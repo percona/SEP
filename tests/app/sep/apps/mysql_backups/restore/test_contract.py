@@ -298,10 +298,15 @@ class TestRestoreContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_201_CREATED, response.text
 
-    def test_create_accepts_s3_tool_under_a_gcs_source(
+    def test_create_rejects_s3_tool_under_a_gcs_source(
         self, contract_client: Any
     ) -> None:
-        """Accept ``s3_tool`` for a GCS source, which the payload still reads it for."""
+        """Reject ``s3_tool`` for a GCS source, whose download never consults it.
+
+        A ``gs://`` source is fetched by ``gs_copy``'s ``gcloud storage rsync``,
+        and the one path that does read ``s3_tool`` on a GCS restore selects
+        ``aws s3 ls`` for a ``gs://`` URL, which cannot list the source.
+        """
         base = app_base_url(self.app_def)
         body = _valid_restore_body()
         body.update(
@@ -312,7 +317,9 @@ class TestRestoreContract(DerivedRouterContractTests):
 
         response = contract_client.post(f"{base}/", json=body)
 
-        assert response.status_code == status.HTTP_201_CREATED, response.text
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, (
+            response.text
+        )
 
     def test_create_accepts_a_cleared_s3_tool_select(
         self, contract_client: Any
@@ -414,16 +421,7 @@ class TestRestoreContract(DerivedRouterContractTests):
                 {"when": {"not_equals": {"source_transport": "ssh"}}}
             ], name
         assert fields["s3_tool"]["forbidden"] == [
-            {
-                "when": {
-                    "not": {
-                        "any": [
-                            {"equals": {"source_transport": "s3"}},
-                            {"equals": {"source_transport": "gcs"}},
-                        ]
-                    }
-                }
-            }
+            {"when": {"not_equals": {"source_transport": "s3"}}}
         ]
         assert fields["gpg_password_file"]["forbidden"] == [
             {

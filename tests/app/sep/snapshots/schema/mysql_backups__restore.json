@@ -232,19 +232,8 @@
           "forbidden": [
             {
               "when": {
-                "not": {
-                  "any": [
-                    {
-                      "equals": {
-                        "source_transport": "s3"
-                      }
-                    },
-                    {
-                      "equals": {
-                        "source_transport": "gcs"
-                      }
-                    }
-                  ]
+                "not_equals": {
+                  "source_transport": "s3"
                 }
               }
             }

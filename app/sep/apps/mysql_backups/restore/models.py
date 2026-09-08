@@ -270,14 +270,9 @@ class RestoreConfig(BaseCaseInsensitiveModel):
 # that reads them, only forbidden outside it.
 _TRANSPORT = F("source_transport")
 _SSH_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.SSH)
-_OBJECT_STORE_ONLY = Forbidden(
-    when=not_(
-        any_(
-            _TRANSPORT == SourceTransport.S3,
-            _TRANSPORT == SourceTransport.GCS,
-        )
-    )
-)
+# S3 only, not object stores generally: a ``gs://`` source is fetched by
+# ``gs_copy``'s ``gcloud storage rsync``, which never consults ``s3_tool``.
+_S3_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.S3)
 _SRC_ENCRYPTION = F("source_encryption")
 _GPG_SOURCE_ONLY = Forbidden(
     when=not_(
@@ -289,7 +284,7 @@ _GPG_SOURCE_ONLY = Forbidden(
 )
 
 _SSH_SOURCE_FIELDS = ("ssh_user", "ssh_port", "ssh_key")
-_OBJECT_STORE_SOURCE_FIELDS = ("s3_tool",)
+_S3_SOURCE_FIELDS = ("s3_tool",)
 _GPG_SOURCE_FIELDS = ("gpg_password_file",)
 _OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.GCS}
 
@@ -320,8 +315,8 @@ def _infer_source_transport(data: Mapping[str, Any]) -> SourceTransport:
     """Return the transport a pre-declaration body's own fields imply.
 
     The ``backup_source`` scheme is checked before the SSH credentials because an
-    object-store source reads ``s3_tool`` live: inferring SSH from a stray
-    credential would drop a value the restore still needs.
+    S3 source reads ``s3_tool`` live: inferring SSH from a stray credential would
+    drop a value the restore still needs.
 
     :param data: The body being normalized.
     :return: The transport the body's own fields imply.
@@ -351,12 +346,12 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     that contradicts it is left intact for the gates to reject.
 
     Dropping is bounded by the inference above, so a removed value can only be one
-    the inferred source has no working use for: ``s3_tool`` off the object-store
-    path, or SSH credentials on an object-store source. Neither is guaranteed to
-    go unread — the Binlog payload consults ``s3_tool`` before it looks at the
-    source's scheme, and more than one payload path shells out to ``ssh`` for any
-    source holding a colon — but a branch reached that way cannot succeed for the
-    source that was inferred, so no working restore depends on the dropped value.
+    the inferred source has no working use for: ``s3_tool`` off the S3 path, or
+    SSH credentials on an object-store source. Neither is guaranteed to go unread
+    — the Binlog payload consults ``s3_tool`` before it looks at the source's
+    scheme, and more than one payload path shells out to ``ssh`` for any source
+    holding a colon — but a branch reached that way cannot succeed for the source
+    that was inferred, so no working restore depends on the dropped value.
 
     :param data: The body to normalize.
     :return: A new body carrying both declarations and only the fields they allow.
@@ -373,10 +368,8 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
         normalized["source_transport"] = transport
         if transport != SourceTransport.SSH:
             forbidden_fields.update(dict.fromkeys(_SSH_SOURCE_FIELDS, transport))
-        if transport not in (SourceTransport.S3, SourceTransport.GCS):
-            forbidden_fields.update(
-                dict.fromkeys(_OBJECT_STORE_SOURCE_FIELDS, transport)
-            )
+        if transport != SourceTransport.S3:
+            forbidden_fields.update(dict.fromkeys(_S3_SOURCE_FIELDS, transport))
     if not encryption_declared:
         encryption = encryption_format_for_passes(
             aes256=normalized.get("backup_type") == BackupType.XTRABACKUP
@@ -531,7 +524,7 @@ class RestoreCreate(TaskFormModel):
     ] = None
     s3_tool: Annotated[
         S3Tool | EmptyStrToNone,
-        _OBJECT_STORE_ONLY,
+        _S3_ONLY,
         Choices(((S3Tool.S3CMD, "s3cmd"), (S3Tool.AWSCLI, "awscli"))),
         Ui(
             label="S3 tool",

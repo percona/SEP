@@ -286,9 +286,9 @@ def _legacy_stamp(**overrides: object) -> dict:
         pytest.param(
             {"backup_source": "gs://bucket/path", "s3_tool": "awscli"},
             SourceTransport.GCS,
-            {"s3_tool": "awscli"},
-            ("ssh_user", "ssh_port"),
-            id="gcs-scheme-wins-over-ssh-credentials",
+            {},
+            ("ssh_user", "ssh_port", "s3_tool"),
+            id="gcs-scheme-wins-over-ssh-credentials-and-drops-the-s3-tool",
         ),
         pytest.param(
             {"backup_source": "db01:/backups/mydumper"},
