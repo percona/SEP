@@ -20,7 +20,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator, Sequence
 from datetime import timedelta
-from typing import Annotated
+from typing import Annotated, cast
 
 import requests.exceptions
 from fastapi import APIRouter, Query, status
@@ -688,7 +688,9 @@ async def sync_task_history(
     )
     if not claim_result.rowcount:
         session.expunge(task_history)
-        task_history = await _get_history_for_response(session, task_history.id)
+        task_history = await _get_history_for_response(
+            session, cast(int, task_history.id)
+        )
         await _populate_log_metadata(session, [task_history])
         return task_history
 
@@ -718,10 +720,10 @@ async def sync_task_history(
             id=task_history.id,
         )
         raise
-    synced = await _get_history_for_response(session, saved.id)
+    synced = await _get_history_for_response(session, cast(int, saved.id))
     await maybe_dispatch_chain(synced, was_running=True)
     if synced.status.is_terminal():
-        await maybe_record_run(synced.id, executor)
+        await maybe_record_run(cast(int, synced.id), executor)
     await _populate_log_metadata(session, [synced])
     return synced
 
@@ -755,7 +757,7 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
     logger.debug("Creating task history for task %s", task.task_id)
     task.set_failure_reason(task.failure_reason)
     saved = await TaskHistoryManager.save(session, task)
-    return await _get_history_for_response(session, saved.id)
+    return await _get_history_for_response(session, cast(int, saved.id))
 
 
 @router.get("/stats/{task}", dependencies=[IsAuthenticatedDep])
