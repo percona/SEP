@@ -73,7 +73,12 @@ async def download_task_history_file(
     task_history: Annotated[TaskHistoryResponse, Depends(get_task_history)],
     tasks_client: TasksClient,
 ) -> StreamingResponse:
-    """Stream a task history's archived file as a binary download."""
+    """Stream a task history's archived file as a binary download.
+
+    The generator is primed before constructing the response so that upstream
+    errors (401/403/410/500) surface as the real status code rather than a
+    misleading 200 with an empty body. See SEP-1878.
+    """
     headers = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
     with tasks_client.auth(user.access_token) as tasks_api:
@@ -94,10 +99,40 @@ async def download_task_history_file(
             attachment = f"{filename}.tar.gz" if is_dir else filename
             headers["Content-Disposition"] = f'attachment; filename="{attachment}"'
 
+    stream = task_history_file_stream(
+        tasks_client, task_history.id, request, user.access_token
+    )
+
+    # Prime the generator to surface upstream errors before committing HTTP 200.
+    # Starlette's StreamingResponse sends http.response.start (status 200) before
+    # iterating the body, so an HTTPException raised on the first pull would
+    # otherwise arrive after the 200 is already committed to the client.
+    try:
+        first_chunk = await anext(stream)
+    except HTTPException:
+        # Upstream rejected the request — re-raise so FastAPI returns the real
+        # status (401/403/410/500) instead of a misleading 200.
+        raise
+    except StopAsyncIteration:
+        # Genuinely empty file — valid 200 with an empty body.
+        async def _empty_stream() -> AsyncGenerator[bytes, None]:
+            return
+            yield  # pragma: no cover — makes this an async generator
+
+        return StreamingResponse(
+            _empty_stream(),
+            media_type="application/octet-stream",
+            headers=headers,
+        )
+
+    # Success path: yield the primed first chunk followed by the rest.
+    async def _primed_stream() -> AsyncGenerator[bytes, None]:
+        yield first_chunk
+        async for chunk in stream:
+            yield chunk
+
     return StreamingResponse(
-        task_history_file_stream(
-            tasks_client, task_history.id, request, user.access_token
-        ),
+        _primed_stream(),
         media_type="application/octet-stream",
         headers=headers,
     )
