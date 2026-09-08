@@ -434,6 +434,7 @@ class TestCreateEndpoint:
         ("backup_dir", "expected_type"),
         [
             pytest.param("", "string_too_short", id="empty-string"),
+            pytest.param("   ", "string_too_short", id="whitespace-only"),
             pytest.param(None, "string_type", id="null"),
         ],
     )
@@ -448,9 +449,11 @@ class TestCreateEndpoint:
     ):
         """Refuse an empty or null backup directory, with the error on the field.
 
-        An untouched text input submits ``""``, so this is the shape a form
-        submission actually sends; pinning the error to ``backup_dir`` is what
-        lets the SPA attach it to the input rather than to a form-level banner.
+        The SPA no longer sends either shape — the field is required in the
+        derived schema, so the client blocks the submit — but a direct API
+        caller can, and the model is what has to refuse it. Pinning the error to
+        ``backup_dir`` is what lets the SPA attach it to the input rather than to
+        a form-level banner if the client-side rule is ever lost.
         """
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()

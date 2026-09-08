@@ -36,6 +36,7 @@ from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
     NonEmptyStr,
+    StrippedNonEmptyStr,
 )
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
@@ -403,7 +404,7 @@ class BackupCreate(TaskFormModel):
             ),
         ),
     ] = None
-    backup_dir: Annotated[NonEmptyStr, BACKUP_DIR_UI]
+    backup_dir: Annotated[StrippedNonEmptyStr, BACKUP_DIR_UI]
 
     hardlink: Annotated[
         bool,

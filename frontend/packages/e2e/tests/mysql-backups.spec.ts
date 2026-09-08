@@ -800,12 +800,17 @@ test.describe('MySQL Backups — encryption_format POST body', () => {
 
 // ── Required Task-section field vs. a collapsed section ───────────────────────
 //
-// ``backup_dir`` is required and lives in ``Task`` precisely because ``General``
-// opens collapsed: a required field behind a collapse toggle is a form the
-// operator cannot complete without first discovering the toggle. This mirrors
-// the real schema's posture so the rendered side of that decision is covered;
-// which section the app actually declares is pinned server-side by
-// ``test_schema_pins_section_collapse_posture``.
+// These serve the *renderer*, not mysql_backups: the schema below is written
+// here rather than fetched, so reverting the app's own field declaration leaves
+// them passing. What they pin is the client half of a required field's
+// mechanism — that a required string in a non-collapsed section renders with the
+// HTML required attribute, that RHF suppresses the POST outright rather than
+// letting a 422 round-trip, and that the typed value arrives under the right
+// body key. Which section mysql_backups actually declares, and that the field is
+// required there, is pinned server-side against the live derived schema by
+// ``test_schema_pins_section_collapse_posture``; that is the test a revert
+// fails. Section order here is Task, Upload, General rather than the app's own
+// order — only the collapse posture is mirrored.
 const MOCK_SCHEMA_WITH_COLLAPSED_GENERAL = {
   ...MOCK_SCHEMA,
   forms: [
@@ -853,7 +858,15 @@ test.describe('MySQL Backups — required backup directory on the create form', 
     const backupDir = page.getByLabel(/Backup directory/);
     await expect(backupDir).toBeVisible();
     await expect(backupDir).toHaveAttribute('required', '');
-    await expect(page.getByLabel(/Logging directory/)).not.toBeVisible();
+
+    // A collapsed section unmounts its children, so the General field is absent
+    // rather than merely hidden. Expanding it has to bring the field back —
+    // without that half, this assertion would also pass for a field the schema
+    // never declared, which is the case it is meant to exclude.
+    const loggingDir = page.getByLabel(/Logging directory/);
+    await expect(loggingDir).toHaveCount(0);
+    await page.getByRole('button', { name: 'General' }).click();
+    await expect(loggingDir).toBeVisible();
 
     await page.screenshot({
       path: 'test-results/screenshots/backup-dir-visible-on-open.png',

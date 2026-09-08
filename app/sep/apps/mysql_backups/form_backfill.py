@@ -21,7 +21,7 @@ from typing import Annotated, Any, TYPE_CHECKING
 
 import yaml
 
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.core.utils.fields import EmptyStrToNone, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
@@ -85,7 +85,7 @@ class LegacyBackupCreate(BackupCreate):
         create model.
     """
 
-    backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
+    backup_dir: Annotated[StrippedNonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
