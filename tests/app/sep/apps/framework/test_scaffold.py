@@ -21,13 +21,15 @@ app must live there to import), builds a fresh registry from the short
 ``MODULE_NAME``, runs the conformance detectors, and exercises the derived
 router through the contract client — then removes the generated package, test
 package, and ``sys.modules`` entries in a ``finally``. ``settings.yaml`` is never
-mutated in place: the ``tmp_settings`` fixture points the engine at a per-test
-copy, so the throwaway registration cannot dirty the worktree or race a parallel
-worker.
+mutated in place: in-process tests take the ``tmp_settings`` fixture's monkeypatch
+and the ``make startapp`` subprocess tests take the ``SEP_SCAFFOLD_SETTINGS_FILE``
+redirect, so the throwaway registration cannot dirty the worktree or race a
+parallel worker.
 """
 
 import importlib
 import json
+import os
 import shutil
 import sys
 from collections.abc import Callable, Iterator
@@ -73,13 +75,34 @@ from tests.app.sep.apps.framework.kit import (
 )
 
 
+def _settings_copy(tmp_path: Path) -> Path:
+    """Return a throwaway ``settings.yaml`` seeded from the repository's own."""
+    copy = tmp_path / "settings.yaml"
+    copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    return copy
+
+
 @pytest.fixture
 def tmp_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Return a per-test ``settings.yaml`` copy the engine writes to instead."""
-    copy = tmp_path / "settings.yaml"
-    copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    copy = _settings_copy(tmp_path)
     monkeypatch.setattr(scaffold, "SETTINGS_FILE", copy)
     return copy
+
+
+def _startapp_env(settings_copy: Path) -> dict[str, str]:
+    """Return a ``make startapp`` environment registering into ``settings_copy``.
+
+    The subprocess tests below run the scaffolder in a child process, so they
+    cannot redirect it with ``tmp_settings``'s monkeypatch. Left pointing at the
+    worktree's own ``settings.yaml``, the child registers its app there, and any
+    test constructing ``SEPSettings()`` while the entry is live fails on the app
+    module the entry names but the run has not written yet.
+
+    :param settings_copy: The throwaway ``settings.yaml`` to register into.
+    :return: ``os.environ`` plus the settings-file redirect.
+    """
+    return {**os.environ, scaffold.SETTINGS_FILE_ENV_VAR: str(settings_copy)}
 
 
 def _cleanup(name: str) -> None:
@@ -1126,16 +1149,16 @@ def test_wizard_keyboard_interrupt_aborts_without_writing(
     assert tmp_settings.read_text() == before
 
 
-def test_makefile_forwards_quoted_values() -> None:
+def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     """Forward a description with spaces and a quote intact through ``make startapp``.
 
-    Exercises the real Makefile ``$$VAR`` shell-environment forwarding (not the
-    in-process ``tmp_settings`` copy), so it backs up and restores the worktree's
-    ``settings.yaml`` in a ``finally`` like ``startapp_check.py``.
+    Exercises the real Makefile ``$$VAR`` shell-environment forwarding. The child
+    process cannot take ``tmp_settings``'s monkeypatch, so it is redirected at a
+    throwaway settings file through :func:`_startapp_env` instead.
     """
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
-    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1149,6 +1172,7 @@ def test_makefile_forwards_quoted_values() -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1163,8 +1187,8 @@ def test_makefile_forwards_quoted_values() -> None:
             f"description={json.dumps(description)}" in rendered
             or f"description={description!r}" in rendered
         )
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
-        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
 
 
@@ -1174,13 +1198,13 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     The ``SCRIPT`` make variable forwards to the scaffolder's ``--script`` flag the
     way ``PAYLOAD`` forwards ``--payload``, so the script flavor is reachable through
     the ``make startapp`` entry point. Exercises the real Makefile ``$$VAR``
-    forwarding, backing up and restoring ``settings.yaml`` like
-    :func:`test_makefile_forwards_quoted_values`.
+    forwarding, redirecting the child's settings write through
+    :func:`_startapp_env` like :func:`test_makefile_forwards_quoted_values`.
     """
     name = "_scaffold_ci_scriptforward"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
-    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1194,6 +1218,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1204,12 +1229,12 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
             snippets_dir / "seed.sh"
         ).read_text() == "#!/usr/bin/env bash\necho hi\n"
         assert not (snippets_dir / "sample.sh").exists()
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
-        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
 
 
-def test_makefile_forwards_item_display_names() -> None:
+def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
     """Forward the record-name flags through ``make startapp``.
 
     Exercises the real Makefile ``$$VAR`` shell-environment forwarding for
@@ -1219,7 +1244,7 @@ def test_makefile_forwards_item_display_names() -> None:
     name = "_scaffold_ci_itemnameforward"
     item_display_name = "gadget"
     item_display_name_plural = "gadgets"
-    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1234,6 +1259,7 @@ def test_makefile_forwards_item_display_names() -> None:
                 f"VIRTUAL_ENV={venv_root}",
             ],
             cwd=scaffold._REPO_ROOT,
+            env=_startapp_env(settings_copy),
             capture_output=True,
             text=True,
             check=False,
@@ -1253,8 +1279,8 @@ def test_makefile_forwards_item_display_names() -> None:
             in rendered
             or f"item_display_name_plural={item_display_name_plural!r}" in rendered
         )
+        assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
-        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
 
 

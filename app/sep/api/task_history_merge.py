@@ -29,7 +29,8 @@ from app.core.pagination import (
     Pagination,
 )
 from app.core.requests.remote_api import as_json_object, JSONBody, RemoteAPI
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.sep.api.task_history_actors import SepTaskHistoryResponse
+from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [
     "fetch_merged_task_history",
@@ -211,19 +212,15 @@ async def fetch_merged_task_history(
     *,
     pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-) -> PaginatedResponse[TaskHistoryResponse]:
+) -> PaginatedResponse[SepTaskHistoryResponse]:
     """Fetch and merge task history for multiple task names via the Tasks API.
 
     :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
     :param task_names: Task names whose history rows should be merged.
-    :type task_names: list[str]
     :param status: Optional exact status filter forwarded upstream.
-    :type status: TaskHistoryStatusEnum | None
     :param pagination: Validated pagination window for merged results.
-    :type pagination: Pagination
-    :return: Merged paginated task history, newest-first across all names.
-    :rtype: PaginatedResponse[TaskHistoryResponse]
+    :return: Merged paginated task history, newest-first across all names, with
+        actor identifiers left as stored for the caller to resolve.
     """
     unique_names = normalize_task_history_names(task_names)
     window_size = _merged_upstream_window_size(pagination)
@@ -240,7 +237,7 @@ async def fetch_merged_task_history(
     )
     merged = merge_task_history_pages(pages, pagination=pagination)
     return PaginatedResponse.from_pagination(
-        [TaskHistoryResponse.model_validate(item) for item in merged["items"]],
+        [SepTaskHistoryResponse.model_validate(item) for item in merged["items"]],
         merged["total"],
         pagination,
     )

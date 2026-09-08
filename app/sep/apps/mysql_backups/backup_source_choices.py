@@ -30,11 +30,6 @@ from app.sep.apps.mysql_backups.models import (
     restore_valid_backup_source,
 )
 
-_TYPE_LABELS = {
-    BackupType.MYDUMPER: "Mydumper",
-    BackupType.XTRABACKUP: "XtraBackup",
-}
-
 _BYTES_PER_KIB = 1024
 _SIZE_UNITS = ("B", "KiB", "MiB", "GiB", "TiB")
 _LABEL_PATH_MAX = 48
@@ -72,7 +67,7 @@ def backup_source_label(run: MysqlBackupRun, *, value: str) -> str:
     :param value: The Choice value (restore-valid location) shown in the label.
     :return: A label combining backup type, finish time, size, and location.
     """
-    type_label = _TYPE_LABELS.get(run.backup_type, str(run.backup_type))
+    type_label = BackupType.LABELS.get(run.backup_type, str(run.backup_type))
     if run.finished_at is None:
         finished = "unknown time"
     else:

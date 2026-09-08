@@ -279,7 +279,7 @@ class RestoreCreate(TaskFormModel):
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Destination Database Service", section="General"),
+        Ui(label="Destination Database Service", section="Task"),
     ] = None
     backup_source: Annotated[
         NonEmptyStr,
@@ -288,7 +288,7 @@ class RestoreCreate(TaskFormModel):
             allow_custom=True,
         ),
         Ui(
-            section="General",
+            section="Task",
             depends_on="service_id",
             description=(
                 "Where the backup is stored. Select a database service above to "
@@ -336,7 +336,16 @@ class RestoreCreate(TaskFormModel):
         NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
     ] = None
     overwrite_tables: Annotated[
-        bool, Ui(label="Overwrite tables", section="Mydumper")
+        bool,
+        Ui(
+            label="Overwrite tables",
+            section="Mydumper",
+            destructive=(
+                "Existing tables in the target database are dropped before the "
+                "backup is loaded. Rows written since the backup was taken are "
+                "lost."
+            ),
+        ),
     ] = False
     myloader_threads: Annotated[
         int | EmptyStrToNone, Ui(label="Myloader threads", section="Mydumper")
