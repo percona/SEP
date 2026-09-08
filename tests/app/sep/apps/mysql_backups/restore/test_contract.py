@@ -32,6 +32,7 @@ from fastapi import status
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
+from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -42,6 +43,10 @@ from tests.app.sep.apps.framework.kit import (
     SYNTH_EXECUTOR_HOST,
     SYNTH_SERVICE_HOST,
     SYNTH_SERVICE_PORT,
+)
+from tests.app.sep.apps.mysql_backups.description_coverage import (
+    assert_every_declared_field_is_described,
+    assert_schema_serves_only_declared_descriptions,
 )
 
 _NEW_TASK_NAME = "contract-new-restore"
@@ -102,6 +107,29 @@ class TestRestoreContract(DerivedRouterContractTests):
             for field in form["fields"]
         }
         assert fields["schema_id"]["label"] == "Target database"
+
+    def test_every_declared_field_is_described(self) -> None:
+        """Require helper text on every field the restore form declares itself.
+
+        A restore is configured under incident pressure, so a field an operator
+        has to guess at is a field they get wrong.
+        """
+        assert_every_declared_field_is_described(RestoreCreate)
+
+    def test_schema_serves_only_declared_descriptions(
+        self, contract_client: Any
+    ) -> None:
+        """Serve each declared field's description verbatim, and only those.
+
+        The inherited Task fields have to stay undescribed here, because
+        describing them would move every other schema-driven app's schema too.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_descriptions(response.json(), RestoreCreate)
 
     def test_create_201(self, contract_client: Any, mock_task_api: Any) -> None:
         """Create a task via a real JSON POST with a valid body, returning 201.
