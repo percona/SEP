@@ -10,6 +10,52 @@ management app is not shipped — the builtin snippet library is ingested and
 auto-approved at boot (SEP-1627) so atw can execute it, with no periodic or
 manual re-sync.
 
+## Try the Tech Preview
+
+This is the fastest way to see PMM's management pages today. It runs a PMM
+*feature build* (a pre-release image cut from a pull request) next to the SEP
+side-car, on one machine, with Docker Compose. It is a preview, not an install:
+the PMM image is rebuilt without notice, nothing here upgrades in place, and
+both services listen on loopback only.
+
+You need Docker (or Podman) with Compose and an x86-64 host, or x86-64
+emulation. Then:
+
+```bash
+git clone -b pmm https://github.com/percona/SEP.git
+cd SEP/sidecar/pmm-fb
+docker compose up -d
+```
+
+First boot takes a couple of minutes; `sep-sidecar` stays in `Created` until
+pmm-server reports healthy. Then sign in at <https://127.0.0.1:8443> as
+`admin` / `admin` and open **Management** in the sidebar. There is no second
+login: the management pages use your PMM session.
+
+What you can do from there:
+
+- **MySQL Backups** needs a MySQL server that PMM monitors *and* that runs a
+  PMM Client, because the backup executes on that node. The `mysql` profile
+  adds one, seeded with the `employees` sample database, so there is something
+  to back up:
+
+  ```bash
+  ./bootstrap.sh                                # generates the profile's .env
+  docker compose --profile mysql up -d --build
+  ```
+
+  The build and the seed import take several minutes; wait for `Imported the
+  employees seed dataset` in `docker compose logs -f sep-mysql`.
+- **Support diagnostics** collects troubleshooting output and sends it to a
+  Percona Support case. Its landing page asks for that connection before it
+  opens, so without a Percona Support subscription this app stays on its setup
+  screen.
+
+To stop and remove everything, including data:
+`docker compose --profile mysql down -v`.
+
+Everything below this line is the developer reference for the harness itself.
+
 ## Which image to pin
 
 The restricted image is built on `main`, not on this branch, and the build emits
