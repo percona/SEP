@@ -289,8 +289,10 @@ class RestoreCreate(TaskFormModel):
             label="Destination Database Service",
             section="Task",
             description=(
-                "Database service being restored into; SEP resolves its address and "
-                "port from inventory. Pick from inventory or type a name."
+                "Database service being restored into. A Mydumper restore needs an "
+                "existing MySQL service, whose address and port become the load "
+                "destination; an XtraBackup or Binlog restore only records the name, "
+                "so a typed one is accepted there."
             ),
         ),
     ] = None
@@ -325,8 +327,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             section="General",
             description=(
-                "Port of the MySQL instance the restore connects to on the target host "
-                "(defaults to 3306)"
+                "Port SEP connects to on the target host when it queries the server "
+                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
+                "loads over the destination service's own address and a Binlog restore "
+                "replays through a local client, so neither uses it."
             ),
         ),
     ] = None
@@ -336,8 +340,10 @@ class RestoreCreate(TaskFormModel):
             label="Custom MySQL init command",
             section="General",
             description=(
-                "Service command used to stop and start MySQL during the restore, such "
-                "as /usr/bin/systemctl. Detected automatically when left empty."
+                "Service command used to stop and start MySQL during an XtraBackup "
+                "restore, such as /usr/bin/systemctl; detected automatically when left "
+                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
+                "it."
             ),
         ),
     ] = None
@@ -366,8 +372,8 @@ class RestoreCreate(TaskFormModel):
             label="SSH key name",
             section="General",
             description=(
-                "Name of the SSH key to authenticate with, not a path. Only used for a "
-                "backup stored on a remote host."
+                "Unused: fetching a backup from a remote host always authenticates "
+                "with the SSH user's own id_rsa key."
             ),
         ),
     ] = None
@@ -401,9 +407,9 @@ class RestoreCreate(TaskFormModel):
             section="Mydumper",
             depends_on="service_id",
             description=(
-                "Database the backup is loaded into. Pick from inventory or type "
-                "a name; leave empty to restore into the databases the backup "
-                "came from."
+                "Database the backup is loaded into; pick one from inventory. Leave "
+                "empty to restore into the databases the backup came from. A name "
+                "typed here instead of picked is ignored and does the same."
             ),
         ),
     ] = None
@@ -414,8 +420,8 @@ class RestoreCreate(TaskFormModel):
             section="Mydumper",
             description=(
                 "Staging directory on the target host where the backup is assembled "
-                "before it is loaded; it is removed once the restore finishes "
-                "(defaults to /tmp)"
+                "before it is loaded; the staging copy is removed once the load "
+                "succeeds, and left behind after a failure (defaults to /tmp)"
             ),
         ),
     ] = None
@@ -457,7 +463,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Skip databases",
             section="Mydumper",
-            description="Comma-separated databases to leave out of the restore",
+            description=(
+                "Databases to leave out of the restore, comma-separated. They are "
+                "filtered out as the backup is fetched, by file name, and are ignored "
+                "for a Google Cloud Storage source."
+            ),
         ),
     ] = None
     include_databases: Annotated[
@@ -466,7 +476,9 @@ class RestoreCreate(TaskFormModel):
             label="Include databases",
             section="Mydumper",
             description=(
-                "Comma-separated databases to restore, ignoring the rest of the backup"
+                "Databases to restore, comma-separated, ignoring the rest of the "
+                "backup. Filtered as the backup is fetched, by file name, and ignored "
+                "for a Google Cloud Storage source."
             ),
         ),
     ] = None
@@ -477,7 +489,8 @@ class RestoreCreate(TaskFormModel):
             section="Mydumper",
             description=(
                 "Path on the target host to a script run before the load. A .sql file "
-                "is executed against the target MySQL; anything else runs as a command."
+                "is executed against the target MySQL; anything else runs as a "
+                "command."
             ),
         ),
     ] = None
@@ -504,18 +517,17 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ] = False
-    # Marked destructive even though the wipe does not depend on the value: an
-    # empty entry is autodetected and emptied just the same, so the mark belongs
-    # on the field that names the target rather than on a toggle.
+    # The mark belongs on the field naming the target rather than on a toggle:
+    # the wipe is unconditional, and an empty entry aborts the restore instead of
+    # being autodetected, so every restore that runs sets this.
     datadir: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Ui(
             label="Data directory",
             section="XtraBackup",
             description=(
-                "MySQL data directory the backup is restored into. It has to exist "
-                "already, and everything currently in it is deleted. Detected from the "
-                "server when left empty."
+                "MySQL data directory the backup is restored into. Required: it has to "
+                "exist already, and everything currently in it is deleted."
             ),
             destructive=(
                 "The data directory is emptied before the backup is restored into "
@@ -550,7 +562,10 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="XtraBackup parallel",
             section="XtraBackup",
-            description="How many files are decrypted and decompressed in parallel",
+            description=(
+                "How many files are decrypted and decompressed in parallel (defaults "
+                "to 4). Clearing it leaves the decompression unbounded."
+            ),
         ),
     ] = Field(default=4)
     xtrabackup_bin_cmd: Annotated[
@@ -571,7 +586,8 @@ class RestoreCreate(TaskFormModel):
             section="XtraBackup",
             description=(
                 "Restore the MySQL configuration files saved in the backup before "
-                "preparing it"
+                "preparing it, rewriting server id to a fresh value. Choosing one that "
+                "is not already taken queries the replication source below."
             ),
         ),
     ] = False
@@ -601,8 +617,9 @@ class RestoreCreate(TaskFormModel):
             section="XtraBackup",
             description=(
                 "Keyring file the prepare needs for a backup with encrypted "
-                "tablespaces. Falls back to the path in the server's configuration "
-                "when left empty."
+                "tablespaces; read only when the backup binary above is xtrabackup. "
+                "Falls back to a path found in the configuration files stored inside "
+                "the backup when left empty."
             ),
         ),
     ] = None
@@ -655,7 +672,11 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master port",
             section="XtraBackup",
-            description="Port of the replication source",
+            description=(
+                "Port used to query the replication source for an unused server id "
+                "when 'Restore my.cnf' is set. Starting replication itself uses the "
+                "port in the coordinates saved in the backup."
+            ),
         ),
     ] = Field(default=3306)
     master_user: Annotated[
@@ -713,8 +734,9 @@ class RestoreCreate(TaskFormModel):
             label="Use SQL file",
             section="Binlog",
             description=(
-                "Replay this SQL file from the staging directory instead of the binlog "
-                "files themselves"
+                "Dump the binlog range to restore.sql in the staging directory first "
+                "and then apply that file, instead of piping the binlogs straight into "
+                "MySQL"
             ),
         ),
     ] = None

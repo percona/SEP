@@ -50,6 +50,38 @@ class _DescribesOneField(TaskFormModel):
     ]
 
 
+class _DeclaresNothing(TaskFormModel):
+    """Declare no fields at all, leaving the helpers with nothing to inspect."""
+
+
+class _NamesACliFlag(TaskFormModel):
+    """Describe a field by the flag it becomes rather than by its effect."""
+
+    retries: Annotated[
+        int,
+        Ui(
+            label="Retries",
+            section="General",
+            description="Passes --safe-slave-backup so the replica pauses",
+        ),
+    ]
+
+
+class _CarriesRstMarkup(TaskFormModel):
+    """Describe a field with rST inline code the renderer emits verbatim."""
+
+    retries: Annotated[
+        int,
+        Ui(label="Retries", section="General", description="Either ``daily`` or none"),
+    ]
+
+
+class _DescribesWithWhitespace(TaskFormModel):
+    """Carry a description the wire schema accepts but an operator cannot read."""
+
+    retries: Annotated[int, Ui(label="Retries", section="General", description="   ")]
+
+
 def _schema_payload(*fields: dict[str, Any]) -> dict[str, Any]:
     """Return a minimal ``GET /schema`` body carrying the given field entries.
 
@@ -111,3 +143,82 @@ class TestServedSchemaFidelity:
             AssertionError, match=r"not served on the wire: \['retries'\]"
         ):
             assert_schema_serves_only_declared_descriptions(payload, _DescribesOneField)
+
+
+class TestDescriptionQuality:
+    """Assert the checks on what a present description is allowed to say."""
+
+    def test_whitespace_only_description_is_rejected(self) -> None:
+        """Reject a description the wire schema accepts but that renders as blank.
+
+        ``NonEmptyStr`` does not strip, so a single space validates at derivation
+        and reaches the operator as empty helper text. Presence alone is the
+        weaker assertion.
+        """
+        with pytest.raises(AssertionError, match=r"no description: \['retries'\]"):
+            assert_every_declared_field_is_described(_DescribesWithWhitespace)
+
+    def test_description_naming_a_cli_flag_is_rejected(self) -> None:
+        """Reject helper text that explains a field by the flag it becomes.
+
+        The form shows a labelled control, not the command line, so a flag only
+        reads to someone who already knows the tool. Matching the flag anywhere
+        rather than at the start catches the copy that leads with it in every
+        sense except the literal first character.
+        """
+        with pytest.raises(AssertionError, match=r"naming a CLI flag: \['retries'\]"):
+            assert_every_declared_field_is_described(_NamesACliFlag)
+
+    def test_description_carrying_rst_markup_is_rejected(self) -> None:
+        """Reject rST inline code, which the renderer passes through as backticks."""
+        with pytest.raises(AssertionError, match=r"carrying rST markup: \['retries'\]"):
+            assert_every_declared_field_is_described(_CarriesRstMarkup)
+
+    def test_a_model_declaring_no_fields_is_rejected(self) -> None:
+        """Refuse to pass over an empty field set.
+
+        Re-parenting a create model onto an intermediate base would otherwise
+        make every assertion below hold without inspecting anything.
+        """
+        with pytest.raises(AssertionError, match=r"declares no fields of its own"):
+            assert_every_declared_field_is_described(_DeclaresNothing)
+
+
+class TestServedSchemaExemptions:
+    """Assert the served-schema half rejects a payload that drops or adds text."""
+
+    def test_a_declared_field_absent_from_the_schema_is_rejected(self) -> None:
+        """Reject a schema that never serves a described field.
+
+        A description that does not reach the wire is invisible to the operator,
+        so model-side coverage alone is not the promise.
+        """
+        payload = _schema_payload({"name": "hostname", "description": None})
+
+        with pytest.raises(
+            AssertionError, match=r"absent from the schema: \['retries'\]"
+        ):
+            assert_schema_serves_only_declared_descriptions(payload, _DescribesOneField)
+
+    def test_an_inherited_field_gaining_a_description_is_rejected(self) -> None:
+        """Reject a description on a field the shared framework model declares.
+
+        Describing an inherited Task field would move the schema of every other
+        schema-driven app, so this form is not the place it can happen.
+        """
+        payload = _schema_payload(
+            {"name": "retries", "description": "How many"},
+            {"name": "task_name", "description": "Name this task"},
+        )
+
+        with pytest.raises(
+            AssertionError, match=r"inherited fields described here: \['task_name'\]"
+        ):
+            assert_schema_serves_only_declared_descriptions(payload, _DescribesOneField)
+
+    def test_a_model_declaring_no_fields_is_rejected(self) -> None:
+        """Refuse to pass over an empty field set on the served-schema half too."""
+        with pytest.raises(AssertionError, match=r"declares no fields of its own"):
+            assert_schema_serves_only_declared_descriptions(
+                _schema_payload(), _DeclaresNothing
+            )

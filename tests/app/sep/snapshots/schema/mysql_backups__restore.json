@@ -71,7 +71,7 @@
         },
         {
           "allow_custom": true,
-          "description": "Database service being restored into; SEP resolves its address and port from inventory. Pick from inventory or type a name.",
+          "description": "Database service being restored into. A Mydumper restore needs an existing MySQL service, whose address and port become the load destination; an XtraBackup or Binlog restore only records the name, so a typed one is accepted there.",
           "label": "Destination Database Service",
           "name": "service_id",
           "required": false,
@@ -107,14 +107,14 @@
           "type": "string"
         },
         {
-          "description": "Port of the MySQL instance the restore connects to on the target host (defaults to 3306)",
+          "description": "Port SEP connects to on the target host when it queries the server during an XtraBackup restore (defaults to 3306). A Mydumper restore loads over the destination service's own address and a Binlog restore replays through a local client, so neither uses it.",
           "label": "Port",
           "name": "port",
           "required": false,
           "type": "integer"
         },
         {
-          "description": "Service command used to stop and start MySQL during the restore, such as /usr/bin/systemctl. Detected automatically when left empty.",
+          "description": "Service command used to stop and start MySQL during an XtraBackup restore, such as /usr/bin/systemctl; detected automatically when left empty. Mydumper and Binlog restores never stop MySQL, so they ignore it.",
           "label": "Custom MySQL init command",
           "min_length": 1,
           "name": "custom_mysql_init_command",
@@ -139,7 +139,7 @@
           "type": "integer"
         },
         {
-          "description": "Name of the SSH key to authenticate with, not a path. Only used for a backup stored on a remote host.",
+          "description": "Unused: fetching a backup from a remote host always authenticates with the SSH user's own id_rsa key.",
           "label": "SSH key name",
           "min_length": 1,
           "name": "ssh_key",
@@ -183,14 +183,14 @@
         {
           "allow_custom": true,
           "depends_on": "service_id",
-          "description": "Database the backup is loaded into. Pick from inventory or type a name; leave empty to restore into the databases the backup came from.",
+          "description": "Database the backup is loaded into; pick one from inventory. Leave empty to restore into the databases the backup came from. A name typed here instead of picked is ignored and does the same.",
           "label": "Target database",
           "name": "schema_id",
           "required": false,
           "type": "schema"
         },
         {
-          "description": "Staging directory on the target host where the backup is assembled before it is loaded; it is removed once the restore finishes (defaults to /tmp)",
+          "description": "Staging directory on the target host where the backup is assembled before it is loaded; the staging copy is removed once the load succeeds, and left behind after a failure (defaults to /tmp)",
           "label": "Local path",
           "min_length": 1,
           "name": "local_path",
@@ -223,7 +223,7 @@
           "type": "string"
         },
         {
-          "description": "Comma-separated databases to leave out of the restore",
+          "description": "Databases to leave out of the restore, comma-separated. They are filtered out as the backup is fetched, by file name, and are ignored for a Google Cloud Storage source.",
           "label": "Skip databases",
           "min_length": 1,
           "name": "skip_databases",
@@ -231,7 +231,7 @@
           "type": "string"
         },
         {
-          "description": "Comma-separated databases to restore, ignoring the rest of the backup",
+          "description": "Databases to restore, comma-separated, ignoring the rest of the backup. Filtered as the backup is fetched, by file name, and ignored for a Google Cloud Storage source.",
           "label": "Include databases",
           "min_length": 1,
           "name": "include_databases",
@@ -280,7 +280,7 @@
           "type": "bool"
         },
         {
-          "description": "MySQL data directory the backup is restored into. It has to exist already, and everything currently in it is deleted. Detected from the server when left empty.",
+          "description": "MySQL data directory the backup is restored into. Required: it has to exist already, and everything currently in it is deleted.",
           "destructive": "The data directory is emptied before the backup is restored into it. Whatever it holds now, including a live dataset, is lost.",
           "label": "Data directory",
           "min_length": 1,
@@ -306,7 +306,7 @@
         },
         {
           "default": 4,
-          "description": "How many files are decrypted and decompressed in parallel",
+          "description": "How many files are decrypted and decompressed in parallel (defaults to 4). Clearing it leaves the decompression unbounded.",
           "label": "XtraBackup parallel",
           "name": "xb_parallel",
           "required": false,
@@ -335,7 +335,7 @@
         },
         {
           "default": false,
-          "description": "Restore the MySQL configuration files saved in the backup before preparing it",
+          "description": "Restore the MySQL configuration files saved in the backup before preparing it, rewriting server id to a fresh value. Choosing one that is not already taken queries the replication source below.",
           "label": "Restore my.cnf",
           "name": "restore_mycnf",
           "required": false,
@@ -358,7 +358,7 @@
           "type": "string"
         },
         {
-          "description": "Keyring file the prepare needs for a backup with encrypted tablespaces. Falls back to the path in the server's configuration when left empty.",
+          "description": "Keyring file the prepare needs for a backup with encrypted tablespaces; read only when the backup binary above is xtrabackup. Falls back to a path found in the configuration files stored inside the backup when left empty.",
           "label": "Keyring file data",
           "min_length": 1,
           "name": "keyring_file_data",
@@ -399,7 +399,7 @@
         },
         {
           "default": 3306,
-          "description": "Port of the replication source",
+          "description": "Port used to query the replication source for an unused server id when 'Restore my.cnf' is set. Starting replication itself uses the port in the coordinates saved in the backup.",
           "label": "Master port",
           "name": "master_port",
           "required": false,
@@ -469,7 +469,7 @@
           "type": "integer"
         },
         {
-          "description": "Replay this SQL file from the staging directory instead of the binlog files themselves",
+          "description": "Dump the binlog range to restore.sql in the staging directory first and then apply that file, instead of piping the binlogs straight into MySQL",
           "label": "Use SQL file",
           "min_length": 1,
           "name": "use_sql_file",

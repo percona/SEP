@@ -395,12 +395,11 @@ class BackupCreate(TaskFormModel):
             label="Hardlink full backups",
             section="General",
             description=(
-                "Reuse unchanged files from the previous backup as hard "
-                "links, so a full backup costs less disk space. Mydumper "
-                "skips it when the previous backup is encrypted; XtraBackup "
-                "skips it when post-run encryption is on, when 'Number of "
-                "backup copies' is 1, and under the 'less_space' incremental "
-                "method. Binlog backups ignore it."
+                "Reuse unchanged files from the previous backup as hard links, so a "
+                "full backup costs less disk space. Mydumper skips it when the "
+                "previous backup is encrypted; XtraBackup skips it when post-run "
+                "encryption is on, when 'Number of backup copies' is 1, and under the "
+                "'less_space' incremental method. Binlog backups ignore it."
             ),
         ),
     ] = False
@@ -411,7 +410,9 @@ class BackupCreate(TaskFormModel):
             section="General",
             description=(
                 "Compress backup data as it is written, using the algorithm selected "
-                "below"
+                "below. XtraBackup drops compression when 'Prepare backup' or the "
+                "'Fast restore' incremental method is on, and a Binlog backup "
+                "compresses every completed file whatever this is set to."
             ),
         ),
     ] = False
@@ -421,8 +422,9 @@ class BackupCreate(TaskFormModel):
             label="Check disk space first",
             section="General",
             description=(
-                "Fail before the backup starts when the target filesystem has too "
-                "little free space"
+                "Fail before a Mydumper or XtraBackup backup starts when the target "
+                "filesystem has too little free space. A Binlog backup instead watches "
+                "free space while it streams and stops the stream when it runs out."
             ),
         ),
     ] = False
@@ -433,7 +435,7 @@ class BackupCreate(TaskFormModel):
             section="General",
             description=(
                 "Skip the host unless replication is running there, so the backup only "
-                "runs on an active replica"
+                "runs on an active replica. Mydumper and XtraBackup backups only."
             ),
         ),
     ] = False
@@ -442,7 +444,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Only if read-only",
             section="General",
-            description="Skip the host unless MySQL is read-only",
+            description=(
+                "Skip the host unless MySQL is read-only. Mydumper and XtraBackup "
+                "backups only."
+            ),
         ),
     ] = False
     use_ftwrl_guardian: Annotated[
@@ -451,8 +456,9 @@ class BackupCreate(TaskFormModel):
             label="FTWRL guardian",
             section="General",
             description=(
-                "Watch for a FLUSH TABLES WITH READ LOCK that hangs during the backup "
-                "and kill it. Mydumper backups only."
+                "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK "
+                "during a Mydumper backup. The watchdog is never reached, so this "
+                "setting changes nothing."
             ),
         ),
     ] = False
@@ -470,8 +476,10 @@ class BackupCreate(TaskFormModel):
             label="Backup directory",
             section="General",
             description=(
-                "Root directory on the database host where backups are written, one "
-                "dated subdirectory per run"
+                "Root directory on the database host where backups are written. "
+                "XtraBackup adds a subdirectory per run, Mydumper one per day that a "
+                "second run the same day writes into, and Binlog keeps its files "
+                "directly under the server's own directory."
             ),
         ),
     ] = None
@@ -481,8 +489,9 @@ class BackupCreate(TaskFormModel):
             label="MySQL defaults file",
             section="General",
             description=(
-                "MySQL defaults file the backup tool reads for its connection "
-                "credentials"
+                "MySQL defaults file used for the connections SEP makes to the server, "
+                "and for the mydumper or binlog command. The XtraBackup binary reads "
+                "'XtraBackup defaults file' instead."
             ),
         ),
     ] = None
@@ -493,7 +502,8 @@ class BackupCreate(TaskFormModel):
             section="General",
             description=(
                 "Algorithm used when compression is enabled; the available choices "
-                "depend on the backup type"
+                "depend on the backup type. A Binlog backup always uses gzip unless "
+                "'Binlog compress command' replaces it."
             ),
         ),
     ] = None
@@ -513,7 +523,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Weekly purge (weeks)",
             section="Mydumper",
-            description="How many weekly backups to keep before the oldest are deleted",
+            description=(
+                "How many Monday-dated backups to keep before the oldest are deleted. "
+                "A weekly backup is an ordinary daily run that landed on a Monday."
+            ),
         ),
     ] = None
     mydumper_dump_triggers: Annotated[
@@ -538,8 +551,8 @@ class BackupCreate(TaskFormModel):
             label="Use NUMA",
             section="Mydumper",
             description=(
-                "Run mydumper under numactl --interleave=all, spreading its memory "
-                "across NUMA nodes"
+                "Interleave mydumper's memory across every NUMA node instead of "
+                "letting it fill one"
             ),
         ),
     ] = False
@@ -549,7 +562,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Extra args",
             section="Mydumper",
-            description="Extra arguments appended to the mydumper command",
+            description=(
+                "Extra arguments for the mydumper command. They are placed ahead of "
+                "the arguments SEP sets, so one that clashes is overridden."
+            ),
         ),
     ] = None
     mydumper_verbose: Annotated[
@@ -558,7 +574,7 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Verbose level",
             section="Mydumper",
-            description="Mydumper log verbosity, from 0 (errors only) to 3 (debug)",
+            description="Mydumper log verbosity, from 0 (silent) to 3 (info)",
         ),
     ] = None
 
@@ -613,10 +629,10 @@ class BackupCreate(TaskFormModel):
             label="Verify after backup",
             section="XtraBackup",
             description=(
-                "Verify the InnoDB pages of the finished backup. Skipped "
-                "automatically when compression is on, and when AES-256 "
-                "encryption is applied during the backup, which is every "
-                "backup binary except mariadb-backup."
+                "Verify the InnoDB pages of the finished backup. Skipped automatically "
+                "when compression is on, when AES-256 encryption is applied during the "
+                "backup (which is every backup binary except mariadb-backup), and on "
+                "an incremental run under the 'less space' method."
             ),
         ),
     ] = False
@@ -626,9 +642,10 @@ class BackupCreate(TaskFormModel):
             label="Prepare for restore",
             section="XtraBackup",
             description=(
-                "Apply the redo log so the backup is ready to restore without "
-                "a prepare step. Disables compression and skips the upload, "
-                "and is forced off when an incremental method is selected."
+                "Apply the redo log so the backup is ready to restore without a "
+                "prepare step. Compression is dropped and the upload skipped whenever "
+                "this is set, including when an incremental method turns the prepare "
+                "itself off."
             ),
         ),
     ] = False
@@ -728,9 +745,9 @@ class BackupCreate(TaskFormModel):
             label="Incremental cycle",
             section="XtraBackup",
             description=(
-                "'daily', 'weekly', or an ISO weekday number (1-7, "
-                "Monday-Sunday) controlling when the full backup runs. Applies "
-                "to the 'less_space' incremental method only."
+                "'daily', 'weekly', or an ISO weekday number (1-7, Monday-Sunday) "
+                "controlling when the full backup runs. Applies to the 'less_space' "
+                "incremental method only."
             ),
         ),
     ] = None
@@ -741,9 +758,8 @@ class BackupCreate(TaskFormModel):
             label="Local SSH destination",
             section="XtraBackup",
             description=(
-                "SSH destination (user@host) the backup is streamed to when the "
-                "database host is not the executor. Detected automatically when left "
-                "empty."
+                "Unused: SEP always runs XtraBackup on the database host itself, so "
+                "the backup is never streamed to another host."
             ),
         ),
     ] = None
@@ -753,9 +769,9 @@ class BackupCreate(TaskFormModel):
             label="Safe replica backup",
             section="XtraBackup",
             description=(
-                "Passes --safe-slave-backup so xtrabackup pauses the replica "
-                "SQL thread during the backup (required for --slave-info on a "
-                "multi-threaded replica with GTID off)."
+                "Pause the replica SQL thread while the data is copied, so the "
+                "replication coordinates recorded in the backup match it. Needed to "
+                "record them at all on a multi-threaded replica with GTID off."
             ),
         ),
     ] = False
@@ -802,7 +818,8 @@ class BackupCreate(TaskFormModel):
             section="Binlog",
             description=(
                 "Base name of the server's binary logs, such as mysql-bin, used to "
-                "find and purge this server's stored files"
+                "find and purge this server's stored files. Required: a Binlog backup "
+                "fails as soon as it starts without it."
             ),
         ),
     ] = None
@@ -821,7 +838,10 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Extra args",
             section="Binlog",
-            description="Extra arguments appended to the mysqlbinlog streaming command",
+            description=(
+                "Extra arguments for the binlog streaming command. They are placed "
+                "ahead of the arguments SEP sets, so one that clashes is overridden."
+            ),
         ),
     ] = None
     binlog_compress_cmd: Annotated[
@@ -844,7 +864,7 @@ class BackupCreate(TaskFormModel):
             section="Binlog",
             description=(
                 "Path to the mysqlbinlog binary on the host, when it is not the "
-                "packaged one"
+                "/usr/bin/mysqlbinlog the backup looks for by default"
             ),
         ),
     ] = None
@@ -885,10 +905,11 @@ class BackupCreate(TaskFormModel):
             label="Encryption format",
             section="Encryption",
             description=(
-                "Which encryption this task applies. 'GPG' needs a recipient and "
-                "a timing below: 'Encrypt backup' encrypts in place as part of an "
-                "upload, so it needs an upload target, while 'Encrypt after backup "
-                "completes' encrypts on the host. 'AES-256' and 'AES-256 + GPG' "
+                "Which encryption this task applies. 'GPG' needs a recipient and a "
+                "timing below: 'Encrypt backup' encrypts as part of an upload, so with "
+                "no upload target nothing is encrypted, while 'Encrypt after backup "
+                "completes' encrypts on the host for a Mydumper or XtraBackup backup "
+                "and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' "
                 "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
                 "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
                 "backend cannot apply on top of it."
@@ -927,10 +948,12 @@ class BackupCreate(TaskFormModel):
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "GPG-encrypt the backup in place as part of an upload, so it "
-                "needs an upload target. Combine with 'Encrypt using tmpdir', or "
-                "use 'Encrypt after backup completes' to encrypt on the host "
-                "instead. Needs a GPG 'Encryption format' and a recipient."
+                "GPG-encrypt the backup as part of an upload. With no upload target "
+                "nothing is encrypted and the task still succeeds. Mydumper and Binlog "
+                "encrypt the backup where it is written, optionally by way of 'Encrypt "
+                "using tmpdir'; XtraBackup encrypts a copy and leaves the backup on "
+                "the host in plain text unless 'Encrypt after backup completes' is set "
+                "too. Needs a GPG 'Encryption format' and a recipient."
             ),
         ),
     ] = False
@@ -950,9 +973,8 @@ class BackupCreate(TaskFormModel):
             label="Encrypt using tmpdir",
             section="Encryption",
             description=(
-                "Encrypt in a temporary directory during the backup. Requires "
-                "'Encrypt backup'; mutually exclusive with 'Encrypt after backup "
-                "completes'."
+                "Encrypt in a temporary directory during the backup. Requires 'Encrypt "
+                "backup'; mutually exclusive with 'Encrypt after backup completes'."
             ),
         ),
     ] = False
@@ -965,8 +987,8 @@ class BackupCreate(TaskFormModel):
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
                 "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
-                "XtraBackup encrypt on the host; a Binlog backup encrypts only "
-                "during an upload, so it also needs an upload target."
+                "XtraBackup encrypt on the host; a Binlog backup encrypts only during "
+                "an upload, so with no upload target nothing is encrypted."
             ),
         ),
     ] = False
@@ -990,8 +1012,8 @@ class BackupCreate(TaskFormModel):
             label="Encryption recipient",
             section="Encryption",
             description=(
-                "GPG recipient/key the backup is encrypted for. Required when "
-                "either GPG timing is enabled."
+                "GPG recipient/key the backup is encrypted for. Required when either "
+                "GPG timing is enabled."
             ),
         ),
     ] = None
@@ -1065,8 +1087,9 @@ class BackupCreate(TaskFormModel):
             label="AWS S3 upload extra args",
             section="Upload",
             description=(
-                "Extra arguments appended to the AWS CLI upload command. XtraBackup "
-                "backups only."
+                "Extra S3 object options for the upload, as space-separated Key=Value "
+                "pairs such as ACL=private. Anything without an equals sign is "
+                "dropped. XtraBackup backups only."
             ),
         ),
     ] = None

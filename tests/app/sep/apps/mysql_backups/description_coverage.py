@@ -21,12 +21,19 @@ apps are only partly described, so promoting it to a registry-wide conformance
 rule would fail them.
 """
 
+import re
 from collections import Counter
 from typing import Any
 
 from app.sep.apps.framework.form_dsl import TaskFormModel, Ui
 
 _RST_INLINE_CODE = "``"
+# The house voice never names a flag in helper text: the form shows a labelled
+# control, not the command line it becomes, so a flag is only ever readable to
+# someone who already knows the tool. Matching anywhere rather than at the start
+# catches "Passes --safe-slave-backup so ...", which leads with the flag in every
+# sense except the literal first character.
+_CLI_FLAG = re.compile(r"(?<![\w-])--[A-Za-z]")
 _SHARED_BASE_CHAIN = frozenset(TaskFormModel.__mro__)
 
 
@@ -86,8 +93,8 @@ def assert_every_declared_field_is_described(
     :param create_model: The form model to inspect.
     :raises AssertionError: When the model declares no fields of its own, when a
         declared field has no description, when the text is blank once stripped,
-        when it leads with a CLI flag the form never shows, or when it carries
-        rST inline-code markup the renderer emits verbatim.
+        when it names a CLI flag the form never shows, or when it carries rST
+        inline-code markup the renderer emits verbatim.
     """
     descriptions = _marker_descriptions(create_model)
     assert descriptions, (
@@ -96,18 +103,18 @@ def assert_every_declared_field_is_described(
     )
 
     missing: set[str] = set()
-    flag_led: set[str] = set()
+    flagged: set[str] = set()
     marked_up: set[str] = set()
     for name, text in descriptions.items():
         if not text.strip():
             missing.add(name)
-        if text.lstrip().startswith("--"):
-            flag_led.add(name)
+        if _CLI_FLAG.search(text):
+            flagged.add(name)
         if _RST_INLINE_CODE in text:
             marked_up.add(name)
 
     assert not missing, f"fields with no description: {sorted(missing)}"
-    assert not flag_led, f"descriptions leading with a CLI flag: {sorted(flag_led)}"
+    assert not flagged, f"descriptions naming a CLI flag: {sorted(flagged)}"
     assert not marked_up, f"descriptions carrying rST markup: {sorted(marked_up)}"
 
 
