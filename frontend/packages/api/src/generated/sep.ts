@@ -9410,6 +9410,15 @@ export interface components {
      *     defaults on a cross-mode restore. Keeping the model permissive preserves the
      *     legacy payload contract byte-for-byte.
      *
+     *     The transport and decryption fields are the exception, and they pay that
+     *     price deliberately: ``source_transport`` and ``source_encryption`` declare
+     *     where the backup lives and how it was encrypted, and the five fields those
+     *     declarations govern are gated on them. Because a field-level ``Forbidden``
+     *     rejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /
+     *     ``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still
+     *     declares them and ``build_restore_spec`` applies them from there, so the
+     *     emitted config is unchanged.
+     *
      *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
      *     markers drive only the ``GET /schema`` widgets, while the conditional,
@@ -9483,8 +9492,8 @@ export interface components {
        * @default false
        */
       restore_mycnf: boolean;
-      /** @default s3cmd */
-      s3_tool: components['schemas']['mysql_backups__S3Tool'];
+      /** S3 Tool */
+      s3_tool?: components['schemas']['mysql_backups__S3Tool'] | null;
       /** Schema Id */
       schema_id?: string | null;
       /** Service Id */
@@ -9501,18 +9510,16 @@ export interface components {
        * @default false
        */
       slave_from_master: boolean;
+      /** @default none */
+      source_encryption: components['schemas']['mysql_backups__EncryptionFormat'];
+      /** @default local */
+      source_transport: components['schemas']['mysql_backups__SourceTransport'];
       /** Ssh Key */
       ssh_key?: string | null;
-      /**
-       * Ssh Port
-       * @default 22
-       */
-      ssh_port: number | null;
-      /**
-       * Ssh User
-       * @default percona
-       */
-      ssh_user: string | null;
+      /** Ssh Port */
+      ssh_port?: number | null;
+      /** Ssh User */
+      ssh_user?: string | null;
       /** Start File */
       start_file?: string | null;
       /** Start Position */
@@ -9605,6 +9612,12 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__S3Tool: 's3cmd' | 'awscli';
+    /**
+     * SourceTransport
+     * @description Declare where the backup being restored is stored.
+     * @enum {string}
+     */
+    mysql_backups__SourceTransport: 'local' | 'ssh' | 's3' | 'gcs';
     /**
      * UploadProvider
      * @description Upload providers.

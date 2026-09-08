@@ -510,6 +510,7 @@ runtime-evaluated-base-classes = [
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 "tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/sep/apps/mysql_backups/description_coverage.py" = ["S"] # shared pytest assertion helper uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
