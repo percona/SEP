@@ -74,6 +74,8 @@
       "title": "Execution"
     }
   ],
+  "item_display_name": "data collection",
+  "item_display_name_plural": "data collections",
   "list_view": {
     "columns": [
       {

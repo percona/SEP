@@ -30,6 +30,28 @@ jobs:
       - name: Run bandit
         run: make bandit
 
+  typecheck:
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11.9"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: ${{ matrix.python }}
+          cache: poetry
+      # Sync explicitly: the `venv` prerequisite no-ops against the runner's
+      # pre-seeded environment, and ty resolves imports against what is actually
+      # installed. See docs/development/ty-policy.md under `Enforcement`.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
+      - name: Hold error-severity diagnostics at zero
+        run: make typecheck
+
   lock_check:
     strategy:
       matrix:

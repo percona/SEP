@@ -19,7 +19,7 @@ __all__ = ["INVENTORY_ADMIN_SETTINGS_CLASSES", "router"]
 
 from fastapi import APIRouter
 
-from app.api.deps import IsAdminDep
+from app.api.deps import AdminUsername, IsAdminDep
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
@@ -42,6 +42,7 @@ _settings_router = build_settings_router(
     classes=INVENTORY_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsAdminDep,
+    actor_dep=AdminUsername,
 )
 
 router = APIRouter(prefix="/admin/settings", tags=["settings"])

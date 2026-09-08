@@ -67,15 +67,7 @@
           "name": "backup_type",
           "required": true,
           "type": "choice"
-        }
-      ],
-      "render_after_submit": false,
-      "title": "Task"
-    },
-    {
-      "collapsed_by_default": true,
-      "collapsible": true,
-      "fields": [
+        },
         {
           "allow_custom": true,
           "label": "Destination Database Service",
@@ -95,7 +87,15 @@
           "name": "backup_source",
           "required": true,
           "type": "remote_choice"
-        },
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
         {
           "label": "Logging directory",
           "min_length": 1,
@@ -167,14 +167,14 @@
       "title": "General"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
           "allow_custom": true,
           "depends_on": "service_id",
           "description": "--database myloader option (database to restore to)",
-          "label": "Restore to Database",
+          "label": "Target database",
           "name": "schema_id",
           "required": false,
           "type": "schema"
@@ -188,6 +188,7 @@
         },
         {
           "default": false,
+          "destructive": "Existing tables in the target database are dropped before the backup is loaded. Rows written since the backup was taken are lost.",
           "label": "Overwrite tables",
           "name": "overwrite_tables",
           "required": false,
@@ -249,7 +250,7 @@
       "title": "Mydumper"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -398,7 +399,7 @@
       "title": "XtraBackup"
     },
     {
-      "collapsed_by_default": false,
+      "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
@@ -455,6 +456,8 @@
       "title": "Binlog"
     }
   ],
+  "item_display_name": "restore",
+  "item_display_name_plural": "restores",
   "list_view": {
     "columns": [
       {
@@ -472,7 +475,12 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "B": "Binlog",
+          "M": "Mydumper",
+          "X": "XtraBackup"
+        }
       },
       {
         "key": "hostname",

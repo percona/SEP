@@ -15,6 +15,7 @@
 
 """Unit tests for the plugin schema DSL."""
 
+from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -791,6 +792,56 @@ def test_column_format_rejects_unknown_values():
         Column(key="x", label="X", format="nonsense")
 
 
+def test_column_value_labels_defaults_to_none():
+    """Leave ``Column.value_labels`` unset when a plugin declares no labels."""
+    assert Column(key="k", label="L").value_labels is None
+
+
+def test_column_value_labels_round_trips_through_json():
+    """Round-trip a populated ``Column.value_labels`` map through JSON output."""
+    column = Column(key="backup_type", label="Type", value_labels={"M": "Mydumper"})
+
+    dumped = column.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"M": "Mydumper"}
+
+
+def test_column_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a column that declares none."""
+    dumped = Column(key="k", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["key"] == "k"
+    assert "value_labels" not in dumped
+
+
+def test_detail_field_value_labels_defaults_to_none():
+    """Leave ``DetailField.value_labels`` unset when a plugin declares no labels."""
+    assert DetailField(path="backup_type", label="Type").value_labels is None
+
+
+def test_detail_field_value_labels_round_trips_through_json():
+    """Round-trip a populated ``DetailField.value_labels`` map through JSON."""
+    field = DetailField(
+        path="backup_type", label="Type", value_labels={"P": "pgBackRest"}
+    )
+
+    dumped = field.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"P": "pgBackRest"}
+
+
+def test_detail_field_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a detail field declaring none."""
+    dumped = DetailField(path="p", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["path"] == "p"
+    assert "value_labels" not in dumped
+
+
 def test_service_field_service_types_round_trip():
     """Round-trip ``ServiceField.service_types`` through JSON back to enum members."""
     field = ServiceField(name="svc", label="S", service_types=[ServiceTypeEnum.MYSQL])
@@ -1313,6 +1364,50 @@ class TestChoiceDisabled:
         assert field.choices[0].disabled is None
         assert field.choices[1].disabled is True
         assert field.choices[1].disabled_reason == "Coming soon."
+
+
+class TestBaseFieldDestructive:
+    """Cover the opt-in ``destructive`` consequence text on ``BaseField``."""
+
+    def test_default_is_absent_from_the_wire(self) -> None:
+        """Keep the pre-feature wire shape for an unmarked field under ``exclude_none``.
+
+        The discovery endpoint serialises with ``exclude_none=True``; typing the
+        attribute optional (default ``None``) keeps it out of the payload so
+        existing schema snapshots stay byte-identical.
+        """
+        field = BoolField(name="x", label="X")
+
+        assert field.destructive is None
+        assert field.model_dump(by_alias=True, exclude_none=True) == {
+            "name": "x",
+            "label": "X",
+            "required": False,
+            "type": "bool",
+        }
+
+    def test_marked_field_serialises_the_consequence_text(self) -> None:
+        """Carry the consequence sentence on the wire for an opted-in field."""
+        field = BoolField(
+            name="overwrite_tables",
+            label="Overwrite tables",
+            destructive="Existing tables are dropped.",
+        )
+
+        dumped = field.model_dump(by_alias=True, exclude_none=True)
+
+        assert dumped["destructive"] == "Existing tables are dropped."
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_consequence_text_is_rejected(self, blank: str) -> None:
+        """Reject a mark carrying no consequence text, whatever the whitespace.
+
+        The ``Ui`` marker guard only sees the model-first DSL path; the apps that
+        construct schema fields directly never build a ``Ui``, so the wire model
+        has to refuse the half-marked state itself.
+        """
+        with pytest.raises(ValidationError):
+            BoolField(name="x", label="X", destructive=blank)
 
 
 class TestReferenceFieldAllowCustom:
@@ -2264,11 +2359,13 @@ def test_detail_view_round_trip_through_json():
                         "path": "data.meta.command",
                         "label": "Command",
                         "highlight": "sql",
+                        "value_labels": None,
                     },
                     {
                         "path": "data.meta.args",
                         "label": "Args",
                         "highlight": None,
+                        "value_labels": None,
                     },
                 ],
             },
@@ -2726,3 +2823,146 @@ class TestOneOfGroup:
             detail_view=_minimal_detail_view(),
         )
         assert schema.forms[0].fields[0].name == "source"
+
+
+# ── Record display names ────────────────────────────────────────────────
+
+
+class TestAppSchemaRecordDisplayNames:
+    """Cover the singular/plural record names carried beside ``display_name``."""
+
+    def test_both_record_names_default_to_display_name(self) -> None:
+        """Fall back to ``display_name`` for both record names when neither is supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_singular_leaves_the_plural_defaulted(self) -> None:
+        """Default the plural from ``display_name``, never from the singular."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_plural_leaves_the_singular_defaulted(self) -> None:
+        """Default the singular from ``display_name``, never from the plural."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "backups"
+
+    def test_declared_record_names_are_kept(self) -> None:
+        """Keep both record names when the author declares them."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "backups"
+
+    @pytest.mark.parametrize(
+        "field_name", ["item_display_name", "item_display_name_plural"]
+    )
+    def test_empty_record_name_is_rejected(self, field_name: str) -> None:
+        """Reject an empty record name; defaulting does not weaken ``NonEmptyStr``."""
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            AppSchema(
+                name="minimal",
+                display_name="Minimal",
+                list_view=_minimal_list_view(),
+                **{field_name: ""},
+            )
+
+    def test_dumped_payload_round_trips(self) -> None:
+        """Re-validate a dumped payload without the defaulting altering it."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        payload = schema.model_dump(mode="json", by_alias=True, exclude_none=True)
+        assert payload["item_display_name"] == "backup"
+        assert payload["item_display_name_plural"] == "backups"
+        assert AppSchema.model_validate(payload) == schema
+
+    @pytest.mark.parametrize("payload", ["garbage", [1, 2], 7, None])
+    def test_non_mapping_input_is_reported_not_raised(self, payload: Any) -> None:
+        """Report non-mapping input as ``model_type`` rather than raising out of the validator.
+
+        This is what the ``before`` validator's mapping guard buys. Without it the
+        ``.get`` calls raise ``AttributeError``, which escapes as an unhandled
+        exception instead of a ``ValidationError`` a caller can catch.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            AppSchema.model_validate(payload)
+
+        assert {error["type"] for error in exc_info.value.errors()} == {"model_type"}
+
+    def test_a_read_only_mapping_defaults_like_a_dict(self) -> None:
+        """Default from any ``Mapping``, not only ``dict`` — the guard is not type-narrow."""
+        payload = MappingProxyType(
+            {
+                "name": "minimal",
+                "display_name": "MySQL Backups",
+                "list_view": _minimal_list_view(),
+            }
+        )
+
+        schema = AppSchema.model_validate(payload)
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_entity_record_names_default_from_the_entity_display_name(self) -> None:
+        """Default an entity's record names from its own ``display_name``."""
+        entity = _minimal_entity_schema()
+
+        assert entity.item_display_name == "Things"
+        assert entity.item_display_name_plural == "Things"
+
+    def test_entity_record_names_are_independent_of_the_parent(self) -> None:
+        """Keep an entity's declared record names distinct from the app's."""
+        entity = AppEntitySchema(
+            name="nodes",
+            display_name="Nodes",
+            item_display_name="node",
+            item_display_name_plural="nodes",
+            forms=[
+                FormSection(
+                    title="T",
+                    fields=[StringField(name="title", label="Title", required=True)],
+                )
+            ],
+            list_view=_minimal_list_view(),
+        )
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[entity],
+        )
+
+        assert schema.item_display_name == "Inventory"
+        assert schema.entities is not None
+        assert schema.entities[0].item_display_name == "node"

@@ -25,6 +25,7 @@ from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
+    BackupType,
     PgBackRestBackupType,
 )
 from app.sep.apps.framework import BaseTaskResponse
@@ -356,3 +357,18 @@ class TestPgbackrestIncrementalCycleField:
     def test_weekly_label_shows_its_monday_equivalence(self):
         """Explain the duplicate: ``weekly`` is Monday under another name."""
         assert "Monday" in self._choices()["weekly"]
+
+
+def test_backup_type_labels_cover_every_member():
+    """Label every declared ``BackupType`` member, keyed by its stored value."""
+    assert set(BackupType.LABELS) == {member.value for member in BackupType}
+
+
+def test_backup_type_labels_are_the_declared_display_strings():
+    """Pin the display text each stored backup-type value resolves to."""
+    assert BackupType.LABELS == {"P": "pgBackRest"}
+
+
+def test_backup_type_labels_is_not_an_enum_member():
+    """Keep ``LABELS`` off the enum's member list via ``enum.nonmember``."""
+    assert "LABELS" not in {member.name for member in BackupType}

@@ -254,6 +254,98 @@ class TestCeleryExecutorDispatchTask:
         assert "RuntimeError" in stderr
 
     @pytest.mark.asyncio
+    async def test_failed_dispatch_reason_names_callable_and_exception_type(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert the reason names the resolved callable and the exception type.
+
+        The exception's own message is not interpolated; it stays in the
+        traceback written to stderr.
+        """
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom with secrets"),
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        assert result.failure_reason == (
+            "Task callable "
+            "'app.sep.apps.inventory.sync.run_scheduled_inventory_sync' "
+            "raised RuntimeError."
+        )
+        assert "boom with secrets" not in result.failure_reason
+
+    @pytest.mark.asyncio
+    async def test_failed_dispatch_reason_without_a_callable_path(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert a non-mapping ``task.data`` still composes a reason, without raising.
+
+        ``Task.data`` is a raw JSON column on a table model, so no validator
+        constrains what a stored row holds; the composer must not raise a second
+        exception out of the error path.
+        """
+        celery_queue_item.task.data = "not-a-mapping"
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            side_effect=TypeError("string indices must be integers"),
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "Task execution raised TypeError."
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "stored_callable",
+        [
+            {"dsn": "postgres://user:hunter2@db/prod"},
+            "postgres://user:hunter2@db/prod",
+            42,
+        ],
+    )
+    async def test_failed_dispatch_reason_omits_an_unvalidated_callable_value(
+        self, executor, session, celery_queue_item, stored_callable
+    ) -> None:
+        """Assert a callable value outside the allowed namespace is not echoed.
+
+        ``Task.data`` holds arbitrary JSON, so a stored ``callable`` can be a
+        mapping, a number, or a string carrying credentials that never names a
+        module. None may reach this unmasked field.
+        """
+        celery_queue_item.task.data = {"callable": stored_callable}
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            side_effect=AttributeError("'dict' object has no attribute 'rsplit'"),
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.failure_reason == "Task execution raised AttributeError."
+
+    @pytest.mark.asyncio
+    async def test_successful_dispatch_records_no_failure_reason(
+        self, executor, session, celery_queue_item
+    ) -> None:
+        """Assert a run that succeeded carries no failure reason."""
+        with patch.object(
+            executor,
+            "_run_callable",
+            new_callable=AsyncMock,
+            return_value="ok",
+        ):
+            result = await executor.dispatch_task(session, celery_queue_item)
+
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.failure_reason is None
+
+    @pytest.mark.asyncio
     async def test_dispatch_stores_logs(
         self, executor, session, celery_queue_item
     ) -> None:

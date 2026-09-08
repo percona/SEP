@@ -86,6 +86,9 @@ jobs:
               - 'frontend/packages/api/specs/**'
               - '.github/labeler.yml'
               - '.github/workflows/ci.yml'
+              # A skipped job counts as green in ci-success, so omitting the
+              # reusable workflow would let a PR editing only it merge unrun.
+              - '.github/workflows/python.yaml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'
@@ -236,6 +239,49 @@ jobs:
     needs:
       - label-gate
       - changes
+
+  # Advisory by design: intentionally omitted from `ci-success`'s `needs`. It
+  # sits here rather than in python.yaml because a reusable workflow cannot make
+  # one of its jobs advisory. See docs/development/ty-policy.md under `Enforcement`.
+  typecheck_diff:
+    # Not redundant with the draft test: on a non-pull_request event the absent
+    # `pull_request` object makes `draft == false` compare 0 to 0 and pass,
+    # through GitHub's numeric coercion of expression operands.
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.python == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
+    runs-on: ubuntu-latest
+    needs:
+      - label-gate
+      - changes
+    env:
+      POETRY: poetry
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The default depth of 1 cannot compute a merge-base.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+
+      # Sync explicitly: the `venv` prerequisite no-ops against the runner's
+      # pre-seeded environment, and ty then resolves no third-party import —
+      # here as false surplus, since an added file has no base-side counterpart.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
+
+      - name: Report ty diagnostics the branch adds
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: make typecheck-diff
 
   frontend:
     if: >-

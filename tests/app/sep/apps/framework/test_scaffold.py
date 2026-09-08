@@ -50,11 +50,13 @@ from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
+    check_item_display_names_declared,
     check_route_collisions,
     check_schema_derivation_succeeds,
     check_view_fields_reference_real_fields,
 )
 from app.sep.apps.framework.registry import build_app_registry
+from app.sep.apps.framework.schema import ITEM_DISPLAY_NAME_KEYS
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.config import App
 from app.sep.deps import get_current_user, IsApiAuthenticated
@@ -1205,3 +1207,193 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     finally:
         scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
         _cleanup(name)
+
+
+def test_makefile_forwards_item_display_names() -> None:
+    """Forward the record-name flags through ``make startapp``.
+
+    Exercises the real Makefile ``$$VAR`` shell-environment forwarding for
+    ``ITEM_DISPLAY_NAME`` and ``ITEM_DISPLAY_NAME_PLURAL``, the way
+    :func:`test_makefile_forwards_quoted_values` exercises ``DESCRIPTION``.
+    """
+    name = "_scaffold_ci_itemnameforward"
+    item_display_name = "gadget"
+    item_display_name_plural = "gadgets"
+    settings_backup = scaffold.SETTINGS_FILE.read_text()
+    venv_root = _venv_root()
+    try:
+        result = scaffold.subprocess.run(
+            [
+                "make",
+                "startapp",
+                f"NAME={name}",
+                "TYPE=task",
+                "NO_INPUT=1",
+                f"ITEM_DISPLAY_NAME={item_display_name}",
+                f"ITEM_DISPLAY_NAME_PLURAL={item_display_name_plural}",
+                f"VIRTUAL_ENV={venv_root}",
+            ],
+            cwd=scaffold._REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+        rendered = (scaffold.PLUGINS_DIR / name / "app.py").read_text()
+        # The values survive make → shell env → argv → json.dumps intact; ruff may
+        # normalise the literal's quote style, so assert on value content rather
+        # than a fixed quote form.
+        assert "item_display_name=" in rendered
+        assert (
+            f"item_display_name={json.dumps(item_display_name)}" in rendered
+            or f"item_display_name={item_display_name!r}" in rendered
+        )
+        assert (
+            f"item_display_name_plural={json.dumps(item_display_name_plural)}"
+            in rendered
+            or f"item_display_name_plural={item_display_name_plural!r}" in rendered
+        )
+    finally:
+        scaffold._atomic_write(scaffold.SETTINGS_FILE, settings_backup)
+        _cleanup(name)
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_names_default_to_the_display_name(
+    flavor: scaffold.Flavor,
+) -> None:
+    """Seed both record names from the display name when the author supplies neither.
+
+    The default is deliberately the value the conformance detector rejects, so a
+    ``task``-flavored scaffold — the only flavor whose rendered app declares a
+    create form — fails the conformance suite until its author names the record.
+    The other two flavors render ``forms=[]`` at the app level and are skipped by
+    the detector, so for them the default just stands.
+    """
+    config = _config_from_args(["--name", "demo", "--type", flavor.value, "--no-input"])
+
+    assert config.item_display_name == config.display_name
+    assert config.item_display_name_plural == config.display_name
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_name_flags_reach_the_config(flavor: scaffold.Flavor) -> None:
+    """Carry both CLI flags through to the resolved config."""
+    config = _config_from_args(
+        [
+            "--name",
+            "demo",
+            "--type",
+            flavor.value,
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    assert config.item_display_name == "widget"
+    assert config.item_display_name_plural == "widgets"
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_record_display_names_rendered_into_every_declaration_site(
+    tmp_settings: Path, flavor: scaffold.Flavor
+) -> None:
+    """Emit both kwargs on exactly the constructors that accept them, and nowhere else.
+
+    ``BaseApp`` declares neither field and does not forbid extras, so a kwarg
+    rendered onto its constructor would be silently discarded rather than
+    rejected — dead configuration a scaffold author would read as load-bearing.
+    The expectation is therefore per-file, not "wherever ``display_name`` appears".
+    """
+    name = f"_scaffold_nouns_{flavor.value}"
+    expected_carriers = {
+        scaffold.Flavor.BASE: {"schema.py"},
+        scaffold.Flavor.TASK: {"app.py"},
+        scaffold.Flavor.SCRIPT: {"source.py"},
+    }[flavor]
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            flavor.value,
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    with _scaffolded_config(config) as result:
+        carriers = {
+            rendered.name
+            for rendered in result.written
+            if 'item_display_name="widget"' in rendered.read_text()
+        }
+        plural_carriers = {
+            rendered.name
+            for rendered in result.written
+            if 'item_display_name_plural="widgets"' in rendered.read_text()
+        }
+
+    assert carriers == expected_carriers
+    assert plural_carriers == expected_carriers
+
+
+def test_default_nouns_make_a_task_scaffold_fail_the_conformance_detector(
+    tmp_settings: Path,
+) -> None:
+    """Pin the enforcement the defaults exist to trigger, end to end.
+
+    The defaults are only useful if an unedited task scaffold actually trips
+    ``check_item_display_names_declared``. Asserting that the rendered source
+    carries the app title would only restate the template; this runs the detector
+    over the schema the generated app derives.
+    """
+    name = "_scaffold_detector_task"
+    config = _config_from_args(["--name", name, "--type", "task", "--no-input"])
+
+    with _scaffolded_config(config):
+        module = importlib.import_module(f"app.sep.apps.{name}")
+        payload = module.app._resolve_plugin_schema().model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+
+    flagged = sorted(
+        key
+        for key in ITEM_DISPLAY_NAME_KEYS
+        if any(repr(key) in m for m in check_item_display_names_declared(payload))
+    )
+    assert flagged == sorted(ITEM_DISPLAY_NAME_KEYS)
+
+
+def test_declared_nouns_make_a_task_scaffold_pass_the_conformance_detector(
+    tmp_settings: Path,
+) -> None:
+    """Clear the detector once the author names the record, the remedy the default points at."""
+    name = "_scaffold_detector_task_named"
+    config = _config_from_args(
+        [
+            "--name",
+            name,
+            "--type",
+            "task",
+            "--item-display-name",
+            "widget",
+            "--item-display-name-plural",
+            "widgets",
+            "--no-input",
+        ]
+    )
+
+    with _scaffolded_config(config):
+        module = importlib.import_module(f"app.sep.apps.{name}")
+        payload = module.app._resolve_plugin_schema().model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+
+    assert check_item_display_names_declared(payload) == []

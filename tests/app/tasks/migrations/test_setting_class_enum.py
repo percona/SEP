@@ -15,19 +15,12 @@
 
 """Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
-from pathlib import Path
-
 import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 
 from app.core.db.utils import check_constraint_name
-from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The add_setting_override_table revision on the Tasks track, before SETTINGS /
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.
@@ -36,19 +29,6 @@ _TASKS_PRE_ENUM_REVISION = "fafdb0445092"
 # The revision immediately below drop_setting_class_check_constraint, so
 # downgrading to it runs exactly that revision's ``downgrade()``.
 _CHECK_DROP_PARENT_REVISION = "c8e4a2b91f70"
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def _insert_override(conn, setting_class: str) -> None:

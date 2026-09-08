@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Pin the ``settingoverride.setting_class`` storage-token derivation."""
+"""Pin the ``settingoverride.setting_class`` storage-token derivation and the ``updated_by`` actor column."""
 
 from pathlib import Path
 from typing import ClassVar
@@ -21,10 +21,12 @@ from typing import ClassVar
 import pytest
 from alembic.migration import MigrationContext
 from sqlalchemy import Column, VARCHAR
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
 from app.core.config import BaseYamlSettings, Settings
 from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
+from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import (
     setting_class_token,
     SettingClassEnum,
@@ -40,6 +42,10 @@ from app.sep.config import App, SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    LONG_USERNAME_LENGTH,
+)
 
 #: Historical ``SettingClassEnum`` member names the database already stores.
 #: Includes the two app-owned classes this ticket removes from the enum, so a
@@ -116,3 +122,41 @@ def test_column_type_matches_inspected_varchar_by_default(dialect_name: str) -> 
         Column("setting_class", SettingOverride.__table__.c.setting_class.type),
     )
     assert verdict is False
+
+
+def test_updated_by_defaults_to_none() -> None:
+    """Leave ``updated_by`` unset on a row constructed without an actor.
+
+    Rows written before the column existed carry no actor and cannot be
+    backfilled, so the column is nullable and every direct construction that
+    omits it stays valid.
+    """
+    row = SettingOverride(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SYNC_REFRESH_TIME",
+        value=5,
+    )
+    assert row.updated_by is None
+
+
+@pytest.mark.asyncio
+async def test_long_updated_by_round_trips(session: AsyncSession) -> None:
+    """Store an unusually long username intact.
+
+    The column is deliberately unbounded because the value is copied from
+    ``BaseUser.username``, which carries a minimum length and no maximum. A
+    width chosen here would pass on SQLite and fail at commit on PostgreSQL.
+    """
+    actor = "a" * LONG_USERNAME_LENGTH
+    await insert_override_row(
+        session,
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        key="SYNC_REFRESH_TIME",
+        value=5,
+        updated_by=actor,
+    )
+    session.expunge_all()
+
+    stored = await SettingsOverrideManager.get(session, key="SYNC_REFRESH_TIME")
+
+    assert stored.updated_by == actor
