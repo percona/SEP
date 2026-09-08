@@ -81,7 +81,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
 TESTS_DIR = _REPO_ROOT / "tests" / "app" / "sep" / "apps"
-SETTINGS_FILE = _REPO_ROOT / "settings.yaml"
+SETTINGS_FILE_ENV_VAR = "SEP_SCAFFOLD_SETTINGS_FILE"
+#: The ``settings.yaml`` new apps are registered in. Redirectable through
+#: :data:`SETTINGS_FILE_ENV_VAR` so a caller that must not touch the working
+#: tree can point the registration at a throwaway copy — the seam a child
+#: process needs, since it cannot monkeypatch this module the way an in-process
+#: caller does.
+SETTINGS_FILE = Path(
+    os.environ.get(SETTINGS_FILE_ENV_VAR) or _REPO_ROOT / "settings.yaml"
+)
 
 # Stdlib-only mirrors of ServiceTypeEnum / NavIcon member names: importing the
 # real enums would pull pydantic/sqlalchemy (ServiceTypeEnum) or the framework
