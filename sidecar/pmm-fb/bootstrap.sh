@@ -35,6 +35,29 @@ need_cmd() {
 need_cmd openssl
 need_cmd grep
 
+# The mysql profile exists to execute tasks, and on an arm64 host every task
+# runs under amd64 emulation. Nomad spawns them with clone3, which QEMU lacks
+# and Rosetta serves, so an emulator without it turns the whole profile into
+# a node that builds for fifteen minutes and then fails every dispatch with
+# `fork/exec …: function not implemented`. Ask the emulator before the build.
+check_amd64_emulation() {
+    [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
+    case "$(uname -m)" in arm64 | aarch64) ;; *) return 0 ;; esac
+    need_cmd docker
+    info 'arm64 host: checking that amd64 emulation can run Nomad tasks'
+    docker run --rm --security-opt seccomp=unconfined --platform linux/amd64 \
+        python:3-alpine python3 -c 'import ctypes, sys
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall(435, ctypes.c_void_p(0), ctypes.c_size_t(8))
+sys.exit(1 if ctypes.get_errno() == 38 else 0)' && return 0
+    error 'amd64 emulation here has no clone3 (QEMU): sep-mysql would build, register, look healthy, and fail every task'
+    error 'Docker Desktop → Settings → General → Virtual Machine Manager = "Apple Virtualization framework", then enable "Use Rosetta for x86_64/amd64 emulation on Apple Silicon", Apply & restart, and re-run'
+    error 'SEP_FB_SKIP_CLONE3_CHECK=1 skips this check'
+    exit 3
+}
+
+check_amd64_emulation
+
 usage() {
     cat << 'EOF'
 bootstrap.sh

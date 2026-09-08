@@ -236,8 +236,9 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   still fingerprints `raw_exec` healthy and stays in SEP's executor list,
   because that check reads only `enabled = true`. Measured on an M3 Pro
   (2026-09-08): five for five backups and diagnostics failed exactly so.
-  `sep-mysql`'s entrypoint now probes `clone3` and refuses to start under such
-  an emulator, naming the fix. On Docker Desktop that is two settings under
+  `bootstrap.sh` therefore probes the emulator on an arm64 host before any
+  build starts, and `sep-mysql`'s entrypoint probes `clone3` again at container
+  start; both refuse and name the fix (`SEP_FB_SKIP_CLONE3_CHECK=1` overrides). On Docker Desktop that is two settings under
   **Settings → General**: Virtual Machine Manager = *Apple Virtualization
   framework* (Docker VMM does not support Rosetta), then *Use Rosetta for
   x86_64/amd64 emulation on Apple Silicon*, Apply & restart. Rosetta translates
