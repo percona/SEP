@@ -1910,6 +1910,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/mysql_backups/{task_name}/backups': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Task Backups
+     * @description Return a page of a backup task's catalogued runs, newest run first.
+     *
+     *     The ``task_name`` path parameter is resolved by
+     *     :data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that
+     *     does not exist or belongs to another app surfaces as a ``404`` while a known
+     *     task with no catalogued backup yields an empty page — keeping "this task has
+     *     never produced a backup" distinguishable from "this task does not exist".
+     *
+     *     The discovery walk behind that dependency is capped, so ``total`` counts the
+     *     runs within the scanned window rather than every run the task ever produced,
+     *     and carries no marker distinguishing a truncated page from a complete one.
+     *     A run older than the window is reachable through the per-service catalog
+     *     route, which is uncapped — but only while its inventory service still
+     *     resolves, and only for a caller that knows which service the run was recorded
+     *     under, which a task since re-pointed at another target no longer answers.
+     *
+     *     :param history_ids: The task's catalogued task-history ids, newest first.
+     *     :param session: The database session the catalog is queried on.
+     *     :param pagination: The requested offset/limit window.
+     *     :return: The requested page of the task's recorded backup runs, newest run
+     *         first.
+     */
+    get: operations['mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/mysql_backups/{task_name}/execute': {
     parameters: {
       query?: never;
@@ -9127,7 +9167,7 @@ export interface components {
     };
     /**
      * BackupRunResponse
-     * @description Expose one catalog record over the per-service query path.
+     * @description Expose one catalog record over the service-scoped and task-scoped queries.
      *
      *     :param id: The record's primary key.
      *     :param service_name: The inventory service the backup was taken from.
@@ -9142,8 +9182,20 @@ export interface components {
      *     :param size_bytes: The backup size in bytes, when the run reported it.
      *     :param started_at: When the run started.
      *     :param finished_at: When the run finished.
+     *     :param backup_source: The run's restore-form-valid source, derived from
+     *         ``upload_destination`` and ``location``; read-only, and absent from the
+     *         table this response is built from.
      */
     mysql_backups__BackupRunResponse: {
+      /**
+       * Backup Source
+       * @description Return the run's restore-form-valid source, or ``None``.
+       *
+       *     Resolved server-side so no caller re-derives it from the raw fields.
+       *     ``None`` means the run recorded no usable source, or recorded one the
+       *     restore form rejects — either way it cannot seed a restore.
+       */
+      readonly backup_source: string | null;
       /**
        * Backup Type
        * @enum {string}
@@ -13561,6 +13613,40 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['mysql_backups__PaginatedResponse_BackupRunResponse_'];
+        };
       };
       /** @description Validation Error */
       422: {
