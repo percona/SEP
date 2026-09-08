@@ -81,7 +81,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
 TESTS_DIR = _REPO_ROOT / "tests" / "app" / "sep" / "apps"
-#: Environment variable that redirects :data:`SETTINGS_FILE`.
 SETTINGS_FILE_ENV_VAR = "SEP_SCAFFOLD_SETTINGS_FILE"
 #: The ``settings.yaml`` new apps are registered in. Redirectable through
 #: :data:`SETTINGS_FILE_ENV_VAR` so a caller that must not touch the working

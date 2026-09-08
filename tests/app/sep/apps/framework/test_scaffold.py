@@ -21,9 +21,10 @@ app must live there to import), builds a fresh registry from the short
 ``MODULE_NAME``, runs the conformance detectors, and exercises the derived
 router through the contract client — then removes the generated package, test
 package, and ``sys.modules`` entries in a ``finally``. ``settings.yaml`` is never
-mutated in place: the ``tmp_settings`` fixture points the engine at a per-test
-copy, so the throwaway registration cannot dirty the worktree or race a parallel
-worker.
+mutated in place: in-process tests take the ``tmp_settings`` fixture's monkeypatch
+and the ``make startapp`` subprocess tests take the ``SEP_SCAFFOLD_SETTINGS_FILE``
+redirect, so the throwaway registration cannot dirty the worktree or race a
+parallel worker.
 """
 
 import importlib
@@ -74,11 +75,17 @@ from tests.app.sep.apps.framework.kit import (
 )
 
 
+def _settings_copy(tmp_path: Path) -> Path:
+    """Return a throwaway ``settings.yaml`` seeded from the repository's own."""
+    copy = tmp_path / "settings.yaml"
+    copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    return copy
+
+
 @pytest.fixture
 def tmp_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Return a per-test ``settings.yaml`` copy the engine writes to instead."""
-    copy = tmp_path / "settings.yaml"
-    copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    copy = _settings_copy(tmp_path)
     monkeypatch.setattr(scaffold, "SETTINGS_FILE", copy)
     return copy
 
@@ -92,10 +99,9 @@ def _startapp_env(settings_copy: Path) -> dict[str, str]:
     test constructing ``SEPSettings()`` while the entry is live fails on the app
     module the entry names but the run has not written yet.
 
-    :param settings_copy: Path the throwaway ``settings.yaml`` is written to.
+    :param settings_copy: The throwaway ``settings.yaml`` to register into.
     :return: ``os.environ`` plus the settings-file redirect.
     """
-    settings_copy.write_text(scaffold.SETTINGS_FILE.read_text())
     return {**os.environ, scaffold.SETTINGS_FILE_ENV_VAR: str(settings_copy)}
 
 
@@ -1152,7 +1158,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     """
     name = "_scaffold_ci_makeforward"
     description = 'describe the "cool" widget here'
-    settings_copy = tmp_path / "settings.yaml"
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1198,7 +1204,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     name = "_scaffold_ci_scriptforward"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
-    settings_copy = tmp_path / "settings.yaml"
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
@@ -1238,7 +1244,7 @@ def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
     name = "_scaffold_ci_itemnameforward"
     item_display_name = "gadget"
     item_display_name_plural = "gadgets"
-    settings_copy = tmp_path / "settings.yaml"
+    settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
     try:
         result = scaffold.subprocess.run(
