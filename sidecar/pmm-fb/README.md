@@ -54,6 +54,33 @@ What you can do from there:
 To stop and remove everything, including data:
 `docker compose --profile mysql down -v`.
 
+### Using your own MySQL instead
+
+The seeded container is a convenience, not a requirement. SEP does no
+scheduling: it pins the backup job to the node you pick and runs it there as a
+plain process, so any host qualifies once it carries all five of
+
+- a PMM Client 3.2 or newer, registered to *this* pmm-server — the Nomad
+  binary the executor needs ships with the client from that version
+- a reachable server address: `compose.yaml` publishes 8443 on loopback and
+  sets `PMM_PUBLIC_ADDRESS` to a compose service name, so a client outside
+  this host needs both changed to an address it can resolve
+- the MySQL service added to PMM (`pmm-admin add mysql`), which SEP's
+  inventory sync picks up within 15 minutes
+- XtraBackup or Mydumper installed on that host — SEP runs them, it does not
+  ship them
+- credentials for a backup user in a defaults file the executor can read,
+  since the create form takes a host and options but no password
+
+The host then appears in the form's executor picker, which lists only nodes
+whose Nomad `raw_exec` driver reports healthy.
+
+**Your own PMM server is a different matter, and the preview cannot use one.**
+Everything SEP relies on — the `PMM_ENABLE_SEP` switch, the `/sep` proxy, the
+PostgreSQL role, the secrets channel, the session exchange, the frontend — is
+still on percona/pmm's feature branch and in no released PMM. Point the
+side-car at an existing PMM 3.x and none of it is there.
+
 Everything below this line is the developer reference for the harness itself.
 
 ## Which image to pin
