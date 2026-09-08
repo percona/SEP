@@ -655,3 +655,107 @@ def test_check_fails_on_an_over_claiming_table(tmp_path, capsys, monkeypatch):
 
     assert _check(tmp_path, manifest, run) == 1
     assert "factory-built-annotated-alias" in capsys.readouterr().out
+
+
+#: One row per group whose only discriminant is the symbol its message names:
+#: the artifact it is meant to claim, and a first-party diagnostic of the same
+#: rule it must decline. The six are the groups carrying neither a path
+#: constraint nor a negative pin, so nothing but these tests demonstrates that
+#: their patterns separate anything.
+SYMBOL_ONLY_GROUPS = [
+    (
+        "pydantic-fieldinfo",
+        (
+            "app/sep/apps/backup/models.py",
+            "invalid-assignment",
+            "Object of type `FieldInfo` is not assignable to `str`",
+        ),
+        (
+            "app/sep/apps/backup/models.py",
+            "invalid-assignment",
+            "Object of type `str` is not assignable to `int`",
+        ),
+    ),
+    (
+        "env-populated-required-params",
+        (
+            "app/core/celery/app.py",
+            "missing-argument",
+            "No argument provided for required parameter `CELERY`",
+        ),
+        (
+            "app/core/celery/app.py",
+            "missing-argument",
+            "No argument provided for required parameter `task_id`",
+        ),
+    ),
+    (
+        "third-party-overload-sets",
+        (
+            "app/core/db/crud.py",
+            "no-matching-overload",
+            "No overload of bound method `AsyncSession.exec` matches arguments",
+        ),
+        (
+            "app/core/db/crud.py",
+            "no-matching-overload",
+            "No overload of bound method `TaskHistoryManager.save` matches arguments",
+        ),
+    ),
+    (
+        "sa-type-typedecorator",
+        (
+            "app/core/db/types.py",
+            "invalid-argument-type",
+            "Expected `type[Any] | PydanticUndefinedType`, found `EncryptedString`",
+        ),
+        (
+            "app/core/db/types.py",
+            "invalid-argument-type",
+            "Expected `str`, found `int`",
+        ),
+    ),
+    (
+        "subscripted-generics-called",
+        (
+            "app/sep/apps/framework/schema.py",
+            "call-non-callable",
+            "Object of type `GenericAlias` is not callable",
+        ),
+        (
+            "app/sep/apps/framework/schema.py",
+            "call-non-callable",
+            "Object of type `None` is not callable",
+        ),
+    ),
+    (
+        "fastapi-query-default",
+        (
+            "app/sep/api/routes/delivery_connection.py",
+            "invalid-parameter-default",
+            "Default value of type `Query` is not assignable to `int`",
+        ),
+        (
+            "app/sep/api/routes/delivery_connection.py",
+            "invalid-parameter-default",
+            "Default value of type `None` is not assignable to `str`",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(("name", "artifact", "first_party"), SYMBOL_ONLY_GROUPS)
+def test_a_symbol_only_group_claims_its_artifact_and_declines_its_rule(
+    name, artifact, first_party
+):
+    """Pin what the symbol in each unconfined group's message actually separates.
+
+    These six groups carry no path constraint, so the symbol their pattern
+    quotes is the whole of their evidence, and ``group_constraint_failures``
+    accepts that symbol without checking it separates anything. A rule that
+    reads its own regex cannot: the pattern is the claim under test. Only a
+    same-rule diagnostic the group declines shows the discriminant working,
+    which is why the audit counts one of these as evidence in its own right.
+    """
+    assert name in _claiming_groups(artifact)
+    assert _claiming_groups(first_party) == []
