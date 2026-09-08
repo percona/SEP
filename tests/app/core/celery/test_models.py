@@ -113,6 +113,33 @@ class TestCrontabScheduleValidation:
         with pytest.raises(ValidationError):
             CrontabSchedule(minute="0", hour="2", timezone="Mars/Olympus_Mons")
 
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [("minute", "not-a-cron"), ("hour", "99"), ("day_of_week", "BADDAY")],
+        ids=["malformed-minute", "hour-out-of-range", "unknown-day-name"],
+    )
+    def test_a_malformed_field_is_located_at_that_field(
+        self, field: str, value: str
+    ) -> None:
+        """Assert a field the scheduler cannot parse is named by the error.
+
+        The location travels into the 422 a client sees, so a caller can
+        highlight the input that carried the bad value.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            CrontabSchedule(**{field: value})
+        assert [error["loc"] for error in excinfo.value.errors()] == [(field,)]
+
+    def test_an_unsatisfiable_combination_is_located_at_the_schedule(self) -> None:
+        """Assert a combination no single field makes wrong stays schedule-level.
+
+        Every field of ``0 2 30 2 *`` parses; only 30 February is unreachable,
+        so there is no one field the error could name.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            CrontabSchedule(minute="0", hour="2", day_of_month="30", month_of_year="2")
+        assert [error["loc"] for error in excinfo.value.errors()] == [()]
+
 
 class TestIntervalScheduleSerialisedShape:
     """Pin the serialised shape every settings field annotated with it inherits."""

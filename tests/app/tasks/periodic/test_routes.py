@@ -1098,7 +1098,8 @@ class TestCronValidationAtTheRequestBoundary:
         response = periodic_test_client.post("/my-task/periodic/", json=payload)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert any(
-            "crontab" in str(error["loc"]) for error in response.json()["detail"]
+            error["loc"][-2:] == ["crontab", "minute"]
+            for error in response.json()["detail"]
         )
 
     @pytest.mark.asyncio
