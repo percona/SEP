@@ -279,7 +279,7 @@ class RestoreCreate(TaskFormModel):
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(label="Destination Database Service", section="General"),
+        Ui(label="Destination Database Service", section="Task"),
     ] = None
     backup_source: Annotated[
         NonEmptyStr,
@@ -288,7 +288,7 @@ class RestoreCreate(TaskFormModel):
             allow_custom=True,
         ),
         Ui(
-            section="General",
+            section="Task",
             depends_on="service_id",
             description=(
                 "Where the backup is stored. Select a database service above to "

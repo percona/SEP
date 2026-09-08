@@ -60,24 +60,28 @@ mysql_backups_views = Views(
                 key="Mydumper",
                 title="Mydumper",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "M"),),
             ),
             SectionLayout(
                 key="XtraBackup",
                 title="XtraBackup",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "X"),),
             ),
             SectionLayout(
                 key="Binlog",
                 title="Binlog",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
             SectionLayout(
                 key="Encryption",
                 title="Encryption",
                 collapsible=True,
+                collapsed_by_default=True,
                 description=(
                     "Pick an 'Encryption format' first; the fields below are that "
                     "format's parameters. GPG timings are independent — in-place "
@@ -89,7 +93,12 @@ mysql_backups_views = Views(
                     "a key file and is XtraBackup-only."
                 ),
             ),
-            SectionLayout(key="Upload", title="Upload", collapsible=True),
+            SectionLayout(
+                key="Upload",
+                title="Upload",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
         )
     ),
     list_view=ListView(
