@@ -746,6 +746,20 @@ def test_registry_app_has_no_duplicate_capability_control(registry_app, test_cli
 
 
 @pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
+def test_registry_app_declares_item_display_names(registry_app, test_client):
+    """Assert no registry app with a create form names its records after itself.
+
+    An app declaring neither record name serves its ``display_name`` under both
+    keys, which is the defect the pair exists to remove. Apps whose schema
+    declares no create form name no record and are skipped by the detector.
+    """
+    payload = _schema_payload(registry_app, test_client)
+    if payload is None:
+        pytest.skip(f"{registry_app.key} exposes no schema payload")
+    assert check_item_display_names_declared(payload) == []
+
+
+@pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
 def test_registry_migrated_app_structural_checks(registry_app):
     """Assert each migrated ``TaskExecutionApp`` satisfies the structural checks."""
     if not isinstance(registry_app, TaskExecutionApp):
