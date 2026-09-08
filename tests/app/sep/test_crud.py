@@ -1303,9 +1303,11 @@ class TestSyncInstanceManagerRunExclusivity:
     ) -> None:
         """Measure a run's age from its last touch, not from when it started.
 
-        A run older than ``stale_after`` that is still being written to is alive,
-        so reading ``created_at`` alone would stop fencing exactly the long sync
-        the bound was meant to protect.
+        The state is constructed, not reachable: no path rewrites an instance row
+        and leaves it ``RUNNING``, so a live long sync bumps its items' timestamps
+        and is fenced by the item check rather than by this bound. The row-level
+        touch is honoured as defence for the day a run's own row is written
+        mid-flight, and this test is what would keep it honoured then.
         """
         alive = await SyncInstanceManager.save(
             session,

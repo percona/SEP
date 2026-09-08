@@ -359,7 +359,10 @@ async def try_pg_advisory_xact_lock(
     guarded sequence — the lock owning the only slot while the work it fences waits
     for one. The price is a connect per acquisition, against a sequence that runs
     periodically, and one connection above the configured ceiling while the block
-    runs.
+    runs. The engine is built from the caller's URL alone, so the lock connection
+    also connects on the driver's own defaults rather than the service's configured
+    ``connect_args``: a configured ``CONNECT_TIMEOUT`` does not bound it, and this
+    is the guarded sequence's first contact with the database.
 
     Acquisition never waits: contention yields ``False`` for the caller to refuse
     on, because a caller blocking here would hold its connection while a peer

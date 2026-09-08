@@ -899,6 +899,11 @@ class TestTryPgAdvisoryXactLockAcquisition:
         runs, and a deployment capped at one slot would then time out on every
         guarded sequence — the lock owning the only slot while the work it fences
         waits for one.
+
+        Only the URL and the pool class are pinned: whether the lock connection
+        also carries the service's ``connect_args`` is a separate question from
+        which pool it comes from, and asserting the exact kwargs would pin today's
+        answer to it as intended behaviour.
         """
         with patch(
             "app.core.db.utils.create_async_engine", return_value=lock_engine
@@ -907,7 +912,7 @@ class TestTryPgAdvisoryXactLockAcquisition:
                 pass
 
         assert create.call_args.args == (postgres_dialect_session.bind.url,)
-        assert create.call_args.kwargs == {"poolclass": NullPool}
+        assert create.call_args.kwargs["poolclass"] is NullPool
 
     @pytest.mark.asyncio
     async def test_issues_the_non_blocking_two_argument_lock(
@@ -1051,7 +1056,9 @@ class TestTryPgAdvisoryXactLockAcquisition:
 
 
 @pytest_asyncio.fixture
-async def contending_sessions(postgres_engine: AsyncEngine):
+async def contending_sessions(
+    postgres_engine: AsyncEngine,
+) -> AsyncGenerator[tuple[AsyncSession, AsyncSession], None]:
     """Yield two sessions on independent connections of the same engine.
 
     One session cannot contend with itself: the helper takes its lock on a

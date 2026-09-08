@@ -309,12 +309,20 @@ class SyncInstanceManager(BaseSQLModelManager):
         Reads the run's own timestamps rather than its items' so that a run which
         has not written an item yet still counts as in progress.
 
+        No path leaves an instance row rewritten and still ``PENDING``/``RUNNING``:
+        an insert starts the run and every later write carries a terminal status, so
+        ``updated_at`` is NULL for every row this predicate can match and the
+        ``coalesce`` resolves to ``created_at``. It is defence for the day a run's
+        own row is touched mid-flight, not what dates a run today — a long sync
+        still writing bumps its items' timestamps and is fenced by
+        :meth:`_items_in_progress` instead.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :param syncer: The name of the synchronizer to inspect.
-        :param newer_than: The moment a run must have been touched since to count.
-            Anything older is presumed abandoned and left for the reclaim, or for
-            the next run to ignore where the reclaim cannot measure it.
+        :param newer_than: The age bound a run's own timestamp has to clear to
+            count. Anything older is presumed abandoned and left for the reclaim, or
+            for the next run to ignore where the reclaim cannot measure it.
         :return: The IDs of that syncer's recent in-progress runs.
         """
         query = select(col(SyncInstance.id)).where(
