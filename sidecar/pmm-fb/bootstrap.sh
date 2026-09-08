@@ -133,7 +133,9 @@ load_env() {
 configure_arm64_host() {
     case "$(uname -m)" in arm64 | aarch64) ;; *) return 0 ;; esac
     ensure_slot SEP_MYSQL_PLATFORM linux/arm64
-    ensure_slot SEP_MYSQL_PMM_CLIENT_IMAGE docker.io/percona/pmm-client:3
+    # Pinned, like every other artifact here: a floating :3 could move the
+    # client's Nomad off the feature-build server's 2.0.5 without notice.
+    ensure_slot SEP_MYSQL_PMM_CLIENT_IMAGE docker.io/percona/pmm-client:3.9.1
     local platform
     platform="$(grep '^SEP_MYSQL_PLATFORM=' .env | cut -d= -f2-)"
     if [[ ${platform} == "linux/amd64" ]]; then

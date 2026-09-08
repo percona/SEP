@@ -239,9 +239,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   (2026-09-08): five for five backups and diagnostics failed exactly so.
 
   So `bootstrap.sh` on an arm64 host writes `SEP_MYSQL_PLATFORM=linux/arm64`
-  and `SEP_MYSQL_PMM_CLIENT_IMAGE=docker.io/percona/pmm-client:3` into `.env`:
+  and `SEP_MYSQL_PMM_CLIENT_IMAGE=docker.io/percona/pmm-client:3.9.1` into `.env`:
   the released multi-arch client carries an aarch64 Nomad at the feature
-  build's own version (2.0.5), Oracle Linux 9, Percona Server 8.4, XtraBackup
+  build's own version (2.0.5) — repin that client only after checking its
+  `tools/nomad version` still matches — Oracle Linux 9, Percona Server 8.4, XtraBackup
   8.4 and mydumper all publish EL9 aarch64 packages, and the executor then runs
   without emulation. Verified 2026-09-08 on an arm64 Mac with a default Docker
   Desktop: as shipped, a diagnostic and an XtraBackup both failed exactly as

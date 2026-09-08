@@ -114,7 +114,7 @@ same build: the client ships its own `nomad` binary that has to speak RPC to
 the server's, and a released client beside a feature-build server pairs two
 Nomad builds nobody has tested. The one sanctioned exception is an arm64
 host, where `bootstrap.sh` points the build at the released multi-arch
-`percona/pmm-client:3` instead: its aarch64 Nomad is the same 2.0.5 the
+`percona/pmm-client:3.9.1` instead: its aarch64 Nomad is the same 2.0.5 the
 feature build ships, so the pairing is version-identical, and the executor
 runs natively rather than under emulation (README § Caveats). Move the variable — `compose.yaml` spells its
 pinned default out on both lines — and rebuild with `docker compose --profile
