@@ -113,16 +113,20 @@ services:
 
   sep-mysql:
     profiles: ["mysql"]
-    # Pinned for a different reason than the two above: this service is built,
-    # and its oraclelinux base is the one image here that does ship arm64. An
-    # arm64 host therefore builds natively and succeeds, having copied the
-    # pmm-client stage's amd64 binaries into an image that cannot run them.
-    platform: linux/amd64
+    # Unlike the two above, this service is built, and its oraclelinux base
+    # ships arm64 — so an arm64 host builds it natively from the released
+    # multi-arch pmm-client (same Nomad 2.0.5 as the feature build) and the
+    # executor runs without emulation at all. bootstrap.sh writes both values
+    # into .env on such a host; every other host keeps the amd64 feature-build
+    # client. Forcing linux/amd64 on arm64 means emulation, which must then be
+    # Rosetta — QEMU lacks the clone3 Nomad spawns tasks with (README § Caveats).
+    platform: ${SEP_MYSQL_PLATFORM:-linux/amd64}
     build:
       context: .
       dockerfile: Containerfile.mysql
       args:
         PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-2c43912}
+        PMM_CLIENT_IMAGE: ${SEP_MYSQL_PMM_CLIENT_IMAGE:-docker.io/perconalab/pmm-client-fb:${PMM_FB_TAG:-PR-4500-2c43912}}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
     # it needs — pmm-managed starts answering registration requests later still.

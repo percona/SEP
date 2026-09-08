@@ -1,6 +1,11 @@
 # Image for the sep-mysql target node; see mysql-target.md.
 ARG PMM_FB_TAG
-FROM docker.io/perconalab/pmm-client-fb:${PMM_FB_TAG} AS pmmclient
+# The feature-build client only exists for amd64. An arm64 host passes the
+# released multi-arch client instead (compose reads it from .env), whose
+# aarch64 Nomad is the same 2.0.5 the feature-build server runs — so the
+# executor is native there rather than emulated. See README.md § Caveats.
+ARG PMM_CLIENT_IMAGE
+FROM ${PMM_CLIENT_IMAGE:-docker.io/perconalab/pmm-client-fb:${PMM_FB_TAG}} AS pmmclient
 
 FROM docker.io/library/oraclelinux:9
 

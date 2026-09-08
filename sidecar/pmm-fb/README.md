@@ -227,26 +227,34 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   pmm-client stage's amd64 binaries into an image that cannot execute them. Keep
   all three pins across a repin.
 
-  **The emulation must be Rosetta, not QEMU, or no task will ever run.** Nomad's
-  `raw_exec` spawns every task with `clone3(CLONE_INTO_CGROUP)` on cgroups v2
-  and Go has no fallback for that path, while QEMU 7.0 and later leave `clone3`
-  unimplemented. Under QEMU every dispatch therefore dies inside the executor
+  **On an arm64 host the executor is built natively, and that is the supported
+  path.** `sep-mysql` is the only service whose work — Nomad `raw_exec` — cannot
+  survive emulation: Nomad spawns every task with `clone3(CLONE_INTO_CGROUP)`
+  on cgroups v2, Go has no fallback for that path, and QEMU 7.0 and later leave
+  `clone3` unimplemented. Under QEMU every dispatch dies inside the executor
   with `fork/exec /usr/bin/sh: function not implemented` before any script
-  output exists, so the run shows as failed with an empty log — and the node
+  output exists, so the run shows as failed with an empty log — while the node
   still fingerprints `raw_exec` healthy and stays in SEP's executor list,
   because that check reads only `enabled = true`. Measured on an M3 Pro
   (2026-09-08): five for five backups and diagnostics failed exactly so.
-  `bootstrap.sh` therefore probes the emulator on an arm64 host before any
-  build starts, and `sep-mysql`'s entrypoint probes `clone3` again at container
-  start; both refuse and name the fix (`SEP_FB_SKIP_CLONE3_CHECK=1` overrides). On Docker Desktop that is two settings under
-  **Settings → General**: Virtual Machine Manager = *Apple Virtualization
-  framework* (Docker VMM does not support Rosetta), then *Use Rosetta for
-  x86_64/amd64 emulation on Apple Silicon*, Apply & restart. Rosetta translates
-  instructions and hands syscalls to the real kernel, which has `clone3`. Even
-  then, treat an emulated run as evidence for functional behaviour only:
-  nothing timing-shaped survives translation, so backup and restore durations,
-  the start periods set here, and any Nomad scheduling race are not measurable
-  on such a host.
+
+  So `bootstrap.sh` on an arm64 host writes `SEP_MYSQL_PLATFORM=linux/arm64`
+  and `SEP_MYSQL_PMM_CLIENT_IMAGE=docker.io/percona/pmm-client:3` into `.env`:
+  the released multi-arch client carries an aarch64 Nomad at the feature
+  build's own version (2.0.5), Oracle Linux 9, Percona Server 8.4, XtraBackup
+  8.4 and mydumper all publish EL9 aarch64 packages, and the executor then runs
+  without emulation. `pmm-server` and the side-car still run emulated, which
+  they tolerate — they are services, not executors. To run the amd64
+  feature-build client under emulation instead, set `SEP_MYSQL_PLATFORM` to
+  `linux/amd64` in `.env`; `bootstrap.sh` then probes the emulator for `clone3`
+  and refuses under QEMU, and `sep-mysql`'s entrypoint probes it again at start
+  (`SEP_FB_SKIP_CLONE3_CHECK=1` overrides both). The emulation that passes is
+  Rosetta — Docker Desktop → **Settings → General**: Virtual Machine Manager =
+  *Apple Virtualization framework* (Docker VMM does not support Rosetta), then
+  *Use Rosetta for x86_64/amd64 emulation on Apple Silicon*. Either way, treat
+  an emulated `pmm-server` as evidence for functional behaviour only: nothing
+  timing-shaped survives translation, so the start periods set here and any
+  Nomad scheduling race are not measurable on such a host.
 - **pmm-server's start period is set by this compose file, not by the image.**
   The image ships 25 s with 3 retries at 4 s, so it is marked `unhealthy` around
   37 s while a cold start needs appreciably longer to first pass `readyz` — and
