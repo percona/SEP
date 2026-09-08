@@ -211,8 +211,11 @@ class PMMSyncer(BaseSyncer):
         """Check whether this run's SyncInstance has been reclaimed out from under it.
 
         Every ledger write and every retirement is gated on this: a run reclaimed
-        while it worked must perform neither. It does not establish that this is the
-        syncer's only run; see ``SyncInstanceManager.is_still_owned``.
+        while it worked must perform neither. Under the conditions
+        ``SyncInstanceManager.is_still_owned`` documents — which the syncer's own
+        ``stale_run_after`` satisfies on PostgreSQL — it also establishes that this is
+        the syncer's only run, so a missing-grace counter cannot be spent twice over
+        by two runs racing in one moment.
 
         :return: ``True`` while this run's ``SyncInstance`` is still ``RUNNING``.
         """
