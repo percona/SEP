@@ -25,7 +25,10 @@
           },
           {
             "label": "Type",
-            "path": "backup_type"
+            "path": "backup_type",
+            "value_labels": {
+              "P": "pgBackRest"
+            }
           },
           {
             "label": "Created at",
@@ -202,6 +205,8 @@
       "title": "pgBackRest"
     }
   ],
+  "item_display_name": "backup",
+  "item_display_name_plural": "backups",
   "list_view": {
     "columns": [
       {
@@ -224,7 +229,10 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "P": "pgBackRest"
+        }
       },
       {
         "format": "relative",

@@ -304,6 +304,45 @@ def _gates(metadata: list[Any], marker_type: type) -> list[FieldGate]:
     ]
 
 
+def _derived_required(field_info: FieldInfo, ui: Ui) -> bool:
+    """Return the wire ``required`` flag, honouring a ``Ui`` override.
+
+    :param field_info: The field's Pydantic ``FieldInfo``.
+    :param ui: The field's ``Ui`` marker.
+    :return: Whether the field is required on the wire.
+    """
+    return ui.required if ui.required is not None else field_info.is_required()
+
+
+def _common_field_kwargs(
+    name: str, field_info: FieldInfo, ui: Ui, metadata: list[Any]
+) -> dict[str, Any]:
+    """Return the ``BaseField`` keyword arguments shared by every field kind.
+
+    The model-first derivation builds the base keys only here, so a key added
+    to this dict reaches the per-kind builder and the multi-reference one-of
+    branch builder in one edit rather than two. Apps that construct schema
+    fields directly, without a :class:`Ui` marker, bypass this and supply their
+    own.
+
+    :param name: The field name (the wire ``name``).
+    :param field_info: The field's Pydantic ``FieldInfo``.
+    :param ui: The field's ``Ui`` marker.
+    :param metadata: The field's ``FieldInfo.metadata`` list.
+    :return: The shared keyword arguments.
+    """
+    return {
+        "name": name,
+        "label": _field_label(name, ui),
+        "required": _derived_required(field_info, ui),
+        "description": ui.description,
+        "destructive": ui.destructive,
+        "default": _field_default(field_info, ui),
+        "requires": _gates(metadata, Requires) or None,
+        "forbidden": _gates(metadata, Forbidden) or None,
+    }
+
+
 def _derive_choices(name: str, base: Any, choices: Choices | None) -> list[Choice]:
     """Return the choice options for a choice field.
 
@@ -564,10 +603,29 @@ def _derive_one_of_from_union(
     field_info: FieldInfo,
     ui: Ui,
 ) -> OneOfGroup:
-    """Derive a :class:`OneOfGroup` from a nested discriminated union field."""
+    """Derive a :class:`OneOfGroup` from a nested discriminated union field.
+
+    :param name: The field name (the wire ``name``).
+    :param field_info: The field's Pydantic ``FieldInfo``.
+    :param ui: The field's ``Ui`` marker.
+    :return: The derived one-of group.
+    :raises ValueError: When the field declares no discriminator key, the union
+        has fewer than two branch models, a branch model omits the
+        discriminator or gives it no single value, a branch model field is
+        missing its ``Ui(...)`` marker, a branch model has no derivable leaf
+        fields besides the discriminator, or the field carries
+        ``Ui(destructive=...)``.
+    """
     disc_key = field_info.discriminator
     if not disc_key:
         raise ValueError(f"field {name!r} has no discriminator key")
+    if ui.destructive is not None:
+        raise ValueError(
+            f"field {name!r} sets Ui(destructive=...) on a discriminated union, "
+            "which derives a one-of group rather than a field; the group cannot "
+            "carry the mark and the branch leaves take their own Ui, so mark the "
+            "destructive leaf inside each branch model instead"
+        )
     members = _union_model_members(field_info.annotation)
     if len(members) < _MIN_ONE_OF_BRANCHES:
         raise ValueError(
@@ -622,17 +680,7 @@ def _derive_multi_ref_one_of(
             "multi-value one-of reference unions are not supported — use a single "
             "reference marker per field for multi-value selection"
         )
-    common = {
-        "name": name,
-        "label": _field_label(name, ui),
-        "required": ui.required
-        if ui.required is not None
-        else field_info.is_required(),
-        "description": ui.description,
-        "default": _field_default(field_info, ui),
-        "requires": _gates(metadata, Requires) or None,
-        "forbidden": _gates(metadata, Forbidden) or None,
-    }
+    common = _common_field_kwargs(name, field_info, ui, metadata)
     branches = []
     for ref in ref_markers:
         ref_type = type(ref)
@@ -721,16 +769,8 @@ def _build_base_field(
         annotation does not accept ``str`` (or, when the field is optional,
         ``None``).
     """
-    required = ui.required if ui.required is not None else field_info.is_required()
-    common = {
-        "name": name,
-        "label": _field_label(name, ui),
-        "required": required,
-        "description": ui.description,
-        "default": _field_default(field_info, ui),
-        "requires": _gates(metadata, Requires) or None,
-        "forbidden": _gates(metadata, Forbidden) or None,
-    }
+    required = _derived_required(field_info, ui)
+    common = _common_field_kwargs(name, field_info, ui, metadata)
 
     ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
     if ref_markers:
@@ -991,6 +1031,8 @@ def derive_app_schema(
     *,
     name: str,
     display_name: str,
+    item_display_name: str | None = None,
+    item_display_name_plural: str | None = None,
     description: str | None = None,
     task_type: str | None = None,
     capabilities: Any = None,
@@ -1011,6 +1053,12 @@ def derive_app_schema(
     :param layout: The section layout for the create form.
     :param name: The plugin identifier.
     :param display_name: The human-readable plugin title.
+    :param item_display_name: Optional name for one record the create form
+        produces. Passed through as-is, so ``None`` leaves
+        :class:`~app.sep.apps.framework.schema.AppSchema` to default it from
+        ``display_name``. Defaults to ``None``.
+    :param item_display_name_plural: Optional name for several such records,
+        defaulted by the same route. Defaults to ``None``.
     :param description: Optional plugin description. Defaults to ``None``.
     :param task_type: Optional task-type identifier. Defaults to ``None``.
     :param capabilities: Optional plugin capabilities. Defaults to ``None``.
@@ -1027,6 +1075,8 @@ def derive_app_schema(
     return AppSchema(
         name=name,
         display_name=display_name,
+        item_display_name=item_display_name,
+        item_display_name_plural=item_display_name_plural,
         description=description,
         task_type=task_type,
         forms=derive_form_sections(model, layout),

@@ -32,12 +32,20 @@ from app.core.requests import as_json_object
 from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.api.proxy import reraise_upstream_tasks_errors
+from app.sep.api.task_history_actors import (
+    resolve_task_history_actors,
+    SepTaskHistoryResponse,
+)
 from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     normalize_task_history_names,
 )
-from app.sep.deps import RequireBearerForUnsafeMethods, TaskAPI
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.sep.deps import (
+    get_username_mapping,
+    RequireBearerForUnsafeMethods,
+    TaskAPI,
+)
+from app.tasks.models import TaskHistoryStatusEnum
 
 router = APIRouter()
 
@@ -50,7 +58,7 @@ async def list_merged_task_history(
     task_names: Annotated[list[str] | None, Query()] = None,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     exclude_internal: Annotated[bool, Query()] = False,
-) -> PaginatedResponse[TaskHistoryResponse]:
+) -> PaginatedResponse[SepTaskHistoryResponse]:
     """Return task-history rows, listing all of them or merging selected names.
 
     Three-way on ``task_names``:
@@ -70,7 +78,8 @@ async def list_merged_task_history(
     :param exclude_internal: When ``True``, forward the filter to the upstream
         list-all path so internal maintenance tasks are excluded before pagination.
         Not forwarded on the ``task_names`` merge path. Defaults to ``False``.
-    :return: Paginated task history, either the upstream list or the merged set.
+    :return: Paginated task history, either the upstream list or the merged set,
+        with every actor identifier resolved to the name a reader should see.
     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
         every value is empty after trimming.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -86,18 +95,20 @@ async def list_merged_task_history(
         }
         with reraise_upstream_tasks_errors():
             payload = await tasks_api.get("/history/", params=params)
-        return PaginatedResponse[TaskHistoryResponse].model_validate(payload)
-    if not normalize_task_history_names(task_names):
-        raise HTTPUnprocessableEntityException(
-            "task_names must contain at least one non-empty name"
-        )
-    with reraise_upstream_tasks_errors():
-        return await fetch_merged_task_history(
-            tasks_api,
-            task_names,
-            status=task_status,
-            pagination=pagination,
-        )
+        page = PaginatedResponse[SepTaskHistoryResponse].model_validate(payload)
+    else:
+        if not normalize_task_history_names(task_names):
+            raise HTTPUnprocessableEntityException(
+                "task_names must contain at least one non-empty name"
+            )
+        with reraise_upstream_tasks_errors():
+            page = await fetch_merged_task_history(
+                tasks_api,
+                task_names,
+                status=task_status,
+                pagination=pagination,
+            )
+    return resolve_task_history_actors(page, await get_username_mapping())
 
 
 @router.post(

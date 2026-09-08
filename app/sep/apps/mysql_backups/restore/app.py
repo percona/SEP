@@ -25,7 +25,7 @@ the ``payload_builder`` escape hatch
 (:func:`~app.sep.apps.mysql_backups.restore.deps.build_restore_payload`)
 rather than the framework's auto-resolve three-phase path; the model-first
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` still drives
-``GET /schema`` and the create form. ``service_id`` lives in the General section
+``GET /schema`` and the create form. ``service_id`` lives in the Task section
 so the restore ``backup_source`` ``RemoteChoices`` cascade is available for every
 backup type (not only Mydumper).
 """
@@ -52,6 +52,8 @@ app = TaskExecutionApp(
     key="mysql_backups/restore",
     name="mysql_backups_restores",
     display_name="MySQL Restores",
+    item_display_name="restore",
+    item_display_name_plural="restores",
     uri_path="/mysql_backups/restores",
     css_class="mysql_backups",
     group="backups",

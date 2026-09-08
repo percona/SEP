@@ -331,6 +331,50 @@ class TestStopTask:
         assert refetched.finished_at is not None
 
     @pytest.mark.asyncio
+    async def test_forced_stop_clears_a_stale_failure_reason(
+        self, session: AsyncSession
+    ):
+        """Assert a run the sync left non-terminal is STOPPED with no failure reason."""
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-clear-reason"
+        )
+        saved_history.set_failure_reason("A reason that predates the stop.")
+        executor = StopStubExecutor()
+
+        with patch("app.tasks.execution.models.schedule_annotation"):
+            result = await executor.stop_task(session, saved_history)
+
+        result_id = result.id
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.STOPPED
+        assert refetched.failure_reason is None
+
+    @pytest.mark.asyncio
+    async def test_stop_preserves_reason_of_a_run_the_sync_failed(
+        self, session: AsyncSession
+    ):
+        """Assert a reason the sync resolved survives a stop landing in the same window.
+
+        The executor's own resolution wins over the stop, so a run that failed
+        keeps the reason explaining why rather than being relabelled.
+        """
+        saved_history = await self._persist_history(
+            session, TaskHistoryStatusEnum.RUNNING, "stop-task-keep-reason"
+        )
+        executor = StopStubExecutor.resolving_to(TaskHistoryStatusEnum.FAILED)
+
+        with patch("app.tasks.execution.models.schedule_annotation"):
+            saved_history.set_failure_reason("The run failed.")
+            result = await executor.stop_task(session, saved_history)
+
+        result_id = result.id
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
+        assert refetched.status == TaskHistoryStatusEnum.FAILED
+        assert refetched.failure_reason == "The run failed."
+
+    @pytest.mark.asyncio
     async def test_calls_sync_task_history(self, session: AsyncSession):
         """Assert stop_task drives sync_task_history (via its _sync boundary)."""
         saved_history = await self._persist_history(

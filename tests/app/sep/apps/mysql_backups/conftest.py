@@ -30,6 +30,7 @@ from app.sep.deps import (
     get_current_user,
     get_inventory_api,
     get_session,
+    get_tasks_api,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
@@ -103,12 +104,15 @@ async def authenticated_get(
     inventory: AsyncMock,
     user: object,
     params: dict[str, Any] | None = None,
+    tasks: AsyncMock | None = None,
 ) -> Response:
     """GET ``url`` against the sep app with the given session + inventory mock.
 
     Installs the authentication overrides an ``/api/apps/*`` route needs, so a
     route test asserts on the route's own behavior rather than on the auth gate,
-    and restores any previously installed overrides afterwards.
+    and restores any previously installed overrides afterwards. Only a route that
+    reaches the Tasks API needs ``tasks``; the dependency is left un-overridden
+    otherwise.
     """
     previous_overrides = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[get_session] = lambda: session
@@ -116,6 +120,8 @@ async def authenticated_get(
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
+    if tasks is not None:
+        sep_app.dependency_overrides[get_tasks_api] = lambda: tasks
     try:
         transport = ASGITransport(app=sep_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

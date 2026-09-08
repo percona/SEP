@@ -41,7 +41,8 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
+from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.shared.backups.columns import backup_type_column
 
 restore_views = Views(
     layout=FormLayout(
@@ -57,25 +58,28 @@ restore_views = Views(
                 key="Mydumper",
                 title="Mydumper",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "M"),),
             ),
             SectionLayout(
                 key="XtraBackup",
                 title="XtraBackup",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "X"),),
             ),
             SectionLayout(
                 key="Binlog",
                 title="Binlog",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
         )
     ),
     list_view=ListView(
         columns=default_columns(
-            BACKUP_TYPE_COLUMN,
+            backup_type_column(BackupType.LABELS),
             EXECUTOR_HOST_COLUMN,
         ),
     ),

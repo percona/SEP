@@ -148,6 +148,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         sync_resolved_it = queue_item.status.is_terminal()
         if not sync_resolved_it:
             queue_item.status = TaskHistoryStatusEnum.STOPPED
+            queue_item.set_failure_reason(None)
         if queue_item.finished_at is None:
             queue_item.finished_at = utc_now()
         event = _TERMINAL_STATUS_EVENT_MAP[queue_item.status]

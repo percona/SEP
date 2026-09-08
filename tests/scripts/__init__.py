@@ -15,8 +15,7 @@
 
 """Load the ``scripts/`` CLIs under test as importable modules."""
 
-import importlib.util
-import sys
+import importlib
 from pathlib import Path
 from types import ModuleType
 
@@ -38,26 +37,27 @@ def write_file(tmp_path: Path, name: str, text: str) -> Path:
 
 
 def load_script(name: str) -> ModuleType:
-    """Return ``scripts/<name>.py`` loaded as a module named ``name``.
+    """Return ``scripts/<name>.py`` as the one module object for that script.
 
-    The scripts are CLIs outside any package, so a test importing one has to load
-    it by path. Loading is memoised through ``sys.modules``: two test modules that
-    need the same script share one instance rather than the second re-registering
-    the key the first claimed.
+    Delegates to :func:`importlib.import_module` under the package-qualified
+    name, so this helper and ``from scripts.<name> import X`` resolve to one
+    object. Do not reintroduce a by-path load: it registers a second module
+    under the bare name, whose classes then fail ``except`` and
+    ``pytest.raises`` against the package copy's.
+    ``tests/scripts/test_loader_identity.py`` pins the invariant.
+
+    ``scripts`` is a package whose ``__init__`` is a licence header, so the
+    delegation adds no import side effects.
 
     :param name: The script's module name, without the ``.py`` suffix.
     :return: The loaded module.
-    :raises RuntimeError: When the script cannot be loaded from ``scripts/``.
+    :raises RuntimeError: When ``scripts/<name>.py`` itself is absent. An
+        ``ImportError`` raised by a module it imports propagates unchanged, so
+        the traceback names the module that actually failed.
     """
-    cached = sys.modules.get(name)
-    if isinstance(cached, ModuleType):
-        return cached
-
-    path = SCRIPTS_DIR / f"{name}.py"
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+    try:
+        return importlib.import_module(f"scripts.{name}")
+    except ImportError as exc:
+        if exc.name != f"scripts.{name}":
+            raise
+        raise RuntimeError(f"cannot load {SCRIPTS_DIR / f'{name}.py'}") from exc
