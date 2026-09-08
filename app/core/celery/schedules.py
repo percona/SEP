@@ -83,8 +83,7 @@ def celery_schedule(
     :param crontab: The crontab schedule, or ``None`` for an interval schedule.
     :return: The ``celery.schedules`` object beat evaluates to decide when the
         task fires.
-    :raises ValueError: If neither schedule is set, or if a crontab names a zone
-        that is not available.
+    :raises ValueError: If neither schedule is set.
     :raises OverflowError: If an interval's cadence exceeds
         :class:`~datetime.timedelta`'s range.
     """
@@ -138,6 +137,10 @@ def next_run_times(
     (SEP bounds dispatch, not the schedule), and disabling a schedule that fails
     to build (validation upstream makes it unreachable).
 
+    An already-due schedule fires at ``now``, so the first run it reports is
+    ``now`` itself; every later run is the next fire time after the one before
+    it.
+
     :param interval: The interval schedule, or ``None`` for a crontab schedule.
     :param crontab: The crontab schedule, or ``None`` for an interval schedule.
     :param start_time: The earliest time the schedule may fire, if any.
@@ -147,10 +150,6 @@ def next_run_times(
     :param now: The instant to evaluate from. Defaults to
         :func:`~app.core.utils.date_time.utc_now`.
     :param count: How many upcoming runs to return.
-    An already-due schedule fires at ``now``, so the first run it reports is
-    ``now`` itself; every later run is the next fire time after the one before
-    it.
-
     :return: Up to ``count`` strictly increasing UTC datetimes, empty when the
         schedule is disabled.
     :raises ValueError: If neither ``interval`` nor ``crontab`` is set.

@@ -727,24 +727,18 @@ export interface components {
     ConnectivityServiceType: 'mysql' | 'postgresql' | 'mongodb';
     /**
      * CrontabSchedule
-     * @description Representing a crontab schedule.
+     * @description Represent a crontab schedule.
      *
-     *     :param minute: Represents the minute component in cron format. Defaults to `"*"`.
-     *     :type minute: str
-     *     :param hour: Represents the hour component in cron format. Defaults to `"*"`.
-     *     :type hour: str
-     *     :param day_of_week: Represents the day of the week component in cron format.
-     *         Defaults to `"*"`.
-     *     :type day_of_week: str
-     *     :param day_of_month: Represents the day of the month component in cron format.
-     *         Defaults to `"*"`.
-     *     :type day_of_month: str
-     *     :param month_of_year: Represents the month component in cron format.
-     *         Defaults to `"*"`.
-     *     :type month_of_year: str
-     *     :param timezone: The timezone for the cron schedule. Defaults to "UTC". Must be a
-     *         valid timezone as returned in `available_timezones()`
-     *     :type timezone: str
+     *     :param minute: The minute component in cron format. Defaults to ``"*"``.
+     *     :param hour: The hour component in cron format. Defaults to ``"*"``.
+     *     :param day_of_week: The day of the week component in cron format.
+     *         Defaults to ``"*"``.
+     *     :param day_of_month: The day of the month component in cron format.
+     *         Defaults to ``"*"``.
+     *     :param month_of_year: The month component in cron format.
+     *         Defaults to ``"*"``.
+     *     :param timezone: The timezone for the cron schedule. Defaults to ``"UTC"``. Must
+     *         be a valid timezone as returned in ``available_timezones()``.
      */
     CrontabSchedule: {
       /**
@@ -1076,23 +1070,14 @@ export interface components {
      *     Extends `PeriodicTaskWrite` and adds validations specific to updating tasks.
      *
      *     :param name: The name of the periodic task.
-     *     :type name: str
      *     :param task: The Celery task name.
-     *     :type task: str
      *     :param start_time: The start time for the task execution.
-     *     :type start_time: UTCDatetime | None
      *     :param enabled: Whether the task is enabled.
-     *     :type enabled: bool
      *     :param description: A description of the task.
-     *     :type description: str
      *     :param execute_request: The execution request details for the task.
-     *     :type execute_request: PeriodicTaskExecuteRequest | None
      *     :param interval: The interval schedule for the task. Defaults to None.
-     *     :type interval: IntervalSchedule | None
      *     :param crontab: The crontab schedule for the task. Defaults to None.
-     *     :type crontab: CrontabSchedule | None
      *     :param kwargs: A JSON string representing additional keyword arguments for the task.
-     *     :type kwargs: str
      */
     PeriodicTaskUpdate: {
       crontab?: components['schemas']['CrontabSchedule'] | null;
