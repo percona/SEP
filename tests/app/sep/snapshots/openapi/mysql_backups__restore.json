@@ -3902,11 +3902,6 @@
             ],
             "title": "Keyring File Data"
           },
-          "kill_mysql": {
-            "default": false,
-            "title": "Kill Mysql",
-            "type": "boolean"
-          },
           "local_path": {
             "anyOf": [
               {

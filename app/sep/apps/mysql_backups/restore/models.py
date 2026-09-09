@@ -144,8 +144,6 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     :type skip_incrementals: bool
     :param datadir: MySQL data directory path.
     :type datadir: NonEmptyStr
-    :param kill_mysql: Whether to kill MySQL process before restore.
-    :type kill_mysql: bool
     :param xb_prepare_memory: Memory limit for xtrabackup prepare operation.
     :type xb_prepare_memory: NonEmptyStr | EmptyStrToNone
     :param xb_parallel: Number of parallel threads for xtrabackup operations.
@@ -200,7 +198,6 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     post_script: NonEmptyStr | EmptyStrToNone = None
     skip_incrementals: bool = False
     datadir: NonEmptyStr | EmptyStrToNone = None
-    kill_mysql: bool = False
     xb_prepare_memory: NonEmptyStr | EmptyStrToNone = None
     xb_parallel: int | EmptyStrToNone = Field(default=4)
     xtrabackup_bin_cmd: XtraBackupTool | EmptyStrToNone = None
@@ -737,17 +734,6 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ] = None
-    kill_mysql: Annotated[
-        bool,
-        Ui(
-            label="Kill MySQL",
-            section="XtraBackup",
-            description=(
-                "MySQL is always stopped before the data directory is replaced, so "
-                "this setting changes nothing."
-            ),
-        ),
-    ] = False
     xb_prepare_memory: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Ui(

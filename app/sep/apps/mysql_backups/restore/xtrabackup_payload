@@ -1913,7 +1913,6 @@ class Xtrabackup(Restore):
         super(Xtrabackup, self).__init__(server_data, 'X')
 
         self.datadir = server_data.get('DATADIR', None)
-        self.kill_mysql = server_data.get('KILL_MYSQL', False)
         self.xtrabackup_aes256_keyfile = server_data.get('XTRABACKUP_AES256_KEYFILE', DEFAULT_CFG_DIR + '/xb_keyfile')
         self.mysql_init_command = server_data.get('MYSQL_INIT_COMMAND', False)  # Deprecated by custom
         self.custom_mysql_init_command = server_data.get('CUSTOM_MYSQL_INIT_COMMAND', False)

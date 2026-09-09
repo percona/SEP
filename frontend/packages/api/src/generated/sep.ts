@@ -9449,11 +9449,6 @@ export interface components {
       incremental_dest_path?: string | null;
       /** Keyring File Data */
       keyring_file_data?: string | null;
-      /**
-       * Kill Mysql
-       * @default false
-       */
-      kill_mysql: boolean;
       /** Local Path */
       local_path?: string | null;
       /** Logging Dir */
