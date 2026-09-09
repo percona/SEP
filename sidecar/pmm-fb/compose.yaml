@@ -9,9 +9,10 @@
 # from main under a suffix-less tag — the build emits a single artifact. See
 # pmm-fb/README.md "Which image to pin".
 #
-# ./bootstrap.sh is only for the `mysql` profile — it generates the .env holding
-# that profile's three test-fixture passwords, and the pair below needs none of
-# them. PMM owns the four secrets SEP reads from disk: it writes them into the
+# ./bootstrap.sh runs before every bring-up. It generates the .env holding the
+# `mysql` profile's three test-fixture passwords, which the pair below needs none
+# of, and the side-car's ENCRYPTION_KEY, which it does — see that variable's own
+# comment. PMM owns the four secrets SEP reads from disk: it writes them into the
 # pmm-sep volume, which the side-car reads through SECRETS_DIR, and it serves SEP
 # under its own /sep prefix. The Grafana service-account token is the side-car's
 # own — it mints and persists that one itself. SEP's remaining settings come from

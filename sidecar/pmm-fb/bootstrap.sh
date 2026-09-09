@@ -152,6 +152,12 @@ load_env() {
     source .env
     : "${SEP_MYSQL_ROOT_PASSWORD:?missing in .env}" "${SEP_MYSQL_BACKUP_PASSWORD:?missing in .env}" \
         "${SEP_MYSQL_PMM_PASSWORD:?missing in .env}"
+    # Emptied by hand rather than absent: ensure_slot only fills a missing slot,
+    # and compose passes an empty slot through as "", which out-ranks a mounted
+    # SECRETS_DIR file in the settings source order and shadows it. Measured: a
+    # side-car given ENCRYPTION_KEY="" alongside a valid key file still refuses
+    # to start.
+    : "${ENCRYPTION_KEY:?empty in .env — delete the line to regenerate it}"
 }
 
 # The engine's architecture, not the shell's: a shell under Rosetta reports
