@@ -198,10 +198,7 @@ HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # The machine-readable `/etc/os-release` ID ("ubuntu", "rocky"), distinct from
     # ``os``'s human-readable PRETTY_NAME above ("Ubuntu 22.04.3 LTS") -- a general
     # inventory fact any task type can use to branch on OS, not specific to any one
-    # consumer. First consumer is PMM-15347's om_bootstrap, choosing an
-    # OperatingSystem-typed strategy from this exact value; kept general here rather
-    # than added as bootstrap-specific logic (PMM-15347/plan.md §4 item 5's
-    # boundary).
+    # consumer.
     ("os_id", ("system", "os_id")),
     ("kernel", ("system", "kernel")),
     ("arch", ("system", "arch")),
