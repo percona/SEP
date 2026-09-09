@@ -63,9 +63,11 @@ from app.sep.apps.framework.schema import (
     ServiceField,
     StringField,
     TableField,
+    TaskStatusDescriptor,
     TextAreaField,
     YamlField,
 )
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 def _minimal_detail_view() -> DetailView:
@@ -2969,6 +2971,120 @@ class TestAppSchemaRecordDisplayNames:
         assert schema.item_display_name == "Inventory"
         assert schema.entities is not None
         assert schema.entities[0].item_display_name == "node"
+
+
+class TestAppSchemaTaskStatuses:
+    """Cover the derived ``task_statuses`` vocabulary published on ``AppSchema``."""
+
+    @staticmethod
+    def _task_style_schema() -> AppSchema:
+        """Return a task-style schema, the shape that publishes the vocabulary."""
+        return AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+    def test_every_enum_member_is_published(self) -> None:
+        """Publish exactly one entry per ``TaskHistoryStatusEnum`` member."""
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert [entry.value for entry in schema.task_statuses] == list(
+            TaskHistoryStatusEnum
+        )
+
+    def test_terminality_matches_the_enum_classification(self) -> None:
+        """Mark a status terminal exactly when ``is_terminal()`` does.
+
+        ``lost`` is asserted through the enum like every other member; the
+        sibling test below is what pins it against ``is_finished()``.
+        """
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            status: status.is_terminal() for status in TaskHistoryStatusEnum
+        }
+
+    def test_lost_is_published_as_terminal(self) -> None:
+        """Classify ``lost`` as terminal, which ``is_finished()`` alone would not."""
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        terminal = {entry.value for entry in schema.task_statuses if entry.terminal}
+        assert TaskHistoryStatusEnum.LOST in terminal
+
+    @pytest.mark.parametrize("status", list(TaskHistoryStatusEnum))
+    def test_every_member_is_classified(self, status: TaskHistoryStatusEnum) -> None:
+        """Refuse a member that is neither terminal nor active.
+
+        A member added to the enum without joining ``active_statuses()`` falls
+        out of both partitions, so this names it rather than letting an
+        unclassified value reach the wire.
+        """
+        assert status.is_terminal() != status.is_active(), (
+            f"{status.value} is classified neither terminal nor active"
+        )
+
+    def test_entity_plugins_withhold_the_vocabulary(self) -> None:
+        """Leave ``task_statuses`` unset for a plugin declaring entities."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        assert schema.task_statuses is None
+
+    def test_withheld_vocabulary_is_absent_from_the_dump(self) -> None:
+        """Drop the key entirely for an entity plugin, matching the wire posture."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        assert "task_statuses" not in schema.model_dump(exclude_none=True)
+
+    def test_schema_round_trips_through_json(self) -> None:
+        """Re-validate a dumped task-style schema back into an equal instance."""
+        schema = self._task_style_schema()
+
+        assert AppSchema.model_validate(schema.model_dump(mode="json")) == schema
+
+    def test_a_supplied_vocabulary_is_overwritten(self) -> None:
+        """Re-derive the vocabulary over a well-formed value a caller supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+            task_statuses=[
+                TaskStatusDescriptor(value=TaskHistoryStatusEnum.PENDING, terminal=True)
+            ],
+        )
+
+        assert schema.task_statuses is not None
+        assert len(schema.task_statuses) == len(TaskHistoryStatusEnum)
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            status: status.is_terminal() for status in TaskHistoryStatusEnum
+        }
+
+    def test_a_supplied_malformed_vocabulary_is_rejected(self) -> None:
+        """Raise on a malformed supplied value rather than silently re-deriving it.
+
+        The field is declared, so an incoming value is validated before the
+        after-validator can overwrite it.
+        """
+        with pytest.raises(ValidationError):
+            AppSchema.model_validate(
+                {
+                    "name": "minimal",
+                    "display_name": "MySQL Backups",
+                    "list_view": _minimal_list_view().model_dump(mode="json"),
+                    "task_statuses": [{"bogus": 1}],
+                }
+            )
 
 
 TS_MIRROR = (

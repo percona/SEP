@@ -77,7 +77,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.deps import InventoryAPI, IsApiAuthenticated
-from app.tasks.models import Task, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
@@ -117,6 +117,8 @@ from tests.app.sep.apps.framework.kit import (
 )
 
 _BASE = f"/api/apps{_PREFIX}"
+_EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+_EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 _SCRIPT_BASE = f"/api/apps{_SCRIPT_PREFIX}"
 
 _LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
@@ -368,6 +370,8 @@ def _execute_response(name: str, task_id: int = 99) -> dict:
         "id": task_id,
         "execution_request": {"task": "synth-cmd", "target": "host1"},
         "task": {**_task_dict(name), "deleted_at": None},
+        "status": _EXECUTE_STATUS.value,
+        "created_at": _EXECUTE_CREATED_AT,
     }
 
 
@@ -876,7 +880,30 @@ class TestExecuteRoute:
         response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t-1", "task_id": 99}
+        assert response.json() == {
+            "task_name": "t-1",
+            "task_id": 99,
+            "status": _EXECUTE_STATUS.value,
+            "created_at": _EXECUTE_CREATED_AT,
+        }
+
+    def test_execute_body_carries_only_the_declared_keys(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the derived response adds run state without dropping identity."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t-1"), created_task=_execute_response("t-1")
+        )
+        client = _client(_synth_app(), tasks_api, regular_user)
+
+        response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
+
+        assert set(response.json()) == {
+            "task_name",
+            "task_id",
+            "status",
+            "created_at",
+        }
 
 
 class TestVerbGating:

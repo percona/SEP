@@ -28,14 +28,17 @@ Three layers:
 """
 
 import logging
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
-from fastapi import APIRouter, status
+from fastapi import APIRouter, FastAPI, status
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, computed_field, ConfigDict, Field
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.sep.api.router import api_router
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
@@ -323,10 +326,12 @@ class _ExecuteWrite(BaseModel):
 
 
 class _ExecuteResponse(BaseModel):
-    """Represent a synthetic execute response keyed by task name and id."""
+    """Represent a synthetic execute response carrying identity and run state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 async def _get_by_cluster(cluster_name: str) -> object:
@@ -967,3 +972,50 @@ def test_registry_app_declares_its_record_display_names(registry_app, test_clien
     if payload is None:
         pytest.skip(f"{registry_app.key} exposes no schema payload")
     assert check_item_display_names_declared(payload) == []
+
+
+def _derived_execute_routes() -> list[APIRoute]:
+    """Return every registered ``POST /{task_name}/execute`` route.
+
+    Walk the config-built ``api_router`` for the same reason
+    :func:`snapshot_utils.build_plugins_openapi` does: sibling conftests mutate
+    the process-global ``sep_app`` at import time.
+
+    :return: The derived execute routes across every configured app.
+    """
+    app = FastAPI()
+    app.include_router(api_router)
+    return [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and route.path.endswith("/{task_name}/execute")
+        and "POST" in route.methods
+    ]
+
+
+def test_every_derived_execute_route_declares_run_state():
+    """Assert every execute response model carries the run state a poller needs.
+
+    A future plugin shipping an execute route with no test of its own is still
+    held to the contract here.
+    """
+    offenders = {
+        route.path: sorted(
+            {"status", "created_at"} - set(route.response_model.model_fields)
+        )
+        for route in _derived_execute_routes()
+        if route.response_model is None
+        or not {"status", "created_at"} <= set(route.response_model.model_fields)
+    }
+
+    assert offenders == {}
+
+
+def test_derived_execute_routes_are_discovered():
+    """Assert the sweep above walks a non-empty route set.
+
+    A walk that silently matched nothing would report the contract as satisfied
+    for every plugin at once.
+    """
+    assert _derived_execute_routes() != []

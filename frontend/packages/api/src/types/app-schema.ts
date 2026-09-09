@@ -459,6 +459,17 @@ export interface RelatedApp {
   route_segment: string;
 }
 
+// ── Task status vocabulary ──────────────────────────────────────────────
+
+/**
+ * One task-status value and whether it ends a run. A client polling a task to
+ * completion re-reads until the row reaches a status whose `terminal` is true.
+ */
+export interface TaskStatusDescriptor {
+  value: string;
+  terminal: boolean;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface AppSchema {
@@ -485,4 +496,6 @@ export interface AppSchema {
   fail_when?: FailRule[];
   /** Separately registered apps rendered as sibling tabs in the React shell. */
   related_apps?: RelatedApp[];
+  /** Status vocabulary for task-style apps; omitted when `entities` is set. */
+  task_statuses?: TaskStatusDescriptor[];
 }

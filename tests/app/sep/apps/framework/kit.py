@@ -566,10 +566,12 @@ class SynthExecuteWrite(BaseModel):
 
 
 class SynthExecuteResponse(BaseModel):
-    """Represent the execute response carrying the dispatched task name and id."""
+    """Represent the execute response carrying the dispatched run's identity and state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 class SynthCapabilities(BaseModel):

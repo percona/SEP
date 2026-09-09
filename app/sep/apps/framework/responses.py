@@ -228,10 +228,16 @@ class TaskExecutionResponse(BaseModel):
 
     :param task_name: The name of the task that was executed.
     :param task_id: The id of the task-history row created by the tasks API.
+    :param status: The status of the task-history row the tasks API created,
+        as it stood at dispatch.
+    :param created_at: When the tasks API created that row. ``started_at`` is
+        deliberately absent: the worker sets it, so it is ``None`` here.
     """
 
     task_name: str
     task_id: int | None = None
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 class TaskResponseBuilder(Protocol[R]):

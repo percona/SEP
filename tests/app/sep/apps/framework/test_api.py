@@ -70,6 +70,7 @@ from app.sep.apps.framework.rules import (
     truthy,
 )
 from app.sep.apps.framework.schema import (
+    AppEntitySchema,
     AppSchema,
     BoolField,
     Capabilities,
@@ -201,6 +202,25 @@ _EMPTY_FORMS_SCHEMA = AppSchema(
 )
 
 
+_ENTITIES_SCHEMA = AppSchema(
+    name="test-entities",
+    display_name="Test Entities",
+    entities=[
+        AppEntitySchema(
+            name="things",
+            display_name="Things",
+            forms=[
+                FormSection(
+                    title="Thing",
+                    fields=[StringField(name="title", label="Title")],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+        ),
+    ],
+)
+
+
 def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAPI:
     """Mount ``plugin_router`` under the production-shape router tree.
 
@@ -248,6 +268,14 @@ def authed_client(regular_user: CasdoorUser) -> TestClient:
 def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
     """Return an authed ``TestClient`` whose schema exercises every field class."""
     app = _build_composed_app(_ALL_FIELDS_SCHEMA, "/test-all-fields")
+    app.dependency_overrides[get_current_user] = lambda: regular_user
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def authed_entities_client(regular_user: CasdoorUser) -> TestClient:
+    """Return an authed ``TestClient`` whose schema declares entities."""
+    app = _build_composed_app(_ENTITIES_SCHEMA, "/test-entities")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
@@ -475,6 +503,29 @@ class TestSchemaEndpointUnauthenticated:
         )
 
         assert "location" not in {k.lower() for k in response.headers}
+
+
+class TestSchemaEndpointTaskStatuses:
+    """Cover how ``task_statuses`` reaches the ``GET /schema`` payload."""
+
+    def test_task_style_schema_publishes_the_vocabulary(
+        self, authed_all_fields_client: TestClient
+    ) -> None:
+        """Assert a task-style plugin serves one entry per status value."""
+        body = authed_all_fields_client.get("/api/apps/test-all-fields/schema").json()
+
+        assert body["task_statuses"] == [
+            {"value": status.value, "terminal": status.is_terminal()}
+            for status in TaskHistoryStatusEnum
+        ]
+
+    def test_entity_schema_omits_the_vocabulary(
+        self, authed_entities_client: TestClient
+    ) -> None:
+        """Assert an entity-declaring plugin serves no ``task_statuses`` key."""
+        body = authed_entities_client.get("/api/apps/test-entities/schema").json()
+
+        assert "task_statuses" not in body
 
 
 class TestSchemaEndpointAllFieldsRoundTrip:
@@ -2783,6 +2834,8 @@ class TestDeriveCrudRoutesCreateContext:
 _EXECUTE_PREFIX = "/test-derive-execute"
 _EXECUTE_BASE_URL = f"/api/apps{_EXECUTE_PREFIX}"
 _EXECUTE_TASK_ID = 77
+_EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+_EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 _SYNTHETIC_TASK_DEP = Annotated[Task, Depends(make_task_dep(_SYNTHETIC_OWNER))]
 
 
@@ -2797,6 +2850,8 @@ class _SyntheticExecutionResponse(BaseModel):
 
     task_name: str
     task_id: int | None = None
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 def _marker_dep() -> None:
@@ -2804,11 +2859,18 @@ def _marker_dep() -> None:
 
 
 def _execute_response_dict(task_id: int | None = _EXECUTE_TASK_ID) -> dict:
-    """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests."""
+    """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests.
+
+    ``status`` and ``created_at`` are pinned to values the model would not
+    default to, so an assertion on them distinguishes a field forwarded from
+    upstream from one Pydantic filled in.
+    """
     return {
         "id": task_id,
         "execution_request": {"task": "t1", "target": "host"},
         "task": _task_dict("t1"),
+        "status": _EXECUTE_STATUS.value,
+        "created_at": _EXECUTE_CREATED_AT,
     }
 
 
@@ -2956,10 +3018,31 @@ class TestDeriveExecuteRouteOverHttp:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t1", "task_id": _EXECUTE_TASK_ID}
+        assert response.json() == {
+            "task_name": "t1",
+            "task_id": _EXECUTE_TASK_ID,
+            "status": _EXECUTE_STATUS.value,
+            "created_at": _EXECUTE_CREATED_AT,
+        }
         tasks_api.post.assert_awaited_once_with(
             "/execute/t1", json={"chain_on_failure": True}
         )
+
+    def test_execute_201_forwards_upstream_run_state(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``status`` and ``created_at`` come from the upstream history row."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict("t1"),
+            history_items=[],
+            created_task=_execute_response_dict(),
+        )
+        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
+
+        body = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={}).json()
+
+        assert body["status"] == _EXECUTE_STATUS.value
+        assert body["created_at"] == _EXECUTE_CREATED_AT
 
     def test_execute_201_empty_body_forwards_empty_json(
         self, regular_user: CasdoorUser
