@@ -501,6 +501,14 @@ class BackupCreate(TaskFormModel):
     ] = None
     compression_algorithm: Annotated[
         CompressionAlgorithm | EmptyStrToNone,
+        Choices(
+            (
+                ("zstd", "ZSTD"),
+                ("lz4", "LZ4"),
+                ("gzip", "gzip"),
+                ("quicklz", "QuickLZ"),
+            )
+        ),
         Ui(
             label="Compression algorithm",
             section="General",
