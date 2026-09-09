@@ -24,7 +24,7 @@ Two rules make it work, and both are easy to get subtly wrong:
 **Conflict is per host.** The old guard refused any run while any other was in
 flight. Keep that and a scoped refresh is useless exactly when the estate is busiest,
 because the ten-minute schedule is often mid-sweep. Two runs collide only when they
-would touch the same host -- and a full refresh touches all of them.
+would touch the same host — and a full refresh touches all of them.
 
 **Nothing outside the scope is written.** This is where §5.4's "only a run that
 attempted an entity touches its timestamps" stops being a principle and starts being
@@ -172,7 +172,7 @@ class TestNarrowToScope:
     """Assert what a scoped sweep keeps and what it drops."""
 
     def test_keeps_only_the_named_hosts_and_their_services(self) -> None:
-        """Everything downstream of enumeration is narrowed, in one place."""
+        """Narrow everything downstream of enumeration, in one place."""
         hosts = [host(NODE_A, "db00"), host(NODE_B, "db01")]
         services = [service_on("db00"), service_on("db01")]
         mapped = [MappedService(s, s.node_name, NodeResolution.NAME) for s in services]
@@ -189,7 +189,7 @@ class TestNarrowToScope:
         """The dangerous failure is a scope that silently means "all".
 
         The endpoint rejects an unknown id before this runs, so reaching here means
-        the estate changed underneath the request -- and refreshing nothing is the
+        the estate changed underneath the request — and refreshing nothing is the
         safe reading, because refreshing everything would touch timestamps the caller
         never asked about.
         """
@@ -220,7 +220,7 @@ class TestTerminalStatus:
         assert _terminal_status(outcome) is ProbeRunStatus.SUCCESS
 
     def test_a_dispatch_that_answered_nothing_is_partial(self) -> None:
-        """One silent host among several is partial, not total failure."""
+        """Report one silent host among several as partial, not total, failure."""
         outcome = SweepOutcome(
             dispatched={"a", "b"}, host_documents={"a": {"os": "Ubuntu 24.04"}}
         )
@@ -245,11 +245,11 @@ class TestTerminalStatus:
         assert _terminal_status(outcome) is ProbeRunStatus.SUCCESS
 
     def test_every_dispatch_failing_is_a_failure_not_a_partial(self) -> None:
-        """Nothing answered is nothing reached, however much was tried.
+        """Report nothing reached when nothing answered, however much was tried.
 
         ``FAILED`` used to be reserved for having attempted nothing at all, so a run
         that dispatched to the whole estate and got nothing back reported ``PARTIAL``
-        -- the status that says "some of this is fine" -- for a total outage. That is
+        — the status that says "some of this is fine" — for a total outage. That is
         the one condition where the loud answer is the point, and it was unreachable
         in the case that needs it: an operator and anything automating against it both
         read `PARTIAL` as a working estate with gaps.
@@ -259,7 +259,7 @@ class TestTerminalStatus:
         assert _terminal_status(outcome) is ProbeRunStatus.FAILED
 
     def test_no_service_answering_on_a_host_that_did_is_still_partial(self) -> None:
-        """Something answered, so the sweep reached the estate: that is partial.
+        """Report partial when something answered, so the sweep reached the estate.
 
         The distinction the previous test rests on is *answered*, not *healthy*. A
         host that reported while every mongod on it refused is a real finding about
@@ -295,7 +295,7 @@ class TestTriggerScope:
     async def test_a_scope_is_recorded_on_the_run(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """Stored rather than inferred: the receipt cannot be read without it.
+        """Store the scope rather than inferring it: the receipt needs it to be read.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -312,7 +312,7 @@ class TestTriggerScope:
         """A full sweep has to store SQL NULL, or `scope IS NULL` finds no full sweeps.
 
         SQLAlchemy's JSON types store a Python ``None`` as the JSON scalar ``null``
-        unless told otherwise, and the Python side reads back ``None`` either way --
+        unless told otherwise, and the Python side reads back ``None`` either way —
         so nothing complains until someone asks the database which runs were full
         sweeps and gets an empty answer. Measured happening before ``none_as_null``
         was set, which is why this asserts against SQL rather than the response.
@@ -331,7 +331,7 @@ class TestTriggerScope:
     async def test_an_unknown_host_is_404_not_an_empty_refresh(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """SEP's inventory copy can lag PMM's, so this is a real case.
+        """Handle SEP's inventory copy lagging PMM's, which is a real case.
 
         Answering 404 by name beats running a refresh that quietly does nothing and
         reports success.
@@ -397,7 +397,7 @@ class TestConflict:
     async def test_a_scoped_refresh_conflicts_with_a_full_one(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """And the same in reverse, which is the easy half to forget.
+        """Check the same in reverse, which is the easy half to forget.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -623,7 +623,7 @@ class TestTheScheduleRespectsSingleFlight:
     async def test_the_message_names_the_hosts_that_are_held(
         self, session: AsyncSession
     ) -> None:
-        """Naming the held hosts beats "a sweep is already running".
+        """Name the held hosts rather than saying "a sweep is already running".
 
         :param session: The database session.
         """
@@ -639,8 +639,8 @@ class TestTwoRunsRacingForTheSameHosts:
     """Assert a race for the same hosts leaves exactly one sweep standing.
 
     Single-flight is check-then-insert: creating the row and claiming the work are two
-    statements, so two overlapping ``POST /runs`` -- or beat entering ``run_probe``
-    beside one -- can both pass the check and both insert ``RUNNING``. Each worker then
+    statements, so two overlapping ``POST /runs`` — or beat entering ``run_probe``
+    beside one — can both pass the check and both insert ``RUNNING``. Each worker then
     re-checks excluding only itself, finds the other, and *both* skip. The estate does
     not refresh at all, and both callers are already holding a ``202`` and a run id
     that will never sweep.
@@ -767,8 +767,8 @@ class TestPruningKeepsWhatIsStillRunning:
     """Assert retention cannot delete a row out from under its own worker.
 
     Retention is by ``started_at`` and a long sweep is by definition the oldest row
-    while it runs, so a burst of newer rows -- scoped refreshes, or the ``SKIPPED``
-    rows a schedule collision leaves behind -- could push it past the limit. The
+    while it runs, so a burst of newer rows — scoped refreshes, or the ``SKIPPED``
+    rows a schedule collision leaves behind — could push it past the limit. The
     worker then finalises a run that no longer exists and raises, losing the receipt
     for work that was actually done.
     """
@@ -796,7 +796,7 @@ class TestPruningKeepsWhatIsStillRunning:
 
     @pytest.mark.asyncio
     async def test_finished_runs_are_still_pruned(self, session: AsyncSession) -> None:
-        """Retention still has to work: the table grows by a fact set per sweep.
+        """Prune on schedule: the table grows by a fact set per sweep.
 
         :param session: The database session.
         """

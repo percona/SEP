@@ -15,7 +15,7 @@
 
 """List the hosts in scope, from the two sources that already know about them.
 
-Enumerating from *services* -- which is what the app did before this module -- can
+Enumerating from *services* — which is what the app did before this module — can
 only ever produce hosts that run a database, and the case worth catching is the one
 where none does. So hosts come from SEP's inventory nodes, filled by ``PMMSyncer``
 independently of services, crossed with the Nomad executor list.
@@ -31,12 +31,12 @@ No MongoDB service   **nothing installed yet**  monitored only
 
 The bottom-left cell is the valuable one, not something to filter out: a reachable
 host with no database is where a database can be installed. What *is* filtered out is
-the bottom-right -- a node with neither a MongoDB service nor an executor is some
+the bottom-right — a node with neither a MongoDB service nor an executor is some
 other machine PMM happens to monitor, and PMM's own server node is one of them.
 
 Matching a node to its executor host reuses the order
-:mod:`~app.sep.apps.om_inventory.mapping` uses per service -- name first, then
-address -- at the host level, where it belongs: every service on a host resolves to
+:mod:`~app.sep.apps.om_inventory.mapping` uses per service — name first, then
+address — at the host level, where it belongs: every service on a host resolves to
 the same executor, so asking once per host is both cheaper and impossible to answer
 inconsistently.
 """
@@ -162,7 +162,7 @@ def build_hosts(
     services: list[InventoryService],
     executor_states: dict[str, ExecutorState],
 ) -> list[InventoryHost]:
-    """Cross the sources into the hosts OM keeps rows for.
+    """Combine the sources into the hosts OM keeps rows for.
 
     A node with no ``external_id`` is skipped: PMM's node id is the key, and a row
     that cannot be keyed cannot be joined, triggered or updated. It is logged rather

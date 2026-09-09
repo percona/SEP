@@ -195,7 +195,7 @@ def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> N
 
     An app's tables declare a token under ``sep_settings.DATABASE.
     SCHEMA_TRANSLATE_MAP`` (OM's is ``om_schema``, ``app/sep/apps/shared/om/
-    config.py``) and the application engine translates it -- to a real schema on
+    config.py``) and the application engine translates it — to a real schema on
     PostgreSQL, to the default schema on SQLite, where SEP and inventory are
     separate database files and cannot collide. This suite is the one place they
     *can*: it creates every service's metadata in a single in-memory database,
@@ -205,7 +205,7 @@ def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> N
     has ``ATTACH``, and an attached in-memory database *is* a schema as far as SQL is
     concerned. Attaching one under each declared token's own name means the
     untranslated ``<token>.service`` resolves, and no fixture needs a
-    ``schema_translate_map`` -- which matters because the suite builds engines in
+    ``schema_translate_map`` — which matters because the suite builds engines in
     some thirty places, and each one that forgot would fail with "unknown database
     <token>".
 
@@ -213,7 +213,7 @@ def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> N
     It fires when the DBAPI connection is opened, before any statement, so
     ``create_all`` already sees the schema. Every SQLite engine here is in-memory and
     single-connection, so the attached database lives exactly as long as the main
-    one. Non-SQLite binds are left alone -- they have real schemas, and the
+    one. Non-SQLite binds are left alone — they have real schemas, and the
     PostgreSQL and MySQL fixtures below route each token into their per-worker one.
 
     :param dbapi_connection: The freshly opened DBAPI connection.

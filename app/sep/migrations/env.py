@@ -65,8 +65,8 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
 
-    Note for OM: Alembic applies no ``schema_translate_map`` offline -- there is no
-    connection to carry one -- so a generated script names ``om_schema`` literally
+    Note for OM: Alembic applies no ``schema_translate_map`` offline — there is no
+    connection to carry one — so a generated script names ``om_schema`` literally
     and has to be edited before it is run. Online mode is what ``make migrate`` uses.
 
     """

@@ -105,7 +105,7 @@ class TestWhyThisEndpointExists:
     def test_the_sep_token_principal_is_not_an_admin(self) -> None:
         """``--sep-token`` cannot reach ``/api/sep/admin/settings``.
 
-        Not a statement about the current deployment's configuration -- the service
+        Not a statement about the current deployment's configuration — the service
         principal is constructed in code with no ``is_admin`` argument, so this holds
         in every deployment. If it ever stops holding, the argument for an app-owned
         ``/config`` weakens and this test is where that gets noticed.
@@ -120,7 +120,7 @@ class TestTheAppIsActuallyWiredIn:
     rows straight from the database, and ``PATCH`` republishes the proxy snapshot
     inline, so a request appears to work end to end. What breaks is the *next
     process*: without the collection below the refresher never republishes, and an
-    override silently reverts to YAML on restart. Measured happening in the sandbox --
+    override silently reverts to YAML on restart. Measured happening in the sandbox —
     a 25-minute sweep that went back to 10 after ``./om restart sep-backend``.
     """
 
@@ -144,7 +144,7 @@ class TestTheAppIsActuallyWiredIn:
         The proxy holding a new interval is not the same thing as beat running on it:
         beat reads ``celery_periodictask``, which only changes when
         ``_reseed_system_periodic_tasks`` runs. Without this entry a schedule change
-        is visible over the API and has no effect on when the sweep actually fires --
+        is visible over the API and has no effect on when the sweep actually fires —
         the worst shape a configuration bug can take.
         """
         original = getattr(sep_app.state, "override_callbacks", None)
@@ -167,7 +167,7 @@ class TestGetConfig:
     async def test_lists_every_field_not_only_overridden_ones(
         self, api: AsyncClient
     ) -> None:
-        """Every field is listed, so "why is it sweeping every 10 minutes" is answerable.
+        """List every field, so "why is it sweeping every 10 minutes" is answerable.
 
         :param api: The authenticated client.
         """
@@ -185,7 +185,7 @@ class TestGetConfig:
         """``SCHEDULE`` arrives split into ``SCHEDULE__every`` / ``SCHEDULE__period``.
 
         The LIST projection expands any nested-model field into its leaves, so a
-        caller reading ``/config`` never sees a key literally named ``SCHEDULE`` --
+        caller reading ``/config`` never sees a key literally named ``SCHEDULE`` —
         the same shape the ``alerts`` app's ``BACKUP_INTERVAL`` produces. Asserted
         because ``PATCH`` accepts *both* spellings (see below) and a reader who
         assumes GET and PATCH share one key set will build a form against a key that
@@ -207,7 +207,7 @@ class TestGetConfig:
         """``CREDENTIALS_PATH`` reads as ``None`` here no matter what is deployed.
 
         This route carries no ``@require_minimum_role``, so its only gate is
-        ``IsApiAuthenticated`` -- any signed-in SEP user, not only admins. The same
+        ``IsApiAuthenticated`` — any signed-in SEP user, not only admins. The same
         settings class is also served at ``/api/sep/admin/settings``, gated
         ``IsApiAdmin``, so a value that is admin-only there must not be
         viewer-readable here. Setting the field directly on the wrapped instance
@@ -227,7 +227,7 @@ class TestGetConfig:
 
 
 class TestPatchConfig:
-    """Change the app's configuration at runtime."""
+    """Update the app's configuration at runtime."""
 
     @pytest.mark.asyncio
     async def test_a_schedule_change_takes_effect_on_the_proxy(
@@ -275,7 +275,7 @@ class TestPatchConfig:
         """``SCHEDULE: null`` is a legitimate value, not a missing one.
 
         It is how an operator says "trigger only", and a nullable union is exactly the
-        shape a coercion layer is most likely to mishandle -- so it is asserted rather
+        shape a coercion layer is most likely to mishandle — so it is asserted rather
         than assumed to fall out of the type.
 
         :param api: The authenticated client.
@@ -344,7 +344,7 @@ class TestPatchConfig:
 
     @pytest.mark.asyncio
     async def test_one_bad_key_rejects_the_whole_batch(self, api: AsyncClient) -> None:
-        """Nothing is written when any key fails, so no partial apply is reachable.
+        """Write nothing when any key fails, so no partial apply is reachable.
 
         :param api: The authenticated client.
         """

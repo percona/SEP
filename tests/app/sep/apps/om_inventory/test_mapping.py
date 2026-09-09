@@ -70,7 +70,7 @@ class TestMapService:
         assert mapped.is_resolved
 
     def test_name_wins_over_address(self) -> None:
-        """The name match is tried first, even when another host has the address."""
+        """Match on the name first, even when another host has the address."""
         mapped = map_service(
             make_service(node_name="host-a", node_address="10.0.0.1"),
             {"host-a": "10.0.0.9", "host-b": "10.0.0.1"},
@@ -128,7 +128,7 @@ class TestMapServices:
     """Cover mapping a whole inventory listing."""
 
     def test_preserves_order_and_splits_resolved_from_orphaned(self) -> None:
-        """Every service gets exactly one entry, in inventory order."""
+        """Give every service exactly one entry, in inventory order."""
         services = [
             make_service(name="a", node_name="host-a"),
             make_service(name="b", node_name="gone", node_address="10.9.9.9"),
@@ -148,8 +148,8 @@ class TestMapServices:
     def test_orphaned_services_are_still_reported(self) -> None:
         """A wholly stale inventory yields rows, not an empty result.
 
-        An inventory listing routinely outlives the executors that served it -- in
-        the workspace sandbox this was 16 of 25 services -- so orphaned entries must
+        An inventory listing routinely outlives the executors that served it — in
+        the workspace sandbox this was 16 of 25 services — so orphaned entries must
         survive into the output rather than being filtered away.
         """
         # Distinct addresses per service: sharing the live host's address would

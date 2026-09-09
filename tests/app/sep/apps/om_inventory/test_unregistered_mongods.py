@@ -17,7 +17,7 @@
 
 Arbiters are why this is ordinary rather than exotic. An arbiter holds no data and
 therefore no user documents, so SCRAM cannot authenticate and ``pmm-admin add
-mongodb`` fails for it -- meaning **any** estate with arbiters and authentication
+mongodb`` fails for it — meaning **any** estate with arbiters and authentication
 enabled has databases PMM does not know about. Three of this sandbox's nodes are in
 exactly that state.
 
@@ -59,7 +59,7 @@ class TestParseConfigPath:
         ids=["--config", "-f", "--config="],
     )
     def test_reads_the_path(self, argv: str) -> None:
-        """All three spellings appear in the wild.
+        """Parse all three spellings, which appear in the wild.
 
         :param argv: The command line to read.
         """
@@ -114,7 +114,7 @@ class TestParsePort:
         assert parse_port("/usr/bin/mongod --config x", str(config)) == SHARD_PORT
 
     def test_ignores_a_trailing_comment(self, tmp_path) -> None:
-        """Config files are hand-edited, and hand-edited files carry comments.
+        """Strip comments, which hand-edited config files carry.
 
         :param tmp_path: pytest's temporary directory.
         """
@@ -168,7 +168,7 @@ class TestFindUnregistered:
         assert [entry["port"] for entry in found] == [SHARD_PORT]
 
     def test_a_second_mongod_beside_a_registered_one_is_reported(self) -> None:
-        """One host, two databases, one of them known. Report the other."""
+        """Report the unknown database on a host carrying one known and one not."""
         found = find_unregistered(
             [process(DEFAULT_PORT), process(SHARD_PORT)],
             [{"service": "db00", "port": DEFAULT_PORT}],
@@ -180,7 +180,7 @@ class TestFindUnregistered:
         """An unidentifiable database is still a database.
 
         It cannot be matched to a target, and discarding it silently is exactly the
-        dishonesty this list exists to prevent -- better a visible entry with a null
+        dishonesty this list exists to prevent — better a visible entry with a null
         port than a host that reads as empty.
         """
         found = find_unregistered(
@@ -216,7 +216,7 @@ class TestMatchedPidsExcludeADoubleListing:
     Both halves have to run together for this to mean anything: an isolated call to
     :func:`find_unregistered` cannot see what a target matched, and an isolated call
     to :func:`match_process` says nothing about what :func:`find_unregistered` would
-    otherwise report. The bug this pins was a real one -- a mongod on the default port
+    otherwise report. The bug this pins was a real one — a mongod on the default port
     with no explicit ``port:`` in its config attributed to its target by
     :func:`match_process`'s single-process shortcut, *and* picked up by
     :func:`find_unregistered`'s ``port is None`` arm, because the same missing port
@@ -241,7 +241,7 @@ class TestMatchedPidsExcludeADoubleListing:
     def test_a_genuine_stranger_beside_a_matched_process_is_still_reported(
         self,
     ) -> None:
-        """Excluding a matched pid must not swallow an actual stranger beside it."""
+        """Exclude a matched pid without swallowing an actual stranger beside it."""
         matched_process = process(DEFAULT_PORT, pid=1)
         stranger = process(SHARD_PORT, pid=2)
         processes = [matched_process, stranger]
