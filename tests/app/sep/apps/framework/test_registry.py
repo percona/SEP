@@ -48,7 +48,6 @@ from app.sep.apps.framework.registry import (
     get_app_registry,
     resolve_app_settings_metadata,
 )
-from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.mysql_backups.inventory_references import (
     referenced_inventory_entities,
 )
@@ -551,16 +550,12 @@ class TestBespokeBaseAppDefinitions:
         app = get_app_registry().get(plugin)
         assert app.api_router is api_routes.router
 
-    def test_inventory_definition_carries_schema(self) -> None:
-        """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
-        assert get_app_registry().get("inventory").app_schema is inventory_schema
-
     def test_tasks_definition_carries_schema(self) -> None:
         """Carry ``TASKS_PLUGIN_SCHEMA`` on the tasks definition's ``app_schema``."""
         assert get_app_registry().get("tasks").app_schema is TASKS_PLUGIN_SCHEMA
 
     @pytest.mark.parametrize(
-        "plugin", ["alert_troubleshooting", "alerts", "dipper", "report"]
+        "plugin", ["alert_troubleshooting", "alerts", "dipper", "inventory", "report"]
     )
     def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
         """Register the schemaless bespoke definitions without an ``app_schema``."""

@@ -102,17 +102,19 @@ class TestApiRouterComposition:
         assert all("checksums" in tags for tags in checksums_route_tags)
 
     def test_apps_router_included_via_api_router(self) -> None:
-        """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
+        """Assert schema-carrying plugins mount their schema route on ``sep_app``.
 
-        Both plugins mount under ``/api/apps/{name}/schema`` on the composed
-        application router.
+        Each such plugin mounts under ``/api/apps/{name}/schema`` on the composed
+        application router. Inventory declares no ``AppSchema``, so it is asserted
+        absent: it is the case that distinguishes a mounted router from a mounted
+        schema.
         """
         api_plugin_paths = {
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
         assert "/api/apps/atw/schema" in api_plugin_paths
         assert "/api/apps/checksums/schema" in api_plugin_paths
-        assert "/api/apps/inventory/schema" in api_plugin_paths
+        assert "/api/apps/inventory/schema" not in api_plugin_paths
 
     def test_legacy_plugins_prefix_removed_from_route_table(self) -> None:
         """Assert no composed route remains under the retired ``/api/plugins`` prefix."""

@@ -39,8 +39,9 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import LOGGING_CONFIG
 from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
+from tests.app.alembic_paths import ALEMBIC_INI
 
-from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION
+from .conftest import ALERTS_HEAD, UNKNOWN_REVISION
 
 # The add_setting_override_table revision on the SEP track, before SETTINGS /
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.

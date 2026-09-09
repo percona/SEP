@@ -29,6 +29,7 @@ from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.form_backfill import (
     _extract_upload_from_meta,
     FORM_BACKFILL_ENTRIES,
+    LegacyBackupCreate,
     reconstruct_mysql_backups_form,
     repair_mysql_backups_stamp,
 )
@@ -179,7 +180,7 @@ def test_reconstruct_mysql_backups_form_happy_path():
     assert "host" not in body
     assert "port" not in body
     assert "name" not in body
-    BackupCreate.model_validate(body)
+    LegacyBackupCreate.model_validate(body)
 
 
 def test_reconstruct_mysql_backups_form_binlog_alternative_host():
@@ -211,7 +212,7 @@ def test_reconstruct_mysql_backups_form_binlog_alternative_host():
     assert body["binlog_prefix"] == "binlog"
     assert body["gs_bucket"] == "gs-bucket"
     assert body["upload"] == ["gsutil"]
-    BackupCreate.model_validate(body)
+    LegacyBackupCreate.model_validate(body)
 
 
 def test_reconstruct_mysql_backups_form_mydumper_happy_path():
@@ -243,7 +244,7 @@ def test_reconstruct_mysql_backups_form_mydumper_happy_path():
     assert body["mydumper_extra_args"] == "--foo"
     assert body["gs_bucket"] == "gs-bucket"
     assert body["upload"] == ["gsutil"]
-    BackupCreate.model_validate(body)
+    LegacyBackupCreate.model_validate(body)
 
 
 def test_reconstruct_mysql_backups_form_returns_none_when_not_run_python():
@@ -304,6 +305,62 @@ def test_backfill_single_task_stamps_mysql_backups_form():
     assert stamped_form["backup_type"] == BackupType.XTRABACKUP.value
     assert stamped_form["upload"] == ["rsync"]
     assert stamped_form["rsync_path"] == "/remote/backups"
+    assert stamped_form["backup_dir"] is None
+
+
+def test_reconstruction_accepts_a_body_the_create_model_refuses():
+    """Pin the split between the strict create model and the lenient backfill one.
+
+    A config written before the create form required a backup directory carries no
+    ``BACKUP_DIR``, so the reconstructed body omits ``backup_dir``. Validating that
+    against the create model would skip the task, and a task with no stamp has no
+    Edit affordance at all — leaving an operator able to delete it but not repair
+    it. Both halves belong in one test because the claim is the difference between
+    the two models: either half alone still passes once the split is broken.
+    """
+    body = {
+        "task_name": "backups-legacy",
+        "hostname": "executor-host",
+        "service_id": 1,
+        "backup_type": BackupType.XTRABACKUP.value,
+        "upload": ["rsync"],
+        "rsync_path": "/data/rsync",
+    }
+
+    assert LegacyBackupCreate.model_validate(body).backup_dir is None
+
+    with pytest.raises(ValidationError) as excinfo:
+        BackupCreate.model_validate(body)
+    assert [error["loc"] for error in excinfo.value.errors()] == [("backup_dir",)]
+
+
+def test_reconstruction_accepts_a_blank_stored_backup_directory():
+    """Accept a stored whitespace-only directory the create form used to write.
+
+    ``NonEmptyStr`` admitted a whitespace-only ``BACKUP_DIR`` before the create
+    form was tightened, and the payload joined it as a *relative* path, so those
+    tasks ran and reported success — which makes them exactly the population an
+    operator needs to reopen and repair. Stripping the value here instead would
+    fail ``min_length`` and skip the task, the outcome the lenient model exists to
+    prevent, so the leniency has to cover blankness and not only absence.
+    """
+    lookup = _lookup(
+        _service(1, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_mysql_backup_task(
+        upload=["S3"],
+        all_servers={"S3_BUCKET": "my-bucket", "BACKUP_DIR": "   "},
+    )
+
+    body = reconstruct_mysql_backups_form(task, _ctx(lookup))
+
+    assert body is not None
+    assert body["backup_dir"] == "   "
+    assert LegacyBackupCreate.model_validate(body).backup_dir == "   "
+
+    with pytest.raises(ValidationError) as excinfo:
+        BackupCreate.model_validate(body)
+    assert [error["loc"] for error in excinfo.value.errors()] == [("backup_dir",)]
 
 
 class TestUploadBackfillDropsNothingSilently:
@@ -367,7 +424,7 @@ class TestUploadBackfillDropsNothingSilently:
         """
         extracted = _extract_upload_from_meta(self._meta(["rsync", "azure"]))
         with pytest.raises(ValidationError) as excinfo:
-            BackupCreate.model_validate(
+            LegacyBackupCreate.model_validate(
                 {
                     "task_name": "backups-legacy",
                     "hostname": "executor-host",

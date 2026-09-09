@@ -104,7 +104,6 @@ app:inventory:
       - 'app/sep/apps/inventory/**'
       - 'frontend/packages/apps/inventory/**'
       - 'tests/app/sep/apps/inventory/**'
-      - 'frontend/packages/e2e/tests/inventory*.spec.ts'
 app:mysql_backups:
 - any:
   - changed-files:

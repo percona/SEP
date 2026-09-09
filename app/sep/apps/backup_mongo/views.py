@@ -25,6 +25,7 @@ applied in :mod:`app.sep.apps.backup_mongo.schema` from
 derived ``GET /schema``.
 """
 
+from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
     FormLayout,
@@ -37,7 +38,7 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
+from app.sep.apps.shared.backups.columns import backup_type_column
 
 backup_mongo_views = Views(
     layout=FormLayout(
@@ -66,7 +67,7 @@ backup_mongo_views = Views(
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            BACKUP_TYPE_COLUMN,
+            backup_type_column(BackupType.LABELS),
         ),
         default_sort="name",
     ),

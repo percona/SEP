@@ -15,33 +15,11 @@
 
 """Tests for the Tasks-track run_result_recorder column migration."""
 
-from pathlib import Path
-
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
-
-from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 _WITH_COLUMN_REVISION = "27a11549ef43"
 _PRE_COLUMN_REVISION = "13e897d11734"
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def _task_columns(sync_url: str) -> set[str]:

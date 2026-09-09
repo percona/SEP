@@ -81,12 +81,27 @@ def build_restore_spec(form: RestoreCreate, resolved: RestoreResolved) -> TaskWr
     the ``file://`` payload directory and pip requirements by ``backup_type``, and
     stamp ``_service_name`` when a service resolved.
 
+    The global config is built from the form's non-``None`` values rather than
+    through ``extract_model_from_instance``, which copies an explicit ``None``
+    across and leaves :class:`RestoreConfigAll`'s own default unapplied. The
+    gated transport fields default to ``None`` on the form, so omitting them here
+    is what lets ``percona`` / ``22`` / ``s3cmd`` reach the emitted YAML exactly
+    as they did when the form carried them itself.
+
     :param form: The validated create form.
     :param resolved: The inventory facts resolved for this restore.
     :return: The restore ``TaskWrite`` consumed by the Tasks API.
-    :raises ValueError: When ``form.backup_type`` is outside the known backup types.
+    :raises ValueError: When ``form.backup_type`` is outside the known backup
+        types, or, as ``pydantic.ValidationError``, when the form's values do not
+        satisfy :class:`RestoreConfigAll`.
     """
-    all_config = extract_model_from_instance(form, RestoreConfigAll)
+    all_config = RestoreConfigAll.model_validate(
+        {
+            key: value
+            for key, value in form.model_dump(exclude_none=True).items()
+            if key in RestoreConfigAll.model_fields
+        }
+    )
     base_config = extract_model_from_instance(form, BaseRestoreConfigServer)
 
     server_config = {**base_config.model_dump(), "alias": form.task_name}

@@ -79,6 +79,8 @@ from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs
 SNIPPETS_PLUGIN_SCHEMA = AppSchema(
     name="snippets",
     display_name="Snippet Manager",
+    item_display_name="script",
+    item_display_name_plural="scripts",
     description=(
         "Discover and execute pre-approved support snippets against "
         "registered executor hosts."
@@ -331,6 +333,10 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
     section rendered after submit. Parameters marked ``hidden`` are excluded
     from the parameter sections.
 
+    ``display_name`` is the snippet's own title, but the record this form
+    creates is a *run* of that snippet rather than the snippet itself, so the
+    record names are fixed here instead of derived from the title.
+
     :param snippet: The snippet whose schema to synthesise.
     :return: The fully-validated plugin schema for this single snippet.
     """
@@ -416,6 +422,8 @@ def build_snippet_schema(snippet: BaseSnippet) -> AppSchema:
     return AppSchema(
         name="snippets",
         display_name=snippet.title,
+        item_display_name="run",
+        item_display_name_plural="runs",
         description=snippet.description or None,
         forms=forms,
         list_view=SNIPPETS_PLUGIN_SCHEMA.list_view,

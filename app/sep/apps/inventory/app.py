@@ -16,9 +16,9 @@
 """Wire the Inventory plugin as a declarative ``BaseApp``.
 
 Register the bespoke inventory plugin through the registry's definition path
-instead of the synthesized-legacy fallback, carrying its existing
-``inventory_schema`` so the conformance suite reads the schema from the
-definition rather than the live ``GET /schema`` endpoint.
+instead of the synthesized-legacy fallback. The app ships no browser surface:
+it declares no ``AppSchema`` and stays out of the sidebar, exposing only the
+operator API under ``/api/apps/inventory/``.
 """
 
 import json
@@ -26,7 +26,6 @@ import json
 from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.inventory.api_routes import router as api_router
 from app.sep.apps.inventory.config import inventory_app_settings
-from app.sep.apps.inventory.schema import inventory_schema
 from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 
 COLLECTION_SCHEDULE_NAME = "sep__inventory_collection"
@@ -66,6 +65,6 @@ app = BaseApp(
     uri_path="/inventory",
     css_class="inventory",
     api_router=api_router,
-    schema=inventory_schema,
+    sidebar=False,
     periodic_task_schedules=[_collection_task()],
 )

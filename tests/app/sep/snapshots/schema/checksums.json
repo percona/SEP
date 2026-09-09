@@ -236,6 +236,8 @@
       "title": "Advanced"
     }
   ],
+  "item_display_name": "checksum",
+  "item_display_name_plural": "checksums",
   "list_view": {
     "columns": [
       {
@@ -269,5 +271,39 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "checksums"
+  "name": "checksums",
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

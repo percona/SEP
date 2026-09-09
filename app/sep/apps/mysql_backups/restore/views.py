@@ -19,9 +19,12 @@ Section membership and order are declared on
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` (via
 ``Ui(section=...)`` and field-declaration order); what lives here is the part the
 model cannot express: the section titles, the per-``backup_type`` visibility
-gates, and the list columns. The gates are declared here (not as field-level
-``Forbidden`` markers) so the permissive create model keeps accepting the
-mode-specific fields' non-``None`` defaults on a cross-mode restore.
+gates, and the list columns. The per-``backup_type`` gates are declared here (not
+as field-level ``Forbidden`` markers) so the permissive create model keeps
+accepting the mode-specific fields' non-``None`` defaults on a cross-mode
+restore. The transport and decryption fields are gated on the model instead,
+which is why ``ssh_user``, ``ssh_port`` and ``s3_tool`` gave up theirs; see
+:class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate`.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -41,7 +44,8 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
+from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.shared.backups.columns import backup_type_column
 
 restore_views = Views(
     layout=FormLayout(
@@ -57,25 +61,28 @@ restore_views = Views(
                 key="Mydumper",
                 title="Mydumper",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "M"),),
             ),
             SectionLayout(
                 key="XtraBackup",
                 title="XtraBackup",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "X"),),
             ),
             SectionLayout(
                 key="Binlog",
                 title="Binlog",
                 collapsible=True,
+                collapsed_by_default=True,
                 forbidden=(FieldGate(when=F("backup_type") != "B"),),
             ),
         )
     ),
     list_view=ListView(
         columns=default_columns(
-            BACKUP_TYPE_COLUMN,
+            backup_type_column(BackupType.LABELS),
             EXECUTOR_HOST_COLUMN,
         ),
     ),

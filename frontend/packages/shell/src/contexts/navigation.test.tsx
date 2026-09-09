@@ -80,12 +80,12 @@ afterEach(() => {
 describe('NavigationProvider', () => {
   it('drops disabled-app items and keeps non-app items', () => {
     // Snippets disabled, Tasks enabled; everything else absent → filtered out
-    // except the always-on non-app items (Dashboard, Inventory).
+    // except the always-on non-app Dashboard item.
     useEnabledApps.mockReturnValue({ data: [app('tasks', true), app('snippets', false)] });
     const titles = renderProvider();
 
     expect(titles).toContain('Dashboard');
-    expect(titles).toContain('Inventory');
+    expect(titles).not.toContain('Inventory');
     expect(titles).toContain('Tasks');
     expect(titles).not.toContain('Snippets');
   });
@@ -95,7 +95,7 @@ describe('NavigationProvider', () => {
     const titles = renderProvider();
 
     expect(titles).toContain('Dashboard');
-    expect(titles).toContain('Inventory');
+    expect(titles).not.toContain('Inventory');
     expect(titles).not.toContain('Snippets');
     expect(titles).not.toContain('Tasks');
   });

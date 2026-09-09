@@ -160,6 +160,7 @@ class TestXtrabackupIncrementalCycleField:
             "hostname": "host-1",
             "service_id": 1,
             "backup_type": BackupType.XTRABACKUP.value,
+            "backup_dir": "/backups",
             "upload": ["RSYNC"],
             "rsync_path": "/data/rsync",
             **overrides,

@@ -29,7 +29,6 @@ only, so no sync driver is available to lean on.
 import asyncio
 import os
 from functools import partial
-from pathlib import Path
 
 import pytest
 from alembic import command
@@ -41,9 +40,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
 

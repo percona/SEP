@@ -76,7 +76,6 @@ describe('buildNavigationItems', () => {
     const items = buildNavigationItems([...FULL_APP_SET].reverse());
     expect(items.map((item) => item.title)).toEqual([
       'Dashboard',
-      'Inventory',
       'tasks',
       'snippets',
       'Diagnostics',
@@ -180,20 +179,19 @@ describe('buildNavigationItems', () => {
 
   it('renders only the static entries when apps are undefined', () => {
     const items = buildNavigationItems(undefined);
-    expect(items.map((item) => item.title)).toEqual(['Dashboard', 'Inventory']);
+    expect(items.map((item) => item.title)).toEqual(['Dashboard']);
   });
 
-  it('always keeps Dashboard and Inventory static entries', () => {
+  it('always keeps the Dashboard static entry', () => {
     const items = buildNavigationItems([]);
-    expect(items.map((item) => item.title)).toEqual(['Dashboard', 'Inventory']);
+    expect(items.map((item) => item.title)).toEqual(['Dashboard']);
   });
 
-  it('does not double-render the statically-handled inventory app', () => {
+  it('gives the inventory app no entry even when the backend advertises one', () => {
     const items = buildNavigationItems([
       mockApp({ app_key: 'inventory', display_name: 'Inventory', nav_order: 1 }),
     ]);
-    expect(items.filter((item) => item.title === 'Inventory')).toHaveLength(1);
-    expect(items.find((item) => item.title === 'Inventory')?.appKey).toBeUndefined();
+    expect(items.map((item) => item.title)).toEqual(['Dashboard']);
   });
 
   it('derives a schema app leaf `to` from the payload react_route', () => {

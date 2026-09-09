@@ -174,11 +174,6 @@ interface SidebarTarget {
 const heading = (name: string) => (page: Page) => page.getByRole('heading', { name }).first();
 
 const TARGETS: SidebarTarget[] = [
-  {
-    label: 'Inventory',
-    urlPattern: /\/inventory(\/|$)/,
-    sentinel: heading(GENERIC_APP_HEADING),
-  },
   { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_APP_HEADING) },
   {
     label: 'Snippet Manager',
@@ -273,9 +268,9 @@ test.describe('sidebar navigation wiring', () => {
 
   test('sidebar → Dashboard returns home', async ({ page }) => {
     // Leave the dashboard first so the click is a real navigation.
-    await page.getByRole('button', { name: 'Inventory' }).click();
-    await expect(page).toHaveURL(/\/inventory(\/|$)/, { timeout: LAZY_TIMEOUT });
-    // Wait for the lazy Inventory page to actually mount before navigating away.
+    await page.getByRole('button', { name: 'Task Manager' }).click();
+    await expect(page).toHaveURL(/\/tasks(\/|$)/, { timeout: LAZY_TIMEOUT });
+    // Wait for the lazy Task Manager page to actually mount before navigating away.
     // The URL flips synchronously on click while the chunk is still resolving, so
     // without this sentinel the Dashboard click can be swallowed mid-load.
     await expect(heading(GENERIC_APP_HEADING)(page)).toBeVisible({ timeout: LAZY_TIMEOUT });

@@ -64,7 +64,6 @@ dependencies = [
     "aiofiles (>=24.1.0,<25.0.0)",
     "typing-extensions (>=4.15.0,<5.0.0)",
     "python-multipart (>=0.0.31,<0.0.32)",
-    "croniter (>=6.0.0,<7.0.0)",
     "weasyprint (>=69.0,<70.0)",
     "cryptography (>=50.0.0,<51.0.0)",
 ]
@@ -169,7 +168,7 @@ exclude_dirs = [
 python-version = "3.11"
 [tool.ty.src]
 # The checked surface is defined here rather than by a path argument, so that this
-# list and `make typecheck` cannot drift apart: the target runs a bare `ty check`.
+# list and `make typecheck` cannot drift apart: the target passes no path arguments.
 # See docs/development/ty-policy.md.
 include = [
     "app",
@@ -511,6 +510,7 @@ runtime-evaluated-base-classes = [
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
 "tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/sep/apps/mysql_backups/description_coverage.py" = ["S"] # shared pytest assertion helper uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists

@@ -271,6 +271,36 @@ default:
     #       reference_pointer: /number
     #       title_pointer: /short_description
     #
+    # Optional connection-details read. Declares the one request the admin
+    # "delivery connection" panel issues to read the facts describing the
+    # configured connection - an account, a company, a credential expiry;
+    # without it that panel answers `undeclared` and the receiver is never
+    # contacted. Like the probe it is declared rather than derived, under the
+    # same constraints:
+    #   - the method is always GET, and there is no body;
+    #   - values may only be {source: literal} or {source: secret} - `input`,
+    #     `output`, `manifest_key` and `term` are refused when the plan is
+    #     parsed.
+    # `path` must be relative to `endpoint`, as everywhere else, and secrets are
+    # rejected in `query`.
+    # `details` maps a display label to a JSON Pointer applied to the response
+    # root. The declaration order is the order the pairs are reported in. A
+    # label may not be empty. A pointer that misses, or lands on a container,
+    # omits its own pair rather than failing the read. What the pointers
+    # address is the deployment's choice: this narrows what the *request* may
+    # carry, never what the response may be asked for, so a pointer naming a
+    # credential field the receiver returns is answered like any other.
+    #   DIAGNOSTICS_DELIVERY:
+    #     connection_details:
+    #       path: api/now/table/sys_user
+    #       query:
+    #         sysparm_limit: {source: literal, value: "1"}
+    #       headers:
+    #         x-sn-apikey: {source: secret, name: api_key}
+    #       details:
+    #         Account: /result/0/user_name
+    #         Company: /result/0/company
+    #
     # Per-deployment inputs for the plan above - unset by default. Supplies the
     # values the skeleton leaves open, so an image can bake a plan whose secret
     # names are declared but empty and an operator fill them in later. Unlike the

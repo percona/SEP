@@ -81,7 +81,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
 TESTS_DIR = _REPO_ROOT / "tests" / "app" / "sep" / "apps"
-SETTINGS_FILE = _REPO_ROOT / "settings.yaml"
+SETTINGS_FILE_ENV_VAR = "SEP_SCAFFOLD_SETTINGS_FILE"
+#: The ``settings.yaml`` new apps are registered in. Redirectable through
+#: :data:`SETTINGS_FILE_ENV_VAR` so a caller that must not touch the working
+#: tree can point the registration at a throwaway copy — the seam a child
+#: process needs, since it cannot monkeypatch this module the way an in-process
+#: caller does.
+SETTINGS_FILE = Path(
+    os.environ.get(SETTINGS_FILE_ENV_VAR) or _REPO_ROOT / "settings.yaml"
+)
 
 # Stdlib-only mirrors of ServiceTypeEnum / NavIcon member names: importing the
 # real enums would pull pydantic/sqlalchemy (ServiceTypeEnum) or the framework
@@ -130,6 +138,18 @@ class ScaffoldConfig:
     :param flavor: The flavor to render.
     :param display_name: The human-facing label (title-cased from ``name`` unless
         overridden).
+    :param item_display_name: The name for one record the app's create form
+        produces, in mid-sentence form. Defaults to ``display_name``, which
+        :func:`~app.sep.apps.framework.conformance.check_item_display_names_declared`
+        rejects for the ``task`` flavor — the only one whose rendered app declares
+        a create form — so an unedited task scaffold fails the conformance suite
+        until its author names the record. Nothing consults that detector at
+        registration time; it runs over the registry from the test suite. The
+        ``base`` and ``script`` flavors render ``forms=[]`` at the app level and
+        are skipped, and a ``script_source`` app's schema can never gain form
+        sections, so for it the app-level noun is unenforced rather than deferred.
+    :param item_display_name_plural: The name for several such records, defaulted
+        the same way and enforced under the same limits.
     :param description: The plugin description; ``None`` for the ``base`` flavor,
         whose ``BaseApp`` has no description field.
     :param service_type: The ``ServiceTypeEnum`` member name for the task form's
@@ -152,6 +172,8 @@ class ScaffoldConfig:
     name: str
     flavor: Flavor
     display_name: str
+    item_display_name: str
+    item_display_name_plural: str
     description: str | None
     service_type: str
     nav_icon: str | None
@@ -178,6 +200,8 @@ class ScaffoldConfig:
             name=name,
             flavor=flavor,
             display_name=display_name,
+            item_display_name=display_name,
+            item_display_name_plural=display_name,
             description=_default_description(flavor, display_name),
             service_type="MYSQL",
             nav_icon=None,
@@ -354,6 +378,8 @@ def _build_context(config: ScaffoldConfig) -> dict[str, str]:
         "display_name": config.display_name,
         "display_name_doc": _docstring_safe(config.display_name),
         "display_name_repr": json.dumps(config.display_name),
+        "item_display_name_repr": json.dumps(config.item_display_name),
+        "item_display_name_plural_repr": json.dumps(config.item_display_name_plural),
         "description_repr": json.dumps(config.description),
         "schema_description_repr": json.dumps(schema_description),
         "service_type": config.service_type,
@@ -724,6 +750,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--display-name", help="the human-facing sidebar label")
     parser.add_argument(
+        "--item-display-name",
+        help="what one record the create form produces is called (e.g. 'backup')",
+    )
+    parser.add_argument(
+        "--item-display-name-plural",
+        help="what several such records are called (e.g. 'backups')",
+    )
+    parser.add_argument(
         "--description", help="the plugin description (task and script flavors)"
     )
     parser.add_argument(
@@ -908,6 +942,8 @@ def _resolve_non_interactive(
     flavor = args.type or Flavor.TASK
     _reject_flavor_incompatible_flags(parser, args, flavor)
     display_name = args.display_name or _derive_display_name(args.name)
+    item_display_name = args.item_display_name or display_name
+    item_display_name_plural = args.item_display_name_plural or display_name
     description = (
         args.description
         if args.description is not None
@@ -928,6 +964,8 @@ def _resolve_non_interactive(
         name=args.name,
         flavor=flavor,
         display_name=display_name,
+        item_display_name=item_display_name,
+        item_display_name_plural=item_display_name_plural,
         description=description,
         service_type=args.service_type or "MYSQL",
         nav_icon=args.nav_icon,
@@ -996,6 +1034,12 @@ def _resolve_interactive(
         display_name = args.display_name or prompt_cls.ask(
             "Display name", default=_derive_display_name(name)
         )
+        item_display_name = args.item_display_name or prompt_cls.ask(
+            "Record name (singular)", default=display_name
+        )
+        item_display_name_plural = args.item_display_name_plural or prompt_cls.ask(
+            "Record name (plural)", default=display_name
+        )
         description = None
         if flavor is not Flavor.BASE:
             description = (
@@ -1058,6 +1102,8 @@ def _resolve_interactive(
             name=name,
             flavor=flavor,
             display_name=display_name,
+            item_display_name=item_display_name,
+            item_display_name_plural=item_display_name_plural,
             description=description,
             service_type=service_type,
             nav_icon=nav_icon,

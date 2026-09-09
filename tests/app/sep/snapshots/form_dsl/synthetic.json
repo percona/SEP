@@ -173,6 +173,22 @@
             "mysql"
           ],
           "type": "service"
+        },
+        {
+          "default": false,
+          "destructive": "Existing rows are dropped before the load.",
+          "label": "Destructive Bool",
+          "name": "a_destructive_bool",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": "",
+          "destructive": "The named directory is emptied before the run.",
+          "label": "Destructive String",
+          "name": "a_destructive_string",
+          "required": false,
+          "type": "string"
         }
       ],
       "render_after_submit": false,
@@ -208,6 +224,8 @@
       "title": "Gated"
     }
   ],
+  "item_display_name": "Synthetic",
+  "item_display_name_plural": "Synthetic",
   "list_view": {
     "columns": [
       {
@@ -218,5 +236,39 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "synthetic"
+  "name": "synthetic",
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

@@ -113,13 +113,13 @@ def test_svc_and_cross_cutting_paths_are_not_app_slices():
     assert sync_pr_labels.app_of(".github/labeler.yml", _APP_GLOBS) is None
 
 
-def test_inventory_e2e_prefix_matches_the_app_label():
-    """Match inventory-related e2e specs via the ``inventory*.spec.ts`` glob."""
+def test_suffixed_e2e_spec_matches_the_app_label():
+    """Match a suffixed e2e spec via its app's ``<app>*.spec.ts`` glob."""
     assert (
         sync_pr_labels.app_of(
-            "frontend/packages/e2e/tests/inventory-sync.spec.ts", _APP_GLOBS
+            "frontend/packages/e2e/tests/snippets-download.spec.ts", _APP_GLOBS
         )
-        == "app:inventory"
+        == "app:snippets"
     )
 
 

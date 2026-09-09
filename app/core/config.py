@@ -39,6 +39,7 @@ from typing import (
 )
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, FastAPI, params
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
@@ -431,6 +432,35 @@ class PMMSettings(BaseLowercaseModel):
 
 _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 
+
+def _encryption_key_error() -> str:
+    """Return the remediation text for a missing or malformed key.
+
+    Names the absolute dotenv path rather than the default spelling.
+    ``ENV_FILE`` is a supported indirection and this repository's own checkouts
+    use it, so prose that hardcodes the default sends the reader to a file the
+    loader never reads: the append succeeds, the next start fails identically,
+    and the natural reading is a malformed key rather than an unread file. It
+    is resolved because the setting is a relative path by default, and a
+    process whose working directory is not the one the reader is standing in
+    would otherwise be told to edit ``.env`` without being told which.
+
+    ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
+    produces 64 characters Fernet rejects, so the two remediations are
+    deliberately different.
+
+    :return: The remediation sentence, naming the dotenv file in use.
+    """
+    return (
+        "ENCRYPTION_KEY must be set to a valid Fernet key (32 url-safe "
+        "base64-encoded bytes). Generate one with `make encryption-key` or "
+        "`openssl rand -base64 32`, then add it as ENCRYPTION_KEY=<key> to "
+        f"{pre_env_settings.ENV_FILE.resolve()} (the file ENV_FILE names), "
+        "export it, or mount it as a file named ENCRYPTION_KEY under "
+        "SECRETS_DIR. It has no default and is never derived from SECRET_KEY."
+    )
+
+
 SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
 
 
@@ -628,6 +658,14 @@ class Settings(BaseYamlSettings):
         every process sharing ``SECRET_KEY`` resolves the identical token.
         Generate an explicit value with ``openssl rand -hex 32`` to rotate it
         independently of ``SECRET_KEY``.
+    :param ENCRYPTION_KEY: The Fernet key :mod:`app.core.encryption` uses to
+        encrypt values SEP stores in its own databases. It has no default and is
+        never derived from ``SECRET_KEY``: ciphertext outlives the process that
+        wrote it, so a key that changed on restart would orphan every encrypted
+        row. Every environment supplies its own, as an environment variable or
+        as a file named ``ENCRYPTION_KEY`` under ``SECRETS_DIR``. Nothing is
+        committed: a key in the repository would be readable by anyone who can
+        read the repository, and the values it protects are real credentials.
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
@@ -650,6 +688,7 @@ class Settings(BaseYamlSettings):
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
+    ENCRYPTION_KEY: SecretStr
     LOGGING: LogLevel = hot_field(LogLevel.WARNING)  # ty: ignore[invalid-assignment]
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
@@ -731,6 +770,36 @@ class Settings(BaseYamlSettings):
         ).hexdigest()
         self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_encryption_key(cls, data: Any) -> Any:
+        """Reject an unset, empty, or malformed ``ENCRYPTION_KEY``.
+
+        The check runs ``before`` field validation so that an absent key reports
+        the remediation below rather than a generic ``Field required``: pydantic
+        resolves required-field presence ahead of any ``after`` model validator,
+        so an ``after`` check never sees the absent case at all. Running here
+        instead lets the field stay non-optional, which is what it is — nothing
+        downstream ever reads a ``None`` key.
+
+        :param data: The assembled settings sources, before field validation.
+        :return: ``data`` unchanged, once the key is known usable.
+        :raises ValueError: If the key is unset, empty, or not a valid Fernet key.
+        """
+        if not isinstance(data, dict):
+            return data
+        supplied = data.get("ENCRYPTION_KEY")
+        key = (
+            supplied.get_secret_value() if isinstance(supplied, SecretStr) else supplied
+        )
+        if not key:
+            raise ValueError(_encryption_key_error())
+        try:
+            Fernet(key.encode() if isinstance(key, str) else key)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(_encryption_key_error()) from exc
+        return data
 
     @classmethod
     def settings_customise_sources(

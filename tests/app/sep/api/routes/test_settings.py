@@ -16,6 +16,7 @@
 """Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime, timedelta
 from string import Template
 from typing import Annotated, Any
 from unittest.mock import AsyncMock, patch
@@ -34,6 +35,7 @@ from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import PMMSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import decrypt, is_encrypted
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
@@ -42,6 +44,7 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
 from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.framework.registry import (
@@ -66,6 +69,9 @@ from app.sep.snippets.config import (
 )
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    insert_override_row,
+    PMM_API_KEY,
+    ROUTING_KEY,
     SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
@@ -97,6 +103,18 @@ _DELIVERY_SKELETON_PAYLOAD: dict[str, Any] = {
 
 _DELIVERY_INPUTS_KEY = "DIAGNOSTICS_DELIVERY_INPUTS"
 _DELIVERY_INPUTS_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
+
+#: The base64 prefix every Fernet token carries, for asserting none reach a response.
+_FERNET_TOKEN_PREFIX = "gAAAAA"
+
+
+def _decrypted_secrets(stored: dict[str, str]) -> dict[str, str]:
+    """Return the plaintext behind each value of a persisted ``secrets`` mapping.
+
+    :param stored: The ``secrets`` mapping as the override row holds it.
+    :return: The same secret names mapped to their decrypted values.
+    """
+    return {name: decrypt(value) for name, value in stored.items()}
 
 
 def _renamed_skeleton() -> dict[str, Any]:
@@ -259,6 +277,7 @@ def reduced_activation_client_fixture(
         classes=SEP_ADMIN_SETTINGS_CLASSES,
         session_dep=Annotated[AsyncSession, Depends(get_reduced_session)],
         admin_dep=Depends(lambda: None),
+        actor_dep=Annotated[str, Depends(lambda: "test-admin")],
         remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
         remote_api_dep=TaskAPI,
         app_owned_classes=collect_app_owned_settings_classes(REDUCED_ACTIVATION),
@@ -1021,7 +1040,7 @@ class TestSepSettingsPatch:
             setting_class=SEP_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
-        assert rows[0].value["secrets"] == _DELIVERY_INPUTS_SECRETS
+        assert _decrypted_secrets(rows[0].value["secrets"]) == _DELIVERY_INPUTS_SECRETS
 
     @pytest.mark.usefixtures("delivery_skeleton")
     async def test_delivery_inputs_mask_without_a_stored_row_is_rejected(
@@ -1180,7 +1199,7 @@ class TestSepSettingsPatch:
             setting_class=SEP_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
-        assert rows[0].value["secrets"] == {
+        assert _decrypted_secrets(rows[0].value["secrets"]) == {
             "sn_api_key": _DELIVERY_INPUTS_SECRETS["sn_api_key"],
             "case_token": "fresh-token",
         }
@@ -1318,18 +1337,24 @@ class TestSepSettingsPatch:
         self,
         api_admin_client: TestClient,
         override_session: AsyncSession,
+        admin_user: CasdoorUser,
     ) -> None:
-        """Retry once on a concurrent-PATCH IntegrityError (one rollback + replay); the row lands."""
+        """Retry once on a concurrent-PATCH IntegrityError (one rollback + replay); the row lands.
+
+        The reported provenance must come from the replay: the first attempt's
+        writes were rolled back, so returning its stamp would report a write that
+        never happened.
+        """
         new_value = 17
         original = settings_routes._stage_and_commit_overrides
         raised = False
 
-        async def flaky(**kwargs: Any) -> None:
+        async def flaky(**kwargs: Any) -> dict[str, Any]:
             nonlocal raised
             if not raised:
                 raised = True
                 raise IntegrityError("statement", "params", Exception("dup"))
-            await original(**kwargs)
+            return await original(**kwargs)
 
         with patch.object(
             settings_routes, "_stage_and_commit_overrides", side_effect=flaky
@@ -1349,6 +1374,12 @@ class TestSepSettingsPatch:
         assert len(rows) == 1
         assert rows[0].value == new_value
         assert rows[0].is_active is True
+        assert rows[0].updated_by == admin_user.username
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert datetime.fromisoformat(entry["updated_at"]) == make_datetime_utc(
+            rows[0].updated_at
+        )
 
 
 @pytest.mark.asyncio
@@ -1787,7 +1818,7 @@ class TestSepSettingsAlertSettings:
                 override_session, setting_class=ALERT_SETTINGS_TOKEN
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
-            assert providers_row.value[0]["routing_key"] == secret
+            assert decrypt(providers_row.value[0]["routing_key"]) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
             alert_settings._set_snapshot({})
@@ -1846,7 +1877,7 @@ class TestSepSettingsAlertSettings:
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
             by_endpoint = {
-                entry["api_endpoint"]: entry["routing_key"]
+                entry["api_endpoint"]: decrypt(entry["routing_key"])
                 for entry in providers_row.value
             }
             assert by_endpoint[endpoint_a] == secret_a
@@ -2105,11 +2136,15 @@ class TestGlobalSettingsClass:
         )
         assert [r.key for r in rows] == ["PMM__verify_ssl"]
 
-    async def test_pmm_api_key_patch_persists_plaintext(
+    async def test_pmm_api_key_patch_persists_the_real_secret(
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
-        """Persist the real secret string, not Pydantic's ``**********`` JSON mask."""
-        secret = "sep-1615-persist-plaintext"
+        """Persist the real secret, not Pydantic's ``**********`` JSON mask.
+
+        The row holds it as ciphertext, so the assertion decrypts rather than
+        comparing against the submitted string.
+        """
+        secret = "pmm-api-key-persisted"
         try:
             response = api_admin_client.patch(
                 "/api/sep/admin/settings/Settings",
@@ -2122,7 +2157,7 @@ class TestGlobalSettingsClass:
             )
             assert len(rows) == 1
             assert rows[0].key == "PMM__api_key"
-            assert rows[0].value == secret
+            assert decrypt(rows[0].value) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
 
@@ -2130,7 +2165,7 @@ class TestGlobalSettingsClass:
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
         """Keep the stored secret when the client resubmits the redacted mask."""
-        secret = "sep-1615-mask-roundtrip"
+        secret = "pmm-api-key-mask-roundtrip"
         try:
             assert (
                 api_admin_client.patch(
@@ -2149,7 +2184,7 @@ class TestGlobalSettingsClass:
                 override_session, setting_class=SETTINGS_TOKEN
             )
             assert len(rows) == 1
-            assert rows[0].value == secret
+            assert decrypt(rows[0].value) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
 
@@ -2252,3 +2287,408 @@ class TestGlobalSettingsClass:
             response.json(), SettingClassEnum.SETTINGS.value, "PMM__api_key"
         )
         assert entry["value"] in (None, "**********")
+
+
+@pytest.mark.asyncio
+class TestSepSettingsSecretsEncryptedAtRest:
+    """Verify the write path encrypts every secret-typed leaf a PATCH persists.
+
+    The stored ciphertext is asserted through :func:`decrypt` rather than pinned:
+    Fernet derives a fresh IV per call, so two encryptions of one plaintext differ.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshots(self) -> Iterator[None]:
+        """Clear the snapshots a PATCH republishes so siblings are unaffected."""
+        yield
+        settings._set_snapshot({})
+        alert_settings._set_snapshot({})
+        sep_settings._set_snapshot({})
+
+    async def test_whole_object_patch_encrypts_the_secret_leaf(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt ``$.api_key`` of a whole-object PMM PATCH, leaving siblings plain."""
+        endpoint = "https://pmm.example.com"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM": {"endpoint": endpoint, "api_key": PMM_API_KEY}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM"
+        )
+        assert is_encrypted(rows[0].value["api_key"])
+        assert decrypt(rows[0].value["api_key"]) == PMM_API_KEY
+        assert rows[0].value["endpoint"] == endpoint
+
+    async def test_whole_object_patch_still_masks_the_secret_in_the_response(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep the redaction contract: neither plaintext nor ciphertext is served."""
+        assert (
+            api_admin_client.patch(
+                "/api/sep/admin/settings/Settings",
+                json={"PMM": {"api_key": PMM_API_KEY}},
+            ).status_code
+            == status.HTTP_200_OK
+        )
+
+        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        entry = _find_setting(
+            list_payload, SettingClassEnum.SETTINGS.value, "PMM__api_key"
+        )
+        assert entry["value"] == SECRET_STR_MASK
+        serialized = json_serializer(list_payload)
+        assert serialized
+        assert PMM_API_KEY not in serialized
+        assert _FERNET_TOKEN_PREFIX not in serialized
+
+    async def test_nested_leaf_patch_encrypts_the_whole_value(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt the row value outright when the nested leaf *is* the secret."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM__api_key": PMM_API_KEY},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM__api_key"
+        )
+        assert is_encrypted(rows[0].value)
+        assert decrypt(rows[0].value) == PMM_API_KEY
+
+    async def test_materializer_backed_provider_patch_encrypts_routing_key(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt a polymorphic provider's secret, keeping its discriminator readable.
+
+        ``PROVIDERS`` is materializer-backed, so the persisted value is the
+        client's raw JSON rather than the coerced provider set, which is the
+        case a value-driven walker cannot see.
+        """
+        endpoint = "https://events.pagerduty.com/v2/"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/AlertSettings",
+            json={
+                "PROVIDERS": [
+                    {
+                        "PROVIDER": "pagerduty",
+                        "api_endpoint": endpoint,
+                        "routing_key": ROUTING_KEY,
+                    }
+                ]
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=ALERT_SETTINGS_TOKEN, key="PROVIDERS"
+        )
+        entry = rows[0].value[0]
+        assert is_encrypted(entry["routing_key"])
+        assert decrypt(entry["routing_key"]) == ROUTING_KEY
+        assert entry["PROVIDER"] == "pagerduty"
+        assert entry["api_endpoint"] == endpoint
+        provider = next(iter(alert_settings.PROVIDERS))
+        assert provider.routing_key.get_secret_value() == ROUTING_KEY
+
+    @pytest.mark.usefixtures("delivery_skeleton")
+    async def test_delivery_inputs_patch_encrypts_every_named_secret(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt every value of the ``dict[str, SecretStr]`` leaf, never its names."""
+        endpoint = "https://elsewhere.example.com/"
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                _DELIVERY_INPUTS_KEY: {
+                    "endpoint": endpoint,
+                    "secrets": _DELIVERY_INPUTS_SECRETS,
+                }
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key=_DELIVERY_INPUTS_KEY,
+        )
+        stored = rows[0].value["secrets"]
+        assert sorted(stored) == sorted(_DELIVERY_INPUTS_SECRETS)
+        for name, plaintext in _DELIVERY_INPUTS_SECRETS.items():
+            assert is_encrypted(stored[name])
+            assert decrypt(stored[name]) == plaintext
+        assert rows[0].value["endpoint"] == endpoint
+
+    async def test_non_secret_field_is_stored_unencrypted(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Store a field whose annotation reaches no secret exactly as before."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM": {"verify_ssl": False}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM"
+        )
+        assert rows[0].value["verify_ssl"] is False
+        assert rows[0].value["api_key"] is None
+
+    async def test_repeated_patch_does_not_double_encrypt(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Keep one layer of ciphertext when the same secret is written twice."""
+        for _ in range(2):
+            assert (
+                api_admin_client.patch(
+                    "/api/sep/admin/settings/Settings",
+                    json={"PMM__api_key": PMM_API_KEY},
+                ).status_code
+                == status.HTTP_200_OK
+            )
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM__api_key"
+        )
+        assert len(rows) == 1
+        assert decrypt(rows[0].value) == PMM_API_KEY
+
+
+@pytest.mark.asyncio
+class TestSepSettingsProvenance:
+    """Cover ``updated_at`` / ``updated_by`` across LIST, DETAIL and PATCH."""
+
+    async def test_patch_stamps_the_calling_admin(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Record the calling admin and a write time on a freshly created override."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] is not None
+
+    async def test_patch_stamp_is_timezone_aware_utc(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Serialise ``updated_at`` with an explicit UTC offset."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        stamp = datetime.fromisoformat(response.json()[0]["updated_at"])
+        assert stamp.tzinfo is not None
+        assert stamp.utcoffset() == timedelta(0)
+
+    async def test_repeated_patch_of_the_same_value_restamps(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        admin_user: CasdoorUser,
+    ) -> None:
+        """Re-stamp a row whose submitted value equals the stored one.
+
+        Submitting the stored value leaves ``value`` and ``is_active`` untouched,
+        so the row is not dirty and the column's ``onupdate`` never fires. Only
+        an explicit assignment forces the UPDATE.
+        """
+        stale = utc_now() - timedelta(days=1)
+        await insert_override_row(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
+            updated_at=stale,
+            updated_by="someone-else",
+        )
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == admin_user.username
+        assert datetime.fromisoformat(entry["updated_at"]) > stale
+
+    async def test_detail_reports_the_stamp_the_patch_returned(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from DETAIL that the PATCH response carried."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["has_override"] is True
+        assert body["updated_by"] == admin_user.username
+        assert body["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_list_reports_the_stamp_the_patch_returned(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Serve the same stamp from LIST that the PATCH response carried."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        response = api_admin_client.get("/api/sep/admin/settings/")
+
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
+        assert entry["updated_by"] == admin_user.username
+        assert entry["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_batch_patch_shares_one_stamp(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Stamp every key of one atomic batch with a single timestamp."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": 900},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        stamps = {entry["updated_at"] for entry in response.json()}
+        assert len(stamps) == 1
+
+    async def test_key_without_an_override_reports_no_provenance(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Report both fields as ``null`` for a key carrying no override row."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None
+
+    async def test_list_carries_null_provenance_without_an_override(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Carry both fields as ``null`` on a LIST entry with no override row.
+
+        The fields are present rather than absent, so a consumer reads the same
+        shape from LIST as from DETAIL.
+        """
+        response = api_admin_client.get("/api/sep/admin/settings/")
+
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+        )
+        assert entry["has_override"] is False
+        assert entry["updated_at"] is None
+        assert entry["updated_by"] is None
+
+    async def test_legacy_row_falls_back_to_created_at(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Report ``created_at`` for a row written before explicit stamping."""
+        row = await insert_override_row(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
+        )
+        assert row.updated_at is None
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["updated_by"] is None
+        assert datetime.fromisoformat(body["updated_at"]) == make_datetime_utc(
+            row.created_at
+        )
+
+    async def test_inactive_row_reports_no_provenance(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Ignore an inactive row: no override is reported and no stamp travels.
+
+        An inactive row does not affect the served value, which falls back to the
+        declared default, so reporting provenance for one would tell the UI a
+        field is overridden while showing it that default.
+        """
+        await insert_override_row(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=10,
+            is_active=False,
+            updated_at=utc_now(),
+            updated_by="someone-else",
+        )
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None
+
+    async def test_nested_parent_reports_the_leaf_stamp(
+        self, api_admin_client: TestClient, admin_user: CasdoorUser
+    ) -> None:
+        """Promote a nested leaf's provenance to every canonical prefix of its chain."""
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 7200},
+        )
+        assert patched.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/APP_DRAIN")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["has_override"] is True
+        assert body["updated_by"] == admin_user.username
+        assert body["updated_at"] == patched.json()[0]["updated_at"]
+
+    async def test_delete_clears_the_provenance(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Clear both fields once the override row is hard-deleted."""
+        api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+        deleted = api_admin_client.delete(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+        assert deleted.status_code == status.HTTP_204_NO_CONTENT
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+        )
+
+        body = response.json()
+        assert body["has_override"] is False
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None

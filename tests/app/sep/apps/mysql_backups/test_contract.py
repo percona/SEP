@@ -37,6 +37,7 @@ from pytest_mock import MockerFixture
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
+from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
@@ -50,6 +51,10 @@ from tests.app.sep.apps.framework.kit import (
     MockTaskAPI,
     SEEDED_TASK_NAME,
     SYNTH_EXECUTOR_HOST,
+)
+from tests.app.sep.apps.mysql_backups.description_coverage import (
+    assert_every_declared_field_is_described,
+    assert_schema_serves_only_declared_descriptions,
 )
 
 _NEW_TASK_NAME = "contract-new-backup"
@@ -72,6 +77,7 @@ def _valid_body(
         "hostname": SYNTH_EXECUTOR_HOST,
         "service_id": MOCK_CREATED_SERVICE_ID,
         "backup_type": backup_type.value,
+        "backup_dir": "/backups",
         "upload": ["RSYNC"],
         "rsync_path": "/data/rsync",
     }
@@ -269,6 +275,96 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
             mode="json"
         )
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
+
+    def test_every_declared_field_is_described(self) -> None:
+        """Require helper text on every field the create form declares itself.
+
+        A backup misconfigured from a guessed field is not caught at submit time
+        — it is caught at restore time, when the configuration can no longer be
+        changed.
+        """
+        assert_every_declared_field_is_described(BackupCreate)
+
+    def test_schema_serves_only_declared_descriptions(
+        self, contract_client: Any
+    ) -> None:
+        """Serve each declared field's description verbatim, and only those.
+
+        The inherited Task fields have to stay undescribed here, because
+        describing them would move every other schema-driven app's schema too.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_descriptions(response.json(), BackupCreate)
+
+    def test_schema_pins_section_collapse_posture(self, contract_client: Any) -> None:
+        """Pin every create-form section's collapse posture and required fields.
+
+        The form opens on what a backup needs: ``Task`` carries the required
+        fields and never collapses, and every expert section is collapsible *and*
+        collapsed, so the expanded-by-default wall of fields cannot come back and
+        a section added later without a posture decision fails here. Where the
+        required fields sit is pinned too, so none of them can drift behind a
+        collapse toggle.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        posture = {
+            section["title"]: (
+                section["collapsible"],
+                section["collapsed_by_default"],
+            )
+            for section in sections
+        }
+        assert posture == {
+            "Task": (False, False),
+            "General": (True, True),
+            "Mydumper": (True, True),
+            "XtraBackup": (True, True),
+            "Binlog": (True, True),
+            "Encryption": (True, True),
+            "Upload": (True, True),
+        }
+        required_fields = {
+            (section["title"], field["name"])
+            for section in sections
+            for field in section["fields"]
+            if field["required"]
+        }
+        assert required_fields == {
+            ("Task", "task_name"),
+            ("Task", "hostname"),
+            ("Task", "service_id"),
+            ("Task", "backup_type"),
+            ("Task", "backup_dir"),
+        }
+
+    def test_update_rejects_a_body_without_a_backup_directory(
+        self, contract_client: Any
+    ) -> None:
+        """Refuse a PUT that drops the backup directory.
+
+        The update route is how an operator repairs a task saved before the
+        directory was required, so it has to insist on the value rather than
+        accept the stored ``None`` back.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_body(task_name=SEEDED_TASK_NAME)
+        body.pop("backup_dir", None)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert ["body", "backup_dir"] in [
+            error["loc"] for error in response.json()["detail"]
+        ]
 
     def test_update_round_trips_stored_form(
         self, contract_client: Any, mock_task_api: Any

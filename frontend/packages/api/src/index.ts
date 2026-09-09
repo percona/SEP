@@ -123,6 +123,7 @@ export type {
   CardinalityRule,
   FailRule,
   RelatedApp,
+  TaskStatusDescriptor,
 } from './types/app-schema';
 
 // Hooks
