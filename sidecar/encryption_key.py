@@ -350,10 +350,17 @@ def state_lock(directory: Path) -> Iterator[None]:
     whichever wrote last; serialising here, and re-reading the persisted key
     once the lock is held, is what makes the loser adopt the winner's.
 
+    ``umask`` narrows the mode at creation, the way ``write_persisted_token``
+    in the token helper beside this one narrows it. Which of the two creates
+    the directory changed here: key resolution runs ahead of the Grafana mint,
+    so on a ``SEP_STATE_DIR`` the image does not pre-create, this is the first
+    writer and owns the mode the other one used to set.
+
     :param directory: The state directory to lock within, created when absent.
     :raises EncryptionKeyError: If the directory or its lock file cannot be
         opened for writing, or a peer holds the lock past :func:`lock_timeout`.
     """
+    previous_umask = os.umask(0o077)
     try:
         directory.mkdir(parents=True, exist_ok=True)
         handle = (directory / LOCK_FILENAME).open("w", encoding="utf-8")
@@ -364,6 +371,8 @@ def state_lock(directory: Path) -> Iterator[None]:
             f"reads the rows it encrypts, so nothing is minted. Mount a writable "
             f"volume there, or pass ENCRYPTION_KEY explicitly."
         ) from error
+    finally:
+        os.umask(previous_umask)
     try:
         _acquire_lock(handle, directory)
         yield
