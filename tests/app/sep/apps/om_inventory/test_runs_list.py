@@ -118,7 +118,7 @@ async def test_list_runs_filters_started_at_before_limit(
 async def test_list_runs_since_excludes_older(
     api: AsyncClient, session: AsyncSession
 ) -> None:
-    """A lower bound drops runs that started before it."""
+    """Drop runs that started before a lower bound."""
     await record_run(session, T0)
     kept = await record_run(session, T2)
 
@@ -158,7 +158,7 @@ async def test_list_runs_rejects_until_before_since(api: AsyncClient) -> None:
 async def test_list_runs_omits_window_when_unset(
     api: AsyncClient, session: AsyncSession
 ) -> None:
-    """No date params still returns newest first, including the oldest row."""
+    """Return newest first with no date params, including the oldest row."""
     oldest = await record_run(session, T0)
     newest = await record_run(session, T2)
 

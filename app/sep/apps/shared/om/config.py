@@ -22,7 +22,7 @@ a prefix would isolate nothing.
 
 The mechanism is SQLAlchemy's **symbolic** schema, copied from what SEP already does
 for the Celery beat tables (``app/core/celery/db.py``): tables declare the *token*
-``om_schema``, and the engine translates it to a real name -- or to ``None``, which
+``om_schema``, and the engine translates it to a real name — or to ``None``, which
 means the bind's default schema. One set of table definitions therefore works on a
 PostgreSQL deployment that wants the isolation and on a SQLite one that has no
 schemas at all, with no branching in the models.
@@ -31,8 +31,8 @@ The token's real name is a plain deployment setting rather than something comput
 here: ``sep_settings.DATABASE.SCHEMA_TRANSLATE_MAP`` (``app/core/db/config.py``) is
 the single core-owned map every symbolic schema token resolves through, applied to
 the engine by ``create_app_async_engine`` and to Alembic's connection by
-``app/sep/migrations/env.py``. Neither of those imports this module -- they only
-know the generic map -- so what lives here is just the token's name and a lookup
+``app/sep/migrations/env.py``. Neither of those imports this module — they only
+know the generic map — so what lives here is just the token's name and a lookup
 into that map for callers, like the OM migration, that need the resolved schema
 for raw DDL.
 """
@@ -52,7 +52,7 @@ OM_SCHEMA_SYMBOL = "om_schema"
 def om_schema(database: DatabaseOptions) -> str | None:
     """Resolve the token to its real schema name for one bind.
 
-    :param database: The database options of the bind OM's tables live on --
+    :param database: The database options of the bind OM's tables live on —
         ``sep_settings.DATABASE`` in every current caller.
     :return: The schema name, or ``None`` for the bind's default schema.
     """

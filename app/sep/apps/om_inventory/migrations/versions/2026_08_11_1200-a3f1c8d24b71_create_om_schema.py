@@ -25,14 +25,14 @@ estate *is*, ``om.inventory_run`` for what one sweep *did*.
 Rewritten in place rather than extended by follow-up revisions - the host counters on
 ``inventory_run`` and the ``SKIPPED`` run status were each a revision of their own
 while this branch was being written, and both are folded in here - because none of this
-has shipped -- there is no deployment whose data a move migration would preserve. The
+has shipped — there is no deployment whose data a move migration would preserve. The
 cost is local: a machine that ran an earlier version of this revision has to drop
 what it created and delete the ``a3f1c8d24b71`` row from ``alembic_version_sep`` by
 hand, since the migration that would have moved it deliberately does not exist. Once
 OM ships, this file freezes and changes become new revisions.
 
-The schema is named symbolically throughout -- ``schema="om_schema"``, translated by
-the connection (``app/sep/migrations/env.py``) -- with the single exception of
+The schema is named symbolically throughout — ``schema="om_schema"``, translated by
+the connection (``app/sep/migrations/env.py``) — with the single exception of
 ``CREATE SCHEMA``, which is raw DDL and therefore untranslated. That statement asks
 :func:`app.sep.apps.shared.om.config.om_schema` for the real name and does nothing
 when the bind has no schemas.
@@ -82,7 +82,7 @@ def _observed_column() -> sa.Column:
 def _freshness_columns() -> list[sa.Column]:
     """Build the per-entity freshness and failure columns.
 
-    Identical on both entity tables by construction -- a host can be perfectly
+    Identical on both entity tables by construction — a host can be perfectly
     reachable while one mongod on it cannot be probed, which is one of the reasons
     these are two rows rather than one.
 
@@ -267,10 +267,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # The schema itself is deliberately left behind: it is shared by every OM app
-    # (app/sep/apps/shared/om/__init__.py), so dropping it here would take another
-    # app's tables with it, and each app's migrations are an independent branch with
-    # no ordering between them.
+    """Drop this app's tables, leaving the schema that holds them in place.
+
+    The schema is shared by every OM app (``app/sep/apps/shared/om/__init__.py``),
+    so dropping it here would take another app's tables with it — and each app's
+    migrations are an independent branch with no ordering between them, so there is
+    no revision that could safely own the drop.
+    """
     op.drop_index(
         op.f("ix_om_inventory_run_status"),
         table_name="inventory_run",

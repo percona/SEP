@@ -16,8 +16,8 @@
 """Test that ``run_probe`` marks a run failed for the whole width of its own work.
 
 Only ``_sweep`` used to sit inside the ``try``/``except`` that calls ``_fail_run``.
-A raise while writing what the sweep found -- ``_persist_estate`` -- or while closing
-the run out -- ``_finalise`` -- propagated past both without anything marking the row
+A raise while writing what the sweep found — ``_persist_estate`` — or while closing
+the run out — ``_finalise`` — propagated past both without anything marking the row
 failed, leaving it ``RUNNING`` forever: the one status a caller polling ``GET
 /runs/{run_id}`` can never treat as "done, try again".
 
@@ -58,7 +58,7 @@ def _session_maker(session: AsyncSession):
 
 
 class TestPersistOrFinaliseFailureMarksTheRunFailed:
-    """A raise after ``_sweep`` returns must still reach ``_fail_run``."""
+    """Route a raise after ``_sweep`` returns to ``_fail_run``."""
 
     @pytest.mark.asyncio
     async def test_a_persist_estate_failure_fails_the_run(
@@ -132,13 +132,13 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
 
 
 class TestPruneFailureStaysOutsideTheFailurePath:
-    """A raise from pruning must not rewrite an already-finalised run."""
+    """Keep a raise from pruning out of an already-finalised run."""
 
     @pytest.mark.asyncio
     async def test_a_prune_failure_does_not_touch_the_finished_run(
         self, session: AsyncSession
     ) -> None:
-        """Pruning is not covered by the same ``try`` as persist/finalise.
+        """Leave pruning outside the ``try`` that covers persist and finalise.
 
         The run is written to ``SUCCESS`` by the real ``_finalise`` before pruning
         ever runs. If pruning's failure were folded into the failure path, this run

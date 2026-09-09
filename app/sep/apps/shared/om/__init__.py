@@ -18,7 +18,7 @@
 OM is a namespace rather than a single app: discovery is the first, and restart,
 configuration change, upgrade and installation are meant to follow, all keeping their
 tables in one ``om`` schema. The schema is therefore owned here rather than by
-whichever app happened to be written first -- an app that later ships without the
+whichever app happened to be written first — an app that later ships without the
 others must not take the schema definition with it.
 
 Deliberately empty of imports. Anything placed here is loaded by every OM app.

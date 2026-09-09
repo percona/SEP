@@ -48,7 +48,7 @@ class OmInventorySettings(BaseYamlSettings):
     Every field is ``hot_field`` except ``CREDENTIALS_PATH``, which stays YAML/env only
     on purpose. It names a file the payload reads off the *node* and hands to a MongoDB
     driver as a URI; making it settable over the API would turn "change this app's
-    configuration" into "read a chosen file on every database host" -- every other
+    configuration" into "read a chosen file on every database host" — every other
     field here only changes how SEP itself behaves, not what a probe reads off a
     monitored machine's filesystem. It is a deployment fact, and it belongs with the
     deployment.
@@ -58,7 +58,7 @@ class OmInventorySettings(BaseYamlSettings):
         periodic job, leaving the trigger endpoint as the only way facts are refreshed.
     :param PROBE_DATABASE: Whether the payload connects to mongod and runs database
         commands. False collects process and OS facts only, which needs no credentials
-        -- and still yields ``installed_version``, the field this app exists for.
+        — and still yields ``installed_version``, the field this app exists for.
     :param CREDENTIALS_PATH: Node-side file holding the MongoDB URI to take credentials
         from. ``None`` falls back to ``~/.mongodb_uri``, the same file the PBM payloads
         read.

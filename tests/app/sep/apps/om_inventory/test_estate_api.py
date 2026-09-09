@@ -17,15 +17,15 @@
 
 Two contracts here are load-bearing and neither is obvious from the handler code.
 
-``GET /hosts?has_service=false`` is the question the host table exists to answer --
-which machines carry a PMM client and no database -- so it is asserted rather than
+``GET /hosts?has_service=false`` is the question the host table exists to answer —
+which machines carry a PMM client and no database — so it is asserted rather than
 assumed, and asserted as a *filter* on the ordinary list rather than a second
 endpoint.
 
 ``DELETE`` exists because stale rows are real: restarting a node's pmm-agent runs
 ``setup --force``, which replaces the node in PMM and mints a new id, so OM gains a
-row and keeps the old one. It is emphatically not suppression -- an entity PMM still
-knows about returns on the next sweep -- and the tests say so, because a reader who
+row and keeps the old one. It is emphatically not suppression — an entity PMM still
+knows about returns on the next sweep — and the tests say so, because a reader who
 mistakes it for suppression will use it that way exactly once.
 """
 
@@ -56,7 +56,7 @@ async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
     """Yield an authenticated client sharing the test session.
 
     Async rather than a sync ``TestClient`` so a test can await a database read after
-    the request -- asserting the cascade on delete needs the request and the check to
+    the request — asserting the cascade on delete needs the request and the check to
     run on one event loop and one session.
 
     :param regular_user: The authenticated user.
@@ -158,7 +158,7 @@ class TestHosts:
     async def test_has_service_true_is_the_ordinary_estate_view(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """The same list, inverted -- which is why it is a filter, not an endpoint.
+        """The same list, inverted — which is why it is a filter, not an endpoint.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -174,7 +174,7 @@ class TestHosts:
         """``?executor=`` means *usable*, not merely matched.
 
         A host whose agent is registered but unreachable, or reachable with an
-        unhealthy driver, has ``executor_host`` set -- matching is against every known
+        unhealthy driver, has ``executor_host`` set — matching is against every known
         executor, broken ones included, so an onboarding problem does not masquerade
         as "no executor". ``?executor=true`` asks a different question: can a payload
         actually run here, which is exactly the query a dispatch target picker needs.
@@ -221,7 +221,7 @@ class TestHosts:
     async def test_unknown_host_is_404(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """An id OM does not hold is not an empty host.
+        """Answer 404 for an id OM does not hold, rather than an empty host.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -238,7 +238,7 @@ class TestServices:
     async def test_lists_services_without_walking_hosts(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """For a consumer that works in services rather than hosts.
+        """Serve a consumer that works in services rather than hosts.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -264,7 +264,7 @@ class TestServices:
     async def test_one_service_by_pmms_service_id(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """Keying on PMM's id is what keeps the path free of a lookup step.
+        """Key on PMM's id, which keeps the path free of a lookup step.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -315,7 +315,7 @@ class TestDelete:
     async def test_deleting_something_absent_is_404(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """Silence would let a typo read as a successful cleanup.
+        """Refuse a typo rather than letting silence read as a successful cleanup.
 
         :param api: The authenticated client.
         :param estate: The populated session.

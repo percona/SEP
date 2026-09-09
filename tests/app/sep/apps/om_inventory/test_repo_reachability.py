@@ -62,7 +62,7 @@ def _response(body: bytes, status: int = 200) -> MagicMock:
 
 
 class TestReachable:
-    """The repository answers with what it should."""
+    """Reach a repository that answers with what it should."""
 
     def test_a_real_key_is_reachable(self) -> None:
         """The ordinary case: the key comes back and the host can install."""
@@ -87,10 +87,10 @@ class TestReachable:
 
 
 class TestFailuresCheaperChecksMiss:
-    """Each of these passes a ping, a connect, or a status check, and fails yum."""
+    """Pass a ping, a connect, or a status check, and still fail yum."""
 
     def test_a_captive_portal_answering_200_is_not_reachable(self) -> None:
-        """Something answered; it was not the repository.
+        """Separate something answering from the repository answering.
 
         The failure a status-code-only check reports as success, and the most likely
         one in the corporate networks this exists to describe.
@@ -120,7 +120,7 @@ class TestFailuresCheaperChecksMiss:
         assert "403" in facts["error"]
 
     def test_a_tls_failure_names_itself(self) -> None:
-        """An untrusted interception certificate is a distinct, fixable cause."""
+        """Report an untrusted interception certificate as its own, fixable cause."""
         with patch(
             "urllib.request.urlopen",
             side_effect=urllib.error.URLError(
@@ -143,13 +143,13 @@ class TestFailuresCheaperChecksMiss:
 
 
 class TestTheProxyIsReported:
-    """Without it the result cannot be explained."""
+    """Report the proxy, without which the result cannot be explained."""
 
     @pytest.mark.parametrize(
         "variable", ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]
     )
     def test_every_spelling_is_read(self, monkeypatch, variable: str) -> None:
-        """All four spellings matter: a host may set any of them and urllib honours all.
+        """Honour all four spellings: a host may set any of them and urllib reads all.
 
         :param monkeypatch: The environment patcher.
         :param variable: The proxy environment variable to set.
@@ -182,8 +182,8 @@ class TestTheProxyCredentialsAreNotReported:
     """Assert the value is redacted before it is stored and served.
 
     ``repo`` is lifted whole onto ``om.host.observed`` and returned by ``GET /hosts``
-    to every API-authenticated caller, so a proxy URL written the ordinary way --
-    ``http://user:pass@proxy:3128``, which is what an authenticating proxy needs --
+    to every API-authenticated caller, so a proxy URL written the ordinary way —
+    ``http://user:pass@proxy:3128``, which is what an authenticating proxy needs —
     published a credential to everyone who can read the estate. The dispatch's
     ``anonymize_mask`` does not cover this: it is about task logs, and this value's
     route out is a JSONB column.
@@ -250,10 +250,10 @@ class TestTheProxyCredentialsAreNotReported:
 
 
 class TestConfiguration:
-    """An air-gapped estate mirrors the repository somewhere else."""
+    """Resolve the repository to the mirror an air-gapped estate points at."""
 
     def test_the_url_is_configurable(self) -> None:
-        """Checking the public repository on a mirrored estate reports every host broken."""
+        """Check the mirror rather than the public repository on a mirrored estate."""
         mirror = "https://mirror.internal/percona/PERCONA-PACKAGING-KEY"
 
         with patch(

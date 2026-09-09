@@ -24,7 +24,7 @@ Results come back over **stdout**, streamed from the task-log chunk store the wa
 :meth:`~app.sep.sync.models.BaseTaskSyncer.wait_for_task_output` does it. That
 channel has no total size cap, unlike the 16 KB ``.sep-run-result.json`` file.
 
-One dispatch per executor host, carrying every service that host serves -- the
+One dispatch per executor host, carrying every service that host serves — the
 payload collects host-level facts once and reuses them across its targets, so
 batching by host is both fewer Nomad jobs and less duplicated work.
 """
@@ -67,7 +67,7 @@ class HostProbeResult:
     :param executor_host: The host the payload ran on.
     :param task_history_id: The dispatched run's history id, when dispatch succeeded.
     :param records: The parsed NDJSON records, keyed by service name.
-    :param host_record: The host's own record -- OS, kernel, the installed binary --
+    :param host_record: The host's own record — OS, kernel, the installed binary —
         collected once per dispatch. ``None`` when the payload never printed it,
         which is the only way to tell "the host did not answer" from "the host
         answered and has no database on it".
@@ -103,14 +103,14 @@ def group_by_executor(mapped: list[MappedService]) -> dict[str, list[MappedServi
 def record_key(service_id: str | None, service_name: str | None) -> str:
     """Return the key a target's parsed NDJSON record is stored and looked up under.
 
-    PMM's service id, when the target carries one -- the only thing two identically
+    PMM's service id, when the target carries one — the only thing two identically
     named services dispatched to the same host do not share. Keying on the name
     alone, which is what ``build_config`` used to send as a target's whole identity,
     let two same-named services on one host overwrite each other's record: the
     service id never reached the node, so nothing distinguished them once their
     NDJSON lines came back.
 
-    Falls back to the name for the rare target inventory carries with no PMM id --
+    Falls back to the name for the rare target inventory carries with no PMM id —
     the same key this dict used exclusively before ids were echoed back at all, so
     that case is no worse off than before. It is also harmless: an entity with no
     PMM id is never written to the estate (see ``_record_entity``), so a collision
@@ -231,15 +231,15 @@ async def _release(tasks_api: RemoteAPI, task_history_id: int) -> str | None:
     which stays ``RUNNING`` with nothing left to advance it. That matters more than it
     sounds: the tasks API refuses to dispatch a queue item identical to one already in
     flight, and every sweep dispatches the same ``run-python`` to the same host with
-    the same config -- so one abandoned run makes that host answer ``409`` forever, and
+    the same config — so one abandoned run makes that host answer ``409`` forever, and
     its facts quietly stop refreshing while the sweep still reports itself partial.
     Measured on the sandbox: seven such rows blocked their hosts for over an hour, and
     the sweeps in between looked like unreachable nodes rather than a queue that needed
     clearing.
 
-    Best-effort by design. The stop can legitimately fail -- most sharply when the
+    Best-effort by design. The stop can legitimately fail — most sharply when the
     allocation is already gone, which is the case most likely to have caused the
-    abandonment in the first place -- and a sweep must not fail because its cleanup
+    abandonment in the first place — and a sweep must not fail because its cleanup
     did. The reason comes back so the caller can say the dispatch was left in flight,
     because a queue item that could not be released is the one thing here that needs a
     human.
@@ -394,7 +394,7 @@ async def probe_all(
     Hosts come from two places and the second is the point: the executor hosts of
     resolved services, *and* every executor host the estate knows about. A machine
     with a PMM client and no database has no service to be reached through, and it is
-    exactly the machine an install decision is about -- so dispatching only to hosts
+    exactly the machine an install decision is about — so dispatching only to hosts
     that serve a service would leave the interesting ones permanently undescribed.
 
     Concurrency is bounded by ``max_concurrent_probes``: each dispatch is a Nomad
