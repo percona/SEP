@@ -394,14 +394,6 @@
           "type": "string"
         },
         {
-          "default": false,
-          "description": "MySQL is always stopped before the data directory is replaced, so this setting changes nothing.",
-          "label": "Kill MySQL",
-          "name": "kill_mysql",
-          "required": false,
-          "type": "bool"
-        },
-        {
           "description": "Memory the prepare step may use, as a size such as 2G (defaults to 100M)",
           "label": "XtraBackup prepare memory",
           "min_length": 1,

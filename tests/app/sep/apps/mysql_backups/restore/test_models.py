@@ -135,6 +135,16 @@ def _derived_fields() -> dict:
     return {field.name: field for section in sections for field in section.fields}
 
 
+def test_kill_mysql_is_not_offered() -> None:
+    """Keep the removed no-op ``kill_mysql`` toggle out of the derived form.
+
+    The restore always stops ``mysqld`` on the UI path and refuses on the
+    command-line path; the flag never governed either, so the form must not
+    advertise a control that misrepresents that behaviour.
+    """
+    assert "kill_mysql" not in _derived_fields()
+
+
 def test_source_controls_are_always_visible_task_choices() -> None:
     """Declare both source controls as ungated choice fields in the Task section.
 
