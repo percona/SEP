@@ -19,7 +19,7 @@ The tasks API refuses a queue item identical to one already in flight, and every
 sweep dispatches the same ``run-python`` to the same host with the same config. So a
 run this app gives up waiting for does not merely cost one probe: it makes that host
 answer ``409`` on every later sweep until someone clears the row by hand. These tests
-pin the release, and pin the two ways it must not misfire -- releasing a run that
+pin the release, and pin the two ways it must not misfire — releasing a run that
 already finished, and failing a sweep because its own cleanup failed.
 """
 
@@ -108,7 +108,7 @@ def stop_calls(api: MagicMock) -> list[str]:
 
 @pytest.fixture(autouse=True)
 def _fast_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Shrink the wait so a timeout case takes a test's worth of time, not minutes."""
+    """Shorten the wait so a timeout case takes a test's worth of time, not minutes."""
     from app.sep.apps.om_inventory.config import om_inventory_settings
 
     monkeypatch.setattr(om_inventory_settings, "TASK_TIMEOUT", 1)

@@ -15,7 +15,7 @@
 
 """Define the ``AppSchema`` for OpenManager Inventory.
 
-The app ships no UI of its own -- its consumer is PMM's OM service -- so this is
+The app ships no UI of its own — its consumer is PMM's OM service — so this is
 the minimum the registry needs plus a run list, which is what someone diagnosing a
 sweep would want if a page is ever built for it.
 """

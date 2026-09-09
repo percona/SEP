@@ -17,8 +17,8 @@
 
 The entity upserts here are where §5.4's freshness lifecycle actually lives, and
 they are written attribute by attribute on purpose. Nothing in these tables is
-user-writable *yet*; the moment one field is -- an assigned name, a label, a
-suppression flag -- a blanket "update every column" upsert wipes it on the next
+user-writable *yet*; the moment one field is — an assigned name, a label, a
+suppression flag — a blanket "update every column" upsert wipes it on the next
 sweep, and the test that catches that has to exist before the field does, not after.
 """
 
@@ -130,7 +130,7 @@ async def upsert_host(
     :param observed: The collected document, or ``None`` when the attempt failed.
     :param executor: What the executor backend says about this host. Written on every
         sweep regardless of ``attempted``, because SEP knows it without running
-        anything -- and the hosts it cannot run anything on are exactly the ones whose
+        anything — and the hosts it cannot run anything on are exactly the ones whose
         document would otherwise be empty with no explanation for it.
     :param error: The failure detail.
     :param run_id: The run this attempt belongs to.
@@ -177,11 +177,11 @@ async def upsert_service(
     """Record one MongoDB service PMM has registered, and optionally one attempt.
 
     Every service PMM knows gets a row, including one whose host has no executor and
-    could not be probed. Omitting those would report a healthier estate than exists --
+    could not be probed. Omitting those would report a healthier estate than exists —
     the PoC measured 17 of 18 services unreachable in a single run, and a listing that
     showed one service would have been worse than useless.
 
-    ``role`` is only written when the probe determined one -- a failed attempt must
+    ``role`` is only written when the probe determined one — a failed attempt must
     not blank out what the last good one saw, for the same reason it must not blank
     out ``observed``.
 
@@ -240,12 +240,12 @@ async def delete_host(session: AsyncSession, host: OmHost) -> None:
     The services are deleted **here**, not left to ``ON DELETE CASCADE``, even though
     the constraint says cascade. SQLite enforces no foreign key unless
     ``PRAGMA foreign_keys=ON`` is set per connection, SEP sets it nowhere, and SQLite
-    is the shipped default in ``settings.yaml`` -- so on a default deployment the
+    is the shipped default in ``settings.yaml`` — so on a default deployment the
     cascade is decoration and deleting a host would leave service rows pointing at a
     host that no longer exists.
 
     The constraint stays as the backstop it is on PostgreSQL. What changes is that the
-    *promise* -- "forgetting a host forgets what was on it" -- no longer depends on
+    *promise* — "forgetting a host forgets what was on it" — no longer depends on
     which database someone configured.
 
     :param session: The database session.
@@ -371,9 +371,9 @@ async def prune_runs(session: AsyncSession, keep: int) -> int:
     kilobytes per sweep and needs bounding here rather than by an operator.
 
     ``RUNNING`` is excluded regardless of age. Retention is by ``started_at``, and a
-    long sweep is by definition the oldest row while it runs: enough newer rows -- a
+    long sweep is by definition the oldest row while it runs: enough newer rows — a
     burst of scoped refreshes, or the ``SKIPPED`` rows a schedule collision leaves
-    behind -- and the pruner deletes a row out from under the worker that owns it,
+    behind — and the pruner deletes a row out from under the worker that owns it,
     which then raises in ``_finalise`` on a run that no longer exists. A row nothing
     has finished writing is not history yet.
 
@@ -405,7 +405,7 @@ async def conflicting_run(
 
     Single-flight is judged **per host**, not globally: with a ten-minute schedule a
     global refusal would reject a one-host refresh exactly when someone wants one. A
-    run with no scope covers everything, so it overlaps whatever is asked -- including
+    run with no scope covers everything, so it overlaps whatever is asked — including
     another full refresh.
 
     Lives here rather than in the API handler because **both** paths need it. The
@@ -421,7 +421,7 @@ async def conflicting_run(
 
     **The check is not atomic**, and where ``exclude`` is given it does not need to be.
     Creating the row and claiming the work are two statements, so two callers can both
-    pass this check and both insert a ``RUNNING`` row -- two overlapping ``POST /runs``,
+    pass this check and both insert a ``RUNNING`` row — two overlapping ``POST /runs``,
     or beat entering ``run_probe`` beside one. Each worker then re-checks, finds the
     other, and *both* skip: the estate does not refresh at all, and both callers are
     already holding a ``202`` and a run id that will never sweep. Losing a race to
@@ -436,7 +436,7 @@ async def conflicting_run(
 
     :param session: The database session.
     :param node_ids: The hosts being asked for, or ``None`` / empty for the estate.
-    :param exclude: A run to ignore -- the caller's own, when it has already been
+    :param exclude: A run to ignore — the caller's own, when it has already been
         created. Without it a task would find its own row and refuse itself.
     :param stale_after: How old an in-flight run may be before it is presumed dead.
     :return: The blocking run, or ``None``.
@@ -464,7 +464,7 @@ async def conflicting_run(
 def _claimed_first(one: ProbeRun, other: ProbeRun) -> bool:
     """Return whether ``one`` has the better claim on the hosts both want.
 
-    By start time, and by id where two rows were created inside the same clock tick --
+    By start time, and by id where two rows were created inside the same clock tick —
     which a shared-second timestamp makes likely rather than exotic. Any total order
     both sides agree on would do; what matters is that it is a property of the rows,
     so two workers reading them separately reach the same verdict and exactly one

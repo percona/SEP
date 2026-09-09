@@ -19,8 +19,8 @@ The payload used to collect one ``ps`` line per dispatch and copy it into every
 target record. On a host running one mongod that is correct and cheap; on a host
 running several it gave every service the same argv, the same config path, the same
 uptime and the same installed version, while the database facts beside them came from
-each service's own port. So the one comparison this payload exists to make -- the
-*installed* binary against the *running* server -- was wrong for every service on the
+each service's own port. So the one comparison this payload exists to make — the
+*installed* binary against the *running* server — was wrong for every service on the
 host but one, and silently: the record looked complete.
 
 A mongos beside a mongod is the sharpest version. The shared line reported
@@ -29,7 +29,7 @@ but a category error.
 
 Multiple server processes per host are ordinary in the estates OM is for: an arbiter
 costs nothing to colocate, and a router usually sits on a member. These tests pin the
-attribution rule -- by port, with the single-process host exempt because a mongod on
+attribution rule — by port, with the single-process host exempt because a mongod on
 the default 27017 has no port on its command line to match.
 """
 
@@ -145,19 +145,19 @@ class TestMatchProcess:
         assert match_process([member, shard], MEMBER_PORT) is member
 
     def test_a_target_matching_no_running_port_is_not_running(self) -> None:
-        """Reporting nothing beats reporting another service's process."""
+        """Report nothing rather than another service's process."""
         processes = [process(MEMBER_PORT), process(SHARD_PORT, pid=SHARD_PID)]
 
         assert match_process(processes, UNKNOWN_PORT) is None
 
     def test_a_target_with_no_port_among_several_is_not_running(self) -> None:
-        """With several candidates and nothing to match on, no answer is honest."""
+        """Report no answer when several candidates share a host and nothing matches."""
         processes = [process(MEMBER_PORT), process(SHARD_PORT, pid=SHARD_PID)]
 
         assert match_process(processes, None) is None
 
     def test_no_server_running_matches_nothing(self) -> None:
-        """An empty host is not a failure to match, it is nothing to match."""
+        """Treat an empty host as nothing to match, not a failure to match."""
         assert match_process([], MEMBER_PORT) is None
 
 
@@ -165,7 +165,7 @@ class TestProcessFacts:
     """Assert the ``process`` sub-document either describes a process or says none."""
 
     def test_a_process_is_reported_whole(self) -> None:
-        """Every field a consumer reads comes off the matched process."""
+        """Take every field a consumer reads off the matched process."""
         facts = process_facts(process(SHARD_PORT, pid=SHARD_PID, uptime=SHARD_UPTIME))
 
         assert facts["running"] is True
@@ -236,7 +236,7 @@ class TestTheRecordsOfAMultiMongodHost:
         assert stopped["process"]["argv"] is None
 
     def test_a_stopped_service_still_reports_the_installed_binary(self) -> None:
-        """Installed version outlives the process that was running it.
+        """Keep the installed version after the process running it is gone.
 
         "Is this machine carrying the version we expect" is exactly the question
         asked about a node that is down.
@@ -266,7 +266,7 @@ class TestBinaryVersionIsAskedOncePerProgram:
         assert cache == {"mongod": MONGOD_VERSION}
 
     def test_an_unknown_program_is_collected_and_remembered(self, monkeypatch) -> None:
-        """One miss, one call, and never again for that program.
+        """Call once on a miss, and never again for that program.
 
         :param monkeypatch: The pytest monkeypatch fixture.
         """

@@ -122,5 +122,5 @@ def test_an_ordinary_member_is_mongod() -> None:
 
 
 def test_no_server_process_found_classifies_as_nothing() -> None:
-    """Absence is not a role: the caller must not blank a previously good one."""
+    """Keep a previously good role rather than blanking it on absence."""
     assert classify_role(record(program=None, running=False)) is None

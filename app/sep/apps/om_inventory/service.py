@@ -16,7 +16,7 @@
 """Run one probe sweep: inventory, executor mapping, dispatch, facts.
 
 This is the half of discovery that cannot be done from PMM. Everything PMM can
-derive for itself -- identity, versions, replica-set state, reachability, load -- it
+derive for itself — identity, versions, replica-set state, reachability, load — it
 reads from its own inventory and VictoriaMetrics. What is left needs a process on the
 database host to answer: the command line a mongod was started with, the config file
 it read, and above all the *installed* binary version as against the *running* server
@@ -248,7 +248,7 @@ def build_document(
 
     ``collected_at`` sits on the document rather than on each field: everything in one
     probe is collected at the same instant, and the granularity that can genuinely
-    differ is the row -- a host can be reachable while a mongod on it is not, and those
+    differ is the row — a host can be reachable while a mongod on it is not, and those
     are already two rows.
 
     :param record: One probe record.
@@ -280,7 +280,7 @@ class SweepOutcome:
     :param nodes: One record per mapped service; see :class:`ProbeRun`.
     :param hosts: The hosts in scope this sweep, whether or not they carry a service.
     :param host_documents: The ``observed`` document per host that answered, keyed by
-        executor host -- the level those attributes belong to.
+        executor host — the level those attributes belong to.
     :param service_documents: The ``observed`` document per service that answered,
         keyed by PMM's service id.
     :param service_roles: The role :func:`classify_role` read off an answering
@@ -291,16 +291,16 @@ class SweepOutcome:
         Only for services a run actually attempted: an entity nobody targeted must
         not have its timestamps touched at all.
     :param seen: ``(service, node_id)`` for every service PMM knows that resolved to
-        a host in scope, orphans included -- all of them get a row.
+        a host in scope, orphans included — all of them get a row.
     :param attempted: PMM's service ids for the subset this run actually probed. The
         rest keep the freshness columns they already had.
-    :param dispatched: Executor hosts a payload was actually sent to -- every host with
+    :param dispatched: Executor hosts a payload was actually sent to — every host with
         a usable executor, whether or not it serves a mapped service: a machine
         carrying a PMM client and no database is exactly the one an install decision is
         about, so it is dispatched to like any other. A host with **no** usable
         executor is not in here, and must not be: recording it as a failed attempt
         would have it accumulate a failure every sweep for a condition that is not a
-        failure -- there was nothing to dispatch to.
+        failure — there was nothing to dispatch to.
     :param host_errors: Why a host did not answer, keyed by PMM's node id. The
         dispatch's own error where it had one, and otherwise that it answered nothing;
         the estate row and the receipt both read it, so the two cannot give an
@@ -348,7 +348,7 @@ async def _enumerate(
 
     A refused connection to *our own* endpoints is not a finding about the estate, so
     it must not become one: it is retried for :data:`STARTUP_RETRIES` attempts and
-    only then allowed to fail the run. Everything else raises on the first attempt --
+    only then allowed to fail the run. Everything else raises on the first attempt —
     a 500 from inventory, or an executor backend that predates ``/hosts/states/``, is
     a real failure and waiting cannot improve it.
 
@@ -390,14 +390,14 @@ async def _enumerate(
 async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOutcome:
     """Map, probe and collect, without touching the run row.
 
-    Split out so :func:`run_probe` reads as the lifecycle it is -- create, work,
-    record -- rather than interleaving the two.
+    Split out so :func:`run_probe` reads as the lifecycle it is — create, work,
+    record — rather than interleaving the two.
 
     A scope narrows *everything downstream of enumeration*, not the enumeration
     itself: hosts are still listed from inventory, because that is how a scoped id is
     recognised as a host at all, and then everything outside the scope is dropped
     before a single dispatch is made. Nothing outside it is written, which is what
-    makes §5.4's rule real -- an entity this run did not attempt keeps every timestamp
+    makes §5.4's rule real — an entity this run did not attempt keeps every timestamp
     it had, so refreshing one host cannot make the rest of the estate look failed.
 
     :param observed_at: When the sweep began, ISO 8601, stamped on every fact.
@@ -496,7 +496,7 @@ def _build_receipt(
     Outcomes only, deliberately: what the probe *found* belongs to the estate, where
     it is upserted and stays current, and carrying it here too would be a second copy
     that goes stale the moment the next sweep runs. ``task_history_id`` is the
-    exception that proves it -- not a finding, but a pointer to where the raw output
+    exception that proves it — not a finding, but a pointer to where the raw output
     of this attempt can still be read, in the Nomad task log the receipt itself never
     holds.
 
@@ -625,7 +625,7 @@ def _record_entity(
 ) -> None:
     """Fold one mapped service into the entity writes the sweep will make.
 
-    An orphan still gets a row -- it is a service PMM knows about, and a listing that
+    An orphan still gets a row — it is a service PMM knows about, and a listing that
     hid it would report a healthier estate than exists. What it does not get is an
     *attempt*: nothing was run against it, so marking it failed would make a host
     whose executor is simply absent look like a host that refused to answer.
@@ -722,7 +722,7 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
     Every enumerated entity is written; only the ones this run actually probed have
     their freshness columns moved. A host with no executor is *seen* every sweep and
     *probed* by none of them, so its row and its ``executor_host`` stay current while
-    its failure history stays where it was -- which is what keeps "unreachable for
+    its failure history stays where it was — which is what keeps "unreachable for
     three days" from resetting to "unreachable since the last sweep".
 
     :param outcome: What the sweep produced.
@@ -771,7 +771,7 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
 
 
 def _terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
-    """Conclude a sweep from what it reached.
+    """Derive a sweep's terminal status from what it reached.
 
     Judged on **dispatches and services together**, not services alone. Services alone
     was right while every dispatch existed to reach one, and it stopped being right
@@ -782,13 +782,13 @@ def _terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
 
     Orphans still do not count against a run: a service whose node runs no healthy
     executor is a fact about the estate, not a failure of the sweep. Reaching *nothing*
-    is different -- no host answered and no service resolved -- and that is OM's
+    is different — no host answered and no service resolved — and that is OM's
     infrastructure being unavailable, which is the condition the probe exists to
     surface.
 
     "Nothing" means nothing *answered*, which is not the same as nothing being tried.
     Reserving ``FAILED`` for having attempted nothing at all would make a run that
-    dispatched to twelve hosts and got twelve failures ``PARTIAL`` instead -- the one
+    dispatched to twelve hosts and got twelve failures ``PARTIAL`` instead — the one
     status that says "look at OM itself" unreachable in the case that most needs it,
     and a total outage would read as "some of the estate is fine" to anything
     automating against it.

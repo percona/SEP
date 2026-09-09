@@ -137,8 +137,8 @@ async def run_sweep(
 ):
     """Run a sweep with the mapping, hosts and probe results stubbed.
 
-    Everything above the mapping is I/O -- two authenticated clients, the inventory
-    and Nomad -- so it is replaced wholesale; what is under test is what the sweep
+    Everything above the mapping is I/O — two authenticated clients, the inventory
+    and Nomad — so it is replaced wholesale; what is under test is what the sweep
     concludes from a mapping and its probe results.
 
     :param mapped_services: The mapping the sweep should see.
@@ -268,7 +268,7 @@ async def test_a_dispatched_host_s_receipt_carries_its_task_history_id() -> None
 
 @pytest.mark.asyncio
 async def test_a_host_never_dispatched_to_has_no_task_history_id() -> None:
-    """An orphan was never sent anywhere, so there is no run to point at."""
+    """Point at no run for an orphan, which was never sent anywhere."""
     outcome = await run_sweep(
         [mapped("svc-b", None, NodeResolution.ORPHANED)],
         {},
@@ -384,7 +384,7 @@ async def test_a_host_that_answered_nothing_at_all_still_says_something() -> Non
 
 @pytest.mark.asyncio
 async def test_a_host_that_answered_carries_no_error() -> None:
-    """Success must not leave a reason behind for the next reader to explain."""
+    """Leave no failure reason behind on success."""
     outcome = await run_sweep(
         [],
         {
@@ -404,7 +404,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
 
     A host carrying a PMM client and no database is the case OM exists for. The
     payload collects its installed version and used to have it dropped here, because
-    only the service fields lifted it -- on exactly the hosts with no service to lift.
+    only the service fields lifted it — on exactly the hosts with no service to lift.
     """
     outcome = await run_sweep(
         [],
@@ -467,7 +467,7 @@ class TestTheColdStartRace:
     The sweep reads the estate over HTTP from SEP itself, so a restart races its own
     uvicorn: beat's ``DatabaseScheduler`` sets "last run" to now on startup and fires
     the entry on its first tick, seconds before the API is listening. Measured on this
-    workspace -- the sweep called the inventory API 6 seconds before "Application
+    workspace — the sweep called the inventory API 6 seconds before "Application
     startup complete" and wrote a terminal ``FAILED`` carrying ``Cannot connect to
     host localhost:8000``, on an estate where a manual sweep moments later answered
     ``SUCCESS`` for all 14 services.
@@ -500,7 +500,7 @@ class TestTheColdStartRace:
 
     @pytest.mark.asyncio
     async def test_the_tasks_api_is_waited_out_too(self) -> None:
-        """Two processes, either of which can be the one still starting."""
+        """Retry when either of two processes can be the one still starting."""
         base = "app.sep.apps.om_inventory.service"
         states = AsyncMock(
             side_effect=[
@@ -521,7 +521,7 @@ class TestTheColdStartRace:
 
     @pytest.mark.asyncio
     async def test_an_api_that_never_answers_still_fails_the_run(self) -> None:
-        """Waiting is bounded: an endpoint that is misconfigured is a real failure.
+        """Stop waiting eventually: a misconfigured endpoint is a real failure.
 
         The retry exists for a web server that is seconds away, not to make a broken
         deployment look busy.
@@ -541,7 +541,7 @@ class TestTheColdStartRace:
 
     @pytest.mark.asyncio
     async def test_a_real_failure_is_not_retried(self) -> None:
-        """Only a refused connection is waited out.
+        """Wait out only a refused connection.
 
         A 500 from inventory, or an executor backend too old to serve
         ``/hosts/states/``, is a finding. Retrying it would delay the run by half a
