@@ -416,4 +416,5 @@ def test_secret_bearing_overridable_fields_are_pinned() -> None:
         (Settings, "PMM"),
         (AlertSettings, "PROVIDERS"),
         (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
+        (TasksSettings, "NOMAD"),
     }

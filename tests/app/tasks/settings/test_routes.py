@@ -25,9 +25,13 @@ from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.encryption import decrypt, is_encrypted
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import (
+    ReloadClassification,
+    SECRET_STR_MASK,
+)
 from app.tasks.config import tasks_settings
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -546,10 +550,12 @@ class TestTasksSettingsNestedOverrides:
             "NOMAD__minify_payload",
             "NOMAD__log_socket_read_timeout",
             "NOMAD__cert_expiry_warn_days",
+            "NOMAD__auth_scheme",
         ]
         for key in advanced_leaves:
             assert by_key[key]["is_advanced"] is True, key
         assert by_key["NOMAD__endpoint"]["is_advanced"] is False
+        assert by_key["NOMAD__api_key"]["is_advanced"] is False
 
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
@@ -781,6 +787,88 @@ class TestTasksSettingsCredentialUrlWriteback:
             assert "****" not in endpoint
         finally:
             tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsNomadApiKey:
+    """Cover the ``NOMAD__api_key`` leaf across LIST, PATCH and DELETE.
+
+    A model-level test can pass while a live PATCH is refused, stores the mask
+    instead of the secret, or never reaches the rebuilt executor, so each
+    surface is exercised through the API rather than through the model alone.
+    """
+
+    _API_KEY = "glsa_settings_api_key"
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot(self) -> Iterator[None]:
+        """Clear override snapshots after each test."""
+        yield
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+
+    async def test_list_reports_the_key_as_a_masked_secret(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Assert LIST flags the leaf secret and never renders the stored value."""
+        assert (
+            admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD__API_KEY": self._API_KEY},
+            ).status_code
+            == status.HTTP_200_OK
+        )
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        entry = {item["key"]: item for item in settings}["NOMAD__api_key"]
+        assert entry["is_secret"] is True
+        assert entry["value"] == SECRET_STR_MASK
+
+    async def test_patch_encrypts_the_row_and_applies_the_key(
+        self, admin_test_client: TestClient, session: AsyncSession
+    ) -> None:
+        """Assert PATCH stores ciphertext and the rebuilt executor carries the secret."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__API_KEY": self._API_KEY},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["value"] == SECRET_STR_MASK
+
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=TASKS_SETTINGS_TOKEN, key="NOMAD__api_key"
+        )
+        assert is_encrypted(rows[0].value)
+        assert decrypt(rows[0].value) == self._API_KEY
+
+        executor = normalize_nomad_config_value(tasks_settings.NOMAD)
+        assert executor.api_key is not None
+        assert executor.api_key.get_secret_value() == self._API_KEY
+        assert executor.headers["Authorization"] == f"Bearer {self._API_KEY}"
+
+    async def test_delete_reverts_the_effective_key(
+        self, admin_test_client: TestClient, session: AsyncSession
+    ) -> None:
+        """Assert DELETE drops the row and the effective executor loses the header."""
+        patched = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__API_KEY": self._API_KEY},
+        )
+        assert patched.status_code == status.HTTP_200_OK
+        configured = normalize_nomad_config_value(tasks_settings.NOMAD)
+        assert configured.headers["Authorization"] == f"Bearer {self._API_KEY}"
+
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/NOMAD__API_KEY"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=TASKS_SETTINGS_TOKEN, key="NOMAD__api_key"
+        )
+        assert rows == []
+        executor = normalize_nomad_config_value(tasks_settings.NOMAD)
+        assert executor.api_key is None
+        assert executor.headers == {}
 
 
 @pytest.mark.asyncio
