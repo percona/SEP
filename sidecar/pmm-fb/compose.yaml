@@ -29,12 +29,11 @@
 # into the gitignored .env; see README.md. The one credential spelled out below
 # is PMM's stock admin:admin, which the feature build ships.
 #
-# Every service pins linux/amd64. Nothing this topology runs publishes an arm64
-# variant — not the pmm-server and pmm-client feature builds, not the released
-# percona/pmm-server, and not the side-car image, whose manifest carries no
-# platform index at all. The pins state that constraint instead of leaving an
-# arm64 host to discover it, as a pull failure for the two images and as a
-# quietly mis-built one for sep-mysql.
+# pmm-server and sep-sidecar pin linux/amd64: nothing publishes an arm64 variant
+# of the feature builds, the released percona/pmm-server, or the side-car image,
+# and the pins state that instead of leaving an arm64 engine to discover it as a
+# pull failure. sep-mysql is built, so its platform follows the engine — see the
+# service's own comment and README.md § Caveats.
 
 name: sep-pmm-fb
 
@@ -111,16 +110,25 @@ services:
 
   sep-mysql:
     profiles: ["mysql"]
-    # Pinned for a different reason than the two above: this service is built,
-    # and its oraclelinux base is the one image here that does ship arm64. An
-    # arm64 host therefore builds natively and succeeds, having copied the
-    # pmm-client stage's amd64 binaries into an image that cannot run them.
-    platform: linux/amd64
+    # Built, unlike the two above, and its oraclelinux base ships arm64. On an
+    # arm64 engine bootstrap.sh writes linux/arm64 plus the released multi-arch
+    # pmm-client into .env and the executor runs natively; every other engine
+    # keeps the amd64 feature-build client. The executor is the one service
+    # that cannot be emulated under QEMU — README.md § Caveats.
+    platform: ${SEP_MYSQL_PLATFORM:-linux/amd64}
     build:
-      context: .
-      dockerfile: Containerfile.mysql
+      # The parent, so the build can copy sidecar/clone3_probe.py, which
+      # bootstrap.sh runs from the host and the entrypoint runs in the image
+      context: ..
+      dockerfile: pmm-fb/Containerfile.mysql
       args:
+        # A repin edits PMM_FB_TAG here and on pmm-server, and NOMAD_VERSION
+        # with whatever `tools/nomad version` that build ships; the build
+        # refuses a client stage whose Nomad disagrees.
         PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-6a928f4}
+        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
+        # Empty selects the amd64 feature-build client at PMM_FB_TAG
+        PMM_CLIENT_IMAGE: ${SEP_MYSQL_PMM_CLIENT_IMAGE:-}
     # service_started, not service_healthy: this node consumes none of the SEP
     # secret provisioning pmm-server's health now gates on, and ordering is all
     # it needs — pmm-managed starts answering registration requests later still.
@@ -150,6 +158,8 @@ services:
       PMM_AGENT_SETUP_NODE_ADDRESS: *sep_mysql_address
       PMM_AGENT_SETUP_NODE_TYPE: container
       PMM_AGENT_PATHS_NOMAD_DATA_DIR: /var/lib/nomad
+      # Skips the entrypoint's clone3 probe; bootstrap.sh honours the same name
+      SEP_FB_SKIP_CLONE3_CHECK: ${SEP_FB_SKIP_CLONE3_CHECK:-0}
     # Nomad's client fingerprinter needs cgroup control, and raw_exec places its
     # tasks into cgroups the client creates. Measured on this topology, and a
     # harness-only concession — the side-car topology needs neither.

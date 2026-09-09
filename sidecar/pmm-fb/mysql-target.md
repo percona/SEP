@@ -112,8 +112,14 @@ are the code.
 image and the PMM Client copied into `sep-mysql`, and the two must stay on the
 same build: the client ships its own `nomad` binary that has to speak RPC to
 the server's, and a released client beside a feature-build server pairs two
-Nomad builds nobody has tested. Move the variable — `compose.yaml` spells its
-pinned default out on both lines — and rebuild with `docker compose --profile
-mysql up -d --build`. Without `--build` you keep the old client against the new
+Nomad builds nobody has tested. The one sanctioned exception is an arm64
+engine, where `bootstrap.sh` points the build at the released multi-arch
+`percona/pmm-client:3.9.1`: its aarch64 Nomad is the version `NOMAD_VERSION`
+pins, which the build asserts, so the RPC pairing holds for as long as that pin
+moves with the tag — while its `pmm-agent` is the released one, so client-side
+changes in the feature build are not exercised there (README § Caveats). Move
+both variables — `compose.yaml` spells `PMM_FB_TAG`'s pinned default out on two
+lines, and `NOMAD_VERSION` takes whatever `tools/nomad version` the new build
+ships — and rebuild with `docker compose --profile mysql up -d --build`. Without `--build` you keep the old client against the new
 server, and the mismatch is silent: registration succeeds and only `raw_exec`
 placement misbehaves.
