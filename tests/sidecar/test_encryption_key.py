@@ -623,9 +623,11 @@ def test_the_minted_key_is_a_usable_key_of_the_documented_shape():
     """
     minted = helper.mint_key()
     cipher = Fernet(minted.encode())
+    minted_characters = set(minted)
 
     assert len(base64.urlsafe_b64decode(minted)) == helper.KEY_BYTES
-    assert set(minted) <= URL_SAFE_ALPHABET
+    assert minted_characters
+    assert minted_characters <= URL_SAFE_ALPHABET
     assert not is_encrypted(minted)
     assert cipher.decrypt(cipher.encrypt(b"probe")) == b"probe"
 
