@@ -28,6 +28,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db import ListQuery
 from app.core.db.list_query import build_search_predicate
 from app.core.db.utils import get_async_session_maker_from_engine, NullsLastOrdering
+from app.core.encryption import is_encrypted
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
@@ -35,6 +36,7 @@ from app.core.pagination import (
     Pagination,
 )
 from app.core.utils.date_time import utc_now
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
@@ -43,6 +45,7 @@ from app.tasks.crud import (
     TaskManager,
 )
 from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -50,6 +53,7 @@ from app.tasks.models import (
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryLog,
     TaskHistoryStatusEnum,
@@ -57,6 +61,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
+from tests.app.tasks.conftest import stored_execution_request
 
 HISTORY_FIXTURE_COUNT = 3
 PAGINATED_TASK_COUNT = 2
@@ -2589,3 +2594,103 @@ class TestTaskHistoryLogManagerDeleteChunksBelowOffset:
             300,
             400,
         ]
+
+
+class TestTaskHistoryManagerInFlightMetaValues:
+    """Cover the SQL-level ``meta`` reader over rows whose protected leaves are encrypted.
+
+    This is the one production reader that extracts a ``meta`` key straight out
+    of the stored JSON, so it is where "every other key stays plaintext and
+    queryable" either holds or does not.
+    """
+
+    @staticmethod
+    async def _seed(
+        session: AsyncSession,
+        *,
+        service_id: str,
+        status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.RUNNING,
+    ) -> None:
+        """Persist one in-flight history row carrying every leaf kind.
+
+        :param session: The session to persist through.
+        :param service_id: The plaintext ``_service_id`` the row records.
+        :param status: The status the row is seeded in.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name=f"meta-{service_id}")),
+        )
+        await TaskHistoryManager.save(
+            session,
+            TaskHistory(
+                task_id=task.id,
+                status=status,
+                execution_request=TaskExecutionRequest(
+                    task=task.name,
+                    target="node-1",
+                    meta={
+                        SERVICE_ID_META_KEY: service_id,
+                        "args": "restore --password hunter2",
+                        "config": "master_password: hunter2\n",
+                    },
+                    payload="secret document",
+                ),
+                executed_by="test-user",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_reads_a_plaintext_meta_key_off_an_encrypted_row(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the extraction still resolves once the protected leaves are ciphertext.
+
+        :param session: The async session the manager queries.
+        """
+        await self._seed(session, service_id="svc-1")
+        await self._seed(session, service_id="svc-2")
+        stored = await stored_execution_request(session, 1)
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+
+        values = await TaskHistoryManager.in_flight_meta_values(
+            session, SERVICE_ID_META_KEY
+        )
+
+        assert sorted(values) == ["svc-1", "svc-2"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("meta_key", ENCRYPTED_META_KEYS)
+    async def test_refuses_an_encrypted_meta_key(
+        self, session: AsyncSession, meta_key: str
+    ) -> None:
+        """Assert asking for an encrypted key raises rather than yielding ciphertext.
+
+        The extraction reads the stored JSON, so an encrypted key would come back
+        as a list of tokens. A caller reads this to learn what it must not act
+        on, so a plausible-looking wrong answer is worse than none.
+
+        :param session: The async session the manager queries.
+        :param meta_key: The encrypted key the caller asks for.
+        """
+        await self._seed(session, service_id="svc-1")
+
+        with pytest.raises(ValueError, match=meta_key):
+            await TaskHistoryManager.in_flight_meta_values(session, meta_key)
+
+    @pytest.mark.asyncio
+    async def test_ignores_a_terminal_row(self, session: AsyncSession) -> None:
+        """Assert the active-status scoping is unaffected by the encryption.
+
+        :param session: The async session the manager queries.
+        """
+        await self._seed(
+            session, service_id="finished", status=TaskHistoryStatusEnum.SUCCESS
+        )
+
+        assert (
+            await TaskHistoryManager.in_flight_meta_values(session, SERVICE_ID_META_KEY)
+            == []
+        )

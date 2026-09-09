@@ -31,6 +31,7 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    PrivateAttr,
     ValidationError,
     ValidationInfo,
 )
@@ -66,6 +67,11 @@ from app.core.utils.strings import shorten_text
 from app.tasks.alert_hooks import build_owner_alert_details
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
+from app.tasks.execution_request_secrets import (
+    decrypt_request_leaves,
+    encrypt_request_leaves,
+    redact_request_leaves,
+)
 from app.tasks.hook_resolver import validate_hook_path
 
 TASK_ALIAS_LENGTH = 100
@@ -310,6 +316,11 @@ class TaskExecutionRequest(BaseModel):
     tracking: ArbitraryMapping | None = {"allocation_id": None, "evaluation_id": None}
     eta: datetime | None = None
 
+    #: Dotted paths of the protected leaves the stored document could not be
+    #: read into. Private so it never reaches ``model_dump``, and therefore
+    #: neither the stored document nor an API response.
+    _unreadable_leaves: tuple[str, ...] = PrivateAttr(default=())
+
     @cached_property
     def payload_content(self) -> str | None:
         """Return the payload content, resolving a ``file://`` reference to file text.
@@ -325,6 +336,36 @@ class TaskExecutionRequest(BaseModel):
         if self.payload and self.payload.strip().startswith("file://"):
             return resolve_payload_reference(self.payload).read_text()
         return self.payload
+
+    @property
+    def unreadable_leaves(self) -> tuple[str, ...]:
+        """Return the protected leaves the stored document could not be read into.
+
+        Empty on a request the route layer built, and on a stored row whose every
+        protected leaf resolved. A non-empty value means those leaves still hold
+        the stored ciphertext rather than a value: a re-save has to write them
+        back unchanged, and a dispatch has to refuse.
+
+        :return: The dotted paths of the leaves that could not be read.
+        """
+        return self._unreadable_leaves
+
+    def mark_unreadable_leaves(self, leaves: tuple[str, ...]) -> None:
+        """Record the protected leaves the stored document could not be read into.
+
+        Set by the storage layer, which is the only place that knows a leaf
+        arrived from the database rather than from a request body, which is the
+        distinction the write path needs and cannot recover from the value.
+
+        The marker describes the values the leaves held when the row was loaded,
+        and nothing re-derives it on assignment. Replacing a marked leaf with a
+        new plaintext without clearing the marker would have the write path spare
+        that plaintext and store it in the clear; no caller does this today, and
+        one that wants to must clear the marker in the same breath.
+
+        :param leaves: The dotted paths of the leaves that could not be read.
+        """
+        self._unreadable_leaves = leaves
 
 
 class TaskExecutionRequestJSON(AutoJSON):
@@ -344,34 +385,59 @@ class TaskExecutionRequestJSON(AutoJSON):
     def process_result_value(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
         """Deserialize a JSON value into a ``TaskExecutionRequest``.
 
+        Decrypt the credential-bearing leaves before construction, so every
+        consumer above the storage layer reads plaintext and nothing else in the
+        service changes. A leaf this deployment's ``ENCRYPTION_KEY`` cannot read
+        is left as the stored ciphertext and named on the returned request
+        instead of raising: this runs inside row loading for a column the
+        task-history list routes undefer, so raising would fail a whole page over
+        one row.
+
         :param value: The raw value from the database.
-        :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
-        :type dialect: Any
         :return: A ``TaskExecutionRequest`` if valid, otherwise the raw value.
-        :rtype: Any
         """
         if value is None:
             return value
+        unreadable: tuple[str, ...] = ()
+        document = value
+        if isinstance(value, dict):
+            document, unreadable = decrypt_request_leaves(value)
         try:
-            return TaskExecutionRequest(**value)
+            request = TaskExecutionRequest(**document)
         except (ValidationError, TypeError):
             return value
+        request.mark_unreadable_leaves(unreadable)
+        return request
 
     def process_bind_param(self, value: Any, dialect: Any) -> Any:  # noqa: ARG002
         """Serialize a ``TaskExecutionRequest`` into a dict for storage.
 
+        Encrypt the credential-bearing leaves of the dumped document, except
+        those a read already reported unreadable on this object: encrypting such
+        a token a second time destroys the only copy of its plaintext, and a
+        loaded row does get saved back. Which leaves to spare comes from the
+        object's provenance, never from testing whether a value looks like
+        ciphertext. A freshly submitted payload can legitimately be a
+        well-formed token, and sparing that one would store a credential in the
+        clear.
+
+        Both branches copy before rewriting, so the caller's live request (which
+        the dispatch dedup comparison reads in the same request) and any plain
+        dict handed to the column keep their plaintext.
+
         :param value: The value to store in the database.
-        :type value: Any
         :param dialect: The SQLAlchemy dialect in use.
-        :type dialect: Any
         :return: A dict representation suitable for JSON storage.
-        :rtype: Any
         """
         if value is None:
             return value
         if isinstance(value, TaskExecutionRequest):
-            return value.model_dump(mode="json")
+            return encrypt_request_leaves(
+                value.model_dump(mode="json"), preserve=value.unreadable_leaves
+            )
+        if isinstance(value, dict):
+            return encrypt_request_leaves(value)
         return value
 
 
@@ -1146,11 +1212,60 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         outcome, or None when the run did not fail or the reason is unknown. A
         historic row predating the column reports None, which means "unknown"
         rather than "did not fail".
+    :param unreadable_request_leaves: Dotted paths of the ``execution_request``
+        leaves stored encrypted that this deployment's key could not read, for
+        example ``["meta.args"]``. Each named leaf is serialised as ``null``
+        rather than as the stored ciphertext, so a client shows the value as
+        withheld instead of rendering an opaque token. Empty on every row that
+        read cleanly, which is every row on a healthy deployment.
     """
 
     task: TaskResponse
     has_logs: bool = False
     log_capture: LogCaptureStatusEnum = LogCaptureStatusEnum.UNKNOWN
+    unreadable_request_leaves: list[str] = []
+
+    @model_validator(mode="after")
+    def _resolve_unreadable_request_leaves(self) -> Self:
+        """Derive the indicator from a loaded row, or keep one already resolved.
+
+        A declared field rather than a ``computed_field`` because the SEP
+        gateway re-validates this body into its own response model, and Pydantic
+        does not accept a computed field on validation. By then the leaf is
+        already ``null`` and the indicator cannot be re-derived, so a computed
+        field would report an empty list for a row the tasks service flagged.
+        An inbound non-empty value is therefore preserved as it stands.
+
+        :return: This response, with the indicator resolved.
+        """
+        if not self.unreadable_request_leaves:
+            self.unreadable_request_leaves = list(
+                self.execution_request.unreadable_leaves
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _redact_unreadable_request_leaves(self) -> Self:
+        """Replace a leaf that could not be read with ``None``, not with its token.
+
+        A *replacement* rather than an in-place edit, because a response validated
+        from an ORM row shares that row's request object: blanking a leaf on it
+        would destroy the ciphertext the write path has to preserve. It is also
+        not a ``field_serializer``, which would be the obvious way to redact on
+        the way out. Pydantic derives the field's published schema from the
+        serializer's return type, so the OpenAPI ``$ref`` collapses to a bare
+        object and every generated client loses the field's type.
+
+        :return: This response, carrying a redacted execution request.
+        """
+        if self.unreadable_request_leaves:
+            self.execution_request = TaskExecutionRequest(
+                **redact_request_leaves(
+                    self.execution_request.model_dump(mode="json"),
+                    self.unreadable_request_leaves,
+                )
+            )
+        return self
 
     @computed_field
     @property

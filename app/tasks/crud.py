@@ -37,6 +37,7 @@ from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.execution.executors.nomad.steps import NON_PERSISTABLE_STEPS
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     CAPTURE_STATUS_PRECEDENCE,
@@ -386,10 +387,21 @@ class TaskHistoryManager(BaseSQLModelManager):
         truncated answer is wrong rather than short. In-flight executions are
         bounded by concurrency, not by history.
 
+        An encrypted key is refused rather than served. The extraction reads the
+        stored JSON directly, so pointing it at one of those keys returns a list
+        of ciphertext, which is a plausible-looking answer to a question whose
+        caller asked it precisely to avoid acting wrongly.
+
         :param session: The SQLAlchemy asynchronous session to use.
         :param meta_key: The execution-request ``meta`` key to read.
+        :raises ValueError: If ``meta_key`` names a key stored encrypted.
         :return: The distinct values present under that key.
         """
+        if meta_key in ENCRYPTED_META_KEYS:
+            raise ValueError(
+                f"{meta_key!r} is stored encrypted and cannot be read out of the "
+                f"execution request in SQL; load the rows instead."
+            )
         extracted = func_json_extract(
             session.get_bind().name,
             col(TaskHistory.execution_request),

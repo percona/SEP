@@ -31,6 +31,7 @@ from app.sep.api.task_history_actors import (
     SYSTEM_ACTOR_LABELS,
 )
 from app.tasks.crud import SYSTEM_EXECUTOR_IDS
+from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import SYSTEM_USER, TaskBackendEnum
 from tests.app.factories import TaskFactory
 
@@ -304,3 +305,33 @@ class TestResolveHistoryPayloadActors:
         payload = {"items": [_history_payload()]}
 
         assert resolve_history_payload_actors(payload, USERNAME_MAP) is payload
+
+
+class TestSepTaskHistoryResponseUnreadableLeaves:
+    """Cover the gateway's handling of an already-redacted upstream row."""
+
+    def test_preserves_an_indicator_it_cannot_re_derive(self):
+        """Keep the upstream indicator, which nothing downstream can reconstruct.
+
+        The leaf is ``null`` by the time this model validates, so a computed
+        field would report an empty list for a row the tasks service flagged.
+        """
+        row = _history_payload(
+            execution_request={
+                "task": "backup",
+                "target": "host1",
+                "meta": {"args": None},
+            },
+            unreadable_request_leaves=[ARGS_LEAF],
+        )
+
+        response = SepTaskHistoryResponse.model_validate(row)
+
+        assert response.unreadable_request_leaves == [ARGS_LEAF]
+        assert (response.execution_request.meta or {})["args"] is None
+
+    def test_reports_no_leaves_for_a_clean_row(self):
+        """Report an empty list for a row the tasks service read cleanly."""
+        response = SepTaskHistoryResponse.model_validate(_history_payload())
+
+        assert response.unreadable_request_leaves == []

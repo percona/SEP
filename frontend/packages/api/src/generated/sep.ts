@@ -4113,6 +4113,11 @@ export interface components {
       /** @default pending */
       status: components['schemas']['TaskHistoryStatusEnum'];
       task: components['schemas']['SepTaskResponse'];
+      /**
+       * Unreadable Request Leaves
+       * @default []
+       */
+      unreadable_request_leaves: string[];
       /** Updated At */
       updated_at?: string | null;
     };
