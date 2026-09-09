@@ -1,5 +1,5 @@
 ---
-applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/apps/**,frontend/packages/shell/**"
+applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,app/sep/apps/**/views.py,app/sep/apps/**/spec.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/apps/**,frontend/packages/shell/**"
 ---
 
 # API-First + React
@@ -18,7 +18,7 @@ Use `/api/sep/<resource>/` when data is shared across apps (executor hosts, curr
 
 ## Rule 2 — Schema-driven by default
 
-Default: define an `AppSchema` in `app/sep/apps/{name}/schema.py`, register an app router, ship a React package that's a pass-through to `<SchemaDrivenApp pluginName="…" />`.
+Default: declare the presentation model in `app/sep/apps/{name}/` and register an app router — **no React package**. `SchemaDrivenAppResolver` (the terminal `*` route in `frontend/packages/shell/src/router.tsx`) mounts a schema-driven app at render from the `GET /api/apps` payload; only bespoke apps take an entry in `CUSTOM_APP_REGISTRY` (`frontend/packages/shell/src/appRegistry.tsx`). Flag any new `frontend/packages/apps/<name>/` package whose component body is just `<SchemaDrivenApp pluginName="…" />` — that package is the resolver's job. The schema may be *derived* rather than hand-written: the `task` scaffold flavor emits `models.py` + `spec.py` + `views.py` and no `schema.py`, and archives, checksums, backup_pg and mysql_backups each carry their presentation bundle as a `Views(...)` in `views.py` feeding the derived `GET /schema`. Review the `Views` bundle wherever there is no `schema.py`; a hand-written `AppSchema` alongside a `Views` bundle is the drift to flag.
 
 **Custom React (escape hatch)** requires (a) no `AppSchema` shape covers the app AND (b) the missing extension wouldn't benefit any other planned app. Only **alerts** and **report** qualify today. **alters** and **archives** are schema-driven via the DSL primitives (conditional rules + side-actions + derived tasks) — reject any proposal to revert either to custom React.
 
@@ -34,10 +34,11 @@ Source of truth: `frontend/packages/framework/src/index.ts` — check it for the
 
 ## Rule 4 — URL & response conventions
 
-- `/api/apps/{name}/` app routes (default); `/api/sep/<resource>/` SEP-level core; `/api/auth/*`, `/api/me/*`, `/api/schema/*` core.
+- `/api/apps/{name}/` app routes (default); `/api/sep/<resource>/` SEP-level core; `/api/oauth/*`, `/api/users/*` (current user is `/api/users/me`), `/api/config/*` core (`app/api/main.py`).
 - `/api/inventory/*`, `/api/tasks/*` are internal-only after Wave 3; FE never calls them.
 - **No versioning** — no `/api/v1/`.
-- **Bare Pydantic responses** — `response_model=ChecksumTaskResponse` (or `list[...]`), not `ApiResponse[...]` envelope wrappers.
+- **Bare Pydantic responses** — `response_model=ConnectivityCheckResponse` (or `list[...]`, e.g. `app/sep/apps/inventory/api_routes.py`), not `ApiResponse[...]` envelope wrappers.
+- **Pagination has no house shape.** Neither an `X-Total-Count` header form nor a `Page[T]` generic was ever adopted — every live `api_routes.py` returns a bare `list[...]`. A PR introducing pagination picks one and says why in the description; flag a `Page[T]`-style wrapper landed silently as if it were the established convention.
 - **Model naming**: `{Resource}Base` → `{Resource}Write` (input) → `{Resource}Response` (output) → `{Resource}` (DB table). Reject `*Request` / `*Input` / `*Output` / `*Payload` suffixes.
 - **Exceptions & status codes**: use SEP project exceptions (`HTTPNotFoundException`, `HTTPConflictException`, `HTTPBadRequestException`, `HTTPUnauthorizedException`), never `fastapi.HTTPException` directly; status codes via `status.HTTP_*` constants, never bare integers.
 
