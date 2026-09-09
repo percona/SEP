@@ -33,7 +33,7 @@ from app.sep.apps.om_inventory.enumeration import InventoryHost
 from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import ExecutorState, MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
-from app.sep.apps.om_inventory.service import _enumerate, _sweep, STARTUP_RETRIES
+from app.sep.apps.om_inventory.service import enumerate_estate, STARTUP_RETRIES, sweep
 
 OBSERVED_AT = "2026-08-12T12:00:00+00:00"
 
@@ -169,7 +169,7 @@ async def run_sweep(
         patch(f"{base}.map_services", return_value=mapped_services),
         patch(f"{base}.probe_all", AsyncMock(return_value=host_results)),
     ):
-        return await _sweep(OBSERVED_AT)
+        return await sweep(OBSERVED_AT)
 
 
 @pytest.mark.asyncio
@@ -493,7 +493,7 @@ class TestTheColdStartRace:
             patch(f"{base}.get_executor_states", AsyncMock(return_value={})),
             patch("asyncio.sleep", AsyncMock()),
         ):
-            enumerated = await _enumerate(MagicMock(), MagicMock())
+            enumerated = await enumerate_estate(MagicMock(), MagicMock())
 
         assert enumerated == ([], [], {})
         assert services.await_count == RETRIED_ONCE
@@ -514,7 +514,7 @@ class TestTheColdStartRace:
             patch(f"{base}.get_executor_states", states),
             patch("asyncio.sleep", AsyncMock()),
         ):
-            enumerated = await _enumerate(MagicMock(), MagicMock())
+            enumerated = await enumerate_estate(MagicMock(), MagicMock())
 
         assert enumerated == ([], [], {})
         assert states.await_count == RETRIED_ONCE
@@ -535,7 +535,7 @@ class TestTheColdStartRace:
             patch("asyncio.sleep", AsyncMock()),
             pytest.raises(ClientConnectionError),
         ):
-            await _enumerate(MagicMock(), MagicMock())
+            await enumerate_estate(MagicMock(), MagicMock())
 
         assert services.await_count == STARTUP_RETRIES
 
@@ -556,6 +556,6 @@ class TestTheColdStartRace:
             patch("asyncio.sleep", AsyncMock()),
             pytest.raises(RuntimeError),
         ):
-            await _enumerate(MagicMock(), MagicMock())
+            await enumerate_estate(MagicMock(), MagicMock())
 
         assert services.await_count == 1

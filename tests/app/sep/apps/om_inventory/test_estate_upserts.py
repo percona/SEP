@@ -49,7 +49,7 @@ from app.sep.apps.om_inventory.crud import (
 from app.sep.apps.om_inventory.enumeration import InventoryHost
 from app.sep.apps.om_inventory.mapping import ExecutorState
 from app.sep.apps.om_inventory.models import NodeResolution, OmHost, OmService
-from app.sep.apps.om_inventory.service import _persist_estate, SweepOutcome
+from app.sep.apps.om_inventory.service import persist_estate, SweepOutcome
 
 NODE_ID = "id-db00"
 SERVICE_ID = "svc-db00"
@@ -427,7 +427,7 @@ class TestExecutorFactsReachTheRow:
             "app.sep.apps.om_inventory.service.get_async_session_maker",
             return_value=lambda: nullcontext(session),
         ):
-            await _persist_estate(outcome, uuid4())
+            await persist_estate(outcome, uuid4())
 
         stored = (await list_hosts(session))[0]
         assert stored.observed["executor"] == {
@@ -463,7 +463,7 @@ class TestExecutorFactsReachTheRow:
             "app.sep.apps.om_inventory.service.get_async_session_maker",
             return_value=lambda: nullcontext(session),
         ):
-            await _persist_estate(outcome, uuid4())
+            await persist_estate(outcome, uuid4())
 
         stored = (await list_hosts(session))[0]
         assert stored.observed["os"] == GOOD_DOCUMENT["os"]
@@ -509,7 +509,7 @@ class TestTheFailureReasonReachesTheRow:
             "app.sep.apps.om_inventory.service.get_async_session_maker",
             return_value=lambda: nullcontext(session),
         ):
-            await _persist_estate(outcome, uuid4())
+            await persist_estate(outcome, uuid4())
 
         stored = (await list_hosts(session))[0]
         assert stored.last_error == (
@@ -543,7 +543,7 @@ class TestTheFailureReasonReachesTheRow:
             "app.sep.apps.om_inventory.service.get_async_session_maker",
             return_value=lambda: nullcontext(session),
         ):
-            await _persist_estate(outcome, uuid4())
+            await persist_estate(outcome, uuid4())
 
         stored = (await list_hosts(session))[0]
         assert stored.last_error is None

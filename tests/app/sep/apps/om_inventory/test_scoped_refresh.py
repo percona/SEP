@@ -37,12 +37,10 @@ from datetime import timedelta
 import pytest
 import pytest_asyncio
 from fastapi import status
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlalchemy import text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import require_minimum_role_for_unsafe_methods
-from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.utils.date_time import utc_now
 from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.crud import (
@@ -58,19 +56,13 @@ from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import ExecutorState, MappedService
 from app.sep.apps.om_inventory.models import NodeResolution, ProbeRun, ProbeRunStatus
 from app.sep.apps.om_inventory.service import (
-    _finalise,
-    _narrow_to_scope,
-    _terminal_status,
+    finalise,
+    narrow_to_scope,
     SweepOutcome,
+    terminal_status,
 )
-from app.sep.deps import (
-    get_current_user,
-    get_session,
-    require_bearer_for_unsafe_methods,
-)
-from app.sep.main import sep_app
+from tests.app.sep.apps.om_inventory.conftest import BASE
 
-BASE = "/api/apps/om_inventory"
 NODE_A = "id-db00"
 NODE_B = "id-db01"
 #: One host with an executor and one without, which is the smallest estate that can
@@ -78,30 +70,6 @@ NODE_B = "id-db01"
 TWO_HOSTS = 2
 #: Three runs kept down to one: the two that are not the survivor.
 PRUNED = 2
-
-
-@pytest_asyncio.fixture
-async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
-    """Yield an authenticated client sharing the test session.
-
-    :param regular_user: The authenticated user.
-    :param session: The database session the routes should use.
-    :return: The client.
-    """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_session] = lambda: session
-    client = AsyncClient(
-        transport=ASGITransport(app=sep_app),
-        base_url="http://test",
-        headers={"Authorization": "Bearer test"},
-    )
-    try:
-        yield client
-    finally:
-        await client.aclose()
-        sep_app.dependency_overrides = {}
 
 
 @pytest_asyncio.fixture
@@ -177,7 +145,7 @@ class TestNarrowToScope:
         services = [service_on("db00"), service_on("db01")]
         mapped = [MappedService(s, s.node_name, NodeResolution.NAME) for s in services]
 
-        scoped_hosts, scoped_services, scoped_mapped = _narrow_to_scope(
+        scoped_hosts, scoped_services, scoped_mapped = narrow_to_scope(
             hosts, services, mapped, [NODE_A]
         )
 
@@ -195,7 +163,7 @@ class TestNarrowToScope:
         """
         hosts = [host(NODE_A, "db00")]
 
-        scoped_hosts, scoped_services, scoped_mapped = _narrow_to_scope(
+        scoped_hosts, scoped_services, scoped_mapped = narrow_to_scope(
             hosts, [service_on("db00")], [], ["id-that-vanished"]
         )
 
@@ -217,7 +185,7 @@ class TestTerminalStatus:
             host_documents={"pmm-client-node00": {"os": "Ubuntu 24.04"}},
         )
 
-        assert _terminal_status(outcome) is ProbeRunStatus.SUCCESS
+        assert terminal_status(outcome) is ProbeRunStatus.SUCCESS
 
     def test_a_dispatch_that_answered_nothing_is_partial(self) -> None:
         """Report one silent host among several as partial, not total, failure."""
@@ -225,14 +193,14 @@ class TestTerminalStatus:
             dispatched={"a", "b"}, host_documents={"a": {"os": "Ubuntu 24.04"}}
         )
 
-        assert _terminal_status(outcome) is ProbeRunStatus.PARTIAL
+        assert terminal_status(outcome) is ProbeRunStatus.PARTIAL
 
     def test_reaching_nothing_at_all_is_a_failure(self) -> None:
         """No host answered and no service resolved: OM's own plumbing is down.
 
         That is the condition the probe exists to surface, so it must stay loud.
         """
-        assert _terminal_status(SweepOutcome()) is ProbeRunStatus.FAILED
+        assert terminal_status(SweepOutcome()) is ProbeRunStatus.FAILED
 
     def test_orphans_alone_do_not_fail_a_run(self) -> None:
         """A service with no executor is an estate fact, not a sweep failure."""
@@ -242,7 +210,7 @@ class TestTerminalStatus:
             host_documents={"a": {"os": "Ubuntu 24.04"}},
         )
 
-        assert _terminal_status(outcome) is ProbeRunStatus.SUCCESS
+        assert terminal_status(outcome) is ProbeRunStatus.SUCCESS
 
     def test_every_dispatch_failing_is_a_failure_not_a_partial(self) -> None:
         """Report nothing reached when nothing answered, however much was tried.
@@ -256,7 +224,7 @@ class TestTerminalStatus:
         """
         outcome = SweepOutcome(dispatched={"a", "b", "c"})
 
-        assert _terminal_status(outcome) is ProbeRunStatus.FAILED
+        assert terminal_status(outcome) is ProbeRunStatus.FAILED
 
     def test_no_service_answering_on_a_host_that_did_is_still_partial(self) -> None:
         """Report partial when something answered, so the sweep reached the estate.
@@ -271,7 +239,7 @@ class TestTerminalStatus:
             host_documents={"a": {"os": "Ubuntu 24.04"}},
         )
 
-        assert _terminal_status(outcome) is ProbeRunStatus.PARTIAL
+        assert terminal_status(outcome) is ProbeRunStatus.PARTIAL
 
 
 class TestTriggerScope:
@@ -472,7 +440,7 @@ class TestHostCounters:
             host_documents={"pmm-client-node00": {"os": "Ubuntu 24.04"}},
         )
 
-        await _finalise(session, run.id, outcome)
+        await finalise(session, run.id, outcome)
 
         stored = await ProbeRunManager.get(session, id=run.id)
         assert (stored.hosts_total, stored.hosts_probeable, stored.hosts_answered) == (
@@ -520,7 +488,7 @@ class TestHostCounters:
             host_documents={"a": {"os": "Ubuntu 24.04"}},
         )
 
-        await _finalise(session, run.id, outcome)
+        await finalise(session, run.id, outcome)
 
         stored = await ProbeRunManager.get(session, id=run.id)
         assert stored.hosts_total == TWO_HOSTS
