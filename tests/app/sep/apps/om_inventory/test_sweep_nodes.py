@@ -426,8 +426,8 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
     document = outcome.host_documents["pmm-client-node00"]
     assert document["installed_version"] == "7.0.39-21"
     assert document["os"] == "Ubuntu 24.04"
-    # The payload collects it (collect_os_facts), but nothing lifted it into the
-    # document until HOST_FIELDS carried an entry for it.
+    # Collected by collect_os_facts, and reaches the document only because
+    # HOST_FIELDS carries an entry lifting it.
     assert document["arch"] == "x86_64"
     # Machine-readable, distinct from "os"'s pretty name.
     assert document["os_id"] == "ubuntu"
