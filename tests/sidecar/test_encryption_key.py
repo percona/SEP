@@ -15,12 +15,14 @@
 """Cover the side-car's encryption-key resolution, freshness guard and mint."""
 
 import asyncio
-import json
+import base64
+import fcntl
 import os
 import socket
 import stat
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -54,6 +56,16 @@ UNREACHABLE_PORT = 1
 
 SHORT_PROBE_TIMEOUT = "1.5"
 """Short enough that an unreachable database is refused inside a test's patience."""
+
+BLOCKED_RUN_SECONDS = 6.0
+"""Long enough to clear interpreter start, so a timeout means the lock held."""
+
+RETRIED_PROBE_TIMEOUT = 2.0
+"""A bound long enough that reaching it can only mean the probe retried.
+
+A refused connection returns instantly, so a run that spends this long before
+giving up cannot have refused on the first error.
+"""
 
 RESTORE_HINT = "sep-state"
 """What a refusal has to name so an operator can act on it."""
@@ -154,7 +166,9 @@ def stalled_database_port() -> Iterator[int]:
         yield listener.getsockname()[1]
 
 
-def run_helper(directory: Path, **environment: str) -> subprocess.CompletedProcess[str]:
+def run_helper(
+    directory: Path, *, timeout: float | None = None, **environment: str
+) -> subprocess.CompletedProcess[str]:
     """Run the helper as ``entrypoint.sh`` runs it, from a minimal environment.
 
     ``ENCRYPTION_KEY`` is deliberately absent from the base: the whole point of
@@ -162,6 +176,8 @@ def run_helper(directory: Path, **environment: str) -> subprocess.CompletedProce
 
     :param directory: The working directory, which is also where the databases
         and the state directory live.
+    :param timeout: How long to wait before raising
+        :class:`subprocess.TimeoutExpired`, or ``None`` to wait indefinitely.
     :param environment: Variables to add over the base.
     :return: The completed run, whose stdout carries the resolved key.
     """
@@ -179,6 +195,7 @@ def run_helper(directory: Path, **environment: str) -> subprocess.CompletedProce
         capture_output=True,
         text=True,
         check=False,
+        timeout=timeout,
     )
 
 
@@ -218,7 +235,8 @@ def test_a_minted_key_is_one_the_settings_validator_accepts(fresh_deployment: Pa
     result = run_helper(fresh_deployment)
 
     assert result.returncode == 0, result.stderr
-    assert Fernet(result.stdout.strip().encode())
+    cipher = Fernet(result.stdout.strip().encode())
+    assert cipher.decrypt(cipher.encrypt(b"an-override-value")) == b"an-override-value"
 
 
 def test_a_minted_key_is_persisted_owner_only(fresh_deployment: Path):
@@ -404,6 +422,48 @@ def test_a_database_that_never_answers_refuses_within_the_timeout(
     assert not persisted_key_path(fresh_deployment).exists()
 
 
+def test_an_unreachable_database_is_retried_rather_than_refused_on_sight(
+    fresh_deployment: Path,
+):
+    """Keep waiting for a database that is not up yet, which a cold start is.
+
+    The supervised migration steps wait for postgres unboundedly, so on a first
+    start the databases are routinely still coming up -- exactly when the mint
+    path runs. A refused connection fails instantly, so refusing on the first
+    error would kill the container in the ordinary case rather than an
+    exceptional one. Refusing only after the bound is what distinguishes the
+    two, and it is visible in the wall clock.
+    """
+    started = time.monotonic()
+
+    result = run_helper(
+        fresh_deployment,
+        SEP_ENCRYPTION_PROBE_TIMEOUT=str(RETRIED_PROBE_TIMEOUT),
+        **unreachable_environment("SEP"),
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.returncode != 0
+    assert elapsed >= RETRIED_PROBE_TIMEOUT
+    assert not persisted_key_path(fresh_deployment).exists()
+
+
+def test_the_unreachable_refusal_does_not_send_the_operator_after_a_backup(
+    fresh_deployment: Path,
+):
+    """Say the database is unreachable, not that a key needs restoring.
+
+    A database still starting is the common cause here, and the ciphertext
+    remedy -- restore the key from a backup of the state volume -- is both
+    inapplicable and expensive to act on.
+    """
+    result = run_helper(fresh_deployment, **unreachable_environment("SEP"))
+
+    assert result.returncode != 0
+    assert "SEP_DB_HOST" in result.stderr
+    assert "backup" not in result.stderr
+
+
 def test_an_unparseable_stored_value_refuses_the_mint(tmp_path: Path):
     """Fail closed on a value the probe cannot decode, which may hide a token."""
     create_database(tmp_path, DATABASE_FILENAMES["SEP"], "a-plain-value")
@@ -465,6 +525,26 @@ def test_two_concurrent_starts_converge_on_one_key(fresh_deployment: Path):
     )
 
 
+def test_a_peer_holding_the_state_lock_blocks_the_mint(fresh_deployment: Path):
+    """Wait for a peer's turn rather than probing and minting beside it.
+
+    The convergence test above cannot see this by itself: because
+    :func:`resolve` returns the value re-read from disk, an unlocked
+    interleaving of write-write-read-read still converges, so deleting the lock
+    leaves that test roughly a coin flip. Holding the lock from outside is what
+    makes the dependence on it observable at all.
+    """
+    lock_path = fresh_deployment / "state" / helper.LOCK_FILENAME
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with lock_path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        with pytest.raises(subprocess.TimeoutExpired):
+            run_helper(fresh_deployment, timeout=BLOCKED_RUN_SECONDS)
+
+    assert not persisted_key_path(fresh_deployment).exists()
+
+
 @pytest.mark.parametrize(
     "value",
     [
@@ -503,8 +583,22 @@ def test_the_minted_key_matches_what_the_makefile_generates():
     """
     minted = helper.mint_key()
 
-    assert Fernet(minted.encode())
+    assert len(base64.urlsafe_b64decode(minted)) == helper.KEY_BYTES
     assert not is_encrypted(minted)
+
+
+def test_the_helper_reaches_the_image():
+    """Assert the helper is copied in; bundle.tgz carries no sidecar/ file.
+
+    A missing ``COPY`` surfaces only as a container that dies on start, with
+    the entrypoint's command substitution reporting a missing file rather than
+    anything about encryption.
+    """
+    containerfile = SIDECAR_DIR / "Containerfile.sidecar"
+
+    assert "./sidecar/encryption_key.py ./encryption_key.py" in containerfile.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_the_refusal_names_the_state_directory_and_the_restore_path(tmp_path: Path):
@@ -527,4 +621,5 @@ def test_no_diagnostic_is_written_to_the_channel_the_key_is_read_from(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.count("\n") == 1
-    assert json.dumps(result.stdout.strip())
+    persisted = persisted_key_path(fresh_deployment).read_text(encoding="utf-8")
+    assert result.stdout == f"{persisted}\n"

@@ -47,6 +47,7 @@ import math
 import os
 import sys
 import tempfile
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
@@ -65,7 +66,17 @@ DEFAULT_STATE_DIR = Path("/home/sep/state")
 PERSISTED_FILENAME = "ENCRYPTION_KEY"
 LOCK_FILENAME = ".ENCRYPTION_KEY.lock"
 
-DEFAULT_PROBE_TIMEOUT_SECONDS = 15.0
+DEFAULT_PROBE_TIMEOUT_SECONDS = 60.0
+"""How long the probe keeps waiting for the databases, across all three.
+
+The supervised migration steps wait for postgres unboundedly
+(``supervisord.conf``: ``until nc -z ...; do sleep 1; done``), so on a first
+start the databases are routinely not up yet -- which is exactly when the mint
+path runs. A probe that refused on the first connection error would make PID 1
+die on the ordinary cold start this feature exists to serve.
+"""
+
+RETRY_INTERVAL_SECONDS = 3.0
 
 KEY_BYTES = 32
 """What Fernet's URL-safe base64 key decodes to: a 16-byte signing half and a
@@ -199,9 +210,12 @@ def mounted_key() -> str | None:
             if not entry.resolve().is_relative_to(directory):
                 continue
             return entry.read_text(encoding="utf-8").strip() or None
-    except OSError:
-        # An unreadable directory supplies nothing, which is how the shell
-        # helper's glob treats it too -- and the channels below still apply.
+    except (OSError, UnicodeDecodeError):
+        # An unreadable directory or file supplies nothing, which is how the
+        # shell helper's glob treats it too, and the channels below still
+        # apply. UnicodeDecodeError is listed because it is a ValueError, not
+        # an OSError, so a non-UTF-8 file would otherwise escape as a traceback
+        # in place of this module's actionable diagnostic.
         return None
     return None
 
@@ -224,7 +238,9 @@ def read_persisted_key(directory: Path) -> str | None:
     """
     try:
         raw = (directory / PERSISTED_FILENAME).read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # UnicodeDecodeError is a ValueError rather than an OSError, so a
+        # non-UTF-8 file would otherwise leave this function as a traceback.
         return None
     return raw.strip() or None
 
@@ -340,7 +356,9 @@ async def service_holds_ciphertext(options: DatabaseOptions) -> bool:
 
     :param options: The service's resolved database options.
     :return: Whether a Fernet token appears in any stored value.
-    :raises SQLAlchemyError: If the database cannot be reached or queried.
+    :raises SQLAlchemyError: If the database rejects the connection or query.
+    :raises OSError: If the endpoint cannot be reached at all, which asyncpg
+        surfaces as the socket error rather than wrapping it.
     :raises ValueError: If a stored value is not decodable JSON, which the
         column's own type raises while reading the result.
     """
@@ -358,43 +376,106 @@ async def service_holds_ciphertext(options: DatabaseOptions) -> bool:
         await engine.dispose()
 
 
+async def probe_until_deadline(
+    service: str, options: DatabaseOptions, deadline: float
+) -> bool:
+    """Return whether one service holds ciphertext, waiting for it to answer.
+
+    Connection failures are retried until ``deadline`` rather than refused on
+    sight, because the databases being unreachable is the *ordinary* first-start
+    condition, not an exceptional one. A value that cannot be decoded is not
+    retried: it is deterministic, and re-reading it only delays the refusal.
+
+    :param service: The service being probed, for the diagnostics.
+    :param options: The service's resolved database options.
+    :param deadline: The monotonic clock reading to give up at.
+    :return: Whether a Fernet token appears in any stored value.
+    :raises EncryptionKeyError: If the database cannot be read before the
+        deadline, or holds a value that cannot be decoded.
+    """
+    last_error: Exception | None = None
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise EncryptionKeyError(
+                f"Could not reach the {service} database within "
+                f"{probe_timeout():g}s ({last_error}). {_unproven_remedy()}"
+            ) from last_error
+        try:
+            return await asyncio.wait_for(
+                service_holds_ciphertext(options), timeout=remaining
+            )
+        except ValueError as error:
+            raise EncryptionKeyError(
+                f"The {service} database holds an override value that could "
+                f"not be decoded ({error}). {_ciphertext_remedy()}"
+            ) from error
+        # TimeoutError subclasses OSError, so the bound and a refused
+        # connection arrive through one clause.
+        except (SQLAlchemyError, OSError) as error:
+            last_error = error
+        # Capped at what is left, so a refused connection -- which fails
+        # instantly -- cannot overshoot the deadline by a whole interval.
+        await asyncio.sleep(
+            min(RETRY_INTERVAL_SECONDS, max(deadline - time.monotonic(), 0.0))
+        )
+
+
 async def assert_every_database_is_fresh() -> None:
     """Raise unless all three service databases are provably free of ciphertext.
 
+    One deadline covers all three, so a side-car waiting on a database that
+    never comes up delays the container start by the timeout once rather than
+    once per service.
+
     :raises EncryptionKeyError: If any database holds ciphertext, or cannot be
-        read within the probe timeout. Both refuse: a deployment whose
-        freshness cannot be *proven* is one where minting may be destructive.
+        read. Both refuse: a deployment whose freshness cannot be *proven* is
+        one where minting may be destructive.
+    :raises ValidationError: If a service's ``<PREFIX>__DATABASE__*`` settings
+        do not resolve, which surfaces as a traceback rather than a diagnostic
+        because it is a misconfiguration of the container, not a state the
+        deployment can be in.
     """
-    timeout = probe_timeout()
+    deadline = time.monotonic() + probe_timeout()
     for service, settings_cls in SERVICE_DATABASES.items():
-        options = settings_cls().DATABASE
-        try:
-            found = await asyncio.wait_for(
-                service_holds_ciphertext(options), timeout=timeout
-            )
-        except (TimeoutError, SQLAlchemyError, ValueError, OSError) as error:
-            raise EncryptionKeyError(
-                f"Could not read the {service} database's overrides ({error}). "
-                f"{_mint_refusal()}"
-            ) from error
-        if found:
+        if await probe_until_deadline(service, settings_cls().DATABASE, deadline):
             raise EncryptionKeyError(
                 f"The {service} database already holds encrypted override "
-                f"values. {_mint_refusal()}"
+                f"values. {_ciphertext_remedy()}"
             )
 
 
-def _mint_refusal() -> str:
-    """Return the remediation every refusal to mint ends with.
+def _ciphertext_remedy() -> str:
+    """Return the remediation for a refusal that found unreadable data.
 
-    :return: What the operator has to do, naming both ways out.
+    :return: What the operator has to do, naming all three ways out.
     """
     return (
         "Refusing to mint a new ENCRYPTION_KEY: a new key cannot decrypt values "
         "written under the old one, and every affected override would silently "
         f"revert to its YAML value. Restore {state_dir() / PERSISTED_FILENAME} "
-        "from a backup of the sep-state volume, or pass the deployment's "
-        "original key as ENCRYPTION_KEY."
+        "from a backup of the sep-state volume, pass the deployment's original "
+        "key as ENCRYPTION_KEY, or -- if this deployment was never encrypted "
+        "and the value is plaintext that merely looks like a token -- pass any "
+        "newly generated key instead."
+    )
+
+
+def _unproven_remedy() -> str:
+    """Return the remediation for a refusal that could not read the data at all.
+
+    Deliberately not :func:`_ciphertext_remedy`: nothing here says the
+    deployment holds ciphertext, so pointing the operator at a key restore
+    would send them after a backup for what is usually a database still
+    starting.
+
+    :return: What the operator has to do.
+    """
+    return (
+        "Refusing to mint a new ENCRYPTION_KEY without proving the deployment "
+        "holds no data a new key could not decrypt. Bring the database up and "
+        "restart the container, check SEP_DB_HOST and SEP_DB_PORT, or raise "
+        "SEP_ENCRYPTION_PROBE_TIMEOUT. Nothing was minted or written."
     )
 
 

@@ -111,9 +111,12 @@ Leaving a mounted name **unset** and leaving it **empty** both work: a
 canonical variable inherited as the empty string would otherwise outrank the
 file, since a blank environment variable still counts as supplied, so the
 script clears the blank for every canonical name it manages — `SECRET_KEY`,
-`ENCRYPTION_KEY`, every name it derives, and every name a `SEP_*` guard would
-otherwise leave untouched when that guard is inactive (`PMM__API_KEY` with no
-`SEP_GRAFANA_TOKEN` set, say).
+every name it derives, and every name a `SEP_*` guard would otherwise leave
+untouched when that guard is inactive (`PMM__API_KEY` with no
+`SEP_GRAFANA_TOKEN` set, say). `ENCRYPTION_KEY` is cleared on the narrower
+condition that a file of that name is also mounted, since that is the only case
+where a blank would shadow something; `entrypoint.sh` overwrites a surviving
+blank on every other path.
 
 ### App set
 
@@ -296,12 +299,24 @@ walking each stored value's JSON *leaves* rather than the row — the ciphertext
 sits inside lists and nested mappings, where a check against the row's own
 value finds nothing. It mints only if none of the three holds a Fernet token.
 Anything else refuses: a token found, a value it cannot parse, or a database it
-cannot reach within `SEP_ENCRYPTION_PROBE_TIMEOUT` (15s by default) — freshness
-unproven is treated exactly like freshness disproven. The probe runs *only* on
-the mint path, so an ordinary restart opens no database connection and pays no
-startup latency.
+cannot reach — freshness unproven is treated exactly like freshness disproven.
+The probe runs *only* on the mint path, so an ordinary restart opens no database
+connection and pays no startup latency.
 
-A refusal names the state path to restore. **Losing the key is unrecoverable:**
+An unreachable database is **retried**, not refused on sight, because a first
+start routinely runs while pmm-server's postgres is still coming up — the same
+condition the supervised migration steps wait out. `SEP_ENCRYPTION_PROBE_TIMEOUT`
+bounds that wait across all three databases together (60s by default); only
+exhausting it refuses, and the message then points at the database rather than
+at a key restore.
+
+Note that a minted key is exported into every supervised program's environment,
+where a key mounted under `SECRETS_DIR` deliberately is not. Mount the key
+instead of letting it be minted if that difference matters to you; the minted
+key is also on disk at `0600` in the state directory either way.
+
+A refusal that found unreadable data names the state path to restore. **Losing
+the key is unrecoverable:**
 there is no way to read those values back without it, and the only remedies are
 restoring the key from a backup or deleting the affected overrides so they can
 be re-entered.
