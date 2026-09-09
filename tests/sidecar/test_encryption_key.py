@@ -587,6 +587,28 @@ def test_the_minted_key_matches_what_the_makefile_generates():
     assert not is_encrypted(minted)
 
 
+def test_a_corrupted_persisted_key_is_refused_rather_than_served(
+    fresh_deployment: Path,
+):
+    """Report a state file the cipher cannot use, instead of passing it on.
+
+    Serving it exits 0 and hands every supervised program a key the settings
+    validator rejects, which is precisely the illegible failure this helper
+    exists to replace: five children crash-looping and nothing from PID 1
+    saying why.
+    """
+    run_helper(fresh_deployment)
+    persisted_key_path(fresh_deployment).write_text(
+        "not-a-fernet-key", encoding="utf-8"
+    )
+
+    result = run_helper(fresh_deployment)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert "ENCRYPTION_KEY" in result.stderr
+
+
 def test_the_helper_reaches_the_image():
     """Assert the helper is copied in; bundle.tgz carries no sidecar/ file.
 

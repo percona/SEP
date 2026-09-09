@@ -53,6 +53,7 @@ from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import Any, ClassVar
 
+from cryptography.fernet import Fernet
 from sqlalchemy import inspect, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -243,6 +244,32 @@ def read_persisted_key(directory: Path) -> str | None:
         # non-UTF-8 file would otherwise leave this function as a traceback.
         return None
     return raw.strip() or None
+
+
+def validated(key: str, source: str) -> str:
+    """Return ``key`` once the cipher every supervised program builds accepts it.
+
+    Checked here rather than left to the settings classes because failing there
+    is the illegible shape this helper exists to replace: the key reaches five
+    children, each rejects it on its own, and PID 1 has already exited 0 with
+    nothing to say. A minted key is valid by construction, so in practice this
+    catches a state file that was corrupted or hand-edited.
+
+    :param key: The resolved key.
+    :param source: Where it came from, for the diagnostic.
+    :return: The key, unchanged.
+    :raises EncryptionKeyError: If Fernet cannot build a cipher from it.
+    """
+    try:
+        Fernet(key.encode())
+    except (TypeError, ValueError) as error:
+        raise EncryptionKeyError(
+            f"The ENCRYPTION_KEY resolved from {source} is not a valid Fernet "
+            f"key ({error}). It must be 32 url-safe base64-encoded bytes; "
+            f"generate one with `openssl rand -base64 32`, not "
+            f"`openssl rand -hex 32`. Nothing was minted or overwritten."
+        ) from error
+    return key
 
 
 def mint_key() -> str:
@@ -488,19 +515,19 @@ def resolve() -> str:
     """
     supplied = supplied_key()
     if supplied is not None:
-        return supplied
+        return validated(supplied, "the environment or a SECRETS_DIR file")
 
     directory = state_dir()
     persisted = read_persisted_key(directory)
     if persisted is not None:
-        return persisted
+        return validated(persisted, f"{directory / PERSISTED_FILENAME}")
 
     with state_lock(directory):
         # Re-read under the lock: a start that raced this one to an empty state
         # volume may have persisted between the read above and the lock.
         persisted = read_persisted_key(directory)
         if persisted is not None:
-            return persisted
+            return validated(persisted, f"{directory / PERSISTED_FILENAME}")
         asyncio.run(assert_every_database_is_fresh())
         write_persisted_key(directory, mint_key())
         final = read_persisted_key(directory)
