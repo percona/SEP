@@ -32,7 +32,7 @@ invisible in the field list.
 
 import pytest
 import pytest_asyncio
-from fastapi import status
+from fastapi import FastAPI, status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -42,6 +42,7 @@ from app.api.deps import (
 )
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import setting_class_token
 from app.core.settings_override.registry import hot_field_names
 from app.sep.apps.framework.registry import collect_app_owned_settings_classes
 from app.sep.apps.om_inventory.config import (
@@ -53,7 +54,7 @@ from app.sep.deps import (
     get_session,
     require_bearer_for_unsafe_methods,
 )
-from app.sep.main import build_sep_override_callbacks, sep_app
+from app.sep.main import sep_app, sep_overrides_lifespan
 
 BASE = "/api/apps/om_inventory"
 
@@ -136,7 +137,8 @@ class TestTheAppIsActuallyWiredIn:
             entry.setting_class for entry in entries
         }
 
-    def test_a_schedule_change_re_seeds_the_beat_row(self) -> None:
+    @pytest.mark.asyncio
+    async def test_a_schedule_change_re_seeds_the_beat_row(self) -> None:
         """``SCHEDULE`` must be wired to the beat re-seed callback.
 
         The proxy holding a new interval is not the same thing as beat running on it:
@@ -145,12 +147,17 @@ class TestTheAppIsActuallyWiredIn:
         is visible over the API and has no effect on when the sweep actually fires --
         the worst shape a configuration bug can take.
         """
-        callbacks = build_sep_override_callbacks(sep_app)
+        original = getattr(sep_app.state, "override_callbacks", None)
+        try:
+            async with sep_overrides_lifespan(FastAPI()):
+                callbacks = sep_app.state.override_callbacks
 
-        assert (
-            OmInventorySettings.__name__,
-            "SCHEDULE",
-        ) in callbacks
+            assert (
+                OmInventorySettings.__name__,
+                "SCHEDULE",
+            ) in callbacks
+        finally:
+            sep_app.state.override_callbacks = original
 
 
 class TestGetConfig:
@@ -291,7 +298,7 @@ class TestPatchConfig:
 
         rows = await SettingsOverrideManager.list(
             session,
-            setting_class=OmInventorySettings.__name__,
+            setting_class=setting_class_token(OmInventorySettings),
             is_active=True,
         )
         assert [(row.key, row.value) for row in rows] == [("RUN_RETENTION", 5)]
