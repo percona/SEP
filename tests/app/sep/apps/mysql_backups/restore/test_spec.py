@@ -29,6 +29,7 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreConfigAll,
     RestoreCreate,
     SourceTransport,
+    XtraBackupTool,
 )
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
@@ -43,13 +44,17 @@ _PAYLOAD_DIR_BY_TYPE = {
 }
 
 
-def _form(backup_type: BackupType) -> RestoreCreate:
+def _form(
+    backup_type: BackupType,
+    xtrabackup_bin_cmd: XtraBackupTool | None = None,
+) -> RestoreCreate:
     return RestoreCreate(
         hostname="restore-host",
         task_name="restore-task",
         backup_type=backup_type,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
+        xtrabackup_bin_cmd=xtrabackup_bin_cmd,
     )
 
 
@@ -79,6 +84,20 @@ def test_build_restore_spec_xtrabackup_requires_filelock():
 
     assert "filelock" in xtrabackup.data["meta"]["requirements"]
     assert "filelock" not in mydumper.data["meta"]["requirements"]
+
+
+@pytest.mark.parametrize("binary", list(XtraBackupTool))
+def test_build_restore_spec_preserves_explicit_xtrabackup_binary(
+    binary: XtraBackupTool,
+):
+    """Preserve an explicitly selected XtraBackup binary in restore config."""
+    spec = build_restore_spec(
+        _form(BackupType.XTRABACKUP, xtrabackup_bin_cmd=binary),
+        RestoreResolved(),
+    )
+
+    config = yaml.safe_load(spec.data["meta"]["config"])["SERVER_LIST"][0]
+    assert config["XTRABACKUP_BIN_CMD"] == binary.value
 
 
 def test_build_restore_spec_injects_resolved_destination_and_service_name():
