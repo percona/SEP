@@ -137,7 +137,7 @@ class TestSchemaEndpoint:
         ]
 
     def test_schema_marks_lost_as_terminal(self, test_client):
-        """A lost run ends, so a client polling for completion stops on it."""
+        """Mark a lost run terminal, so a client polling for completion stops on it."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
         assert {
             "value": TaskHistoryStatusEnum.LOST.value,

@@ -83,6 +83,10 @@ SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
+#: Run state pinned on the upstream history row execute fixtures return, chosen
+#: so neither value is one the response model would default to.
+EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 SYNTH_CREATED_BY = "synth-user-id"
 SYNTH_CREATED_BY_NAME = "synth-username"
 

@@ -3045,7 +3045,10 @@ class TestAppSchemaTaskStatuses:
             entities=[_minimal_entity_schema()],
         )
 
-        assert "task_statuses" not in schema.model_dump(exclude_none=True)
+        dumped = schema.model_dump(exclude_none=True)
+
+        assert dumped["entities"]
+        assert "task_statuses" not in dumped
 
     def test_schema_round_trips_through_json(self) -> None:
         """Re-validate a dumped task-style schema back into an equal instance."""

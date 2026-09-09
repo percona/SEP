@@ -34,6 +34,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
+from tests.app.sep.apps.framework.kit import EXECUTE_CREATED_AT, EXECUTE_STATUS
 
 API_BASE = "/api/apps/backup_mongo/restore"
 EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
@@ -63,8 +64,6 @@ EXPECTED_LOGICAL_RESTORE_PUTS = 3
 THREE_PARENT_FIXTURE_TOTAL = 3
 TWO_PARENT_FIXTURE_TOTAL = 2
 EXPECTED_RESTORE_PARENT_LIST_GETS = 2
-EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
-EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 
 
 def build_restore_task(name: str = "mongo-restore-task", **overrides: Any) -> dict:

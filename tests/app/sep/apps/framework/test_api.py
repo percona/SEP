@@ -114,6 +114,7 @@ from app.sep.deps import (
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskWrite
 from tests.app.factories import GeneratedTaskFactory, TaskFactory
+from tests.app.sep.apps.framework.kit import EXECUTE_CREATED_AT, EXECUTE_STATUS
 
 _TEST_SCHEMA = AppSchema(
     name="test-schema-endpoint",
@@ -525,6 +526,7 @@ class TestSchemaEndpointTaskStatuses:
         """Assert an entity-declaring plugin serves no ``task_statuses`` key."""
         body = authed_entities_client.get("/api/apps/test-entities/schema").json()
 
+        assert body["entities"]
         assert "task_statuses" not in body
 
 
@@ -2834,8 +2836,6 @@ class TestDeriveCrudRoutesCreateContext:
 _EXECUTE_PREFIX = "/test-derive-execute"
 _EXECUTE_BASE_URL = f"/api/apps{_EXECUTE_PREFIX}"
 _EXECUTE_TASK_ID = 77
-_EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
-_EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 _SYNTHETIC_TASK_DEP = Annotated[Task, Depends(make_task_dep(_SYNTHETIC_OWNER))]
 
 
@@ -2869,8 +2869,8 @@ def _execute_response_dict(task_id: int | None = _EXECUTE_TASK_ID) -> dict:
         "id": task_id,
         "execution_request": {"task": "t1", "target": "host"},
         "task": _task_dict("t1"),
-        "status": _EXECUTE_STATUS.value,
-        "created_at": _EXECUTE_CREATED_AT,
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -3021,8 +3021,8 @@ class TestDeriveExecuteRouteOverHttp:
         assert response.json() == {
             "task_name": "t1",
             "task_id": _EXECUTE_TASK_ID,
-            "status": _EXECUTE_STATUS.value,
-            "created_at": _EXECUTE_CREATED_AT,
+            "status": EXECUTE_STATUS.value,
+            "created_at": EXECUTE_CREATED_AT,
         }
         tasks_api.post.assert_awaited_once_with(
             "/execute/t1", json={"chain_on_failure": True}
@@ -3041,8 +3041,8 @@ class TestDeriveExecuteRouteOverHttp:
 
         body = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={}).json()
 
-        assert body["status"] == _EXECUTE_STATUS.value
-        assert body["created_at"] == _EXECUTE_CREATED_AT
+        assert body["status"] == EXECUTE_STATUS.value
+        assert body["created_at"] == EXECUTE_CREATED_AT
 
     def test_execute_201_empty_body_forwards_empty_json(
         self, regular_user: CasdoorUser
