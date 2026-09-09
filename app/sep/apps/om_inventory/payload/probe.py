@@ -65,7 +65,7 @@ pip requirements by the dispatcher. It is imported lazily so that a run with
 import json
 import os
 import platform
-import subprocess
+import subprocess  # nosec B404 - the payload's whole job is asking the host
 import sys
 import time
 import urllib.error
@@ -113,7 +113,7 @@ def run_command(args):
     :return: The command's stdout stripped of surrounding whitespace, or ``None``.
     """
     try:
-        completed = subprocess.run(
+        completed = subprocess.run(  # nosec B603 - argv is a literal list, never a shell string, and every element is a constant from SERVER_PROGRAMS
             args,
             capture_output=True,
             text=True,
@@ -251,7 +251,7 @@ def parse_port(argv, config_path):
     """
     tokens = argv.split()
     for index, token in enumerate(tokens):
-        if token == "--port" and index + 1 < len(tokens):
+        if token == "--port" and index + 1 < len(tokens):  # nosec B105 - a mongod flag, not a password
             if tokens[index + 1].isdigit():
                 return int(tokens[index + 1])
         if token.startswith("--port="):
@@ -753,7 +753,7 @@ def collect_repo_facts(config):
         # behaviour wanted here: the check should go the same way a package manager
         # would rather than a way only this payload knows about.
         request = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310  # nosec B310 - REPO_URL is a StrHttpUrl, so http/https only
             # Read the body rather than trusting the status line. A proxy or captive
             # portal answering 200 with its own HTML is a failure that a status-only
             # check reports as success, and reading is what a package manager does.
