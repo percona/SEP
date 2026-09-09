@@ -336,8 +336,8 @@ echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVID
 
 #### `ENCRYPTION_KEY`
 
-`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Nothing is
-encrypted yet — the key gates the encryption helper itself — but **every
+`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Secret-typed
+settings-override values are encrypted with it at rest, and **every
 environment needs its own, local development included**: SEP refuses to start
 without one, and so do the Celery workers, the Alembic migrations, and the
 OpenAPI dump. It has no default, is never derived from
@@ -345,11 +345,20 @@ OpenAPI dump. It has no default, is never derived from
 real third-party credentials, so a shared key would protect nothing from anyone
 who can read the source.
 
-Mint one and add it to your `.env`:
+Mint one and add it as `ENCRYPTION_KEY=<key>` to **the file `ENV_FILE` names**:
 
 ```shell
-echo "ENCRYPTION_KEY=$(make -s encryption-key)" >> .env
+make -s encryption-key
 ```
+
+That is `.env` by default, but not always: `ENV_FILE` is read from the process
+environment — exported in your shell, set by `direnv`, or passed by your
+container runtime — and it redirects the loader to a different file, whose keys
+replace `.env`'s rather than adding to them. Setting `ENV_FILE` *inside* `.env`
+does nothing: it is resolved before the dotenv source is configured. So on a
+checkout that exports `ENV_FILE=.env.local`, appending to `.env` succeeds and
+changes nothing the application sees. If you are unsure which file is in play,
+start the app and read the error: it names the exact path it looked in.
 
 `openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
 generator `SECRET_KEY` uses — does **not** produce a valid key.
@@ -358,9 +367,11 @@ A deployment supplies the same value as an environment variable or as a file
 named `ENCRYPTION_KEY` under `SECRETS_DIR`.
 
 **Keep the value stable.** Ciphertext outlives the process that wrote it, so
-once values are encrypted, rotating or losing the key makes every
-already-encrypted row permanently unreadable. There is no recovery path and no
-rotation tooling.
+rotating or losing the key makes every already-encrypted row permanently
+unreadable. There is no recovery path and no rotation tooling. An override SEP
+cannot decrypt is logged and skipped, and the setting falls back to its
+YAML/env value — the deployment keeps starting, but the stored credential is
+gone.
 
 The test suite needs no action — it mints its own key per run.
 

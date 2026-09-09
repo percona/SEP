@@ -492,3 +492,25 @@ class TestBackupMongoResponseModels:
         assert dumped["connectivity_warning"] is None
         assert "anonymize_mask" in dumped
         assert "anonymized_entities" in dumped
+
+
+def test_backup_type_labels_cover_every_member():
+    """Label every declared ``BackupType`` member, keyed by its stored value."""
+    assert set(BackupType.LABELS) == {member.value for member in BackupType}
+
+
+def test_backup_type_labels_are_the_declared_display_strings():
+    """Pin the display text each stored backup-type value resolves to."""
+    assert BackupType.LABELS == {
+        "pbm_logical": "PBM Logical",
+        "pbm_physical": "PBM Physical",
+        "pbm_incremental": "PBM Incremental",
+        "pbm_snapshot": "PBM Snapshot",
+        "pbm_config": "PBM Config",
+        "pbm_status": "PBM Status",
+    }
+
+
+def test_backup_type_labels_is_not_an_enum_member():
+    """Keep ``LABELS`` off the enum's member list via ``enum.nonmember``."""
+    assert "LABELS" not in {member.name for member in BackupType}

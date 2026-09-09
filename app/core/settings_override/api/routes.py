@@ -83,6 +83,7 @@ from app.core.settings_override.registry import (
     SettingProvenance,
     unwrap_secrets_for_storage,
 )
+from app.core.settings_override.secret_storage import encrypt_secret_leaves
 from app.core.utils.date_time import utc_now
 
 ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
@@ -1406,7 +1407,9 @@ async def _stage_and_commit_overrides(
         for key, _value in to_apply
     }
     for key, value in to_apply:
-        stored_value = unwrap_secrets_for_storage(value)
+        stored_value = encrypt_secret_leaves(
+            settings_cls, key, unwrap_secrets_for_storage(value)
+        )
         existing_rows = await override_rows_for_key(
             session,
             settings_cls=settings_cls,

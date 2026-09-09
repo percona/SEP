@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
@@ -46,6 +47,10 @@ DATABASE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
 
 BLANK_BEAT_URI = {"CELERY__BEAT_DBURI": ""}
 """A blank inherited beat URI, the shape the helper has to clear."""
+
+FERNET_KEY = Fernet.generate_key().decode("ascii")
+"""A real key rather than a placeholder, so these cases carry a value the
+settings classes would accept."""
 
 
 def source_helper(**inputs: str) -> subprocess.CompletedProcess[str]:
@@ -418,6 +423,58 @@ def test_a_blank_secret_key_variable_does_not_shadow_the_file(tmp_path: Path):
     environment = exported(source_helper(SECRET_KEY="", SECRETS_DIR=secrets_dir))
 
     assert "SECRET_KEY" not in environment
+
+
+def test_an_encryption_key_from_a_file_is_not_exported(tmp_path: Path):
+    """Leave a mounted key to the file, which every settings class reads itself."""
+    secrets_dir = write_secrets(tmp_path, ENCRYPTION_KEY=FERNET_KEY)
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_a_lowercase_encryption_key_file_is_not_exported(tmp_path: Path):
+    """Match the file case-insensitively, the way the settings source matches it."""
+    secrets_dir = write_secrets(tmp_path, encryption_key=FERNET_KEY)
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_a_blank_encryption_key_does_not_shadow_the_file(tmp_path: Path):
+    """Clear a blank inherited key, which was measured to shadow a valid file.
+
+    A blank environment variable still counts as supplied, so without the clear
+    it outranks the mounted file and the settings classes refuse to start on the
+    empty value.
+    """
+    secrets_dir = write_secrets(tmp_path, ENCRYPTION_KEY=FERNET_KEY)
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", ENCRYPTION_KEY="", SECRETS_DIR=secrets_dir)
+    )
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_an_explicit_encryption_key_is_left_exported():
+    """Keep an operator's own key, which no lower channel may displace."""
+    environment = exported(source_helper(SECRET_KEY="k", ENCRYPTION_KEY=FERNET_KEY))
+
+    assert environment["ENCRYPTION_KEY"] == FERNET_KEY
+
+
+def test_no_encryption_key_is_exported_when_nothing_supplies_one():
+    """Leave the name unset, which is what sends the entrypoint to its helper."""
+    environment = exported(source_helper(SECRET_KEY="k"))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
 
 
 def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(tmp_path: Path):

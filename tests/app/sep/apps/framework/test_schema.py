@@ -15,12 +15,16 @@
 
 """Unit tests for the plugin schema DSL."""
 
+import re
+from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework import schema as schema_module
 from app.sep.apps.framework.rules import CardinalityRule, FailRule, present
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
@@ -59,9 +63,11 @@ from app.sep.apps.framework.schema import (
     ServiceField,
     StringField,
     TableField,
+    TaskStatusDescriptor,
     TextAreaField,
     YamlField,
 )
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 def _minimal_detail_view() -> DetailView:
@@ -791,6 +797,56 @@ def test_column_format_rejects_unknown_values():
         Column(key="x", label="X", format="nonsense")
 
 
+def test_column_value_labels_defaults_to_none():
+    """Leave ``Column.value_labels`` unset when a plugin declares no labels."""
+    assert Column(key="k", label="L").value_labels is None
+
+
+def test_column_value_labels_round_trips_through_json():
+    """Round-trip a populated ``Column.value_labels`` map through JSON output."""
+    column = Column(key="backup_type", label="Type", value_labels={"M": "Mydumper"})
+
+    dumped = column.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"M": "Mydumper"}
+
+
+def test_column_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a column that declares none."""
+    dumped = Column(key="k", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["key"] == "k"
+    assert "value_labels" not in dumped
+
+
+def test_detail_field_value_labels_defaults_to_none():
+    """Leave ``DetailField.value_labels`` unset when a plugin declares no labels."""
+    assert DetailField(path="backup_type", label="Type").value_labels is None
+
+
+def test_detail_field_value_labels_round_trips_through_json():
+    """Round-trip a populated ``DetailField.value_labels`` map through JSON."""
+    field = DetailField(
+        path="backup_type", label="Type", value_labels={"P": "pgBackRest"}
+    )
+
+    dumped = field.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    assert dumped["value_labels"] == {"P": "pgBackRest"}
+
+
+def test_detail_field_without_value_labels_omits_the_key():
+    """Drop ``value_labels`` from the payload of a detail field declaring none."""
+    dumped = DetailField(path="p", label="L").model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
+
+    assert dumped["path"] == "p"
+    assert "value_labels" not in dumped
+
+
 def test_service_field_service_types_round_trip():
     """Round-trip ``ServiceField.service_types`` through JSON back to enum members."""
     field = ServiceField(name="svc", label="S", service_types=[ServiceTypeEnum.MYSQL])
@@ -1313,6 +1369,50 @@ class TestChoiceDisabled:
         assert field.choices[0].disabled is None
         assert field.choices[1].disabled is True
         assert field.choices[1].disabled_reason == "Coming soon."
+
+
+class TestBaseFieldDestructive:
+    """Cover the opt-in ``destructive`` consequence text on ``BaseField``."""
+
+    def test_default_is_absent_from_the_wire(self) -> None:
+        """Keep the pre-feature wire shape for an unmarked field under ``exclude_none``.
+
+        The discovery endpoint serialises with ``exclude_none=True``; typing the
+        attribute optional (default ``None``) keeps it out of the payload so
+        existing schema snapshots stay byte-identical.
+        """
+        field = BoolField(name="x", label="X")
+
+        assert field.destructive is None
+        assert field.model_dump(by_alias=True, exclude_none=True) == {
+            "name": "x",
+            "label": "X",
+            "required": False,
+            "type": "bool",
+        }
+
+    def test_marked_field_serialises_the_consequence_text(self) -> None:
+        """Carry the consequence sentence on the wire for an opted-in field."""
+        field = BoolField(
+            name="overwrite_tables",
+            label="Overwrite tables",
+            destructive="Existing tables are dropped.",
+        )
+
+        dumped = field.model_dump(by_alias=True, exclude_none=True)
+
+        assert dumped["destructive"] == "Existing tables are dropped."
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_blank_consequence_text_is_rejected(self, blank: str) -> None:
+        """Reject a mark carrying no consequence text, whatever the whitespace.
+
+        The ``Ui`` marker guard only sees the model-first DSL path; the apps that
+        construct schema fields directly never build a ``Ui``, so the wire model
+        has to refuse the half-marked state itself.
+        """
+        with pytest.raises(ValidationError):
+            BoolField(name="x", label="X", destructive=blank)
 
 
 class TestReferenceFieldAllowCustom:
@@ -2264,11 +2364,13 @@ def test_detail_view_round_trip_through_json():
                         "path": "data.meta.command",
                         "label": "Command",
                         "highlight": "sql",
+                        "value_labels": None,
                     },
                     {
                         "path": "data.meta.args",
                         "label": "Args",
                         "highlight": None,
+                        "value_labels": None,
                     },
                 ],
             },
@@ -2726,3 +2828,432 @@ class TestOneOfGroup:
             detail_view=_minimal_detail_view(),
         )
         assert schema.forms[0].fields[0].name == "source"
+
+
+# ── Record display names ────────────────────────────────────────────────
+
+
+class TestAppSchemaRecordDisplayNames:
+    """Cover the singular/plural record names carried beside ``display_name``."""
+
+    def test_both_record_names_default_to_display_name(self) -> None:
+        """Fall back to ``display_name`` for both record names when neither is supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_singular_leaves_the_plural_defaulted(self) -> None:
+        """Default the plural from ``display_name``, never from the singular."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_supplying_the_plural_leaves_the_singular_defaulted(self) -> None:
+        """Default the singular from ``display_name``, never from the plural."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "backups"
+
+    def test_declared_record_names_are_kept(self) -> None:
+        """Keep both record names when the author declares them."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "backups"
+
+    @pytest.mark.parametrize(
+        "field_name", ["item_display_name", "item_display_name_plural"]
+    )
+    def test_empty_record_name_is_rejected(self, field_name: str) -> None:
+        """Reject an empty record name; defaulting does not weaken ``NonEmptyStr``."""
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            AppSchema(
+                name="minimal",
+                display_name="Minimal",
+                list_view=_minimal_list_view(),
+                **{field_name: ""},
+            )
+
+    def test_dumped_payload_round_trips(self) -> None:
+        """Re-validate a dumped payload without the defaulting altering it."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            item_display_name="backup",
+            item_display_name_plural="backups",
+            list_view=_minimal_list_view(),
+        )
+
+        payload = schema.model_dump(mode="json", by_alias=True, exclude_none=True)
+        assert payload["item_display_name"] == "backup"
+        assert payload["item_display_name_plural"] == "backups"
+        assert AppSchema.model_validate(payload) == schema
+
+    @pytest.mark.parametrize("payload", ["garbage", [1, 2], 7, None])
+    def test_non_mapping_input_is_reported_not_raised(self, payload: Any) -> None:
+        """Report non-mapping input as ``model_type`` rather than raising out of the validator.
+
+        This is what the ``before`` validator's mapping guard buys. Without it the
+        ``.get`` calls raise ``AttributeError``, which escapes as an unhandled
+        exception instead of a ``ValidationError`` a caller can catch.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            AppSchema.model_validate(payload)
+
+        assert {error["type"] for error in exc_info.value.errors()} == {"model_type"}
+
+    def test_a_read_only_mapping_defaults_like_a_dict(self) -> None:
+        """Default from any ``Mapping``, not only ``dict`` — the guard is not type-narrow."""
+        payload = MappingProxyType(
+            {
+                "name": "minimal",
+                "display_name": "MySQL Backups",
+                "list_view": _minimal_list_view(),
+            }
+        )
+
+        schema = AppSchema.model_validate(payload)
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"
+
+    def test_entity_record_names_default_from_the_entity_display_name(self) -> None:
+        """Default an entity's record names from its own ``display_name``."""
+        entity = _minimal_entity_schema()
+
+        assert entity.item_display_name == "Things"
+        assert entity.item_display_name_plural == "Things"
+
+    def test_entity_record_names_are_independent_of_the_parent(self) -> None:
+        """Keep an entity's declared record names distinct from the app's."""
+        entity = AppEntitySchema(
+            name="nodes",
+            display_name="Nodes",
+            item_display_name="node",
+            item_display_name_plural="nodes",
+            forms=[
+                FormSection(
+                    title="T",
+                    fields=[StringField(name="title", label="Title", required=True)],
+                )
+            ],
+            list_view=_minimal_list_view(),
+        )
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[entity],
+        )
+
+        assert schema.item_display_name == "Inventory"
+        assert schema.entities is not None
+        assert schema.entities[0].item_display_name == "node"
+
+
+class TestAppSchemaTaskStatuses:
+    """Cover the derived ``task_statuses`` vocabulary published on ``AppSchema``."""
+
+    @staticmethod
+    def _task_style_schema() -> AppSchema:
+        """Return a task-style schema, the shape that publishes the vocabulary."""
+        return AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+    def test_every_enum_member_is_published(self) -> None:
+        """Publish exactly one entry per ``TaskHistoryStatusEnum`` member."""
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert [entry.value for entry in schema.task_statuses] == list(
+            TaskHistoryStatusEnum
+        )
+
+    def test_each_status_carries_its_declared_terminality(self) -> None:
+        """Pin every member's terminality independently of ``is_terminal()``.
+
+        Deriving the expectation from the same method the implementation calls
+        would pass straight through a flip of that method, and ``lost`` is the
+        member such a flip is most likely to reach: it is terminal here but
+        excluded by the similarly-named ``is_finished()``.
+        """
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            TaskHistoryStatusEnum.PENDING: False,
+            TaskHistoryStatusEnum.RUNNING: False,
+            TaskHistoryStatusEnum.SUCCESS: True,
+            TaskHistoryStatusEnum.FAILED: True,
+            TaskHistoryStatusEnum.STOPPED: True,
+            TaskHistoryStatusEnum.LOST: True,
+            TaskHistoryStatusEnum.STALE: True,
+            TaskHistoryStatusEnum.UNLAUNCHABLE: True,
+        }
+
+    def test_entity_plugins_withhold_the_vocabulary(self) -> None:
+        """Leave ``task_statuses`` unset for a plugin declaring entities."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        assert schema.task_statuses is None
+
+    def test_withheld_vocabulary_is_absent_from_the_dump(self) -> None:
+        """Drop the key entirely for an entity plugin, matching the wire posture."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        dumped = schema.model_dump(exclude_none=True)
+
+        assert dumped["entities"]
+        assert "task_statuses" not in dumped
+
+    def test_schema_round_trips_through_json(self) -> None:
+        """Re-validate a dumped task-style schema back into an equal instance."""
+        schema = self._task_style_schema()
+
+        assert AppSchema.model_validate(schema.model_dump(mode="json")) == schema
+
+    def test_a_supplied_vocabulary_is_overwritten(self) -> None:
+        """Re-derive the vocabulary over a well-formed value a caller supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+            task_statuses=[
+                TaskStatusDescriptor(value=TaskHistoryStatusEnum.PENDING, terminal=True)
+            ],
+        )
+
+        assert schema.task_statuses is not None
+        assert len(schema.task_statuses) == len(TaskHistoryStatusEnum)
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            status: status.is_terminal() for status in TaskHistoryStatusEnum
+        }
+
+    def test_a_supplied_malformed_vocabulary_is_rejected(self) -> None:
+        """Raise on a malformed supplied value rather than silently re-deriving it.
+
+        The field is declared, so an incoming value is validated before the
+        after-validator can overwrite it.
+        """
+        with pytest.raises(ValidationError):
+            AppSchema.model_validate(
+                {
+                    "name": "minimal",
+                    "display_name": "MySQL Backups",
+                    "list_view": _minimal_list_view().model_dump(mode="json"),
+                    "task_statuses": [{"bogus": 1}],
+                }
+            )
+
+
+TS_MIRROR = (
+    Path(__file__).resolve().parents[5]
+    / "frontend"
+    / "packages"
+    / "api"
+    / "src"
+    / "types"
+    / "app-schema.ts"
+)
+
+_INTERFACE_RE = re.compile(
+    r"^(?:export )?interface (?P<name>\w+)(?: extends (?P<base>\w+))?\s*\{"
+    r"(?P<body>.*?)^\}",
+    re.MULTILINE | re.DOTALL,
+)
+_PROPERTY_RE = re.compile(r"^\s{2}(?P<name>\w+)\??\s*:", re.MULTILINE)
+
+#: Models whose mirror interface carries a different name. Kept explicit rather
+#: than inferred: a rule guessing at ``Column`` -> ``ListColumn`` would also
+#: pair anything else that happened to look close.
+MIRROR_NAMES = MappingProxyType(
+    {
+        "Capabilities": "AppCapabilities",
+        "Choice": "ChoiceOption",
+        "Column": "ListColumn",
+    }
+)
+
+#: Models the wire format never carries to a browser, with what consumes them
+#: instead. ``AppSchema.derived`` and ``.predecessors`` are typed by these two
+#: and are absent from the mirror for the same reason.
+BACKEND_ONLY_MODELS = MappingProxyType(
+    {
+        "DerivedTask": "cascade orchestration, consumed by framework.cascade",
+        "ChainedPredecessor": "cascade orchestration, consumed by framework.cascade",
+    }
+)
+
+#: Field names each side carries alone, as ``(python_only, typescript_only)``.
+#: Two kinds sit here and they are not equivalent. ``AppSchema``'s pair is
+#: deliberate -- both are cascade specs the renderer never sees. The other two
+#: are unreconciled drift, recorded so they cannot grow: the mirror is behind on
+#: ``AppEntitySchema``, and declares two constraints on ``MultiChoiceField``
+#: that no backend field backs.
+KNOWN_MIRROR_GAPS = MappingProxyType(
+    {
+        "AppSchema": (frozenset({"derived", "predecessors"}), frozenset()),
+        "AppEntitySchema": (frozenset({"cardinality_rules", "fail_when"}), frozenset()),
+        "MultiChoiceField": (frozenset(), frozenset({"min_items", "max_items"})),
+    }
+)
+
+
+def _ts_interfaces() -> dict[str, frozenset[str]]:
+    """Return each mirror interface's property names, with ``extends`` flattened.
+
+    :return: Interface name to the properties it carries, inherited included.
+    """
+    text = TS_MIRROR.read_text(encoding="utf-8")
+    declared: dict[str, tuple[str | None, set[str]]] = {}
+    for match in _INTERFACE_RE.finditer(text):
+        body = re.sub(r"/\*.*?\*/", "", match["body"], flags=re.DOTALL)
+        body = re.sub(r"//.*", "", body)
+        declared[match["name"]] = (match["base"], set(_PROPERTY_RE.findall(body)))
+
+    resolved: dict[str, frozenset[str]] = {}
+    for name, (base, properties) in declared.items():
+        inherited = set(properties)
+        parent = base
+        while parent is not None and parent in declared:
+            inherited |= declared[parent][1]
+            parent = declared[parent][0]
+        resolved[name] = frozenset(inherited)
+    return resolved
+
+
+def _wire_names(model: type[BaseModel]) -> frozenset[str]:
+    """Return the field names ``model`` serializes under.
+
+    The discriminator is declared as ``field_type`` and ships as ``type``, so
+    comparing attribute names against the mirror would disagree on every field
+    subclass while the wire format matches exactly.
+
+    :param model: The schema model to read.
+    :return: The names a client sees.
+    """
+    return frozenset(
+        info.serialization_alias or info.alias or name
+        for name, info in model.model_fields.items()
+    )
+
+
+def _mirrored_models() -> dict[str, type[BaseModel]]:
+    """Return every schema model carrying fields, keyed by class name."""
+    return {
+        name: obj
+        for name, obj in vars(schema_module).items()
+        if isinstance(obj, type) and issubclass(obj, BaseModel) and obj.model_fields
+    }
+
+
+class TestFrontendSchemaMirror:
+    """Bind ``app-schema.ts`` to the models it mirrors by hand.
+
+    ``frontend/packages/api/specs/sep.json`` is gated by
+    ``test_committed_openapi_specs_are_fresh`` and
+    ``frontend/packages/api/src/generated/sep.ts`` by the frontend workflow's
+    ``git diff --exit-code``. ``app-schema.ts`` is gated by neither: it mirrors
+    ``app/sep/apps/framework/schema.py`` by hand, so a backend field is free to
+    ship with no client type and nothing says so. ``value_labels`` had to be
+    hand-added to ``ListColumn`` and ``DetailField`` for exactly that reason.
+
+    The existing ``DetailHighlightLanguage`` guard pins one enum's values; these
+    pin every model's field set.
+    """
+
+    def test_every_schema_model_has_a_mirror_or_a_recorded_reason(self) -> None:
+        """Refuse a model that is neither mirrored nor declared backend-only.
+
+        This is what stops :data:`MIRROR_NAMES` and :data:`BACKEND_ONLY_MODELS`
+        going stale. A new model added to the schema fails here until its author
+        either mirrors it or says why it is not mirrored, which is the failure a
+        hand-maintained roster otherwise defers indefinitely.
+        """
+        interfaces = _ts_interfaces()
+
+        unaccounted = sorted(
+            name
+            for name in _mirrored_models()
+            if MIRROR_NAMES.get(name, name) not in interfaces
+            and name not in BACKEND_ONLY_MODELS
+        )
+
+        assert unaccounted == []
+
+    def test_every_mirrored_model_agrees_with_its_interface(self) -> None:
+        """Compare wire field sets, allowing only the recorded gaps."""
+        interfaces = _ts_interfaces()
+        disagreements: dict[str, tuple[list[str], list[str]]] = {}
+
+        for name, model in sorted(_mirrored_models().items()):
+            properties = interfaces.get(MIRROR_NAMES.get(name, name))
+            if name in BACKEND_ONLY_MODELS or properties is None:
+                continue
+            allowed_python, allowed_typescript = KNOWN_MIRROR_GAPS.get(
+                name, (frozenset(), frozenset())
+            )
+            python_only = _wire_names(model) - properties - allowed_python
+            typescript_only = properties - _wire_names(model) - allowed_typescript
+            if python_only or typescript_only:
+                disagreements[name] = (
+                    sorted(python_only),
+                    sorted(typescript_only),
+                )
+
+        assert disagreements == {}
+
+    def test_no_recorded_gap_has_silently_closed(self) -> None:
+        """Fail once a recorded gap is fixed, so the allowance is deleted with it.
+
+        A stale entry here is worse than none: it goes on excusing a field that
+        agrees, and would excuse the same name if it diverged again later.
+        """
+        interfaces = _ts_interfaces()
+        models = _mirrored_models()
+        stale: dict[str, list[str]] = {}
+
+        for name, (allowed_python, allowed_typescript) in KNOWN_MIRROR_GAPS.items():
+            properties = interfaces[MIRROR_NAMES.get(name, name)]
+            wire = _wire_names(models[name])
+            closed = sorted(
+                (allowed_python - (wire - properties))
+                | (allowed_typescript - (properties - wire))
+            )
+            if closed:
+                stale[name] = closed
+
+        assert stale == {}

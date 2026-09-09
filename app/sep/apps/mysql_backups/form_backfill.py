@@ -17,16 +17,18 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Annotated, Any, TYPE_CHECKING
 
 import yaml
 
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
 from app.sep.apps.mysql_backups.forms import (
+    BACKUP_DIR_UI,
     BackupCreate,
     encryption_format_for_passes,
     OWNER,
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FORM_BACKFILL_ENTRIES",
+    "LegacyBackupCreate",
     "reconstruct_mysql_backups_form",
     "repair_mysql_backups_stamp",
 ]
@@ -65,6 +68,30 @@ _EXPLICIT_FORM_KEYS = frozenset(
     }
 )
 _PARSE_ONLY_KEYS = frozenset({"name", "host", "port"})
+
+
+class LegacyBackupCreate(BackupCreate):
+    """Validate a reconstructed form body against the create form's older contract.
+
+    A stored config written before the create form required a backup directory has
+    no ``BACKUP_DIR`` key, so the reconstructed body omits ``backup_dir``.
+    Validating that against the strict create model would skip the task, and a task
+    with no ``_form`` stamp has no Edit affordance at all — leaving an operator able
+    to delete and recreate it but not to repair it. The rejection belongs on the
+    create and update routes, which keep
+    :class:`~app.sep.apps.mysql_backups.forms.BackupCreate`.
+
+    The field is declared exactly as the create model declared it before the
+    tightening, ``NonEmptyStr`` and not ``StrippedNonEmptyStr``: the older form
+    accepted a whitespace-only directory, the payload joined it as a relative path,
+    and those tasks ran and reported success, so they are part of the population
+    that has to reconstruct rather than be skipped.
+
+    :param backup_dir: The backup root directory; optional here and un-stripped,
+        unlike on the create model.
+    """
+
+    backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
@@ -205,7 +232,7 @@ FORM_BACKFILL_ENTRIES = [
     FormBackfillEntry(
         app_key="mysql_backups",
         owner=OWNER,
-        create_model=BackupCreate,
+        create_model=LegacyBackupCreate,
         reconstructor=reconstruct_mysql_backups_form,
         stamp_repairer=repair_mysql_backups_stamp,
     ),

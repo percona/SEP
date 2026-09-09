@@ -9,6 +9,8 @@
   "description": "Discover and execute pre-approved support snippets against registered executor hosts.",
   "display_name": "Snippet Manager",
   "forms": [],
+  "item_display_name": "script",
+  "item_display_name_plural": "scripts",
   "list_view": {
     "columns": [
       {
@@ -47,5 +49,39 @@
     "default_sort": "filename",
     "overview_hidden_fields": []
   },
-  "name": "snippets"
+  "name": "snippets",
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

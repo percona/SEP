@@ -567,7 +567,12 @@ def stamp_form_input(write: TaskWrite, form: BaseModel) -> None:
     Persist the create form verbatim so a derived ``PUT`` can prefill an edit form
     from it. The JSON-mode dump keeps enums and datetimes as round-trippable JSON
     scalars, since the stamped body is re-submitted through the derived ``PUT`` and
-    must re-validate against the app's ``create_model``.
+    re-validated against the app's ``create_model``. Round-trippable is not the same
+    as acceptable: the legacy form backfill stamps against the model its
+    :class:`~app.sep.apps.framework.form_backfill_registry.FormBackfillEntry`
+    registers, which an app whose form tightened after tasks were saved may
+    deliberately make laxer than its route model, so a stamp can prefill an edit
+    form the operator must complete before the ``PUT`` is accepted.
 
     :param write: The assembled task envelope whose ``data`` carries the stamp.
     :param form: The validated create-form instance to persist. Any

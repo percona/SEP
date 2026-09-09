@@ -78,6 +78,17 @@ if [[ -z ${SECRET_KEY:-} ]]; then
     unset SECRET_KEY
 fi
 
+# No gate and no export_canonical fan-out: the key sits on the shared core
+# Settings class, so it has no SEP__/INVENTORY__/TASKS__ spellings, and two
+# further sources sit below this file -- a key an earlier start persisted, and
+# one entrypoint.sh mints. Only the blank clear is owed here, and it is
+# load-bearing rather than cosmetic: an inherited empty string counts as
+# supplied, and was measured shadowing a valid mounted file into a refusal to
+# start.
+if [[ -z ${ENCRYPTION_KEY:-} ]] && secret_file_supplies ENCRYPTION_KEY; then
+    unset ENCRYPTION_KEY
+fi
+
 # The migrate wait loops read SEP_DB_HOST/SEP_DB_PORT below, so a mounted host or
 # port has to seed them before their defaults apply -- and seeding all three
 # services off it is why a mounted host is not confined to SEP the way a mounted
