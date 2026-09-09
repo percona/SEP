@@ -476,8 +476,16 @@ writable volume — at minimum `SEP.artifact_dir`, which defaults to
 `/home/sep/state` is the one path the image creates for SEP to write its own
 files into (`0700 sep:sep`) — `$APP_HOME` above admits new entries beside the
 shipped tree, but nothing under it is SEP's to write. It holds the minted
-Grafana token; mounting it is what makes that token survive a container recreate
-rather than only a restart:
+Grafana token and the minted `ENCRYPTION_KEY`; mounting it is what makes both
+survive a container recreate rather than only a restart.
+
+**Mount it.** The two have very different stakes. A lost Grafana token is
+re-minted on the next start at no cost; a lost `ENCRYPTION_KEY` is
+unrecoverable, and every setting override encrypted under it becomes
+unreadable. See
+[The encryption key is minted, but only onto a fresh deployment](#the-encryption-key-is-minted-but-only-onto-a-fresh-deployment)
+— on a deployment that already holds encrypted values, recreating without this
+volume does not start the container at all.
 
 ```
 -v sep-state:/home/sep/state
