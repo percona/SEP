@@ -503,10 +503,10 @@ class BackupCreate(TaskFormModel):
         CompressionAlgorithm | EmptyStrToNone,
         Choices(
             (
-                ("zstd", "ZSTD"),
-                ("lz4", "LZ4"),
-                ("gzip", "gzip"),
-                ("quicklz", "QuickLZ"),
+                (CompressionAlgorithm.ZSTD, "ZSTD"),
+                (CompressionAlgorithm.LZ4, "LZ4"),
+                (CompressionAlgorithm.GZIP, "gzip"),
+                (CompressionAlgorithm.QUICKLZ, "QuickLZ"),
             )
         ),
         Ui(
