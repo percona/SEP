@@ -24,23 +24,13 @@ page.
 from datetime import datetime, timedelta, UTC
 
 import pytest
-import pytest_asyncio
 from fastapi import status
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import require_minimum_role_for_unsafe_methods
-from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_inventory.crud import ProbeRunManager
 from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
-from app.sep.deps import (
-    get_current_user,
-    get_session,
-    require_bearer_for_unsafe_methods,
-)
-from app.sep.main import sep_app
-
-BASE = "/api/apps/om_inventory"
+from tests.app.sep.apps.om_inventory.conftest import BASE
 
 #: Three stamps, a day apart, so a window can include the middle one and exclude
 #: the others without depending on clock-second fuzz.
@@ -48,30 +38,6 @@ DAY = timedelta(days=1)
 T0 = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
 T1 = T0 + DAY
 T2 = T1 + DAY
-
-
-@pytest_asyncio.fixture
-async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
-    """Yield an authenticated client sharing the test session.
-
-    :param regular_user: The authenticated user.
-    :param session: The database session the routes should use.
-    :return: The client.
-    """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_session] = lambda: session
-    client = AsyncClient(
-        transport=ASGITransport(app=sep_app),
-        base_url="http://test",
-        headers={"Authorization": "Bearer test"},
-    )
-    try:
-        yield client
-    finally:
-        await client.aclose()
-        sep_app.dependency_overrides = {}
 
 
 async def record_run(session: AsyncSession, started_at: datetime) -> ProbeRun:

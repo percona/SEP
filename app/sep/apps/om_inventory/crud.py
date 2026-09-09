@@ -273,6 +273,7 @@ async def list_hosts(session: AsyncSession) -> list[OmHost]:
     :param session: The database session.
     :return: The hosts.
     """
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(select(OmHost).order_by(col(OmHost.name)))
     return list(result.all())
 
@@ -289,6 +290,7 @@ async def list_services(
     statement = select(OmService).order_by(col(OmService.name))
     if node_id is not None:
         statement = statement.where(OmService.node_id == node_id)
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(statement)
     return list(result.all())
 
@@ -317,6 +319,7 @@ async def recent_runs(
         statement = statement.where(col(ProbeRun.started_at) >= since)
     if until is not None:
         statement = statement.where(col(ProbeRun.started_at) <= until)
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(statement.limit(limit))
     return list(result.all())
 
@@ -337,6 +340,7 @@ async def running_run(session: AsyncSession) -> ProbeRun | None:
     :param session: The database session.
     :return: The running run, or ``None``.
     """
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         select(ProbeRun)
         .where(ProbeRun.status == ProbeRunStatus.RUNNING)
@@ -356,6 +360,7 @@ async def running_runs(session: AsyncSession) -> list[ProbeRun]:
     :param session: The database session.
     :return: The running runs.
     """
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         select(ProbeRun)
         .where(ProbeRun.status == ProbeRunStatus.RUNNING)
@@ -374,7 +379,7 @@ async def prune_runs(session: AsyncSession, keep: int) -> int:
     long sweep is by definition the oldest row while it runs: enough newer rows — a
     burst of scoped refreshes, or the ``SKIPPED`` rows a schedule collision leaves
     behind — and the pruner deletes a row out from under the worker that owns it,
-    which then raises in ``_finalise`` on a run that no longer exists. A row nothing
+    which then raises in ``finalise`` on a run that no longer exists. A row nothing
     has finished writing is not history yet.
 
     :param session: The database session.
@@ -384,6 +389,7 @@ async def prune_runs(session: AsyncSession, keep: int) -> int:
     survivors = (
         select(ProbeRun.id).order_by(col(ProbeRun.started_at).desc()).limit(keep)
     )
+    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         delete(ProbeRun).where(  # type: ignore[call-overload]
             col(ProbeRun.id).not_in(survivors),

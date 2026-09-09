@@ -40,6 +40,7 @@ from time import monotonic
 from typing import Any
 
 from app.core.requests import RemoteAPI
+from app.sep.apps.framework.spec import RUN_PYTHON_TASK
 from app.sep.apps.om_inventory import payload as payload_pkg
 from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.mapping import MappedService
@@ -47,8 +48,6 @@ from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
 logger = logging.getLogger(__name__)
 
-#: The pre-seeded system task that runs a Python payload on a Nomad target.
-RUN_PYTHON_TASK = "run-python"
 #: The Nomad task inside the ``run-python`` job whose stdout carries the payload's
 #: output. The job also runs prestart steps whose logs are filtered out by this.
 STDOUT_STEP = "run-script"
