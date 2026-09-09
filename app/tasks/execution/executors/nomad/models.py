@@ -62,7 +62,7 @@ from app.core.utils import (
     utc_now,
 )
 from app.core.utils.fields import (
-    NonEmptyStr,
+    AuthSchemeStr,
     PreservableSecretStr,
     strip_credential_url_userinfo,
 )
@@ -623,13 +623,6 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
-    :param api_key: Credential sent as ``Authorization: <auth_scheme> <api_key>``
-        on both the synchronous and the asynchronous request path. It takes
-        precedence over any userinfo embedded in ``endpoint``, which is stripped
-        for as long as a key is configured. An empty value counts as unset,
-        leaving whatever ``endpoint`` carries. Defaults to None.
-    :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
-        ``api_key``. Defaults to ``"Bearer"``.
     :param secure: Whether to use a secure connection. Defaults to False.
     :param timeout: The timeout in seconds for requests to the Nomad API.
         Defaults to 10 seconds.
@@ -643,6 +636,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param check_cert_expiry_interval: Beat schedule for ``check_nomad_cert_expiry``
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
+    :param api_key: Credential sent as ``Authorization: <auth_scheme> <api_key>``
+        on both the synchronous and the asynchronous request path. It takes
+        precedence over any userinfo embedded in ``endpoint``, which is stripped
+        for as long as a key is configured. An empty value counts as unset,
+        leaving whatever ``endpoint`` carries. Defaults to None.
+    :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
+        ``api_key``. Defaults to ``"Bearer"``.
     :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
         after terminal detection to drain any stdout/stderr tail Nomad's
         ``logmon`` flushes shortly after the task finishes. Each attempt waits
@@ -716,7 +716,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
     )
     api_key: PreservableSecretStr | None = None
-    auth_scheme: NonEmptyStr = hot_field(  # ty: ignore[invalid-assignment]
+    auth_scheme: AuthSchemeStr = hot_field(  # ty: ignore[invalid-assignment]
         "Bearer", advanced=True
     )
 
@@ -757,9 +757,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def base_url(self) -> str:
         """Compute the base URL, dropping userinfo once an API key is configured.
 
-        The aiohttp session is built with this value, so it is where the
-        asynchronous path gets the strip
+        ``__aenter__`` builds the aiohttp session from this value, so this is
+        where the asynchronous path takes the strip that
         :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
+        It stays a computed field, so it continues to appear in ``model_dump``
+        and therefore in the config fingerprint
+        :class:`~app.tasks.execution.nomad_lifecycle.NomadLifecycle` compares.
 
         :return: The base URL of the Nomad endpoint.
         """

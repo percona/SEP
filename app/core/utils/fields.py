@@ -409,6 +409,18 @@ def database_url_normalized_scheme_field_factory(
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
 
+AuthSchemeStr = Annotated[
+    str, StringConstraints(pattern=r"^[0-9A-Za-z!#$%&'*+.^_`|~-]+$")
+]
+"""Define an HTTP authentication scheme, the ``token`` production of RFC 7230.
+
+A scheme is spliced into an ``Authorization`` header value, and a header value
+cannot carry whitespace-leading, ``CR``, ``LF`` or ``NUL`` bytes under any
+escaping -- ``requests`` raises ``InvalidHeader`` and ``aiohttp`` raises
+``ValueError`` at send time. Constraining the field rejects such a value where
+an operator sets it, rather than leaving every later request to fail.
+"""
+
 ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
 """Advertise a free-form argument map for OpenAPI / TypeScript clients.
 

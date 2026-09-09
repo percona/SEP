@@ -27,11 +27,13 @@ from typing import Any
 from unittest.mock import AsyncMock, call, MagicMock, patch
 
 import pytest
-from aiohttp import ClientError, ClientResponseError, ClientTimeout
+import requests
+from aiohttp import ClientError, ClientRequest, ClientResponseError, ClientTimeout
 from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from yarl import URL
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.settings_override.registry import (
@@ -604,6 +606,47 @@ class TestNomadExecutorApiKey:
                 "Bearer glsa_supersecret"
             )
 
+    @pytest.mark.asyncio
+    async def test_the_async_request_url_yields_the_bearer(self) -> None:
+        """Assert the header survives on the URL aiohttp actually requests.
+
+        ``aiohttp`` derives basic auth in :class:`~aiohttp.ClientRequest` from the
+        *joined* per-request URL, not from ``base_url``, and lets it overwrite an
+        explicit header. Asserting on ``base_url`` alone would stay green if
+        userinfo were ever reintroduced during the join.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        async with executor:
+            request = ClientRequest(
+                "GET",
+                URL(executor.base_url + executor.prepare_path("/v1/jobs")),
+                headers=executor._session.headers,
+            )
+        assert request.headers["Authorization"] == "Bearer glsa_supersecret"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_sync_request_url_yields_the_bearer(self, mock_nomad_cls) -> None:
+        """Assert the header survives once ``requests`` has prepared the request.
+
+        ``requests`` applies URL userinfo in ``Session.prepare_request``, after
+        the session default header is set, so the prepared request is the only
+        place the precedence is observable.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        call_kwargs = mock_nomad_cls.call_args[1]
+        session = call_kwargs["session"]
+        prepared = session.prepare_request(
+            requests.Request("GET", f"{call_kwargs['address']}/v1/jobs")
+        )
+        assert prepared.headers["Authorization"] == "Bearer glsa_supersecret"
+
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_an_empty_key_counts_as_unset_on_both_paths(self, mock_nomad_cls) -> None:
         """Assert a blank mounted secret falls through to whatever the URL carries."""
@@ -616,10 +659,24 @@ class TestNomadExecutorApiKey:
         assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
         assert "hunter2" in executor.base_url
 
-    def test_an_empty_auth_scheme_is_rejected(self) -> None:
-        """Assert validation refuses a blank scheme rather than emitting a bare header."""
+    @pytest.mark.parametrize(
+        "scheme", ["", " ", "Bearer x\r\nX-Injected: yes", "Bea rer", "Bearer\x00"]
+    )
+    def test_a_non_token_auth_scheme_is_rejected(self, scheme: str) -> None:
+        """Refuse a scheme no ``Authorization`` header value can carry.
+
+        Both HTTP clients raise at send time on such a value, so accepting it
+        here would trade a settings-validation error for every later Nomad
+        request failing.
+        """
         with pytest.raises(ValidationError):
-            _build_executor(api_key="glsa_supersecret", auth_scheme="")
+            _build_executor(api_key="glsa_supersecret", auth_scheme=scheme)
+
+    @pytest.mark.parametrize("scheme", ["Bearer", "Basic", "Token", "X-Custom.v1"])
+    def test_a_token_auth_scheme_is_accepted(self, scheme: str) -> None:
+        """Accept every scheme shape RFC 7230's ``token`` production allows."""
+        executor = _build_executor(api_key="glsa_supersecret", auth_scheme=scheme)
+        assert executor.headers["Authorization"] == f"{scheme} glsa_supersecret"
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     def test_the_address_never_carries_a_credential(self, mock_nomad_cls) -> None:

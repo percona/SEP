@@ -359,11 +359,20 @@ and override the header.
 
 The helper does nothing at all when either the Grafana service-account token or
 `PMM__API_KEY` already resolves, from an explicit variable or from a file under
-`SECRETS_DIR`, or when the active auth provider is not Grafana. Those two are the
-mint gate; `TASKS__NOMAD__API_KEY` is a destination only, so mounting it alone
-does not suppress minting. A blank value counts as absent at every rank the
-helper reads. A non-Grafana deployment mints nothing, so it must set
-`TASKS__NOMAD__API_KEY` itself if its Nomad requires a credential.
+`SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
+counts as absent at every rank the helper reads.
+
+**Those two names are the mint gate, and the gate controls the whole fan-out.**
+Supplying either of them suppresses minting, and `entrypoint.sh` calls
+`export_grafana_token` only when a token was actually minted — so a deployment
+that mounts `PMM__API_KEY` (or the Grafana token) and leaves `SEP_GRAFANA_TOKEN`
+unset gets **no** `TASKS__NOMAD__API_KEY` at all, and the Nomad executor falls
+back to whatever `TASKS__NOMAD__ENDPOINT` carries. `TASKS__NOMAD__API_KEY` is a
+destination only: mounting *it* alone does not suppress minting, but it also
+cannot make the fan-out run. Supply all three explicitly whenever you supply any
+of the mint-gate two. The same applies to a non-Grafana deployment, which mints
+nothing and must set `TASKS__NOMAD__API_KEY` itself if its Nomad requires a
+credential.
 
 One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
 on the file *existing*, not on it holding a value, because the settings source
