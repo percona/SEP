@@ -35,7 +35,7 @@ from app.sep.apps.framework.form_dsl import (
     TaskFormModel,
     Ui,
 )
-from app.sep.apps.framework.rules import any_, F, not_
+from app.sep.apps.framework.rules import any_, F, falsy, not_
 from app.sep.apps.mysql_backups.forms import (
     encryption_format_for_passes,
     EncryptionFormat,
@@ -43,6 +43,17 @@ from app.sep.apps.mysql_backups.forms import (
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     ensure_backup_source_shell_safe,
+)
+
+# Pairs with the ``Ui(parent="slave_from_master")`` on the same fields: the
+# pointer nests them under the toggle in the renderer, this gate is what the
+# server enforces. ``master_port`` is deliberately not in the set — it defaults
+# to 3306 and is read when 'Restore my.cnf' is set, not when replication starts,
+# so gating it on this toggle would reject every restore that leaves replication
+# off.
+_REPLICATION_OFF = Forbidden(
+    when=falsy("slave_from_master"),
+    message="'slave_from_master' must be enabled to set a replication option.",
 )
 
 _log = logging.getLogger(__name__)
@@ -503,101 +514,6 @@ class RestoreCreate(TaskFormModel):
         ),
     ] = EncryptionFormat.NONE
 
-    logging_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Logging directory",
-            section="General",
-            description="Directory on the target host for this restore's log files",
-        ),
-    ] = None
-    port: Annotated[
-        int | None,
-        Ui(
-            section="General",
-            description=(
-                "Port SEP connects to on the target host when it queries the server "
-                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
-                "loads over the destination service's own address and a Binlog restore "
-                "replays through a local client, so neither uses it."
-            ),
-        ),
-    ] = None
-    custom_mysql_init_command: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Custom MySQL init command",
-            section="General",
-            description=(
-                "Service command used to stop and start MySQL during an XtraBackup "
-                "restore, such as /usr/bin/systemctl; detected automatically when left "
-                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
-                "it."
-            ),
-        ),
-    ] = None
-    ssh_user: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH user",
-            section="General",
-            description=(
-                "SSH user for fetching a backup stored on a remote host. "
-                "Defaults to percona when left blank."
-            ),
-        ),
-    ] = None
-    ssh_port: Annotated[
-        int | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH port",
-            section="General",
-            description=(
-                "SSH port for fetching a backup stored on a remote host. "
-                "Defaults to 22 when left blank."
-            ),
-        ),
-    ] = None
-    ssh_key: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH key name",
-            section="General",
-            description=(
-                "Unused for the sources above: a local path, remote host, S3 or "
-                "Google Cloud Storage fetch always authenticates with the SSH "
-                "user's own id_rsa key."
-            ),
-        ),
-    ] = None
-    s3_tool: Annotated[
-        S3Tool | EmptyStrToNone,
-        _S3_ONLY,
-        Choices(((S3Tool.S3CMD, "s3cmd"), (S3Tool.AWSCLI, "awscli"))),
-        Ui(
-            label="S3 tool",
-            section="General",
-            description=(
-                "Client used to download the backup. Defaults to s3cmd when left blank."
-            ),
-        ),
-    ] = None
-    gpg_password_file: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _GPG_SOURCE_ONLY,
-        Ui(
-            label="GPG password file",
-            section="General",
-            description=(
-                "Path on the target host to the file holding the passphrase for a "
-                "GPG-encrypted backup"
-            ),
-        ),
-    ] = None
-
     schema_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
@@ -835,9 +751,11 @@ class RestoreCreate(TaskFormModel):
     ] = False
     wait_for_catchup: Annotated[
         bool,
+        _REPLICATION_OFF,
         Ui(
             label="Wait for catchup",
             section="XtraBackup",
+            parent="slave_from_master",
             description=(
                 "Wait for the restored replica to catch up and fail the task if it "
                 "does not. Needs replication to be started above."
@@ -846,9 +764,11 @@ class RestoreCreate(TaskFormModel):
     ] = False
     master_ip: Annotated[
         NonEmptyStr | EmptyStrToNone,
+        _REPLICATION_OFF,
         Ui(
             label="Master IP",
             section="XtraBackup",
+            parent="slave_from_master",
             description=(
                 "Replication source the restored instance connects to. Used when "
                 "replication is started above."
@@ -869,17 +789,21 @@ class RestoreCreate(TaskFormModel):
     ] = Field(default=3306)
     master_user: Annotated[
         NonEmptyStr | EmptyStrToNone,
+        _REPLICATION_OFF,
         Ui(
             label="Master user",
             section="XtraBackup",
+            parent="slave_from_master",
             description="Account the restored instance replicates with",
         ),
     ] = None
     master_password: Annotated[
         NonEmptyStr | EmptyStrToNone,
+        _REPLICATION_OFF,
         Ui(
             label="Master password",
             section="XtraBackup",
+            parent="slave_from_master",
             description="Password for the replication account",
         ),
     ] = None
@@ -937,6 +861,101 @@ class RestoreCreate(TaskFormModel):
         ),
     ] = None
 
+    logging_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Logging directory",
+            section="General",
+            description="Directory on the target host for this restore's log files",
+        ),
+    ] = None
+    port: Annotated[
+        int | None,
+        Ui(
+            section="General",
+            description=(
+                "Port SEP connects to on the target host when it queries the server "
+                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
+                "loads over the destination service's own address and a Binlog restore "
+                "replays through a local client, so neither uses it."
+            ),
+        ),
+    ] = None
+    custom_mysql_init_command: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Custom MySQL init command",
+            section="General",
+            description=(
+                "Service command used to stop and start MySQL during an XtraBackup "
+                "restore, such as /usr/bin/systemctl; detected automatically when left "
+                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
+                "it."
+            ),
+        ),
+    ] = None
+    ssh_user: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH user",
+            section="General",
+            description=(
+                "SSH user for fetching a backup stored on a remote host. "
+                "Defaults to percona when left blank."
+            ),
+        ),
+    ] = None
+    ssh_port: Annotated[
+        int | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH port",
+            section="General",
+            description=(
+                "SSH port for fetching a backup stored on a remote host. "
+                "Defaults to 22 when left blank."
+            ),
+        ),
+    ] = None
+    ssh_key: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH key name",
+            section="General",
+            description=(
+                "Unused for the sources above: a local path, remote host, S3 or "
+                "Google Cloud Storage fetch always authenticates with the SSH "
+                "user's own id_rsa key."
+            ),
+        ),
+    ] = None
+    s3_tool: Annotated[
+        S3Tool | EmptyStrToNone,
+        _S3_ONLY,
+        Choices(((S3Tool.S3CMD, "s3cmd"), (S3Tool.AWSCLI, "awscli"))),
+        Ui(
+            label="S3 tool",
+            section="General",
+            description=(
+                "Client used to download the backup. Defaults to s3cmd when left blank."
+            ),
+        ),
+    ] = None
+    gpg_password_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _GPG_SOURCE_ONLY,
+        Ui(
+            label="GPG password file",
+            section="General",
+            description=(
+                "Path on the target host to the file holding the passphrase for a "
+                "GPG-encrypted backup"
+            ),
+        ),
+    ] = None
+
     @model_validator(mode="before")
     @classmethod
     def _coerce_int_reference_ids(cls, data: Any) -> Any:
@@ -988,6 +1007,36 @@ class RestoreCreate(TaskFormModel):
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
         return ensure_backup_source_shell_safe(value)
+
+
+class LegacyRestoreCreate(RestoreCreate):
+    """Validate a reconstructed form body against the create form's older contract.
+
+    The replication options gained a gate on ``slave_from_master`` when the form
+    started nesting them under it. A stored body carries them independently, so
+    a restore that recorded a replication source while replication was off would
+    now fail to revalidate. Two paths need that tolerance: the backfill
+    reconstruction, where the task would be skipped and left with no ``_form``
+    stamp and therefore no Edit affordance at all, and the response builder's
+    stored-stamp repair in :mod:`app.sep.apps.mysql_backups.restore.deps`, which
+    swallows a validation error and would silently serve an unrepaired stamp. The rejection
+    belongs on the create and update routes, which keep :class:`RestoreCreate`.
+
+    Each field is redeclared exactly as the create model declared it before the
+    tightening. The ``Ui`` pointer goes with the gate rather than being kept
+    here: the two are a pair, and a model carrying only the pointer would fail
+    the DSL's own conformance check.
+
+    :param wait_for_catchup: Whether to wait for the replica to catch up.
+    :param master_ip: The replication source address.
+    :param master_user: The replication account.
+    :param master_password: The replication account's password.
+    """
+
+    wait_for_catchup: bool = False
+    master_ip: NonEmptyStr | EmptyStrToNone = None
+    master_user: NonEmptyStr | EmptyStrToNone = None
+    master_password: NonEmptyStr | EmptyStrToNone = None
 
 
 class RestoresResponse(BaseTaskResponse):

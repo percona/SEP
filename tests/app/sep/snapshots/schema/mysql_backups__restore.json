@@ -151,141 +151,6 @@
       "collapsible": true,
       "fields": [
         {
-          "description": "Directory on the target host for this restore's log files",
-          "label": "Logging directory",
-          "min_length": 1,
-          "name": "logging_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "Port SEP connects to on the target host when it queries the server during an XtraBackup restore (defaults to 3306). A Mydumper restore loads over the destination service's own address and a Binlog restore replays through a local client, so neither uses it.",
-          "label": "Port",
-          "name": "port",
-          "required": false,
-          "type": "integer"
-        },
-        {
-          "description": "Service command used to stop and start MySQL during an XtraBackup restore, such as /usr/bin/systemctl; detected automatically when left empty. Mydumper and Binlog restores never stop MySQL, so they ignore it.",
-          "label": "Custom MySQL init command",
-          "min_length": 1,
-          "name": "custom_mysql_init_command",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "SSH user for fetching a backup stored on a remote host. Defaults to percona when left blank.",
-          "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "source_transport": "ssh"
-                }
-              }
-            }
-          ],
-          "label": "SSH user",
-          "min_length": 1,
-          "name": "ssh_user",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "SSH port for fetching a backup stored on a remote host. Defaults to 22 when left blank.",
-          "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "source_transport": "ssh"
-                }
-              }
-            }
-          ],
-          "label": "SSH port",
-          "name": "ssh_port",
-          "required": false,
-          "type": "integer"
-        },
-        {
-          "description": "Unused for the sources above: a local path, remote host, S3 or Google Cloud Storage fetch always authenticates with the SSH user's own id_rsa key.",
-          "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "source_transport": "ssh"
-                }
-              }
-            }
-          ],
-          "label": "SSH key name",
-          "min_length": 1,
-          "name": "ssh_key",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "choices": [
-            {
-              "label": "s3cmd",
-              "value": "s3cmd"
-            },
-            {
-              "label": "awscli",
-              "value": "awscli"
-            }
-          ],
-          "description": "Client used to download the backup. Defaults to s3cmd when left blank.",
-          "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "source_transport": "s3"
-                }
-              }
-            }
-          ],
-          "label": "S3 tool",
-          "name": "s3_tool",
-          "required": false,
-          "type": "choice"
-        },
-        {
-          "description": "Path on the target host to the file holding the passphrase for a GPG-encrypted backup",
-          "forbidden": [
-            {
-              "when": {
-                "not": {
-                  "any": [
-                    {
-                      "equals": {
-                        "source_encryption": "gpg"
-                      }
-                    },
-                    {
-                      "equals": {
-                        "source_encryption": "dual"
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          ],
-          "label": "GPG password file",
-          "min_length": 1,
-          "name": "gpg_password_file",
-          "required": false,
-          "type": "string"
-        }
-      ],
-      "render_after_submit": false,
-      "title": "General"
-    },
-    {
-      "collapsed_by_default": true,
-      "collapsible": true,
-      "fields": [
-        {
           "allow_custom": true,
           "depends_on": "service_id",
           "description": "Database the backup is loaded into; pick one from inventory. Leave empty to restore into the databases the backup came from. A name typed here instead of picked is ignored and does the same.",
@@ -481,16 +346,34 @@
         {
           "default": false,
           "description": "Wait for the restored replica to catch up and fail the task if it does not. Needs replication to be started above.",
+          "forbidden": [
+            {
+              "message": "'slave_from_master' must be enabled to set a replication option.",
+              "when": {
+                "falsy": "slave_from_master"
+              }
+            }
+          ],
           "label": "Wait for catchup",
           "name": "wait_for_catchup",
+          "parent": "slave_from_master",
           "required": false,
           "type": "bool"
         },
         {
           "description": "Replication source the restored instance connects to. Used when replication is started above.",
+          "forbidden": [
+            {
+              "message": "'slave_from_master' must be enabled to set a replication option.",
+              "when": {
+                "falsy": "slave_from_master"
+              }
+            }
+          ],
           "label": "Master IP",
           "min_length": 1,
           "name": "master_ip",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         },
@@ -504,17 +387,35 @@
         },
         {
           "description": "Account the restored instance replicates with",
+          "forbidden": [
+            {
+              "message": "'slave_from_master' must be enabled to set a replication option.",
+              "when": {
+                "falsy": "slave_from_master"
+              }
+            }
+          ],
           "label": "Master user",
           "min_length": 1,
           "name": "master_user",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         },
         {
           "description": "Password for the replication account",
+          "forbidden": [
+            {
+              "message": "'slave_from_master' must be enabled to set a replication option.",
+              "when": {
+                "falsy": "slave_from_master"
+              }
+            }
+          ],
           "label": "Master password",
           "min_length": 1,
           "name": "master_password",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         }
@@ -593,6 +494,142 @@
       ],
       "render_after_submit": false,
       "title": "Binlog"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "description": "Directory on the target host for this restore's log files",
+          "label": "Logging directory",
+          "min_length": 1,
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Port SEP connects to on the target host when it queries the server during an XtraBackup restore (defaults to 3306). A Mydumper restore loads over the destination service's own address and a Binlog restore replays through a local client, so neither uses it.",
+          "label": "Port",
+          "name": "port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Service command used to stop and start MySQL during an XtraBackup restore, such as /usr/bin/systemctl; detected automatically when left empty. Mydumper and Binlog restores never stop MySQL, so they ignore it.",
+          "label": "Custom MySQL init command",
+          "min_length": 1,
+          "name": "custom_mysql_init_command",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "SSH user for fetching a backup stored on a remote host. Defaults to percona when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH user",
+          "min_length": 1,
+          "name": "ssh_user",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "SSH port for fetching a backup stored on a remote host. Defaults to 22 when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH port",
+          "name": "ssh_port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Unused for the sources above: a local path, remote host, S3 or Google Cloud Storage fetch always authenticates with the SSH user's own id_rsa key.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH key name",
+          "min_length": 1,
+          "name": "ssh_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "s3cmd",
+              "value": "s3cmd"
+            },
+            {
+              "label": "awscli",
+              "value": "awscli"
+            }
+          ],
+          "description": "Client used to download the backup. Defaults to s3cmd when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 tool",
+          "name": "s3_tool",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "description": "Path on the target host to the file holding the passphrase for a GPG-encrypted backup",
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_encryption": "gpg"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_encryption": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "label": "GPG password file",
+          "min_length": 1,
+          "name": "gpg_password_file",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "group": "Advanced",
+      "render_after_submit": false,
+      "title": "General"
     }
   ],
   "item_display_name": "restore",

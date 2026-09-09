@@ -7180,6 +7180,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7379,6 +7381,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7505,6 +7509,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7721,6 +7727,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7768,6 +7776,8 @@ export interface components {
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7801,6 +7811,14 @@ export interface components {
      *     :param fail_when: Optional predicate-only invariants scoped to this
      *         section. Defaults to ``None``.
      *     :type fail_when: list[FailRule] | None
+     *     :param group: Optional heading of the collapsible group this section
+     *         belongs to. A run of *adjacent* sections carrying the same value
+     *         renders inside one collapsed shell titled by it, so a form with many
+     *         secondary sections costs one row at rest instead of one per section.
+     *         Each member keeps its own ``collapsible`` / ``collapsed_by_default``
+     *         behaviour inside the group. Defaults to ``None`` — the section renders
+     *         on its own.
+     *     :type group: NonEmptyStr | None
      *     :param collapsible: Whether the renderer may collapse this section behind
      *         a toggle. Defaults to ``False``.
      *     :type collapsible: bool
@@ -7868,6 +7886,8 @@ export interface components {
       )[];
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      /** Group */
+      group?: string | null;
       /**
        * Render After Submit
        * @default false
@@ -7917,6 +7937,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7966,6 +7988,8 @@ export interface components {
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8042,6 +8066,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8099,6 +8125,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8147,6 +8175,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8191,6 +8221,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8239,6 +8271,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8452,6 +8486,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8507,6 +8543,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8613,6 +8651,8 @@ export interface components {
       language?: string | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8681,6 +8721,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8733,6 +8775,8 @@ export interface components {
       min_length?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Pattern */
       pattern?: string | null;
       /** Placeholder */
@@ -8792,6 +8836,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8887,6 +8933,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**
@@ -8930,6 +8978,8 @@ export interface components {
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**

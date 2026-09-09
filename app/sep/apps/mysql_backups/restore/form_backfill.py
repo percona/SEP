@@ -28,6 +28,7 @@ from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
 from app.sep.apps.mysql_backups.restore.models import (
+    LegacyRestoreCreate,
     normalize_source_declaration,
     OWNER,
     RestoreCreate,
@@ -39,9 +40,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FORM_BACKFILL_ENTRY",
+    "LegacyRestoreCreate",
     "reconstruct_mysql_restores_form",
     "repair_mysql_restores_stamp",
 ]
+
 
 _RESTORE_FORM_FIELDS = frozenset(RestoreCreate.model_fields)
 _EXPLICIT_FORM_KEYS = frozenset(
@@ -219,7 +222,7 @@ def repair_mysql_restores_stamp(
 FORM_BACKFILL_ENTRY = FormBackfillEntry(
     app_key="mysql_backups/restore",
     owner=OWNER,
-    create_model=RestoreCreate,
+    create_model=LegacyRestoreCreate,
     reconstructor=reconstruct_mysql_restores_form,
     stamp_repairer=repair_mysql_restores_stamp,
 )

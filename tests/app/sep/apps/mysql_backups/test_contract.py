@@ -309,6 +309,12 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         a section added later without a posture decision fails here. Where the
         required fields sit is pinned too, so none of them can drift behind a
         collapse toggle.
+
+        Order and ``group`` are pinned as a list rather than a mapping. The
+        renderer builds the ``Advanced`` shell from an *adjacent* run, and the
+        derived order comes from field declaration order on the model — so a
+        contributor reordering fields for an unrelated reason could split the
+        group in two, and a mapping would not notice.
         """
         base = app_base_url(self.app_def)
 
@@ -316,22 +322,23 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_200_OK, response.text
         sections = response.json()["forms"]
-        posture = {
-            section["title"]: (
+        assert [
+            (
+                section["title"],
                 section["collapsible"],
                 section["collapsed_by_default"],
+                section.get("group"),
             )
             for section in sections
-        }
-        assert posture == {
-            "Task": (False, False),
-            "General": (True, True),
-            "Mydumper": (True, True),
-            "XtraBackup": (True, True),
-            "Binlog": (True, True),
-            "Encryption": (True, True),
-            "Upload": (True, True),
-        }
+        ] == [
+            ("Task", False, False, None),
+            ("Mydumper", True, True, None),
+            ("XtraBackup", True, True, None),
+            ("Binlog", True, True, None),
+            ("General", True, True, "Advanced"),
+            ("Encryption", True, True, "Advanced"),
+            ("Upload", True, True, "Advanced"),
+        ]
         required_fields = {
             (section["title"], field["name"])
             for section in sections

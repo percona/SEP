@@ -51,7 +51,9 @@ from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
     FailRule,
+    falsy,
     FieldGate,
+    not_,
     truthy,
 )
 from app.sep.apps.framework.schema import (
@@ -1314,3 +1316,209 @@ class TestDeriveAppSchemaItemDisplayNames:
 
         assert schema.item_display_name == "MySQL Backups"
         assert schema.item_display_name_plural == "MySQL Backups"
+
+
+# ── Section grouping and parent toggles (SEP-2039) ───────────────────────────
+
+
+class _GroupedLayoutModel(AppFormModel):
+    lead: Annotated[str, Ui(label="Lead", section="Task")] = ""
+    general: Annotated[str, Ui(label="General", section="General")] = ""
+    upload: Annotated[str, Ui(label="Upload", section="Upload")] = ""
+
+
+_GROUPED_LAYOUT = FormLayout(
+    sections=(
+        SectionLayout(key="Task", title="Task"),
+        SectionLayout(key="General", title="General", group="Advanced"),
+        SectionLayout(key="Upload", title="Upload", group="Advanced"),
+    )
+)
+
+
+class _ParentedModel(AppFormModel):
+    kill: Annotated[bool, Ui(label="Kill", section="s")] = False
+    timeout: Annotated[
+        int | EmptyStrToNone,
+        Forbidden(when=falsy("kill")),
+        Ui(label="Timeout", section="s", parent="kill"),
+    ] = None
+
+
+_PARENTED_LAYOUT = FormLayout(sections=(SectionLayout(key="s", title="S"),))
+
+#: An arbitrary in-range value for the parented model's timeout field.
+_PARENTED_TIMEOUT = 30
+
+
+def _one_section_layout() -> FormLayout:
+    return FormLayout(sections=(SectionLayout(key="s", title="S"),))
+
+
+class TestSectionGroup:
+    """Cover SectionLayout.group reaching the wire."""
+
+    def test_group_copied_onto_the_derived_section(self) -> None:
+        """Copy the layout's group onto every section that declares one."""
+        sections = derive_form_sections(_GroupedLayoutModel, _GROUPED_LAYOUT)
+        assert [(s.title, s.group) for s in sections] == [
+            ("Task", None),
+            ("General", "Advanced"),
+            ("Upload", "Advanced"),
+        ]
+
+    def test_ungrouped_section_leaves_group_unset(self) -> None:
+        """Leave ``group`` unset so a route excluding nulls keeps it off the wire."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        assert sections[0].group is None
+
+    def test_blank_group_rejected(self) -> None:
+        """Reject a group heading the renderer would have nothing to show for."""
+        with pytest.raises(ValueError, match="must carry the heading"):
+            SectionLayout(key="s", title="S", group="   ")
+
+    def test_non_adjacent_group_rejected(self) -> None:
+        """Reject a run the renderer would draw as two same-titled shells.
+
+        Adjacency is easy to break by accident: ``group`` is declared on the
+        layout, while the order that decides adjacency comes from field
+        declaration order on the model.
+        """
+
+        class _Model(AppFormModel):
+            first: Annotated[str, Ui(label="First", section="a")] = ""
+            middle: Annotated[str, Ui(label="Middle", section="b")] = ""
+            last: Annotated[str, Ui(label="Last", section="c")] = ""
+
+        layout = FormLayout(
+            sections=(
+                SectionLayout(key="a", title="A", group="Advanced"),
+                SectionLayout(key="b", title="B"),
+                SectionLayout(key="c", title="C", group="Advanced"),
+            )
+        )
+        with pytest.raises(ValueError, match="rejoins group 'Advanced'"):
+            derive_form_sections(_Model, layout)
+
+    def test_two_distinct_groups_may_follow_each_other(self) -> None:
+        """Accept back-to-back groups: each is still one adjacent run."""
+
+        class _Model(AppFormModel):
+            first: Annotated[str, Ui(label="First", section="a")] = ""
+            second: Annotated[str, Ui(label="Second", section="b")] = ""
+
+        layout = FormLayout(
+            sections=(
+                SectionLayout(key="a", title="A", group="One"),
+                SectionLayout(key="b", title="B", group="Two"),
+            )
+        )
+        assert [s.group for s in derive_form_sections(_Model, layout)] == [
+            "One",
+            "Two",
+        ]
+
+
+class TestParentToggle:
+    """Cover Ui(parent=...) reaching the wire and its conformance rules."""
+
+    def test_parent_copied_onto_the_derived_field(self) -> None:
+        """Copy the pointer onto the field and leave unparented fields unset."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        by_name = {f.name: f for f in sections[0].fields}
+        assert by_name["timeout"].parent == "kill"
+        assert by_name["kill"].parent is None
+
+    def test_blank_parent_rejected(self) -> None:
+        """Reject a pointer that names nothing."""
+        with pytest.raises(ValueError, match="must name the sibling bool field"):
+            Ui(label="x", section="s", parent="  ")
+
+    def test_parent_without_companion_gate_rejected(self) -> None:
+        """Reject the pointer alone: the server would still accept a value."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[bool, Ui(label="Kill", section="s")] = False
+            timeout: Annotated[
+                int | EmptyStrToNone, Ui(label="Timeout", section="s", parent="kill")
+            ] = None
+
+        with pytest.raises(ValueError, match="declares no Forbidden"):
+            derive_form_sections(_Model, _one_section_layout())
+
+    def test_not_truthy_accepted_as_the_companion_gate(self) -> None:
+        """Accept the other spelling of "the parent is off"."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[bool, Ui(label="Kill", section="s")] = False
+            timeout: Annotated[
+                int | EmptyStrToNone,
+                Forbidden(when=not_(truthy("kill"))),
+                Ui(label="Timeout", section="s", parent="kill"),
+            ] = None
+
+        sections = derive_form_sections(_Model, _one_section_layout())
+        assert sections[0].fields[1].parent == "kill"
+
+    def test_non_bool_parent_rejected(self) -> None:
+        """Reject a pointer at a field the renderer could not render as a toggle."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[str, Ui(label="Kill", section="s")] = ""
+            timeout: Annotated[
+                int | EmptyStrToNone,
+                Forbidden(when=falsy("kill")),
+                Ui(label="Timeout", section="s", parent="kill"),
+            ] = None
+
+        with pytest.raises(ValueError, match="is not a bool field in section"):
+            derive_form_sections(_Model, _one_section_layout())
+
+    def test_cross_section_parent_rejected(self) -> None:
+        """Reject a pointer the renderer could not nest under, being elsewhere."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[bool, Ui(label="Kill", section="a")] = False
+            timeout: Annotated[
+                int | EmptyStrToNone,
+                Forbidden(when=falsy("kill")),
+                Ui(label="Timeout", section="b", parent="kill"),
+            ] = None
+
+        layout = FormLayout(
+            sections=(
+                SectionLayout(key="a", title="A"),
+                SectionLayout(key="b", title="B"),
+            )
+        )
+        with pytest.raises(ValueError, match="is not a bool field in section"):
+            derive_form_sections(_Model, layout)
+
+    def test_chained_parent_rejected(self) -> None:
+        """Reject a chain, whose cyclic form leaves both toggles inert."""
+
+        class _Model(AppFormModel):
+            a: Annotated[bool, Ui(label="A", section="s")] = False
+            b: Annotated[
+                bool,
+                Forbidden(when=falsy("a")),
+                Ui(label="B", section="s", parent="a"),
+            ] = False
+            c: Annotated[
+                int | EmptyStrToNone,
+                Forbidden(when=falsy("b")),
+                Ui(label="C", section="s", parent="b"),
+            ] = None
+
+        with pytest.raises(ValueError, match="is itself parented"):
+            derive_form_sections(_Model, _one_section_layout())
+
+    def test_companion_gate_is_enforced_at_runtime(self) -> None:
+        """Keep the pointer presentational: the gate is what rejects a payload."""
+        with pytest.raises(ValidationError):
+            _ParentedModel(kill=False, timeout=_PARENTED_TIMEOUT)
+        assert (
+            _ParentedModel(kill=True, timeout=_PARENTED_TIMEOUT).timeout
+            == _PARENTED_TIMEOUT
+        )
+        assert _ParentedModel(kill=False).timeout is None

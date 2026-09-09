@@ -637,3 +637,40 @@ class TestEncryptionFormatStampRepair:
             outcome.stamped_data[RESERVED_FORM_KEY]["encryption_format"]
             == EncryptionFormat.GPG
         )
+
+
+_LEGACY_KILL_QUERIES_TIMEOUT = 300
+
+
+def test_reconstruction_accepts_a_dependent_option_whose_toggle_is_off():
+    """Accept the combinations the create form started rejecting in SEP-2039.
+
+    Nesting the kill-queries and prepare options under their toggles put a
+    ``Forbidden`` gate on each, because the ``Ui(parent=...)`` pointer is
+    presentation only and the server has to enforce the pairing itself. A stored
+    config carries the option and its toggle independently, and the
+    reconstruction copies every non-null parsed key, so without the leniency a
+    task that set one of these while its toggle was off would be skipped — and a
+    skipped task has no Edit affordance to repair it with.
+    """
+    body = {
+        "task_name": "backups-legacy",
+        "hostname": "executor-host",
+        "service_id": 1,
+        "backup_type": BackupType.XTRABACKUP.value,
+        "backup_dir": "/data/backups",
+        "xtrabackup_kill_queries": False,
+        "xtrabackup_kill_queries_timeout": _LEGACY_KILL_QUERIES_TIMEOUT,
+        "xtrabackup_kill_query_type": "select",
+        "xtrabackup_prepare": False,
+        "xtrabackup_prepare_memory": "2G",
+    }
+
+    legacy = LegacyBackupCreate.model_validate(body)
+    assert legacy.xtrabackup_kill_queries_timeout == _LEGACY_KILL_QUERIES_TIMEOUT
+    assert legacy.xtrabackup_kill_query_type == "select"
+    assert legacy.xtrabackup_prepare_memory == "2G"
+
+    with pytest.raises(ValidationError) as excinfo:
+        BackupCreate.model_validate(body)
+    assert excinfo.value.error_count() >= 1

@@ -19,7 +19,11 @@ Section membership and order are declared on
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` (via
 ``Ui(section=...)`` and field-declaration order); what lives here is the part the
 model cannot express: the section titles, the per-``backup_type`` visibility
-gates, and the list columns. The per-``backup_type`` gates are declared here (not
+gates, the ``Advanced`` grouping, and the list columns. ``group=ADVANCED_GROUP``
+on ``General`` collapses it into one row; the renderer forms a group from an
+*adjacent* run of sections and the derived order comes from field declaration
+order, which is why ``General``'s fields sit below the mode sections on the
+create model rather than above them. The per-``backup_type`` gates are declared here (not
 as field-level ``Forbidden`` markers) so the permissive create model keeps
 accepting the mode-specific fields' non-``None`` defaults on a cross-mode
 restore. The transport and decryption fields are gated on the model instead,
@@ -29,6 +33,7 @@ which is why ``ssh_user``, ``ssh_port`` and ``s3_tool`` gave up theirs; see
 
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
+    ADVANCED_GROUP,
     FormLayout,
     SectionLayout,
     TASK_SECTION_LAYOUT,
@@ -54,6 +59,7 @@ restore_views = Views(
             SectionLayout(
                 key="General",
                 title="General",
+                group=ADVANCED_GROUP,
                 collapsible=True,
                 collapsed_by_default=True,
             ),

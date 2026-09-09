@@ -20,6 +20,7 @@ import pytest
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import (
+    _declared_source_override,
     build_restore_api_task_response,
     build_restore_payload,
     resolve_restore_entities,
@@ -77,6 +78,9 @@ async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
         backup_type=BackupType.XTRABACKUP,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
+        # The replication options are gated on their parent toggle, so a
+        # password only reaches the payload with replication actually on.
+        slave_from_master=True,
         master_password="s3cret-pw",
     )
 
@@ -165,3 +169,29 @@ def test_a_task_without_a_stamp_is_served_unchanged():
     served = build_restore_api_task_response(_restore_task(None)).data
 
     assert RESERVED_FORM_KEY not in served
+
+
+def test_stored_stamp_repair_tolerates_a_legacy_replication_combination():
+    """Repair a pre-source-controls stamp that also predates the gating.
+
+    ``_declared_source_override`` swallows a validation error, so validating the
+    stored stamp with the strict model would silently skip the repair for the
+    exact population it exists to serve — a stamp old enough to lack the source
+    controls is also old enough to carry a replication option with
+    ``slave_from_master`` off.
+    """
+    stored_form = {
+        "task_name": "restore-legacy",
+        "hostname": "executor-host",
+        "backup_type": BackupType.XTRABACKUP.value,
+        "backup_source": "/data/backups/latest",
+        "slave_from_master": False,
+        "master_ip": "10.0.0.9",
+    }
+    task = _restore_task(stored_form)
+
+    override = _declared_source_override(task)
+
+    declared = override["data"][RESERVED_FORM_KEY]
+    assert declared["source_transport"] == SourceTransport.LOCAL.value
+    assert declared["master_ip"] == "10.0.0.9"

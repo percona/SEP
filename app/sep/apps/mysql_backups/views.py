@@ -18,15 +18,24 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.mysql_backups.forms.BackupCreate` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
-express: the section titles, the collapse/whole-section-hide metadata, the list
-columns, and the UI capability flags. These feed the derived ``GET /schema`` and
-are carried over from the previous hand-written ``AppSchema``; the one addition
-is the Encryption section's group ``description`` that guides operators from the
-explicit encryption format to the fields that parameterise it.
+express: the section titles, the collapse/whole-section-hide metadata, the
+``Advanced`` grouping, the list columns, and the UI capability flags. These feed
+the derived ``GET /schema``.
+
+Two things here are not carried over from the previous hand-written
+``AppSchema``: the Encryption section's group ``description``, which guides
+operators from the explicit encryption format to the fields that parameterise
+it, and ``group=ADVANCED_GROUP`` on General, Encryption and Upload, which
+collapses the three into one row so the required fields fit one screen. The
+renderer forms a group from an *adjacent* run of sections, and the derived order
+comes from field declaration order on the model — which is why ``General``'s
+fields sit below the mode sections in
+:mod:`~app.sep.apps.mysql_backups.forms` rather than above them.
 """
 
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
+    ADVANCED_GROUP,
     FormLayout,
     SectionLayout,
     TASK_SECTION_LAYOUT,
@@ -53,6 +62,7 @@ mysql_backups_views = Views(
             SectionLayout(
                 key="General",
                 title="General",
+                group=ADVANCED_GROUP,
                 collapsible=True,
                 collapsed_by_default=True,
             ),
@@ -80,6 +90,7 @@ mysql_backups_views = Views(
             SectionLayout(
                 key="Encryption",
                 title="Encryption",
+                group=ADVANCED_GROUP,
                 collapsible=True,
                 collapsed_by_default=True,
                 description=(
@@ -90,6 +101,7 @@ mysql_backups_views = Views(
             SectionLayout(
                 key="Upload",
                 title="Upload",
+                group=ADVANCED_GROUP,
                 collapsible=True,
                 collapsed_by_default=True,
             ),

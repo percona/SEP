@@ -247,6 +247,16 @@ class BaseField(SchemaBaseModel):
     :param forbidden: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be absent.
         Defaults to ``None``.
+    :param parent: Optional name of a sibling ``bool`` field, in the same
+        section, that this field parameterises. The schema-driven React
+        renderer draws the field indented beneath that toggle and inert until
+        it is on, rather than hiding it. Presentation only — the runtime rule
+        is the field's own ``forbidden`` gate on the parent being falsy, which
+        the renderer recognises and consumes as the disable condition instead
+        of applying it as a hide; every other gate keeps hiding the field.
+        Typed optional so a route serialising with ``exclude_none`` drops it
+        from the wire until a field opts in, the same posture as
+        ``destructive``. Defaults to ``None``.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -257,6 +267,7 @@ class BaseField(SchemaBaseModel):
     default: Any | None = None
     requires: list[FieldGate] | None = None
     forbidden: list[FieldGate] | None = None
+    parent: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)] | None = None
 
 
 class BoolField(BaseField):
@@ -862,6 +873,14 @@ class FormSection(SchemaBaseModel):
     :param fail_when: Optional predicate-only invariants scoped to this
         section. Defaults to ``None``.
     :type fail_when: list[FailRule] | None
+    :param group: Optional heading of the collapsible group this section
+        belongs to. A run of *adjacent* sections carrying the same value
+        renders inside one collapsed shell titled by it, so a form with many
+        secondary sections costs one row at rest instead of one per section.
+        Each member keeps its own ``collapsible`` / ``collapsed_by_default``
+        behaviour inside the group. Defaults to ``None`` — the section renders
+        on its own.
+    :type group: NonEmptyStr | None
     :param collapsible: Whether the renderer may collapse this section behind
         a toggle. Defaults to ``False``.
     :type collapsible: bool
@@ -892,6 +911,7 @@ class FormSection(SchemaBaseModel):
     fields: list[AnyField]
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+    group: NonEmptyStr | None = None
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False

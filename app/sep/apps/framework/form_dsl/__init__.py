@@ -23,6 +23,7 @@ from app.sep.apps.framework.form_dsl.derivation import (
     iter_service_refs,
 )
 from app.sep.apps.framework.form_dsl.markers import (
+    ADVANCED_GROUP,
     ArgFormat,
     Choices,
     FieldWidget,
@@ -52,6 +53,7 @@ from app.sep.apps.framework.form_dsl.pt_toolkit import (
 )
 
 __all__ = [
+    "ADVANCED_GROUP",
     "DSN_TABLE_DEFAULT",
     "TASK_SECTION_LAYOUT",
     "AppFormModel",

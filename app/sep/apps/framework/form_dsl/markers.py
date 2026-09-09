@@ -139,6 +139,15 @@ class Ui:
         default; ``None`` sets the form default to ``None``; any other value sets
         the form default to that value. The model's own default — what the JSON
         body validates against — is never affected.
+    :param parent: Name of a sibling ``bool`` field, in the same section, that
+        this field parameterises. The renderer draws the field indented beneath
+        that toggle and keeps it non-interactive until the toggle is on, rather
+        than hiding it, so a reader can see what enabling the toggle will offer.
+        Presentation only, per this class's governing rule: the runtime rule
+        stays with the field's own ``Forbidden(when=falsy(<parent>))``, which
+        :func:`~app.sep.apps.framework.form_dsl.derivation.derive_form_sections`
+        requires alongside the pointer so the two cannot drift. Defaults to
+        ``None``.
     """
 
     label: str | None = None
@@ -150,18 +159,24 @@ class Ui:
     required: bool | None = None
     widget: FieldWidget | None = None
     default: Any = _UNSET
+    parent: str | None = None
 
     def __post_init__(self) -> None:
-        """Reject a destructive marker that carries no consequence text.
+        """Reject a marker whose opt-in string carries nothing.
 
-        :raises ValueError: When ``destructive`` is set to a blank or
-            whitespace-only string.
+        :raises ValueError: When ``destructive`` or ``parent`` is set to a blank
+            or whitespace-only string.
         """
         if self.destructive is not None and not self.destructive.strip():
             raise ValueError(
                 "Ui(destructive=...) must carry the consequence text a "
                 "confirmation shows; omit the keyword to leave the field "
                 "unmarked"
+            )
+        if self.parent is not None and not self.parent.strip():
+            raise ValueError(
+                "Ui(parent=...) must name the sibling bool field this field "
+                "parameterises; omit the keyword to leave the field unparented"
             )
 
     @property
@@ -513,6 +528,16 @@ class SectionLayout:
     :param title: The section heading.
     :param description: Optional helper text beneath the heading. Defaults to
         ``None``.
+    :param group: Heading of the collapsible group this section belongs to (for
+        example ``"Advanced"``). A run of sections carrying the same value
+        renders inside one collapsed shell titled by it, so a form with many
+        secondary sections costs one row at rest instead of one per section. A
+        section keeps its own ``collapsible`` / ``collapsed_by_default``
+        behaviour inside the group. Members must be *adjacent* in the derived
+        section order — which comes from field declaration order on the model,
+        not from this tuple — because the renderer groups adjacent runs; a
+        broken run renders as two shells with the same heading. Defaults to
+        ``None`` (the section renders on its own).
     :param collapsible: Whether the renderer may collapse the section. Defaults
         to ``False``.
     :param collapsed_by_default: Whether a collapsible section starts collapsed.
@@ -527,21 +552,37 @@ class SectionLayout:
     key: str
     title: str
     description: str | None = None
+    group: str | None = None
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
     forbidden: tuple[FieldGate, ...] | None = None
 
     def __post_init__(self) -> None:
-        """Normalise ``forbidden`` to a tuple so the layout stays hashable."""
+        """Normalise ``forbidden`` to a tuple so the layout stays hashable.
+
+        :raises ValueError: When ``group`` is set to a blank or whitespace-only
+            string, which would give the renderer no heading to show.
+        """
         if self.forbidden is not None:
             object.__setattr__(self, "forbidden", tuple(self.forbidden))
+        if self.group is not None and not self.group.strip():
+            raise ValueError(
+                "SectionLayout(group=...) must carry the heading the grouped "
+                "shell shows; omit the keyword to leave the section ungrouped"
+            )
 
 
 #: Shared Task-section layout adopted by every task app's ``FormLayout`` and the
 #: task scaffold template. Frozen (see :class:`SectionLayout`), so this single
 #: instance is safe to reference directly.
 TASK_SECTION_LAYOUT = SectionLayout(key="Task", title="Task")
+
+#: Conventional heading for the group holding a form's expert sections. Shared
+#: so the several :attr:`SectionLayout.group` values that have to match within
+#: one form cannot drift by a typo — which would split the group in two rather
+#: than fail.
+ADVANCED_GROUP = "Advanced"
 
 
 @dataclass(frozen=True, slots=True)
