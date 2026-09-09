@@ -52,6 +52,7 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.pagination import PaginatedResponse, PaginationDep
 from app.core.settings_override.api import (
     apply_class_overrides,
     clear_class_override,
@@ -228,6 +229,7 @@ def _run_response(run: ProbeRun) -> ProbeRunResponse:
 @router.get("/hosts")
 async def list_estate_hosts(
     session: SessionDep,
+    pagination: PaginationDep,
     has_service: bool | None = Query(
         default=None,
         description="True for hosts running a MongoDB service, False for those with "
@@ -241,7 +243,7 @@ async def list_estate_hosts(
         description="True for hosts a payload can run on, False for those with no "
         "executor.",
     ),
-) -> list[HostResponse]:
+) -> PaginatedResponse[HostResponse]:
     """Return every host OM holds, each with its services.
 
     ``has_service=false`` is the question this table exists to answer: which machines
@@ -252,11 +254,15 @@ async def list_estate_hosts(
     Counts describe the *tables*, not the last run. A scoped refresh must not make the
     estate look one host wide.
 
+    ``total`` counts every host matching the filters, not the page, so a caller can
+    tell "this is the whole estate" from "this is the first twenty of it".
+
     :param session: The database session.
+    :param pagination: The offset/limit window for the page.
     :param has_service: Filter on whether a MongoDB service is registered here.
     :param failing: Filter on whether the host is currently failing.
     :param executor: Filter on whether an executor serves it.
-    :return: The hosts, by name.
+    :return: One page of hosts, by name, with the matching total.
     """
     hosts = await list_hosts(session)
     services = await list_services(session)
@@ -265,13 +271,16 @@ async def list_estate_hosts(
     for service in services:
         by_node.setdefault(service.node_id, []).append(service)
 
-    return [
+    matching = [
         _host_response(host, by_node.get(host.node_id, []))
         for host in hosts
         if (has_service is None or bool(by_node.get(host.node_id)) is has_service)
         and (failing is None or (host.failing_since is not None) is failing)
         and (executor is None or _executor_usable(host) is executor)
     ]
+    return PaginatedResponse.from_pagination(
+        pagination.slice(matching), len(matching), pagination
+    )
 
 
 @router.get("/hosts/{node_id}")
@@ -292,11 +301,12 @@ async def get_estate_host(node_id: str, session: SessionDep) -> HostResponse:
 @router.get("/services")
 async def list_estate_services(
     session: SessionDep,
+    pagination: PaginationDep,
     node_id: str | None = Query(default=None, description="Restrict to one host."),
     failing: bool | None = Query(
         default=None, description="Restrict to services that are, or are not, failing."
     ),
-) -> list[ServiceResponse]:
+) -> PaginatedResponse[ServiceResponse]:
     """Return the services OM holds, flat.
 
     For a consumer that works in services and would otherwise walk every host document
@@ -304,16 +314,22 @@ async def list_estate_services(
     deliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the
     same list, and ``?node_id=`` covers wanting them without the host.
 
+    ``total`` counts every service matching the filters, not the page.
+
     :param session: The database session.
+    :param pagination: The offset/limit window for the page.
     :param node_id: Restrict to one host.
     :param failing: Filter on whether the service is currently failing.
-    :return: The services, by name.
+    :return: One page of services, by name, with the matching total.
     """
-    return [
+    matching = [
         _service_response(service)
         for service in await list_services(session, node_id=node_id)
         if failing is None or (service.failing_since is not None) is failing
     ]
+    return PaginatedResponse.from_pagination(
+        pagination.slice(matching), len(matching), pagination
+    )
 
 
 @router.get("/services/{service_id}")
@@ -382,6 +398,7 @@ async def delete_estate_service(service_id: str, session: SessionDep) -> None:
 @router.get("/runs")
 async def list_runs(
     session: SessionDep,
+    # pagination-ok: bounded by `limit`, which the query applies and caps at 100.
     limit: int = Query(default=20, ge=1, le=100),
     since: Annotated[
         UTCDatetime | None,
@@ -495,6 +512,8 @@ async def trigger_probe(
 
 
 @router.get("/config")
+# pagination-ok: one row per hot field on OmInventorySettings, so the cardinality is
+# the class's field count and cannot grow with the estate.
 async def get_config(session: SessionDep) -> list[SettingResponse]:
     """Return this app's configuration: every field, its value and its origin.
 
@@ -528,6 +547,7 @@ async def get_config(session: SessionDep) -> list[SettingResponse]:
 
 @router.patch("/config")
 @require_minimum_role(UserRole.ADMIN)
+# pagination-ok: one row per key in the request body, so the caller already bounds it.
 async def patch_config(
     request: Request, body: SettingsPatch, session: SessionDep
 ) -> list[SettingResponse]:

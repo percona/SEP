@@ -134,7 +134,7 @@ class TestHosts:
         response = await api.get(f"{BASE}/hosts")
 
         assert response.status_code == status.HTTP_200_OK
-        hosts = {host["node_id"]: host for host in response.json()}
+        hosts = {host["node_id"]: host for host in response.json()["items"]}
         assert set(hosts) == {NODE_WITH_DB, NODE_EMPTY}
         assert [s["service_id"] for s in hosts[NODE_WITH_DB]["services"]] == [
             SERVICE_ID
@@ -152,7 +152,7 @@ class TestHosts:
         """
         response = await api.get(f"{BASE}/hosts", params={"has_service": "false"})
 
-        assert [host["node_id"] for host in response.json()] == [NODE_EMPTY]
+        assert [host["node_id"] for host in response.json()["items"]] == [NODE_EMPTY]
 
     @pytest.mark.asyncio
     async def test_has_service_true_is_the_ordinary_estate_view(
@@ -165,7 +165,7 @@ class TestHosts:
         """
         response = await api.get(f"{BASE}/hosts", params={"has_service": "true"})
 
-        assert [host["node_id"] for host in response.json()] == [NODE_WITH_DB]
+        assert [host["node_id"] for host in response.json()["items"]] == [NODE_WITH_DB]
 
     @pytest.mark.asyncio
     async def test_executor_true_excludes_a_registered_but_down_agent(
@@ -200,8 +200,8 @@ class TestHosts:
         usable = await api.get(f"{BASE}/hosts", params={"executor": "true"})
         unusable = await api.get(f"{BASE}/hosts", params={"executor": "false"})
 
-        assert "id-down00" not in {h["node_id"] for h in usable.json()}
-        assert "id-down00" in {h["node_id"] for h in unusable.json()}
+        assert "id-down00" not in {h["node_id"] for h in usable.json()["items"]}
+        assert "id-down00" in {h["node_id"] for h in unusable.json()["items"]}
 
     @pytest.mark.asyncio
     async def test_one_host_by_pmms_node_id(
@@ -245,7 +245,7 @@ class TestServices:
         """
         response = await api.get(f"{BASE}/services")
 
-        assert [s["service_id"] for s in response.json()] == [SERVICE_ID]
+        assert [s["service_id"] for s in response.json()["items"]] == [SERVICE_ID]
 
     @pytest.mark.asyncio
     async def test_filters_by_host(
@@ -258,7 +258,7 @@ class TestServices:
         """
         response = await api.get(f"{BASE}/services", params={"node_id": NODE_EMPTY})
 
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     @pytest.mark.asyncio
     async def test_one_service_by_pmms_service_id(
@@ -293,7 +293,7 @@ class TestDelete:
         gone = await api.get(f"{BASE}/hosts/{NODE_WITH_DB}")
         assert gone.status_code == status.HTTP_404_NOT_FOUND
         remaining = await api.get(f"{BASE}/services")
-        assert remaining.json() == []
+        assert remaining.json()["items"] == []
 
     @pytest.mark.asyncio
     async def test_deleting_a_service_leaves_its_host(
