@@ -71,11 +71,13 @@ docker compose up -d                          # pmm-server + sep-sidecar
 
 That is the whole prerequisite list. PMM publishes the four secrets SEP reads
 from disk and the side-car mints its own Grafana token, so nothing has to be
-chosen or seeded in advance. The topology does require an x86-64 runtime; arm64
-hosts need x86-64 emulation — see [Caveats](#caveats).
+chosen or seeded in advance. `pmm-server` and the side-car are x86-64 only, so an
+arm64 engine runs those two under emulation; the `sep-mysql` executor is built
+natively there instead — see [Caveats](#caveats).
 
-`./bootstrap.sh` is needed **only** for the `mysql` profile, whose three
-test-fixture passwords are the only thing the generated `.env` still holds:
+`./bootstrap.sh` is needed **only** for the `mysql` profile: it generates that
+profile's three test-fixture passwords and, on an arm64 engine, the two executor
+slots described under [Caveats](#caveats):
 
 ```bash
 ./bootstrap.sh                                # generate .env
@@ -150,7 +152,8 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   regardless of the active profile, and a guard there would make the script a
   prerequisite of every bring-up. PMM generates the secrets it publishes itself,
   including the PostgreSQL role's password. Nothing secret is committed;
-  re-running keeps an existing `.env` and appends any slot it predates.
+  re-running keeps an existing `.env` and appends any password slot it predates;
+  on an arm64 engine it also rewrites the two executor slots it owns.
 - **PMM owns the four secrets SEP reads from disk.** With `PMM_ENABLE_SEP=1` it
   writes four files into the `pmm-sep` volume, which pmm-server mounts at
   `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.

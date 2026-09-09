@@ -97,7 +97,10 @@ set_slot() {
     else
         [[ -z $(tail -c1 .env) ]] || printf '\n' >> .env
         printf '%s=%s\n' "${name}" "${value}" >> .env
-    fi
+    fi || {
+        error "Could not write ${name} to .env: the build would use the slot's stale value"
+        exit 2
+    }
 }
 
 # Wrapped by without_xtrace at the call site: the generated passwords reach
