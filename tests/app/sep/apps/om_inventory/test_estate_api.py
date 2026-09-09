@@ -228,7 +228,7 @@ class TestServices:
     async def test_one_service_by_pmms_service_id(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """Key on PMM's id, which keeps the path free of a lookup step.
+        """Use PMM's id as the path, which keeps it free of a lookup step.
 
         :param api: The authenticated client.
         :param estate: The populated session.
