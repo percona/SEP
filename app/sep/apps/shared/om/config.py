@@ -31,10 +31,11 @@ The token's real name is a plain deployment setting rather than something comput
 here: ``sep_settings.DATABASE.SCHEMA_TRANSLATE_MAP`` (``app/core/db/config.py``) is
 the single core-owned map every symbolic schema token resolves through, applied to
 the engine by ``create_app_async_engine`` and to Alembic's connection by
-``app/sep/migrations/env.py``. Neither of those imports this module — they only
-know the generic map — so what lives here is just the token's name and a lookup
-into that map for callers, like the OM migration, that need the resolved schema
-for raw DDL.
+``app/sep/migrations/env.py``, and, for the comparison ``alembic check`` runs,
+to a translated copy of the metadata by the same ``env.py``. Neither of those
+imports this module — they only know the generic map — so what lives here is
+just the token's name and a lookup into that map for callers, like the OM
+migration, that need the resolved schema for raw DDL.
 """
 
 __all__ = ["OM_SCHEMA_SYMBOL", "om_schema"]
