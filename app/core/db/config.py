@@ -36,9 +36,30 @@ _CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
     AsyncDatabaseEngine.POSTGRESQL: "timeout",
 }
 
+#: The dialects this class emits pool sizing for. SQLite is excluded whole
+#: rather than per-backing, which is a choice worth stating: only an in-memory
+#: database gets a ``StaticPool``, which raises ``TypeError`` when handed these
+#: kwargs, while a file-backed one gets an ``AsyncAdaptedQueuePool`` that would
+#: accept them. Splitting the carve-out that way would make the same setting
+#: work on one SQLite database and crash another, and no SQLite database has a
+#: server-side connection cap to budget against in the first place -- so a
+#: sizing value configured against SQLite is ignored rather than forwarded.
+_POOL_SIZED_ENGINES: frozenset[AsyncDatabaseEngine] = frozenset(
+    {AsyncDatabaseEngine.POSTGRESQL},
+)
+
 
 class DatabaseOptions(BaseModel):
     """Define configuration options for a database connection.
+
+    The sizing defaults are deliberately tighter than SQLAlchemy's own. A
+    shipped deployment runs five long-running processes that build at least
+    eight engines between them, of which at least five come from this class.
+    At SQLAlchemy's ``5 + 10`` those eight together can demand more than a
+    stock PostgreSQL ``max_connections`` of 100, at which point the server
+    refuses new connections outright. ``3 + 2`` caps this class's own share at
+    25 rather than 75. A deployment that needs more sets these fields, which is
+    what they exist for.
 
     :param ENGINE: The database engine to use (e.g., SQLite, PostgreSQL).
         Defaults to SQLite.
@@ -47,14 +68,15 @@ class DatabaseOptions(BaseModel):
     :param HOST: The hostname or IP address of the database server.
     :param PORT: The port number on which the database is running.
     :param NAME: The name of the database.
-    :param POOL_SIZE: Maximum number of persistent pool connections. Unset keeps
-        SQLAlchemy's default. Must be ``>= 1``; ``0`` requests an unbounded pool,
-        a footgun under a shared connection cap.
-    :param MAX_OVERFLOW: Connections allowed beyond ``POOL_SIZE``. Unset keeps
-        SQLAlchemy's default. ``0`` disables overflow; ``-1`` (unlimited) is
-        rejected.
-    :param POOL_TIMEOUT: Seconds to wait for a free connection. Unset keeps
-        SQLAlchemy's default. Must be ``> 0``.
+    :param POOL_SIZE: Maximum number of persistent pool connections. Defaults to
+        ``3``. Must be ``>= 1``; ``0`` requests an unbounded pool, a footgun
+        under a shared connection cap.
+    :param MAX_OVERFLOW: Connections allowed beyond ``POOL_SIZE``. Defaults to
+        ``2``, capping each engine at five concurrent connections. ``0``
+        disables overflow; ``-1`` (unlimited) is rejected.
+    :param POOL_TIMEOUT: Seconds to wait for a free connection. Defaults to
+        ``10.0``, so a saturated pool refuses the request rather than holding
+        it. Must be ``> 0``.
     :param CONNECT_TIMEOUT: Seconds to wait for a TCP connect. Unset passes no
         ``connect_args``, leaving the driver's own default. Forwarded as
         ``timeout`` for asyncpg; omitted for SQLite, where that key means lock
@@ -72,9 +94,9 @@ class DatabaseOptions(BaseModel):
     HOST: str | None = None
     PORT: int | None = None
     NAME: str
-    POOL_SIZE: PositiveInt | None = None
-    MAX_OVERFLOW: NonNegativeInt | None = None
-    POOL_TIMEOUT: PositiveFloat | None = None
+    POOL_SIZE: PositiveInt | None = 3
+    MAX_OVERFLOW: NonNegativeInt | None = 2
+    POOL_TIMEOUT: PositiveFloat | None = 10.0
     CONNECT_TIMEOUT: PositiveFloat | None = None
     POOL_PRE_PING: bool = True
 
@@ -111,11 +133,17 @@ class DatabaseOptions(BaseModel):
         """Return pool options as ``create_engine`` kwargs.
 
         ``pool_pre_ping`` is always emitted so the engine overrides SQLAlchemy's
-        ``False`` default. Sizing fields are omitted when unset so the engine
-        keeps SQLAlchemy's own defaults for those.
+        ``False`` default. The sizing fields are emitted only for a dialect in
+        :data:`_POOL_SIZED_ENGINES` — the same per-dialect carve-out
+        :attr:`connect_engine_kwargs` applies, and it discards a value
+        configured against SQLite rather than forwarding it — and then only when
+        set, so an explicit ``None`` still falls back to SQLAlchemy's own
+        default for that field.
 
         :return: Pool options keyed by their lowercase engine-kwarg names.
         """
+        if self.ENGINE not in _POOL_SIZED_ENGINES:
+            return {"pool_pre_ping": self.POOL_PRE_PING}
         return {
             "pool_pre_ping": self.POOL_PRE_PING,
             **{

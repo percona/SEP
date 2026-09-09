@@ -71,6 +71,7 @@ from starlette.types import Lifespan
 from app import BASE_DIR
 from app.core.celery.config import CeleryOptions
 from app.core.db.config import DatabaseOptions
+from app.core.db.exception_handlers import register_db_capacity_handlers
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
@@ -1049,7 +1050,9 @@ def create_app(
         Starlette strips it before matching routes and ``request.url_for`` re-adds
         it. Defaults to ``""``, which is inert: FastAPI writes the ASGI scope key
         only for a non-empty value, so the unprefixed app is untouched.
-    :return: An instance of the FastAPI application with an attached Celery app.
+    :return: An instance of the FastAPI application with an attached Celery app,
+        carrying the database capacity handlers every sub-application inherits
+        from here.
     """
     openapi_kwargs = {}
     if title is not None:
@@ -1071,6 +1074,7 @@ def create_app(
         dependencies=dependencies,
         **openapi_kwargs,
     )
+    register_db_capacity_handlers(app)
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,
