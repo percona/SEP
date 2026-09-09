@@ -2010,7 +2010,7 @@ export interface paths {
     head?: never;
     /**
      * Patch Config
-     * @description Change this app's configuration at runtime.
+     * @description Update this app's configuration at runtime.
      *
      *     The batch is atomic: a single bad key rejects all of it with a per-key 422 and
      *     writes nothing, so a caller never has to work out how far a partial apply got.
@@ -2084,11 +2084,15 @@ export interface paths {
      *     Counts describe the *tables*, not the last run. A scoped refresh must not make the
      *     estate look one host wide.
      *
+     *     ``total`` counts every host matching the filters, not the page, so a caller can
+     *     tell "this is the whole estate" from "this is the first twenty of it".
+     *
      *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
      *     :param has_service: Filter on whether a MongoDB service is registered here.
      *     :param failing: Filter on whether the host is currently failing.
      *     :param executor: Filter on whether an executor serves it.
-     *     :return: The hosts, by name.
+     *     :return: One page of hosts, by name, with the matching total.
      */
     get: operations['om_inventory_list_estate_hosts_api_apps_om_inventory_hosts_get'];
     put?: never;
@@ -2134,7 +2138,7 @@ export interface paths {
      *
      *     Its services go with it. That is done explicitly rather than left to the
      *     ``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no
-     *     foreign key without a per-connection pragma SEP never sets -- and SQLite is the
+     *     foreign key without a per-connection pragma SEP never sets — and SQLite is the
      *     shipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.
      *
      *     :param node_id: PMM's node id.
@@ -2172,11 +2176,11 @@ export interface paths {
     put?: never;
     /**
      * Trigger Probe
-     * @description Queue a probe sweep, over the whole estate or over named hosts.
+     * @description Start a probe sweep, over the whole estate or over named hosts.
      *
      *     A scoped refresh exists because the two questions are different sizes. "What does
      *     the estate look like" is a sweep of everything and costs a Nomad job per executor
-     *     host -- a minute and a half in this sandbox. "I just did something to this host,
+     *     host — a minute and a half in this sandbox. "I just did something to this host,
      *     is it healthy now" should not cost that, and it is the question PMM's UI will ask
      *     after every action it grows.
      *
@@ -2265,10 +2269,13 @@ export interface paths {
      *     deliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the
      *     same list, and ``?node_id=`` covers wanting them without the host.
      *
+     *     ``total`` counts every service matching the filters, not the page.
+     *
      *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
      *     :param node_id: Restrict to one host.
      *     :param failing: Filter on whether the service is currently failing.
-     *     :return: The services, by name.
+     *     :return: One page of services, by name, with the matching total.
      */
     get: operations['om_inventory_list_estate_services_api_apps_om_inventory_services_get'];
     put?: never;
@@ -10132,7 +10139,7 @@ export interface components {
       | 'account-tree';
     /**
      * HostResponse
-     * @description One host, with the services OM knows are on it.
+     * @description Report one host, with the services OM knows are on it.
      *
      *     A host is a row whether or not any MongoDB was found on it: that is what makes
      *     "which hosts have no database" a query rather than an absence, and it is the only
@@ -10186,6 +10193,28 @@ export interface components {
       /** Services */
       services?: components['schemas']['om_inventory__ServiceResponse'][];
     };
+    /** PaginatedResponse[HostResponse] */
+    om_inventory__PaginatedResponse_HostResponse_: {
+      /** Items */
+      items: components['schemas']['om_inventory__HostResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[ServiceResponse] */
+    om_inventory__PaginatedResponse_ServiceResponse_: {
+      /** Items */
+      items: components['schemas']['om_inventory__ServiceResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /**
      * ProbeCounts
      * @description Count what one sweep reached.
@@ -10229,10 +10258,10 @@ export interface components {
     };
     /**
      * ProbeNode
-     * @description One **host** this sweep attempted, and what came of it.
+     * @description Report one **host** this sweep attempted, and what came of it.
      *
-     *     Host-oriented, because a sweep attempts hosts. A flat list of services -- which
-     *     this was -- cannot show a machine carrying a PMM client and no database, however
+     *     Host-oriented, because a sweep attempts hosts. A flat list of services — which
+     *     this was — cannot show a machine carrying a PMM client and no database, however
      *     many times it is probed, and that machine is the case OM most exists to describe.
      *
      *     One dispatch covers every service on a host, so the host owns the timing and the
@@ -10243,7 +10272,7 @@ export interface components {
      *     :param node_id: **PMM's** node id, the key OM holds this host under.
      *     :param host_name: The node's registered name.
      *     :param executor_host: The client its probe ran on; ``None`` when none matched.
-     *     :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+     *     :param resolution: ``name`` / ``address`` / ``orphaned`` — how that client was
      *         matched, or that it was not. Orphaned is why nothing ran, not an error.
      *     :param answered: Whether the *host* returned a record. A different question from
      *         whether its services did: a host with no database answers perfectly well and
@@ -10279,7 +10308,7 @@ export interface components {
     };
     /**
      * ProbeNodeService
-     * @description One service on a host, as this sweep saw it.
+     * @description Report one service on a host, as this sweep saw it.
      *
      *     :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
      *     :param service_name: Its name, so a reader is not left joining UUIDs by hand.
@@ -10301,7 +10330,7 @@ export interface components {
     };
     /**
      * ProbeRunAccepted
-     * @description Acknowledge a queued sweep.
+     * @description Return the id of a queued sweep.
      *
      *     Returned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so
      *     it is never performed synchronously.
@@ -10329,7 +10358,7 @@ export interface components {
     };
     /**
      * ProbeRunDetail
-     * @description One sweep, with everything it recorded.
+     * @description Carry one sweep, with everything it recorded.
      *
      *     Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
      *     records, so returning them for every row of a 25-run history would make the list
@@ -10362,7 +10391,7 @@ export interface components {
     };
     /**
      * ProbeRunResponse
-     * @description One sweep's record.
+     * @description Carry one sweep's record.
      *
      *     :param run_id: The sweep's id.
      *     :param status: ``running`` / ``success`` / ``partial`` / ``failed``.
@@ -10397,7 +10426,7 @@ export interface components {
     };
     /**
      * ServiceResponse
-     * @description One MongoDB service PMM has registered, as OM currently holds it.
+     * @description Report one MongoDB service PMM has registered, as OM currently holds it.
      *
      *     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
      *     the path and the payload carry the id every consumer already has, with nothing to
@@ -10456,7 +10485,7 @@ export interface components {
      * @description Ask for a refresh of named hosts rather than the whole estate.
      *
      *     :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
-     *         host OM holds -- which is what the scheduled sweep does.
+     *         host OM holds — which is what the scheduled sweep does.
      */
     om_inventory__TriggerRequest: {
       /** Node Ids */
@@ -14683,6 +14712,8 @@ export interface operations {
         failing?: boolean | null;
         /** @description True for hosts a payload can run on, False for those with no executor. */
         executor?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -14696,7 +14727,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['om_inventory__HostResponse'][];
+          'application/json': components['schemas']['om_inventory__PaginatedResponse_HostResponse_'];
         };
       };
       /** @description Validation Error */
@@ -14896,6 +14927,8 @@ export interface operations {
         node_id?: string | null;
         /** @description Restrict to services that are, or are not, failing. */
         failing?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -14909,7 +14942,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['om_inventory__ServiceResponse'][];
+          'application/json': components['schemas']['om_inventory__PaginatedResponse_ServiceResponse_'];
         };
       };
       /** @description Validation Error */
