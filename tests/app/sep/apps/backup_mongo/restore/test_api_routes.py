@@ -1045,11 +1045,11 @@ class TestRestoreMongoApiExecute:
     def test_execute_returns_the_dispatched_run_state(
         self, test_client, mock_task_api_dep
     ) -> None:
-        """Executing a restore task returns the dispatched run's status and creation.
+        """Return the dispatched run's status and creation time for a restore.
 
         This app derives an execute route but binds no contract mixin, so the
         run-state assertions ``DerivedRouterContractTests`` makes for the other
-        seven derived execute routes have to be made here.
+        derived execute routes have to be made here.
         """
         task = build_restore_task("mongo-restore-task")
         mock_task_api_dep.get = AsyncMock(return_value=task)

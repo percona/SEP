@@ -24,7 +24,7 @@ from pydantic import BaseModel, computed_field, create_model, Field, FutureDatet
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 from app.core.requests import as_json_object
-from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -241,7 +241,7 @@ class TaskExecutionResponse(BaseModel):
     task_name: str
     task_id: int | None = None
     status: TaskHistoryStatusEnum
-    created_at: datetime
+    created_at: UTCDatetime
 
 
 class TaskResponseBuilder(Protocol[R]):

@@ -129,7 +129,7 @@ class TestSchemaEndpoint:
         }
 
     def test_schema_publishes_the_task_status_vocabulary(self, test_client):
-        """Body declares every status value and whether it ends a run."""
+        """Declare every status value and whether it ends a run."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
         assert body["task_statuses"] == [
             {"value": status_value.value, "terminal": status_value.is_terminal()}
