@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from cryptography.fernet import Fernet
 
 from tests.sidecar.conftest import SIDECAR_DIR
 
@@ -179,73 +178,12 @@ def test_amd64_engine_reclaims_slots_an_arm64_engine_wrote(harness: Harness) -> 
 def test_amd64_engine_leaves_a_file_without_executor_slots_alone(
     harness: Harness,
 ) -> None:
-    """Add no executor slot to an environment file that never carried one.
-
-    Asserted against the executor slots and the seeded passwords rather than
-    the file's bytes. The script also appends ``ENCRYPTION_KEY`` to a file
-    predating that slot, which is the documented append-what-it-predates
-    behaviour and not the subject here, so byte identity would fail on a
-    change this test does not describe.
-    """
+    """Add no executor slot to an environment file that never carried one."""
     harness.write_env()
+    before = harness.env_file.read_text(encoding="utf-8")
 
     assert harness.run("amd64").returncode == 0
-    assert harness.slots() == {}
-    assert harness.env_file.read_text(encoding="utf-8").startswith(PASSWORDS)
-
-
-def read_slot(harness: Harness, name: str) -> str:
-    """Read one slot's value out of the environment file.
-
-    :param harness: The harness whose environment file is read.
-    :param name: The slot to return.
-    :return: The slot's value.
-    :raises AssertionError: If the file carries no such slot.
-    """
-    for line in harness.env_file.read_text(encoding="utf-8").splitlines():
-        key, _, value = line.partition("=")
-        if key == name:
-            return value
-    raise AssertionError(f"{name} missing from {harness.env_file}")
-
-
-def test_encryption_key_is_seeded_into_a_file_that_predates_it(
-    harness: Harness,
-) -> None:
-    """Append a usable key to an environment file generated before the slot."""
-    harness.write_env()
-
-    assert harness.run("amd64").returncode == 0
-    key = read_slot(harness, "ENCRYPTION_KEY").encode()
-    assert Fernet(key).decrypt(Fernet(key).encrypt(b"probe")) == b"probe"
-
-
-def test_a_rerun_keeps_the_encryption_key_it_already_seeded(
-    harness: Harness,
-) -> None:
-    """Keep a key an earlier run seeded: ciphertext outlives the run."""
-    harness.write_env()
-    assert harness.run("amd64").returncode == 0
-    first = read_slot(harness, "ENCRYPTION_KEY")
-
-    assert harness.run("amd64").returncode == 0
-
-    assert read_slot(harness, "ENCRYPTION_KEY") == first
-
-
-def test_an_emptied_encryption_key_slot_is_refused(harness: Harness) -> None:
-    """Refuse a blank slot rather than hand the side-car a shadowing value.
-
-    ``ensure_slot`` fills only a slot that is absent, so an emptied one
-    survives a re-run, and compose renders it as ``""`` rather than omitting
-    it — which out-ranks a mounted ``SECRETS_DIR`` key file and shadows it.
-    """
-    harness.write_env(extra="ENCRYPTION_KEY=\n")
-
-    result = harness.run("amd64")
-
-    assert result.returncode != 0
-    assert "ENCRYPTION_KEY" in result.stderr
+    assert harness.env_file.read_text(encoding="utf-8") == before
 
 
 def test_forced_amd64_on_arm64_blanks_the_client_slot(harness: Harness) -> None:

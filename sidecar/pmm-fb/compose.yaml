@@ -9,15 +9,14 @@
 # from main under a suffix-less tag — the build emits a single artifact. See
 # pmm-fb/README.md "Which image to pin".
 #
-# ./bootstrap.sh runs before every bring-up. It generates the .env holding the
-# `mysql` profile's three test-fixture passwords, which the pair below needs none
-# of, and the side-car's ENCRYPTION_KEY, which it does — see that variable's own
-# comment. PMM owns the four secrets SEP reads from disk: it writes them into the
+# ./bootstrap.sh is only for the `mysql` profile — it generates the .env holding
+# that profile's three test-fixture passwords, and the pair below needs none of
+# them. PMM owns the four secrets SEP reads from disk: it writes them into the
 # pmm-sep volume, which the side-car reads through SECRETS_DIR, and it serves SEP
-# under its own /sep prefix. The Grafana service-account token is the side-car's
-# own — it mints and persists that one itself. SEP's remaining settings come from
-# the profile baked into the image, with the per-deployment values below
-# overriding it — environment outranks the file.
+# under its own /sep prefix. The Grafana service-account token and the encryption
+# key are the side-car's own — it resolves and persists those itself. SEP's
+# remaining settings come from the profile baked into the image, with the
+# per-deployment values below overriding it — environment outranks the file.
 #
 # sep-mysql is the task-execution target, behind the `mysql` profile; see
 # mysql-target.md.
@@ -74,7 +73,7 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:be2859f3a7487aa9389ca63cdb118a4dbd243d43
+    image: docker.io/percona/percona-sep:11dc66d4d561e98d9d8415ca6d0e6f9418446313
     platform: linux/amd64
     # service_healthy, not service_started: SEP builds its settings once, at
     # process start, so a side-car released before pmm-server has written the
@@ -86,35 +85,28 @@ services:
     # The image runs as uid/gid 1001 and PMM writes the files 0640 group 0 under
     # a setgid directory, so group 0 membership is what makes them readable
     group_add: ["0"]
-    # List form, not a mapping, so the last entry can be passed by bare name
     environment:
-      - SECRETS_DIR=/run/secrets/sep
+      SECRETS_DIR: /run/secrets/sep
       # The baked profile's endpoint is deliberately credential-free; the
       # harness is where PMM's admin:admin belongs
-      - SEP_NOMAD_ENDPOINT=https://admin:admin@pmm-server:8443/nomad
+      SEP_NOMAD_ENDPOINT: https://admin:admin@pmm-server:8443/nomad
       # The harness's only Nomad executor runs inside pmm-server and shares its
       # network namespace, so it resolves this compose service name; a real
       # deployment's PMM Client nodes could not. The /sep prefix is load-bearing:
       # download URLs are joined onto this path rather than replacing it.
-      - BASE_URL=http://sep-sidecar:9000/sep
-      # A harness-local stopgap, not the embedded design. SEP refuses to start
-      # without an encryption key, and PMM publishes only the four files the
-      # side-car reads out of SECRETS_DIR, so nothing provisions this one and
-      # the migration one-shots exit before any app is reachable. Passed by
-      # bare name deliberately: bootstrap.sh writes the value into the
-      # gitignored .env, and an absent slot leaves the variable unset rather
-      # than empty, so a PMM build that starts publishing the key as a file
-      # under SECRETS_DIR outranks this with no edit here.
-      - ENCRYPTION_KEY
+      BASE_URL: http://sep-sidecar:9000/sep
     ports:
       - "127.0.0.1:9000:9000" # sep API (direct host access for probing)
       - "127.0.0.1:9001:9001" # inventory API
       - "127.0.0.1:9002:9002" # tasks API
     volumes:
       - pmm-sep:/run/secrets/sep:ro
-      # SEP's own writable state. The side-car mints its own Grafana
-      # service-account token at start and persists it here, so a recreate
-      # reuses that token instead of minting a second one against Grafana.
+      # SEP's own writable state, holding the Grafana service-account token and
+      # the encryption key, both resolved at start and persisted here so a
+      # recreate reuses them. The two are not equally replaceable: a lost token
+      # costs one re-mint, a lost key makes every encrypted settings override
+      # permanently unreadable — so once any exist, dropping this volume alone
+      # refuses to start rather than minting over them.
       - sep-state:/home/sep/state
     networks:
       - sep-pmm
