@@ -429,8 +429,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
     # The payload collects it (collect_os_facts), but nothing lifted it into the
     # document until HOST_FIELDS carried an entry for it.
     assert document["arch"] == "x86_64"
-    # Machine-readable, distinct from "os"'s pretty name -- PMM-15347's
-    # om_bootstrap picks an OperatingSystem-typed strategy from this exact value.
+    # Machine-readable, distinct from "os"'s pretty name.
     assert document["os_id"] == "ubuntu"
 
 
