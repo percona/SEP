@@ -43,6 +43,7 @@ PAYLOAD_DIR = SNAPSHOTS_DIR / "payload"
 
 _TASK_NAME = "backups-golden"
 _HOSTNAME = "executor-host"
+_BACKUP_DIR = "/backups"
 _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
 
 # Each case names a slug and the backups field values; the cases cover the three
@@ -194,6 +195,7 @@ def _spec_envelope(service: CreatedService, case: dict) -> dict:
         task_name=_TASK_NAME,
         hostname=_HOSTNAME,
         service_id=service.id,
+        backup_dir=_BACKUP_DIR,
         alert_on_fail=case["alert_on_fail"],
         **case["form"],
     )
@@ -235,6 +237,7 @@ def _all_servers_config(
         hostname=_HOSTNAME,
         service_id=service.id,
         backup_type=backup_type,
+        backup_dir=_BACKUP_DIR,
         **encryption,
     )
     return yaml.safe_load(build_backup_spec(form, resolved).config)["ALL_SERVERS"]

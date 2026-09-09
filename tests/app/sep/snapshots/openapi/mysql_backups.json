@@ -3942,16 +3942,9 @@
             "title": "Awscli S3 Upload Extra Args"
           },
           "backup_dir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Dir"
+            "minLength": 1,
+            "title": "Backup Dir",
+            "type": "string"
           },
           "backup_type": {
             "$ref": "#/components/schemas/mysql_backups__BackupType"
@@ -4468,7 +4461,8 @@
           "task_name",
           "hostname",
           "service_id",
-          "backup_type"
+          "backup_type",
+          "backup_dir"
         ],
         "title": "BackupCreate",
         "type": "object"

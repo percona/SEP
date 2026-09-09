@@ -9045,7 +9045,7 @@ export interface components {
       /** Awscli S3 Upload Extra Args */
       awscli_s3_upload_extra_args?: string | null;
       /** Backup Dir */
-      backup_dir?: string | null;
+      backup_dir: string;
       backup_type: components['schemas']['mysql_backups__BackupType'];
       /** Binlog Alternative Host */
       binlog_alternative_host?: string | null;
