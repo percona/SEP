@@ -71,7 +71,7 @@ DEFAULT_PROBE_TIMEOUT_SECONDS = 60.0
 
 The supervised migration steps wait for postgres unboundedly
 (``supervisord.conf``: ``until nc -z ...; do sleep 1; done``), so on a first
-start the databases are routinely not up yet -- which is exactly when the mint
+start the databases are routinely not up yet, which is exactly when the mint
 path runs. A probe that refused on the first connection error would make PID 1
 die on the ordinary cold start this feature exists to serve.
 """
@@ -455,9 +455,9 @@ def _ciphertext_remedy() -> str:
         "written under the old one, and every affected override would silently "
         f"revert to its YAML value. Restore {state_dir() / PERSISTED_FILENAME} "
         "from a backup of the sep-state volume, pass the deployment's original "
-        "key as ENCRYPTION_KEY, or -- if this deployment was never encrypted "
-        "and the value is plaintext that merely looks like a token -- pass any "
-        "newly generated key instead."
+        "key as ENCRYPTION_KEY, or pass any newly generated key if this "
+        "deployment was never encrypted and the value is plaintext that merely "
+        "looks like a token."
     )
 
 

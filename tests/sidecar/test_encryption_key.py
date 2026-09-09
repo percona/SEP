@@ -428,10 +428,10 @@ def test_an_unreachable_database_is_retried_rather_than_refused_on_sight(
     """Keep waiting for a database that is not up yet, which a cold start is.
 
     The supervised migration steps wait for postgres unboundedly, so on a first
-    start the databases are routinely still coming up -- exactly when the mint
-    path runs. A refused connection fails instantly, so refusing on the first
-    error would kill the container in the ordinary case rather than an
-    exceptional one. Refusing only after the bound is what distinguishes the
+    start the databases are routinely still coming up, which is exactly when
+    the mint path runs. A refused connection fails instantly, so refusing on
+    the first error would kill the container in the ordinary case rather than
+    an exceptional one. Refusing only after the bound is what distinguishes the
     two, and it is visible in the wall clock.
     """
     started = time.monotonic()
@@ -454,7 +454,7 @@ def test_the_unreachable_refusal_does_not_send_the_operator_after_a_backup(
     """Say the database is unreachable, not that a key needs restoring.
 
     A database still starting is the common cause here, and the ciphertext
-    remedy -- restore the key from a backup of the state volume -- is both
+    remedy (restore the key from a backup of the state volume) is both
     inapplicable and expensive to act on.
     """
     result = run_helper(fresh_deployment, **unreachable_environment("SEP"))
