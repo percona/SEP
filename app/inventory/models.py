@@ -604,7 +604,7 @@ class HostSystemObservationBase(SQLModel):
         default=None,
         sa_column=Column(JSON),
     )
-    observed_at: UTCDatetime
+    observed_at: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
 
     @model_validator(mode="after")
     def validate_at_least_one_observation_field(self) -> Self:
@@ -682,7 +682,7 @@ class ServiceSystemObservationBase(SQLModel):
         ondelete="CASCADE",
     )
     db_engine_version: NonEmptyStr
-    observed_at: UTCDatetime
+    observed_at: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
 
 
 class ServiceSystemObservation(BaseSQLModel, ServiceSystemObservationBase, table=True):
