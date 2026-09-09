@@ -39,6 +39,7 @@ from app.api.deps import minimum_role_for
 from app.core.auth.models import UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_bootstrap.api_routes import (
+    cancel_run,
     dispatch_finalize_step,
     dispatch_rollback_step,
     dispatch_run_run_step,
@@ -127,6 +128,10 @@ class TestAdminGateIsRegistered:
         """Declaring a run failed/rolled back is the stepper's own privileged call."""
         assert minimum_role_for_endpoint(finish_run) == UserRole.ADMIN
 
+    def test_cancel_run_requires_admin(self) -> None:
+        """Aborting a live deployment is as privileged as starting one."""
+        assert minimum_role_for_endpoint(cancel_run) == UserRole.ADMIN
+
 
 def minimum_role_for_endpoint(endpoint: object) -> UserRole:
     """Read the role ``@require_minimum_role`` registered for ``endpoint``.
@@ -158,6 +163,10 @@ class TestTriggerRun:
                 "os": "ubuntu",
                 "mongodb_version": "8.0",
                 "replica_set_name": "rs-test",
+                "data_path": "/var/lib/mongo",
+                "log_path": "/var/log/mongodb/mongod.log",
+                "port": 27017,
+                "bind_ip": "0.0.0.0",
             },
         )
 
@@ -169,6 +178,35 @@ class TestTriggerRun:
             assert all(step["status"] == "pending" for step in host["steps"])
             assert host["finalize_steps"]
             assert all(step["status"] == "pending" for step in host["finalize_steps"])
+
+    def test_accepts_per_host_member_configs(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A per-host election override in the request survives round-trip creation."""
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs",
+            json={
+                "hosts": ["node00", "node01"],
+                "install_method": "packages",
+                "os": "ubuntu",
+                "mongodb_version": "8.0",
+                "replica_set_name": "rs-test",
+                "data_path": "/var/lib/mongo",
+                "log_path": "/var/log/mongodb/mongod.log",
+                "port": 27017,
+                "bind_ip": "0.0.0.0",
+                "member_configs": {
+                    "node01": {
+                        "priority": 0,
+                        "votes": False,
+                        "hidden": True,
+                        "delay_secs": 300,
+                    }
+                },
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
 
     def test_rejects_an_empty_host_list(
         self, regular_user: CasdoorUser, session: AsyncSession
@@ -182,6 +220,10 @@ class TestTriggerRun:
                 "os": "ubuntu",
                 "mongodb_version": "8.0",
                 "replica_set_name": "rs-test",
+                "data_path": "/var/lib/mongo",
+                "log_path": "/var/log/mongodb/mongod.log",
+                "port": 27017,
+                "bind_ip": "0.0.0.0",
             },
         )
 
@@ -199,6 +241,10 @@ class TestTriggerRun:
                 "os": "ubuntu",
                 "mongodb_version": "8.0",
                 "replica_set_name": "rs-test",
+                "data_path": "/var/lib/mongo",
+                "log_path": "/var/log/mongodb/mongod.log",
+                "port": 27017,
+                "bind_ip": "0.0.0.0",
             },
         )
 
@@ -216,6 +262,10 @@ class TestTriggerRun:
                 "os": "ubuntu",
                 "mongodb_version": "8.0",
                 "replica_set_name": "rs-test",
+                "data_path": "/var/lib/mongo",
+                "log_path": "/var/log/mongodb/mongod.log",
+                "port": 27017,
+                "bind_ip": "0.0.0.0",
             },
         )
 
@@ -938,3 +988,123 @@ class TestFinishRun:
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
+
+
+class TestCancelRun:
+    """Assert POST /runs/{id}:cancel records the request and stops what's running."""
+
+    async def _seed_run(
+        self,
+        session: AsyncSession,
+        run_status: BootstrapRunStatus = BootstrapRunStatus.RUNNING,
+        *,
+        cancel_requested: bool = False,
+    ) -> BootstrapRun:
+        return await BootstrapRunManager.save(
+            session,
+            BootstrapRun(
+                status=run_status,
+                cancel_requested=cancel_requested,
+                install_method=InstallMethod.PACKAGES,
+                os=OperatingSystem.UBUNTU,
+                mongodb_version="8.0",
+                replica_set_name="rs-test",
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(
+                                    name="install_package",
+                                    status=StepStatus.RUNNING,
+                                    task_history_id=FAKE_TASK_HISTORY_ID,
+                                )
+                            ],
+                        )
+                    ]
+                ),
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_sets_cancel_requested_and_stops_the_running_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A live step's Nomad allocation is stopped, not left to run out its timeout."""
+        run = await self._seed_run(session)
+        tasks_api = _fake_tasks_api()
+        tasks_api.post = AsyncMock(return_value=None)
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+            AsyncMock(return_value=tasks_api),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}:cancel"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        body = response.json()
+        assert body["cancel_requested"] is True
+        tasks_api.post.assert_awaited_once_with(
+            f"/history/{FAKE_TASK_HISTORY_ID}/stop/"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tolerates_a_step_that_fails_to_stop(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A Tasks API rejection while stopping a step doesn't fail the whole request.
+
+        PMM's stepper's rollback decision only needs cancel_requested set -- see
+        bootstrap_decision.go's runNeedsRollback -- so a step this route couldn't
+        stop is not fatal here.
+        """
+        run = await self._seed_run(session)
+        tasks_api = _fake_tasks_api()
+        tasks_api.post = AsyncMock(
+            side_effect=HTTPException(status_code=400, detail="already stopped")
+        )
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+            AsyncMock(return_value=tasks_api),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}:cancel"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.json()["cancel_requested"] is True
+
+    @pytest.mark.asyncio
+    async def test_is_idempotent_once_already_requested(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """Clicking Abort twice is a no-op, not an error."""
+        run = await self._seed_run(session, cancel_requested=True)
+
+        response = _client(regular_user, session).post(f"{_BASE}/runs/{run.id}:cancel")
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.json()["cancel_requested"] is True
+
+    @pytest.mark.asyncio
+    async def test_409s_for_an_already_terminal_run(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A finished run has nothing left to cancel."""
+        run = await self._seed_run(session, BootstrapRunStatus.ROLLED_BACK)
+
+        response = _client(regular_user, session).post(f"{_BASE}/runs/{run.id}:cancel")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    @pytest.mark.asyncio
+    async def test_404s_for_an_unknown_run(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A run id nobody created is a 404, not a 500."""
+        response = _client(regular_user, session).post(f"{_BASE}/runs/{uuid4()}:cancel")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND

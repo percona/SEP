@@ -31,6 +31,7 @@ decided gate (PMM-15347/questions.md Q6) is admin-only, so both mutating routes
 register :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 """
 
+import logging
 from collections.abc import Callable
 from uuid import UUID
 
@@ -72,6 +73,7 @@ from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
     InstallMethod,
     InstallStrategy,
+    MemberConfig,
     OperatingSystem,
     StepAction,
     StepRecord,
@@ -79,6 +81,8 @@ from app.sep.apps.om_bootstrap.strategy import (
 )
 from app.sep.config import sep_settings
 from app.sep.deps import SessionDep
+
+logger = logging.getLogger(__name__)
 
 #: BootstrapRunStatus members :func:`finish_run` accepts -- a caller declaring the
 #: run itself decided to give up. SUCCEEDED is deliberately excluded: reconciling
@@ -99,6 +103,15 @@ class TriggerRunRequest(BaseModel):
     :param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.
     :param mongodb_version: The Percona Server for MongoDB version to install.
     :param replica_set_name: The replica set every host joins.
+    :param data_path: Where mongod stores its data on every host.
+    :param log_path: Where mongod writes its log file on every host.
+    :param port: The port mongod listens on, on every host.
+    :param bind_ip: The interface(s) mongod listens on, on every host.
+    :param member_configs: Per-host election settings for ``rs.initiate``,
+        keyed by entries of ``hosts``. A host missing from this mapping --
+        including every host, when this is left empty -- gets
+        :class:`~app.sep.apps.om_bootstrap.strategy.MemberConfig`'s own
+        defaults (PMM-15347/plan.md §6 Phase B).
     """
 
     hosts: list[str]
@@ -106,6 +119,11 @@ class TriggerRunRequest(BaseModel):
     os: OperatingSystem
     mongodb_version: str
     replica_set_name: str
+    data_path: str
+    log_path: str
+    port: int
+    bind_ip: str
+    member_configs: dict[str, MemberConfig] = {}
 
 
 class DispatchStepRequest(BaseModel):
@@ -159,6 +177,10 @@ class RunResponse(BaseModel):
         planned up front the same way ``hosts``' steps are.
     :param error: The run-level failure detail, when the run itself raised
         outside any single host's steps.
+    :param cancel_requested: Whether an operator has asked this run to stop --
+        see :func:`cancel_run`. PMM's stepper treats this the same as a step
+        exhausting its retries (force every host's rollback), never something
+        ``om_bootstrap`` itself acts on.
     """
 
     id: UUID
@@ -172,6 +194,7 @@ class RunResponse(BaseModel):
     hosts: list[HostBootstrapState]
     run_steps: list[StepRecord]
     error: str | None
+    cancel_requested: bool
 
 
 def _run_response(
@@ -202,6 +225,7 @@ def _run_response(
         hosts=hosts if hosts is not None else parse_host_states(run),
         run_steps=run_steps if run_steps is not None else parse_run_steps(run),
         error=run.error,
+        cancel_requested=run.cancel_requested,
     )
 
 
@@ -353,6 +377,11 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
         os=request.os,
         mongodb_version=request.mongodb_version,
         replica_set_name=request.replica_set_name,
+        data_path=request.data_path,
+        log_path=request.log_path,
+        port=request.port,
+        bind_ip=request.bind_ip,
+        member_configs=request.member_configs,
     )
     strategy = _strategy_for(request.install_method)
     host_states = [
@@ -376,6 +405,14 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
             os=to_models_os(request.os),
             mongodb_version=request.mongodb_version,
             replica_set_name=request.replica_set_name,
+            data_path=request.data_path,
+            log_path=request.log_path,
+            port=request.port,
+            bind_ip=request.bind_ip,
+            member_configs={
+                host: config.model_dump()
+                for host, config in request.member_configs.items()
+            },
             hosts=dump_host_states(host_states),
             run_steps=dump_run_steps(run_steps),
         ),
@@ -483,6 +520,11 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         os=to_strategy_os(run.os),
         mongodb_version=run.mongodb_version,
         replica_set_name=run.replica_set_name,
+        data_path=run.data_path,
+        log_path=run.log_path,
+        port=run.port,
+        bind_ip=run.bind_ip,
+        member_configs=run.member_configs,
     )
     return _strategy_for(install_method), spec
 
@@ -774,5 +816,91 @@ async def finish_run(
     run.status = body.status
     run.finished_at = utc_now()
     run.error = body.error
+    run = await BootstrapRunManager.save(session, run)
+    return _run_response(run)
+
+
+async def _stop_running_steps(
+    tasks_api: RemoteAPI, states: list[HostBootstrapState], run_steps: list[StepRecord]
+) -> None:
+    """Best-effort stop every currently-dispatching step's Nomad allocation.
+
+    Called once, the moment cancellation is first requested -- not on every
+    poll -- so a host mid-install doesn't keep running after an operator asked
+    it to stop. A stopped dispatch's ``TaskHistory`` reaches a terminal,
+    non-success status, which the next :func:`~app.sep.apps.om_bootstrap.reconcile.reconcile_step`
+    translates onto the step as ``FAILED`` the same way any other interrupted
+    dispatch would be -- nothing here writes to ``StepRecord`` directly.
+
+    Failures are logged and otherwise ignored: PMM's stepper's rollback
+    decision does not depend on this succeeding (it already treats
+    ``cancel_requested`` as reason enough on its own), and a step that
+    couldn't be stopped here still eventually reaches a terminal status once
+    its own dispatch actually finishes.
+
+    :param tasks_api: The Tasks API client.
+    :param states: Every host's current state.
+    :param run_steps: The run's current run-level steps.
+    """
+    step_lists = [
+        step_list
+        for state in states
+        for step_list in (state.steps, state.rollback_steps, state.finalize_steps)
+    ]
+    step_lists.append(run_steps)
+    for steps in step_lists:
+        for step in steps:
+            if step.status != StepStatus.RUNNING or step.task_history_id is None:
+                continue
+            try:
+                await tasks_api.post(f"/history/{step.task_history_id}/stop/")
+            except HTTPException as exc:
+                logger.warning(
+                    "Failed to stop task history %s while cancelling: %s",
+                    step.task_history_id,
+                    exc.detail,
+                )
+
+
+@router.post("/runs/{run_id}:cancel", status_code=http_status.HTTP_202_ACCEPTED)
+@require_minimum_role(UserRole.ADMIN)
+async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
+    """Request that a running bootstrap run stop and roll back every host.
+
+    Records the request and best-effort interrupts whatever is currently
+    dispatching (:func:`_stop_running_steps`) so it doesn't keep running for
+    however long its own timeout is -- it does not itself decide to roll
+    anything back. That is PMM's stepper's call, exactly like every other
+    rollback trigger (see the module docstring): it reads
+    ``cancel_requested`` on its next poll and treats it the same as a step
+    exhausting its retries.
+
+    Idempotent while the run is still running: calling this again after
+    cancellation was already requested is a no-op, not an error -- an
+    operator clicking Abort twice should never see a failure.
+
+    :param run_id: The run's id.
+    :param session: The database session.
+    :raises HTTPNotFoundException: When there is no such run.
+    :raises HTTPConflictException: When the run is already terminal --
+        rolled back or otherwise, there is nothing left to cancel.
+    :return: The run, with ``cancel_requested`` now set.
+    """
+    run = await BootstrapRunManager.get_run(session, run_id)
+    if run.status != BootstrapRunStatus.RUNNING:
+        raise HTTPConflictException(
+            detail=f"Run {run_id} is already {run.status.value}"
+        )
+    if run.cancel_requested:
+        return _run_response(run)
+
+    run.cancel_requested = True
+    states = parse_host_states(run)
+    run_steps = parse_run_steps(run)
+
+    tasks_api = await _tasks_api_client()
+    with tasks_api.auth(require_internal_token()):
+        await _stop_running_steps(tasks_api, states, run_steps)
+
     run = await BootstrapRunManager.save(session, run)
     return _run_response(run)

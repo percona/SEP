@@ -49,6 +49,7 @@ __all__ = [
     "HostBootstrapState",
     "InstallMethod",
     "InstallStrategy",
+    "MemberConfig",
     "OperatingSystem",
     "StepAction",
     "StepRecord",
@@ -87,6 +88,32 @@ class OperatingSystem(StrEnum):
     ROCKY = "rocky"
 
 
+class MemberConfig(BaseModel):
+    """One host's replica-set election settings, for ``rs.initiate``.
+
+    MongoDB's own defaults for a member no entry names here -- priority 1,
+    votes on, not hidden, no delay -- so a run created before this field
+    existed, or one that never names a given host, behaves exactly as it did
+    in phase A (PMM-15347/plan.md §6 Phase B).
+
+    :param priority: Relative election priority, 0-1000. A member with 0 can
+        never become primary.
+    :param votes: Whether this member gets a vote in elections.
+    :param hidden: Whether this member is hidden from client read preference
+        and ``db.hello()``'s own output.
+    :param delay_secs: Seconds this member's data intentionally lags the
+        primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
+        ``votes`` off whenever this is nonzero -- PMM validates that
+        combination before a run is ever created (TriggerHostBootstrap's own
+        doc comment), so this module trusts it rather than re-checking.
+    """
+
+    priority: int = 1
+    votes: bool = True
+    hidden: bool = False
+    delay_secs: int = 0
+
+
 class BootstrapSpec(BaseModel):
     """What one host's bootstrap needs to know to plan and build its steps.
 
@@ -102,12 +129,29 @@ class BootstrapSpec(BaseModel):
     :param replica_set_name: The replica set this host joins. ``rs.initiate`` and
         multi-host orchestration are the state machine's job, not a single host's
         strategy -- this field is what one host's own config file needs to name.
+    :param data_path: Where mongod stores its data, e.g. ``/var/lib/mongo``.
+    :param log_path: Where mongod writes its log file.
+    :param port: The port mongod listens on. ``rs.initiate``'s member list and
+        every ``mongosh`` dispatch need this alongside ``mongod.conf`` itself,
+        since none of them still assume the package's own unconfigured default
+        (PMM-15347/plan.md §6 Phase A).
+    :param bind_ip: The interface(s) mongod listens on, e.g. ``0.0.0.0``.
+    :param member_configs: Per-host election settings for ``rs.initiate``,
+        keyed by the same host names ``hosts`` (the run's target list) uses.
+        A host missing from this mapping -- including every host, for a run
+        that never sets it at all -- gets :class:`MemberConfig`'s own
+        defaults (PMM-15347/plan.md §6 Phase B).
     """
 
     install_method: InstallMethod
     os: OperatingSystem
     mongodb_version: str
     replica_set_name: str
+    data_path: str
+    log_path: str
+    port: int
+    bind_ip: str
+    member_configs: dict[str, MemberConfig] = {}
 
 
 class StepAction(BaseModel):

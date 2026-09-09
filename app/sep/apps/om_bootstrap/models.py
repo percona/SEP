@@ -118,6 +118,10 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     :param mongodb_version: The Percona Server for MongoDB version this run
         installs.
     :param replica_set_name: The replica set every host in this run joins.
+    :param data_path: Where mongod stores its data on every host in this run.
+    :param log_path: Where mongod writes its log file on every host in this run.
+    :param port: The port mongod listens on, on every host in this run.
+    :param bind_ip: The interface(s) mongod listens on, on every host in this run.
     :param hosts: One :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState`
         per host, as plain JSON (``model_dump()``, not re-validated on read --
         callers that need the typed shape back use
@@ -170,6 +174,20 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     )
     mongodb_version: str
     replica_set_name: str = SQLField(sa_type=Text)
+    # Defaults match the fixed values every pre-Phase-A run used
+    # (strategies/packages.py's former module constants) -- see this table's own
+    # migration for why the column carries the same server_default.
+    data_path: str = SQLField(default="/var/lib/mongo", sa_type=Text)
+    log_path: str = SQLField(default="/var/log/mongodb/mongod.log", sa_type=Text)
+    port: int = SQLField(default=27017)
+    bind_ip: str = SQLField(default="0.0.0.0", sa_type=Text)  # noqa: S104
+    # Set once, by the :cancel route, when an operator asks a running run to stop.
+    # PMM's stepper (bootstrap_decision.go's runNeedsRollback) treats this the same
+    # as a step exhausting its retries -- force every host's rollback, not just the
+    # one that failed, since there is no failed step here to point at. This module
+    # decides nothing from it; it only ever records the request and best-effort
+    # stops whatever is currently dispatching (see api_routes.py's cancel_run).
+    cancel_requested: bool = SQLField(default=False)
 
     # JSON, not postgresql.JSONB directly: PostgreSQL is the dialect that gets a
     # variant carved out of it here, same reasoning as ProbeRun.nodes.
@@ -187,6 +205,20 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
             JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
             nullable=False,
             server_default="[]",
+        ),
+    )
+    # Keyed by host, one dict per entry matching
+    # strategy.MemberConfig's own fields -- read back through pydantic's own
+    # coercion when rebuilding a BootstrapSpec (api_routes.py's _spec_for), the
+    # same "stored as plain JSON, typed on the way out" treatment as `hosts`
+    # and `run_steps`. A host missing from this mapping -- including every run
+    # created before this column existed -- gets MemberConfig's own defaults.
+    member_configs: dict[str, dict[str, Any]] = SQLField(
+        default_factory=dict,
+        sa_column=Column(
+            JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+            server_default="{}",
         ),
     )
     error: str | None = SQLField(default=None)

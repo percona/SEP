@@ -26,53 +26,43 @@ is exactly what the strategy boundary is for: :meth:`PackagesInstallStrategy.pla
 returns the same step *names* regardless of OS, so the stepper never branches on
 OS -- only :meth:`PackagesInstallStrategy.build_step` does, once, per step.
 
-The mongod port is never a field anywhere in this module: every step (and
-:meth:`build_run_step`'s member list) assumes the package's own unconfigured
-default, 27017 -- ``mongod.conf`` here never sets ``net.port``. Making the port
-configurable is future scope, alongside TLS and per-member voting
-(PMM-15347/plan.md §3 Phase 4).
+Data path, log path, port and bind IP all come from :class:`BootstrapSpec`
+(PMM-15347/plan.md §6 Phase A). Per-member election settings (priority, votes,
+hidden, delayed) come from ``spec.member_configs`` (plan.md §6 Phase B); TLS is
+still future scope (plan.md §6 Phase C).
 """
 
 import json
+import posixpath
 import shlex
 
 from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
+    MemberConfig,
     OperatingSystem,
     StepAction,
 )
 
 #: Where every step here reads or writes the shared keyFile -- planted by the
-#: ``distribute_keyfile`` step, ahead of ``configure_mongod``.
+#: ``distribute_keyfile`` step, ahead of ``configure_mongod``. Fixed, not a
+#: :class:`BootstrapSpec` field -- keyFile *content* is per-run (Q7), but where
+#: it lands on disk isn't something the Configure step exposes.
 KEY_FILE_PATH = "/etc/mongod.key"
 
-#: Where the packaged mongod stores its data -- the default the package itself
-#: configures, kept explicit here since ``pre_check`` and ``configure_mongod`` both
-#: need to agree on it.
-DATA_PATH = "/var/lib/mongo"
-
 #: Where the packaged mongod's own config file lives on both supported OSes.
+#: Fixed for the same reason as :data:`KEY_FILE_PATH`.
 CONFIG_PATH = "/etc/mongod.conf"
 
 #: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
 #: OSes. The unit is ``Type=forking``, so this has to agree with the systemd unit
-#: exactly -- see :meth:`PackagesInstallStrategy._configure_mongod`.
+#: exactly -- see :meth:`PackagesInstallStrategy._configure_mongod`. Fixed for
+#: the same reason as :data:`KEY_FILE_PATH`.
 PID_FILE_PATH = "/var/run/mongod.pid"
 
-#: Where mongod's own logs go once it forks. Not the same thing as the unit's
-#: ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` -- those capture
-#: only the pre-fork parent, which prints nothing once mongod backgrounds
-#: itself. ``/var/log/mongodb`` already exists, owned by ``mongod``, from the
-#: package's own post-install.
-LOG_PATH = "/var/log/mongodb/mongod.log"
-
-#: Minimum free space at :data:`DATA_PATH` ``pre_check`` requires, in bytes.
+#: Minimum free space at ``spec.data_path`` ``pre_check`` requires, in bytes.
 #: 5 GiB -- generous for phase-1's single-member/three-member replica sets, not a
 #: sized-for-production figure.
 MIN_DATA_DISK_BYTES = 5 * 1024 * 1024 * 1024
-
-#: The mongod port every step assumes -- see the module docstring.
-MONGOD_PORT = 27017
 
 #: Roles PMM's ``mongodb_exporter`` needs, granted to the user
 #: ``create_pmm_monitoring_user`` creates -- ``clusterMonitor`` for replication/
@@ -128,16 +118,16 @@ def _mongod_config(spec: BootstrapSpec, *, with_auth: bool) -> str:
         else ""
     )
     return (
-        f"net:\n  bindIp: 0.0.0.0\n"
-        f"storage:\n  dbPath: {DATA_PATH}\n"
+        f"net:\n  bindIp: {spec.bind_ip}\n  port: {spec.port}\n"
+        f"storage:\n  dbPath: {spec.data_path}\n"
         f"{security}"
         f"replication:\n  replSetName: {spec.replica_set_name}\n"
         f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
-        f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
+        f"systemLog:\n  destination: file\n  path: {spec.log_path}\n  logAppend: true\n"
     )
 
 
-def _mongosh_eval(js: str) -> StepAction:
+def _mongosh_eval(js: str, port: int) -> StepAction:
     """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
 
     Centralized so every run-level step (which embeds generated JS, some of it
@@ -156,10 +146,17 @@ def _mongosh_eval(js: str) -> StepAction:
     exists.
 
     :param js: The JavaScript to evaluate.
+    :param port: The port mongod listens on -- explicit rather than assumed,
+        since ``spec.port`` is no longer always the package's own default
+        (PMM-15347/plan.md §6 Phase A).
     :return: The step action.
     """
     return StepAction(
-        command=["sh", "-c", f"mongosh --quiet --eval {shlex.quote(js)}"],
+        command=[
+            "sh",
+            "-c",
+            f"mongosh --quiet --port {port} --eval {shlex.quote(js)}",
+        ],
         timeout_s=60,
     )
 
@@ -271,6 +268,23 @@ class PackagesInstallStrategy:
         PMM-15347/questions.md Q8: disk space, path, OS version -- Adamo's three
         checks, all read-only, all fast enough to run inline rather than as a
         background job.
+
+        Checks ``spec.data_path`` itself only when it already exists -- on the
+        first bootstrap of a fresh host it never does yet (this runs before
+        ``install_package``/``configure_mongod``, so nothing has created it),
+        and ``df`` on a path that does not exist would just fail. Falling back
+        to ``/`` in that case, rather than treating a missing path as an
+        automatic failure, is deliberate: the two are on the same filesystem on
+        every host this has been run against so far. Runs `df` exactly once
+        either way (rather than a `2>/dev/null || df ...` fallback chain) so
+        `tail -1` -- stripping `df --output`'s header row -- always applies:
+        confirmed against a real retry (a host bootstrapped, rolled back, and
+        retried, `data_path` already present from the first attempt) that the
+        fallback-chain form only stripped the header on the `/` branch, so the
+        primary branch's two-line `$(...)` output (the literal word "Avail"
+        on its own line, then the byte count) failed the numeric comparison
+        with `integer expression expected` -- a pre_check that itself could
+        not pass a disk-space check.
         """
         pkg_manager = self._require_package_manager(spec.os)
         return StepAction(
@@ -278,8 +292,8 @@ class PackagesInstallStrategy:
                 "sh",
                 "-c",
                 f"command -v {pkg_manager} >/dev/null && "
-                f'[ "$(df --output=avail -B1 {DATA_PATH} 2>/dev/null || '
-                f'df --output=avail -B1 / | tail -1)" -ge {MIN_DATA_DISK_BYTES} ]',
+                f'avail_dir="$( [ -d {spec.data_path} ] && echo {spec.data_path} || echo / )" && '
+                f'[ "$(df --output=avail -B1 "$avail_dir" | tail -1)" -ge {MIN_DATA_DISK_BYTES} ]',
             ],
             timeout_s=30,
         )
@@ -333,7 +347,7 @@ class PackagesInstallStrategy:
         :meth:`_enable_auth` -- a finalize step, dispatched only once that user
         already exists -- turns it on afterward, per host.
 
-        Also creates :data:`DATA_PATH`, owned by ``mongod``, rather than
+        Also creates ``spec.data_path``, owned by ``mongod``, rather than
         assuming the package's own post-install already did -- confirmed
         against a real failure that it does not: mongod exits immediately on
         first start with ``NonExistentPath: Data directory /var/lib/mongo not
@@ -359,10 +373,26 @@ class PackagesInstallStrategy:
         ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` do not stand
         in for this: those capture only the pre-fork parent, which prints
         nothing once mongod backgrounds itself.
+
+        Also creates ``spec.log_path``'s directory, owned by ``mongod``, the
+        same way and for the same reason as ``spec.data_path`` above -- a gap
+        this one had until a real bootstrap run against a bare host (no
+        pre-existing ``/var/log/mongo``, unlike the sandbox's own database
+        topology images) confirmed it the same way: mongod's control process
+        exits immediately (``Can't initialize rotatable log file :: caused by
+        :: Failed to open <path>``) if the directory the configured log path
+        names does not already exist, and ``start_service`` again reports
+        success regardless, for the same ``Type=forking`` reason. The
+        package's own post-install cannot be assumed to have created it: it
+        defaults to a directory (``/var/log/mongo`` on both Ubuntu and Rocky)
+        that only matches ``spec.log_path`` by coincidence, and the wizard's
+        own default (``/var/log/mongodb/mongod.log``) does not.
         """
         config = _mongod_config(spec, with_auth=False)
+        log_dir = posixpath.dirname(spec.log_path)
         command = (
-            f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
+            f"install -d -m 750 -o mongod -g mongod {spec.data_path} && "
+            f"install -d -m 750 -o mongod -g mongod {log_dir} && "
             f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
         )
         return StepAction(
@@ -379,8 +409,7 @@ class PackagesInstallStrategy:
 
     def _verify(self, spec: BootstrapSpec) -> StepAction:
         """Confirm ``mongod`` answers before declaring this host done."""
-        del spec
-        return _mongosh_eval("db.adminCommand('ping').ok")
+        return _mongosh_eval("db.adminCommand('ping').ok", spec.port)
 
     def _require_package_manager(self, os_: OperatingSystem) -> str:
         """Map a supported OS to its package manager, or reject an unsupported one."""
@@ -427,7 +456,7 @@ class PackagesInstallStrategy:
         if step_name == "rs_initiate":
             return self._rs_initiate(hosts, spec)
         if step_name == "create_pmm_monitoring_user":
-            return self._create_pmm_monitoring_user(params)
+            return self._create_pmm_monitoring_user(spec, params)
         raise ValueError(
             f"{step_name!r} is not a PackagesInstallStrategy run step; "
             f"expected one of {self.plan_run_steps(spec)}"
@@ -436,18 +465,29 @@ class PackagesInstallStrategy:
     def _rs_initiate(self, hosts: list[str], spec: BootstrapSpec) -> StepAction:
         """Initiate the replica set from its seed member (``hosts[0]``).
 
-        Equal-priority members, no voting/hidden/delayed configuration -- that
-        per-member tuning is phase-4 scope (PMM-15347/plan.md §3), out of reach
-        until the Configure step actually collects it.
+        Per-member priority/votes/hidden/delay come from ``spec.member_configs``,
+        keyed by host -- a host missing from it gets :class:`MemberConfig`'s own
+        defaults, so a run that never set this behaves exactly as phase A did.
         """
-        members = [
-            {"_id": index, "host": f"{host}:{MONGOD_PORT}"}
-            for index, host in enumerate(hosts)
-        ]
+        members = []
+        for index, host in enumerate(hosts):
+            member = spec.member_configs.get(host, MemberConfig())
+            entry = {
+                "_id": index,
+                "host": f"{host}:{spec.port}",
+                "priority": member.priority,
+                "votes": 1 if member.votes else 0,
+                "hidden": member.hidden,
+            }
+            if member.delay_secs:
+                entry["secondaryDelaySecs"] = member.delay_secs
+            members.append(entry)
         config = {"_id": spec.replica_set_name, "members": members}
-        return _mongosh_eval(f"rs.initiate({json.dumps(config)})")
+        return _mongosh_eval(f"rs.initiate({json.dumps(config)})", spec.port)
 
-    def _create_pmm_monitoring_user(self, params: dict[str, str] | None) -> StepAction:
+    def _create_pmm_monitoring_user(
+        self, spec: BootstrapSpec, params: dict[str, str] | None
+    ) -> StepAction:
         """Create the MongoDB user PMM's ``mongodb_exporter`` authenticates as.
 
         Created once, on the seed member -- MongoDB replicates ``admin.system.users``
@@ -471,7 +511,7 @@ class PackagesInstallStrategy:
             f"roles: {json.dumps(PMM_MONITORING_USER_ROLES)}"
             f"}})"
         )
-        return _mongosh_eval(command)
+        return _mongosh_eval(command, spec.port)
 
     def plan_finalize_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's fixed per-host finalize step names.
@@ -621,5 +661,4 @@ class PackagesInstallStrategy:
 
     def _rollback_remove_data(self, spec: BootstrapSpec) -> StepAction:
         """Remove the data directory ``mongod`` was configured to use."""
-        del spec
-        return StepAction(command=["rm", "-rf", DATA_PATH], timeout_s=60)
+        return StepAction(command=["rm", "-rf", spec.data_path], timeout_s=60)
