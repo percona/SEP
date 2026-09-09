@@ -336,7 +336,7 @@ def test_a_mounted_encryption_key_is_neither_minted_over_nor_exported(
 def test_a_minted_encryption_key_reaches_every_supervised_program(
     container: FakeContainer,
 ):
-    """Export what the helper resolved, which is how the four channels converge."""
+    """Hand what the helper resolved to every program, as the mint step does."""
     result = container.start(encryption_key=None)
 
     assert result.returncode == 0, result.stderr

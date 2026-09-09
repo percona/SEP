@@ -24,7 +24,7 @@ same thing the container would.
 Unlike the Grafana token beside it, this key is not re-mintable. Every
 ``settingoverride`` row SEP has encrypted is readable only under the key that
 wrote it, and :mod:`~app.core.settings_override.cache` warns and skips a row it
-cannot decrypt rather than failing the load -- so minting a replacement over
+cannot decrypt rather than failing the load, so minting a replacement over
 surviving ciphertext brings the container up green with the affected overrides
 silently reverted to their YAML values. Minting therefore happens only where all
 three service databases are provably free of ciphertext, and any database that
@@ -32,8 +32,8 @@ cannot be reached counts as unproven.
 
 The freshness probe reads the databases through :class:`_ServiceDatabase`
 subclasses rather than the services' own settings classes. Those resolve the
-same ``<PREFIX>__DATABASE__*`` sources -- environment, dotenv, ``SECRETS_DIR``
-file, YAML profile -- while requiring no ``ENCRYPTION_KEY`` of their own, which
+same ``<PREFIX>__DATABASE__*`` sources (environment, dotenv, ``SECRETS_DIR``
+file, YAML profile) while requiring no ``ENCRYPTION_KEY`` of their own, which
 the key-less path this helper runs on could not supply.
 
 Deployment inputs, all optional: ``SEP_STATE_DIR`` and
@@ -306,9 +306,9 @@ def state_lock(directory: Path) -> Iterator[None]:
 def contains_ciphertext(value: Any) -> bool:
     """Return whether any string leaf of ``value`` is structurally a Fernet token.
 
-    The stored value is JSON and the ciphertext sits at its *leaves* -- an
-    alert provider's routing key inside a list, a delivery input's API key
-    inside a nested mapping -- so testing the row's own value finds nothing on
+    The stored value is JSON and the ciphertext sits at its *leaves*: an alert
+    provider's routing key inside a list, a delivery input's API key inside a
+    nested mapping. Testing the row's own value therefore finds nothing on
     exactly the rows that matter.
 
     Deciding structurally is safe in this direction, and only this one. The

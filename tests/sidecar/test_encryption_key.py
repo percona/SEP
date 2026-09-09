@@ -162,7 +162,7 @@ def run_helper(directory: Path, **environment: str) -> subprocess.CompletedProce
 
 @pytest.fixture
 def fresh_deployment(tmp_path: Path) -> Path:
-    """Lay out three empty service databases and return their directory.
+    """Create three empty service databases and return their directory.
 
     :param tmp_path: The per-test temporary directory.
     :return: The directory holding the three files.

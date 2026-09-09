@@ -431,6 +431,7 @@ def test_an_encryption_key_from_a_file_is_not_exported(tmp_path: Path):
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
+    assert environment
     assert "ENCRYPTION_KEY" not in environment
 
 
@@ -440,6 +441,7 @@ def test_a_lowercase_encryption_key_file_is_not_exported(tmp_path: Path):
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
+    assert environment
     assert "ENCRYPTION_KEY" not in environment
 
 
@@ -456,6 +458,7 @@ def test_a_blank_encryption_key_does_not_shadow_the_file(tmp_path: Path):
         source_helper(SECRET_KEY="k", ENCRYPTION_KEY="", SECRETS_DIR=secrets_dir)
     )
 
+    assert environment
     assert "ENCRYPTION_KEY" not in environment
 
 
@@ -470,6 +473,7 @@ def test_no_encryption_key_is_exported_when_nothing_supplies_one():
     """Leave the name unset, which is what sends the entrypoint to its helper."""
     environment = exported(source_helper(SECRET_KEY="k"))
 
+    assert environment
     assert "ENCRYPTION_KEY" not in environment
 
 
