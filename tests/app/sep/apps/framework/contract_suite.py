@@ -73,6 +73,7 @@ from tests.app.factories import (
 )
 from tests.app.sep.apps.framework.kit import (
     EXECUTE_CREATED_AT,
+    EXECUTE_STATUS,
     SEEDED_TASK_NAME,
     SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
@@ -970,7 +971,7 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_201_CREATED
         body = response.json()
         assert body["task_name"] == SEEDED_TASK_NAME
-        assert body["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert body["status"] == EXECUTE_STATUS.value
         assert body["created_at"] == EXECUTE_CREATED_AT
 
     def test_execute_route_absent(self) -> None:

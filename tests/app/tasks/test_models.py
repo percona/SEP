@@ -167,7 +167,8 @@ class TestTaskHistoryStatusEnum:
         keeps the published ``task_statuses`` vocabulary exhaustive.
         """
         assert status.is_terminal() != status.is_active(), (
-            f"{status.value} is classified neither terminal nor active"
+            f"{status.value}: is_terminal={status.is_terminal()} "
+            f"is_active={status.is_active()} -- expected exactly one"
         )
 
     @pytest.mark.parametrize(
