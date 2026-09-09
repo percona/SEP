@@ -444,7 +444,6 @@ def _encryption_key_error() -> str:
     is resolved because the setting is a relative path by default, and a
     process whose working directory is not the one the reader is standing in
     would otherwise be told to edit ``.env`` without being told which.
-
     ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
     produces 64 characters Fernet rejects, so the two remediations are
     deliberately different.
