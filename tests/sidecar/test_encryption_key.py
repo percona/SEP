@@ -17,9 +17,11 @@
 import asyncio
 import json
 import os
+import socket
 import stat
 import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -117,19 +119,39 @@ def database_environment(directory: Path) -> dict[str, str]:
     }
 
 
-def unreachable_environment(prefix: str) -> dict[str, str]:
+def unreachable_environment(
+    prefix: str, port: int = UNREACHABLE_PORT
+) -> dict[str, str]:
     """Return the environment pointing one service at a database nothing answers.
 
     :param prefix: The service whose endpoint to break.
+    :param port: The port to aim it at.
     :return: The PostgreSQL connection variables for that service alone.
     """
     return {
         f"{prefix}__DATABASE__ENGINE": "postgresql+asyncpg",
         f"{prefix}__DATABASE__HOST": "127.0.0.1",
-        f"{prefix}__DATABASE__PORT": str(UNREACHABLE_PORT),
+        f"{prefix}__DATABASE__PORT": str(port),
         f"{prefix}__DATABASE__USER": "sep",
         f"{prefix}__DATABASE__NAME": "sep",
     }
+
+
+@pytest.fixture
+def stalled_database_port() -> Iterator[int]:
+    """Return a port that completes the TCP handshake and then answers nothing.
+
+    A refused connection fails immediately and never reaches the timeout, so
+    this is what exercises the bound rather than the error path beside it: the
+    kernel accepts into the backlog while nothing ever reads, leaving the
+    driver waiting on a startup reply that does not come.
+
+    :return: The listening port.
+    """
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        yield listener.getsockname()[1]
 
 
 def run_helper(directory: Path, **environment: str) -> subprocess.CompletedProcess[str]:
@@ -358,6 +380,24 @@ def test_an_absent_override_table_counts_as_fresh(tmp_path: Path):
 def test_an_unreachable_database_refuses_the_mint(fresh_deployment: Path, prefix: str):
     """Refuse where freshness cannot be proven, for any one of the three."""
     result = run_helper(fresh_deployment, **unreachable_environment(prefix))
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert not persisted_key_path(fresh_deployment).exists()
+
+
+def test_a_database_that_never_answers_refuses_within_the_timeout(
+    fresh_deployment: Path, stalled_database_port: int
+):
+    """Refuse on the bound, not just on a connection the kernel rejects outright.
+
+    A side-car started while its database is still coming up sees this shape
+    rather than a refusal, and it is the one that could hang the container
+    start indefinitely.
+    """
+    result = run_helper(
+        fresh_deployment, **unreachable_environment("SEP", stalled_database_port)
+    )
 
     assert result.returncode != 0
     assert not result.stdout.strip()

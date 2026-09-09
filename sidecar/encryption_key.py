@@ -86,10 +86,12 @@ class _ServiceDatabase(BaseYamlSettings):
     ``app.core.config._SEPDatabaseSettings``, which reads the SEP database the
     same way for the same reason: to stay clear of a proxy it cannot resolve.
 
-    :param DATABASE: The service's database connection options.
+    :param DATABASE: The service's database connection options. Left without a
+        default so each subclass supplies its own service's, rather than
+        inheriting one service's name as a silent fallback for the others.
     """
 
-    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+    DATABASE: DatabaseOptions
 
 
 class _SEPDatabase(_ServiceDatabase):
