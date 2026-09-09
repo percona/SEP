@@ -165,5 +165,6 @@ class TestMapServices:
 
         mapped = map_services(services, {"live": "10.0.0.1"})
 
+        assert mapped, "an empty mapping would make the ORPHANED check below vacuous"
         assert len(mapped) == STALE_SERVICE_COUNT
         assert all(entry.resolution is NodeResolution.ORPHANED for entry in mapped)

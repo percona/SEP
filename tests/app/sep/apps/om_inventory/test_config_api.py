@@ -31,16 +31,13 @@ invisible in the field list.
 """
 
 import pytest
-import pytest_asyncio
 from fastapi import FastAPI, status
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import (
-    _SERVICE_PRINCIPAL,
-    require_minimum_role_for_unsafe_methods,
+    SERVICE_PRINCIPAL,
 )
-from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import setting_class_token
 from app.core.settings_override.registry import hot_field_names
@@ -49,42 +46,12 @@ from app.sep.apps.om_inventory.config import (
     om_inventory_settings,
     OmInventorySettings,
 )
-from app.sep.deps import (
-    get_current_user,
-    get_session,
-    require_bearer_for_unsafe_methods,
-)
 from app.sep.main import sep_app, sep_overrides_lifespan
-
-BASE = "/api/apps/om_inventory"
+from tests.app.sep.apps.om_inventory.conftest import BASE
 
 #: The YAML-configured values these tests assert against, taken from the class so a
 #: default change moves the assertions with it rather than silently passing.
 DEFAULTS = OmInventorySettings()
-
-
-@pytest_asyncio.fixture
-async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
-    """Yield an authenticated client sharing the test session.
-
-    :param regular_user: The authenticated user.
-    :param session: The database session the routes should use.
-    :return: The client.
-    """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_session] = lambda: session
-    client = AsyncClient(
-        transport=ASGITransport(app=sep_app),
-        base_url="http://test",
-        headers={"Authorization": "Bearer test"},
-    )
-    try:
-        yield client
-    finally:
-        await client.aclose()
-        sep_app.dependency_overrides = {}
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +63,7 @@ def _reset_proxy_snapshot() -> None:
     that reads the setting afterwards.
     """
     yield
+    # ty-attr-ok: the proxy forwards to the wrapped class via __getattr__.
     om_inventory_settings._set_snapshot({})
 
 
@@ -110,7 +78,7 @@ class TestWhyThisEndpointExists:
         in every deployment. If it ever stops holding, the argument for an app-owned
         ``/config`` weakens and this test is where that gets noticed.
         """
-        assert _SERVICE_PRINCIPAL.is_admin is False
+        assert SERVICE_PRINCIPAL.is_admin is False
 
 
 class TestTheAppIsActuallyWiredIn:
@@ -370,7 +338,9 @@ class TestPatchConfig:
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-        assert "CREDENTIALS_PATH" not in hot_field_names(OmInventorySettings)
+        hot = hot_field_names(OmInventorySettings)
+        assert hot, "no hot fields at all would make the exclusion below vacuous"
+        assert "CREDENTIALS_PATH" not in hot
 
     @pytest.mark.asyncio
     async def test_an_override_can_be_cleared_back_to_the_deployment_value(

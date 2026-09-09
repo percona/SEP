@@ -341,7 +341,7 @@ STARTUP_RETRIES = 6
 STARTUP_RETRY_DELAY = 5
 
 
-async def _enumerate(
+async def enumerate_estate(
     inventory_api: RemoteAPI, tasks_api: RemoteAPI
 ) -> tuple[list[InventoryService], list[dict], dict[str, ExecutorState]]:
     """Read the estate from SEP's own APIs, waiting out a cold start.
@@ -387,7 +387,7 @@ async def _enumerate(
     raise AssertionError("unreachable: the loop returns or raises")
 
 
-async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOutcome:
+async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOutcome:
     """Map, probe and collect, without touching the run row.
 
     Split out so :func:`run_probe` reads as the lifecycle it is — create, work,
@@ -412,16 +412,16 @@ async def _sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOu
     # block, so every call that needs it has to be made inside.
     token = require_internal_token()
     with inventory_api.auth(token), tasks_api.auth(token):
-        services, nodes, executor_states = await _enumerate(inventory_api, tasks_api)
+        services, nodes, executor_states = await enumerate_estate(
+            inventory_api, tasks_api
+        )
         mapped = map_services(services, usable_executor_hosts(executor_states))
         # Hosts are enumerated from nodes rather than derived from the services just
         # mapped: a host with no database has no service to derive it from, and that
         # is the host worth having a row for.
         hosts = build_hosts(nodes, services, executor_states)
         if node_ids:
-            hosts, services, mapped = _narrow_to_scope(
-                hosts, services, mapped, node_ids
-            )
+            hosts, services, mapped = narrow_to_scope(hosts, services, mapped, node_ids)
         # Every host with an executor is dispatched to, service or no service:
         # a machine with a PMM client and no database is the one an install
         # decision is about, and it has no service to be reached through.
@@ -552,7 +552,7 @@ def _build_receipt(
     return receipt
 
 
-def _narrow_to_scope(
+def narrow_to_scope(
     hosts: list[InventoryHost],
     services: list[InventoryService],
     mapped: list[Any],
@@ -676,7 +676,7 @@ def _record_entity(
         outcome.service_roles[entry.service.external_id] = role
 
 
-async def _finalise(
+async def finalise(
     session: AsyncSession, run_id: UUID, outcome: SweepOutcome
 ) -> ProbeRun:
     """Write what the sweep did onto its run row, and close it.
@@ -695,8 +695,9 @@ async def _finalise(
     :param outcome: What the sweep produced.
     :return: The stored row.
     """
+    # call-shape-dup-ok: the manager's own canonical accessor, and the three sites fetch the run for unrelated reasons — finalise, fail, resume — so a wrapper would name none of them and would hide the manager a reader expects to see.
     finished = await ProbeRunManager.get(session, id=run_id)
-    finished.status = _terminal_status(outcome)
+    finished.status = terminal_status(outcome)
     finished.finished_at = utc_now()
     finished.services_total = outcome.total
     finished.services_resolved = outcome.resolved
@@ -712,7 +713,7 @@ async def _finalise(
     return await ProbeRunManager.save(session, finished)
 
 
-async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
+async def persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
     """Write what the sweep saw into ``om.host`` and ``om.service``.
 
     Hosts first, and in one transaction with the services: ``om.service.node_id`` is
@@ -770,7 +771,7 @@ async def _persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
         await session.commit()
 
 
-def _terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
+def terminal_status(outcome: SweepOutcome) -> ProbeRunStatus:
     """Derive a sweep's terminal status from what it reached.
 
     Judged on **dispatches and services together**, not services alone. Services alone
@@ -874,16 +875,16 @@ async def run_probe(
 
     observed_at = utc_now().isoformat()
     try:
-        outcome = await _sweep(observed_at, node_ids)
+        outcome = await sweep(observed_at, node_ids)
         # The estate goes in before the run reaches a terminal status, so a reader
         # that sees a finished run always finds the rows that run produced. Covered
-        # by the same try as the sweep itself: a raise here or in ``_finalise`` left
-        # the run ``RUNNING`` forever before this widened, since only ``_sweep`` was
+        # by the same try as the sweep itself: a raise here or in ``finalise`` left
+        # the run ``RUNNING`` forever before this widened, since only ``sweep`` was
         # inside the failure path and nothing downstream of it could mark the run
         # failed.
-        await _persist_estate(outcome, run_id)
+        await persist_estate(outcome, run_id)
         async with session_maker() as session:
-            await _finalise(session, run_id, outcome)
+            await finalise(session, run_id, outcome)
     except Exception as exc:
         logger.exception("OM inventory: sweep %s failed", run_id)
         await _fail_run(run_id, str(exc))
@@ -894,7 +895,7 @@ async def run_probe(
     # problem -- it must not rewrite a completed run's status to failed.
     async with session_maker() as session:
         await prune_runs(session, om_inventory_settings.RUN_RETENTION)
-    status = _terminal_status(outcome)
+    status = terminal_status(outcome)
 
     logger.info(
         "OM inventory: sweep %s %s -- %d service(s), %d resolved, %d answered",
