@@ -620,7 +620,8 @@ This annotated type validates the string as any valid URL without additional pro
 """
 
 CREDENTIAL_URL_MASK = "****"
-PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {"preserve_credentials": True}
+_PRESERVE_CREDENTIALS_KEY = "preserve_credentials"
+PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {_PRESERVE_CREDENTIALS_KEY: True}
 
 
 def _netloc_host(netloc: str) -> str:
@@ -747,7 +748,7 @@ def _credential_url_serializer(
     """Serialize a URL value, redacting embedded passwords unless context opts out."""
     serialized = handler(value)
     context = getattr(info, "context", None) or {}
-    if context.get("preserve_credentials"):
+    if context.get(_PRESERVE_CREDENTIALS_KEY):
         return serialized
     return redact_credential_url(str(serialized))
 
@@ -849,7 +850,7 @@ def _preserve_secret_serializer(
         masked value ``handler`` produces.
     """
     context = getattr(info, "context", None) or {}
-    if context.get("preserve_credentials") and isinstance(value, SecretStr):
+    if context.get(_PRESERVE_CREDENTIALS_KEY) and isinstance(value, SecretStr):
         return value.get_secret_value()
     return handler(value)
 
@@ -870,6 +871,49 @@ unequal to the one it replaces.
 :func:`~app.core.settings_override.registry.annotation_contains_secret` still
 classifies the field as a secret and settings-API masking and at-rest encryption
 are unchanged.
+"""
+
+_HEADER_UNSENDABLE_CHARACTERS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+
+
+def _reject_header_unsendable_characters(value: Any) -> Any:
+    """Reject a credential carrying a byte one of the HTTP clients refuses to send.
+
+    :param value: The raw value on its way into the secret wrapper.
+    :return: ``value`` unchanged when it is safe to splice into a header.
+    :raises ValueError: If the value contains a character neither client will send.
+    """
+    if isinstance(value, str) and _HEADER_UNSENDABLE_CHARACTERS.search(value):
+        raise ValueError(
+            "cannot contain control characters: the HTTP clients refuse to send "
+            "them, so every request presenting this credential would fail when it "
+            "is sent rather than where it is set"
+        )
+    return value
+
+
+AuthCredentialSecretStr = Annotated[
+    PreservableSecretStr, BeforeValidator(_reject_header_unsendable_characters)
+]
+"""Define a :data:`PreservableSecretStr` safe to splice into an ``Authorization`` header.
+
+The companion of :data:`AuthSchemeStr` for the other half of the header value.
+A credential is *not* held to RFC 7230's ``token`` — base64 padding and other
+non-``token`` bytes are legitimate in a real key — so the rejected set is
+exactly what one of the two clients refuses to put on the wire: every control
+character except ``HTAB``. Swept byte by byte against both, ``requests`` rejects
+only ``LF`` and ``CR`` while ``aiohttp`` rejects the rest, and ``HTAB`` and space
+are sent by both. A key pasted with a trailing newline is the ordinary way such a
+value arrives, and it would otherwise fail every request rather than the
+assignment.
+
+The constraint sits in a ``BeforeValidator`` rather than
+:class:`~pydantic.StringConstraints` because a constraint cannot be applied to
+:class:`~pydantic.SecretStr`'s schema, and wrapping a constrained ``str`` in
+:class:`~pydantic.Secret` instead would drop ``SecretStr`` from the annotation —
+which is what
+:func:`~app.core.settings_override.registry.annotation_contains_secret` reads to
+classify the field, so masking and at-rest encryption would silently stop.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]

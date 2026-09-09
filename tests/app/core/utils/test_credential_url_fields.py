@@ -23,6 +23,7 @@ from app.core.settings_override.registry import (
     SECRET_STR_MASK,
 )
 from app.core.utils.fields import (
+    AuthCredentialSecretStr,
     CREDENTIAL_URL_MASK,
     CredentialHttpUrl,
     PreservableSecretStr,
@@ -331,3 +332,41 @@ class TestPreservableSecretStr:
     def test_annotation_is_classified_secret(self) -> None:
         """Keep the annotation recognisable to the settings-override secret walker."""
         assert annotation_contains_secret(PreservableSecretStr | None) is True
+
+
+class TestAuthCredentialSecretStr:
+    """Cover :data:`AuthCredentialSecretStr`'s header-safety constraint."""
+
+    class _Model(BaseModel):
+        api_key: AuthCredentialSecretStr | None = None
+
+    @pytest.mark.parametrize(
+        "value", ["tok\n", "tok\r\nX-Injected: yes", "tok\x00", "tok\x0b", "tok\x7f"]
+    )
+    def test_rejects_a_character_one_client_will_not_send(self, value: str) -> None:
+        """Refuse a credential the HTTP clients will not put on the wire."""
+        with pytest.raises(ValidationError):
+            self._Model(api_key=value)
+
+    @pytest.mark.parametrize("value", ["tok", "Sf-Kx==", "a b", "tok\ttok"])
+    def test_accepts_a_credential_both_clients_will_send(self, value: str) -> None:
+        """Accept every shape both clients send, including ``HTAB`` and space."""
+        model = self._Model(api_key=value)
+        assert model.api_key is not None
+        assert model.api_key.get_secret_value() == value
+
+    def test_annotation_is_still_classified_secret(self) -> None:
+        """Keep the wrapped annotation recognisable to the secret walker.
+
+        Constraining the value by wrapping a constrained ``str`` in
+        :class:`~pydantic.Secret` would drop ``SecretStr`` from the annotation and
+        silently disable settings-API masking and at-rest encryption.
+        """
+        assert annotation_contains_secret(AuthCredentialSecretStr | None) is True
+
+    def test_the_preserve_context_still_reaches_the_secret(self) -> None:
+        """Keep the inherited preserve-context dump working through the constraint."""
+        model = self._Model(api_key="glsa_realtoken")
+        assert model.model_dump(mode="json")["api_key"] == SECRET_STR_MASK
+        dumped = model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["api_key"] == "glsa_realtoken"

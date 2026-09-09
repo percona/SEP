@@ -696,6 +696,36 @@ class TestNomadExecutorApiKey:
         with pytest.raises(ValidationError):
             _build_executor(api_key="glsa_supersecret", auth_scheme=scheme)
 
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "glsa_tok\n",
+            "glsa\r\nX-Injected: yes",
+            "glsa\x00tok",
+            "glsa\x0btok",
+            "a\x7f",
+        ],
+    )
+    def test_a_key_one_client_refuses_to_send_is_rejected(self, key: str) -> None:
+        """Refuse a credential the HTTP clients will not put on the wire.
+
+        The scheme is constrained for the same reason; the key is the half an
+        operator pastes, so a trailing newline is the ordinary way one arrives.
+        """
+        with pytest.raises(ValidationError):
+            _build_executor(api_key=key)
+
+    @pytest.mark.parametrize(
+        "key", ["glsa_tok", "eyJhbGci.eyJzdWIi.Sf-Kx==", "a b", "tok+/=~", "glsa\ttok"]
+    )
+    def test_a_key_both_clients_will_send_is_accepted(self, key: str) -> None:
+        """Accept every credential shape both clients put on the wire.
+
+        A key is not held to RFC 7230's ``token``: base64 padding, spaces and
+        ``HTAB`` are all sent unchanged by both, so none of them is rejected.
+        """
+        assert _build_executor(api_key=key).headers["Authorization"] == f"Bearer {key}"
+
     @pytest.mark.parametrize("scheme", ["Bearer", "Basic", "Token", "X-Custom.v1"])
     def test_a_token_auth_scheme_is_accepted(self, scheme: str) -> None:
         """Accept every scheme shape RFC 7230's ``token`` production allows."""

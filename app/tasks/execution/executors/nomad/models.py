@@ -63,8 +63,8 @@ from app.core.utils import (
     utc_now,
 )
 from app.core.utils.fields import (
+    AuthCredentialSecretStr,
     AuthSchemeStr,
-    PreservableSecretStr,
     strip_credential_url_userinfo,
 )
 from app.core.utils.pydantic import field_with_metadata
@@ -641,7 +641,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         on both the synchronous and the asynchronous request path. It takes
         precedence over any userinfo embedded in ``endpoint``, which is stripped
         for as long as a key is configured. An empty value counts as unset,
-        leaving whatever ``endpoint`` carries. Defaults to ``None``.
+        leaving whatever ``endpoint`` carries. A control character is rejected
+        here rather than at send time. Defaults to ``None``.
     :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
         ``api_key``. Defaults to ``"Bearer"``.
     :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
@@ -716,7 +717,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
         )
     )
-    api_key: PreservableSecretStr | None = None
+    api_key: AuthCredentialSecretStr | None = None
     auth_scheme: AuthSchemeStr = hot_field(  # ty: ignore[invalid-assignment]
         "Bearer", advanced=True
     )
