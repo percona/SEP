@@ -22,7 +22,7 @@ to every executor host in the estate, and the payload prints a record for the ho
 whether or not it has any targets.
 
 That record is also what stops host attributes being read off whichever service
-happened to answer -- they belong to the host, they are collected once, and now they
+happened to answer — they belong to the host, they are collected once, and now they
 are reported once.
 """
 
@@ -100,7 +100,7 @@ class TestParseNdjson:
         assert host_record is not None
 
     def test_noise_around_the_records_is_ignored(self) -> None:
-        """Pip and the job template write to the same stream the payload does."""
+        """Ignore pip and job-template noise on the stream the payload writes to."""
         stdout = f"Collecting pymongo\n{HOST_LINE}\nnot json\n{SERVICE_LINE}\n"
 
         records, host_record = parse_ndjson(stdout)
@@ -117,10 +117,10 @@ class TestParseNdjson:
 
 
 class TestServiceIdPreventsANameCollision:
-    """Two same-named services on one host must not overwrite each other's record.
+    """Keep two same-named services on one host from overwriting each other's record.
 
     ``build_config`` used to send only the service *name* as a target's identity, and
-    ``parse_ndjson`` keyed the parsed records the same way -- the payload never saw a
+    ``parse_ndjson`` keyed the parsed records the same way — the payload never saw a
     service id at all ("the service id never reaches the node"). Names are not unique
     per node, so two same-named services dispatched to one executor host produced two
     NDJSON lines under one key, and the second silently replaced the first.
@@ -191,7 +191,7 @@ class TestProbeAllTargets:
 
     @pytest.mark.asyncio
     async def test_an_orphaned_service_adds_no_dispatch(self) -> None:
-        """Orphans have no executor by definition, so there is nowhere to dispatch.
+        """Skip an orphan, which has no executor and so nowhere to dispatch.
 
         :return: Nothing.
         """
@@ -228,7 +228,7 @@ class TestThePayloadRunsOnOldPython:
     """
 
     def test_minification_produces_no_nested_quote_f_strings(self) -> None:
-        """No f-string may carry its own quote character inside an expression."""
+        """Refuse an f-string carrying its own quote character inside an expression."""
         source = Path(probe.__file__).read_text(encoding="utf-8")
 
         minified = minify(source, rename_locals=True, rename_globals=True)
@@ -249,7 +249,7 @@ class TestThePayloadRunsOnOldPython:
         another function's use of those literals only exists when they are
         minified together. A same-file, function-only minification (what this
         test did originally, and what the review comment that questioned the
-        loop-vs-comprehension rationale here also did) misses exactly this case --
+        loop-vs-comprehension rationale here also did) misses exactly this case —
         it is what let a real ``UnboundLocalError`` reach dispatch once already.
 
         The renamed top-level name is found by signature (``rename_globals``

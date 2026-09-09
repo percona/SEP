@@ -17,7 +17,7 @@
 
 The case this module exists for is the one the old service-driven enumeration could
 not express at all: a host with a PMM client, a live executor and **no database**.
-It is not hypothetical -- the sandbox runs three -- and it is the row a future install
+It is not hypothetical — the sandbox runs three — and it is the row a future install
 app needs, so "it is in scope" is asserted here rather than assumed.
 
 The other half is scope. A node that is neither running a database nor able to run
@@ -144,7 +144,7 @@ class TestScope:
         assert hosts[0].has_executor
 
     def test_host_with_a_database_and_no_executor_is_in_scope(self) -> None:
-        """Monitored but not actionable is still part of the estate.
+        """Keep a monitored but not actionable host in the estate.
 
         Dropping it would make a stopped or misconfigured host vanish from the
         inventory rather than show up as unreachable, which is the opposite of what
@@ -159,7 +159,7 @@ class TestScope:
         assert hosts[0].resolution is NodeResolution.ORPHANED
 
     def test_node_with_neither_is_left_out(self) -> None:
-        """PMM's own server node is the case this keeps out.
+        """Exclude PMM's own server node.
 
         It is in inventory, it runs no MongoDB, and nothing dispatches to it. A row
         for it would be permanently empty and permanently unactionable.
@@ -192,7 +192,7 @@ class TestUnusableExecutors:
 
         Scope is decided on whether an executor *matched*, not on whether it works.
         Deciding it on usability would make a host disappear from the inventory at
-        exactly the moment someone starts looking for it -- and, for a host with no
+        exactly the moment someone starts looking for it — and, for a host with no
         database, disappear with no service to bring it back.
         """
         hosts = build_hosts(
@@ -207,7 +207,7 @@ class TestUnusableExecutors:
         assert hosts[0].executor_document["reachable"] is False
 
     def test_an_unusable_executor_still_resolves_by_name(self) -> None:
-        """Matching runs against every known client, not the usable ones.
+        """Match against every known client, not only the usable ones.
 
         Otherwise a registered-but-broken client reports as "no executor", which
         reads as never onboarded and sends the operator to set up a machine that is
@@ -250,7 +250,7 @@ class TestExecutorMatching:
 
         ``BaseTaskSyncer.get_task_target`` does fall back with strict matching off,
         which here would mean probing one machine and recording the answers against
-        another -- confidently wrong facts, which are worse than none.
+        another — confidently wrong facts, which are worse than none.
         """
         hosts = build_hosts(
             [node("db00", "10.0.0.1")],
@@ -387,7 +387,7 @@ class TestInventoryHost:
 
 
 class TestDuplicateRegistrations:
-    """One host name, several executor registrations.
+    """Collapse several executor registrations sharing one host name.
 
     Restarting a host's agent leaves the old registration behind as ``down`` beside
     the new one. ``get_hosts`` never had to care: everything in it was usable by

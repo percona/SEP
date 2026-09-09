@@ -17,7 +17,7 @@
 
 Every rule here is one that reads as an implementation detail and is not. Each is
 cheap to get right now and expensive to discover later, because the symptom is never
-a crash -- it is a column that quietly stops meaning what it says:
+a crash — it is a column that quietly stops meaning what it says:
 
 * overwrite ``failing_since`` on every failure and "failing for three days" silently
   becomes "failed a minute ago", so the duration is always one schedule interval;
@@ -147,7 +147,7 @@ class TestHostLifecycle:
     async def test_success_clears_the_failure_history(
         self, session: AsyncSession
     ) -> None:
-        """Recovery resets the counters, or a host that healed still reads as broken.
+        """Reset the counters on recovery, or a host that healed still reads as broken.
 
         :param session: The database session.
         """
@@ -165,12 +165,12 @@ class TestHostLifecycle:
     async def test_an_unattempted_host_keeps_its_freshness_columns(
         self, session: AsyncSession
     ) -> None:
-        """Being *seen* is not being *probed*, and the columns must know it.
+        """Separate being *seen* from being *probed*, and make the columns know it.
 
         This is the live case: a host with an executor and no MongoDB service has
         nothing dispatched to it, and a host with no executor cannot be dispatched to
         at all. Counting either as a failed attempt would have it accrue a failure
-        every sweep -- forever -- for a condition that is not a failure. Its identity
+        every sweep — forever — for a condition that is not a failure. Its identity
         and executor still refresh, because those are what a reader needs.
 
         :param session: The database session.
@@ -240,7 +240,7 @@ class TestServiceLifecycle:
     ) -> None:
         """A service PMM knows is a row even when nothing could probe it.
 
-        Omitting it reports a healthier estate than exists -- the PoC measured 17 of
+        Omitting it reports a healthier estate than exists — the PoC measured 17 of
         18 services unreachable in a single run, and a listing showing one would have
         been worse than useless. What it does not get is an attempt.
 
@@ -346,7 +346,7 @@ class TestRunLinkage:
     async def test_the_run_id_is_recorded_on_an_attempt(
         self, session: AsyncSession
     ) -> None:
-        """Without it a row's freshness cannot be traced to the sweep that set it.
+        """Track a row's freshness to the sweep that set it.
 
         :param session: The database session.
         """
@@ -376,7 +376,7 @@ class TestRunLinkage:
 async def test_tables_live_in_oms_own_schema(session: AsyncSession) -> None:
     """The tables are ``om.host`` and ``om.service``, not SEP's ``service``.
 
-    Named plainly because the schema qualifies them -- which means SEP inventory's
+    Named plainly because the schema qualifies them — which means SEP inventory's
     ``service`` and OM's are two different tables, and on a bind without schemas they
     would not be. Asserting the declared schema is what keeps that from regressing
     into a table name collision nobody notices until ``create_all`` fails.
@@ -441,7 +441,7 @@ class TestExecutorFactsReachTheRow:
     async def test_probe_facts_and_executor_facts_share_the_document(
         self, session: AsyncSession
     ) -> None:
-        """Merging the two must not drop either half.
+        """Merge the two without dropping either half.
 
         :param session: The database session.
         """

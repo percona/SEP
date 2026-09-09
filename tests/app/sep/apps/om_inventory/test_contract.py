@@ -56,7 +56,7 @@ def test_declares_no_custom_ui() -> None:
     """``custom_ui`` means "ships a bespoke React UI", which this app does not.
 
     Unlike ``atw``/``topology``, which register one, this app has no ``react_route``
-    and no component of its own -- ``sidebar=False`` already says there is nothing to
+    and no component of its own — ``sidebar=False`` already says there is nothing to
     navigate to. ``custom_ui=True`` here would claim a UI that does not exist.
     """
     assert om_inventory_app.custom_ui is False

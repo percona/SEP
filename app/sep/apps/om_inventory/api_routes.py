@@ -19,7 +19,7 @@ Every read here follows from one constraint: **the caller must never wait for a 
 job.** PMM assembles its topology document on the request path in about a tenth of a
 second; a probe sweep takes tens of seconds. So nothing on this router probes. It
 serves rows, each carrying when it was last collected, and leaves the caller to
-decide -- which it can, because the age travels with the data and the consumer merges
+decide — which it can, because the age travels with the data and the consumer merges
 by precedence rather than by trust.
 
 ``GET /services`` is the contract with pmm-managed. It replaced ``GET /facts``, which
@@ -34,7 +34,7 @@ router guard, and unsafe methods additionally require a bearer and the rank
 resolves to ``DEFAULT_MINIMUM_ROLE`` (admin), so every unsafe route here registers its
 rank explicitly rather than inheriting one: the estate deletes and the configuration
 writes are admin, and refreshing is **editor**, because a refresh runs a fixed payload
-and is the button beside a row -- requiring admin would put the routine question behind
+and is the button beside a row — requiring admin would put the routine question behind
 the rarest role. pmm-managed's service principal is admitted by identity at that gate,
 so PMM reaches all of these with its deployment token whatever rank a human needs.
 """
@@ -105,10 +105,10 @@ _REDACTED_CONFIG_KEYS = frozenset({"CREDENTIALS_PATH"})
 
 
 def _redact_config(responses: list[SettingResponse]) -> list[SettingResponse]:
-    """Null out fields too sensitive for this route's viewer-readable audience.
+    """Redact fields too sensitive for this route's viewer-readable audience.
 
-    ``GET /config`` is gated only by ``IsApiAuthenticated`` -- any logged-in SEP
-    user -- because that is what PMM's ``--sep-token`` principal needs to reach the
+    ``GET /config`` is gated only by ``IsApiAuthenticated`` — any logged-in SEP
+    user — because that is what PMM's ``--sep-token`` principal needs to reach the
     rest of this settings class. ``CREDENTIALS_PATH`` is the one field that same
     audience must not see: it names a file a MongoDB driver reads as a URI, and the
     settings class docstring already calls it too sensitive to make writable, let
@@ -157,7 +157,7 @@ def _executor_usable(host: OmHost) -> bool:
 
     Reads ``observed.executor``, which :func:`~app.sep.apps.om_inventory.crud.
     upsert_host` writes on every sweep for every host regardless of whether it was
-    probed -- unlike ``executor_host``, which is set the moment *any* known executor
+    probed — unlike ``executor_host``, which is set the moment *any* known executor
     matches, usable or not. A missing or absent sub-document reads as not usable,
     which is the honest answer for a host that has never been swept at all.
 
@@ -348,7 +348,7 @@ async def delete_estate_host(node_id: str, session: SessionDep) -> None:
 
     Its services go with it. That is done explicitly rather than left to the
     ``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no
-    foreign key without a per-connection pragma SEP never sets -- and SQLite is the
+    foreign key without a per-connection pragma SEP never sets — and SQLite is the
     shipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.
 
     :param node_id: PMM's node id.
@@ -444,11 +444,11 @@ async def get_probe_run(run_id: UUID, session: SessionDep) -> ProbeRunDetail:
 async def trigger_probe(
     session: SessionDep, request: TriggerRequest | None = None
 ) -> ProbeRunAccepted:
-    """Queue a probe sweep, over the whole estate or over named hosts.
+    """Start a probe sweep, over the whole estate or over named hosts.
 
     A scoped refresh exists because the two questions are different sizes. "What does
     the estate look like" is a sweep of everything and costs a Nomad job per executor
-    host -- a minute and a half in this sandbox. "I just did something to this host,
+    host — a minute and a half in this sandbox. "I just did something to this host,
     is it healthy now" should not cost that, and it is the question PMM's UI will ask
     after every action it grows.
 
@@ -531,7 +531,7 @@ async def get_config(session: SessionDep) -> list[SettingResponse]:
 async def patch_config(
     request: Request, body: SettingsPatch, session: SessionDep
 ) -> list[SettingResponse]:
-    """Change this app's configuration at runtime.
+    """Update this app's configuration at runtime.
 
     The batch is atomic: a single bad key rejects all of it with a per-key 422 and
     writes nothing, so a caller never has to work out how far a partial apply got.

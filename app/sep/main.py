@@ -173,7 +173,7 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``),
     ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``)
-    and ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``) -- each of
+    and ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``) — each of
     which the rebuild seeds or drops as the interval is set or cleared, since
     the app's schedule thunk contributes nothing while it is unset. Rebuilds
     the system periodic-task set via
@@ -188,9 +188,9 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
     Gating is then re-applied, because preserving it is only true of the **update**
-    path. A schedule an app may set to ``None`` -- which is how an app-owned sweep is
+    path. A schedule an app may set to ``None`` — which is how an app-owned sweep is
     turned off, and how ``OmInventorySettings.SCHEDULE`` turns off the estate probe
-    -- contributes no task at all while it is null, and the orphan cleanup in
+    — contributes no task at all while it is null, and the orphan cleanup in
     ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
     path, which builds a fresh row at the model's default ``enabled``, so a disabled
     app would start running on the next beat tick. This is the same pair

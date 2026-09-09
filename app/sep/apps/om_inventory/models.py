@@ -20,14 +20,14 @@ Three tables, and the split between them is the design:
 ``om.host`` and ``om.service``
     What the estate *is*, one row per entity, upserted. A host row exists whether or
     not any MongoDB was found on it, which is what makes "which pmm-clients have no
-    database" answerable at all -- and it is not hypothetical: the sandbox carries
+    database" answerable at all — and it is not hypothetical: the sandbox carries
     hosts with a PMM client and nothing else beside arbiters running a mongod PMM has
     no service for, and PMM's inventory describes the two identically.
 
 ``om.inventory_run``
     What one sweep *did*. A receipt, not a copy of the estate: which entity was
     attempted, on which executor host, whether it answered, and any error. Keeping
-    the collected attributes out of it is load-bearing -- with ``RUN_RETENTION``
+    the collected attributes out of it is load-bearing — with ``RUN_RETENTION``
     runs kept, putting them here stores the same facts that many times over, and
     creates a second source of truth for them.
 
@@ -77,10 +77,10 @@ def _observed_document_type() -> Any:
     """Build the column type for an ``observed`` document.
 
     A fresh type instance per call. A single shared ``Column`` cannot be reused across
-    two models -- SQLAlchemy binds a Column to exactly one Table -- which is why the
+    two models — SQLAlchemy binds a Column to exactly one Table — which is why the
     freshness mixin below declares types rather than columns.
 
-    :return: ``JSONB`` on PostgreSQL, plain ``JSON`` on every other dialect -- which
+    :return: ``JSONB`` on PostgreSQL, plain ``JSON`` on every other dialect — which
         includes MySQL, not only SQLite: ``JSON`` is the correct default to carve a
         variant *out of*, since PostgreSQL is the odd one with a dedicated binary type.
     """
@@ -139,7 +139,7 @@ class ObservedEntity(SQLModel):
     The lifecycle these implement is four rules, each cheap now and expensive to
     discover later:
 
-    * ``failing_since`` is set with ``COALESCE(failing_since, now())`` -- overwrite it
+    * ``failing_since`` is set with ``COALESCE(failing_since, now())`` — overwrite it
       on every failure and "since" quietly becomes "most recent failure", so the
       duration is always about one schedule interval and the column is worthless;
     * a failed probe must **not** erase ``observed``. The last known good document is
@@ -148,7 +148,7 @@ class ObservedEntity(SQLModel):
     * only a run that actually attempted an entity touches its timestamps, so a
       single-host refresh does not mark everything it skipped as failed;
     * the upsert lists the columns it owns explicitly. Nothing here is user-writable
-      *yet*, so there is nothing to clobber -- but a blanket ``ON CONFLICT DO UPDATE``
+      *yet*, so there is nothing to clobber — but a blanket ``ON CONFLICT DO UPDATE``
       over every column wipes the first field that ever is.
 
     :param observed: Everything the probe collected, with its own ``collected_at``.
@@ -198,7 +198,7 @@ class OmHost(ObservedEntity, table=True):
 
     Keyed on **PMM's** node id. OM is not the system of record for identity here,
     PMM is, so the table and the API speak the id every consumer already holds and
-    nothing needs translating anywhere -- including the scoped refresh, which takes
+    nothing needs translating anywhere — including the scoped refresh, which takes
     the ``node_id`` PMM already has.
 
     ``text``, not ``uuid``: PMM's ids are usually UUIDs but not always. The PMM
@@ -206,9 +206,9 @@ class OmHost(ObservedEntity, table=True):
     ``uuid`` column would reject the one node every installation has.
 
     The consequence to accept openly is that if PMM re-registers a node under a new
-    id, OM gets a second row and the old one stays -- there is no host retention, only
-    ``DELETE /hosts/{node_id}`` removes it. The usual answer -- a OM-minted id plus a
-    natural key to recognise the machine across ids -- has no natural key available:
+    id, OM gets a second row and the old one stays — there is no host retention, only
+    ``DELETE /hosts/{node_id}`` removes it. The usual answer — a OM-minted id plus a
+    natural key to recognise the machine across ids — has no natural key available:
     ``machine_id`` is inherited from the container image, so most of this sandbox
     reports one shared value and the rest report an empty string. Matching on it would
     merge unrelated hosts. Hence no surrogate key: it would only move the guess into a
@@ -247,7 +247,7 @@ class OmHost(ObservedEntity, table=True):
 class OmService(ObservedEntity, table=True):
     """Record one MongoDB service PMM has registered, on its host.
 
-    A service row is a service **PMM knows** -- that is what keying on ``service_id``
+    A service row is a service **PMM knows** — that is what keying on ``service_id``
     means. The probe will still find mongod processes PMM has no service for, and
     those are recorded on the host's ``observed`` document instead: no identity to
     invent, no schema commitment, and the estate view does not get to claim the host
@@ -258,7 +258,7 @@ class OmService(ObservedEntity, table=True):
     The foreign key is safe because both tables belong to *this* app. Across apps the
     ``om`` schema takes no foreign keys at all: each app that owns migrations is an
     independent branch, an image that strips an app removes its ``versions/``
-    directory, and there is no guaranteed ordering between branches -- so an FK into
+    directory, and there is no guaranteed ordering between branches — so an FK into
     another app's table can reference something that legitimately vanishes.
 
     :param service_id: PMM's service id, the primary key. ``text`` for the same
@@ -266,7 +266,7 @@ class OmService(ObservedEntity, table=True):
     :param node_id: The host it runs on.
     :param name: The service name as PMM registered it.
     :param port: The port it listens on.
-    :param role: What the probe found it to be -- ``mongod``, ``mongos``, ``config``,
+    :param role: What the probe found it to be — ``mongod``, ``mongos``, ``config``,
         ``arbiter``. Observed, not declared: plain text rather than an enum, because a
         role we have not thought of should land in the column rather than raise. (An
         enum would also need care: SQLAlchemy's non-native ``Enum`` persists by member
@@ -305,7 +305,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     :class:`OmHost` and :class:`OmService`, upserted and current; this table only
     says which entity was attempted, on which executor host, whether it answered,
     how long it took and what failed. Keeping the collected attributes out of it is
-    load-bearing -- with ``RUN_RETENTION`` runs kept, putting them here would store
+    load-bearing — with ``RUN_RETENTION`` runs kept, putting them here would store
     the same facts that many times over and create a second source of truth for them.
 
     :param started_at: When the sweep began.
@@ -322,15 +322,15 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     :param hosts_answered: Hosts that returned a usable record.
     :param nodes: One record per host: where it was probed, how that host was
         matched, whether it answered, how long it took, and its dispatch's task
-        history id -- so a reader can still open the probe's raw output, which the
+        history id — so a reader can still open the probe's raw output, which the
         receipt itself does not carry. The counters above are this list's summary,
-        and a summary is all a sweep could show until this column existed -- "5 of 14
+        and a summary is all a sweep could show until this column existed — "5 of 14
         answered" cannot say *which* five, on which hosts, or which one took a
         minute.
     :param scope: The node ids this run was asked to refresh, or ``None`` for the
         whole estate. Stored rather than inferred, because without it the receipt
-        cannot be read honestly -- "9 of 13 answered" means something different when
-        the run was only ever asked about one host -- and because the single-flight
+        cannot be read honestly — "9 of 13 answered" means something different when
+        the run was only ever asked about one host — and because the single-flight
         guard has nothing to compare against.
     :param error: The failure detail when the sweep itself raised.
     """
@@ -442,7 +442,7 @@ class ProbeCounts(BaseModel):
 
 
 class ProbeRunResponse(BaseModel):
-    """One sweep's record.
+    """Carry one sweep's record.
 
     :param run_id: The sweep's id.
     :param status: ``running`` / ``success`` / ``partial`` / ``failed``.
@@ -465,7 +465,7 @@ class ProbeRunResponse(BaseModel):
 
 
 class ProbeNodeService(BaseModel):
-    """One service on a host, as this sweep saw it.
+    """Report one service on a host, as this sweep saw it.
 
     :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
     :param service_name: Its name, so a reader is not left joining UUIDs by hand.
@@ -480,10 +480,10 @@ class ProbeNodeService(BaseModel):
 
 
 class ProbeNode(BaseModel):
-    """One **host** this sweep attempted, and what came of it.
+    """Report one **host** this sweep attempted, and what came of it.
 
-    Host-oriented, because a sweep attempts hosts. A flat list of services -- which
-    this was -- cannot show a machine carrying a PMM client and no database, however
+    Host-oriented, because a sweep attempts hosts. A flat list of services — which
+    this was — cannot show a machine carrying a PMM client and no database, however
     many times it is probed, and that machine is the case OM most exists to describe.
 
     One dispatch covers every service on a host, so the host owns the timing and the
@@ -494,7 +494,7 @@ class ProbeNode(BaseModel):
     :param node_id: **PMM's** node id, the key OM holds this host under.
     :param host_name: The node's registered name.
     :param executor_host: The client its probe ran on; ``None`` when none matched.
-    :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+    :param resolution: ``name`` / ``address`` / ``orphaned`` — how that client was
         matched, or that it was not. Orphaned is why nothing ran, not an error.
     :param answered: Whether the *host* returned a record. A different question from
         whether its services did: a host with no database answers perfectly well and
@@ -518,7 +518,7 @@ class ProbeNode(BaseModel):
 
 
 class ProbeRunDetail(ProbeRunResponse):
-    """One sweep, with everything it recorded.
+    """Carry one sweep, with everything it recorded.
 
     Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
     records, so returning them for every row of a 25-run history would make the list
@@ -534,14 +534,14 @@ class TriggerRequest(BaseModel):
     """Ask for a refresh of named hosts rather than the whole estate.
 
     :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
-        host OM holds -- which is what the scheduled sweep does.
+        host OM holds — which is what the scheduled sweep does.
     """
 
     node_ids: list[str] = Field(default_factory=list)
 
 
 class ProbeRunAccepted(BaseModel):
-    """Acknowledge a queued sweep.
+    """Return the id of a queued sweep.
 
     Returned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so
     it is never performed synchronously.
@@ -559,7 +559,7 @@ class ProbeRunAccepted(BaseModel):
 
 
 class ServiceResponse(BaseModel):
-    """One MongoDB service PMM has registered, as OM currently holds it.
+    """Report one MongoDB service PMM has registered, as OM currently holds it.
 
     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
     the path and the payload carry the id every consumer already has, with nothing to
@@ -597,7 +597,7 @@ class ServiceResponse(BaseModel):
 
 
 class HostResponse(BaseModel):
-    """One host, with the services OM knows are on it.
+    """Report one host, with the services OM knows are on it.
 
     A host is a row whether or not any MongoDB was found on it: that is what makes
     "which hosts have no database" a query rather than an absence, and it is the only

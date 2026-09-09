@@ -32,7 +32,7 @@ DEFAULT_MONGODB_PORT = 27017
 class InventoryService:
     """Carry one MongoDB service as inventory reports it.
 
-    Topology grouping -- cluster identity, replica-set membership, environment -- is
+    Topology grouping — cluster identity, replica-set membership, environment — is
     PMM's to derive, not SEP's; this app only has to find the service and probe its
     host. No ``cluster``, ``replication_set`` or ``environment`` field lives here:
     carrying them with zero consumers would be a standing temptation to start
@@ -41,7 +41,7 @@ class InventoryService:
     :param service_id: The inventory service id.
     :param external_id: **PMM's** service UUID, which inventory stores as
         ``external_id``. This is the join key against VictoriaMetrics, whose
-        ``service_id`` label carries the same UUID -- and it is the *only* safe one:
+        ``service_id`` label carries the same UUID — and it is the *only* safe one:
         ``service_name`` is reused across re-registrations while the superseded series
         live on until retention expires, so a name-keyed join silently mixes
         generations. ``None`` when inventory carries none, which makes the service

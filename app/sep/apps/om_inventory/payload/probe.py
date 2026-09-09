@@ -19,7 +19,7 @@ Runs on one executor host under the venv the ``run-python`` job template builds,
 and collects, for every target named in the task config:
 
 * its server process (pid, uptime, argv, config path) from ``ps``, matched to the
-  target by **port** -- a host may run several mongods, and each target's facts have
+  target by **port** — a host may run several mongods, and each target's facts have
   to be its own;
 * the installed version of the binary *that* process runs;
 * a handful of database commands, when ``probe_database`` is set.
@@ -159,7 +159,7 @@ SERVER_PROGRAMS = ("mongod", "mongos")
 
 
 def process_facts(process):
-    """Shape one server process as a record's ``process`` sub-document.
+    """Format one server process as a record's ``process`` sub-document.
 
     :param process: The process, or ``None`` when none was found for this subject.
     :return: The sub-document. ``running`` is ``False`` and every other value is
@@ -199,7 +199,7 @@ def match_process(processes, port):
     itself a mongod.
 
     A **single** server process is attributed to the target without matching, because
-    a mongod started without an explicit port has no port to match on -- every mongod
+    a mongod started without an explicit port has no port to match on — every mongod
     on the default 27017 with no ``port:`` in its config file is that case, and
     refusing to attribute the one process running there would report the commonest
     host in any estate as stopped.
@@ -241,7 +241,7 @@ def parse_port(argv, config_path):
     """Determine the port a server process listens on.
 
     The command line wins when it carries one. Otherwise the configuration file is
-    read, because that is where the port usually lives -- every node in the sandbox
+    read, because that is where the port usually lives — every node in the sandbox
     is started as ``mongod --config <file>`` with the port set inside it, so an
     argv-only reading would find nothing on any of them.
 
@@ -327,7 +327,7 @@ def matched_process_pids(processes, targets):
     """Return the pid of every process :func:`match_process` already attributed.
 
     Resolved the same way :func:`probe` resolves it per target, so :func:`main` can
-    tell :func:`find_unregistered` which processes are already spoken for -- before
+    tell :func:`find_unregistered` which processes are already spoken for — before
     it applies its own, coarser port filter.
 
     :param processes: Every server process found on the host.
@@ -346,7 +346,7 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
     """Return the server processes no target accounts for.
 
     A "target" is a service PMM has registered and asked us to probe, identified by
-    its port. Anything else listening is a database PMM does not know about --
+    its port. Anything else listening is a database PMM does not know about —
     normal rather than exotic, because an arbiter holds no data and therefore no user
     documents, so SCRAM cannot authenticate and ``pmm-admin add mongodb`` fails for
     it. Any estate with arbiters and authentication enabled has them.
@@ -356,7 +356,7 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
     database would be exactly the dishonesty this list exists to prevent. That rule
     on its own double-counts one case, though: a lone mongod with no explicit port has
     no port to match here either, so without ``matched_pids`` it would land in this
-    list *and* be the process :func:`match_process` already attributed to a target --
+    list *and* be the process :func:`match_process` already attributed to a target —
     one running database reported as both a healthy service and a stranger.
     ``matched_pids`` is how :func:`main` excludes it before the port filter runs.
 
@@ -393,7 +393,7 @@ def collect_binary_version(program=None):
     """Return the installed server binary's version string, or ``None``.
 
     Read from the binary rather than from the database so it is available even when
-    the database is unreachable or ``probe_database`` is off -- an upgrade check
+    the database is unreachable or ``probe_database`` is off — an upgrade check
     needs the installed version, not the running one.
 
     Asks the program the member actually runs: a router's ``mongos --version``
@@ -440,7 +440,7 @@ def read_userinfo(credentials_path):
     are accepted either as a full ``mongodb://user:pass@host:port`` URI or as the
     bare ``user:pass@host:port`` form the sandbox writes; only the credentials are
     taken, because host and port come from the config. A missing file is not an
-    error -- an unauthenticated mongod is legitimate.
+    error — an unauthenticated mongod is legitimate.
 
     :param credentials_path: Path to the credentials file, or ``None`` to skip.
     :return: The ``user:pass@`` prefix ready to splice into a URI, or ``""``.
@@ -506,7 +506,7 @@ def build_uri(target, userinfo, auth_source, connect_timeout_ms):
 def collect_database_facts(target, userinfo, auth_source, connect_timeout_ms):
     """Return facts read from the database for one target.
 
-    Each command is run independently so one failure does not lose the others --
+    Each command is run independently so one failure does not lose the others —
     ``replSetGetStatus`` legitimately fails against a mongos or a standalone, and
     that must not discard the ``buildInfo`` that came back fine.
 
@@ -544,7 +544,7 @@ def collect_database_facts(target, userinfo, auth_source, connect_timeout_ms):
 
 
 def summarise_database_facts(facts):
-    """Lift the few fields worth having at the top level of the record.
+    """Copy the few fields worth having to the top level of the record.
 
     The raw command output stays under ``raw``; the summary is what becomes
     VictoriaMetrics labels and Postgres columns downstream, and what a human reads
@@ -674,13 +674,13 @@ def redact_userinfo(url):
 
     Proxy URLs commonly carry credentials, and this value is stored on the host's
     ``observed`` document and served from ``GET /hosts`` to every API-authenticated
-    caller -- so reporting it verbatim, which is what this did, publishes a secret to
+    caller — so reporting it verbatim, which is what this did, publishes a secret to
     a wider audience than the environment variable it came from. The
     ``anonymize_mask`` on the dispatch does not help: it covers task logs, and the
     value's route out is the JSONB column.
 
     Redacting only the userinfo keeps every diagnostic property the value has. Which
-    proxy is in effect -- scheme, host, port -- is what makes a refused connection
+    proxy is in effect — scheme, host, port — is what makes a refused connection
     explainable, and none of it is secret.
 
     :param url: The proxy URL as configured, or ``None``.
@@ -780,8 +780,8 @@ def main():
     The host line comes first and is emitted whether or not there are targets. A
     dispatch with no targets is not a misconfiguration: a machine carrying a PMM
     client and no database is exactly what OM wants to describe, and it is the state
-    a host is in before anything is installed on it. Refusing to run there -- which
-    this did, exiting 1 on an empty target list -- left the only hosts worth an
+    a host is in before anything is installed on it. Refusing to run there — which
+    this did, exiting 1 on an empty target list — left the only hosts worth an
     install decision as the only hosts OM could say nothing about.
 
     The host line also stops host attributes being read off whichever service record

@@ -16,8 +16,8 @@
 """Register OpenManager Inventory as a ``BaseApp``.
 
 The first of the SEP apps that exist to do work on Nomad clients. This one only
-reads -- it runs a payload on each database host and collects facts no metric
-carries -- but it establishes the shape the rest will follow: a periodic sweep, a
+reads — it runs a payload on each database host and collects facts no metric
+carries — but it establishes the shape the rest will follow: a periodic sweep, a
 run history, and an API a consumer polls rather than drives.
 
 ``sidebar=False`` and no ``react_route``: there is nothing to navigate to. The

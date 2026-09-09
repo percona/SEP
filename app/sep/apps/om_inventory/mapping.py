@@ -19,14 +19,14 @@ This is the question the worker exists to answer: given ``rsc-node02``, which ho
 a script run on to reach that mongod?
 
 The matching order mirrors
-:meth:`~app.sep.sync.models.BaseTaskSyncer.get_task_target` -- node name first, then
-node address -- against the executor list the Tasks API serves from
+:meth:`~app.sep.sync.models.BaseTaskSyncer.get_task_target` — node name first, then
+node address — against the executor list the Tasks API serves from
 :meth:`~app.tasks.execution.executors.nomad.models.NomadExecutor.get_hosts`, which
 already filters server-side to ready clients with a healthy ``raw_exec`` driver.
 
 **What this module deliberately does not copy** is that method's fallback. With
 ``strict_executor_matching`` off, an unmatched node resolves to
-``next(iter(available_hosts))`` -- an arbitrary unrelated host -- and the probe runs
+``next(iter(available_hosts))`` — an arbitrary unrelated host — and the probe runs
 there and reports facts about a mongod that is not on that box. Here an unmatched
 service is :attr:`~app.sep.apps.om_inventory.models.NodeResolution.ORPHANED` and is not
 probed at all.

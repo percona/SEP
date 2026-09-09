@@ -73,7 +73,7 @@ class DatabaseOptions(BaseModel):
         ``schema_translate_map``; see ``settings.CELERY.beat_schema`` for the
         single-token precedent this generalises). Deployment-declared rather
         than assembled from any one caller's settings, so this class stays
-        usable by every caller without importing them -- a caller that shares
+        usable by every caller without importing them — a caller that shares
         this bind merges its own token in under its own key instead of
         replacing the map. Cleared to the bind's default schema off
         PostgreSQL; see :meth:`clear_schema_translate_map_off_postgresql`.
@@ -100,8 +100,8 @@ class DatabaseOptions(BaseModel):
         concept here: SQLite has none, and MySQL's "schema" is a database, so
         honouring a token there would scatter tables into a second database
         nothing provisions. Values are cleared to ``None`` rather than the map
-        being dropped, so a caller's tables -- which name their token
-        unconditionally -- keep resolving to the default schema instead of
+        being dropped, so a caller's tables — which name their token
+        unconditionally — keep resolving to the default schema instead of
         reaching the database as a literal, undefined identifier.
 
         :return: The validated options.
