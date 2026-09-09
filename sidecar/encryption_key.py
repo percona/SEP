@@ -1,0 +1,451 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+"""Resolve the side-car's ``ENCRYPTION_KEY`` before supervisord starts.
+
+``entrypoint.sh`` runs this once, after ``settings-env.sh`` has expanded the
+deployment inputs, and only when neither an explicit ``ENCRYPTION_KEY`` nor a
+file of that name under ``SECRETS_DIR`` already supplied one. Stdout carries
+the resolved key and nothing else; every diagnostic goes to stderr. Both
+channels are re-read here anyway so a run outside the entrypoint answers the
+same thing the container would.
+
+Unlike the Grafana token beside it, this key is not re-mintable. Every
+``settingoverride`` row SEP has encrypted is readable only under the key that
+wrote it, and :mod:`~app.core.settings_override.cache` warns and skips a row it
+cannot decrypt rather than failing the load -- so minting a replacement over
+surviving ciphertext brings the container up green with the affected overrides
+silently reverted to their YAML values. Minting therefore happens only where all
+three service databases are provably free of ciphertext, and any database that
+cannot be reached counts as unproven.
+
+The freshness probe reads the databases through :class:`_ServiceDatabase`
+subclasses rather than the services' own settings classes. Those resolve the
+same ``<PREFIX>__DATABASE__*`` sources -- environment, dotenv, ``SECRETS_DIR``
+file, YAML profile -- while requiring no ``ENCRYPTION_KEY`` of their own, which
+the key-less path this helper runs on could not supply.
+
+Deployment inputs, all optional: ``SEP_STATE_DIR`` and
+``SEP_ENCRYPTION_PROBE_TIMEOUT``.
+"""
+
+import asyncio
+import base64
+import fcntl
+import math
+import os
+import sys
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager, redirect_stdout
+from pathlib import Path
+from typing import Any, ClassVar
+
+from sqlalchemy import inspect, select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.core.config import BaseYamlSettings
+from app.core.db.config import DatabaseOptions
+from app.core.encryption import is_encrypted
+from app.core.settings_override.models import SettingOverride
+
+DEFAULT_STATE_DIR = Path("/home/sep/state")
+PERSISTED_FILENAME = "ENCRYPTION_KEY"
+LOCK_FILENAME = ".ENCRYPTION_KEY.lock"
+
+DEFAULT_PROBE_TIMEOUT_SECONDS = 15.0
+
+KEY_BYTES = 32
+"""What Fernet's URL-safe base64 key decodes to: a 16-byte signing half and a
+16-byte encryption half."""
+
+
+class EncryptionKeyError(Exception):
+    """Raise when no key can be served and the pre-flight has to give up."""
+
+
+class _ServiceDatabase(BaseYamlSettings):
+    """Resolve one service's database options without resolving its settings.
+
+    Subclassed once per service because
+    :meth:`~app.core.config.BaseYamlSettings.settings_customise_sources` ranks
+    the prefixed spelling of a name above the unprefixed one from
+    ``SETTINGS_PREFIXES``, which is a class-level declaration. Mirrors
+    ``app.core.config._SEPDatabaseSettings``, which reads the SEP database the
+    same way for the same reason: to stay clear of a proxy it cannot resolve.
+
+    :param DATABASE: The service's database connection options.
+    """
+
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+
+
+class _SEPDatabase(_ServiceDatabase):
+    """Resolve the ``sep`` service's database options.
+
+    :cvar SETTINGS_PREFIXES: The prefix this probe reads its sources under.
+    :param DATABASE: The service's database connection options.
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+
+
+class _InventoryDatabase(_ServiceDatabase):
+    """Resolve the ``inventory`` service's database options.
+
+    :cvar SETTINGS_PREFIXES: The prefix this probe reads its sources under.
+    :param DATABASE: The service's database connection options.
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["INVENTORY"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="inventory.db")
+
+
+class _TasksDatabase(_ServiceDatabase):
+    """Resolve the ``tasks`` service's database options.
+
+    :cvar SETTINGS_PREFIXES: The prefix this probe reads its sources under.
+    :param DATABASE: The service's database connection options.
+    """
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
+
+
+SERVICE_DATABASES: dict[str, type[_ServiceDatabase]] = {
+    "sep": _SEPDatabase,
+    "inventory": _InventoryDatabase,
+    "tasks": _TasksDatabase,
+}
+"""Every database carrying ``settingoverride`` rows, keyed by service name.
+
+The model is shared and its DDL created per service, so a row encrypted under
+the lost key can sit in any one of the three.
+"""
+
+
+def warn(message: str) -> None:
+    """Write one diagnostic line, leaving stdout as the key channel alone.
+
+    :param message: The line to write.
+    """
+    sys.stderr.write(f"[encryption-key] {message}\n")
+
+
+def state_dir() -> Path:
+    """Return the directory SEP persists its minted key in.
+
+    :return: The configured directory, or the image's own.
+    """
+    configured = os.environ.get("SEP_STATE_DIR") or ""
+    return Path(configured) if configured.strip() else DEFAULT_STATE_DIR
+
+
+def probe_timeout() -> float:
+    """Return how long each freshness probe may wait for its database.
+
+    :return: The bound in seconds.
+    """
+    raw = (os.environ.get("SEP_ENCRYPTION_PROBE_TIMEOUT") or "").strip()
+    if not raw:
+        return DEFAULT_PROBE_TIMEOUT_SECONDS
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = 0.0
+    if not math.isfinite(seconds) or seconds <= 0:
+        warn(
+            f"SEP_ENCRYPTION_PROBE_TIMEOUT={raw!r} is not a finite positive "
+            f"number of seconds; waiting {DEFAULT_PROBE_TIMEOUT_SECONDS:g}s instead."
+        )
+        return DEFAULT_PROBE_TIMEOUT_SECONDS
+    return seconds
+
+
+def mounted_key() -> str | None:
+    """Return the key a file under ``SECRETS_DIR`` supplies, if one does.
+
+    Matched case-insensitively and skipping any entry resolving outside the
+    directory, which is how both ``settings-env.sh`` and the settings source
+    walk the same directory.
+
+    :return: The stripped key, or ``None`` when no usable file supplies one.
+    """
+    configured = (os.environ.get("SECRETS_DIR") or "").strip()
+    if not configured:
+        return None
+    directory = Path(configured).resolve()
+    if not directory.is_dir():
+        return None
+    try:
+        for entry in directory.iterdir():
+            if entry.name.lower() != PERSISTED_FILENAME.lower() or not entry.is_file():
+                continue
+            if not entry.resolve().is_relative_to(directory):
+                continue
+            return entry.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        # An unreadable directory supplies nothing, which is how the shell
+        # helper's glob treats it too -- and the channels below still apply.
+        return None
+    return None
+
+
+def supplied_key() -> str | None:
+    """Return the key channels 1 and 2 supply, in that order.
+
+    :return: The stripped key, or ``None`` when neither channel supplies one.
+    """
+    explicit = (os.environ.get("ENCRYPTION_KEY") or "").strip()
+    return explicit or mounted_key()
+
+
+def read_persisted_key(directory: Path) -> str | None:
+    """Return the key an earlier start persisted, if it left a usable one.
+
+    :param directory: The state directory to read from.
+    :return: The stripped key, or ``None`` when the file is absent, unreadable,
+        or holds only whitespace.
+    """
+    try:
+        raw = (directory / PERSISTED_FILENAME).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return raw.strip() or None
+
+
+def mint_key() -> str:
+    """Return a fresh Fernet key.
+
+    Built exactly the way ``make encryption-key`` builds one, so a key minted
+    here and one an operator generates by hand are interchangeable.
+
+    :return: The URL-safe base64 key.
+    """
+    return base64.urlsafe_b64encode(os.urandom(KEY_BYTES)).decode("ascii")
+
+
+def write_persisted_key(directory: Path, key: str) -> None:
+    """Persist ``key`` owner-only so every later start resolves the same value.
+
+    Written through a uniquely named temporary file in the same directory and
+    moved into place atomically, so neither an interrupted start nor a
+    concurrent one can leave a truncated key where a working one was.
+    :func:`tempfile.mkstemp` creates that file readable and writable by the
+    owner alone, and :meth:`~pathlib.Path.replace` carries the mode across, so
+    the key is never briefly group-readable.
+
+    :param directory: The state directory to write into.
+    :param key: The key to persist.
+    :raises EncryptionKeyError: If the key cannot be persisted. Serving an
+        unpersistable key would orphan every row written during the run that
+        used it.
+    """
+    try:
+        descriptor, name = tempfile.mkstemp(dir=directory)
+        temporary = Path(name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(key)
+            temporary.replace(directory / PERSISTED_FILENAME)
+        except OSError:
+            temporary.unlink(missing_ok=True)
+            raise
+    except OSError as error:
+        raise EncryptionKeyError(
+            f"Could not persist the minted ENCRYPTION_KEY under {directory}: "
+            f"{error}. Refusing to serve a key the next start cannot read back, "
+            f"which would leave every row written under it unreadable. Mount a "
+            f"writable volume at {directory}, or pass ENCRYPTION_KEY explicitly."
+        ) from error
+
+
+@contextmanager
+def state_lock(directory: Path) -> Iterator[None]:
+    """Hold an exclusive lock over the whole re-read, probe, mint and persist.
+
+    Two side-cars started together against one empty state volume both observe
+    no key. Atomic replacement alone would leave them holding *different* keys,
+    whichever wrote last; serialising here, and re-reading the persisted key
+    once the lock is held, is what makes the loser adopt the winner's.
+
+    :param directory: The state directory to lock within, created when absent.
+    :raises EncryptionKeyError: If the directory or its lock file cannot be
+        opened for writing.
+    """
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        handle = (directory / LOCK_FILENAME).open("w", encoding="utf-8")
+    except OSError as error:
+        raise EncryptionKeyError(
+            f"Could not open the state directory {directory} for writing: "
+            f"{error}. A minted ENCRYPTION_KEY has to survive the restart that "
+            f"reads the rows it encrypts, so nothing is minted. Mount a writable "
+            f"volume there, or pass ENCRYPTION_KEY explicitly."
+        ) from error
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+    finally:
+        handle.close()
+
+
+def contains_ciphertext(value: Any) -> bool:
+    """Return whether any string leaf of ``value`` is structurally a Fernet token.
+
+    The stored value is JSON and the ciphertext sits at its *leaves* -- an
+    alert provider's routing key inside a list, a delivery input's API key
+    inside a nested mapping -- so testing the row's own value finds nothing on
+    exactly the rows that matter.
+
+    Deciding structurally is safe in this direction, and only this one. The
+    write path must not (``secret_storage.encrypt_secret_leaves``: a credential
+    that happens to be base64 would be misread as ciphertext and stored in the
+    clear), but here a false positive merely refuses to mint, which is loud and
+    an operator resolves by supplying the key. A false negative is the
+    dangerous direction, and it has none that reading annotations would avoid.
+
+    :param value: The decoded stored value, at any depth.
+    :return: Whether a Fernet token appears anywhere within it.
+    """
+    if isinstance(value, str):
+        return is_encrypted(value)
+    if isinstance(value, dict):
+        return any(contains_ciphertext(leaf) for leaf in value.values())
+    if isinstance(value, list):
+        return any(contains_ciphertext(leaf) for leaf in value)
+    return False
+
+
+async def service_holds_ciphertext(options: DatabaseOptions) -> bool:
+    """Return whether one service's override rows hold any ciphertext.
+
+    A database whose ``settingoverride`` table has never been created has no
+    rows to hold any, which is the ordinary first-start shape.
+
+    :param options: The service's resolved database options.
+    :return: Whether a Fernet token appears in any stored value.
+    :raises SQLAlchemyError: If the database cannot be reached or queried.
+    :raises ValueError: If a stored value is not decodable JSON, which the
+        column's own type raises while reading the result.
+    """
+    engine = create_async_engine(options.URL, **options.connect_engine_kwargs)
+    try:
+        async with engine.connect() as connection:
+            table = SettingOverride.__table__
+            if not await connection.run_sync(
+                lambda sync: inspect(sync).has_table(table.name)
+            ):
+                return False
+            stored = await connection.execute(select(table.c.value))
+            return any(contains_ciphertext(value) for (value,) in stored)
+    finally:
+        await engine.dispose()
+
+
+async def assert_every_database_is_fresh() -> None:
+    """Raise unless all three service databases are provably free of ciphertext.
+
+    :raises EncryptionKeyError: If any database holds ciphertext, or cannot be
+        read within the probe timeout. Both refuse: a deployment whose
+        freshness cannot be *proven* is one where minting may be destructive.
+    """
+    timeout = probe_timeout()
+    for service, settings_cls in SERVICE_DATABASES.items():
+        options = settings_cls().DATABASE
+        try:
+            found = await asyncio.wait_for(
+                service_holds_ciphertext(options), timeout=timeout
+            )
+        except (TimeoutError, SQLAlchemyError, ValueError, OSError) as error:
+            raise EncryptionKeyError(
+                f"Could not read the {service} database's overrides ({error}). "
+                f"{_mint_refusal()}"
+            ) from error
+        if found:
+            raise EncryptionKeyError(
+                f"The {service} database already holds encrypted override "
+                f"values. {_mint_refusal()}"
+            )
+
+
+def _mint_refusal() -> str:
+    """Return the remediation every refusal to mint ends with.
+
+    :return: What the operator has to do, naming both ways out.
+    """
+    return (
+        "Refusing to mint a new ENCRYPTION_KEY: a new key cannot decrypt values "
+        "written under the old one, and every affected override would silently "
+        f"revert to its YAML value. Restore {state_dir() / PERSISTED_FILENAME} "
+        "from a backup of the sep-state volume, or pass the deployment's "
+        "original key as ENCRYPTION_KEY."
+    )
+
+
+def resolve() -> str:
+    """Resolve the key from the first channel that supplies one, minting last.
+
+    :return: The resolved key, always the value read back from disk rather
+        than a locally minted string, so racing starts converge.
+    :raises EncryptionKeyError: If no key can be served.
+    """
+    supplied = supplied_key()
+    if supplied is not None:
+        return supplied
+
+    directory = state_dir()
+    persisted = read_persisted_key(directory)
+    if persisted is not None:
+        return persisted
+
+    with state_lock(directory):
+        # Re-read under the lock: a start that raced this one to an empty state
+        # volume may have persisted between the read above and the lock.
+        persisted = read_persisted_key(directory)
+        if persisted is not None:
+            return persisted
+        asyncio.run(assert_every_database_is_fresh())
+        write_persisted_key(directory, mint_key())
+        final = read_persisted_key(directory)
+    if final is None:
+        raise EncryptionKeyError(
+            f"The ENCRYPTION_KEY persisted under {directory} could not be read "
+            f"back immediately after being written."
+        )
+    return final
+
+
+def main() -> int:
+    """Print the resolved key for ``entrypoint.sh`` to capture.
+
+    :return: The process exit status.
+    """
+    try:
+        # The settings stack binds its logging handlers to whatever stdout is
+        # when it is first resolved, so without this a log record would land
+        # inside the key entrypoint.sh captures.
+        with redirect_stdout(sys.stderr):
+            key = resolve()
+    except EncryptionKeyError as error:
+        warn(str(error))
+        return 1
+    sys.stdout.write(f"{key}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

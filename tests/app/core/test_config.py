@@ -553,6 +553,21 @@ class TestEncryptionKey:
         with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
             Settings(ENCRYPTION_KEY=SecretStr(value))
 
+    def test_the_remediation_rules_out_the_secret_key_generator(self):
+        """Name the generator that does *not* work, beside the one that does.
+
+        ``SECRET_KEY``'s own message offers ``openssl rand -hex 32``, so an
+        operator supplying both keys reaches for it twice. It yields 64
+        characters Fernet refuses, and a message naming only the working
+        generator leaves that reader to infer which of the two failed.
+        """
+        with pytest.raises(ValidationError) as caught:
+            Settings(ENCRYPTION_KEY=SecretStr(secrets.token_hex(32)))
+
+        message = str(caught.value)
+        assert "openssl rand -base64 32" in message
+        assert "openssl rand -hex 32" in message
+
     def test_valid_key_accepted(self):
         """Accept a freshly generated Fernet key and keep it wrapped."""
         key = Fernet.generate_key().decode("ascii")

@@ -445,16 +445,14 @@ def _encryption_key_error() -> str:
     process whose working directory is not the one the reader is standing in
     would otherwise be told to edit ``.env`` without being told which.
 
-    ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
-    produces 64 characters Fernet rejects, so the two remediations are
-    deliberately different.
-
     :return: The remediation sentence, naming the dotenv file in use.
     """
     return (
         "ENCRYPTION_KEY must be set to a valid Fernet key (32 url-safe "
         "base64-encoded bytes). Generate one with `make encryption-key` or "
-        "`openssl rand -base64 32`, then add it as ENCRYPTION_KEY=<key> to "
+        "`openssl rand -base64 32` -- not `openssl rand -hex 32`, which "
+        "SECRET_KEY's own message offers and which yields 64 characters Fernet "
+        "rejects. Then add it as ENCRYPTION_KEY=<key> to "
         f"{pre_env_settings.ENV_FILE.resolve()} (the file ENV_FILE names), "
         "export it, or mount it as a file named ENCRYPTION_KEY under "
         "SECRETS_DIR. It has no default and is never derived from SECRET_KEY."
