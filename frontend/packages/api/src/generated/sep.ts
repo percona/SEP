@@ -1514,10 +1514,12 @@ export interface paths {
      * Inventory Plugin Tasks
      * @description Return the list of periodic task names for the Inventory plugin.
      *
-     *     Hard-coded because the Inventory plugin has exactly one periodic task
-     *     (``inventory-sync``). The shape matches what the React
-     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+     *     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
+     *     (``inventory-sync`` and ``inventory-collection``). The shape matches what the
+     *     React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
      *     minimum a ``name`` key.
+     *
+     *     :return: The plugin's periodic tasks, each with its name and display name.
      */
     get: operations['inventory_inventory_plugin_tasks_api_apps_inventory__get'];
     put?: never;
@@ -1724,16 +1726,14 @@ export interface paths {
     };
     /**
      * Inventory Sync Status
-     * @description Return whether an inventory-wide sync is currently running.
+     * @description Return whether an inventory-wide sync is running, plus recent run outcomes.
      *
      *     Replaces the server-rendered ``sync_is_running`` template variable
      *     used by the Jinja2 inventory page so the React control can poll the
      *     same state without scraping HTML.
      *
      *     :param session: SQLModel async session.
-     *     :type session: SessionDep
-     *     :return: ``{"is_running": <bool>}``.
-     *     :rtype: InventorySyncStatusResponse
+     *     :return: The running flag and the most recent runs, newest first.
      */
     get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
     put?: never;
@@ -1764,11 +1764,7 @@ export interface paths {
      */
     get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
-    /**
-     * Inventory Create Entity
-     * @description Create an inventory node, service, schema, or table.
-     */
-    post: operations['inventory_inventory_create_entity_api_apps_inventory__entity___post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -1787,17 +1783,9 @@ export interface paths {
      * @description Retrieve a single inventory node, service, schema, or table.
      */
     get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
-    /**
-     * Inventory Update Entity
-     * @description Update an inventory node, service, schema, or table.
-     */
-    put: operations['inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put'];
+    put?: never;
     post?: never;
-    /**
-     * Inventory Delete Entity
-     * @description Delete an inventory node, service, schema, or table.
-     */
-    delete: operations['inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -2074,7 +2062,7 @@ export interface paths {
     head?: never;
     /**
      * Patch Config
-     * @description Change this app's configuration at runtime.
+     * @description Update this app's configuration at runtime.
      *
      *     The batch is atomic: a single bad key rejects all of it with a per-key 422 and
      *     writes nothing, so a caller never has to work out how far a partial apply got.
@@ -2148,11 +2136,15 @@ export interface paths {
      *     Counts describe the *tables*, not the last run. A scoped refresh must not make the
      *     estate look one host wide.
      *
+     *     ``total`` counts every host matching the filters, not the page, so a caller can
+     *     tell "this is the whole estate" from "this is the first twenty of it".
+     *
      *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
      *     :param has_service: Filter on whether a MongoDB service is registered here.
      *     :param failing: Filter on whether the host is currently failing.
      *     :param executor: Filter on whether an executor serves it.
-     *     :return: The hosts, by name.
+     *     :return: One page of hosts, by name, with the matching total.
      */
     get: operations['om_inventory_list_estate_hosts_api_apps_om_inventory_hosts_get'];
     put?: never;
@@ -2198,7 +2190,7 @@ export interface paths {
      *
      *     Its services go with it. That is done explicitly rather than left to the
      *     ``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no
-     *     foreign key without a per-connection pragma SEP never sets -- and SQLite is the
+     *     foreign key without a per-connection pragma SEP never sets — and SQLite is the
      *     shipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.
      *
      *     :param node_id: PMM's node id.
@@ -2236,11 +2228,11 @@ export interface paths {
     put?: never;
     /**
      * Trigger Probe
-     * @description Queue a probe sweep, over the whole estate or over named hosts.
+     * @description Start a probe sweep, over the whole estate or over named hosts.
      *
      *     A scoped refresh exists because the two questions are different sizes. "What does
      *     the estate look like" is a sweep of everything and costs a Nomad job per executor
-     *     host -- a minute and a half in this sandbox. "I just did something to this host,
+     *     host — a minute and a half in this sandbox. "I just did something to this host,
      *     is it healthy now" should not cost that, and it is the question PMM's UI will ask
      *     after every action it grows.
      *
@@ -2329,10 +2321,13 @@ export interface paths {
      *     deliberately no ``/hosts/{node_id}/services``: it would be a second spelling of the
      *     same list, and ``?node_id=`` covers wanting them without the host.
      *
+     *     ``total`` counts every service matching the filters, not the page.
+     *
      *     :param session: The database session.
+     *     :param pagination: The offset/limit window for the page.
      *     :param node_id: Restrict to one host.
      *     :param failing: Filter on whether the service is currently failing.
-     *     :return: The services, by name.
+     *     :return: One page of services, by name, with the matching total.
      */
     get: operations['om_inventory_list_estate_services_api_apps_om_inventory_services_get'];
     put?: never;
@@ -3220,7 +3215,7 @@ export interface paths {
     post?: never;
     /**
      * Delete Setting
-     * @description Revert one override row to the field's declared default.
+     * @description Revert override row(s) for one field to the field's declared default.
      *
      *     For a remote class the DELETE is forwarded to the owning sub-app, which
      *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
@@ -3232,7 +3227,10 @@ export interface paths {
      *     override row in the first place and the operator's intent is
      *     unsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld
      *     may still carry a row written before the restriction applied, so that
-     *     row is deleted normally and only the no-row case answers 409.
+     *     row is deleted normally (found by canonicalizing the stored key, so a
+     *     legacy non-canonical casing is still seen) and only the no-row case
+     *     answers 409. When several rows canonicalize to the same key, all of
+     *     them are removed.
      *
      *     After republishing the snapshot, fires the rebind callbacks for the
      *     reverted key so a HOT target rebinds to its restored value without
@@ -4131,19 +4129,16 @@ export interface components {
      * @description Represent a node in the inventory.
      *
      *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
      *     :param name: The name of the node.
-     *     :type name: NonEmptyStr
      *     :param external_id: An external identifier for the node. Must be unique for source,
      *         as defined by composite index ix_node_external_id_source.
-     *     :type external_id: NonEmptyStr | None
      *     :param source: The source from which the node information is derived. Must be unique
      *         for external_id, as defined by composite index ix_node_external_id_source.
-     *     :type source: SourceEnum | None
      *     :param type: The type of the node (e.g., remote, generic).
-     *     :type type: NonEmptyStr
+     *     :param retired_at: When the node stopped being reported upstream, or None while
+     *         it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param services: A list of services associated with the node.
-     *     :type services: list[Service]
      */
     Node: {
       /** Address */
@@ -4154,12 +4149,14 @@ export interface components {
        */
       created_at?: string;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
       name: string;
-      source?: components['schemas']['SourceEnum'] | null;
+      /** Retired At */
+      retired_at?: string | null;
+      source: components['schemas']['SourceEnum'];
       /**
        * Type
        * @default generic
@@ -4253,24 +4250,20 @@ export interface components {
      * @description Represent a database schema within a service.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param name: The name of the schema. Must be unique for service_id, as defined by
      *         composite index ix_schema_name_service_id.
-     *     :type name: NonEmptyStr
      *     :param service_id: The unique identifier of the service to which the schema belongs.
      *         Must be unique for name, as defined by composite index
      *         ix_schema_name_service_id.
-     *     :type service_id: int
      *     :param service: The service to which the schema is associated.
-     *     :type service: Service
+     *     :param retired_at: When the schema stopped being reported upstream, or None
+     *         while it is active.
+     *     :param retirement_key: The discriminator carried inside every unique index.
      *     :param tables: A list of tables within the schema.
-     *     :type tables: list[Table]
      */
     Schema: {
       /**
@@ -4282,6 +4275,8 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
+      /** Retired At */
+      retired_at?: string | null;
       /** Service Id */
       service_id: number;
       /** Updated At */
@@ -4322,62 +4317,22 @@ export interface components {
       | 'external'
       | 'valkey';
     /**
-     * SettingClassEnum
-     * @description Enumerate settings classes that may have HOT override rows.
-     *
-     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
-     *     ``SnippetsSettings``, the global ``Settings``, ``AlertSettings``,
-     *     ``AlertsSettings``, ``AnonymizerSettings``, ``HealthReportSettings``,
-     *     ``InventorySettings`` and ``OmInventorySettings``.
-     *
-     *     To wire a new settings class:
-     *
-     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
-     *     2. Generate an Alembic migration on every consumer track that extends the
-     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
-     *        uses ``native_enum=False`` so the value list lives in a constraint,
-     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
-     *        Note that the column and ``CHECK`` constraint persist the enum member
-     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
-     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
-     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
-     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
-     * @enum {string}
-     */
-    SettingClassEnum:
-      | 'SEPSettings'
-      | 'TasksSettings'
-      | 'SnippetsSettings'
-      | 'Settings'
-      | 'AlertSettings'
-      | 'AnonymizerSettings'
-      | 'AlertsSettings'
-      | 'HealthReportSettings'
-      | 'InventorySettings'
-      | 'OmInventorySettings';
-    /**
      * SettingClassGroup
-     * @description One settings-class group in the LIST response.
+     * @description Group one settings class's fields for the LIST response.
      *
-     *     :param setting_class: The settings class this group represents.
-     *     :type setting_class: SettingClassEnum
+     *     :param setting_class: The Pydantic class ``__name__`` this group represents.
      *     :param settings: The fields declared on the settings class, with their
      *         current values and metadata.
-     *     :type settings: list[SettingResponse]
      *     :param is_app_owned: Whether this group belongs to a SEP app under
      *         ``app/sep/apps/`` rather than core SEP wiring.
-     *     :type is_app_owned: bool
      *     :param app_id: The owning app's registry key when ``is_app_owned`` is
      *         ``True``; ``None`` for core groups.
-     *     :type app_id: str | None
      *     :param app_display_name: The owning app's human-facing label when
      *         ``is_app_owned`` is ``True``; ``None`` for core groups.
-     *     :type app_display_name: str | None
      *     :param app_enabled: Whether the owning app is currently enabled when
      *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
      *         apps remain listed so the frontend can hide them without a second
      *         lookup.
-     *     :type app_enabled: bool | None
      */
     SettingClassGroup: {
       /** App Display Name */
@@ -4391,7 +4346,8 @@ export interface components {
        * @default false
        */
       is_app_owned: boolean;
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Settings */
       settings: components['schemas']['SettingResponse'][];
     };
@@ -4412,7 +4368,7 @@ export interface components {
      * SettingResponse
      * @description Represent a single setting's metadata and current value.
      *
-     *     :param setting_class: The settings class the field belongs to.
+     *     :param setting_class: The Pydantic class ``__name__`` the field belongs to.
      *     :param key: The field name on the settings class.
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
@@ -4470,7 +4426,8 @@ export interface components {
       /** Options */
       options?: components['schemas']['SettingOption'][] | null;
       reload: components['schemas']['ReloadClassification'];
-      setting_class: components['schemas']['SettingClassEnum'];
+      /** Setting Class */
+      setting_class: string;
       /** Type */
       type: string;
       /** Value */
@@ -4664,6 +4621,21 @@ export interface components {
      * @enum {string}
      */
     SourceEnum: 'pmm';
+    /**
+     * SyncStatusEnum
+     * @description Enumerate the possible statuses of a synchronization process.
+     *
+     *     :cvar PENDING: The synchronization is pending.
+     *     :vartype PENDING: str
+     *     :cvar RUNNING: The synchronization is currently running.
+     *     :vartype RUNNING: str
+     *     :cvar SUCCESS: The synchronization completed successfully.
+     *     :vartype SUCCESS: str
+     *     :cvar FAILED: The synchronization failed.
+     *     :vartype FAILED: str
+     * @enum {string}
+     */
+    SyncStatusEnum: 'pending' | 'running' | 'success' | 'failed';
     /**
      * TaskBackendEnum
      * @description Control the choice of backends.
@@ -5509,34 +5481,23 @@ export interface components {
      * @description Define the service API response.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
-     *     :type id: int | None
      *     :param created_at: The timestamp when the record is created. Defaults to the current
      *         time in UTC.
-     *     :type created_at: UTCDatetime
      *     :param updated_at: The timestamp when the record is last updated. Automatically
      *         updated on changes.
-     *     :type updated_at: UTCDatetime | None
      *     :param external_id: An external identifier for the service.
-     *     :type external_id: NonEmptyStr | None
      *     :param name: The name of the service.
-     *     :type name: NonEmptyStr
      *     :param type: The type of the service (e.g., MYSQL, POSTGRESQL).
-     *     :type type: ServiceTypeEnum
      *     :param port: The port number on which the service is running.
-     *     :type port: int | None
      *     :param environment: The environment in which the service is running, if set.
-     *     :type environment: str | None
      *     :param cluster: The cluster in which the service is running, if set.
-     *     :type cluster: str | None
      *     :param replication_set: The replication set in which the service is running, if set.
-     *     :type replication_set: str | None
      *     :param custom_labels: Custom labels associated with the service, if set.
      *     :param node_id: The unique identifier of the node on which the service is running.
-     *     :type node_id: int
      *     :param schemas: A list of schemas associated with the service.
-     *     :type schemas: list[Schema]
      *     :param node: The node to which the service is associated.
-     *     :type node: Node
+     *     :param retired_at: When the service stopped being reported upstream, or None
+     *         while it is active.
      */
     app__inventory__models__ServiceResponse: {
       /** Cluster */
@@ -5553,7 +5514,7 @@ export interface components {
       /** Environment */
       environment?: string | null;
       /** External Id */
-      external_id?: string | null;
+      external_id: string;
       /** Id */
       id: number | null;
       /** Name */
@@ -5565,6 +5526,8 @@ export interface components {
       port?: number | null;
       /** Replication Set */
       replication_set?: string | null;
+      /** Retired At */
+      retired_at?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
       type: components['schemas']['ServiceTypeEnum'];
@@ -6748,7 +6711,9 @@ export interface components {
       /** Pgbackrest Datadir */
       pgbackrest_datadir?: string | null;
       /** Pgbackrest Incremental Cycle */
-      pgbackrest_incremental_cycle?: string | number | null;
+      pgbackrest_incremental_cycle?:
+        | ('daily' | 'weekly' | '1' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
       /** Pgbackrest Retention Archive */
       pgbackrest_retention_archive?: number | null;
       /** Pgbackrest Retention Full */
@@ -9103,11 +9068,16 @@ export interface components {
      *
      *     :param is_running: ``True`` when an inventory-wide sync is currently
      *         in progress; ``False`` otherwise.
-     *     :type is_running: bool
+     *     :param last_runs: The most recently recorded synchronization runs, newest first.
      */
     inventory__InventorySyncStatusResponse: {
       /** Is Running */
       is_running: boolean;
+      /**
+       * Last Runs
+       * @default []
+       */
+      last_runs: components['schemas']['inventory__SyncRunSummary'][];
     };
     /**
      * InventorySyncTriggerWrite
@@ -9130,15 +9100,38 @@ export interface components {
      * @description Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
      *
      *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
-     *     :type name: str
      *     :param display_name: Human-readable label for the schedule UI.
-     *     :type display_name: str
      */
     inventory__PluginTaskResponse: {
       /** Display Name */
       display_name: string;
       /** Name */
       name: string;
+    };
+    /**
+     * SyncRunSummary
+     * @description Summarize one recorded synchronization run for the sync-status endpoint.
+     *
+     *     :param syncer: The fully qualified name of the synchronizer that ran.
+     *     :param started_at: When the run was recorded.
+     *     :param finished_at: When the run last changed, or ``None`` while it is open.
+     *     :param status: The run-level outcome.
+     *     :param snapshot_complete: Whether the run observed a complete generation of the
+     *         remote inventory, or ``None`` when the syncer does not produce one.
+     */
+    inventory__SyncRunSummary: {
+      /** Finished At */
+      finished_at: string | null;
+      /** Snapshot Complete */
+      snapshot_complete: boolean | null;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['SyncStatusEnum'];
+      /** Syncer */
+      syncer: string;
     };
     /**
      * BackupCreate
@@ -9747,7 +9740,7 @@ export interface components {
       | 'account-tree';
     /**
      * HostResponse
-     * @description One host, with the services OM knows are on it.
+     * @description Report one host, with the services OM knows are on it.
      *
      *     A host is a row whether or not any MongoDB was found on it: that is what makes
      *     "which hosts have no database" a query rather than an absence, and it is the only
@@ -9801,6 +9794,28 @@ export interface components {
       /** Services */
       services?: components['schemas']['om_inventory__ServiceResponse'][];
     };
+    /** PaginatedResponse[HostResponse] */
+    om_inventory__PaginatedResponse_HostResponse_: {
+      /** Items */
+      items: components['schemas']['om_inventory__HostResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[ServiceResponse] */
+    om_inventory__PaginatedResponse_ServiceResponse_: {
+      /** Items */
+      items: components['schemas']['om_inventory__ServiceResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /**
      * ProbeCounts
      * @description Count what one sweep reached.
@@ -9844,10 +9859,10 @@ export interface components {
     };
     /**
      * ProbeNode
-     * @description One **host** this sweep attempted, and what came of it.
+     * @description Report one **host** this sweep attempted, and what came of it.
      *
-     *     Host-oriented, because a sweep attempts hosts. A flat list of services -- which
-     *     this was -- cannot show a machine carrying a PMM client and no database, however
+     *     Host-oriented, because a sweep attempts hosts. A flat list of services — which
+     *     this was — cannot show a machine carrying a PMM client and no database, however
      *     many times it is probed, and that machine is the case OM most exists to describe.
      *
      *     One dispatch covers every service on a host, so the host owns the timing and the
@@ -9858,7 +9873,7 @@ export interface components {
      *     :param node_id: **PMM's** node id, the key OM holds this host under.
      *     :param host_name: The node's registered name.
      *     :param executor_host: The client its probe ran on; ``None`` when none matched.
-     *     :param resolution: ``name`` / ``address`` / ``orphaned`` -- how that client was
+     *     :param resolution: ``name`` / ``address`` / ``orphaned`` — how that client was
      *         matched, or that it was not. Orphaned is why nothing ran, not an error.
      *     :param answered: Whether the *host* returned a record. A different question from
      *         whether its services did: a host with no database answers perfectly well and
@@ -9894,7 +9909,7 @@ export interface components {
     };
     /**
      * ProbeNodeService
-     * @description One service on a host, as this sweep saw it.
+     * @description Report one service on a host, as this sweep saw it.
      *
      *     :param service_id: **PMM's** service UUID, or ``None`` where inventory holds none.
      *     :param service_name: Its name, so a reader is not left joining UUIDs by hand.
@@ -9916,7 +9931,7 @@ export interface components {
     };
     /**
      * ProbeRunAccepted
-     * @description Acknowledge a queued sweep.
+     * @description Return the id of a queued sweep.
      *
      *     Returned with ``202``: a sweep dispatches Nomad jobs and takes tens of seconds, so
      *     it is never performed synchronously.
@@ -9944,7 +9959,7 @@ export interface components {
     };
     /**
      * ProbeRunDetail
-     * @description One sweep, with everything it recorded.
+     * @description Carry one sweep, with everything it recorded.
      *
      *     Kept apart from the list shape on purpose: a sweep's nodes run to a few hundred
      *     records, so returning them for every row of a 25-run history would make the list
@@ -9977,7 +9992,7 @@ export interface components {
     };
     /**
      * ProbeRunResponse
-     * @description One sweep's record.
+     * @description Carry one sweep's record.
      *
      *     :param run_id: The sweep's id.
      *     :param status: ``running`` / ``success`` / ``partial`` / ``failed``.
@@ -10012,7 +10027,7 @@ export interface components {
     };
     /**
      * ServiceResponse
-     * @description One MongoDB service PMM has registered, as OM currently holds it.
+     * @description Report one MongoDB service PMM has registered, as OM currently holds it.
      *
      *     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
      *     the path and the payload carry the id every consumer already has, with nothing to
@@ -10071,7 +10086,7 @@ export interface components {
      * @description Ask for a refresh of named hosts rather than the whole estate.
      *
      *     :param node_ids: PMM's node ids. Empty, or the whole body absent, means every
-     *         host OM holds -- which is what the scheduled sweep does.
+     *         host OM holds — which is what the scheduled sweep does.
      */
     om_inventory__TriggerRequest: {
       /** Node Ids */
@@ -13772,102 +13787,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_create_entity_api_apps_inventory__entity___post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -14492,6 +14412,8 @@ export interface operations {
         failing?: boolean | null;
         /** @description True for hosts a payload can run on, False for those with no executor. */
         executor?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -14505,7 +14427,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['om_inventory__HostResponse'][];
+          'application/json': components['schemas']['om_inventory__PaginatedResponse_HostResponse_'];
         };
       };
       /** @description Validation Error */
@@ -14705,6 +14627,8 @@ export interface operations {
         node_id?: string | null;
         /** @description Restrict to services that are, or are not, failing. */
         failing?: boolean | null;
+        offset?: number;
+        limit?: number;
       };
       header?: never;
       path?: never;
@@ -14718,7 +14642,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['om_inventory__ServiceResponse'][];
+          'application/json': components['schemas']['om_inventory__PaginatedResponse_ServiceResponse_'];
         };
       };
       /** @description Validation Error */
@@ -15649,7 +15573,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
       };
       cookie?: never;
     };
@@ -15684,7 +15608,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;
@@ -15716,7 +15640,7 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        setting_class: components['schemas']['SettingClassEnum'];
+        setting_class: string;
         key: string;
       };
       cookie?: never;
@@ -16230,9 +16154,7 @@ export interface operations {
   };
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -16263,9 +16185,7 @@ export interface operations {
   };
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -16298,9 +16218,7 @@ export interface operations {
   };
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -16331,9 +16249,7 @@ export interface operations {
   };
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -16364,9 +16280,7 @@ export interface operations {
   };
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
-      query?: {
-        owner?: string | null;
-      };
+      query?: never;
       header?: never;
       path: {
         task_history_id: number;
