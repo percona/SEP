@@ -51,7 +51,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TextIO
 
 from cryptography.fernet import Fernet
 from sqlalchemy import inspect, select
@@ -78,6 +78,21 @@ die on the ordinary cold start this feature exists to serve.
 """
 
 RETRY_INTERVAL_SECONDS = 3.0
+
+LOCK_POLL_INTERVAL_SECONDS = 0.2
+"""How often a start re-tries the state lock while a peer holds it."""
+
+LOCK_WAIT_PROBE_BUDGETS = 2.0
+"""How many probe budgets a start waits for a peer before it refuses.
+
+A peer holding the lock is running one freshness probe and four file
+operations, so its turn is bounded by :func:`probe_timeout` and little else.
+Deriving the wait from that same knob rather than a second one keeps a
+deployment that raised the probe bound from refusing on a peer merely using it.
+Waiting unboundedly instead would leave PID 1 blocked with nothing on stderr,
+which is the illegible failure this helper exists to replace: ``flock`` is
+released when a peer dies, but not when one is merely stopped.
+"""
 
 KEY_BYTES = 32
 """What Fernet's URL-safe base64 key decodes to: a 16-byte signing half and a
@@ -187,6 +202,14 @@ def probe_timeout() -> float:
         )
         return DEFAULT_PROBE_TIMEOUT_SECONDS
     return seconds
+
+
+def lock_timeout() -> float:
+    """Return how long a start waits for a peer to finish its turn.
+
+    :return: The bound in seconds.
+    """
+    return probe_timeout() * LOCK_WAIT_PROBE_BUDGETS
 
 
 def mounted_key() -> str | None:
@@ -329,7 +352,7 @@ def state_lock(directory: Path) -> Iterator[None]:
 
     :param directory: The state directory to lock within, created when absent.
     :raises EncryptionKeyError: If the directory or its lock file cannot be
-        opened for writing.
+        opened for writing, or a peer holds the lock past :func:`lock_timeout`.
     """
     try:
         directory.mkdir(parents=True, exist_ok=True)
@@ -342,10 +365,44 @@ def state_lock(directory: Path) -> Iterator[None]:
             f"volume there, or pass ENCRYPTION_KEY explicitly."
         ) from error
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        _acquire_lock(handle, directory)
         yield
     finally:
         handle.close()
+
+
+def _acquire_lock(handle: TextIO, directory: Path) -> None:
+    """Take the exclusive lock, waiting a peer's turn out under a bound.
+
+    Bounded because this runs as PID 1's pre-flight, where an indefinite wait
+    is indistinguishable from a hang: the container sits unhealthy with nothing
+    written, which is the shape the whole helper exists to replace.
+
+    :param handle: The opened lock file.
+    :param directory: The state directory, for the diagnostic.
+    :raises EncryptionKeyError: If a peer holds the lock past the bound.
+    """
+    deadline = time.monotonic() + lock_timeout()
+    while True:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            if time.monotonic() >= deadline:
+                raise EncryptionKeyError(
+                    f"Another start held the lock on "
+                    f"{directory / LOCK_FILENAME} for over {lock_timeout():g}s. "
+                    f"Refusing to probe and mint beside it, since two starts "
+                    f"minting together leave each unable to read the rows the "
+                    f"other wrote. Check whether a second side-car runs against "
+                    f"this state directory, or raise "
+                    f"SEP_ENCRYPTION_PROBE_TIMEOUT, which this bound follows. "
+                    f"Nothing was minted or written."
+                ) from error
+        else:
+            return
+        time.sleep(
+            min(LOCK_POLL_INTERVAL_SECONDS, max(deadline - time.monotonic(), 0.0))
+        )
 
 
 def contains_ciphertext(value: Any) -> bool:

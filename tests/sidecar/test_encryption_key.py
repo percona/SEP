@@ -58,7 +58,7 @@ SHORT_PROBE_TIMEOUT = "1.5"
 """Short enough that an unreachable database is refused inside a test's patience."""
 
 BLOCKED_RUN_SECONDS = 6.0
-"""Long enough to clear interpreter start, so a timeout means the lock held."""
+"""A subprocess bound comfortably past the lock wait, so a timeout means a hang."""
 
 RETRIED_PROBE_TIMEOUT = 2.0
 """A bound long enough that reaching it can only mean the probe retried.
@@ -525,7 +525,7 @@ def test_two_concurrent_starts_converge_on_one_key(fresh_deployment: Path):
     )
 
 
-def test_a_peer_holding_the_state_lock_blocks_the_mint(fresh_deployment: Path):
+def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Path):
     """Wait for a peer's turn rather than probing and minting beside it.
 
     The convergence test above cannot see this by itself: because
@@ -533,15 +533,24 @@ def test_a_peer_holding_the_state_lock_blocks_the_mint(fresh_deployment: Path):
     interleaving of write-write-read-read still converges, so deleting the lock
     leaves that test roughly a coin flip. Holding the lock from outside is what
     makes the dependence on it observable at all.
+
+    The wait is bounded, so a peer that never releases is refused with a
+    diagnostic naming the lock rather than leaving PID 1 blocked on it.
     """
     lock_path = fresh_deployment / "state" / helper.LOCK_FILENAME
     lock_path.parent.mkdir(parents=True, exist_ok=True)
+    bound = float(SHORT_PROBE_TIMEOUT) * helper.LOCK_WAIT_PROBE_BUDGETS
 
     with lock_path.open("w", encoding="utf-8") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        with pytest.raises(subprocess.TimeoutExpired):
-            run_helper(fresh_deployment, timeout=BLOCKED_RUN_SECONDS)
+        started = time.monotonic()
+        result = run_helper(fresh_deployment, timeout=BLOCKED_RUN_SECONDS)
+        elapsed = time.monotonic() - started
 
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert elapsed >= bound
+    assert str(lock_path) in result.stderr
     assert not persisted_key_path(fresh_deployment).exists()
 
 

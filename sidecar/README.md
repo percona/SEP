@@ -308,12 +308,16 @@ start routinely runs while pmm-server's postgres is still coming up — the same
 condition the supervised migration steps wait out. `SEP_ENCRYPTION_PROBE_TIMEOUT`
 bounds that wait across all three databases together (60s by default); only
 exhausting it refuses, and the message then points at the database rather than
-at a key restore.
+at a key restore. It also bounds how long a start waits for a peer side-car
+holding the state lock — twice the probe budget — so two containers sharing one
+state volume serialise rather than mint beside each other, and neither waits on
+the other forever.
 
 Note that a minted key is exported into every supervised program's environment,
 where a key mounted under `SECRETS_DIR` deliberately is not. Mount the key
-instead of letting it be minted if that difference matters to you; the minted
-key is also on disk at `0600` in the state directory either way.
+instead of letting it be minted if that difference matters to you. A mounted key
+stays where you mounted it under the mode you gave it; only a minted key is
+written to the state directory, at `0600`.
 
 A refusal that found unreadable data names the state path to restore. **Losing
 the key is unrecoverable:**
