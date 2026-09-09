@@ -44,7 +44,7 @@ x-sep-mysql-address: &sep_mysql_address 172.28.9.40
 services:
   pmm-server:
     # Default repeated on sep-mysql's PMM_FB_TAG build arg — a repin edits both
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-2c43912}
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-PR-4500-6a928f4}
     platform: linux/amd64
     # The image ships start_period 25s with 3 retries at 4s, so it is marked
     # unhealthy around 37s while a cold start needs appreciably longer to first
@@ -125,7 +125,7 @@ services:
         # A repin edits PMM_FB_TAG here and on pmm-server, and NOMAD_VERSION
         # with whatever `tools/nomad version` that build ships; the build
         # refuses a client stage whose Nomad disagrees.
-        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-2c43912}
+        PMM_FB_TAG: ${PMM_FB_TAG:-PR-4500-6a928f4}
         NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
         # Empty selects the amd64 feature-build client at PMM_FB_TAG
         PMM_CLIENT_IMAGE: ${SEP_MYSQL_PMM_CLIENT_IMAGE:-}
