@@ -341,10 +341,16 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     # name here would make the table uncreatable in the unit suite, and the
     # real-PostgreSQL lane routes every table into a per-xdist-worker schema that a
     # hard-coded ``om`` would escape and then collide across workers.
-    __table_args__ = {"schema": "om_schema"}
+    __table_args__ = (
+        # Named for the same reason OmService names its index: ``index=True``
+        # derives the name from the declared table, schema token included.
+        Index("ix_om_inventory_run_started_at", "started_at"),
+        Index("ix_om_inventory_run_status", "status"),
+        {"schema": OM_SCHEMA},
+    )
 
     started_at: UTCDatetime = SQLField(
-        sa_type=DateTimeWithTimezone, default_factory=utc_now, index=True
+        sa_type=DateTimeWithTimezone, default_factory=utc_now
     )
     finished_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
@@ -354,7 +360,6 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         sa_column=Column(
             EnumField(ProbeRunStatus, native_enum=False, create_constraint=True),
             nullable=False,
-            index=True,
         ),
     )
 
