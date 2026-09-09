@@ -1692,12 +1692,9 @@ class AppSchema(SchemaBaseModel):
         surfaces as sibling tabs (for example a restore app nested under a
         backups parent). Defaults to ``None``.
     :param task_statuses: The task-status vocabulary a client polls against,
-        declaring per status value whether it ends a run. Server-authored:
-        :meth:`_populate_task_statuses` derives it from
-        :class:`~app.tasks.models.TaskHistoryStatusEnum` and overwrites whatever
-        a caller supplied, though a supplied value still has to parse as this
-        type first. Withheld (``None``) for a plugin declaring ``entities``,
-        whose records are not task runs.
+        declaring per status value whether it ends a run. Server-authored, so a
+        supplied value is replaced rather than honoured. Withheld (``None``) for
+        a plugin declaring ``entities``, whose records are not task runs.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -1733,11 +1730,21 @@ class AppSchema(SchemaBaseModel):
     def _populate_task_statuses(self) -> Self:
         """Publish the status vocabulary, or withhold it for entity plugins.
 
+        The list is derived from :class:`~app.tasks.models.TaskHistoryStatusEnum`
+        and overwrites whatever a caller supplied, though a supplied value still
+        has to parse as ``list[TaskStatusDescriptor]`` first, since the field is
+        declared rather than computed.
+
         Deriving it here rather than at the construction sites covers every path
         that *validates* an ``AppSchema`` — ``__init__`` and ``model_validate``
         — including the ``schema=`` passthrough that never reaches
         ``derive_app_schema``. ``model_construct`` and ``model_copy`` bypass
         validation and so bypass this.
+
+        A ``computed_field`` is the more idiomatic derivation and is ruled out
+        here: :class:`SchemaBaseModel` sets ``extra="forbid"``, and a computed
+        field serialises into the dump without being an accepted input, so every
+        ``AppSchema`` round-trip back through ``model_validate`` would fail.
 
         :return: The validated plugin schema instance.
         """

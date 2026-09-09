@@ -6996,12 +6996,9 @@ export interface components {
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
      *     :param task_statuses: The task-status vocabulary a client polls against,
-     *         declaring per status value whether it ends a run. Server-authored:
-     *         :meth:`_populate_task_statuses` derives it from
-     *         :class:`~app.tasks.models.TaskHistoryStatusEnum` and overwrites whatever
-     *         a caller supplied, though a supplied value still has to parse as this
-     *         type first. Withheld (``None``) for a plugin declaring ``entities``,
-     *         whose records are not task runs.
+     *         declaring per status value whether it ends a run. Server-authored, so a
+     *         supplied value is replaced rather than honoured. Withheld (``None``) for
+     *         a plugin declaring ``entities``, whose records are not task runs.
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
