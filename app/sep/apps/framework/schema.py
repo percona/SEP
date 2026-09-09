@@ -55,6 +55,7 @@ __all__ = [
     "ServiceField",
     "StringField",
     "TableField",
+    "TaskStatusDescriptor",
     "TextAreaField",
     "YamlField",
     "declared_field_names_from_forms",
@@ -88,6 +89,7 @@ from app.sep.apps.framework.rules import (
     FieldGate,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
+from app.tasks.models import TaskHistoryStatusEnum
 
 # Dots are permitted so nested one-of branch fields can use paths such as
 # ``source.source_db_id`` (see :class:`OneOfGroup`).
@@ -1607,6 +1609,30 @@ class AppEntitySchema(SchemaBaseModel):
         return self
 
 
+class TaskStatusDescriptor(SchemaBaseModel):
+    """Declare one task-status value and whether it ends a run.
+
+    :param value: The status as it appears on a task-history payload.
+    :param terminal: Whether a run in this status will not transition again, so
+        a client polling for completion can stop re-reading on it.
+    """
+
+    value: TaskHistoryStatusEnum
+    terminal: bool
+
+
+def _task_status_descriptors() -> list[TaskStatusDescriptor]:
+    """Return the task-status vocabulary in enum declaration order.
+
+    :return: One descriptor per :class:`TaskHistoryStatusEnum` member, each
+        classified by :meth:`TaskHistoryStatusEnum.is_terminal`.
+    """
+    return [
+        TaskStatusDescriptor(value=status, terminal=status.is_terminal())
+        for status in TaskHistoryStatusEnum
+    ]
+
+
 class AppSchema(SchemaBaseModel):
     """Represent a plugin's complete schema: form sections, list view, capabilities.
 
@@ -1665,6 +1691,10 @@ class AppSchema(SchemaBaseModel):
     :param related_apps: Optional separately registered apps the React shell
         surfaces as sibling tabs (for example a restore app nested under a
         backups parent). Defaults to ``None``.
+    :param task_statuses: The task-status vocabulary a client polls against,
+        declaring per status value whether it ends a run. Server-authored, so a
+        supplied value is replaced rather than honoured. Withheld (``None``) for
+        a plugin declaring ``entities``, whose records are not task runs.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -1683,6 +1713,7 @@ class AppSchema(SchemaBaseModel):
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
     related_apps: list[RelatedApp] | None = None
+    task_statuses: list[TaskStatusDescriptor] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1694,6 +1725,31 @@ class AppSchema(SchemaBaseModel):
             were supplied or nothing could be filled.
         """
         return _fill_item_display_names(data)
+
+    @model_validator(mode="after")
+    def _populate_task_statuses(self) -> Self:
+        """Publish the status vocabulary, or withhold it for entity plugins.
+
+        The list is derived from :class:`~app.tasks.models.TaskHistoryStatusEnum`
+        and overwrites whatever a caller supplied, though a supplied value still
+        has to parse as ``list[TaskStatusDescriptor]`` first, since the field is
+        declared rather than computed.
+
+        Deriving it here rather than at the construction sites covers every path
+        that *validates* an ``AppSchema`` — ``__init__`` and ``model_validate``
+        — including the ``schema=`` passthrough that never reaches
+        ``derive_app_schema``. ``model_construct`` and ``model_copy`` bypass
+        validation and so bypass this.
+
+        A ``computed_field`` is the more idiomatic derivation and is ruled out
+        here: :class:`SchemaBaseModel` sets ``extra="forbid"``, and a computed
+        field serialises into the dump without being an accepted input, so every
+        ``AppSchema`` round-trip back through ``model_validate`` would fail.
+
+        :return: The validated plugin schema instance.
+        """
+        self.task_statuses = None if self.entities else _task_status_descriptors()
+        return self
 
     @model_validator(mode="after")
     def _validate_detail_view_required_for_task_type(self) -> Self:

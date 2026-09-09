@@ -128,6 +128,22 @@ class TestSchemaEndpoint:
             "pii_anonymization": False,
         }
 
+    def test_schema_publishes_the_task_status_vocabulary(self, test_client):
+        """Declare every status value and whether it ends a run."""
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
+        assert body["task_statuses"] == [
+            {"value": status_value.value, "terminal": status_value.is_terminal()}
+            for status_value in TaskHistoryStatusEnum
+        ]
+
+    def test_schema_marks_lost_as_terminal(self, test_client):
+        """Mark a lost run terminal, so a client polling for completion stops on it."""
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
+        assert {
+            "value": TaskHistoryStatusEnum.LOST.value,
+            "terminal": True,
+        } in body["task_statuses"]
+
     def test_schema_includes_backup_type_field(self, test_client):
         """The mode-discriminator field is present."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()

@@ -63,9 +63,11 @@ from app.sep.apps.framework.schema import (
     ServiceField,
     StringField,
     TableField,
+    TaskStatusDescriptor,
     TextAreaField,
     YamlField,
 )
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 def _minimal_detail_view() -> DetailView:
@@ -2969,6 +2971,112 @@ class TestAppSchemaRecordDisplayNames:
         assert schema.item_display_name == "Inventory"
         assert schema.entities is not None
         assert schema.entities[0].item_display_name == "node"
+
+
+class TestAppSchemaTaskStatuses:
+    """Cover the derived ``task_statuses`` vocabulary published on ``AppSchema``."""
+
+    @staticmethod
+    def _task_style_schema() -> AppSchema:
+        """Return a task-style schema, the shape that publishes the vocabulary."""
+        return AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+        )
+
+    def test_every_enum_member_is_published(self) -> None:
+        """Publish exactly one entry per ``TaskHistoryStatusEnum`` member."""
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert [entry.value for entry in schema.task_statuses] == list(
+            TaskHistoryStatusEnum
+        )
+
+    def test_each_status_carries_its_declared_terminality(self) -> None:
+        """Pin every member's terminality independently of ``is_terminal()``.
+
+        Deriving the expectation from the same method the implementation calls
+        would pass straight through a flip of that method, and ``lost`` is the
+        member such a flip is most likely to reach: it is terminal here but
+        excluded by the similarly-named ``is_finished()``.
+        """
+        schema = self._task_style_schema()
+
+        assert schema.task_statuses is not None
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            TaskHistoryStatusEnum.PENDING: False,
+            TaskHistoryStatusEnum.RUNNING: False,
+            TaskHistoryStatusEnum.SUCCESS: True,
+            TaskHistoryStatusEnum.FAILED: True,
+            TaskHistoryStatusEnum.STOPPED: True,
+            TaskHistoryStatusEnum.LOST: True,
+            TaskHistoryStatusEnum.STALE: True,
+            TaskHistoryStatusEnum.UNLAUNCHABLE: True,
+        }
+
+    def test_entity_plugins_withhold_the_vocabulary(self) -> None:
+        """Leave ``task_statuses`` unset for a plugin declaring entities."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        assert schema.task_statuses is None
+
+    def test_withheld_vocabulary_is_absent_from_the_dump(self) -> None:
+        """Drop the key entirely for an entity plugin, matching the wire posture."""
+        schema = AppSchema(
+            name="multi",
+            display_name="Inventory",
+            entities=[_minimal_entity_schema()],
+        )
+
+        dumped = schema.model_dump(exclude_none=True)
+
+        assert dumped["entities"]
+        assert "task_statuses" not in dumped
+
+    def test_schema_round_trips_through_json(self) -> None:
+        """Re-validate a dumped task-style schema back into an equal instance."""
+        schema = self._task_style_schema()
+
+        assert AppSchema.model_validate(schema.model_dump(mode="json")) == schema
+
+    def test_a_supplied_vocabulary_is_overwritten(self) -> None:
+        """Re-derive the vocabulary over a well-formed value a caller supplied."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="MySQL Backups",
+            list_view=_minimal_list_view(),
+            task_statuses=[
+                TaskStatusDescriptor(value=TaskHistoryStatusEnum.PENDING, terminal=True)
+            ],
+        )
+
+        assert schema.task_statuses is not None
+        assert len(schema.task_statuses) == len(TaskHistoryStatusEnum)
+        assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
+            status: status.is_terminal() for status in TaskHistoryStatusEnum
+        }
+
+    def test_a_supplied_malformed_vocabulary_is_rejected(self) -> None:
+        """Raise on a malformed supplied value rather than silently re-deriving it.
+
+        The field is declared, so an incoming value is validated before the
+        after-validator can overwrite it.
+        """
+        with pytest.raises(ValidationError):
+            AppSchema.model_validate(
+                {
+                    "name": "minimal",
+                    "display_name": "MySQL Backups",
+                    "list_view": _minimal_list_view().model_dump(mode="json"),
+                    "task_statuses": [{"bogus": 1}],
+                }
+            )
 
 
 TS_MIRROR = (

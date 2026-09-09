@@ -34,6 +34,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
+from tests.app.sep.apps.framework.kit import EXECUTE_CREATED_AT, EXECUTE_STATUS
 
 API_BASE = "/api/apps/backup_mongo/restore"
 EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
@@ -1000,11 +1001,18 @@ class TestRestoreMongoApiUpdate:
 def build_restore_execute_response(
     task_id: int | None = 99, task_name: str = "mongo-restore-task"
 ) -> dict:
-    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests."""
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests.
+
+    ``status`` and ``created_at`` are pinned to values ``TaskHistoryResponse``
+    would not itself supply (``PENDING`` and ``utc_now()``), so asserting them
+    distinguishes a field forwarded from the upstream row from a defaulted one.
+    """
     return {
         "id": task_id,
         "execution_request": {"task": task_name, "target": "mongo-restore-host"},
         "task": {**build_restore_task(task_name), "deleted_at": None},
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -1032,6 +1040,30 @@ class TestRestoreMongoApiExecute:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/execute/mongo-restore-task", json={}
         )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_the_dispatched_run_state(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return the dispatched run's status and creation time for a restore.
+
+        This app derives an execute route but binds no contract mixin, so the
+        run-state assertions ``DerivedRouterContractTests`` makes for the other
+        derived execute routes have to be made here.
+        """
+        task = build_restore_task("mongo-restore-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value=build_restore_execute_response()
+        )
+
+        response = test_client.post(f"{API_BASE}/mongo-restore-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert set(data) == {"task_name", "task_id", "status", "created_at"}
+        assert data["status"] == EXECUTE_STATUS.value
+        assert data["created_at"] == EXECUTE_CREATED_AT
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_404_for_unknown_task(

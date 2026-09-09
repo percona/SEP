@@ -6995,6 +6995,10 @@ export interface components {
      *     :param related_apps: Optional separately registered apps the React shell
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
+     *     :param task_statuses: The task-status vocabulary a client polls against,
+     *         declaring per status value whether it ends a run. Server-authored, so a
+     *         supplied value is replaced rather than honoured. Withheld (``None``) for
+     *         a plugin declaring ``entities``, whose records are not task runs.
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -7024,6 +7028,8 @@ export interface components {
       predecessors?: components['schemas']['framework__ChainedPredecessor'][] | null;
       /** Related Apps */
       related_apps?: components['schemas']['framework__RelatedApp'][] | null;
+      /** Task Statuses */
+      task_statuses?: components['schemas']['framework__TaskStatusDescriptor'][] | null;
       /** Task Type */
       task_type?: string | null;
     };
@@ -8819,14 +8825,41 @@ export interface components {
      * TaskExecutionResponse
      * @description Represent the default response from a task execute route.
      *
+     *     ``started_at`` is deliberately not carried: the worker sets it, so it is
+     *     still ``None`` on the row this response is built from.
+     *
      *     :param task_name: The name of the task that was executed.
      *     :param task_id: The id of the task-history row created by the tasks API.
+     *         Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it
+     *         so, not because a dispatched run is expected to lack one.
+     *     :param status: The status of the task-history row the tasks API created,
+     *         as it stood at dispatch.
+     *     :param created_at: When the tasks API created that row.
      */
     framework__TaskExecutionResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      status: components['schemas']['TaskHistoryStatusEnum'];
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
       task_name: string;
+    };
+    /**
+     * TaskStatusDescriptor
+     * @description Declare one task-status value and whether it ends a run.
+     *
+     *     :param value: The status as it appears on a task-history payload.
+     *     :param terminal: Whether a run in this status will not transition again, so
+     *         a client polling for completion can stop re-reading on it.
+     */
+    framework__TaskStatusDescriptor: {
+      /** Terminal */
+      terminal: boolean;
+      value: components['schemas']['TaskHistoryStatusEnum'];
     };
     /**
      * TextAreaField
