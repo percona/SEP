@@ -18,8 +18,9 @@ side-car, on one machine, with Docker Compose. It is a preview, not an install:
 the PMM image is rebuilt without notice, nothing here upgrades in place, and
 both services listen on loopback only.
 
-You need Docker (or Podman) with Compose and an x86-64 host, or x86-64
-emulation. Then:
+You need Docker (or Podman) with Compose. On an arm64 host `pmm-server` and the
+side-car run under x86-64 emulation, while the MySQL target below is built
+natively instead ([Caveats](#caveats)). Then:
 
 ```bash
 git clone -b pmm https://github.com/percona/SEP.git
