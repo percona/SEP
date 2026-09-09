@@ -73,7 +73,7 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:b97ee985fc64f841f611b3a057737814da308a61
+    image: docker.io/percona/percona-sep:be2859f3a7487aa9389ca63cdb118a4dbd243d43
     platform: linux/amd64
     # service_healthy, not service_started: SEP builds its settings once, at
     # process start, so a side-car released before pmm-server has written the
@@ -85,16 +85,26 @@ services:
     # The image runs as uid/gid 1001 and PMM writes the files 0640 group 0 under
     # a setgid directory, so group 0 membership is what makes them readable
     group_add: ["0"]
+    # List form, not a mapping, so the last entry can be passed by bare name
     environment:
-      SECRETS_DIR: /run/secrets/sep
+      - SECRETS_DIR=/run/secrets/sep
       # The baked profile's endpoint is deliberately credential-free; the
       # harness is where PMM's admin:admin belongs
-      SEP_NOMAD_ENDPOINT: https://admin:admin@pmm-server:8443/nomad
+      - SEP_NOMAD_ENDPOINT=https://admin:admin@pmm-server:8443/nomad
       # The harness's only Nomad executor runs inside pmm-server and shares its
       # network namespace, so it resolves this compose service name; a real
       # deployment's PMM Client nodes could not. The /sep prefix is load-bearing:
       # download URLs are joined onto this path rather than replacing it.
-      BASE_URL: http://sep-sidecar:9000/sep
+      - BASE_URL=http://sep-sidecar:9000/sep
+      # A harness-local stopgap, not the embedded design. SEP refuses to start
+      # without an encryption key, and PMM publishes only the four files the
+      # side-car reads out of SECRETS_DIR, so nothing provisions this one and
+      # the migration one-shots exit before any app is reachable. Passed by
+      # bare name deliberately: bootstrap.sh writes the value into the
+      # gitignored .env, and an absent slot leaves the variable unset rather
+      # than empty, so a PMM build that starts publishing the key as a file
+      # under SECRETS_DIR outranks this with no edit here.
+      - ENCRYPTION_KEY
     ports:
       - "127.0.0.1:9000:9000" # sep API (direct host access for probing)
       - "127.0.0.1:9001:9001" # inventory API

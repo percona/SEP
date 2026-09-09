@@ -140,21 +140,27 @@ The pmm-server pin is subject to its own constraint — see
 git clone -b pmm git@github.com:percona/SEP.git  # already cloned: git checkout pmm && git pull
 cd SEP/sidecar/pmm-fb
 
+./bootstrap.sh                                # generate .env
 docker compose up -d                          # pmm-server + sep-sidecar
 ```
 
-That is the whole prerequisite list. PMM publishes the four secrets SEP reads
-from disk and the side-car mints its own Grafana token, so nothing has to be
-chosen or seeded in advance. `pmm-server` and the side-car are x86-64 only, so an
-arm64 engine runs those two under emulation; the `sep-mysql` executor is built
-natively there instead — see [Caveats](#caveats).
+PMM publishes the four secrets SEP reads from disk and the side-car mints its
+own Grafana token, so nothing has to be *chosen* in advance. `pmm-server` and
+the side-car are x86-64 only, so an arm64 engine runs those two under emulation;
+the `sep-mysql` executor is built natively there instead — see
+[Caveats](#caveats).
 
-`./bootstrap.sh` is needed **only** for the `mysql` profile: it generates that
-profile's three test-fixture passwords and, on an arm64 engine, the two executor
-slots described under [Caveats](#caveats):
+`./bootstrap.sh` runs before **every** bring-up. It used to be the `mysql`
+profile's alone, when that profile's three test-fixture passwords and the two
+arm64 executor slots were all the generated `.env` held. It now also seeds
+`ENCRYPTION_KEY`, which SEP requires at startup and which nothing in the
+embedded topology provisions — the fifth secret PMM does not publish, described
+under [Caveats](#caveats). Skip the script and `sep-sidecar`'s migration
+one-shots exit before any app is reachable.
+
+Adding the `mysql` profile builds the task-execution target too:
 
 ```bash
-./bootstrap.sh                                # generate .env
 docker compose --profile mysql up -d --build  # or: podman compose ...
 ```
 
@@ -218,13 +224,16 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 ## How the pieces connect
 
 - `bootstrap.sh` generates the gitignored `.env`, which holds the three
-  `sep-mysql` passwords and, on an arm64 engine, the two executor slots
-  described under Caveats — test-fixture credentials for the `mysql` profile, not
-  anything the pair needs, so a bring-up without that profile can skip it
-  entirely. `sep-mysql`'s entrypoint refuses to start without them; `compose.yaml`
-  deliberately does not, because Compose interpolates every service at parse time
-  regardless of the active profile, and a guard there would make the script a
-  prerequisite of every bring-up. PMM generates the secrets it publishes itself,
+  `sep-mysql` passwords, the side-car's `ENCRYPTION_KEY`, and, on an arm64
+  engine, the two executor slots described under Caveats. The passwords are
+  test-fixture credentials for the `mysql` profile, but `ENCRYPTION_KEY` is read
+  by `sep-sidecar` itself, so a bring-up without that profile can no longer skip
+  the script. `sep-mysql`'s entrypoint refuses to start without the passwords;
+  `compose.yaml` deliberately does not guard them, because Compose interpolates
+  every service at parse time regardless of the active profile, and a guard
+  there would fail a bring-up over credentials it does not use. `ENCRYPTION_KEY`
+  needs no guard either: it is passed through by bare name, and SEP's own
+  startup validation names it in a single actionable line when it is missing. PMM generates the secrets it publishes itself,
   including the PostgreSQL role's password. Nothing secret is committed;
   re-running keeps an existing `.env`, appends any password slot it predates,
   and repoints the two executor slots it owns at the current engine — adding
@@ -369,6 +378,22 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   single actionable `SECRET_KEY is required` rather than coming up
   half-configured. A side-car already running is unaffected until it restarts,
   because its settings are in memory.
+- **`ENCRYPTION_KEY` comes from this harness, not from PMM, and that is a
+  stopgap.** SEP made the key a startup requirement with no default and no
+  derivation from `SECRET_KEY`; the enumerated set pmm-server publishes into
+  `SECRETS_DIR` is still the four files above, so in the embedded topology
+  nothing mints it. `bootstrap.sh` seeds it into the gitignored `.env` and
+  `compose.yaml` passes it through **by bare name**, so an absent slot leaves
+  the variable unset rather than empty — the day a PMM build publishes an
+  `ENCRYPTION_KEY` file under `SECRETS_DIR`, that file outranks this channel
+  with no edit here. Two properties make it unlike the other secrets: it must
+  be identical across the side-car's processes and stable across restarts,
+  because rotating or losing it makes every already-encrypted row permanently
+  unreadable and there is no rotation tooling; and `openssl rand -hex 32`, the
+  generator `SECRET_KEY` uses, produces a value Fernet **rejects** — it wants 32
+  url-safe base64-encoded bytes. Supplying it is not optional: without it the
+  side-car's migration one-shots fail settings validation and exit, so the
+  container never serves anything rather than coming up degraded.
 - Both ports 8443 and 9000-9002 bind to loopback only. `sep-mysql` publishes
   nothing; it is reachable only on the compose network.
 - Under **rootless podman**, `group_add: ["0"]` maps through the user namespace
