@@ -55,6 +55,18 @@ async def _mock_failing_file_stream():
     raise RuntimeError("upstream stream broke")
 
 
+async def _mock_rejected_file_stream(status_code: int):
+    """Raise HTTPException immediately, simulating upstream rejection before any bytes."""
+    raise HTTPException(status_code=status_code)
+    yield  # pragma: no cover — makes this an async generator
+
+
+async def _mock_empty_file_stream():
+    """Yield nothing, simulating a genuinely empty upstream file."""
+    return
+    yield  # pragma: no cover — makes this an async generator
+
+
 @pytest.fixture
 def mock_tasks_api_dep(task_history_response):
     """Override the TaskAPI dependency with an AsyncMock."""
@@ -258,6 +270,59 @@ class TestDownloadTaskHistoryFile:
         )
         assert response.content == b"partial-"
 
+    @pytest.mark.parametrize(
+        "upstream_status",
+        [
+            HTTP_400_BAD_REQUEST,
+            HTTP_500_INTERNAL_SERVER_ERROR,
+        ],
+    )
+    def test_upstream_rejection_before_any_chunk_returns_real_status(
+        self, test_client, mock_tasks_client_dep, task_history_response, upstream_status
+    ):
+        """Assert upstream rejection before any bytes returns the real status, not 200.
+
+        When the upstream rejects the request (401/403/410/500) before yielding any
+        bytes, the caller must receive that status — not a misleading 200 with an
+        empty body. This is the fix for SEP-1878.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            upstream_status
+        )
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == upstream_status
+
+    def test_empty_upstream_file_returns_200_with_empty_body(
+        self, test_client, mock_tasks_client_dep, task_history_response
+    ):
+        """Assert a genuinely empty upstream file returns 200 with an empty body.
+
+        When the upstream fetch succeeds but the file is 0 bytes (the generator
+        raises StopAsyncIteration on the first pull, no HTTPException), the caller
+        must still receive 200 — this is not an error.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "empty.txt": {"size": 0, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_empty_file_stream()
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=empty.txt"
+        )
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="empty.txt"'
+        )
+        assert response.content == b""
+
     def test_no_path_streams_without_headers(
         self, test_client, mock_tasks_client_dep, task_history_response
     ):
@@ -354,7 +419,12 @@ class TestDownloadThroughTheRealClientDependency:
     async def test_download_survives_a_rebind_mid_transfer(
         self, app_state_tasks_client, task_history_response
     ):
-        """Deliver a full download whose client was retired while the body was in flight."""
+        """Deliver a full download whose client was retired while the body was in flight.
+
+        With error-priming (SEP-1878), the HTTP status is sent after the first
+        chunk arrives, so we release the upstream before checking the status,
+        then retire the client while draining.
+        """
         release = asyncio.Event()
 
         async def held_body(_url, **_kwargs):
@@ -365,15 +435,18 @@ class TestDownloadThroughTheRealClientDependency:
         with aioresponses() as upstream:
             upstream.get(url, callback=held_body)
 
+            # Release upstream so the first chunk (and thus 200) can be sent
+            release.set()
+
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
             ) as response:
                 assert response.status_code == HTTP_200_OK
 
+                # Retire the client while the body is being drained
                 await app_state_tasks_client.close_when_idle()
                 assert app_state_tasks_client._session is not None
 
-                release.set()
                 body = await response.drain()
 
         assert response.status_code == HTTP_200_OK
@@ -394,16 +467,14 @@ class TestDownloadThroughTheRealClientDependency:
         This is what pins the shield around the deferred close: replacing it with
         a bare await leaves the session open here, while the unit-level
         cancellation test passes either way.
+
+        With error-priming (SEP-1878), the HTTP status is sent after the first
+        chunk arrives. The test verifies cleanup happens when exiting the context
+        after the status is received but before explicitly draining the body.
         """
-        never_released = asyncio.Event()
-
-        async def held_body(_url, **_kwargs):
-            await never_released.wait()
-            return CallbackResult(status=HTTP_200_OK, body=b"payload")
-
         url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
         with aioresponses() as upstream:
-            upstream.get(url, callback=held_body)
+            upstream.get(url, status=HTTP_200_OK, body=b"payload")
 
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
@@ -412,5 +483,7 @@ class TestDownloadThroughTheRealClientDependency:
 
                 await app_state_tasks_client.close_when_idle()
                 assert app_state_tasks_client._session is not None
+
+                # Exit without draining — simulates client disconnect
 
         assert app_state_tasks_client._session is None
