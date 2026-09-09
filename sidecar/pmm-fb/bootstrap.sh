@@ -7,8 +7,8 @@
 # On an arm64 engine it also decides how sep-mysql, the task executor, is
 # built: natively from the released multi-arch pmm-client by default, or as the
 # amd64 feature-build client under emulation when SEP_MYSQL_PLATFORM=linux/amd64
-# is set — in which case the emulator is probed for clone3 first, because Nomad
-# spawns every task with it and QEMU does not implement it.
+# is set — which is probed for clone3 first, because that emulation cannot run
+# tasks (README.md § Caveats).
 
 set -o nounset
 set -o pipefail
@@ -158,15 +158,18 @@ engine_arch() {
     esac
 }
 
+# The engine that answers, asked in engine_arch's order, so the probe runs
+# against the same engine whose architecture chose the platform. A CLI on PATH
+# is not enough: its daemon may be stopped, or DOCKER_HOST may point elsewhere.
 container_runtime() {
-    command -v docker > /dev/null 2>&1 && {
+    if docker version --format '{{.Server.Arch}}' > /dev/null 2>&1; then
         echo docker
         return 0
-    }
-    command -v podman > /dev/null 2>&1 && {
+    fi
+    if podman info --format '{{.Host.Arch}}' > /dev/null 2>&1; then
         echo podman
         return 0
-    }
+    fi
     return 1
 }
 
@@ -178,16 +181,19 @@ check_amd64_emulation() {
     [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
     local runtime out
     runtime="$(container_runtime)" || {
-        warn 'neither docker nor podman on PATH: cannot probe the amd64 emulator'
+        warn 'no container engine answered: cannot probe the amd64 emulator'
         return 0
     }
     info 'SEP_MYSQL_PLATFORM=linux/amd64 on an arm64 engine: probing the emulator for clone3'
-    out="$("${runtime}" run --rm --security-opt seccomp=unconfined --platform linux/amd64 \
-        -v "${script_dir}/../clone3_probe.py:/clone3_probe.py:ro" \
-        python:3-alpine python3 /clone3_probe.py 2> /dev/null)" || true
+    # On stdin, not a bind mount: the daemon resolves a -v source on its own
+    # filesystem, so a remote DOCKER_HOST would mount nothing. Stderr is kept so
+    # a failed pull names itself, and the tokens are matched as substrings so
+    # that it cannot swallow the verdict.
+    out="$("${runtime}" run --rm -i --security-opt seccomp=unconfined --platform linux/amd64 \
+        python:3-alpine python3 - < "${script_dir}/../clone3_probe.py" 2>&1)" || true
     case "${out}" in
-        CLONE3_OK) return 0 ;;
-        CLONE3_ENOSYS)
+        *CLONE3_OK*) return 0 ;;
+        *CLONE3_ENOSYS*)
             error 'amd64 emulation here has no clone3 (QEMU): sep-mysql would build, register, look healthy, and fail every task'
             error 'Recommended: set SEP_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh, so the executor builds natively'
             error 'Alternative, Docker Desktop only: Settings → General → Virtual Machine Manager = "Apple Virtualization framework", then "Use Rosetta for x86_64/amd64 emulation on Apple Silicon", Apply & restart'
@@ -205,7 +211,18 @@ check_amd64_emulation() {
 # or empty SEP_MYSQL_PLATFORM is the amd64 default there, so it is written out
 # explicitly here and an arm64 engine gets the native pair unless told not to.
 configure_executor_platform() {
-    [[ $(engine_arch) == arm64 ]] || return 0
+    if [[ $(engine_arch) != arm64 ]]; then
+        # A .env an arm64 engine wrote would otherwise build the executor arm64
+        # here, under the reverse emulation these slots exist to avoid. Absent
+        # slots stay absent, so a host that has only ever been amd64 keeps a
+        # .env this script never touches.
+        if grep -q '^SEP_MYSQL_PLATFORM=' .env; then
+            set_slot SEP_MYSQL_PLATFORM linux/amd64
+            set_slot SEP_MYSQL_PMM_CLIENT_IMAGE ""
+            info 'sep-mysql: amd64 feature-build client (reclaimed the executor slots an arm64 engine had written)'
+        fi
+        return 0
+    fi
     local platform="${SEP_MYSQL_PLATFORM:-linux/arm64}"
     case "${platform}" in
         linux/amd64)

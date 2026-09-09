@@ -97,21 +97,18 @@ require_secrets() {
 
 without_xtrace require_secrets
 
-# Nomad's raw_exec spawns every task with clone3(CLONE_INTO_CGROUP) on cgroups
-# v2, and Go's os/exec has no fallback for that path, so ask the syscall the way
-# the executor will before becoming a node that registers, looks healthy, and
-# fails every dispatch with `fork/exec …: function not implemented`. ENOSYS has
-# two known sources: Docker's default seccomp profile on an unprivileged
-# container (compose.yaml runs this one privileged), and QEMU, which does not
-# implement clone3 — what an arm64 engine uses for amd64 images unless Rosetta
-# is on. Only the probe's printed verdict decides; anything else is reported.
+# raw_exec spawns every task with clone3, so a node where the syscall is
+# unimplemented registers, fingerprints healthy, and fails every dispatch with
+# `fork/exec …: function not implemented`. Refuse to become that node. The two
+# sources of ENOSYS and the fix for each are in README.md § Caveats, and the
+# messages below name them. Only the probe's printed verdict decides.
 require_clone3() {
     [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
     local out
     out="$(python3 /usr/local/bin/clone3_probe.py 2>&1)" || true
     case "${out}" in
-        CLONE3_OK) return 0 ;;
-        CLONE3_ENOSYS)
+        *CLONE3_OK*) return 0 ;;
+        *CLONE3_ENOSYS*)
             error 'clone3 is unimplemented here (ENOSYS): Nomad cannot launch a single task on this node'
             error 'Unprivileged container? compose.yaml runs sep-mysql privileged; a plain docker run needs --privileged or --security-opt seccomp=unconfined'
             error 'Emulated amd64 on an arm64 engine? Set SEP_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh to build this node natively, or enable Rosetta (Docker Desktop → Settings → General → "Apple Virtualization framework" + "Use Rosetta for x86_64/amd64 emulation")'
