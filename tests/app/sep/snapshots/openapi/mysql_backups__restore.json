@@ -3491,7 +3491,7 @@
         "type": "object"
       },
       "framework__TaskExecutionResponse": {
-        "description": "Represent the default response from a task execute route.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.\n:param status: The status of the task-history row the tasks API created,\n    as it stood at dispatch.\n:param created_at: When the tasks API created that row. ``started_at`` is\n    deliberately absent: the worker sets it, so it is ``None`` here.",
+        "description": "Represent the default response from a task execute route.\n\n``started_at`` is deliberately not carried: the worker sets it, so it is\nstill ``None`` on the row this response is built from.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.\n    Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it\n    so, not because a dispatched run is expected to lack one.\n:param status: The status of the task-history row the tasks API created,\n    as it stood at dispatch.\n:param created_at: When the tasks API created that row.",
         "properties": {
           "created_at": {
             "format": "date-time",

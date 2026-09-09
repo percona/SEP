@@ -8828,12 +8828,16 @@ export interface components {
      * TaskExecutionResponse
      * @description Represent the default response from a task execute route.
      *
+     *     ``started_at`` is deliberately not carried: the worker sets it, so it is
+     *     still ``None`` on the row this response is built from.
+     *
      *     :param task_name: The name of the task that was executed.
      *     :param task_id: The id of the task-history row created by the tasks API.
+     *         Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it
+     *         so, not because a dispatched run is expected to lack one.
      *     :param status: The status of the task-history row the tasks API created,
      *         as it stood at dispatch.
-     *     :param created_at: When the tasks API created that row. ``started_at`` is
-     *         deliberately absent: the worker sets it, so it is ``None`` here.
+     *     :param created_at: When the tasks API created that row.
      */
     framework__TaskExecutionResponse: {
       /**

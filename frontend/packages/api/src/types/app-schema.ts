@@ -466,6 +466,10 @@ export interface RelatedApp {
  * completion re-reads until the row reaches a status whose `terminal` is true.
  */
 export interface TaskStatusDescriptor {
+  /** A `TaskHistoryStatusEnum` member. Deliberately not a literal union like
+   * `ColumnFormat` or `DetailHighlightLanguage`: the point of publishing this
+   * list is that a client discovers the vocabulary at runtime instead of
+   * hardcoding it, which a union here would reintroduce. */
   value: string;
   terminal: boolean;
 }

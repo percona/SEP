@@ -1734,8 +1734,10 @@ class AppSchema(SchemaBaseModel):
         """Publish the status vocabulary, or withhold it for entity plugins.
 
         Deriving it here rather than at the construction sites covers every path
-        a plugin can build an ``AppSchema`` by, including the ``app_schema=``
-        passthrough that never reaches ``derive_app_schema``.
+        that *validates* an ``AppSchema`` — ``__init__`` and ``model_validate``
+        — including the ``schema=`` passthrough that never reaches
+        ``derive_app_schema``. ``model_construct`` and ``model_copy`` bypass
+        validation and so bypass this.
 
         :return: The validated plugin schema instance.
         """

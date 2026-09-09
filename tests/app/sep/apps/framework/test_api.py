@@ -2861,9 +2861,9 @@ def _marker_dep() -> None:
 def _execute_response_dict(task_id: int | None = _EXECUTE_TASK_ID) -> dict:
     """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests.
 
-    ``status`` and ``created_at`` are pinned to values the model would not
-    default to, so an assertion on them distinguishes a field forwarded from
-    upstream from one Pydantic filled in.
+    ``status`` and ``created_at`` are pinned to values ``TaskHistoryResponse``
+    would not itself supply (``PENDING`` and ``utc_now()``), so an assertion on
+    them distinguishes a field forwarded from upstream from a defaulted one.
     """
     return {
         "id": task_id,
@@ -3027,22 +3027,6 @@ class TestDeriveExecuteRouteOverHttp:
         tasks_api.post.assert_awaited_once_with(
             "/execute/t1", json={"chain_on_failure": True}
         )
-
-    def test_execute_201_forwards_upstream_run_state(
-        self, regular_user: CasdoorUser
-    ) -> None:
-        """Assert ``status`` and ``created_at`` come from the upstream history row."""
-        tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t1"),
-            history_items=[],
-            created_task=_execute_response_dict(),
-        )
-        client = _authed_execute_client(_execute_router(), tasks_api, regular_user)
-
-        body = client.post(f"{_EXECUTE_BASE_URL}/t1/execute", json={}).json()
-
-        assert body["status"] == EXECUTE_STATUS.value
-        assert body["created_at"] == EXECUTE_CREATED_AT
 
     def test_execute_201_empty_body_forwards_empty_json(
         self, regular_user: CasdoorUser

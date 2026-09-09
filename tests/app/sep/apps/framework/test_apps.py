@@ -889,24 +889,6 @@ class TestExecuteRoute:
             "created_at": EXECUTE_CREATED_AT,
         }
 
-    def test_execute_body_carries_only_the_declared_keys(
-        self, regular_user: CasdoorUser
-    ) -> None:
-        """Assert the derived response adds run state without dropping identity."""
-        tasks_api = _make_tasks_api(
-            detail_task=_task_dict("t-1"), created_task=_execute_response("t-1")
-        )
-        client = _client(_synth_app(), tasks_api, regular_user)
-
-        response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
-
-        assert set(response.json()) == {
-            "task_name",
-            "task_id",
-            "status",
-            "created_at",
-        }
-
 
 class TestVerbGating:
     """Cover that capability flags gate which verbs are reachable over HTTP."""

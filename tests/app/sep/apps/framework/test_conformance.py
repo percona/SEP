@@ -997,17 +997,20 @@ def _derived_execute_routes() -> list[APIRoute]:
 def test_every_derived_execute_route_declares_run_state():
     """Assert every execute response model carries the run state a poller needs.
 
-    A future plugin shipping an execute route with no test of its own is still
-    held to the contract here.
+    All eight routes share the default ``TaskExecutionResponse`` today, so what
+    this can actually catch is a plugin passing an ``execute_response_model=``
+    that omits the fields — the one way a derived execute route can lose them
+    without its own test noticing. It matches on the derived
+    ``/{task_name}/execute`` path shape, so a hand-written execute route mounted
+    through ``extra_routes`` under a different path is out of its reach.
     """
-    offenders = {
-        route.path: sorted(
-            {"status", "created_at"} - set(route.response_model.model_fields)
-        )
-        for route in _derived_execute_routes()
-        if route.response_model is None
-        or not {"status", "created_at"} <= set(route.response_model.model_fields)
-    }
+    required = {"status", "created_at"}
+    offenders: dict[str, list[str]] = {}
+    for route in _derived_execute_routes():
+        model = route.response_model
+        declared = set(model.model_fields) if model is not None else set()
+        if not required <= declared:
+            offenders[route.path] = sorted(required - declared)
 
     assert offenders == {}
 

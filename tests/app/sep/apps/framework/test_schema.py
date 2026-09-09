@@ -2994,38 +2994,27 @@ class TestAppSchemaTaskStatuses:
             TaskHistoryStatusEnum
         )
 
-    def test_terminality_matches_the_enum_classification(self) -> None:
-        """Mark a status terminal exactly when ``is_terminal()`` does.
+    def test_each_status_carries_its_declared_terminality(self) -> None:
+        """Pin every member's terminality independently of ``is_terminal()``.
 
-        ``lost`` is asserted through the enum like every other member; the
-        sibling test below is what pins it against ``is_finished()``.
+        Deriving the expectation from the same method the implementation calls
+        would pass straight through a flip of that method, and ``lost`` is the
+        member such a flip is most likely to reach: it is terminal here but
+        excluded by the similarly-named ``is_finished()``.
         """
         schema = self._task_style_schema()
 
         assert schema.task_statuses is not None
         assert {entry.value: entry.terminal for entry in schema.task_statuses} == {
-            status: status.is_terminal() for status in TaskHistoryStatusEnum
+            TaskHistoryStatusEnum.PENDING: False,
+            TaskHistoryStatusEnum.RUNNING: False,
+            TaskHistoryStatusEnum.SUCCESS: True,
+            TaskHistoryStatusEnum.FAILED: True,
+            TaskHistoryStatusEnum.STOPPED: True,
+            TaskHistoryStatusEnum.LOST: True,
+            TaskHistoryStatusEnum.STALE: True,
+            TaskHistoryStatusEnum.UNLAUNCHABLE: True,
         }
-
-    def test_lost_is_published_as_terminal(self) -> None:
-        """Classify ``lost`` as terminal, which ``is_finished()`` alone would not."""
-        schema = self._task_style_schema()
-
-        assert schema.task_statuses is not None
-        terminal = {entry.value for entry in schema.task_statuses if entry.terminal}
-        assert TaskHistoryStatusEnum.LOST in terminal
-
-    @pytest.mark.parametrize("status", list(TaskHistoryStatusEnum))
-    def test_every_member_is_classified(self, status: TaskHistoryStatusEnum) -> None:
-        """Refuse a member that is neither terminal nor active.
-
-        A member added to the enum without joining ``active_statuses()`` falls
-        out of both partitions, so this names it rather than letting an
-        unclassified value reach the wire.
-        """
-        assert status.is_terminal() != status.is_active(), (
-            f"{status.value} is classified neither terminal nor active"
-        )
 
     def test_entity_plugins_withhold_the_vocabulary(self) -> None:
         """Leave ``task_statuses`` unset for a plugin declaring entities."""

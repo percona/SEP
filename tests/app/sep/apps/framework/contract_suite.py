@@ -72,6 +72,7 @@ from tests.app.factories import (
     MOCK_CREATED_TABLE_ID,
 )
 from tests.app.sep.apps.framework.kit import (
+    EXECUTE_CREATED_AT,
     SEEDED_TASK_NAME,
     SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
@@ -966,10 +967,11 @@ class DerivedRouterContractTests:
             f"{base}/{SEEDED_TASK_NAME}/execute", json=write_body
         )
 
+        assert response.status_code == status.HTTP_201_CREATED
         body = response.json()
         assert body["task_name"] == SEEDED_TASK_NAME
         assert body["status"] == TaskHistoryStatusEnum.SUCCESS.value
-        assert body["created_at"] is not None
+        assert body["created_at"] == EXECUTE_CREATED_AT
 
     def test_execute_route_absent(self) -> None:
         """Assert no derived execute route exists when execute is disabled."""

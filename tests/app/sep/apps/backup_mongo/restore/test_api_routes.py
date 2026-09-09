@@ -1003,9 +1003,9 @@ def build_restore_execute_response(
 ) -> dict:
     """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests.
 
-    ``status`` and ``created_at`` are pinned to values the response model would
-    not default to, so asserting them distinguishes a field forwarded from the
-    upstream row from one Pydantic filled in.
+    ``status`` and ``created_at`` are pinned to values ``TaskHistoryResponse``
+    would not itself supply (``PENDING`` and ``utc_now()``), so asserting them
+    distinguishes a field forwarded from the upstream row from a defaulted one.
     """
     return {
         "id": task_id,
@@ -1047,8 +1047,9 @@ class TestRestoreMongoApiExecute:
     ) -> None:
         """Executing a restore task returns the dispatched run's status and creation.
 
-        This app derives an execute route but binds no contract mixin, so this
-        is the only real round-trip covering the eighth derived execute route.
+        This app derives an execute route but binds no contract mixin, so the
+        run-state assertions ``DerivedRouterContractTests`` makes for the other
+        seven derived execute routes have to be made here.
         """
         task = build_restore_task("mongo-restore-task")
         mock_task_api_dep.get = AsyncMock(return_value=task)
