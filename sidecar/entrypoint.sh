@@ -18,6 +18,21 @@ app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=sidecar/settings-env.sh
 . "$app_dir/settings-env.sh"
 
+# Ahead of both steps below, because the Grafana helper resolves the settings
+# stack and that refuses to build without this key -- and its failure is
+# absorbed, so a key arriving after it would degrade auth with no diagnostic.
+#
+# Guarded on the file channel as well as the variable: the helper resolves a
+# SECRETS_DIR file too, and exporting that answer would put a mounted secret
+# into every supervised program's environment, which is the one thing mounting
+# it avoids. Unlike the Grafana mint, the failure is not absorbed -- a non-zero
+# exit means minting could not be proven safe, and starting anyway is what
+# silently reverts every encrypted override to its YAML default.
+if [[ -z ${ENCRYPTION_KEY:-} ]] && ! secret_file_supplies ENCRYPTION_KEY; then
+    ENCRYPTION_KEY="$(python3 "$app_dir/encryption_key.py")"
+    export ENCRYPTION_KEY
+fi
+
 valkey_conf=/tmp/valkey.conf
 
 valkey_password="$(python3 -c 'import secrets; print(secrets.token_hex(24))')"

@@ -22,12 +22,14 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 
 from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
 
 ENTRYPOINT = SIDECAR_DIR / "entrypoint.sh"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 MINT_HELPER_NAME = "grafana_service_account.py"
+ENCRYPTION_HELPER_NAME = "encryption_key.py"
 
 SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
 
@@ -40,6 +42,12 @@ CANONICAL_NAMES = (
 )
 
 MINTED_TOKEN = "glsa_minted_at_container_start"
+
+SUPPLIED_ENCRYPTION_KEY = Fernet.generate_key().decode("ascii")
+"""A key the deployment supplies, which must send the entrypoint past its helper."""
+
+MINTED_ENCRYPTION_KEY = Fernet.generate_key().decode("ascii")
+"""A key the stub helper answers with, distinct so the two are never confused."""
 
 FAKE_SUPERVISORD = r"""#!/usr/bin/env bash
 env -0 > "$FAKE_SUPERVISORD_ENV"
@@ -61,6 +69,20 @@ sys.stdout.write(os.environ["FAKE_HELPER_STDOUT"])
 sys.exit(int(os.environ["FAKE_HELPER_EXIT"]))
 """
 """A stand-in for the mint helper, answering whatever the case calls for."""
+
+STUB_ENCRYPTION_HELPER = """import os
+import sys
+
+with open(os.environ["FAKE_ENCRYPTION_ARGV"], "w", encoding="utf-8") as handle:
+    handle.write("\\n".join(sys.argv))
+sys.stdout.write(os.environ["FAKE_ENCRYPTION_STDOUT"])
+sys.exit(int(os.environ["FAKE_ENCRYPTION_EXIT"]))
+"""
+"""A stand-in for the encryption-key helper.
+
+Written to its own argv file rather than sharing the mint helper's, because the
+cases below turn on *whether* each helper ran at all.
+"""
 
 
 class FakeContainer:
@@ -97,6 +119,9 @@ class FakeContainer:
             target.write_text(text, encoding="utf-8")
             target.chmod(0o755)
         (self.app_dir / MINT_HELPER_NAME).write_text(STUB_MINT_HELPER, encoding="utf-8")
+        (self.app_dir / ENCRYPTION_HELPER_NAME).write_text(
+            STUB_ENCRYPTION_HELPER, encoding="utf-8"
+        )
 
         self._bin = root / "bin"
         self._bin.mkdir()
@@ -106,15 +131,27 @@ class FakeContainer:
 
         self._environment_file = root / "supervisord-env"
         self._argv_file = root / "helper-argv"
+        self._encryption_argv_file = root / "encryption-helper-argv"
         self._sentinel_file = root / "supervisord-sentinels"
 
     def start(
-        self, *, token: str = MINTED_TOKEN, exit_code: int = 0, **inputs: str
+        self,
+        *,
+        token: str = MINTED_TOKEN,
+        exit_code: int = 0,
+        encryption_key: str | None = SUPPLIED_ENCRYPTION_KEY,
+        minted_key: str = MINTED_ENCRYPTION_KEY,
+        minted_key_exit_code: int = 0,
+        **inputs: str,
     ) -> subprocess.CompletedProcess[str]:
-        """Run the entrypoint with the mint helper answering as configured.
+        """Run the entrypoint with both stub helpers answering as configured.
 
-        :param token: What the stub helper prints for the entrypoint to capture.
-        :param exit_code: What the stub helper exits with.
+        :param token: What the stub mint helper prints for the entrypoint to capture.
+        :param exit_code: What the stub mint helper exits with.
+        :param encryption_key: The key the deployment supplies, or ``None`` to
+            supply none — which is what sends the entrypoint to its helper.
+        :param minted_key: What the stub encryption helper prints.
+        :param minted_key_exit_code: What the stub encryption helper exits with.
         :param inputs: Deployment inputs to place in the environment.
         :return: The completed entrypoint run.
         """
@@ -126,6 +163,10 @@ class FakeContainer:
             "FAKE_HELPER_ARGV": str(self._argv_file),
             "FAKE_HELPER_STDOUT": token,
             "FAKE_HELPER_EXIT": str(exit_code),
+            "FAKE_ENCRYPTION_ARGV": str(self._encryption_argv_file),
+            "FAKE_ENCRYPTION_STDOUT": minted_key,
+            "FAKE_ENCRYPTION_EXIT": str(minted_key_exit_code),
+            **({} if encryption_key is None else {"ENCRYPTION_KEY": encryption_key}),
             **inputs,
         }
         return subprocess.run(
@@ -162,6 +203,24 @@ class FakeContainer:
         :return: One entry per argument, in order.
         """
         return self._argv_file.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def encryption_helper_argv(self) -> list[str]:
+        """Return the argv the entrypoint invoked the encryption helper with.
+
+        :return: One entry per argument, empty when the helper never ran.
+        """
+        if not self._encryption_argv_file.exists():
+            return []
+        return self._encryption_argv_file.read_text(encoding="utf-8").splitlines()
+
+    @property
+    def reached_supervisord(self) -> bool:
+        """Return whether the entrypoint got as far as spawning supervisord.
+
+        :return: Whether the recording stub ever ran.
+        """
+        return self._environment_file.exists()
 
     @property
     def owned_sentinels(self) -> set[str]:
@@ -240,6 +299,73 @@ def test_the_grafana_admin_credential_stops_at_the_mint(container: FakeContainer
     supervised = container.supervised_environment
     assert "GF_SECURITY_ADMIN_USER" not in supervised
     assert "GF_SECURITY_ADMIN_PASSWORD" not in supervised
+
+
+def test_an_explicit_encryption_key_skips_the_helper(container: FakeContainer):
+    """Leave channel 1 alone, which the helper sits three ranks below."""
+    result = container.start()
+
+    assert result.returncode == 0, result.stderr
+    assert container.encryption_helper_argv == []
+    assert container.supervised_environment["ENCRYPTION_KEY"] == SUPPLIED_ENCRYPTION_KEY
+
+
+def test_a_mounted_encryption_key_is_neither_minted_over_nor_exported(
+    container: FakeContainer, tmp_path: Path
+):
+    """Leave a mounted key to its file, which is the regression the shell cannot see.
+
+    ``settings-env.sh`` alone would pass this: it never exports the name either
+    way. What only the entrypoint can get wrong is running the helper anyway and
+    exporting its answer, which converts the file channel from "each process
+    reads the file" into "one value in every process's environment".
+    """
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "ENCRYPTION_KEY").write_text(
+        SUPPLIED_ENCRYPTION_KEY, encoding="utf-8"
+    )
+
+    result = container.start(encryption_key=None, SECRETS_DIR=str(secrets_dir))
+
+    assert result.returncode == 0, result.stderr
+    assert container.encryption_helper_argv == []
+    assert "ENCRYPTION_KEY" not in container.supervised_environment
+
+
+def test_a_minted_encryption_key_reaches_every_supervised_program(
+    container: FakeContainer,
+):
+    """Hand what the helper resolved to every program, as the mint step does."""
+    result = container.start(encryption_key=None)
+
+    assert result.returncode == 0, result.stderr
+    assert container.supervised_environment["ENCRYPTION_KEY"] == MINTED_ENCRYPTION_KEY
+
+
+def test_a_failing_encryption_helper_takes_the_container_down(
+    container: FakeContainer,
+):
+    """Let the helper's refusal end PID 1, unlike the Grafana mint beside it.
+
+    The helper exits non-zero only where it could not prove the deployment has
+    no ciphertext. Absorbing that would start the container under a key it
+    already refused to mint, or under none at all — the silently-reverted
+    overrides this guard exists to prevent.
+    """
+    result = container.start(encryption_key=None, minted_key_exit_code=1)
+
+    assert result.returncode != 0
+    assert not container.reached_supervisord
+
+
+def test_the_encryption_key_never_enters_the_helpers_argv(container: FakeContainer):
+    """Keep the key out of ``/proc``, which every process in the namespace reads."""
+    container.start(encryption_key=None)
+
+    assert container.encryption_helper_argv == [
+        str(container.app_dir / ENCRYPTION_HELPER_NAME)
+    ]
 
 
 def cleared_sentinels() -> set[str]:
