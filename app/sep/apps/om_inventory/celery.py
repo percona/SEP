@@ -47,6 +47,7 @@ def run_om_probe(
         scheduled sweep passes nothing, which is what keeps it a full refresh.
     :return: The run's id, as a string.
     """
+    # ty-attr-ok: Celery installs `loop` at runtime.
     resolved = celery.loop.run_until_complete(
         run_probe(UUID(execution_id) if execution_id else None, node_ids)
     )

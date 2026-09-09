@@ -50,7 +50,7 @@ RefreshTokenCookie = Annotated[
 ]
 
 SERVICE_PRINCIPAL_ID = UUID("00000000-0000-4000-8000-000000000000")
-_SERVICE_PRINCIPAL = User.build_service_principal(
+SERVICE_PRINCIPAL = User.build_service_principal(
     user_id=SERVICE_PRINCIPAL_ID,
     username="sep-service",
     first_name="SEP",
@@ -71,7 +71,7 @@ def _build_service_principal(secret: str) -> User:
     :return: A fresh copy of the singleton with ``access_token`` populated.
     :rtype: User
     """
-    user = _SERVICE_PRINCIPAL.model_copy()
+    user = SERVICE_PRINCIPAL.model_copy()
     user.access_token = secret
     return user
 
@@ -102,7 +102,7 @@ async def authenticate_bearer_token(token: str) -> User:
     if (token_setting := settings.SEP_INTERNAL_TOKEN) is not None:
         secret = token_setting.get_secret_value()
         if secret and secrets.compare_digest(token, secret):
-            set_log_context(user=_SERVICE_PRINCIPAL.username)
+            set_log_context(user=SERVICE_PRINCIPAL.username)
             return _build_service_principal(secret)
     try:
         user = await User.from_bearer(token)

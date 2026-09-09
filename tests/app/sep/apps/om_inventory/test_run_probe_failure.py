@@ -15,9 +15,9 @@
 
 """Test that ``run_probe`` marks a run failed for the whole width of its own work.
 
-Only ``_sweep`` used to sit inside the ``try``/``except`` that calls ``_fail_run``.
-A raise while writing what the sweep found — ``_persist_estate`` — or while closing
-the run out — ``_finalise`` — propagated past both without anything marking the row
+Only ``sweep`` used to sit inside the ``try``/``except`` that calls ``_fail_run``.
+A raise while writing what the sweep found — ``persist_estate`` — or while closing
+the run out — ``finalise`` — propagated past both without anything marking the row
 failed, leaving it ``RUNNING`` forever: the one status a caller polling ``GET
 /runs/{run_id}`` can never treat as "done, try again".
 
@@ -37,7 +37,7 @@ from app.sep.apps.om_inventory.crud import ProbeRunManager
 from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
 from app.sep.apps.om_inventory.service import run_probe, SweepOutcome
 
-#: One resolved, one answered: ``_terminal_status`` reads this as a clean SUCCESS,
+#: One resolved, one answered: ``terminal_status`` reads this as a clean SUCCESS,
 #: so a run that reaches it and is *not* rewritten afterwards is unambiguous.
 CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
 
@@ -58,13 +58,13 @@ def _session_maker(session: AsyncSession):
 
 
 class TestPersistOrFinaliseFailureMarksTheRunFailed:
-    """Route a raise after ``_sweep`` returns to ``_fail_run``."""
+    """Route a raise after ``sweep`` returns to ``_fail_run``."""
 
     @pytest.mark.asyncio
     async def test_a_persist_estate_failure_fails_the_run(
         self, session: AsyncSession
     ) -> None:
-        """``_persist_estate`` raising leaves the run ``FAILED``, not ``RUNNING``.
+        """``persist_estate`` raising leaves the run ``FAILED``, not ``RUNNING``.
 
         :param session: The database session.
         """
@@ -77,11 +77,11 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
                 return_value=_session_maker(session),
             ),
             patch.object(
-                service_module, "_sweep", AsyncMock(return_value=CLEAN_OUTCOME)
+                service_module, "sweep", AsyncMock(return_value=CLEAN_OUTCOME)
             ),
             patch.object(
                 service_module,
-                "_persist_estate",
+                "persist_estate",
                 AsyncMock(side_effect=RuntimeError("disk full")),
             ),
         ):
@@ -97,9 +97,9 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
     async def test_a_finalise_failure_fails_the_run(
         self, session: AsyncSession
     ) -> None:
-        """``_finalise`` raising leaves the run ``FAILED``, not ``RUNNING``.
+        """``finalise`` raising leaves the run ``FAILED``, not ``RUNNING``.
 
-        ``_persist_estate`` runs for real here (with nothing for it to write, since
+        ``persist_estate`` runs for real here (with nothing for it to write, since
         ``CLEAN_OUTCOME`` carries no hosts or services) so this pins the *second*
         half of the widened window, not just the first.
 
@@ -114,11 +114,11 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
                 return_value=_session_maker(session),
             ),
             patch.object(
-                service_module, "_sweep", AsyncMock(return_value=CLEAN_OUTCOME)
+                service_module, "sweep", AsyncMock(return_value=CLEAN_OUTCOME)
             ),
             patch.object(
                 service_module,
-                "_finalise",
+                "finalise",
                 AsyncMock(side_effect=RuntimeError("constraint violation")),
             ),
         ):
@@ -140,10 +140,10 @@ class TestPruneFailureStaysOutsideTheFailurePath:
     ) -> None:
         """Leave pruning outside the ``try`` that covers persist and finalise.
 
-        The run is written to ``SUCCESS`` by the real ``_finalise`` before pruning
+        The run is written to ``SUCCESS`` by the real ``finalise`` before pruning
         ever runs. If pruning's failure were folded into the failure path, this run
         would come back ``FAILED`` with pruning's exception as its error; instead it
-        must keep exactly what ``_finalise`` wrote, and ``run_probe`` propagates the
+        must keep exactly what ``finalise`` wrote, and ``run_probe`` propagates the
         pruning exception rather than swallowing it.
 
         :param session: The database session.
@@ -157,7 +157,7 @@ class TestPruneFailureStaysOutsideTheFailurePath:
                 return_value=_session_maker(session),
             ),
             patch.object(
-                service_module, "_sweep", AsyncMock(return_value=CLEAN_OUTCOME)
+                service_module, "sweep", AsyncMock(return_value=CLEAN_OUTCOME)
             ),
             patch.object(
                 service_module,
