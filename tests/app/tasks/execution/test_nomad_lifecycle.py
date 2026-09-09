@@ -261,7 +261,7 @@ async def test_get_request_executor_yields_a_celery_executor_unheld() -> None:
 
 @pytest.mark.asyncio
 async def test_aenter_preserves_the_configured_api_key() -> None:
-    """``__aenter__`` rebuilds the executor with the real key, not the JSON mask."""
+    """Rebuild the executor on entry with the real key, not the JSON mask."""
     _override_nomad(_NOMAD_WITH_KEY)
     async with NomadLifecycle(FastAPI()) as holder:
         assert holder.current.api_key is not None
@@ -270,7 +270,7 @@ async def test_aenter_preserves_the_configured_api_key() -> None:
 
 @pytest.mark.asyncio
 async def test_reconcile_rebinds_when_only_the_api_key_rotates() -> None:
-    """``reconcile`` swaps the executor when the key rotates and nothing else moves."""
+    """Swap the executor on reconcile when the key rotates and nothing else moves."""
     _override_nomad(_NOMAD_WITH_KEY)
     async with NomadLifecycle(FastAPI()) as holder:
         old = holder.current

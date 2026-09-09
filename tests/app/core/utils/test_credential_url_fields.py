@@ -251,6 +251,14 @@ class TestStripCredentialUrlUserinfo:
             (_PLAIN_URL, _PLAIN_URL),
             ("https://admin:admin@pmm-server/nomad", "https://pmm-server/nomad"),
             ("http://user:p@ss@[::1]:4646/v1", "http://[::1]:4646/v1"),
+            (
+                "http://@nomad.internal:4646/v1/jobs",
+                "http://nomad.internal:4646/v1/jobs",
+            ),
+            (
+                "http://:@nomad.internal:4646/v1/jobs",
+                "http://nomad.internal:4646/v1/jobs",
+            ),
         ],
     )
     def test_removes_userinfo_and_preserves_the_rest(

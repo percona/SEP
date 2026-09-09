@@ -850,10 +850,14 @@ class TestTasksSettingsNomadApiKey:
         self, admin_test_client: TestClient, session: AsyncSession
     ) -> None:
         """Assert DELETE drops the row and the effective executor loses the header."""
-        admin_test_client.patch(
+        patched = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__API_KEY": self._API_KEY},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        configured = normalize_nomad_config_value(tasks_settings.NOMAD)
+        assert configured.headers["Authorization"] == f"Bearer {self._API_KEY}"
+
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/NOMAD__API_KEY"
         )

@@ -142,9 +142,9 @@ if [[ -n ${SEP_DB_PASSWORD:-} ]]; then
     export_canonical TASKS__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
 fi
 
-# A function rather than two lines in the guard below because entrypoint.sh calls
-# it a second time, with a token minted after this file has finished, and both
-# names have to keep resolving from one place.
+# A function rather than inline exports in the guard below because entrypoint.sh
+# calls it a second time, with a token minted after this file has finished, and
+# every destination name has to keep resolving from one place.
 export_grafana_token() {
     export_canonical AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN "$1"
     export_canonical PMM__API_KEY "$1"

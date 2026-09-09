@@ -30,6 +30,7 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
+from types import TracebackType
 from typing import Any, ClassVar, NamedTuple
 
 import requests
@@ -640,7 +641,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         on both the synchronous and the asynchronous request path. It takes
         precedence over any userinfo embedded in ``endpoint``, which is stripped
         for as long as a key is configured. An empty value counts as unset,
-        leaving whatever ``endpoint`` carries. Defaults to None.
+        leaving whatever ``endpoint`` carries. Defaults to ``None``.
     :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
         ``api_key``. Defaults to ``"Bearer"``.
     :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
@@ -720,6 +721,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         "Bearer", advanced=True
     )
 
+    _sync_session: requests.Session | None = None
+
     @property
     def _configured_api_key(self) -> str | None:
         """Return the configured API key's plain value, or ``None`` when unset.
@@ -790,6 +793,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         if self._configured_api_key is not None:
             address = strip_credential_url_userinfo(address)
             session.headers.update(self.headers)
+        self._sync_session = session
         return Nomad(
             address=address,
             secure=self.secure,
@@ -799,6 +803,35 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             cert=cert,
             session=session,
         )
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the asynchronous context manager, releasing both HTTP clients.
+
+        The inherited exit closes the aiohttp session; this one also closes the
+        ``requests.Session`` handed to python-nomad, which the executor owns
+        rather than the library. Retirement runs through
+        :meth:`~app.core.requests.remote_api.BaseRemoteAPI.close_when_idle`, so
+        the close lands once the last consumer hold has drained.
+
+        Dropping the cached :attr:`backend` alongside it keeps a re-entered
+        executor symmetric with the inherited half, which rebuilds its session
+        on the next ``__aenter__``: without the drop, the cache would hand the
+        next caller a client whose session is closed.
+
+        :param exc_type: The exception type, if any.
+        :param exc_val: The exception value, if any.
+        :param exc_tb: The traceback, if any.
+        """
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+        self.__dict__.pop("backend", None)
+        if self._sync_session is not None:
+            self._sync_session.close()
+            self._sync_session = None
 
     @staticmethod
     def timestamp_to_datetime(timestamp: int) -> datetime:

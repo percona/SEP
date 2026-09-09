@@ -416,7 +416,7 @@ AuthSchemeStr = Annotated[
 
 A scheme is spliced into an ``Authorization`` header value, and a header value
 cannot carry whitespace-leading, ``CR``, ``LF`` or ``NUL`` bytes under any
-escaping -- ``requests`` raises ``InvalidHeader`` and ``aiohttp`` raises
+escaping — ``requests`` raises ``InvalidHeader`` and ``aiohttp`` raises
 ``ValueError`` at send time. Constraining the field rejects such a value where
 an operator sets it, rather than leaving every later request to fail.
 """
@@ -668,11 +668,16 @@ def strip_credential_url_userinfo(url: str) -> str:
     This differs from :func:`redact_credential_url`, which only masks the
     password: a masked URL still puts basic auth on the wire.
 
+    The presence test reads the ``@`` delimiter rather than the parsed username
+    and password, so the degenerate ``http://@host`` and ``http://:@host``
+    shapes — whose parsed halves are both empty strings — lose their delimiter
+    too.
+
     :param url: The URL string to strip.
     :return: The URL without its userinfo segment, or ``url`` when it carries none.
     """
     parsed = urlparse(url)
-    if not (parsed.username or parsed.password):
+    if "@" not in parsed.netloc:
         return url
     return urlunparse(
         (

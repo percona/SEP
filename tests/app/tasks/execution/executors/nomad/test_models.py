@@ -553,6 +553,30 @@ class TestNomadExecutorApiKey:
                 "Bearer glsa_supersecret"
             )
 
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_exit_closes_the_sync_session_and_drops_the_backend(
+        self, mock_nomad_cls
+    ) -> None:
+        """Assert retirement releases the session the executor owns."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        with patch.object(requests.Session, "close", autospec=True) as mock_close:
+            async with executor:
+                _ = executor.backend
+                session = mock_nomad_cls.call_args[1]["session"]
+                mock_close.assert_not_called()
+
+            mock_close.assert_called_once_with(session)
+
+        assert executor._sync_session is None
+        assert "backend" not in executor.__dict__
+
+        rebuilt_from = mock_nomad_cls.call_count
+        async with executor:
+            _ = executor.backend
+            assert mock_nomad_cls.call_count == rebuilt_from + 1
+            assert mock_nomad_cls.call_args[1]["session"] is not session
+
     def test_the_configured_scheme_is_honoured(self) -> None:
         """Assert ``auth_scheme`` selects the scheme the header announces."""
         executor = _build_executor(api_key="glsa_supersecret", auth_scheme="Basic")
