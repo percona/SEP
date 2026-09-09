@@ -75,8 +75,12 @@ class DatabaseOptions(BaseModel):
         than assembled from any one caller's settings, so this class stays
         usable by every caller without importing them — a caller that shares
         this bind merges its own token in under its own key instead of
-        replacing the map. Cleared to the bind's default schema off
-        PostgreSQL; see :meth:`clear_schema_translate_map_off_postgresql`.
+        replacing the map. Applied to the application engine
+        (:func:`~app.core.db.utils.create_app_async_engine`), to the migration
+        connection, and to the metadata Alembic compares
+        (:func:`~app.core.db.utils.translate_metadata_schemas`). Cleared to
+        the bind's default schema off PostgreSQL; see
+        :meth:`clear_schema_translate_map_off_postgresql`.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE

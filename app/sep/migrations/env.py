@@ -23,7 +23,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
-from app.core.db.utils import compare_type
+from app.core.db.utils import compare_type, translate_metadata_schemas
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import discover_plugin_migrations_and_models
 from app.sep.migrations._orphan_heads import skip_unresolvable_heads
@@ -47,6 +47,16 @@ discover_plugin_migrations_and_models()
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 target_metadata = SQLModel.metadata
+
+_translate_map = sep_settings.DATABASE.SCHEMA_TRANSLATE_MAP
+_real_schemas = {schema for schema in _translate_map.values() if schema is not None}
+
+
+def _include_name(name: str | None, type_: str, _parent_names: dict) -> bool:
+    if type_ != "schema":
+        return True
+    return name is None or name in _real_schemas
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -85,9 +95,22 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    """Configure the context against a translated copy of the metadata and run.
+
+    The connection translates the DDL a migration executes
+    (:func:`run_async_migrations`); autogenerate compares ``Table`` objects
+    before anything executes, so the metadata it compares is translated
+    through the same map here. A token that resolves to a real schema also
+    needs that schema reflected, which is the only case ``include_schemas``
+    is on.
+
+    :param connection: The synchronous connection Alembic runs on.
+    """
     context.configure(
         connection=connection,
-        target_metadata=target_metadata,
+        target_metadata=translate_metadata_schemas(target_metadata, _translate_map),
+        include_schemas=bool(_real_schemas),
+        include_name=_include_name,
         version_table="alembic_version_sep",
         compare_type=compare_type,
     )
