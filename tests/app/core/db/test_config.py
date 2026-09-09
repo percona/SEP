@@ -210,3 +210,34 @@ def test_pool_field_bounds_rejected_at_config_load(field_kwargs):
     """Reject out-of-range pool values at config load, not at engine creation."""
     with pytest.raises(ValidationError):
         DatabaseOptions(NAME="test.db", **field_kwargs)
+
+
+@pytest.mark.parametrize(
+    "engine",
+    [
+        pytest.param(AsyncDatabaseEngine.SQLITE, id="sqlite"),
+        pytest.param(AsyncDatabaseEngine.MYSQL, id="mysql"),
+    ],
+)
+def test_schema_translate_map_values_cleared_off_postgresql(engine):
+    """Keep the declared tokens off PostgreSQL, but null every target schema."""
+    db_options = DatabaseOptions(
+        ENGINE=engine,
+        NAME="testdb",
+        HOST="localhost",
+        SCHEMA_TRANSLATE_MAP={"om_schema": "om", "beat_schema": "celery"},
+    )
+
+    assert db_options.SCHEMA_TRANSLATE_MAP == {"om_schema": None, "beat_schema": None}
+
+
+def test_schema_translate_map_passed_through_on_postgresql():
+    """Leave the map untouched on PostgreSQL, where a schema is a real namespace."""
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        NAME="testdb",
+        HOST="localhost",
+        SCHEMA_TRANSLATE_MAP={"om_schema": "om"},
+    )
+
+    assert db_options.SCHEMA_TRANSLATE_MAP == {"om_schema": "om"}
