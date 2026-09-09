@@ -37,6 +37,7 @@ from pydantic import (
     GetJsonSchemaHandler,
     HttpUrl,
     PlainSerializer,
+    SecretStr,
     StringConstraints,
     TypeAdapter,
     UrlConstraints,
@@ -646,6 +647,33 @@ def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
     )
 
 
+def strip_credential_url_userinfo(url: str) -> str:
+    """Return ``url`` with any embedded userinfo segment removed.
+
+    ``requests`` and ``aiohttp`` both derive basic auth from a URL's userinfo and
+    let it override an explicit ``Authorization`` header, so a caller presenting
+    a header of its own must remove the userinfo rather than rely on precedence.
+    This differs from :func:`redact_credential_url`, which only masks the
+    password: a masked URL still puts basic auth on the wire.
+
+    :param url: The URL string to strip.
+    :return: The URL without its userinfo segment, or ``url`` when it carries none.
+    """
+    parsed = urlparse(url)
+    if not (parsed.username or parsed.password):
+        return url
+    return urlunparse(
+        (
+            parsed.scheme,
+            _netloc_host(parsed.netloc),
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
 def _credential_url_identity_parts(
     parsed: Any, *, include_password: bool = True
 ) -> tuple[Any, ...]:
@@ -787,6 +815,44 @@ Use for broker/backend URLs that may carry credentials in the userinfo segment.
 Validation rejects a URL whose userinfo password equals
 :data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
 unusable on this type: it is indistinguishable from the mask by construction.
+"""
+
+
+def _preserve_secret_serializer(
+    value: Any,
+    handler: Callable[[Any], Any],
+    info: Any,
+) -> Any:
+    """Serialize a secret, emitting the real value only under the preserve context.
+
+    :param value: The secret being serialized.
+    :param handler: Pydantic's default serializer for the field, which masks.
+    :param info: Pydantic serialization info; its ``context`` opts out of masking.
+    :return: The plain secret under :data:`PRESERVE_CREDENTIALS_CONTEXT`, else the
+        masked value ``handler`` produces.
+    """
+    context = getattr(info, "context", None) or {}
+    if context.get("preserve_credentials") and isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return handler(value)
+
+
+PreservableSecretStr = Annotated[
+    SecretStr,
+    WrapSerializer(_preserve_secret_serializer, when_used="json"),
+]
+"""Define a secret string whose JSON dump can opt out of masking.
+
+JSON dumps carry Pydantic's mask
+(:data:`~app.core.settings_override.registry.SECRET_STR_MASK`) unless
+:data:`PRESERVE_CREDENTIALS_CONTEXT` is passed, which emits the plain secret so a
+config fingerprint survives a JSON round-trip and a rotated credential compares
+unequal to the one it replaces.
+
+:class:`~pydantic.SecretStr` remains reachable from the annotation, so
+:func:`~app.core.settings_override.registry.annotation_contains_secret` still
+classifies the field as a secret and settings-API masking and at-rest encryption
+are unchanged.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]

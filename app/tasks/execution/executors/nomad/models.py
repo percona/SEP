@@ -32,6 +32,7 @@ from itertools import product
 from pathlib import Path
 from typing import Any, ClassVar, NamedTuple
 
+import requests
 from aiohttp import (
     ClientError,
     ClientTimeout,
@@ -39,6 +40,7 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import computed_field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -58,6 +60,11 @@ from app.core.utils import (
     slugify,
     sort_dict,
     utc_now,
+)
+from app.core.utils.fields import (
+    NonEmptyStr,
+    PreservableSecretStr,
+    strip_credential_url_userinfo,
 )
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks.anonymizer import anonymize_text
@@ -616,6 +623,13 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param ssl_keyfile: Path to the SSL key file. Defaults to None.
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :param logger_name: Name to use for the logger. Defaults to ``__name__``.
+    :param api_key: Credential sent as ``Authorization: <auth_scheme> <api_key>``
+        on both the synchronous and the asynchronous request path. It takes
+        precedence over any userinfo embedded in ``endpoint``, which is stripped
+        for as long as a key is configured. An empty value counts as unset,
+        leaving whatever ``endpoint`` carries. Defaults to None.
+    :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
+        ``api_key``. Defaults to ``"Bearer"``.
     :param secure: Whether to use a secure connection. Defaults to False.
     :param timeout: The timeout in seconds for requests to the Nomad API.
         Defaults to 10 seconds.
@@ -701,6 +715,58 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
         )
     )
+    api_key: PreservableSecretStr | None = None
+    auth_scheme: NonEmptyStr = hot_field(  # ty: ignore[invalid-assignment]
+        "Bearer", advanced=True
+    )
+
+    @property
+    def _configured_api_key(self) -> str | None:
+        """Return the configured API key's plain value, or ``None`` when unset.
+
+        An empty secret counts as unset: :class:`~pydantic.SecretStr` defines
+        ``__len__``, so a blank value is falsy and would otherwise emit a bearer
+        header with no credential. Every site that branches on the credential
+        reads it here, so the two request paths cannot disagree about what
+        counts as configured.
+
+        :return: The plain API key when a non-empty one is configured, else
+            ``None``.
+        """
+        return self.api_key.get_secret_value() if self.api_key else None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the headers to be used in Nomad requests.
+
+        Carries the configured API key as an ``Authorization`` header; without
+        one the inherited empty header set stands.
+
+        :return: A dictionary containing the headers for Nomad API requests.
+        """
+        api_key = self._configured_api_key
+        if api_key is None:
+            return super().headers
+        return {
+            **super().headers,
+            "Authorization": f"{self.auth_scheme} {api_key}",
+        }
+
+    @computed_field
+    @property
+    def base_url(self) -> str:
+        """Compute the base URL, dropping userinfo once an API key is configured.
+
+        The aiohttp session is built with this value, so it is where the
+        asynchronous path gets the strip
+        :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
+
+        :return: The base URL of the Nomad endpoint.
+        """
+        url = super().base_url
+        if self._configured_api_key is None:
+            return url
+        return strip_credential_url_userinfo(url)
 
     @cached_property
     def backend(self) -> Nomad:
@@ -716,13 +782,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 cert = (self.ssl_certfile, self.ssl_keyfile)
             else:
                 cert = (self.ssl_certfile,)
+        address = str(self.endpoint).rstrip("/")
+        session = requests.Session()
+        if self._configured_api_key is not None:
+            address = strip_credential_url_userinfo(address)
+            session.headers.update(self.headers)
         return Nomad(
-            address=str(self.endpoint).rstrip("/"),
+            address=address,
             secure=self.secure,
             timeout=self.timeout,
             verify=(self.secure and self.verify_ssl and self.ssl_cafile)
             or self.verify_ssl,
             cert=cert,
+            session=session,
         )
 
     @staticmethod

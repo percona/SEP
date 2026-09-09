@@ -526,6 +526,137 @@ class TestBackendProperty:
         assert call_kwargs["verify"] == "/path/ca.pem"
 
 
+class TestNomadExecutorApiKey:
+    """Cover the configured API key on both executor request paths.
+
+    The synchronous python-nomad client and the asynchronous aiohttp session
+    each snapshot their headers once per session, so the credential is model
+    state rather than a per-call context.
+    """
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_sync_session_carries_the_bearer_header(self, mock_nomad_cls) -> None:
+        """Assert ``backend`` hands python-nomad a session carrying the header."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        _ = executor.backend
+        session = mock_nomad_cls.call_args[1]["session"]
+        assert session.headers["Authorization"] == "Bearer glsa_supersecret"
+
+    @pytest.mark.asyncio
+    async def test_the_async_session_carries_the_bearer_header(self) -> None:
+        """Assert the entered aiohttp session defaults to the bearer header."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        async with executor:
+            assert executor._session.headers["Authorization"] == (
+                "Bearer glsa_supersecret"
+            )
+
+    def test_the_configured_scheme_is_honoured(self) -> None:
+        """Assert ``auth_scheme`` selects the scheme the header announces."""
+        executor = _build_executor(api_key="glsa_supersecret", auth_scheme="Basic")
+        assert executor.headers["Authorization"] == "Basic glsa_supersecret"
+
+    def test_no_key_emits_no_header(self) -> None:
+        """Assert an unconfigured key leaves the header set byte-identical to today."""
+        assert _build_executor().headers == {}
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_no_key_leaves_the_sync_session_unauthenticated(
+        self, mock_nomad_cls
+    ) -> None:
+        """Assert the session handed to python-nomad carries no authorization header."""
+        _ = _build_executor().backend
+        session = mock_nomad_cls.call_args[1]["session"]
+        assert "Authorization" not in session.headers
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_userinfo_alone_still_authenticates(self, mock_nomad_cls) -> None:
+        """Assert an endpoint credential keeps working when no key is configured."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        _ = executor.backend
+        assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
+        assert "hunter2" in executor.base_url
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_key_wins_over_userinfo_on_the_sync_path(self, mock_nomad_cls) -> None:
+        """Assert the address loses its userinfo so the header is the credential sent."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        call_kwargs = mock_nomad_cls.call_args[1]
+        assert call_kwargs["address"] == "http://localhost:4646"
+        assert call_kwargs["session"].headers["Authorization"] == (
+            "Bearer glsa_supersecret"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_key_wins_over_userinfo_on_the_async_path(self) -> None:
+        """Assert ``base_url`` loses its userinfo so aiohttp cannot derive basic auth."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        assert executor.base_url == "http://localhost:4646"
+        async with executor:
+            assert executor._session.headers["Authorization"] == (
+                "Bearer glsa_supersecret"
+            )
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_an_empty_key_counts_as_unset_on_both_paths(self, mock_nomad_cls) -> None:
+        """Assert a blank mounted secret falls through to whatever the URL carries."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key=""
+        )
+        _ = executor.backend
+        assert executor.headers == {}
+        assert "Authorization" not in mock_nomad_cls.call_args[1]["session"].headers
+        assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
+        assert "hunter2" in executor.base_url
+
+    def test_an_empty_auth_scheme_is_rejected(self) -> None:
+        """Assert validation refuses a blank scheme rather than emitting a bare header."""
+        with pytest.raises(ValidationError):
+            _build_executor(api_key="glsa_supersecret", auth_scheme="")
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_address_never_carries_a_credential(self, mock_nomad_cls) -> None:
+        """Assert neither credential reaches the address python-nomad embeds in URLs.
+
+        ``BaseNomadException`` renders the response body only, so keeping both
+        credentials out of the address is what keeps the synchronous path's
+        errors and request URLs free of them.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        address = mock_nomad_cls.call_args[1]["address"]
+        assert address == "http://localhost:4646"
+        assert "glsa_supersecret" not in address
+        assert "hunter2" not in address
+
+    @pytest.mark.asyncio
+    async def test_the_request_debug_log_withholds_the_key(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Assert the per-request debug line never renders the configured key."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        async with executor:
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=MagicMock())
+            context.__aexit__ = AsyncMock(return_value=None)
+            executor._session.request = MagicMock(return_value=context)
+            with caplog.at_level(logging.DEBUG, logger=executor.logger.name):
+                async with executor._request("GET", "/v1/jobs"):
+                    pass
+        assert "Sending GET request" in caplog.text
+        assert "glsa_supersecret" not in caplog.text
+
+
 class TestRegisterJob:
     """Test NomadExecutor.register_job."""
 
