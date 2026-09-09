@@ -1010,17 +1010,21 @@ class RestoreCreate(TaskFormModel):
 
 
 class LegacyRestoreCreate(RestoreCreate):
-    """Validate a reconstructed form body against the create form's older contract.
+    """Validate a stored form body against the create form's older contract.
 
     The replication options gained a gate on ``slave_from_master`` when the form
-    started nesting them under it. A stored body carries them independently, so
-    a restore that recorded a replication source while replication was off would
-    now fail to revalidate. Two paths need that tolerance: the backfill
-    reconstruction, where the task would be skipped and left with no ``_form``
-    stamp and therefore no Edit affordance at all, and the response builder's
-    stored-stamp repair in :mod:`app.sep.apps.mysql_backups.restore.deps`, which
-    swallows a validation error and would silently serve an unrepaired stamp. The rejection
-    belongs on the create and update routes, which keep :class:`RestoreCreate`.
+    started nesting them under it. A body written before that gate carries the
+    options independently of the toggle, so revalidating one through
+    :class:`RestoreCreate` can fail for a restore that was saved legitimately.
+
+    This model is where that line is drawn: a body arriving as a *submission* is
+    held to the current contract, and a body being *read back* is held to the one
+    it was written under. Anything revalidating stored state belongs on this side
+    of the line; the create and update routes stay on :class:`RestoreCreate`.
+
+    Rejecting a stored body is worse than accepting a stale one. A body that will
+    not revalidate loses its ``_form`` stamp, and the stamp is what gives a task
+    an Edit affordance — the only way an operator has to repair it.
 
     Each field is redeclared exactly as the create model declared it before the
     tightening. The ``Ui`` pointer goes with the gate rather than being kept
