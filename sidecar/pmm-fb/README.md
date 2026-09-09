@@ -152,8 +152,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   regardless of the active profile, and a guard there would make the script a
   prerequisite of every bring-up. PMM generates the secrets it publishes itself,
   including the PostgreSQL role's password. Nothing secret is committed;
-  re-running keeps an existing `.env` and appends any password slot it predates;
-  on an arm64 engine it also rewrites the two executor slots it owns.
+  re-running keeps an existing `.env`, appends any password slot it predates,
+  and repoints the two executor slots it owns at the current engine — adding
+  them on an arm64 engine, and reclaiming them if the deployment later moves to
+  an amd64 one.
 - **PMM owns the four secrets SEP reads from disk.** With `PMM_ENABLE_SEP=1` it
   writes four files into the `pmm-sep` volume, which pmm-server mounts at
   `/srv/sep` and the side-car mounts read-only at `/run/secrets/sep`.
@@ -263,8 +265,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   **Running the amd64 feature-build client under emulation instead.** Set
   `SEP_MYSQL_PLATFORM=linux/amd64` in `.env` and re-run `./bootstrap.sh`: it
   blanks the client-image slot so the feature-build client is used, and probes
-  the emulator for `clone3` before the build, refusing under QEMU. The only
-  emulation that passes is Rosetta — Docker Desktop → **Settings → General**:
+  the emulator for `clone3` before the build, refusing under QEMU. Rosetta is
+  the emulation to reach for, since the host kernel serves the syscall rather
+  than the translator — though only the QEMU path (refuses) and the native one
+  (passes) are measured here. Docker Desktop → **Settings → General**:
   Virtual Machine Manager = *Apple Virtualization framework* (Docker VMM does
   not support Rosetta), then *Use Rosetta for x86_64/amd64 emulation on Apple
   Silicon*, Apply & restart. `sep-mysql`'s entrypoint probes again at container
