@@ -640,7 +640,7 @@ class TestEncryptionFormatStampRepair:
 
 
 class TestBinaryCompressionBackfillLeniency:
-    """A stored pairing the create form now rejects still reconstructs."""
+    """Reconstruct a stored pairing the create form now rejects."""
 
     def test_reconstruction_accepts_a_pairing_the_running_binary_rejects(self):
         """Pin the split for a pairing saved before the binary gate existed.

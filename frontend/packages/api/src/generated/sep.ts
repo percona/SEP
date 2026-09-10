@@ -9065,12 +9065,11 @@ export interface components {
      *
      *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
      *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-     *         validation, as does a GPG format with no timing. They are app-scoped, so
-     *         they reject on submit; the binary/compression rules, which reject an
+     *         validation, as does a GPG format with no timing. Those are app-scoped, so
+     *         they surface only on submit. The binary/compression rules, which reject an
      *         XtraBackup compression algorithm the selected (or defaulted)
      *         ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning
-     *         ``compression_algorithm`` — the scope ``SchemaFormRenderer`` evaluates, so
-     *         those land under the field as the operator types.
+     *         ``compression_algorithm``, so they also evaluate as the operator types.
      */
     mysql_backups__BackupCreate: {
       /**

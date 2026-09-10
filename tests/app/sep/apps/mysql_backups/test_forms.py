@@ -15,7 +15,6 @@
 
 """Tests for the app.sep.apps.mysql_backups.forms module."""
 
-import ast
 import re
 
 import pytest
@@ -37,6 +36,7 @@ from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.tasks.models import TaskBackendEnum
 from tests.app.sep.apps.conftest import literal_members
 from tests.app.sep.apps.mysql_backups.conftest import (
+    xtrabackup_binary_default,
     XTRABACKUP_INCREMENTAL_CYCLES,
     xtrabackup_payload_tree,
 )
@@ -304,30 +304,9 @@ class TestXtrabackupIncrementalCycleField:
 
 
 class TestXtrabackupBinaryCompressionMatrix:
-    """The per-binary compression matrix agrees with the surfaces around it."""
+    """Hold the per-binary compression matrix to the surfaces around it."""
 
     _FIELD = "xtrabackup_bin_cmd"
-
-    @staticmethod
-    def _payload_binary_default() -> str:
-        """Return the binary the payload falls back to when the config omits it.
-
-        Read off the payload's AST rather than restated: the form gates a blank
-        field against this value, so the two drifting would send the gate looking
-        at a binary the run never uses.
-        """
-        for node in ast.walk(xtrabackup_payload_tree()):
-            if not isinstance(node, ast.Call) or not isinstance(
-                node.func, ast.Attribute
-            ):
-                continue
-            match node.func.attr, node.args:
-                case "get", [
-                    ast.Constant(value="XTRABACKUP_BIN_CMD"),
-                    ast.Constant(value=str() as default),
-                ]:
-                    return default
-        raise AssertionError("the payload no longer defaults XTRABACKUP_BIN_CMD")
 
     def test_matrix_covers_every_declared_binary(self):
         """Hold a row for each binary the vocabulary declares.
@@ -390,7 +369,10 @@ class TestXtrabackupBinaryCompressionMatrix:
 
     def test_default_binary_matches_the_payload(self):
         """Pin the form's blank-field resolution to the payload's own default."""
-        assert self._payload_binary_default() == XTRABACKUP_BIN_DEFAULT
+        assert (
+            xtrabackup_binary_default(xtrabackup_payload_tree())
+            == XTRABACKUP_BIN_DEFAULT
+        )
 
     @staticmethod
     def _compression_description() -> str:

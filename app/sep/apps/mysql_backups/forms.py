@@ -457,18 +457,22 @@ class BackupCreate(TaskFormModel):
 
     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-        validation, as does a GPG format with no timing. They are app-scoped, so
-        they reject on submit; the binary/compression rules, which reject an
+        validation, as does a GPG format with no timing. Those are app-scoped, so
+        they surface only on submit. The binary/compression rules, which reject an
         XtraBackup compression algorithm the selected (or defaulted)
         ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning
-        ``compression_algorithm`` — the scope ``SchemaFormRenderer`` evaluates, so
-        those land under the field as the operator types.
+        ``compression_algorithm``, so they also evaluate as the operator types.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
         fail_when=MODE_AND_ENCRYPTION_FAIL_RULES,
-        # Section-scoped rather than app-scoped: ``useFailRules`` evaluates only
-        # section rules, so only there is ``error_fields`` acted on.
+        # Section-scoped rather than app-scoped because ``useFailRules`` evaluates
+        # section rules only. It renders the message as an alert at the head of the
+        # section, not against the field: ``SectionRenderer`` takes the violation as
+        # ``{message}`` and drops ``error_fields``, so a message on a section
+        # collapsed by default stays unmounted until the operator expands it. The
+        # submit-time 422 carries no field path either, and surfaces above the
+        # submit button.
         sections={"General": SectionRules(fail_when=_BINARY_COMPRESSION_FAIL_RULES)},
     )
 

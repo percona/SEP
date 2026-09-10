@@ -355,11 +355,11 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     ) -> None:
         """Serve one compression rule per backup binary, on that field's section.
 
-        The renderer evaluates section-scoped rules only, so this is the scope in
-        which ``error_fields`` puts the message under the compression field rather
-        than at the top of the form. Asserted against the section that actually
-        declares the field, so moving the field without moving the rules fails
-        here instead of silently unbinding the message.
+        The renderer evaluates section-scoped rules only, so this is the scope that
+        gets the operator a message before submit rather than after. Asserted
+        against the section that actually declares the field, so moving the field
+        without moving the rules fails here instead of silently detaching the
+        message from the fields it is about.
         """
         base = app_base_url(self.app_def)
 

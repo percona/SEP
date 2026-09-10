@@ -823,7 +823,7 @@ def _binary_pairs(
 
 
 class TestBinaryCompressionGate:
-    """XtraBackup compression is gated on the binary that will run the backup."""
+    """Gate XtraBackup compression on the binary that will run the backup."""
 
     @pytest.mark.parametrize(("binary", "algorithm"), _binary_pairs(supported=True))
     def test_supported_pairing_validates(
@@ -961,12 +961,12 @@ class TestBinaryCompressionGate:
 
 
 class TestBinaryCompressionGateWireShape:
-    """The default binary's rule matches a blank field on the wire too.
+    """Serve the default binary's rule so a blank field matches it too.
 
     The served rule set is asserted in the contract tests; what only shows here is
     the shape of the predicate, which is what the renderer evaluates from — a
-    predicate matching only the explicit spelling would let the frontend accept a
-    defaulted form the server then rejects.
+    predicate matching only the explicit spelling would let the frontend stay
+    quiet on a defaulted form the server then rejects.
     """
 
     @staticmethod
