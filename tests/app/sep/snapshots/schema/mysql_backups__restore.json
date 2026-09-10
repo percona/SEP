@@ -369,7 +369,6 @@
           "description": "Port used to query the replication source for an unused server id when 'Restore my.cnf' is set. Starting replication itself uses the port in the coordinates saved in the backup.",
           "label": "Master port",
           "name": "master_port",
-          "parent": "slave_from_master",
           "required": false,
           "type": "integer"
         },

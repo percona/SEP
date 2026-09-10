@@ -764,10 +764,16 @@ class RestoreCreate(TaskFormModel):
     ] = None
     master_port: Annotated[
         int | EmptyStrToNone,
+        # Deliberately unparented, unlike its four neighbours: the field's own
+        # description says it is read when 'Restore my.cnf' is set, and that
+        # starting replication uses the port in the backup's coordinates
+        # instead — so nesting it under 'Slave from master' would grey it out
+        # for the one toggle that does not use it. Whether it belongs under
+        # 'Restore my.cnf' is a question for the backups owner; until then it
+        # stays a plain field, as it is on main.
         Ui(
             label="Master port",
             section="XtraBackup",
-            parent="slave_from_master",
             description=(
                 "Port used to query the replication source for an unused server id "
                 "when 'Restore my.cnf' is set. Starting replication itself uses the "
