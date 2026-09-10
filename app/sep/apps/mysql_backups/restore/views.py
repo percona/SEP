@@ -19,14 +19,13 @@ Section membership and order are declared on
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` (via
 ``Ui(section=...)`` and field-declaration order); what lives here is the part the
 model cannot express: the section titles, the per-``backup_type`` visibility
-gates, the ``Advanced`` grouping, and the list columns. ``group=ADVANCED_GROUP``
-puts ``General`` behind the same heading the backup form uses for its expert
-sections; it is the only grouped section here, so the group has a single member.
-``General``'s fields sit below the mode sections on the create model because the
-renderer forms a group from an *adjacent* run and the derived order comes from
-field declaration order, not from the tuple below — the same ordering the backup
-form needs for its own three-section run. The per-``backup_type`` gates are
-declared here (not as field-level ``Forbidden`` markers) so the permissive
+gates and the list columns. No section here carries ``group``: ``General`` is
+the only candidate, and a group of one wraps an already-collapsible section in
+a second shell instead of saving a row. ``General``'s fields still sit below
+the mode sections on the create model — derived section order comes from field
+declaration order, not from the tuple below, and this form reads the same way
+the backup form does with the expert block last. The per-``backup_type`` gates
+are declared here (not as field-level ``Forbidden`` markers) so the permissive
 create model keeps accepting the mode-specific fields' non-``None`` defaults on
 a cross-mode restore. The transport and decryption fields are gated on the model
 instead, which is why ``ssh_user``, ``ssh_port`` and ``s3_tool`` gave up theirs;
@@ -35,7 +34,6 @@ see :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate`.
 
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
-    ADVANCED_GROUP,
     FormLayout,
     SectionLayout,
     TASK_SECTION_LAYOUT,
@@ -61,7 +59,6 @@ restore_views = Views(
             SectionLayout(
                 key="General",
                 title="General",
-                group=ADVANCED_GROUP,
                 collapsible=True,
                 collapsed_by_default=True,
             ),

@@ -596,7 +596,6 @@
           "type": "string"
         }
       ],
-      "group": "Advanced",
       "render_after_submit": false,
       "title": "General"
     }
