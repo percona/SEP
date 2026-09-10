@@ -19,7 +19,7 @@ import importlib
 import pkgutil
 from collections.abc import Iterator
 
-from annotated_types import BaseMetadata
+from annotated_types import BaseMetadata, GroupedMetadata
 from pydantic import TypeAdapter
 
 from app.sep.sync import syncers
@@ -65,7 +65,10 @@ class TestConstrainedSyncerFields:
             name
             for cls in _syncer_classes()
             for name, field in cls.model_fields.items()
-            if any(isinstance(item, BaseMetadata) for item in field.metadata)
+            if any(
+                isinstance(item, BaseMetadata | GroupedMetadata)
+                for item in field.metadata
+            )
         }
 
         assert constrained, "no constrained syncer field was discovered"

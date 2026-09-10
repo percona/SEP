@@ -51,6 +51,7 @@ from app.sep.config import (
     SyncerExtraKwargs,
     SyncOptions,
 )
+from app.sep.sync.syncers.pmm import PMMSyncer
 
 
 class TestCookieOptions:
@@ -885,6 +886,7 @@ class TestSyncerExtrasValidatedAtLoad:
         )[0]
 
         assert syncer.stale_run_after == timedelta(seconds=60)
+        assert isinstance(syncer, PMMSyncer)
         assert syncer.missing_grace_generations == grace
 
     def test_null_threshold_falls_back_to_the_field_default(
