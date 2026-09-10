@@ -547,12 +547,6 @@
                   "backup_type": "X"
                 }
               }
-            },
-            {
-              "message": "'xtrabackup_kill_queries' must be enabled to set a kill-queries option.",
-              "when": {
-                "falsy": "xtrabackup_kill_queries"
-              }
             }
           ],
           "label": "Kill-queries timeout (s)",
@@ -579,12 +573,6 @@
                 "not_equals": {
                   "backup_type": "X"
                 }
-              }
-            },
-            {
-              "message": "'xtrabackup_kill_queries' must be enabled to set a kill-queries option.",
-              "when": {
-                "falsy": "xtrabackup_kill_queries"
               }
             }
           ],
@@ -618,12 +606,6 @@
                 "not_equals": {
                   "backup_type": "X"
                 }
-              }
-            },
-            {
-              "message": "'xtrabackup_prepare' must be enabled to set a prepare option.",
-              "when": {
-                "falsy": "xtrabackup_prepare"
               }
             }
           ],

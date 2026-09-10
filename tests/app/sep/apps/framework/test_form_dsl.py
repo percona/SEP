@@ -51,9 +51,7 @@ from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
     FailRule,
-    falsy,
     FieldGate,
-    not_,
     truthy,
 )
 from app.sep.apps.framework.schema import (
@@ -1340,7 +1338,6 @@ class _ParentedModel(AppFormModel):
     kill: Annotated[bool, Ui(label="Kill", section="s")] = False
     timeout: Annotated[
         int | EmptyStrToNone,
-        Forbidden(when=falsy("kill")),
         Ui(label="Timeout", section="s", parent="kill"),
     ] = None
 
@@ -1434,32 +1431,6 @@ class TestParentToggle:
         with pytest.raises(ValueError, match="must name the sibling bool field"):
             Ui(label="x", section="s", parent="  ")
 
-    def test_parent_without_companion_gate_rejected(self) -> None:
-        """Reject the pointer alone: the server would still accept a value."""
-
-        class _Model(AppFormModel):
-            kill: Annotated[bool, Ui(label="Kill", section="s")] = False
-            timeout: Annotated[
-                int | EmptyStrToNone, Ui(label="Timeout", section="s", parent="kill")
-            ] = None
-
-        with pytest.raises(ValueError, match="declares no Forbidden"):
-            derive_form_sections(_Model, _one_section_layout())
-
-    def test_not_truthy_accepted_as_the_companion_gate(self) -> None:
-        """Accept the other spelling of "the parent is off"."""
-
-        class _Model(AppFormModel):
-            kill: Annotated[bool, Ui(label="Kill", section="s")] = False
-            timeout: Annotated[
-                int | EmptyStrToNone,
-                Forbidden(when=not_(truthy("kill"))),
-                Ui(label="Timeout", section="s", parent="kill"),
-            ] = None
-
-        sections = derive_form_sections(_Model, _one_section_layout())
-        assert sections[0].fields[1].parent == "kill"
-
     def test_non_bool_parent_rejected(self) -> None:
         """Reject a pointer at a field the renderer could not render as a toggle."""
 
@@ -1467,7 +1438,6 @@ class TestParentToggle:
             kill: Annotated[str, Ui(label="Kill", section="s")] = ""
             timeout: Annotated[
                 int | EmptyStrToNone,
-                Forbidden(when=falsy("kill")),
                 Ui(label="Timeout", section="s", parent="kill"),
             ] = None
 
@@ -1481,7 +1451,6 @@ class TestParentToggle:
             kill: Annotated[bool, Ui(label="Kill", section="a")] = False
             timeout: Annotated[
                 int | EmptyStrToNone,
-                Forbidden(when=falsy("kill")),
                 Ui(label="Timeout", section="b", parent="kill"),
             ] = None
 
@@ -1501,22 +1470,29 @@ class TestParentToggle:
             a: Annotated[bool, Ui(label="A", section="s")] = False
             b: Annotated[
                 bool,
-                Forbidden(when=falsy("a")),
                 Ui(label="B", section="s", parent="a"),
             ] = False
             c: Annotated[
                 int | EmptyStrToNone,
-                Forbidden(when=falsy("b")),
                 Ui(label="C", section="s", parent="b"),
             ] = None
 
         with pytest.raises(ValueError, match="is itself parented"):
             derive_form_sections(_Model, _one_section_layout())
 
-    def test_companion_gate_is_enforced_at_runtime(self) -> None:
-        """Keep the pointer presentational: the gate is what rejects a payload."""
-        with pytest.raises(ValidationError):
-            _ParentedModel(kill=False, timeout=_PARENTED_TIMEOUT)
+    def test_parent_does_not_change_what_the_server_accepts(self) -> None:
+        """Accept a parented field whose toggle is off.
+
+        The pointer is presentation: it tells the renderer where to draw the
+        field and when to grey it out, and nothing more. A field that should
+        also be rejected in that state says so with its own ``Forbidden``,
+        which is a per-field validation decision rather than something the
+        pointer implies.
+        """
+        assert (
+            _ParentedModel(kill=False, timeout=_PARENTED_TIMEOUT).timeout
+            == _PARENTED_TIMEOUT
+        )
         assert (
             _ParentedModel(kill=True, timeout=_PARENTED_TIMEOUT).timeout
             == _PARENTED_TIMEOUT

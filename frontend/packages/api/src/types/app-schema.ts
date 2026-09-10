@@ -100,10 +100,12 @@ interface BaseField {
    * — a reader can see what enabling the parent will offer.
    *
    * Presentation only, and taken on trust: the disable state comes from the
-   * named field's truthiness alone. Enforcement stays with the backend, through
-   * this field's own `forbidden` gate on the parent being falsy, which the
-   * renderer recognises structurally and consumes as the disable condition
-   * rather than applying it as a hide. Every other gate keeps hiding the field.
+   * named field's truthiness alone, and nesting a field says nothing about
+   * whether the backend accepts a value for it. A parented field may also
+   * carry its own `forbidden` gate on the parent being falsy — where it does,
+   * the renderer recognises that shape structurally and consumes it as the
+   * disable condition rather than applying it as a hide. Every other gate
+   * keeps hiding the field.
    */
   parent?: string;
 }

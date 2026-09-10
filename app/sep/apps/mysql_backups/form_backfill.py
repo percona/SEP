@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, TYPE_CHECKING
+from typing import Annotated, Any, TYPE_CHECKING
 
 import yaml
 
@@ -33,7 +33,6 @@ from app.sep.apps.mysql_backups.forms import (
     encryption_format_for_passes,
     OWNER,
     UploadProvider,
-    XTRABACKUP_ONLY,
 )
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.form_backfill import (
@@ -88,37 +87,11 @@ class LegacyBackupCreate(BackupCreate):
     and those tasks ran and reported success, so they are part of the population
     that has to reconstruct rather than be skipped.
 
-    The kill-queries and prepare options went the same way when the form started
-    nesting them under their toggles and gave each one a gate on it. A stored
-    config carries the option and its toggle independently — the reconstruction
-    copies every non-null parsed key — so a task that set one of these while its
-    toggle was off would be skipped for the same reason. Each keeps
-    :data:`~app.sep.apps.mysql_backups.forms.XTRABACKUP_ONLY`, the mode gate it
-    already carried, so only the new parent gate is relaxed: a stored Mydumper or
-    Binlog config naming an XtraBackup-only key is still rejected exactly as it
-    was before. The ``Ui`` markers are dropped because nothing reads them here —
-    this model is only ever validated against, never derived into a schema.
-
     :param backup_dir: The backup root directory; optional here and un-stripped,
         unlike on the create model.
-    :param xtrabackup_kill_queries_timeout: The kill-queries timeout; accepted
-        with ``xtrabackup_kill_queries`` off, unlike on the create model.
-    :param xtrabackup_kill_query_type: Which blocking queries may be killed;
-        accepted with ``xtrabackup_kill_queries`` off, unlike on the create model.
-    :param xtrabackup_prepare_memory: Memory the prepare step may use; accepted
-        with ``xtrabackup_prepare`` off, unlike on the create model.
     """
 
     backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
-    xtrabackup_kill_queries_timeout: Annotated[
-        int | EmptyStrToNone, XTRABACKUP_ONLY
-    ] = None
-    xtrabackup_kill_query_type: Annotated[
-        Literal["select", "all"] | EmptyStrToNone, XTRABACKUP_ONLY
-    ] = None
-    xtrabackup_prepare_memory: Annotated[
-        NonEmptyStr | EmptyStrToNone, XTRABACKUP_ONLY
-    ] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:

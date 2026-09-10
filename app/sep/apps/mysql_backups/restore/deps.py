@@ -30,11 +30,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
-from app.sep.apps.mysql_backups.restore.models import (
-    LegacyRestoreCreate,
-    RestoreCreate,
-    RestoresResponse,
-)
+from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -183,14 +179,9 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     the form opens on the transport the stored values imply and keeps them
     visible.
 
-    Re-validating through
-    :class:`~app.sep.apps.mysql_backups.restore.models.LegacyRestoreCreate`
-    rather than calling the normalizer directly keeps the served stamp close to
-    what a subsequent ``PUT`` would accept. The lenient model, not
-    ``RestoreCreate``: a stamp predating the source controls also predates the
-    replication options being gated on ``slave_from_master``, and rejecting it
-    here would silently skip the repair for exactly the population the repair
-    exists to serve. It is tolerant of a stamp that cannot be validated at all,
+    Re-validating through :class:`RestoreCreate` rather than calling the
+    normalizer directly keeps the served stamp exactly what a subsequent ``PUT``
+    would accept. It is tolerant of a stamp that cannot be validated at all,
     because this builder also serves the list route, where one unparseable task
     must not take out the whole page.
 
@@ -208,9 +199,7 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     ):
         return {}
     try:
-        declared = LegacyRestoreCreate.model_validate(stored_form).model_dump(
-            mode="json"
-        )
+        declared = RestoreCreate.model_validate(stored_form).model_dump(mode="json")
     except ValidationError:
         return {}
     return {"data": {**data, RESERVED_FORM_KEY: declared}}

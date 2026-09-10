@@ -250,10 +250,12 @@ class BaseField(SchemaBaseModel):
     :param parent: Optional name of a sibling ``bool`` field, in the same
         section, that this field parameterises. The schema-driven React
         renderer draws the field indented beneath that toggle and inert until
-        it is on, rather than hiding it. Presentation only — the runtime rule
-        is the field's own ``forbidden`` gate on the parent being falsy, which
-        the renderer recognises and consumes as the disable condition instead
-        of applying it as a hide; every other gate keeps hiding the field.
+        it is on, rather than hiding it. Presentation only — it does not change
+        what the server accepts, and the disable state comes from the named
+        field's truthiness alone. A field that additionally declares a
+        ``forbidden`` gate on the parent being falsy is still nested rather
+        than hidden: the renderer recognises that shape and consumes it as the
+        disable condition, while every other gate keeps hiding the field.
         Typed optional so a route serialising with ``exclude_none`` drops it
         from the wire until a field opts in, the same posture as
         ``destructive``. Defaults to ``None``.

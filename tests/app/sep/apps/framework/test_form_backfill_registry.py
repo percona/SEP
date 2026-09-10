@@ -37,9 +37,9 @@ from app.sep.apps.mysql_backups.form_backfill import (
     reconstruct_mysql_backups_form,
 )
 from app.sep.apps.mysql_backups.restore.form_backfill import (
-    LegacyRestoreCreate,
     reconstruct_mysql_restores_form,
 )
+from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.config import App, sep_settings
 
 EXPECTED_DEFAULT_ENTRIES = [
@@ -49,7 +49,7 @@ EXPECTED_DEFAULT_ENTRIES = [
     (
         "mysql_backups/restore",
         "RESTORES",
-        LegacyRestoreCreate,
+        RestoreCreate,
         reconstruct_mysql_restores_form,
     ),
     ("checksums", "CHECKSUMS", ChecksumsForm, reconstruct_checksums_form),

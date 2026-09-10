@@ -346,14 +346,6 @@
         {
           "default": false,
           "description": "Wait for the restored replica to catch up and fail the task if it does not. Needs replication to be started above.",
-          "forbidden": [
-            {
-              "message": "'slave_from_master' must be enabled to set a replication option.",
-              "when": {
-                "falsy": "slave_from_master"
-              }
-            }
-          ],
           "label": "Wait for catchup",
           "name": "wait_for_catchup",
           "parent": "slave_from_master",
@@ -362,14 +354,6 @@
         },
         {
           "description": "Replication source the restored instance connects to. Used when replication is started above.",
-          "forbidden": [
-            {
-              "message": "'slave_from_master' must be enabled to set a replication option.",
-              "when": {
-                "falsy": "slave_from_master"
-              }
-            }
-          ],
           "label": "Master IP",
           "min_length": 1,
           "name": "master_ip",
@@ -382,19 +366,12 @@
           "description": "Port used to query the replication source for an unused server id when 'Restore my.cnf' is set. Starting replication itself uses the port in the coordinates saved in the backup.",
           "label": "Master port",
           "name": "master_port",
+          "parent": "slave_from_master",
           "required": false,
           "type": "integer"
         },
         {
           "description": "Account the restored instance replicates with",
-          "forbidden": [
-            {
-              "message": "'slave_from_master' must be enabled to set a replication option.",
-              "when": {
-                "falsy": "slave_from_master"
-              }
-            }
-          ],
           "label": "Master user",
           "min_length": 1,
           "name": "master_user",
@@ -404,14 +381,6 @@
         },
         {
           "description": "Password for the replication account",
-          "forbidden": [
-            {
-              "message": "'slave_from_master' must be enabled to set a replication option.",
-              "when": {
-                "falsy": "slave_from_master"
-              }
-            }
-          ],
           "label": "Master password",
           "min_length": 1,
           "name": "master_password",

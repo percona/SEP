@@ -991,32 +991,24 @@ def _validate_section_groups(sections: list[FormSection]) -> None:
         previous = group
 
 
-def _parent_off_gate_dicts(parent: str) -> tuple[dict[str, Any], ...]:
-    """Return the wire shapes that spell "the parent toggle is off".
-
-    Both are accepted so an author can write the gate either way; the React
-    renderer matches the same two shapes when deciding which gate to consume as
-    its disable condition.
-
-    :param parent: The parent field name.
-    :return: The accepted predicate wire shapes.
-    """
-    return ({"falsy": parent}, {"not": {"truthy": parent}})
-
-
 def _validate_parent_pointers(sections: list[FormSection]) -> None:
     """Reject ``Ui(parent=...)`` pointers that the renderer could not honour.
 
-    ``Ui`` is presentation-only, so the pointer changes nothing about what the
-    server accepts — the field's own ``Forbidden(when=falsy(<parent>))`` remains
-    the runtime rule. That split is only safe while the two agree, and neither
-    the type system nor a wire snapshot can catch them drifting apart, so the
-    pairing is enforced here, where every migrated app derives its schema.
+    ``Ui`` is presentation-only, so a pointer changes nothing about what the
+    server accepts: it says where the renderer draws the field and when to grey
+    it out, and nothing more. What it can still get wrong is naming a target the
+    renderer cannot nest under — a field in another section, one that is not a
+    toggle, or one that is itself nested — and none of those is visible in a
+    wire snapshot, so they are caught here, where every migrated app derives its
+    schema.
+
+    A field may still carry its own ``Forbidden`` gate on the same parent when
+    the combination is genuinely invalid, but that is a validation decision made
+    per field, not something the pointer implies.
 
     :param sections: The derived form sections.
     :raises ValueError: When a pointer names a field outside its own section, a
-        field that is not a bool, or a field that is itself parented; or when
-        the field carrying the pointer declares no matching forbidden gate.
+        field that is not a bool, or a field that is itself parented.
     """
     for section in sections:
         bools = {
@@ -1053,15 +1045,6 @@ def _validate_parent_pointers(sections: list[FormSection]) -> None:
                     "itself parented. Chained parents are not supported, and a "
                     "cycle would leave both toggles permanently inert."
                 )
-            accepted = _parent_off_gate_dicts(parent)
-            gates = leaf.forbidden or []
-            if not any(gate.when.to_dict() in accepted for gate in gates):
-                raise ValueError(
-                    f"field {leaf.name!r} sets Ui(parent={parent!r}) but declares "
-                    f"no Forbidden(when=falsy({parent!r})). Ui is presentation "
-                    "only, so without that gate the renderer greys the field out "
-                    "while the server still accepts a value for it."
-                )
 
 
 def derive_form_sections(
@@ -1083,8 +1066,9 @@ def derive_form_sections(
     :return: The derived form sections in field-declaration order.
     :raises ValueError: When a field names a section absent from ``layout``, a
         layout section has no fields, a ``group`` is not one adjacent run (see
-        :func:`_validate_section_groups`), or a ``Ui(parent=...)`` pointer is one
-        the renderer could not honour (see :func:`_validate_parent_pointers`).
+        :func:`_validate_section_groups`), or a ``Ui(parent=...)`` pointer names
+        a target the renderer could not nest under (see
+        :func:`_validate_parent_pointers`).
     """
     specs = _derive_field_specs(model)
     layout_by_key = {section.key: section for section in layout.sections}

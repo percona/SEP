@@ -17,9 +17,7 @@
 
 from types import SimpleNamespace
 
-import pytest
 import yaml
-from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import _backfill_single_task
@@ -32,7 +30,6 @@ from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY,
-    LegacyRestoreCreate,
     reconstruct_mysql_restores_form,
 )
 from app.sep.apps.mysql_backups.restore.models import (
@@ -457,56 +454,3 @@ def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():
     assert body is not None
     assert body["source_transport"] == SourceTransport.SSH.value
     RestoreCreate.model_validate(body)
-
-
-def test_reconstruction_accepts_a_replication_option_with_the_toggle_off():
-    """Accept the combination the create form started rejecting when it nested.
-
-    Nesting the replication options under ``slave_from_master`` put a
-    ``Forbidden`` gate on each, because the ``Ui(parent=...)`` pointer is
-    presentation only and the server has to enforce the pairing itself. A stored
-    config carries them independently, so without the leniency a restore that
-    recorded a replication source while replication was off would be skipped —
-    and a task with no ``_form`` stamp has no Edit affordance at all.
-    """
-    body = {
-        "task_name": "restore-legacy",
-        "hostname": "executor-host",
-        "backup_type": BackupType.XTRABACKUP.value,
-        "backup_source": "/data/backups/latest",
-        "slave_from_master": False,
-        "master_ip": "10.0.0.9",
-        "master_user": "repl",
-        "master_password": "secret",
-        "wait_for_catchup": True,
-    }
-
-    legacy = LegacyRestoreCreate.model_validate(body)
-    assert legacy.master_ip == "10.0.0.9"
-    assert legacy.wait_for_catchup is True
-
-    with pytest.raises(ValidationError) as excinfo:
-        RestoreCreate.model_validate(body)
-    assert "'slave_from_master' must be enabled" in str(excinfo.value)
-
-
-_DEFAULT_MASTER_PORT = 3306
-
-
-def test_master_port_default_survives_replication_being_off():
-    """Keep ``master_port`` out of the parented set.
-
-    It defaults to 3306 and is read when 'Restore my.cnf' is set, not when
-    replication starts, so gating it on ``slave_from_master`` would reject every
-    restore that leaves replication off — the common case.
-    """
-    created = RestoreCreate.model_validate(
-        {
-            "task_name": "restore",
-            "hostname": "executor-host",
-            "backup_type": BackupType.XTRABACKUP.value,
-            "backup_source": "/data/backups/latest",
-        }
-    )
-    assert created.slave_from_master is False
-    assert created.master_port == _DEFAULT_MASTER_PORT

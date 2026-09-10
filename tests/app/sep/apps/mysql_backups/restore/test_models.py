@@ -164,21 +164,13 @@ def test_source_controls_are_always_visible_task_choices() -> None:
         assert task_fields[name].forbidden is None, name
 
 
-def test_only_the_source_and_replication_fields_are_gated() -> None:
-    """Gate exactly the source-declaration and replication fields, and nothing else.
+def test_only_the_transport_and_decryption_fields_are_gated() -> None:
+    """Gate exactly the five fields a source declaration governs, and nothing else.
 
-    The source predicates are pinned on the served schema in
+    The predicates themselves are pinned on the served schema in
     ``test_schema_gates_transport_and_decryption_fields``; what matters here is
-    that no other field acquired a gate, since a gated field must not carry a
-    present default — its own ``Forbidden`` would otherwise reject it.
-
-    The replication four are gated because they are nested under
-    ``slave_from_master`` in the renderer, and ``Ui(parent=...)`` is
-    presentation only: the pairing is what stops the greyed-out control and the
-    accepted payload drifting apart. ``master_port`` is deliberately absent — it
-    defaults to 3306 and is read when 'Restore my.cnf' is set rather than when
-    replication starts, so gating it would 422 every restore that leaves
-    replication off.
+    that no other field acquired a gate, since every gated field also had to give
+    up its default.
     """
     gated = {name for name, field in _derived_fields().items() if field.forbidden}
 
@@ -188,10 +180,6 @@ def test_only_the_source_and_replication_fields_are_gated() -> None:
         "ssh_key",
         "s3_tool",
         "gpg_password_file",
-        "wait_for_catchup",
-        "master_ip",
-        "master_user",
-        "master_password",
     }
 
 

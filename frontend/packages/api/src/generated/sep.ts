@@ -9676,7 +9676,7 @@ export interface components {
     };
     /**
      * S3Tool
-     * @description Allowed tools to interact with S3-compatible services.
+     * @description Enumerate the clients that can download a backup from S3-compatible storage.
      * @enum {string}
      */
     mysql_backups__S3Tool: 's3cmd' | 'awscli';

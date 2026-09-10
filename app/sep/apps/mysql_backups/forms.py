@@ -156,10 +156,7 @@ _UPLOAD_GSUTIL = "GSUTIL"
 # instead — ``_field_is_present`` treats ``False`` as absent, so a gate here would
 # never fire on their default.
 _MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
-#: Public because the backfill's lenient subclass redeclares three XtraBackup
-#: fields and has to carry the same mode gate to keep accepting what it accepted
-#: before; the other two modes have no such reader.
-XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
+_XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
 _BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
 
 #: Shared by ``BackupCreate`` and the backfill's lenient subclass, which
@@ -194,18 +191,6 @@ _GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
 _DESYNC_PXC_DESCRIPTION = (
     "Desync the node from the PXC cluster while the backup runs, so flow "
     "control does not stall the cluster. Ignored on a non-PXC node."
-)
-
-# Companion gates for the ``Ui(parent=...)`` pointers on the same fields; see
-# :class:`~app.sep.apps.framework.form_dsl.markers.Ui` for the pairing rule the
-# DSL enforces.
-_KILL_QUERIES_OFF = Forbidden(
-    when=falsy("xtrabackup_kill_queries"),
-    message=("'xtrabackup_kill_queries' must be enabled to set a kill-queries option."),
-)
-_PREPARE_OFF = Forbidden(
-    when=falsy("xtrabackup_prepare"),
-    message="'xtrabackup_prepare' must be enabled to set a prepare option.",
 )
 
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
@@ -493,7 +478,7 @@ class BackupCreate(TaskFormModel):
 
     xtrabackup_copies: Annotated[
         int | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Number of backup copies",
             section="XtraBackup",
@@ -515,8 +500,7 @@ class BackupCreate(TaskFormModel):
     ] = False
     xtrabackup_kill_queries_timeout: Annotated[
         int | EmptyStrToNone,
-        XTRABACKUP_ONLY,
-        _KILL_QUERIES_OFF,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Kill-queries timeout (s)",
             section="XtraBackup",
@@ -528,8 +512,7 @@ class BackupCreate(TaskFormModel):
     ] = None
     xtrabackup_kill_query_type: Annotated[
         Literal["select", "all"] | EmptyStrToNone,
-        XTRABACKUP_ONLY,
-        _KILL_QUERIES_OFF,
+        _XTRABACKUP_ONLY,
         Choices((("select", "SELECT"), ("all", "All"))),
         Ui(
             label="Kill query type",
@@ -568,8 +551,7 @@ class BackupCreate(TaskFormModel):
     ] = False
     xtrabackup_prepare_memory: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        XTRABACKUP_ONLY,
-        _PREPARE_OFF,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Prepare memory",
             section="XtraBackup",
@@ -609,7 +591,7 @@ class BackupCreate(TaskFormModel):
     ] = False
     xtrabackup_defaults_file: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Ui(
             label="XtraBackup defaults file",
             section="XtraBackup",
@@ -621,7 +603,7 @@ class BackupCreate(TaskFormModel):
     ] = None
     xtrabackup_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Extra args",
             section="XtraBackup",
@@ -630,7 +612,7 @@ class BackupCreate(TaskFormModel):
     ] = None
     xtrabackup_incremental_method: Annotated[
         Literal["less_space", "fast_restore"] | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Choices((("less_space", "Less space"), ("fast_restore", "Fast restore"))),
         Ui(
             label="Incremental method",
@@ -646,7 +628,7 @@ class BackupCreate(TaskFormModel):
     # Vocabulary duplicated -- see the note on BackupConfigAll.xtrabackup_incremental_cycle.
     xtrabackup_incremental_cycle: Annotated[
         Literal["daily", "weekly", "1", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Choices(
             (
                 ("daily", "Daily"),
@@ -672,7 +654,7 @@ class BackupCreate(TaskFormModel):
     ] = None
     xtrabackup_local_ssh_destination: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Local SSH destination",
             section="XtraBackup",
@@ -718,7 +700,7 @@ class BackupCreate(TaskFormModel):
     ] = False
     xtrabackup_bin_cmd: Annotated[
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Ui(
             label="Backup binary",
             section="XtraBackup",
@@ -943,7 +925,7 @@ class BackupCreate(TaskFormModel):
     ] = EncryptionFormat.NONE
     xtrabackup_aes256_keyfile: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        XTRABACKUP_ONLY,
+        _XTRABACKUP_ONLY,
         Requires(
             when=_FMT_HAS_AES,
             message=(

@@ -143,11 +143,14 @@ class Ui:
         this field parameterises. The renderer draws the field indented beneath
         that toggle and keeps it non-interactive until the toggle is on, rather
         than hiding it, so a reader can see what enabling the toggle will offer.
-        Presentation only, per this class's governing rule: the runtime rule
-        stays with the field's own ``Forbidden(when=falsy(<parent>))``, which
+        Presentation only, per this class's governing rule: it changes nothing
+        about what the server accepts. A field that must also be *rejected*
+        while its toggle is off says so with its own ``Forbidden``, which is a
+        per-field validation decision rather than something the pointer
+        implies.
         :func:`~app.sep.apps.framework.form_dsl.derivation.derive_form_sections`
-        requires alongside the pointer so the two cannot drift. Defaults to
-        ``None``.
+        checks only that the target is a same-section ``bool`` that is not
+        itself parented. Defaults to ``None``.
     """
 
     label: str | None = None

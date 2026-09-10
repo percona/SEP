@@ -35,7 +35,7 @@ from app.sep.apps.framework.form_dsl import (
     TaskFormModel,
     Ui,
 )
-from app.sep.apps.framework.rules import any_, F, falsy, not_
+from app.sep.apps.framework.rules import any_, F, not_
 from app.sep.apps.mysql_backups.forms import (
     encryption_format_for_passes,
     EncryptionFormat,
@@ -45,24 +45,13 @@ from app.sep.apps.mysql_backups.models import (
     ensure_backup_source_shell_safe,
 )
 
-# Pairs with the ``Ui(parent="slave_from_master")`` on the same fields: the
-# pointer nests them under the toggle in the renderer, this gate is what the
-# server enforces. ``master_port`` is deliberately not in the set — it defaults
-# to 3306 and is read when 'Restore my.cnf' is set, not when replication starts,
-# so gating it on this toggle would reject every restore that leaves replication
-# off.
-_REPLICATION_OFF = Forbidden(
-    when=falsy("slave_from_master"),
-    message="'slave_from_master' must be enabled to set a replication option.",
-)
-
 _log = logging.getLogger(__name__)
 
 OWNER = "RESTORES"
 
 
 class S3Tool(EnumFieldMixin, StrEnum):
-    """Allowed tools to interact with S3-compatible services."""
+    """Enumerate the clients that can download a backup from S3-compatible storage."""
 
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
@@ -751,7 +740,6 @@ class RestoreCreate(TaskFormModel):
     ] = False
     wait_for_catchup: Annotated[
         bool,
-        _REPLICATION_OFF,
         Ui(
             label="Wait for catchup",
             section="XtraBackup",
@@ -764,7 +752,6 @@ class RestoreCreate(TaskFormModel):
     ] = False
     master_ip: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        _REPLICATION_OFF,
         Ui(
             label="Master IP",
             section="XtraBackup",
@@ -780,6 +767,7 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master port",
             section="XtraBackup",
+            parent="slave_from_master",
             description=(
                 "Port used to query the replication source for an unused server id "
                 "when 'Restore my.cnf' is set. Starting replication itself uses the "
@@ -789,7 +777,6 @@ class RestoreCreate(TaskFormModel):
     ] = Field(default=3306)
     master_user: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        _REPLICATION_OFF,
         Ui(
             label="Master user",
             section="XtraBackup",
@@ -799,7 +786,6 @@ class RestoreCreate(TaskFormModel):
     ] = None
     master_password: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        _REPLICATION_OFF,
         Ui(
             label="Master password",
             section="XtraBackup",
@@ -1007,41 +993,6 @@ class RestoreCreate(TaskFormModel):
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
         return ensure_backup_source_shell_safe(value)
-
-
-class LegacyRestoreCreate(RestoreCreate):
-    """Validate a stored form body against the create form's older contract.
-
-    The replication options gained a gate on ``slave_from_master`` when the form
-    started nesting them under it. A body written before that gate carries the
-    options independently of the toggle, so revalidating one through
-    :class:`RestoreCreate` can fail for a restore that was saved legitimately.
-
-    This model is where that line is drawn: a body arriving as a *submission* is
-    held to the current contract, and a body being *read back* is held to the one
-    it was written under. Anything revalidating stored state belongs on this side
-    of the line; the create and update routes stay on :class:`RestoreCreate`.
-
-    Rejecting a stored body is worse than accepting a stale one. A body that will
-    not revalidate loses its ``_form`` stamp, and the stamp is what gives a task
-    an Edit affordance — the only way an operator has to repair it.
-
-    Each field is redeclared exactly as the create model declared it before the
-    tightening, which for these four is a bare annotation — none of them carried
-    another gate. The ``Ui`` pointer is dropped along with the gate because
-    nothing reads it here: this model is only ever validated against, never
-    derived into a schema, so its presentation markers are inert.
-
-    :param wait_for_catchup: Whether to wait for the replica to catch up.
-    :param master_ip: The replication source address.
-    :param master_user: The replication account.
-    :param master_password: The replication account's password.
-    """
-
-    wait_for_catchup: bool = False
-    master_ip: NonEmptyStr | EmptyStrToNone = None
-    master_user: NonEmptyStr | EmptyStrToNone = None
-    master_password: NonEmptyStr | EmptyStrToNone = None
 
 
 class RestoresResponse(BaseTaskResponse):
