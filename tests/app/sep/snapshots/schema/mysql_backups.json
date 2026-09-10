@@ -1035,11 +1035,11 @@
         {
           "choices": [
             {
-              "label": "zstd",
+              "label": "ZSTD",
               "value": "zstd"
             },
             {
-              "label": "lz4",
+              "label": "LZ4",
               "value": "lz4"
             },
             {
@@ -1047,7 +1047,7 @@
               "value": "gzip"
             },
             {
-              "label": "quicklz",
+              "label": "QuickLZ",
               "value": "quicklz"
             }
           ],
