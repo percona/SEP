@@ -88,6 +88,8 @@ from tests.app.sep.apps.framework.contract_suite import (
     routes_of as _routes,
 )
 from tests.app.sep.apps.framework.kit import (
+    EXECUTE_CREATED_AT,
+    EXECUTE_STATUS,
     synth_app,
     synth_app_kwargs,
     synth_reject_running_task,
@@ -116,6 +118,8 @@ from tests.app.sep.apps.framework.kit import (
     SynthResponse as _SynthResponse,
 )
 
+# scaffolding-dup-ok: pre-existing on main in both this file and
+# test_script_source.py; extracting it is unrelated to this change.
 _BASE = f"/api/apps{_PREFIX}"
 _SCRIPT_BASE = f"/api/apps{_SCRIPT_PREFIX}"
 
@@ -368,6 +372,8 @@ def _execute_response(name: str, task_id: int = 99) -> dict:
         "id": task_id,
         "execution_request": {"task": "synth-cmd", "target": "host1"},
         "task": {**_task_dict(name), "deleted_at": None},
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -876,7 +882,12 @@ class TestExecuteRoute:
         response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t-1", "task_id": 99}
+        assert response.json() == {
+            "task_name": "t-1",
+            "task_id": 99,
+            "status": EXECUTE_STATUS.value,
+            "created_at": EXECUTE_CREATED_AT,
+        }
 
 
 class TestVerbGating:

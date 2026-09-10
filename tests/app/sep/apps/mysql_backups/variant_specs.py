@@ -68,6 +68,7 @@ def spec_for(upload: list[str], backup_type: str = "X") -> RunPythonSpec:
         hostname=HOSTNAME,
         service_id=resolved_service.id,
         backup_type=backup_type,
+        backup_dir="/backups",
         upload=upload,
         **fields,
     )

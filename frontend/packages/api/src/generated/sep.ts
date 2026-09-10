@@ -3031,6 +3031,39 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/periodic-tasks/schedule/preview/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Schedule
+     * @description Dispatch a schedule preview to the Tasks API.
+     *
+     *     Two path segments so the sibling ``POST /{task_name}/`` cannot match this
+     *     route: a single-segment ``/preview/`` would be ambiguous with it, resolvable
+     *     only by declaration order and only at the cost of reserving ``preview`` as a
+     *     task name nobody could schedule.
+     *
+     *     :param tasks_api: The Tasks API client used to compute the preview.
+     *     :param body: The ``SchedulePreviewWrite`` JSON body, forwarded verbatim.
+     *     :return: The schedule preview as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/periodic-tasks/{periodic_task_id}': {
     parameters: {
       query?: never;
@@ -6962,6 +6995,10 @@ export interface components {
      *     :param related_apps: Optional separately registered apps the React shell
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
+     *     :param task_statuses: The task-status vocabulary a client polls against,
+     *         declaring per status value whether it ends a run. Server-authored, so a
+     *         supplied value is replaced rather than honoured. Withheld (``None``) for
+     *         a plugin declaring ``entities``, whose records are not task runs.
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -6991,6 +7028,8 @@ export interface components {
       predecessors?: components['schemas']['framework__ChainedPredecessor'][] | null;
       /** Related Apps */
       related_apps?: components['schemas']['framework__RelatedApp'][] | null;
+      /** Task Statuses */
+      task_statuses?: components['schemas']['framework__TaskStatusDescriptor'][] | null;
       /** Task Type */
       task_type?: string | null;
     };
@@ -8786,14 +8825,41 @@ export interface components {
      * TaskExecutionResponse
      * @description Represent the default response from a task execute route.
      *
+     *     ``started_at`` is deliberately not carried: the worker sets it, so it is
+     *     still ``None`` on the row this response is built from.
+     *
      *     :param task_name: The name of the task that was executed.
      *     :param task_id: The id of the task-history row created by the tasks API.
+     *         Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it
+     *         so, not because a dispatched run is expected to lack one.
+     *     :param status: The status of the task-history row the tasks API created,
+     *         as it stood at dispatch.
+     *     :param created_at: When the tasks API created that row.
      */
     framework__TaskExecutionResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      status: components['schemas']['TaskHistoryStatusEnum'];
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
       task_name: string;
+    };
+    /**
+     * TaskStatusDescriptor
+     * @description Declare one task-status value and whether it ends a run.
+     *
+     *     :param value: The status as it appears on a task-history payload.
+     *     :param terminal: Whether a run in this status will not transition again, so
+     *         a client polling for completion can stop re-reading on it.
+     */
+    framework__TaskStatusDescriptor: {
+      /** Terminal */
+      terminal: boolean;
+      value: components['schemas']['TaskHistoryStatusEnum'];
     };
     /**
      * TextAreaField
@@ -9012,7 +9078,7 @@ export interface components {
       /** Awscli S3 Upload Extra Args */
       awscli_s3_upload_extra_args?: string | null;
       /** Backup Dir */
-      backup_dir?: string | null;
+      backup_dir: string;
       backup_type: components['schemas']['mysql_backups__BackupType'];
       /** Binlog Alternative Host */
       binlog_alternative_host?: string | null;
@@ -9377,6 +9443,15 @@ export interface components {
      *     defaults on a cross-mode restore. Keeping the model permissive preserves the
      *     legacy payload contract byte-for-byte.
      *
+     *     The transport and decryption fields are the exception, and they pay that
+     *     price deliberately: ``source_transport`` and ``source_encryption`` declare
+     *     where the backup lives and how it was encrypted, and the five fields those
+     *     declarations govern are gated on them. Because a field-level ``Forbidden``
+     *     rejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /
+     *     ``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still
+     *     declares them and ``build_restore_spec`` applies them from there, so the
+     *     emitted config is unchanged.
+     *
      *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
      *     markers drive only the ``GET /schema`` widgets, while the conditional,
@@ -9407,11 +9482,6 @@ export interface components {
       incremental_dest_path?: string | null;
       /** Keyring File Data */
       keyring_file_data?: string | null;
-      /**
-       * Kill Mysql
-       * @default false
-       */
-      kill_mysql: boolean;
       /** Local Path */
       local_path?: string | null;
       /** Logging Dir */
@@ -9450,8 +9520,8 @@ export interface components {
        * @default false
        */
       restore_mycnf: boolean;
-      /** @default s3cmd */
-      s3_tool: components['schemas']['mysql_backups__S3Tool'];
+      /** S3 Tool */
+      s3_tool?: components['schemas']['mysql_backups__S3Tool'] | null;
       /** Schema Id */
       schema_id?: string | null;
       /** Service Id */
@@ -9468,18 +9538,16 @@ export interface components {
        * @default false
        */
       slave_from_master: boolean;
+      /** @default none */
+      source_encryption: components['schemas']['mysql_backups__EncryptionFormat'];
+      /** @default local */
+      source_transport: components['schemas']['mysql_backups__SourceTransport'];
       /** Ssh Key */
       ssh_key?: string | null;
-      /**
-       * Ssh Port
-       * @default 22
-       */
-      ssh_port: number | null;
-      /**
-       * Ssh User
-       * @default percona
-       */
-      ssh_user: string | null;
+      /** Ssh Port */
+      ssh_port?: number | null;
+      /** Ssh User */
+      ssh_user?: string | null;
       /** Start File */
       start_file?: string | null;
       /** Start Position */
@@ -9572,6 +9640,12 @@ export interface components {
      * @enum {string}
      */
     mysql_backups__S3Tool: 's3cmd' | 'awscli';
+    /**
+     * SourceTransport
+     * @description Declare where the backup being restored is stored.
+     * @enum {string}
+     */
+    mysql_backups__SourceTransport: 'local' | 'ssh' | 's3' | 'gcs';
     /**
      * UploadProvider
      * @description Upload providers.
@@ -14793,6 +14867,54 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['PaginatedResponse_ArbitraryMapping_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': {
+          [key: string]: unknown;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: unknown;
+          };
         };
       };
       /** @description Validation Error */

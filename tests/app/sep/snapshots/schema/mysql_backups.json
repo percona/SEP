@@ -353,6 +353,7 @@
           "type": "host"
         },
         {
+          "description": "Database service to back up; SEP resolves its host and port from inventory",
           "label": "Database Host",
           "name": "service_id",
           "required": true,
@@ -376,16 +377,26 @@
               "value": "B"
             }
           ],
+          "description": "Backup method for this task; it selects the tool that runs and which sections below apply",
           "label": "Backup Type",
           "name": "backup_type",
           "required": true,
           "type": "choice"
         },
         {
+          "description": "Name for this server in backup paths and reports (defaults to the service address)",
           "label": "Server Alias",
           "min_length": 1,
           "name": "alias",
           "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Root directory on the database host where backups are written. XtraBackup adds a subdirectory per run, Mydumper one per day that a second run the same day writes into, and Binlog keeps its files directly under the server's own directory.",
+          "label": "Backup directory",
+          "min_length": 1,
+          "name": "backup_dir",
+          "required": true,
           "type": "string"
         }
       ],
@@ -398,6 +409,7 @@
       "fields": [
         {
           "default": false,
+          "description": "Reuse unchanged files from the previous backup as hard links, so a full backup costs less disk space. Mydumper skips it when the previous backup is encrypted; XtraBackup skips it when post-run encryption is on, when 'Number of backup copies' is 1, and under the 'less_space' incremental method. Binlog backups ignore it.",
           "label": "Hardlink full backups",
           "name": "hardlink",
           "required": false,
@@ -405,6 +417,7 @@
         },
         {
           "default": false,
+          "description": "Compress backup data as it is written, using the algorithm selected below. XtraBackup drops compression when 'Prepare backup' or the 'Fast restore' incremental method is on, and a Binlog backup compresses every completed file whatever this is set to.",
           "label": "Compress backup data",
           "name": "compress",
           "required": false,
@@ -412,6 +425,7 @@
         },
         {
           "default": false,
+          "description": "Fail before a Mydumper or XtraBackup backup starts when the target filesystem has too little free space. A Binlog backup instead watches free space while it streams and stops the stream when it runs out.",
           "label": "Check disk space first",
           "name": "check_disk_space",
           "required": false,
@@ -419,6 +433,7 @@
         },
         {
           "default": false,
+          "description": "Skip the host unless replication is running there, so the backup only runs on an active replica. Mydumper and XtraBackup backups only.",
           "label": "Only if running replica",
           "name": "only_if_running_replica",
           "required": false,
@@ -426,6 +441,7 @@
         },
         {
           "default": false,
+          "description": "Skip the host unless MySQL is read-only. Mydumper and XtraBackup backups only.",
           "label": "Only if read-only",
           "name": "only_if_read_only",
           "required": false,
@@ -433,12 +449,14 @@
         },
         {
           "default": false,
+          "description": "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK during a Mydumper backup. The watchdog is never reached, so this setting changes nothing.",
           "label": "FTWRL guardian",
           "name": "use_ftwrl_guardian",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Directory on the database host for this task's log files",
           "label": "Logging directory",
           "min_length": 1,
           "name": "logging_dir",
@@ -446,13 +464,7 @@
           "type": "string"
         },
         {
-          "label": "Backup directory",
-          "min_length": 1,
-          "name": "backup_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
+          "description": "MySQL defaults file used for the connections SEP makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
           "label": "MySQL defaults file",
           "min_length": 1,
           "name": "defaults_file",
@@ -462,11 +474,11 @@
         {
           "choices": [
             {
-              "label": "zstd",
+              "label": "ZSTD",
               "value": "zstd"
             },
             {
-              "label": "lz4",
+              "label": "LZ4",
               "value": "lz4"
             },
             {
@@ -474,10 +486,11 @@
               "value": "gzip"
             },
             {
-              "label": "quicklz",
+              "label": "QuickLZ",
               "value": "quicklz"
             }
           ],
+          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
           "label": "Compression algorithm",
           "name": "compression_algorithm",
           "required": false,
@@ -492,6 +505,7 @@
       "collapsible": true,
       "fields": [
         {
+          "description": "How many daily backups to keep before the oldest are deleted",
           "forbidden": [
             {
               "when": {
@@ -507,6 +521,7 @@
           "type": "integer"
         },
         {
+          "description": "How many Monday-dated backups to keep before the oldest are deleted. A weekly backup is an ordinary daily run that landed on a Monday.",
           "forbidden": [
             {
               "when": {
@@ -523,6 +538,7 @@
         },
         {
           "default": false,
+          "description": "Include table triggers in the dump",
           "label": "Dump triggers",
           "name": "mydumper_dump_triggers",
           "required": false,
@@ -530,6 +546,7 @@
         },
         {
           "default": false,
+          "description": "Desync the node from the PXC cluster while the backup runs, so flow control does not stall the cluster. Ignored on a non-PXC node.",
           "label": "Desync PXC node",
           "name": "mydumper_desync_pxc",
           "required": false,
@@ -537,12 +554,14 @@
         },
         {
           "default": false,
+          "description": "Interleave mydumper's memory across every NUMA node instead of letting it fill one",
           "label": "Use NUMA",
           "name": "mydumper_use_numa",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Extra arguments for the mydumper command. They are placed ahead of the arguments SEP sets, so one that clashes is overridden.",
           "forbidden": [
             {
               "when": {
@@ -558,6 +577,7 @@
           "type": "string"
         },
         {
+          "description": "Mydumper log verbosity, from 0 (silent) to 3 (info)",
           "forbidden": [
             {
               "when": {
@@ -592,6 +612,7 @@
       "collapsible": true,
       "fields": [
         {
+          "description": "How many backup copies to keep on the host before the oldest are deleted",
           "forbidden": [
             {
               "when": {
@@ -608,12 +629,14 @@
         },
         {
           "default": false,
+          "description": "Kill queries that block the backup's lock instead of waiting for them",
           "label": "Kill blocking queries",
           "name": "xtrabackup_kill_queries",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "How long a blocking query may run before it is killed (seconds)",
           "forbidden": [
             {
               "when": {
@@ -639,6 +662,7 @@
               "value": "all"
             }
           ],
+          "description": "Which blocking queries may be killed: SELECTs only, or any statement",
           "forbidden": [
             {
               "when": {
@@ -655,6 +679,7 @@
         },
         {
           "default": false,
+          "description": "Verify the InnoDB pages of the finished backup. Skipped automatically when compression is on, when AES-256 encryption is applied during the backup (which is every backup binary except mariadb-backup), and on an incremental run under the 'less space' method.",
           "label": "Verify after backup",
           "name": "xtrabackup_verify",
           "required": false,
@@ -662,12 +687,14 @@
         },
         {
           "default": false,
+          "description": "Apply the redo log so the backup is ready to restore without a prepare step. Compression is dropped and the upload skipped whenever this is set, including when an incremental method turns the prepare itself off.",
           "label": "Prepare for restore",
           "name": "xtrabackup_prepare",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Memory the prepare step may use, as a size such as 2G",
           "forbidden": [
             {
               "when": {
@@ -685,6 +712,7 @@
         },
         {
           "default": false,
+          "description": "Desync the node from the PXC cluster while the backup runs, so flow control does not stall the cluster. Ignored on a non-PXC node.",
           "label": "Desync PXC node",
           "name": "xtrabackup_desync_pxc",
           "required": false,
@@ -692,6 +720,7 @@
         },
         {
           "default": false,
+          "description": "Copy non-InnoDB files with rsync to shorten the lock at the end of the backup. Unrelated to the Rsync upload provider.",
           "label": "Use rsync",
           "name": "xtrabackup_rsync",
           "required": false,
@@ -699,12 +728,14 @@
         },
         {
           "default": false,
+          "description": "Record the source's replication coordinates in the backup, so a restore can resume replication from it",
           "label": "Include replica info",
           "name": "xtrabackup_replica_info",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Defaults file passed to the backup binary, when it differs from the one used for connections",
           "forbidden": [
             {
               "when": {
@@ -721,6 +752,7 @@
           "type": "string"
         },
         {
+          "description": "Extra arguments appended to the backup binary's command",
           "forbidden": [
             {
               "when": {
@@ -747,6 +779,7 @@
               "value": "fast_restore"
             }
           ],
+          "description": "How incrementals are stored. 'Less space' chains each incremental to the one before it, which saves disk but has to be merged in order to restore. 'Fast restore' merges each incremental into the base, so the latest backup is always ready to restore.",
           "forbidden": [
             {
               "when": {
@@ -800,7 +833,7 @@
               "value": "7"
             }
           ],
-          "description": "``daily``, ``weekly``, or an ISO weekday number (1-7, Monday-Sunday) controlling when the FULL backup runs. Applies to the ``less_space`` incremental method only.",
+          "description": "'daily', 'weekly', or an ISO weekday number (1-7, Monday-Sunday) controlling when the full backup runs. Applies to the 'less_space' incremental method only.",
           "forbidden": [
             {
               "when": {
@@ -816,6 +849,7 @@
           "type": "choice"
         },
         {
+          "description": "Unused: SEP always runs XtraBackup on the database host itself, so the backup is never streamed to another host.",
           "forbidden": [
             {
               "when": {
@@ -833,7 +867,7 @@
         },
         {
           "default": false,
-          "description": "Passes --safe-slave-backup so xtrabackup pauses the replica SQL thread during the backup (required for --slave-info on a multi-threaded replica with GTID off).",
+          "description": "Pause the replica SQL thread while the data is copied, so the replication coordinates recorded in the backup match it. Needed to record them at all on a multi-threaded replica with GTID off.",
           "label": "Safe replica backup",
           "name": "xtrabackup_stop_replica",
           "required": false,
@@ -841,6 +875,7 @@
         },
         {
           "default": false,
+          "description": "Block DDL for the duration of the backup, so a schema change cannot corrupt it",
           "label": "Lock DDL",
           "name": "xtrabackup_lock_ddl",
           "required": false,
@@ -848,6 +883,7 @@
         },
         {
           "default": false,
+          "description": "Drop the per-file copy lines from the backup log, leaving progress and errors",
           "label": "Quiet log (drop per-file copy lines)",
           "name": "xtrabackup_quiet",
           "required": false,
@@ -868,6 +904,7 @@
               "value": "innobackupex"
             }
           ],
+          "description": "Which backup binary to run; pick the one matching the server's fork and version",
           "forbidden": [
             {
               "when": {
@@ -900,6 +937,7 @@
       "collapsible": true,
       "fields": [
         {
+          "description": "Base name of the server's binary logs, such as mysql-bin, used to find and purge this server's stored files. Required: a Binlog backup fails as soon as it starts without it.",
           "forbidden": [
             {
               "when": {
@@ -916,6 +954,7 @@
           "type": "string"
         },
         {
+          "description": "Delete stored binlogs older than this many days",
           "forbidden": [
             {
               "when": {
@@ -931,6 +970,7 @@
           "type": "integer"
         },
         {
+          "description": "Extra arguments for the binlog streaming command. They are placed ahead of the arguments SEP sets, so one that clashes is overridden.",
           "forbidden": [
             {
               "when": {
@@ -947,6 +987,7 @@
           "type": "string"
         },
         {
+          "description": "Command used to compress each completed binlog file, replacing the default",
           "forbidden": [
             {
               "when": {
@@ -963,6 +1004,7 @@
           "type": "string"
         },
         {
+          "description": "Path to the mysqlbinlog binary on the host, when it is not the /usr/bin/mysqlbinlog the backup looks for by default",
           "forbidden": [
             {
               "when": {
@@ -980,12 +1022,14 @@
         },
         {
           "default": true,
+          "description": "Keep this on. The binlog backup streams every server in the task's config, and refuses to start when the option is cleared.",
           "label": "Run all binlog backups",
           "name": "binlog_run_all",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Pull binlogs from this host instead of the selected service's address",
           "forbidden": [
             {
               "when": {
@@ -1017,7 +1061,7 @@
     {
       "collapsed_by_default": true,
       "collapsible": true,
-      "description": "Pick an 'Encryption format' first; the fields below are that format's parameters. GPG timings are independent — in-place ('Encrypt backup', optionally with 'Encrypt using tmpdir'), applied during upload, and post-run ('Encrypt after backup completes'), applied on the host; enable either or both, and either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt after backup completes' are mutually exclusive. AES-256 needs a key file and is XtraBackup-only.",
+      "description": "Pick an 'Encryption format' first; the fields below are that format's parameters.",
       "fields": [
         {
           "choices": [
@@ -1039,13 +1083,14 @@
             }
           ],
           "default": "none",
-          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts in place as part of an upload, so it needs an upload target, while 'Encrypt after backup completes' encrypts on the host. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so with no upload target nothing is encrypted, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
           "label": "Encryption format",
           "name": "encryption_format",
           "required": false,
           "type": "choice"
         },
         {
+          "description": "Path on the database host to the AES-256 key file. Required by the AES-256 formats, which are XtraBackup-only.",
           "forbidden": [
             {
               "when": {
@@ -1101,7 +1146,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the backup in place as part of an upload, so it needs an upload target. Combine with 'Encrypt using tmpdir', or use 'Encrypt after backup completes' to encrypt on the host instead. Needs a GPG 'Encryption format' and a recipient.",
+          "description": "GPG-encrypt the backup as part of an upload. With no upload target nothing is encrypted and the task still succeeds. Mydumper and Binlog encrypt the backup where it is written, optionally by way of 'Encrypt using tmpdir'; XtraBackup encrypts a copy and leaves the backup on the host in plain text unless 'Encrypt after backup completes' is set too. Needs a GPG 'Encryption format' and a recipient.",
           "label": "Encrypt backup",
           "name": "encrypt",
           "required": false,
@@ -1131,7 +1176,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host; a Binlog backup encrypts only during an upload, so it also needs an upload target.",
+          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host; a Binlog backup encrypts only during an upload, so with no upload target nothing is encrypted.",
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,
@@ -1190,12 +1235,14 @@
               "value": "GSUTIL"
             }
           ],
+          "description": "Where the finished backup is copied. Leave empty to keep it on the database host.",
           "label": "Upload providers",
           "name": "upload",
           "required": false,
           "type": "multi_choice"
         },
         {
+          "description": "Destination S3 bucket, optionally with a path prefix (bucket/path)",
           "forbidden": [
             {
               "when": {
@@ -1214,6 +1261,7 @@
           "type": "string"
         },
         {
+          "description": "Storage class applied to uploaded objects (defaults to STANDARD)",
           "forbidden": [
             {
               "when": {
@@ -1233,6 +1281,7 @@
         },
         {
           "default": false,
+          "description": "Upload even when the bucket allows public access, skipping the block-public-access check",
           "forbidden": [
             {
               "when": {
@@ -1251,12 +1300,14 @@
         },
         {
           "default": false,
+          "description": "Drop routine progress lines from the upload log, leaving errors",
           "label": "Quiet upload logs",
           "name": "upload_quiet",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Extra S3 object options for the upload, as space-separated Key=Value pairs such as ACL=private. Anything without an equals sign is dropped. XtraBackup backups only.",
           "forbidden": [
             {
               "when": {
@@ -1275,6 +1326,7 @@
           "type": "string"
         },
         {
+          "description": "Destination Google Cloud Storage bucket, optionally with a path prefix (bucket/path)",
           "forbidden": [
             {
               "when": {
@@ -1293,6 +1345,7 @@
           "type": "string"
         },
         {
+          "description": "Destination path for the rsync upload, as an rsync target",
           "forbidden": [
             {
               "when": {
@@ -1372,6 +1425,40 @@
       "app_key": "mysql_backups/restore",
       "label": "Restore",
       "route_segment": "restores"
+    }
+  ],
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
     }
   ]
 }

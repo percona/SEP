@@ -36,6 +36,7 @@ from app.core.utils.fields import (
     EmptyStrToNone,
     EnumFieldMixin,
     NonEmptyStr,
+    StrippedNonEmptyStr,
 )
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
@@ -158,6 +159,21 @@ _MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
 _XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
 _BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
 
+#: Shared by ``BackupCreate`` and the backfill's lenient subclass, which
+#: redeclares the field with the older optionality: the two must not drift on
+#: label, section or description. Frozen (see :class:`Ui`), so this single
+#: instance is safe to reference directly.
+BACKUP_DIR_UI = Ui(
+    label="Backup directory",
+    section="Task",
+    description=(
+        "Root directory on the database host where backups are written. "
+        "XtraBackup adds a subdirectory per run, Mydumper one per day that a "
+        "second run the same day writes into, and Binlog keeps its files "
+        "directly under the server's own directory."
+    ),
+)
+
 # ``encryption_format`` is the signal for *which* encryption runs; the key file
 # and the GPG timing bools below are its format-specific parameters, unreachable
 # outside their format. Reused across those fields the way the ``_ONLY`` gates
@@ -169,6 +185,13 @@ _FMT_HAS_GPG = any_(_FMT == EncryptionFormat.GPG, _FMT == EncryptionFormat.DUAL)
 # The GPG timing bools. Being bools they are gated by the ``FailRule``s below
 # rather than by a ``Forbidden`` like the mode gates above.
 _GPG_TIMING_FIELDS = ("encrypt", "post_run_encrypt")
+
+# Shared so the wording cannot drift between the backup paths that offer the
+# toggle.
+_DESYNC_PXC_DESCRIPTION = (
+    "Desync the node from the PXC cluster while the backup runs, so flow "
+    "control does not stall the cluster. Ignored on a non-PXC node."
+)
 
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
 _GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
@@ -350,130 +373,368 @@ class BackupCreate(TaskFormModel):
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
-        Ui(label="Database Host", section="Task"),
+        Ui(
+            label="Database Host",
+            section="Task",
+            description=(
+                "Database service to back up; SEP resolves its host and port from "
+                "inventory"
+            ),
+        ),
     ]
     backup_type: Annotated[
         BackupType,
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
-        Ui(section="Task"),
+        Ui(
+            section="Task",
+            description=(
+                "Backup method for this task; it selects the tool that runs and which "
+                "sections below apply"
+            ),
+        ),
     ]
     alias: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Server Alias", section="Task")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Server Alias",
+            section="Task",
+            description=(
+                "Name for this server in backup paths and reports (defaults to the "
+                "service address)"
+            ),
+        ),
     ] = None
+    backup_dir: Annotated[StrippedNonEmptyStr, BACKUP_DIR_UI]
 
-    hardlink: Annotated[bool, Ui(label="Hardlink full backups", section="General")] = (
-        False
-    )
-    compress: Annotated[bool, Ui(label="Compress backup data", section="General")] = (
-        False
-    )
+    hardlink: Annotated[
+        bool,
+        Ui(
+            label="Hardlink full backups",
+            section="General",
+            description=(
+                "Reuse unchanged files from the previous backup as hard links, so a "
+                "full backup costs less disk space. Mydumper skips it when the "
+                "previous backup is encrypted; XtraBackup skips it when post-run "
+                "encryption is on, when 'Number of backup copies' is 1, and under the "
+                "'less_space' incremental method. Binlog backups ignore it."
+            ),
+        ),
+    ] = False
+    compress: Annotated[
+        bool,
+        Ui(
+            label="Compress backup data",
+            section="General",
+            description=(
+                "Compress backup data as it is written, using the algorithm selected "
+                "below. XtraBackup drops compression when 'Prepare backup' or the "
+                "'Fast restore' incremental method is on, and a Binlog backup "
+                "compresses every completed file whatever this is set to."
+            ),
+        ),
+    ] = False
     check_disk_space: Annotated[
-        bool, Ui(label="Check disk space first", section="General")
+        bool,
+        Ui(
+            label="Check disk space first",
+            section="General",
+            description=(
+                "Fail before a Mydumper or XtraBackup backup starts when the target "
+                "filesystem has too little free space. A Binlog backup instead watches "
+                "free space while it streams and stops the stream when it runs out."
+            ),
+        ),
     ] = False
     only_if_running_replica: Annotated[
-        bool, Ui(label="Only if running replica", section="General")
+        bool,
+        Ui(
+            label="Only if running replica",
+            section="General",
+            description=(
+                "Skip the host unless replication is running there, so the backup only "
+                "runs on an active replica. Mydumper and XtraBackup backups only."
+            ),
+        ),
     ] = False
     only_if_read_only: Annotated[
-        bool, Ui(label="Only if read-only", section="General")
+        bool,
+        Ui(
+            label="Only if read-only",
+            section="General",
+            description=(
+                "Skip the host unless MySQL is read-only. Mydumper and XtraBackup "
+                "backups only."
+            ),
+        ),
     ] = False
     use_ftwrl_guardian: Annotated[
-        bool, Ui(label="FTWRL guardian", section="General")
+        bool,
+        Ui(
+            label="FTWRL guardian",
+            section="General",
+            description=(
+                "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK "
+                "during a Mydumper backup. The watchdog is never reached, so this "
+                "setting changes nothing."
+            ),
+        ),
     ] = False
     logging_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
-    ] = None
-    backup_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Backup directory", section="General")
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Logging directory",
+            section="General",
+            description="Directory on the database host for this task's log files",
+        ),
     ] = None
     defaults_file: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        Ui(label="MySQL defaults file", section="General"),
+        Ui(
+            label="MySQL defaults file",
+            section="General",
+            description=(
+                "MySQL defaults file used for the connections SEP makes to the server, "
+                "and for the mydumper or binlog command. The XtraBackup binary reads "
+                "'XtraBackup defaults file' instead."
+            ),
+        ),
     ] = None
     compression_algorithm: Annotated[
         CompressionAlgorithm | EmptyStrToNone,
-        Ui(label="Compression algorithm", section="General"),
+        Choices(
+            (
+                (CompressionAlgorithm.ZSTD, "ZSTD"),
+                (CompressionAlgorithm.LZ4, "LZ4"),
+                (CompressionAlgorithm.GZIP, "gzip"),
+                (CompressionAlgorithm.QUICKLZ, "QuickLZ"),
+            )
+        ),
+        Ui(
+            label="Compression algorithm",
+            section="General",
+            description=(
+                "Algorithm used when compression is enabled; the available choices "
+                "depend on the backup type. A Binlog backup always uses gzip unless "
+                "'Binlog compress command' replaces it."
+            ),
+        ),
     ] = None
 
     mydumper_daily_purge: Annotated[
         int | EmptyStrToNone,
         _MYDUMPER_ONLY,
-        Ui(label="Daily purge (days)", section="Mydumper"),
+        Ui(
+            label="Daily purge (days)",
+            section="Mydumper",
+            description="How many daily backups to keep before the oldest are deleted",
+        ),
     ] = None
     mydumper_weekly_purge: Annotated[
         int | EmptyStrToNone,
         _MYDUMPER_ONLY,
-        Ui(label="Weekly purge (weeks)", section="Mydumper"),
+        Ui(
+            label="Weekly purge (weeks)",
+            section="Mydumper",
+            description=(
+                "How many Monday-dated backups to keep before the oldest are deleted. "
+                "A weekly backup is an ordinary daily run that landed on a Monday."
+            ),
+        ),
     ] = None
     mydumper_dump_triggers: Annotated[
-        bool, Ui(label="Dump triggers", section="Mydumper")
+        bool,
+        Ui(
+            label="Dump triggers",
+            section="Mydumper",
+            description="Include table triggers in the dump",
+        ),
     ] = False
     mydumper_desync_pxc: Annotated[
-        bool, Ui(label="Desync PXC node", section="Mydumper")
+        bool,
+        Ui(
+            label="Desync PXC node",
+            section="Mydumper",
+            description=_DESYNC_PXC_DESCRIPTION,
+        ),
     ] = False
-    mydumper_use_numa: Annotated[bool, Ui(label="Use NUMA", section="Mydumper")] = False
+    mydumper_use_numa: Annotated[
+        bool,
+        Ui(
+            label="Use NUMA",
+            section="Mydumper",
+            description=(
+                "Interleave mydumper's memory across every NUMA node instead of "
+                "letting it fill one"
+            ),
+        ),
+    ] = False
     mydumper_extra_args: Annotated[
-        str | EmptyStrToNone, _MYDUMPER_ONLY, Ui(label="Extra args", section="Mydumper")
+        str | EmptyStrToNone,
+        _MYDUMPER_ONLY,
+        Ui(
+            label="Extra args",
+            section="Mydumper",
+            description=(
+                "Extra arguments for the mydumper command. They are placed ahead of "
+                "the arguments SEP sets, so one that clashes is overridden."
+            ),
+        ),
     ] = None
     mydumper_verbose: Annotated[
         bounded_int_from_empty_str_factory(0, 3),  # ty: ignore[invalid-type-form]
         _MYDUMPER_ONLY,
-        Ui(label="Verbose level", section="Mydumper"),
+        Ui(
+            label="Verbose level",
+            section="Mydumper",
+            description="Mydumper log verbosity, from 0 (silent) to 3 (info)",
+        ),
     ] = None
 
     xtrabackup_copies: Annotated[
         int | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Number of backup copies", section="XtraBackup"),
+        Ui(
+            label="Number of backup copies",
+            section="XtraBackup",
+            description=(
+                "How many backup copies to keep on the host before the oldest are "
+                "deleted"
+            ),
+        ),
     ] = None
     xtrabackup_kill_queries: Annotated[
-        bool, Ui(label="Kill blocking queries", section="XtraBackup")
+        bool,
+        Ui(
+            label="Kill blocking queries",
+            section="XtraBackup",
+            description=(
+                "Kill queries that block the backup's lock instead of waiting for them"
+            ),
+        ),
     ] = False
     xtrabackup_kill_queries_timeout: Annotated[
         int | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Kill-queries timeout (s)", section="XtraBackup"),
+        Ui(
+            label="Kill-queries timeout (s)",
+            section="XtraBackup",
+            description=(
+                "How long a blocking query may run before it is killed (seconds)"
+            ),
+        ),
     ] = None
     xtrabackup_kill_query_type: Annotated[
         Literal["select", "all"] | EmptyStrToNone,
         _XTRABACKUP_ONLY,
         Choices((("select", "SELECT"), ("all", "All"))),
-        Ui(label="Kill query type", section="XtraBackup"),
+        Ui(
+            label="Kill query type",
+            section="XtraBackup",
+            description=(
+                "Which blocking queries may be killed: SELECTs only, or any statement"
+            ),
+        ),
     ] = None
     xtrabackup_verify: Annotated[
-        bool, Ui(label="Verify after backup", section="XtraBackup")
+        bool,
+        Ui(
+            label="Verify after backup",
+            section="XtraBackup",
+            description=(
+                "Verify the InnoDB pages of the finished backup. Skipped automatically "
+                "when compression is on, when AES-256 encryption is applied during the "
+                "backup (which is every backup binary except mariadb-backup), and on "
+                "an incremental run under the 'less space' method."
+            ),
+        ),
     ] = False
     xtrabackup_prepare: Annotated[
-        bool, Ui(label="Prepare for restore", section="XtraBackup")
+        bool,
+        Ui(
+            label="Prepare for restore",
+            section="XtraBackup",
+            description=(
+                "Apply the redo log so the backup is ready to restore without a "
+                "prepare step. Compression is dropped and the upload skipped whenever "
+                "this is set, including when an incremental method turns the prepare "
+                "itself off."
+            ),
+        ),
     ] = False
     xtrabackup_prepare_memory: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Prepare memory", section="XtraBackup"),
+        Ui(
+            label="Prepare memory",
+            section="XtraBackup",
+            description="Memory the prepare step may use, as a size such as 2G",
+        ),
     ] = None
     xtrabackup_desync_pxc: Annotated[
-        bool, Ui(label="Desync PXC node", section="XtraBackup")
+        bool,
+        Ui(
+            label="Desync PXC node",
+            section="XtraBackup",
+            description=_DESYNC_PXC_DESCRIPTION,
+        ),
     ] = False
-    xtrabackup_rsync: Annotated[bool, Ui(label="Use rsync", section="XtraBackup")] = (
-        False
-    )
+    xtrabackup_rsync: Annotated[
+        bool,
+        Ui(
+            label="Use rsync",
+            section="XtraBackup",
+            description=(
+                "Copy non-InnoDB files with rsync to shorten the lock at the end of "
+                "the backup. Unrelated to the Rsync upload provider."
+            ),
+        ),
+    ] = False
     xtrabackup_replica_info: Annotated[
-        bool, Ui(label="Include replica info", section="XtraBackup")
+        bool,
+        Ui(
+            label="Include replica info",
+            section="XtraBackup",
+            description=(
+                "Record the source's replication coordinates in the backup, so a "
+                "restore can resume replication from it"
+            ),
+        ),
     ] = False
     xtrabackup_defaults_file: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="XtraBackup defaults file", section="XtraBackup"),
+        Ui(
+            label="XtraBackup defaults file",
+            section="XtraBackup",
+            description=(
+                "Defaults file passed to the backup binary, when it differs from the "
+                "one used for connections"
+            ),
+        ),
     ] = None
     xtrabackup_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Extra args", section="XtraBackup"),
+        Ui(
+            label="Extra args",
+            section="XtraBackup",
+            description="Extra arguments appended to the backup binary's command",
+        ),
     ] = None
     xtrabackup_incremental_method: Annotated[
         Literal["less_space", "fast_restore"] | EmptyStrToNone,
         _XTRABACKUP_ONLY,
         Choices((("less_space", "Less space"), ("fast_restore", "Fast restore"))),
-        Ui(label="Incremental method", section="XtraBackup"),
+        Ui(
+            label="Incremental method",
+            section="XtraBackup",
+            description=(
+                "How incrementals are stored. 'Less space' chains each incremental to "
+                "the one before it, which saves disk but has to be merged in order to "
+                "restore. 'Fast restore' merges each incremental into the base, so the "
+                "latest backup is always ready to restore."
+            ),
+        ),
     ] = None
     # Vocabulary duplicated -- see the note on BackupConfigAll.xtrabackup_incremental_cycle.
     xtrabackup_incremental_cycle: Annotated[
@@ -496,16 +757,23 @@ class BackupCreate(TaskFormModel):
             label="Incremental cycle",
             section="XtraBackup",
             description=(
-                "``daily``, ``weekly``, or an ISO weekday number (1-7, "
-                "Monday-Sunday) controlling when the FULL backup runs. Applies to "
-                "the ``less_space`` incremental method only."
+                "'daily', 'weekly', or an ISO weekday number (1-7, Monday-Sunday) "
+                "controlling when the full backup runs. Applies to the 'less_space' "
+                "incremental method only."
             ),
         ),
     ] = None
     xtrabackup_local_ssh_destination: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Local SSH destination", section="XtraBackup"),
+        Ui(
+            label="Local SSH destination",
+            section="XtraBackup",
+            description=(
+                "Unused: SEP always runs XtraBackup on the database host itself, so "
+                "the backup is never streamed to another host."
+            ),
+        ),
     ] = None
     xtrabackup_stop_replica: Annotated[
         bool,
@@ -513,56 +781,126 @@ class BackupCreate(TaskFormModel):
             label="Safe replica backup",
             section="XtraBackup",
             description=(
-                "Passes --safe-slave-backup so xtrabackup pauses the replica "
-                "SQL thread during the backup (required for --slave-info on a "
-                "multi-threaded replica with GTID off)."
+                "Pause the replica SQL thread while the data is copied, so the "
+                "replication coordinates recorded in the backup match it. Needed to "
+                "record them at all on a multi-threaded replica with GTID off."
             ),
         ),
     ] = False
-    xtrabackup_lock_ddl: Annotated[bool, Ui(label="Lock DDL", section="XtraBackup")] = (
-        False
-    )
+    xtrabackup_lock_ddl: Annotated[
+        bool,
+        Ui(
+            label="Lock DDL",
+            section="XtraBackup",
+            description=(
+                "Block DDL for the duration of the backup, so a schema change cannot "
+                "corrupt it"
+            ),
+        ),
+    ] = False
     xtrabackup_quiet: Annotated[
-        bool, Ui(label="Quiet log (drop per-file copy lines)", section="XtraBackup")
+        bool,
+        Ui(
+            label="Quiet log (drop per-file copy lines)",
+            section="XtraBackup",
+            description=(
+                "Drop the per-file copy lines from the backup log, leaving progress "
+                "and errors"
+            ),
+        ),
     ] = False
     xtrabackup_bin_cmd: Annotated[
         Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone,
         _XTRABACKUP_ONLY,
-        Ui(label="Backup binary", section="XtraBackup"),
+        Ui(
+            label="Backup binary",
+            section="XtraBackup",
+            description=(
+                "Which backup binary to run; pick the one matching the server's fork "
+                "and version"
+            ),
+        ),
     ] = None
 
     binlog_prefix: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Binlog prefix", section="Binlog"),
+        Ui(
+            label="Binlog prefix",
+            section="Binlog",
+            description=(
+                "Base name of the server's binary logs, such as mysql-bin, used to "
+                "find and purge this server's stored files. Required: a Binlog backup "
+                "fails as soon as it starts without it."
+            ),
+        ),
     ] = None
     binlog_purge_days: Annotated[
         int | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Purge after (days)", section="Binlog"),
+        Ui(
+            label="Purge after (days)",
+            section="Binlog",
+            description="Delete stored binlogs older than this many days",
+        ),
     ] = None
     binlog_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Extra args", section="Binlog"),
+        Ui(
+            label="Extra args",
+            section="Binlog",
+            description=(
+                "Extra arguments for the binlog streaming command. They are placed "
+                "ahead of the arguments SEP sets, so one that clashes is overridden."
+            ),
+        ),
     ] = None
     binlog_compress_cmd: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Compress command", section="Binlog"),
+        Ui(
+            label="Compress command",
+            section="Binlog",
+            description=(
+                "Command used to compress each completed binlog file, replacing the "
+                "default"
+            ),
+        ),
     ] = None
     binlog_cmd: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Binlog command", section="Binlog"),
+        Ui(
+            label="Binlog command",
+            section="Binlog",
+            description=(
+                "Path to the mysqlbinlog binary on the host, when it is not the "
+                "/usr/bin/mysqlbinlog the backup looks for by default"
+            ),
+        ),
     ] = None
     binlog_run_all: Annotated[
-        bool, Ui(label="Run all binlog backups", section="Binlog")
+        bool,
+        Ui(
+            label="Run all binlog backups",
+            section="Binlog",
+            description=(
+                "Keep this on. The binlog backup streams every server in the task's "
+                "config, and refuses to start when the option is cleared."
+            ),
+        ),
     ] = True
     binlog_alternative_host: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _BINLOG_ONLY,
-        Ui(label="Alternative binlog host", section="Binlog"),
+        Ui(
+            label="Alternative binlog host",
+            section="Binlog",
+            description=(
+                "Pull binlogs from this host instead of the selected service's address"
+            ),
+        ),
     ] = None
 
     encryption_format: Annotated[
@@ -579,10 +917,11 @@ class BackupCreate(TaskFormModel):
             label="Encryption format",
             section="Encryption",
             description=(
-                "Which encryption this task applies. 'GPG' needs a recipient and "
-                "a timing below: 'Encrypt backup' encrypts in place as part of an "
-                "upload, so it needs an upload target, while 'Encrypt after backup "
-                "completes' encrypts on the host. 'AES-256' and 'AES-256 + GPG' "
+                "Which encryption this task applies. 'GPG' needs a recipient and a "
+                "timing below: 'Encrypt backup' encrypts as part of an upload, so with "
+                "no upload target nothing is encrypted, while 'Encrypt after backup "
+                "completes' encrypts on the host for a Mydumper or XtraBackup backup "
+                "and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' "
                 "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
                 "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
                 "backend cannot apply on top of it."
@@ -606,7 +945,14 @@ class BackupCreate(TaskFormModel):
                 "'encryption_format' does not include AES-256."
             ),
         ),
-        Ui(label="AES-256 key file path", section="Encryption"),
+        Ui(
+            label="AES-256 key file path",
+            section="Encryption",
+            description=(
+                "Path on the database host to the AES-256 key file. Required by the "
+                "AES-256 formats, which are XtraBackup-only."
+            ),
+        ),
     ] = None
     encrypt: Annotated[
         bool,
@@ -614,10 +960,12 @@ class BackupCreate(TaskFormModel):
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "GPG-encrypt the backup in place as part of an upload, so it "
-                "needs an upload target. Combine with 'Encrypt using tmpdir', or "
-                "use 'Encrypt after backup completes' to encrypt on the host "
-                "instead. Needs a GPG 'Encryption format' and a recipient."
+                "GPG-encrypt the backup as part of an upload. With no upload target "
+                "nothing is encrypted and the task still succeeds. Mydumper and Binlog "
+                "encrypt the backup where it is written, optionally by way of 'Encrypt "
+                "using tmpdir'; XtraBackup encrypts a copy and leaves the backup on "
+                "the host in plain text unless 'Encrypt after backup completes' is set "
+                "too. Needs a GPG 'Encryption format' and a recipient."
             ),
         ),
     ] = False
@@ -637,9 +985,8 @@ class BackupCreate(TaskFormModel):
             label="Encrypt using tmpdir",
             section="Encryption",
             description=(
-                "Encrypt in a temporary directory during the backup. Requires "
-                "'Encrypt backup'; mutually exclusive with 'Encrypt after backup "
-                "completes'."
+                "Encrypt in a temporary directory during the backup. Requires 'Encrypt "
+                "backup'; mutually exclusive with 'Encrypt after backup completes'."
             ),
         ),
     ] = False
@@ -652,8 +999,8 @@ class BackupCreate(TaskFormModel):
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
                 "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
-                "XtraBackup encrypt on the host; a Binlog backup encrypts only "
-                "during an upload, so it also needs an upload target."
+                "XtraBackup encrypt on the host; a Binlog backup encrypts only during "
+                "an upload, so with no upload target nothing is encrypted."
             ),
         ),
     ] = False
@@ -677,8 +1024,8 @@ class BackupCreate(TaskFormModel):
             label="Encryption recipient",
             section="Encryption",
             description=(
-                "GPG recipient/key the backup is encrypted for. Required when "
-                "either GPG timing is enabled."
+                "GPG recipient/key the backup is encrypted for. Required when either "
+                "GPG timing is enabled."
             ),
         ),
     ] = None
@@ -692,36 +1039,92 @@ class BackupCreate(TaskFormModel):
                 (_UPLOAD_GSUTIL, "Google Cloud Storage"),
             )
         ),
-        Ui(label="Upload providers", section="Upload"),
+        Ui(
+            label="Upload providers",
+            section="Upload",
+            description=(
+                "Where the finished backup is copied. Leave empty to keep it on the "
+                "database host."
+            ),
+        ),
     ] = Field(default_factory=list)
     s3_bucket: Annotated[
-        NonEmptyStr | EmptyStrToNone, _S3_ONLY, Ui(label="S3 bucket", section="Upload")
+        NonEmptyStr | EmptyStrToNone,
+        _S3_ONLY,
+        Ui(
+            label="S3 bucket",
+            section="Upload",
+            description=(
+                "Destination S3 bucket, optionally with a path prefix (bucket/path)"
+            ),
+        ),
     ] = None
     s3_storage_class: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _S3_ONLY,
-        Ui(label="S3 storage class", section="Upload"),
+        Ui(
+            label="S3 storage class",
+            section="Upload",
+            description=(
+                "Storage class applied to uploaded objects (defaults to STANDARD)"
+            ),
+        ),
     ] = None
     skip_s3_safety_check: Annotated[
-        bool, _S3_ONLY, Ui(label="Skip S3 safety check", section="Upload")
+        bool,
+        _S3_ONLY,
+        Ui(
+            label="Skip S3 safety check",
+            section="Upload",
+            description=(
+                "Upload even when the bucket allows public access, skipping the "
+                "block-public-access check"
+            ),
+        ),
     ] = False
-    upload_quiet: Annotated[bool, Ui(label="Quiet upload logs", section="Upload")] = (
-        False
-    )
+    upload_quiet: Annotated[
+        bool,
+        Ui(
+            label="Quiet upload logs",
+            section="Upload",
+            description=(
+                "Drop routine progress lines from the upload log, leaving errors"
+            ),
+        ),
+    ] = False
     awscli_s3_upload_extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _S3_ONLY,
-        Ui(label="AWS S3 upload extra args", section="Upload"),
+        Ui(
+            label="AWS S3 upload extra args",
+            section="Upload",
+            description=(
+                "Extra S3 object options for the upload, as space-separated Key=Value "
+                "pairs such as ACL=private. Anything without an equals sign is "
+                "dropped. XtraBackup backups only."
+            ),
+        ),
     ] = None
     gs_bucket: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _GSUTIL_ONLY,
-        Ui(label="Google Cloud Storage bucket", section="Upload"),
+        Ui(
+            label="Google Cloud Storage bucket",
+            section="Upload",
+            description=(
+                "Destination Google Cloud Storage bucket, optionally with a path "
+                "prefix (bucket/path)"
+            ),
+        ),
     ] = None
     rsync_path: Annotated[
         NonEmptyStr | EmptyStrToNone,
         _RSYNC_ONLY,
-        Ui(label="Rsync destination path", section="Upload"),
+        Ui(
+            label="Rsync destination path",
+            section="Upload",
+            description="Destination path for the rsync upload, as an rsync target",
+        ),
     ] = None
 
     @field_validator("encryption_format", mode="before")
