@@ -89,11 +89,11 @@ def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
     """Build a service API async engine with pool and connect options.
 
     ``pool_pre_ping`` is always forwarded. The pool sizing fields carry bounded
-    defaults and are forwarded only for a dialect whose pool accepts them, so a
-    SQLite engine gets none of them and a PostgreSQL one gets whatever
-    :attr:`DatabaseOptions.pool_engine_kwargs` resolved. An unset or
-    SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise omits ``connect_args``
-    entirely.
+    defaults and are forwarded only for a dialect :class:`DatabaseOptions`
+    sizes, so a SQLite engine of either backing gets none of them and a
+    PostgreSQL one gets whatever :attr:`DatabaseOptions.pool_engine_kwargs`
+    resolved. An unset or SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise
+    omits ``connect_args`` entirely.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.

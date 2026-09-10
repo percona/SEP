@@ -49,10 +49,14 @@ _CAPACITY_UNAVAILABLE = HTTPServiceUnavailableException(
 )
 
 
-async def db_capacity_exception_handler(_: Request, exc: Exception) -> JSONResponse:
+async def db_capacity_exception_handler(
+    request: Request,  # noqa: ARG001
+    exc: Exception,
+) -> JSONResponse:
     """Return a 503 for a database that cannot serve the request right now.
 
-    :param _: The incoming request, which the fixed payload does not consult.
+    :param request: The incoming request, which the fixed payload does not
+        consult.
     :param exc: The capacity failure to report.
     :return: A JSON response carrying the service-unavailable detail.
     """
@@ -117,24 +121,19 @@ def register_db_capacity_handlers(app: FastAPI) -> None:
     """Register the capacity-to-503 mapping on ``app``.
 
     The handlers are keyed on the exception class rather than on status ``500``
-    for two reasons. Starlette resolves status-code handlers only for an
-    :class:`fastapi.HTTPException`, and neither class below is one: SQLAlchemy
-    leaves a server-side refusal unwrapped, so the raw driver exception reaches
-    the app, and its own pool timeout is a plain ``SQLAlchemyError``. Class
-    handlers also live in Starlette's inner ``ExceptionMiddleware``, which sees
-    an exception before the outer ``ServerErrorMiddleware`` a sub-application's
-    own ``500`` handler is lifted into, so this mapping wins over one of those.
+    for two reasons. Starlette resolves status-code handlers only for a
+    :class:`starlette.exceptions.HTTPException`, and neither class below is
+    one: SQLAlchemy leaves a server-side refusal unwrapped, so the raw driver
+    exception reaches the app, and its own pool timeout is a plain
+    ``SQLAlchemyError``. Class handlers also live in Starlette's inner
+    ``ExceptionMiddleware``, which sees an exception before the outer
+    ``ServerErrorMiddleware`` a sub-application's own ``500`` handler is
+    lifted into, so this mapping wins over one of those.
 
-    Three registrations, covering the same class of failure by the three routes
-    it can arrive on. ``InsufficientResourcesError`` is the base asyncpg raises
-    when the server cannot spare a resource — too many connections, out of
-    memory, disk full, or a configuration limit — and it reaches the app raw
-    only when raised while *connecting*. Raised while executing a statement it
-    arrives wrapped, which is what the :class:`sqlalchemy.exc.DBAPIError`
-    registration below is for. SQLAlchemy's own
-    :class:`sqlalchemy.exc.TimeoutError` is the local counterpart, raised when
-    this process's pool stayed saturated for ``POOL_TIMEOUT``. All three mean
-    "cannot serve this now", which is what 503 says.
+    Three registrations cover the three routes one capacity failure can arrive
+    on: ``InsufficientResourcesError`` raw, :class:`sqlalchemy.exc.DBAPIError`
+    wrapping it, and :class:`sqlalchemy.exc.TimeoutError` for this process's
+    own saturated pool. Each handler documents the shape it takes.
 
     :param app: The FastAPI application to register the handlers on.
     """
