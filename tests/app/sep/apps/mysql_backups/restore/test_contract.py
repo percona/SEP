@@ -177,6 +177,33 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert mock_task_api.create_count == 0
 
+    def test_create_rejects_a_replication_option_with_the_toggle_off(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject each replication field submitted without ``slave_from_master``.
+
+        Pinned on the route, not only on the model: these combinations were
+        accepted before the fields were nested under the toggle, so this is the
+        tightening the changelog announces and it should be visible as a
+        contract test rather than only as a side effect of the gates.
+        """
+        base = app_base_url(self.app_def)
+        orphaned: dict[str, Any] = {
+            "master_ip": "10.0.0.9",
+            "master_user": "repl",
+            "master_password": "secret",
+            "wait_for_catchup": True,
+        }
+
+        for field, value in orphaned.items():
+            body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+            body[field] = value
+
+            response = contract_client.post(f"{base}/", json=body)
+
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, field
+        assert mock_task_api.create_count == 0
+
     def test_create_threads_executor_host_to_meta_target(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:

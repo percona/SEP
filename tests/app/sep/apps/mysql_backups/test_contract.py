@@ -199,6 +199,32 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert mock_task_api.create_count == 0
 
+    def test_create_rejects_a_dependent_option_whose_toggle_is_off(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject each nested option submitted without its parent toggle.
+
+        Pinned on the route, not only on the model: these three combinations
+        were accepted before the options were nested under their toggles, so
+        this is the tightening the changelog announces and it should be visible
+        as a contract test rather than only as a side effect of the gates.
+        """
+        base = app_base_url(self.app_def)
+        orphaned = {
+            "xtrabackup_kill_queries_timeout": 30,
+            "xtrabackup_kill_query_type": "select",
+            "xtrabackup_prepare_memory": "2G",
+        }
+
+        for field, value in orphaned.items():
+            body = _valid_body(backup_type=BackupType.XTRABACKUP)
+            body[field] = value
+
+            response = contract_client.post(f"{base}/", json=body)
+
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, field
+        assert mock_task_api.create_count == 0
+
     def test_create_connectivity_warning(
         self, contract_client: Any, mocker: MockerFixture
     ) -> None:
