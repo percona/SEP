@@ -794,7 +794,7 @@ class TestSyncerExtrasValidatedAtLoad:
                 }
             )
 
-        assert "env override" not in str(excinfo.value)
+        assert "If this came from" not in str(excinfo.value)
 
     def test_env_hint_is_withheld_for_a_string_on_a_syncer_entry(self) -> None:
         """Do not send an operator back to the surface they already configured.
@@ -807,7 +807,7 @@ class TestSyncerExtrasValidatedAtLoad:
                 {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": "abc"}]}
             )
 
-        assert "env override" not in str(excinfo.value)
+        assert "If this came from" not in str(excinfo.value)
 
     @pytest.mark.parametrize(
         "value", ["60", "60.5", "-60", "abc", "", 0, -1, [60], {"seconds": 60}]
@@ -959,9 +959,10 @@ class TestSyncerExtrasValidatedAtLoad:
     def test_threshold_is_checked_even_when_the_syncer_lacks_the_field(self) -> None:
         """Refuse a global extra no configured syncer would ever apply.
 
-        ``MISSING_GRACE_GENERATIONS`` is a ``PMMSyncer`` field, so a MySQL-only
-        deployment setting it would otherwise carry a value that reads as a retirement
-        policy and enforces nothing.
+        ``MISSING_GRACE_GENERATIONS`` is a ``PMMSyncer`` field, so on a MySQL-only
+        deployment an unusable value is refused at load rather than merged into an
+        entry that would silently drop it. A usable one still loads, and is still
+        ignored.
         """
         mysql = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):

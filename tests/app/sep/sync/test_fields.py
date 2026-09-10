@@ -75,6 +75,7 @@ class TestConstrainedSyncerFields:
         """Drop an entry whose field a syncer no longer carries."""
         declared = {name for cls in _syncer_classes() for name in cls.model_fields}
 
+        assert declared, "no syncer field was discovered"
         assert set(CONSTRAINED_SYNCER_FIELDS) <= declared
 
     def test_registry_entries_mirror_the_fields_they_stand_for(self):
@@ -102,6 +103,7 @@ class TestConstrainedSyncerFields:
 
     def test_every_entry_names_the_forms_it_accepts(self):
         """Give the operator something to act on, not just a refusal."""
+        assert CONSTRAINED_SYNCER_FIELDS, "the registry is empty"
         assert all(
             constraint.accepted.strip()
             for constraint in CONSTRAINED_SYNCER_FIELDS.values()
