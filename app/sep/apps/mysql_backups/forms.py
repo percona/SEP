@@ -20,6 +20,7 @@ Imports ``app.inventory`` and the app framework's form DSL, so — unlike
 Alembic migration time; see that module's docstring for the split rationale.
 """
 
+from collections.abc import Sequence
 from enum import auto, IntEnum, StrEnum
 from typing import Annotated, Any, ClassVar, Literal, Self
 
@@ -44,11 +45,13 @@ from app.sep.apps.framework.form_dsl import (
     Forbidden,
     FormRules,
     Requires,
+    SectionRules,
     ServiceRef,
     TaskFormModel,
     Ui,
 )
 from app.sep.apps.framework.rules import (
+    all_,
     AllFalsy,
     any_,
     AnyTruthy,
@@ -59,7 +62,7 @@ from app.sep.apps.framework.rules import (
     not_,
     truthy,
 )
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.shared.backups.responses import BackupTaskBase
 
 OWNER = "BACKUPS"
@@ -90,6 +93,24 @@ ALLOWED_COMPRESSIONS = {
         CompressionAlgorithm.QUICKLZ,
     ],
     BackupType.BINLOG: [CompressionAlgorithm.GZIP],
+}
+
+#: The binary a blank ``xtrabackup_bin_cmd`` resolves to, matching the default the
+#: xtrabackup payload applies when the dispatched config carries no
+#: ``XTRABACKUP_BIN_CMD`` key. Validation resolves it the same way so a form left
+#: blank is gated against the binary that will actually run.
+XTRABACKUP_BIN_DEFAULT = XtraBackupTool.XTRABACKUP
+
+#: The ``--compress`` algorithms each backup binary accepts, measured off ``--help``
+#: on the shipped versions. No algorithm is common to all three, so
+#: ``ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP]`` cannot be repaired by editing its
+#: contents — it stays the outer filter and the binary narrows it.
+ALLOWED_XTRABACKUP_BIN_COMPRESSIONS: dict[
+    XtraBackupTool, tuple[CompressionAlgorithm, ...]
+] = {
+    XTRABACKUP_BIN_DEFAULT: (CompressionAlgorithm.LZ4, CompressionAlgorithm.ZSTD),
+    XtraBackupTool.INNOBACKUPEX: (CompressionAlgorithm.QUICKLZ,),
+    XtraBackupTool.MARIADB_BACKUP: (CompressionAlgorithm.QUICKLZ,),
 }
 
 
@@ -221,6 +242,113 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+#: The mode-owned and encryption-format bool invariants: a truthy mode-owned bool
+#: outside its mode, or a GPG timing outside a GPG format, fails validation, as does
+#: a GPG format with no timing. Named rather than inlined so the backfill's lenient
+#: model can inherit these without the binary/compression rules below.
+MODE_AND_ENCRYPTION_FAIL_RULES: tuple[FailRule, ...] = (
+    *(
+        FailRule(
+            fail_when=truthy(name) & (F("backup_type") != owner_mode),
+            error_fields=[name],
+            message=(
+                f"{name!r} must not be set when backup_type is not {owner_mode!r}."
+            ),
+        )
+        for owner_mode, names in _MODE_BOOL_FIELDS.items()
+        for name in names
+    ),
+    *(
+        FailRule(
+            fail_when=truthy(name) & not_(_FMT_HAS_GPG),
+            error_fields=[name],
+            message=(
+                f"{name!r} must not be set when 'encryption_format' does "
+                "not include GPG."
+            ),
+        )
+        for name in _GPG_TIMING_FIELDS
+    ),
+    FailRule(
+        fail_when=_FMT_HAS_GPG & AllFalsy(_GPG_TIMING_FIELDS),
+        error_fields=list(_GPG_TIMING_FIELDS),
+        message=(
+            "A GPG 'encryption_format' requires 'encrypt' or "
+            "'post_run_encrypt' to select when the backup is encrypted."
+        ),
+    ),
+)
+
+
+def _join_or(values: Sequence[str]) -> str:
+    """Return ``values`` as an English alternatives list.
+
+    :param values: The non-empty alternatives, in the order they should read.
+    :return: The alternatives joined with commas and a trailing ``or``.
+    """
+    if len(values) == 1:
+        return values[0]
+    return f"{', '.join(values[:-1])} or {values[-1]}"
+
+
+#: The per-binary algorithm lists as operator-facing help text, built off the matrix
+#: so the field's description cannot contradict the rule that rejects the pairing.
+_XTRABACKUP_BIN_COMPRESSION_HELP = "; ".join(
+    f"{binary} takes {_join_or([algorithm.value for algorithm in allowed])}"
+    for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+)
+
+
+def _binary_compression_fail_rule(
+    binary: XtraBackupTool, allowed: tuple[CompressionAlgorithm, ...]
+) -> FailRule | None:
+    """Return the rule rejecting the algorithms one backup binary cannot run.
+
+    :param binary: The ``xtrabackup_bin_cmd`` spelling this rule gates.
+    :param allowed: The algorithms that binary accepts.
+    :return: The fail rule for that binary, or ``None`` when the binary accepts
+        every algorithm the backup type offers and so needs no rule.
+    """
+    rejected = [
+        algorithm
+        for algorithm in ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP]
+        if algorithm not in allowed
+    ]
+    if not rejected:
+        return None
+    # A blank field never reaches the payload, so the payload's default decides which
+    # binary runs — the default's rule has to match the blank spelling too.
+    selected = F("xtrabackup_bin_cmd") == binary
+    blank_note = ""
+    if binary == XTRABACKUP_BIN_DEFAULT:
+        selected = any_(selected, falsy("xtrabackup_bin_cmd"))
+        blank_note = ", which is what a blank binary selects"
+    return FailRule(
+        # Guarded on the mode as well: without it the blank-binary arm would reach a
+        # Mydumper form, whose algorithms these binaries have no say over.
+        fail_when=all_(
+            F("backup_type") == BackupType.XTRABACKUP,
+            selected,
+            any_(*(F("compression_algorithm") == algorithm for algorithm in rejected))
+            if len(rejected) > 1
+            else F("compression_algorithm") == rejected[0],
+        ),
+        error_fields=["compression_algorithm"],
+        message=(
+            f"'compression_algorithm' must be "
+            f"{_join_or([algorithm.value for algorithm in allowed])} when the backup "
+            f"binary is {binary.value!r}{blank_note}."
+        ),
+    )
+
+
+_BINARY_COMPRESSION_FAIL_RULES: tuple[FailRule, ...] = tuple(
+    rule
+    for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+    if (rule := _binary_compression_fail_rule(binary, allowed)) is not None
+)
+
+
 class DirEncryptConfig(BaseModel):
     """Represent the encryption configuration for the backup task.
 
@@ -285,9 +413,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     xtrabackup_stop_replica: bool = False
     xtrabackup_lock_ddl: bool = False
     xtrabackup_quiet: bool = False
-    xtrabackup_bin_cmd: (
-        Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
-    ) = None
+    xtrabackup_bin_cmd: XtraBackupTool | EmptyStrToNone = None
     binlog_prefix: NonEmptyStr | EmptyStrToNone = None
     binlog_purge_days: int | EmptyStrToNone = None
     binlog_extra_args: NonEmptyStr | EmptyStrToNone = None
@@ -331,43 +457,19 @@ class BackupCreate(TaskFormModel):
 
     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-        validation with a per-field message, as does a GPG format with no timing.
+        validation, as does a GPG format with no timing. They are app-scoped, so
+        they reject on submit; the binary/compression rules, which reject an
+        XtraBackup compression algorithm the selected (or defaulted)
+        ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning
+        ``compression_algorithm`` — the scope ``SchemaFormRenderer`` evaluates, so
+        those land under the field as the operator types.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=(
-            *(
-                FailRule(
-                    fail_when=truthy(name) & (F("backup_type") != owner_mode),
-                    error_fields=[name],
-                    message=(
-                        f"{name!r} must not be set when backup_type is not "
-                        f"{owner_mode!r}."
-                    ),
-                )
-                for owner_mode, names in _MODE_BOOL_FIELDS.items()
-                for name in names
-            ),
-            *(
-                FailRule(
-                    fail_when=truthy(name) & not_(_FMT_HAS_GPG),
-                    error_fields=[name],
-                    message=(
-                        f"{name!r} must not be set when 'encryption_format' does "
-                        "not include GPG."
-                    ),
-                )
-                for name in _GPG_TIMING_FIELDS
-            ),
-            FailRule(
-                fail_when=_FMT_HAS_GPG & AllFalsy(_GPG_TIMING_FIELDS),
-                error_fields=list(_GPG_TIMING_FIELDS),
-                message=(
-                    "A GPG 'encryption_format' requires 'encrypt' or "
-                    "'post_run_encrypt' to select when the backup is encrypted."
-                ),
-            ),
-        )
+        fail_when=MODE_AND_ENCRYPTION_FAIL_RULES,
+        # Section-scoped rather than app-scoped: ``useFailRules`` evaluates only
+        # section rules, so only there is ``error_fields`` acted on.
+        sections={"General": SectionRules(fail_when=_BINARY_COMPRESSION_FAIL_RULES)},
     )
 
     service_id: Annotated[
@@ -514,8 +616,10 @@ class BackupCreate(TaskFormModel):
             section="General",
             description=(
                 "Algorithm used when compression is enabled; the available choices "
-                "depend on the backup type. A Binlog backup always uses gzip unless "
-                "'Binlog compress command' replaces it."
+                "depend on the backup type and, for XtraBackup, on the selected "
+                f"backup binary — {_XTRABACKUP_BIN_COMPRESSION_HELP}. A Binlog "
+                "backup always uses gzip unless 'Binlog compress command' "
+                "replaces it."
             ),
         ),
     ] = None
@@ -810,7 +914,7 @@ class BackupCreate(TaskFormModel):
         ),
     ] = False
     xtrabackup_bin_cmd: Annotated[
-        Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone,
+        XtraBackupTool | EmptyStrToNone,
         _XTRABACKUP_ONLY,
         Ui(
             label="Backup binary",
@@ -1230,11 +1334,14 @@ class BackupCreate(TaskFormModel):
 
     @model_validator(mode="after")
     def validate_compression_algorithm(self) -> Self:
-        """Validate that the compression_algorithm is compatible with the selected backup_type.
+        """Validate the compression algorithm against the selected backup type.
 
-        :return: The validated instance
-        :rtype: Self
-        :raises ValueError: If the compression_algorithm is not valid for the specified backup_type.
+        The outer filter of a two-stage gate: this rejects an algorithm no binary of
+        the selected type can run, and the ``xtrabackup_bin_cmd`` rules in
+        :attr:`__form_rules__` narrow the XtraBackup list to the selected binary.
+
+        :return: The validated instance.
+        :raises ValueError: If the algorithm is not valid for the backup type.
         """
         allowed_algorithms = ALLOWED_COMPRESSIONS.get(self.backup_type, [])
         if (
