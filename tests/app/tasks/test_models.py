@@ -1615,6 +1615,27 @@ class TestTaskExecutionRequestJSON:
         assert document["meta"]["args"] == "restore --password hunter2"
         assert document["payload"] == "secret document"
 
+    def test_bind_leaves_an_already_encrypted_dict_byte_identical(self) -> None:
+        """Assert re-saving the raw fallback document does not encrypt it twice.
+
+        ``process_result_value`` hands back the stored document unchanged when it
+        will not validate, so the dict branch can receive ciphertext. A second
+        encryption there would leave a leaf no key can read, and the read path
+        would report it as plaintext rather than as unreadable, so nothing
+        downstream could tell.
+        """
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        assert is_encrypted(stored["payload"]), (
+            "the fixture must already be ciphertext, or the identity asserted "
+            "below proves nothing"
+        )
+
+        resaved = column.process_bind_param(stored, None)
+
+        assert resaved == stored
+        assert json.loads(decrypt(resaved["payload"])) == "secret document"
+
     def test_bind_passes_none_through(self) -> None:
         """Assert a ``None`` column value is stored unchanged."""
         assert self._column().process_bind_param(None, None) is None

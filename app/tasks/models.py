@@ -71,6 +71,7 @@ from app.tasks.execution_request_secrets import (
     decrypt_request_leaves,
     encrypt_request_leaves,
     redact_request_leaves,
+    reencrypt_request_leaves,
 )
 from app.tasks.hook_resolver import validate_hook_path
 
@@ -422,6 +423,15 @@ class TaskExecutionRequestJSON(AutoJSON):
         well-formed token, and sparing that one would store a credential in the
         clear.
 
+        A bare dict carries no provenance to read, so it takes the structural
+        variant instead. That is the weaker rule the paragraph above rejects,
+        and it is the right one here only because the dict branch cannot
+        receive a fresh submission: every caller assigns a
+        :class:`TaskExecutionRequest`, and the one value that arrives as a dict
+        is the document :meth:`process_result_value` hands back when a stored
+        row will not validate, which is already ciphertext. Encrypting it
+        unconditionally would leave a leaf no key can read, reported by nothing.
+
         Both branches copy before rewriting, so the caller's live request (which
         the dispatch dedup comparison reads in the same request) and any plain
         dict handed to the column keep their plaintext.
@@ -437,7 +447,7 @@ class TaskExecutionRequestJSON(AutoJSON):
                 value.model_dump(mode="json"), preserve=value.unreadable_leaves
             )
         if isinstance(value, dict):
-            return encrypt_request_leaves(value)
+            return reencrypt_request_leaves(value)
         return value
 
 
