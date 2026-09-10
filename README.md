@@ -144,6 +144,8 @@ These are some, but not all, the possible settings you can have, per app:
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
+| TASKS__NOMAD__API_KEY      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__NOMAD__AUTH_SCHEME  | tasks     | no       | Bearer                                              | Bearer                                           |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                              |
 | TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
@@ -174,6 +176,13 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
 | SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
+
+`TASKS__NOMAD__API_KEY` is sent on every Nomad request as
+`Authorization: <TASKS__NOMAD__AUTH_SCHEME> <TASKS__NOMAD__API_KEY>`, and takes
+precedence over a `user:password` embedded in `TASKS__NOMAD__ENDPOINT`: while a
+key is set the endpoint's userinfo is stripped, since both HTTP clients would
+otherwise derive basic auth from it and override the header. Leave the key unset
+to keep authenticating with the endpoint's own userinfo, if it carries any.
 
 The active authentication provider is configured under `AUTH__PROVIDER__<NAME>__*`,
 and **exactly one** provider may be configured. Casdoor is the built-in default,
@@ -345,11 +354,20 @@ OpenAPI dump. It has no default, is never derived from
 real third-party credentials, so a shared key would protect nothing from anyone
 who can read the source.
 
-Mint one and add it to your `.env`:
+Mint one and add it as `ENCRYPTION_KEY=<key>` to **the file `ENV_FILE` names**:
 
 ```shell
-echo "ENCRYPTION_KEY=$(make -s encryption-key)" >> .env
+make -s encryption-key
 ```
+
+That is `.env` by default, but not always: `ENV_FILE` is read from the process
+environment — exported in your shell, set by `direnv`, or passed by your
+container runtime — and it redirects the loader to a different file, whose keys
+replace `.env`'s rather than adding to them. Setting `ENV_FILE` *inside* `.env`
+does nothing: it is resolved before the dotenv source is configured. So on a
+checkout that exports `ENV_FILE=.env.local`, appending to `.env` succeeds and
+changes nothing the application sees. If you are unsure which file is in play,
+start the app and read the error: it names the exact path it looked in.
 
 `openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
 generator `SECRET_KEY` uses — does **not** produce a valid key.

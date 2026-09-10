@@ -30,6 +30,8 @@ from app.tasks.models import ANY_OWNER
 app = TaskExecutionApp(
     name="golden_task",
     display_name="Golden Task",
+    item_display_name="Golden Task",
+    item_display_name_plural="Golden Task",
     uri_path="/golden_task",
     description="TODO: describe what the Golden Task task does.",
     owner=ANY_OWNER,

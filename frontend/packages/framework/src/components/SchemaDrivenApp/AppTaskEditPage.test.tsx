@@ -300,6 +300,77 @@ describe('AppTaskEditPage', () => {
     // not the stored "rsync", so the backend accepts the request.
     expect(values.upload).toEqual(['RSYNC']);
   });
+
+  it('opens a task whose stored value for a now-required field is null, and blocks save until it is filled', async () => {
+    // A field can become required after tasks were already saved without it. The
+    // stored `null` must still open in the editor — a task that cannot be opened
+    // can only be deleted and recreated — while the required rule keeps the
+    // repair honest.
+    const requiredFieldSchema: AppSchema = {
+      pluginName: 'mysql_backups',
+      display_name: 'MySQL Backup',
+      description: 'Test',
+      capabilities: {},
+      list_view: { columns: [{ key: 'name', label: 'Name' }] },
+      forms: [
+        {
+          title: 'Task',
+          fields: [
+            { type: 'string', name: 'task_name', label: 'Task Name' },
+            {
+              type: 'string',
+              name: 'backup_dir',
+              label: 'Backup directory',
+              required: true,
+            },
+          ],
+        },
+      ],
+    } as unknown as AppSchema;
+
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'b1',
+        status: 'completed',
+        data: { _form: { task_name: 'b1', backup_dir: null } },
+      },
+      isLoading: false,
+    });
+    mockUpdateTaskMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+
+    render(
+      <SnackbarProvider>
+        <MemoryRouter initialEntries={['/apps/mysql_backups/task/b1/edit']}>
+          <Routes>
+            <Route
+              path="/apps/:plugin/task/:id/edit"
+              element={<AppTaskEditPage schema={requiredFieldSchema} pluginName="mysql_backups" />}
+            />
+            <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </SnackbarProvider>,
+    );
+
+    const input = screen.getByLabelText(/Backup directory/);
+    expect(input).toBeVisible();
+    expect(input).toHaveValue('');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(screen.getByText('Backup directory is required')).toBeInTheDocument(),
+    );
+    expect(mockUpdateTaskMutate).not.toHaveBeenCalled();
+
+    await userEvent.type(input, '/backups');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdateTaskMutate).toHaveBeenCalledTimes(1));
+    const [{ values: repaired }] = mockUpdateTaskMutate.mock.calls[0];
+    expect(repaired.backup_dir).toBe('/backups');
+  });
 });
 
 describe('normalizeChoiceDefaults', () => {

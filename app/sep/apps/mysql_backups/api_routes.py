@@ -17,10 +17,11 @@
 
 The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
 ``app.py`` derives the task CRUD surface; this router carries the per-service
-completed-backup catalog query and the restore ``backup_source`` Choice options
-endpoint, mounted as the app's ``extra_routes``. Both routes are read-only and
-inherit the app's standard authenticated-user gate from the ``/api/apps/*``
-mount, so they introduce no mutating or unauthenticated surface.
+completed-backup catalog query, the task-scoped catalog query, and the restore
+``backup_source`` Choice options endpoint, mounted as the app's ``extra_routes``.
+All three routes are read-only and inherit the app's standard authenticated-user
+gate from the ``/api/apps/*`` mount, so they introduce no mutating or
+unauthenticated surface.
 """
 
 from fastapi import APIRouter
@@ -31,6 +32,7 @@ from app.sep.apps.framework.schema import Choice
 from app.sep.apps.mysql_backups.backup_source_choices import choices_for_service
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.deps import (
+    CataloguedHistoryIds,
     OptionalCatalogServiceKey,
     ResolvedMysqlService,
 )
@@ -71,14 +73,44 @@ async def list_service_backups(
         CatalogServiceKey(service_name=service.name, service_id=service.id),
         pagination=pagination,
     )
-    return PaginatedResponse[BackupRunResponse](
-        items=[
-            BackupRunResponse.model_validate(run, from_attributes=True)
-            for run in page.items
-        ],
-        total=page.total,
-        offset=page.offset,
-        limit=page.limit,
+    return page.map_items(
+        lambda run: BackupRunResponse.model_validate(run, from_attributes=True)
+    )
+
+
+@router.get("/{task_name}/backups")
+async def list_task_backups(
+    history_ids: CataloguedHistoryIds,
+    session: SessionDep,
+    pagination: PaginationDep,
+) -> PaginatedResponse[BackupRunResponse]:
+    """Return a page of a backup task's catalogued runs, newest run first.
+
+    The ``task_name`` path parameter is resolved by
+    :data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that
+    does not exist or belongs to another app surfaces as a ``404`` while a known
+    task with no catalogued backup yields an empty page — keeping "this task has
+    never produced a backup" distinguishable from "this task does not exist".
+
+    The discovery walk behind that dependency is capped, so ``total`` counts the
+    runs within the scanned window rather than every run the task ever produced,
+    and carries no marker distinguishing a truncated page from a complete one.
+    A run older than the window is reachable through the per-service catalog
+    route, which is uncapped — but only while its inventory service still
+    resolves, and only for a caller that knows which service the run was recorded
+    under, which a task since re-pointed at another target no longer answers.
+
+    :param history_ids: The task's catalogued task-history ids, newest first.
+    :param session: The database session the catalog is queried on.
+    :param pagination: The requested offset/limit window.
+    :return: The requested page of the task's recorded backup runs, newest run
+        first.
+    """
+    page = await MysqlBackupRunManager.list_for_history_ids(
+        session, history_ids, pagination=pagination
+    )
+    return page.map_items(
+        lambda run: BackupRunResponse.model_validate(run, from_attributes=True)
     )
 
 

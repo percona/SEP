@@ -335,6 +335,25 @@ class TestDescribeSyncError:
         assert described.startswith("SyncInstanceAlreadyInProgressError: ")
         assert "sync items" in described
 
+    def test_an_allowlisted_exception_keeps_its_supplied_detail(self) -> None:
+        """Keep a detail-built message whole, as an item-built one is kept.
+
+        The allowlist opts a message in by its exception's exact type, not by how
+        the message was built, so a conflict described by a supplied detail passes
+        through verbatim too — which is what obliges every such detail to stay
+        bookkeeping-only.
+        """
+        described = _describe_sync_error(
+            SyncInstanceAlreadyInProgressError(
+                detail="A run of syncer 'pmm' is being created already.",
+            )
+        )
+
+        assert described == (
+            "SyncInstanceAlreadyInProgressError: A run of syncer 'pmm' is being "
+            "created already."
+        )
+
     def test_an_executor_host_error_contributes_only_its_type(self) -> None:
         """Keep the executor-host map out of a column any reader can fetch.
 

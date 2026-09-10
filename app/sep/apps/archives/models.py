@@ -322,7 +322,15 @@ class ArchivesCreate(TaskFormModel):
     disable_binlog: Annotated[bool | None, Ui(section="Advanced")] = None
     disable_bulk_insert: Annotated[bool | None, Ui(section="Advanced")] = None
     delete_data: Annotated[
-        bool | None, Ui(label="Delete Without Archiving", section="Advanced")
+        bool | None,
+        Ui(
+            label="Delete Without Archiving",
+            section="Advanced",
+            destructive=(
+                "The matched source rows are deleted without being archived "
+                "anywhere. There is no copy to restore from."
+            ),
+        ),
     ] = None
 
     @model_validator(mode="after")

@@ -24,7 +24,7 @@ from pydantic import BaseModel, computed_field, create_model, Field, FutureDatet
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
 from app.core.requests import as_json_object
-from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -226,12 +226,22 @@ class TaskExecuteWrite(BaseModel):
 class TaskExecutionResponse(BaseModel):
     """Represent the default response from a task execute route.
 
+    ``started_at`` is deliberately not carried: the worker sets it, so it is
+    still ``None`` on the row this response is built from.
+
     :param task_name: The name of the task that was executed.
     :param task_id: The id of the task-history row created by the tasks API.
+        Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it
+        so, not because a dispatched run is expected to lack one.
+    :param status: The status of the task-history row the tasks API created,
+        as it stood at dispatch.
+    :param created_at: When the tasks API created that row.
     """
 
     task_name: str
     task_id: int | None = None
+    status: TaskHistoryStatusEnum
+    created_at: UTCDatetime
 
 
 class TaskResponseBuilder(Protocol[R]):

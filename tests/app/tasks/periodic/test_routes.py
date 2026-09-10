@@ -21,10 +21,12 @@ from datetime import datetime, timedelta
 import pytest
 import pytest_asyncio
 from fastapi import status
+from sqlalchemy import select
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.celery.schedules import INTERVAL_TIMEZONE, NEXT_RUNS_PREVIEW_COUNT
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -44,6 +46,18 @@ UNFILTERED_PAGE_LIMIT = 2
 OWNER_FILTER_MATCH_TOTAL = 3
 OWNER_FILTER_PAGE_LIMIT = 2
 OWNER_NAME = "BACKUPS"
+
+#: A day count well inside ``timedelta``'s range, so the cadence builds, whose
+#: upcoming runs still land past ``datetime.max``. Guarding only the cadence
+#: would let this one through.
+OVERFLOWS_RUN_DATETIME = 500_000_000
+
+#: A day count past ``timedelta``'s own range, so the cadence cannot be built.
+OVERFLOWS_CADENCE_TIMEDELTA = 2_000_000_000
+
+#: A ``start_time`` close enough to ``datetime.max`` that the runs after the
+#: first overflow, whatever the cadence.
+OVERFLOWS_FROM_START_TIME = "9999-12-31T23:00:00Z"
 
 
 async def _add_periodic_task(
@@ -1020,3 +1034,298 @@ class TestDeletePeriodicTask:
         """Assert deleting a non-existent periodic task returns 404."""
         response = periodic_test_client.delete("/periodic/99999")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestScheduleFieldsOnReadRoutes:
+    """Cover timezone and next_runs on every route returning a schedule."""
+
+    def test_retrieve_carries_the_schedule_fields(
+        self, periodic_test_client, created_periodic_task
+    ):
+        """Assert the detail route reports the zone and the upcoming runs."""
+        response = periodic_test_client.get(f"/periodic/{created_periodic_task.id}")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["timezone"] == INTERVAL_TIMEZONE
+        assert len(data["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+        assert data["next_run_at"] == data["next_runs"][0]
+
+    def test_list_carries_the_schedule_fields(
+        self, periodic_test_client, created_periodic_task
+    ):
+        """Assert every row of the paginated list reports both fields."""
+        response = periodic_test_client.get("/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert items
+        for item in items:
+            assert item["timezone"] == INTERVAL_TIMEZONE
+            assert len(item["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+
+    @pytest.mark.asyncio
+    async def test_list_by_task_name_carries_the_schedule_fields(
+        self, periodic_test_client, celery_beat_session, tasks_session
+    ):
+        """Assert the by-task-name route reports both fields."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="scheduled-task")),
+        )
+        await _add_periodic_task(
+            celery_beat_session, name="nightly", task_name="scheduled-task"
+        )
+        response = periodic_test_client.get("/scheduled-task/periodic/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data
+        assert data[0]["timezone"] == INTERVAL_TIMEZONE
+        assert len(data[0]["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+
+
+class TestCronValidationAtTheRequestBoundary:
+    """Cover the 422 a cron the scheduler cannot run earns on every write path."""
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_an_unrunnable_cron(
+        self, periodic_test_client, tasks_session
+    ):
+        """Assert create answers 422 naming the offending field."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="my-task")),
+        )
+        payload = {"crontab": {"minute": "not-a-cron", "hour": "2"}}
+        response = periodic_test_client.post("/my-task/periodic/", json=payload)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert any(
+            error["loc"][-2:] == ["crontab", "minute"]
+            for error in response.json()["detail"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_create_accepts_a_runnable_cron(
+        self, periodic_test_client, tasks_session
+    ):
+        """Assert a cron the scheduler can run is still created."""
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="my-task")),
+        )
+        payload = {"crontab": {"minute": "0", "hour": "2"}}
+        response = periodic_test_client.post("/my-task/periodic/", json=payload)
+        assert response.status_code == status.HTTP_201_CREATED
+
+    def test_update_rejects_an_unrunnable_cron(
+        self, periodic_test_client, created_periodic_task
+    ):
+        """Assert update answers 422 rather than failing at flush time."""
+        payload = {
+            "name": "updated-name",
+            "task": "my-backup-task",
+            "start_time": None,
+            "enabled": True,
+            "description": "",
+            "crontab": {"minute": "not-a-cron", "hour": "2"},
+        }
+        response = periodic_test_client.put(
+            f"/periodic/{created_periodic_task.id}", json=payload
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_update_accepts_a_runnable_cron(
+        self, periodic_test_client, created_periodic_task
+    ):
+        """Assert a cron the scheduler can run is still accepted on update."""
+        payload = {
+            "name": "updated-name",
+            "task": "my-backup-task",
+            "start_time": None,
+            "enabled": True,
+            "description": "",
+            "crontab": {"minute": "0", "hour": "2"},
+        }
+        response = periodic_test_client.put(
+            f"/periodic/{created_periodic_task.id}", json=payload
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_update_rejects_a_parseable_but_unsatisfiable_cron(
+        self, periodic_test_client, created_periodic_task
+    ):
+        """Assert 30 February is refused at the boundary, not at serialisation.
+
+        The expression parses; only ``remaining_estimate`` discovers it can never
+        fire, and it signals that with ``RuntimeError`` rather than ``ValueError``.
+        """
+        payload = {
+            "name": "updated-name",
+            "task": "my-backup-task",
+            "start_time": None,
+            "enabled": True,
+            "description": "",
+            "crontab": {
+                "minute": "0",
+                "hour": "2",
+                "day_of_month": "30",
+                "month_of_year": "2",
+            },
+        }
+        response = periodic_test_client.put(
+            f"/periodic/{created_periodic_task.id}", json=payload
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestPreviewSchedule:
+    """Test the POST /periodic/schedule/preview/ endpoint."""
+
+    def test_preview_interval_reports_zone_and_runs(self, periodic_test_client):
+        """Assert an interval body previews three UTC runs in UTC."""
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"interval": {"every": 30, "period": "minutes"}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["timezone"] == INTERVAL_TIMEZONE
+        assert len(data["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+        assert data["next_run_at"] == data["next_runs"][0]
+
+    def test_preview_crontab_reports_its_own_zone(self, periodic_test_client):
+        """Assert a crontab body previews in the zone it declares."""
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"crontab": {"minute": "0", "hour": "2", "timezone": "Europe/Lisbon"}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["timezone"] == "Europe/Lisbon"
+        assert len(data["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+
+    def test_preview_honours_a_future_start_time(self, periodic_test_client):
+        """Assert the preview reports no run before a future start_time."""
+        start = utc_now() + timedelta(days=7)
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={
+                "interval": {"every": 30, "period": "minutes"},
+                "start_time": start.isoformat(),
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["next_run_at"] == start.isoformat().replace(
+            "+00:00", "Z"
+        )
+
+    def test_preview_rejects_an_unrunnable_cron(self, periodic_test_client):
+        """Assert the preview route answers 422 like the write routes do."""
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"crontab": {"minute": "not-a-cron", "hour": "2"}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_preview_rejects_both_schedule_kinds(self, periodic_test_client):
+        """Assert naming both an interval and a crontab is refused."""
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={
+                "interval": {"every": 30, "period": "minutes"},
+                "crontab": {"minute": "0", "hour": "2"},
+            },
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_preview_rejects_neither_schedule_kind(self, periodic_test_client):
+        """Assert naming no schedule at all is refused."""
+        response = periodic_test_client.post("/periodic/schedule/preview/", json={})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_preview_rejects_a_period_create_would_refuse(self, periodic_test_client):
+        """Assert an interval previewable here is one create would also accept."""
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"interval": {"every": 5, "period": "seconds"}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.parametrize(
+        "every",
+        [OVERFLOWS_RUN_DATETIME, OVERFLOWS_CADENCE_TIMEDELTA],
+        ids=["overflows-the-run-datetime", "overflows-the-cadence-timedelta"],
+    )
+    def test_preview_rejects_an_unschedulable_interval(
+        self, periodic_test_client, every
+    ):
+        """Assert an interval that cannot produce runs earns a 422, not a 500.
+
+        ``every`` is otherwise unbounded, and the overflow would surface from a
+        computed field during serialisation. The two values fail at different
+        points: one builds a cadence but lands a run past
+        ``datetime.max``, the other cannot build the cadence at all.
+        """
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"interval": {"every": every, "period": "days"}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.parametrize(
+        "schedule",
+        [
+            {"interval": {"every": 1, "period": "hours"}},
+            {"crontab": {"minute": "0", "hour": "*"}},
+        ],
+        ids=["interval", "crontab"],
+    )
+    def test_preview_rejects_a_start_time_that_overflows_later_runs(
+        self, periodic_test_client, schedule
+    ):
+        """Assert a near-``datetime.max`` start_time earns a 422, not a 500.
+
+        The cadence is representable and the first run is fine; the runs after it
+        fall off the end of the calendar, so the anchor has to be checked
+        together with the schedule rather than either alone.
+        """
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={**schedule, "start_time": OVERFLOWS_FROM_START_TIME},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_an_unschedulable_interval(
+        self, periodic_test_client, tasks_session
+    ):
+        """Assert the write path refuses what a read could not then serialise.
+
+        A stored row of this shape would 500 the whole list endpoint, not just
+        its own detail response.
+        """
+        await TaskManager.create(
+            tasks_session,
+            TaskWrite.model_validate(TaskFactory.build(name="my-task")),
+        )
+        response = periodic_test_client.post(
+            "/my-task/periodic/",
+            json={"interval": {"every": OVERFLOWS_RUN_DATETIME, "period": "days"}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    @pytest.mark.asyncio
+    async def test_preview_persists_nothing(
+        self, periodic_test_client, celery_beat_session
+    ):
+        """Assert previewing leaves the beat store untouched."""
+        before = len(
+            (await celery_beat_session.execute(select(PeriodicTask))).scalars().all()
+        )
+        response = periodic_test_client.post(
+            "/periodic/schedule/preview/",
+            json={"interval": {"every": 30, "period": "minutes"}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        after = len(
+            (await celery_beat_session.execute(select(PeriodicTask))).scalars().all()
+        )
+        assert after == before

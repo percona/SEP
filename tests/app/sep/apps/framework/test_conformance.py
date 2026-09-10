@@ -28,14 +28,17 @@ Three layers:
 """
 
 import logging
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
-from fastapi import APIRouter, status
+from fastapi import APIRouter, FastAPI, status
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, computed_field, ConfigDict, Field
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.sep.api.router import api_router
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
@@ -43,6 +46,7 @@ from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,
     check_child_app_registration,
     check_form_conformance,
+    check_item_display_names_declared,
     check_no_duplicate_capability_control,
     check_route_collisions,
     check_routes_documented,
@@ -66,6 +70,7 @@ from app.sep.apps.framework.schema import (
     DetailField,
     DetailSection,
     DetailView,
+    ITEM_DISPLAY_NAME_KEYS,
     ListView,
 )
 from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
@@ -321,10 +326,12 @@ class _ExecuteWrite(BaseModel):
 
 
 class _ExecuteResponse(BaseModel):
-    """Represent a synthetic execute response keyed by task name and id."""
+    """Represent a synthetic execute response carrying identity and run state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 async def _get_by_cluster(cluster_name: str) -> object:
@@ -744,6 +751,20 @@ def test_registry_app_has_no_duplicate_capability_control(registry_app, test_cli
 
 
 @pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
+def test_registry_app_declares_item_display_names(registry_app, test_client):
+    """Assert no registry app with a create form names its records after itself.
+
+    An app declaring neither record name serves its ``display_name`` under both
+    keys, which is the defect the pair exists to remove. Apps whose schema
+    declares no create form name no record and are skipped by the detector.
+    """
+    payload = _schema_payload(registry_app, test_client)
+    if payload is None:
+        pytest.skip(f"{registry_app.key} exposes no schema payload")
+    assert check_item_display_names_declared(payload) == []
+
+
+@pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
 def test_registry_migrated_app_structural_checks(registry_app):
     """Assert each migrated ``TaskExecutionApp`` satisfies the structural checks."""
     if not isinstance(registry_app, TaskExecutionApp):
@@ -804,3 +825,200 @@ def test_registry_transitional_check_runs_at_warning_level(caplog):
                     "transitional drift in %s: %s", app.key, warning
                 )
     assert activated == []
+
+
+# --- check_item_display_names_declared ----------------------------------------
+
+
+def test_item_display_names_skipped_when_the_schema_declares_no_create_form():
+    """Assert a schema with no create form names no record and is skipped."""
+    payload = {
+        "name": "tasks",
+        "display_name": "Tasks",
+        "item_display_name": "Tasks",
+        "item_display_name_plural": "Tasks",
+        "forms": [],
+    }
+    assert check_item_display_names_declared(payload) == []
+
+
+def test_item_display_names_skipped_when_every_form_section_is_empty():
+    """Assert a section with no fields creates no record, so the rule stays silent."""
+    payload = {
+        "name": "hollow",
+        "display_name": "Hollow",
+        "item_display_name": "Hollow",
+        "item_display_name_plural": "Hollow",
+        "forms": [{"fields": []}],
+    }
+    assert check_item_display_names_declared(payload) == []
+
+
+def test_item_display_names_pass_when_both_names_differ_from_the_title():
+    """Assert a schema naming its record distinctly yields no violations."""
+    payload = {
+        "name": "mysql_backups",
+        "display_name": "MySQL Backups",
+        "item_display_name": "backup",
+        "item_display_name_plural": "backups",
+        "forms": [{"fields": [{"name": "service_id"}]}],
+    }
+    assert check_item_display_names_declared(payload) == []
+
+
+def test_item_display_names_fire_once_per_name_left_equal_to_the_title():
+    """Assert both defaulted record names are reported, each naming its own key."""
+    payload = {
+        "name": "mysql_backups",
+        "display_name": "MySQL Backups",
+        "item_display_name": "MySQL Backups",
+        "item_display_name_plural": "MySQL Backups",
+        "forms": [{"fields": [{"name": "service_id"}]}],
+    }
+
+    violations = check_item_display_names_declared(payload)
+
+    assert violations
+    flagged = sorted(
+        key
+        for key in ITEM_DISPLAY_NAME_KEYS
+        if any(repr(key) in message for message in violations)
+    )
+    assert flagged == sorted(ITEM_DISPLAY_NAME_KEYS)
+    assert all("mysql_backups" in message for message in violations)
+
+
+def test_item_display_names_fire_on_the_singular_alone():
+    """Assert a declared plural does not excuse a defaulted singular."""
+    payload = {
+        "name": "mysql_backups",
+        "display_name": "MySQL Backups",
+        "item_display_name": "MySQL Backups",
+        "item_display_name_plural": "backups",
+        "forms": [{"fields": [{"name": "service_id"}]}],
+    }
+
+    violations = check_item_display_names_declared(payload)
+
+    assert len(violations) == 1
+    assert "item_display_name'" in violations[0]
+
+
+def test_item_display_names_checked_per_entity_against_its_own_title():
+    """Assert an entity's record names are judged against the entity's display name."""
+    payload = {
+        "name": "inventory",
+        "display_name": "Inventory",
+        "item_display_name": "Inventory",
+        "item_display_name_plural": "Inventory",
+        "entities": [
+            {
+                "name": "nodes",
+                "display_name": "Nodes",
+                "item_display_name": "Nodes",
+                "item_display_name_plural": "nodes",
+                "forms": [{"fields": [{"name": "address"}]}],
+            }
+        ],
+    }
+
+    violations = check_item_display_names_declared(payload)
+
+    assert len(violations) == 1
+    assert "nodes" in violations[0]
+    assert "item_display_name'" in violations[0]
+
+
+def test_item_display_names_pass_for_a_fully_declared_entity_schema():
+    """Assert an entities-mode schema naming each entity's record yields no violations."""
+    payload = {
+        "name": "inventory",
+        "display_name": "Inventory",
+        "item_display_name": "Inventory",
+        "item_display_name_plural": "Inventory",
+        "entities": [
+            {
+                "name": "nodes",
+                "display_name": "Nodes",
+                "item_display_name": "node",
+                "item_display_name_plural": "nodes",
+                "forms": [{"fields": [{"name": "address"}]}],
+            }
+        ],
+    }
+    assert check_item_display_names_declared(payload) == []
+
+
+def test_item_display_names_message_names_what_to_add():
+    """Assert the message carries both the offending key and the reused value."""
+    payload = {
+        "name": "mysql_backups",
+        "display_name": "MySQL Backups",
+        "item_display_name": "MySQL Backups",
+        "item_display_name_plural": "backups",
+        "forms": [{"fields": [{"name": "service_id"}]}],
+    }
+
+    message = check_item_display_names_declared(payload)[0]
+
+    assert "item_display_name" in message
+    assert "MySQL Backups" in message
+
+
+@pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)
+def test_registry_app_declares_its_record_display_names(registry_app, test_client):
+    """Assert every registry app with a create form names its record distinctly."""
+    payload = _schema_payload(registry_app, test_client)
+    if payload is None:
+        pytest.skip(f"{registry_app.key} exposes no schema payload")
+    assert check_item_display_names_declared(payload) == []
+
+
+def _derived_execute_routes() -> list[APIRoute]:
+    """Return every registered ``POST /{task_name}/execute`` route.
+
+    Walk the config-built ``api_router`` for the same reason
+    :func:`snapshot_utils.build_plugins_openapi` does: sibling conftests mutate
+    the process-global ``sep_app`` at import time.
+
+    :return: The derived execute routes across every configured app.
+    """
+    app = FastAPI()
+    app.include_router(api_router)
+    return [
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and route.path.endswith("/{task_name}/execute")
+        and "POST" in route.methods
+    ]
+
+
+def test_every_derived_execute_route_declares_run_state():
+    """Assert every execute response model carries the run state a poller needs.
+
+    Every derived route shares the default ``TaskExecutionResponse`` today, so
+    what this can catch is a plugin passing an ``execute_response_model=`` that
+    omits the fields — the one way a derived execute route can lose them without
+    its own test noticing. It matches on the derived ``/{task_name}/execute``
+    path shape, so a hand-written execute route mounted through ``extra_routes``
+    under a different path is out of its reach.
+    """
+    required = {"status", "created_at"}
+    offenders: dict[str, list[str]] = {}
+    for route in _derived_execute_routes():
+        model = route.response_model
+        declared = set(model.model_fields) if model is not None else set()
+        if not required <= declared:
+            offenders[route.path] = sorted(required - declared)
+
+    assert offenders == {}
+
+
+def test_derived_execute_routes_are_discovered():
+    """Assert the sweep above walks a non-empty route set.
+
+    A walk that silently matched nothing would report the contract as satisfied
+    for every plugin at once.
+    """
+    assert _derived_execute_routes() != []

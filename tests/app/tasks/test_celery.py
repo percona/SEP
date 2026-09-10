@@ -1641,6 +1641,7 @@ class TestSyncQueueItem:
             "status",
             "started_at",
             "finished_at",
+            "failure_reason",
             "sync_in_progress_started_at",
         }
         assert result is saved_item
@@ -1918,6 +1919,7 @@ class TestSyncQueueItemChainDispatch:
             "status",
             "started_at",
             "finished_at",
+            "failure_reason",
             "sync_in_progress_started_at",
         }
         saved_arg = mock_save.await_args.args[1]
@@ -2369,6 +2371,16 @@ async def _seed_history(
         return history
 
 
+async def _set_history_running(async_session_maker, task_history_id: int) -> None:
+    """Set a seeded TaskHistory to RUNNING so ``sync_queue_item`` syncs it."""
+    async with async_session_maker() as session:
+        await TaskHistoryManager.update_where(
+            session,
+            {"status": TaskHistoryStatusEnum.RUNNING},
+            id=task_history_id,
+        )
+
+
 async def _list_log_chunks(async_session_maker, task_history_id: int):
     """Return all TaskHistoryLog chunks for ``task_history_id``."""
     async with async_session_maker() as session:
@@ -2484,6 +2496,36 @@ class TestExecuteTaskByName:
             assert stderr_chunks
             assert "not ready on Nomad" in stderr_chunks[0].content
             assert stderr_chunks[0].source == "execution"
+
+    def test_unhealthy_target_persists_failure_reason_matching_stderr(self, mocker):
+        """Assert the persisted failure_reason is the reason written to stderr."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=False)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            saved = rows[0]
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, saved.id)
+            )
+            stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
+            assert saved.failure_reason == stderr_chunks[0].content
+            assert "not ready on Nomad" in saved.failure_reason
 
     def test_unhealthy_target_no_alert_when_alert_on_fail_false(self, mocker):
         """Assert the FAILED row + log chunk are written but no alert fires."""
@@ -3082,6 +3124,52 @@ class TestSyncQueueItemRegression:
         parent_arg = mock_chain.await_args.args[1]
         assert "execution_request" not in sa_inspect(parent_arg).unloaded
 
+    def test_failure_reason_survives_the_sync_save(self, mocker):
+        """Assert a reason the executor set survives ``sync_queue_item``'s save.
+
+        ``sync_queue_item`` loads the row in one session, hands it to the
+        executor under a second, and saves it under a third, so this pins the
+        round trip that the per-arm Nomad unit tests cannot see: they assert
+        against the in-memory ``queue_item``, which carries the reason whether
+        or not the final UPDATE writes it.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="reason-persist-task")
+            )
+            history = test_loop.run_until_complete(
+                _seed_history(async_session_maker, task, payload=None)
+            )
+            test_loop.run_until_complete(
+                _set_history_running(async_session_maker, history.id)
+            )
+
+            async def fake_sync(
+                item: TaskHistory,
+                *,
+                writer_session=None,
+                await_annotations: bool = False,
+            ) -> TaskHistory:
+                del writer_session, await_annotations
+                item.status = TaskHistoryStatusEnum.FAILED
+                item.set_failure_reason("Step 'run-script' failed (exit code 1).")
+                return item
+
+            fake_executor = MagicMock(spec=BaseExecutor)
+            fake_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=fake_executor
+            )
+            mocker.patch("app.tasks.celery.maybe_record_run", new_callable=AsyncMock)
+
+            test_loop.run_until_complete(sync_queue_item(history.id))
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert rows[0].failure_reason == "Step 'run-script' failed (exit code 1)."
+
 
 def _write_self_signed_pem(
     path: Path,
@@ -3372,6 +3460,38 @@ class TestPreDispatchPayloadCheck:
             stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
             assert stderr_chunks
             assert "file:///nonexistent/x_payload" in stderr_chunks[0].content
+
+    def test_unresolvable_payload_persists_failure_reason(self, mocker):
+        """Assert the persisted failure_reason names the task and the underlying error.
+
+        The payload-resolution failure is the one reason permitted to interpolate
+        an underlying error message, so the stored value carries it verbatim.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mocker.patch(
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            saved = rows[0]
+            assert saved.failure_reason is not None
+            assert "Task payload could not be resolved" in saved.failure_reason
+            assert "/nonexistent/x_payload" in saved.failure_reason
+            assert "\n" not in saved.failure_reason
 
     def test_unresolvable_payload_gates_before_health_check(self, mocker):
         """Assert the payload gate persists FAILED before the health check runs Nomad.

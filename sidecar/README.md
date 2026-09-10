@@ -17,12 +17,13 @@ the app packages the settings profile activates — see [App set](#app-set).
 | Input | Role |
 |---|---|
 | `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
-| `entrypoint.sh` | PID 1. Mints the broker credential for the container run, resolves SEP's Grafana service-account token, then hands off to `supervisord`. |
+| `entrypoint.sh` | PID 1. Resolves `ENCRYPTION_KEY`, mints the broker credential for the container run, resolves SEP's Grafana service-account token, then hands off to `supervisord`. |
 | `supervisord.conf` | Runs `valkey`, four `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `wait_for_api.py` | Run by `supervisord` ahead of the beat command; holds beat until the three APIs answer `/health`, then starts it whatever the outcome. |
 | `wait_for_schema.sh` | Run by `supervisord` ahead of each API command; holds the API until all four schema one-shots have published their sentinel, and fails rather than starting it if they do not. |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
+| `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
 | `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
@@ -56,9 +57,10 @@ name. What a file supplies is a *canonical destination*:
 | Canonical name | Mountable? |
 |---|---|
 | `SECRET_KEY` | **Yes.** The gate accepts a file and the script never exports the key, so each process reads it from the file. |
+| `ENCRYPTION_KEY` | **Yes.** A file suppresses the mint below it and is never exported, so each process reads it from the file. Mount it only carrying a value: the deferral is on the file *existing*, so a blank one pins the key empty and the container refuses to start. |
 | `DATABASE__PASSWORD` | **Yes.** One file supplies all three services. A per-service `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file or variable overrides it for that service only. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` | **Yes.** Per-service names; host and port reach every service through the `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs (see below), not through a global name in this image. |
-| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
+| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `TASKS__NOMAD__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from the resolved SEP database, which a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD` outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
@@ -111,7 +113,10 @@ file, since a blank environment variable still counts as supplied, so the
 script clears the blank for every canonical name it manages — `SECRET_KEY`,
 every name it derives, and every name a `SEP_*` guard would otherwise leave
 untouched when that guard is inactive (`PMM__API_KEY` with no
-`SEP_GRAFANA_TOKEN` set, say).
+`SEP_GRAFANA_TOKEN` set, say). `ENCRYPTION_KEY` is cleared on the narrower
+condition that a file of that name is also mounted, since that is the only case
+where a blank would shadow something; `entrypoint.sh` overwrites a surviving
+blank on every other path.
 
 ### App set
 
@@ -165,22 +170,26 @@ because `SEP.APPS` is absent from `SETTINGS_OVERRIDE.ALLOWED_KEYS`.
 Expanded by `settings-env.sh` into the canonical settings variables. The `SEP_*`
 names are shell inputs rather than settings fields, so none of them is mountable
 under its own name — the canonical destinations they expand to are.
-`SECRET_KEY` is the exception, being already canonical: it is both an input here
-and mountable. See the note under
+`SECRET_KEY` and `ENCRYPTION_KEY` are the exceptions, being already canonical:
+each is both an input here and mountable. See the note under
 [Runtime configuration](#runtime-configuration):
 
 | Input | Required | Default | Canonical destinations |
 |---|---|---|---|
 | `SECRET_KEY` | **yes** | — (fail fast) | already canonical (global `Settings`, no prefix) |
+| `ENCRYPTION_KEY` | no | minted into `sep-state` when the databases are provably fresh | already canonical (global `Settings`, no prefix) |
 | `SEP_DB_PASSWORD` | yes in practice | none | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` |
 | `SEP_DB_HOST` | no | `pmm-server` | `SEP__DATABASE__HOST`, `INVENTORY__DATABASE__HOST`, `TASKS__DATABASE__HOST`, and the three supervisord wait loops |
 | `SEP_DB_PORT` | no | `5432` | same as `SEP_DB_HOST` |
-| `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` |
+| `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `TASKS__NOMAD__API_KEY` |
 | `SEP_PMM_ENDPOINT` | no | `https://pmm-server:8443` | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT` (with `/graph` appended) |
-| `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT` |
+| `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT`. The address only — the executor's credential is `TASKS__NOMAD__API_KEY`, which the Grafana fan-out above supplies |
 
-`SECRET_KEY` is the only input with no default — the container exits unless one
-is supplied, as an environment variable or as a mounted file. It signs the
+`SECRET_KEY` is the only input with no fallback of any kind — the container
+exits unless one is supplied, as an environment variable or as a mounted file.
+(`ENCRYPTION_KEY` comes close, and its fallback is conditional: see
+[The encryption key is minted, but only onto a fresh deployment](#the-encryption-key-is-minted-but-only-onto-a-fresh-deployment).)
+It signs the
 framework's cookies and CSRF tokens and, when
 `SEP_INTERNAL_TOKEN` is unset, derives that token by HMAC, so it has to be both
 identical across the supervisord children and stable across restarts. The class
@@ -256,26 +265,121 @@ container's PID namespace. A container restart mints a fresh one, which is safe:
 the broker runs with `save ""` and `appendonly no`, so no broker state crosses
 restarts.
 
+### The encryption key is minted, but only onto a fresh deployment
+
+`ENCRYPTION_KEY` keys the Fernet ciphertext SEP stores in its
+`settingoverride` rows, so every secret-typed override — an alert provider's
+routing key, a delivery input's API key — is readable only under the key that
+wrote it. Four channels supply it, tried in order:
+
+1. An explicit `ENCRYPTION_KEY` environment variable. Wins outright.
+2. A file named `ENCRYPTION_KEY` under `SECRETS_DIR`. Never exported, so each
+   process reads the file.
+3. A key a previous start persisted at `$SEP_STATE_DIR/ENCRYPTION_KEY`.
+4. A freshly minted key, persisted mode `0600` at that same path.
+
+Only channels 1 and 2 are the operator's; `entrypoint.sh` runs
+`encryption_key.py` for the other two, and only when neither of the first two
+supplied anything. Mount a volume at `/home/sep/state` for a minted key to
+survive a container *recreate* — without one, the key is lost with the
+container, and with it every override encrypted under it.
+
+Minting is guarded, because minting the wrong key is silently destructive
+rather than loud. A row the configured key cannot decrypt is logged and
+skipped, not treated as an error, so the setting falls back to its YAML value
+and the container comes up green with the operator's configuration quietly
+reverted. The state volume and the databases have independent lifecycles — the
+databases live in pmm-server's postgres, the state volume belongs to the
+side-car — so recreating the side-car against a surviving database is an
+ordinary path, not an exotic one.
+
+So before minting, the helper reads the `settingoverride` table in all three
+service databases (`sep`, `inventory` and `tasks`, whose endpoints may differ),
+walking each stored value's JSON *leaves* rather than the row — the ciphertext
+sits inside lists and nested mappings, where a check against the row's own
+value finds nothing. It mints only if none of the three holds a Fernet token.
+Anything else refuses: a token found, a value it cannot parse, or a database it
+cannot reach — freshness unproven is treated exactly like freshness disproven.
+The probe runs *only* on the mint path, so an ordinary restart opens no database
+connection and pays no startup latency.
+
+An unreachable database is **retried**, not refused on sight, because a first
+start routinely runs while pmm-server's postgres is still coming up — the same
+condition the supervised migration steps wait out. `SEP_ENCRYPTION_PROBE_TIMEOUT`
+bounds that wait across all three databases together (60s by default); only
+exhausting it refuses, and the message then points at the database rather than
+at a key restore. It also bounds how long a start waits for a peer side-car
+holding the state lock — twice the probe budget — so two containers sharing one
+state volume serialise rather than mint beside each other, and neither waits on
+the other forever.
+
+Note that a minted key is exported into every supervised program's environment,
+where a key mounted under `SECRETS_DIR` deliberately is not. Mount the key
+instead of letting it be minted if that difference matters to you. A mounted key
+stays where you mounted it under the mode you gave it; only a minted key is
+written to the state directory, at `0600`.
+
+A refusal that found unreadable data names the state path to restore. **Losing
+the key is unrecoverable:**
+there is no way to read those values back without it, and the only remedies are
+restoring the key from a backup or deleting the affected overrides so they can
+be re-entered.
+
+Generate one by hand with `make encryption-key`, or:
+
+```bash
+openssl rand -base64 32
+```
+
+Use `-base64`, not `-hex`: a hex string is 64 characters and Fernet requires 32
+bytes of URL-safe base64, so a hex key is rejected. The output of `-base64` will
+usually contain `+` and `/` rather than the `-` and `_` of the URL-safe alphabet
+Fernet's own documentation shows. That is fine and not worth "fixing" — the
+decoder translates `-_` to `+/` and passes `+/` through untouched, so both
+alphabets are accepted.
+
 ### The Grafana token is minted, not required
 
 `SEP_GRAFANA_TOKEN` is the last value an operator supplies. Below it,
 `entrypoint.sh` runs `grafana_service_account.py` once, before supervisord, and
-fans its answer out to both canonical names through the same
-`export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses — so all five programs
-inherit one resolved value, and nothing in the application copies one setting
-into the other.
+fans its answer out to all three canonical names — the Grafana provider's
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, the PMM client's
+`PMM__API_KEY`, and the Nomad executor's `TASKS__NOMAD__API_KEY` — through the
+same `export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses, so all five
+programs inherit one resolved value and nothing in the application copies one
+setting into the other.
 
-The helper does nothing at all when either canonical name already resolves, from
-an explicit variable or from a file under `SECRETS_DIR`, or when the active auth
-provider is not Grafana. A blank value counts as absent at every rank the helper
-reads.
+`TASKS__NOMAD__API_KEY` is what lets the executor reach PMM's `/nomad/` location,
+whose server-level `auth_request` the embedded profile's credential-free endpoint
+cannot otherwise satisfy. The executor sends it as
+`Authorization: Bearer <key>`, and it takes precedence over any `user:password`
+embedded in `TASKS__NOMAD__ENDPOINT`: while a key is set the endpoint's userinfo
+is stripped, because both HTTP clients would otherwise derive basic auth from it
+and override the header.
+
+The helper does nothing at all when either the Grafana service-account token or
+`PMM__API_KEY` already resolves, from an explicit variable or from a file under
+`SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
+counts as absent at every rank the helper reads.
+
+**Those two names are the mint gate, and the gate controls the whole fan-out.**
+Supplying either of them suppresses minting, and `entrypoint.sh` calls
+`export_grafana_token` only when a token was actually minted — so a deployment
+that mounts `PMM__API_KEY` (or the Grafana token) and leaves `SEP_GRAFANA_TOKEN`
+unset gets **no** `TASKS__NOMAD__API_KEY` at all, and the Nomad executor falls
+back to whatever `TASKS__NOMAD__ENDPOINT` carries. `TASKS__NOMAD__API_KEY` is a
+destination only: mounting *it* alone does not suppress minting, but it also
+cannot make the fan-out run. Supply all three explicitly whenever you supply any
+of the mint-gate two. The same applies to a non-Grafana deployment, which mints
+nothing and must set `TASKS__NOMAD__API_KEY` itself if its Nomad requires a
+credential.
 
 One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
 on the file *existing*, not on it holding a value, because the settings source
 resolves an empty secret file to the empty string rather than falling through. So
-a mounted-but-empty file named for either canonical name pins that name to the
-empty string, and a token minted below it cannot displace it. Mount a file only
-when it carries a value; to leave a name to the mint, do not mount it at all.
+a mounted-but-empty file named for any of the three pins that name to the empty
+string, and a token minted below it cannot displace it. Mount a file only when it
+carries a value; to leave a name to the mint, do not mount it at all.
 
 Otherwise it finds or creates a service account named `sep` with the `Admin` org
 role and asks it for a non-expiring token, authenticating as Grafana's admin.
@@ -394,8 +498,16 @@ writable volume — at minimum `SEP.artifact_dir`, which defaults to
 `/home/sep/state` is the one path the image creates for SEP to write its own
 files into (`0700 sep:sep`) — `$APP_HOME` above admits new entries beside the
 shipped tree, but nothing under it is SEP's to write. It holds the minted
-Grafana token; mounting it is what makes that token survive a container recreate
-rather than only a restart:
+Grafana token and the minted `ENCRYPTION_KEY`; mounting it is what makes both
+survive a container recreate rather than only a restart.
+
+**Mount it.** The two have very different stakes. A lost Grafana token is
+re-minted on the next start at no cost; a lost `ENCRYPTION_KEY` is
+unrecoverable, and every setting override encrypted under it becomes
+unreadable. See
+[The encryption key is minted, but only onto a fresh deployment](#the-encryption-key-is-minted-but-only-onto-a-fresh-deployment)
+— on a deployment that already holds encrypted values, recreating without this
+volume does not start the container at all.
 
 ```
 -v sep-state:/home/sep/state
