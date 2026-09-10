@@ -1,0 +1,83 @@
+# Weekly CVE scan of the side-car image.
+#
+# This runs on a schedule rather than per pull request because the two failure
+# modes it guards against are time-driven, not change-driven: Trivy's
+# vulnerability database updates independently of the pinned binary, and every
+# .trivyignore.yaml entry carries an expiry. Both flip a previously-clean image
+# to failing with no commit in this repository, so a pull-request-triggered
+# scan would either never observe them or would block whichever unrelated pull
+# request happened to arrive first.
+#
+# Neither build reuses a layer cache, and both pass --pull: the shipping stage
+# of sidecar/Containerfile.sidecar is FROM a mutable tag
+# (docker.io/library/python:3.11.16-slim), so a cached layer would scan a
+# digest that never ships and would hide the upstream drift this job exists to
+# find. The published image is built with --no-cache for the same reason.
+
+name: Trivy scan
+
+on:
+  schedule:
+    # Mondays, 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trivy-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@a0c73a10bb6782f082cd6714666c87911e4fc7d3 # v4.0.0
+
+      - name: Build base image
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: Containerfile.base
+          tags: sep:builder
+          load: true
+          pull: true
+          no-cache: true
+
+      - name: Prepare app bundle
+        run: make pack
+
+      - name: Build app image
+        run: >-
+          docker build
+          --pull
+          --no-cache
+          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          -f sidecar/Containerfile.sidecar
+          --build-arg SEP_RESTRICT_APPS=1
+          -t "sep:HEAD" .
+
+      - name: Install Trivy
+        # Installer pinned to the v0.69.3 tag's commit, matching how every
+        # other third-party CI dependency is pinned.
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/6fb20c8edd70745d6b34bff0387b53b03c8a760a/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.69.3
+
+      - name: Trivy image scan
+        # Fails on any HIGH/CRITICAL finding not covered by .trivyignore.yaml.
+        # Passing --ignorefile is required, and that file's own header explains
+        # why. --scanners vuln keeps the gate to the finding class that file can
+        # express an exception for.
+        run: >-
+          trivy image
+          --scanners vuln
+          --ignorefile .trivyignore.yaml
+          --severity HIGH,CRITICAL
+          --exit-code 1
+          "sep:HEAD"
