@@ -1050,9 +1050,8 @@ def create_app(
         Starlette strips it before matching routes and ``request.url_for`` re-adds
         it. Defaults to ``""``, which is inert: FastAPI writes the ASGI scope key
         only for a non-empty value, so the unprefixed app is untouched.
-    :return: An instance of the FastAPI application with an attached Celery app,
-        carrying the database capacity handlers every sub-application inherits
-        from here.
+    :return: An instance of the FastAPI application, carrying the database
+        capacity handlers every sub-application inherits from here.
     """
     openapi_kwargs = {}
     if title is not None:

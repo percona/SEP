@@ -282,6 +282,7 @@ def inventory_client_with_failing_session(
     inventory_app.dependency_overrides = {}
 
 
+@requires_asyncpg
 def test_capacity_handler_wins_over_the_inventory_500_handler(
     inventory_client_with_failing_session: TestClient,
 ):

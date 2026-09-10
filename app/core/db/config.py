@@ -42,7 +42,7 @@ _CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
 #: kwargs, while a file-backed one gets an ``AsyncAdaptedQueuePool`` that would
 #: accept them. Splitting the carve-out that way would make the same setting
 #: work on one SQLite database and crash another, and no SQLite database has a
-#: server-side connection cap to budget against in the first place -- so a
+#: server-side connection cap to budget against in the first place — so a
 #: sizing value configured against SQLite is ignored rather than forwarded.
 _POOL_SIZED_ENGINES: frozenset[AsyncDatabaseEngine] = frozenset(
     {AsyncDatabaseEngine.POSTGRESQL},
@@ -53,13 +53,17 @@ class DatabaseOptions(BaseModel):
     """Define configuration options for a database connection.
 
     The sizing defaults are deliberately tighter than SQLAlchemy's own. A
-    shipped deployment runs five long-running processes that build at least
-    eight engines between them, of which at least five come from this class.
-    At SQLAlchemy's ``5 + 10`` those eight together can demand more than a
-    stock PostgreSQL ``max_connections`` of 100, at which point the server
-    refuses new connections outright. ``3 + 2`` caps this class's own share at
-    25 rather than 75. A deployment that needs more sets these fields, which is
-    what they exist for.
+    shipped deployment runs five long-running programs building at least eight
+    engines between them, five of which come from this class: four in the three
+    API processes, and one in the Celery worker that the prefork pool replicates
+    per child, so the worker's share scales with its concurrency rather than
+    being a fixed count. At SQLAlchemy's ``5 + 10`` the four API-side engines
+    alone reach 60 against a stock PostgreSQL ``max_connections`` of 100 and the
+    worker's children take the rest, at which point the server refuses new
+    connections outright. ``3 + 2`` caps every engine this class feeds at five
+    concurrent connections, a third of what it allowed before, which is what
+    bounds the per-child cost too. A deployment that needs more sets these
+    fields, which is what they exist for.
 
     :param ENGINE: The database engine to use (e.g., SQLite, PostgreSQL).
         Defaults to SQLite.
