@@ -89,6 +89,58 @@
           "name": "backup_source",
           "required": true,
           "type": "remote_choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "Local path",
+              "value": "local"
+            },
+            {
+              "label": "Remote host over SSH",
+              "value": "ssh"
+            },
+            {
+              "label": "S3-compatible object storage",
+              "value": "s3"
+            },
+            {
+              "label": "Google Cloud Storage",
+              "value": "gcs"
+            }
+          ],
+          "default": "local",
+          "description": "How the backup above is reached. Selecting a transport reveals only the credentials that transport uses.",
+          "label": "Backup location",
+          "name": "source_transport",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "No encryption",
+              "value": "none"
+            },
+            {
+              "label": "GPG",
+              "value": "gpg"
+            },
+            {
+              "label": "AES-256 (XtraBackup only)",
+              "value": "aes256"
+            },
+            {
+              "label": "AES-256 + GPG (XtraBackup only)",
+              "value": "dual"
+            }
+          ],
+          "default": "none",
+          "description": "Which encryption the backup being restored was written with. The GPG formats reveal the password file used to decrypt it.",
+          "label": "Backup encryption",
+          "name": "source_encryption",
+          "required": false,
+          "type": "choice"
         }
       ],
       "render_after_submit": false,
@@ -122,8 +174,16 @@
           "type": "string"
         },
         {
-          "default": "percona",
-          "description": "SSH user for fetching a backup stored on a remote host. Unused for a local, S3 or Google Cloud Storage source.",
+          "description": "SSH user for fetching a backup stored on a remote host. Defaults to percona when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH user",
           "min_length": 1,
           "name": "ssh_user",
@@ -131,8 +191,16 @@
           "type": "string"
         },
         {
-          "default": 22,
-          "description": "SSH port for fetching a backup stored on a remote host",
+          "description": "SSH port for fetching a backup stored on a remote host. Defaults to 22 when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH port",
           "name": "ssh_port",
           "required": false,
@@ -140,6 +208,15 @@
         },
         {
           "description": "Unused for the sources above: a local path, remote host, S3 or Google Cloud Storage fetch always authenticates with the SSH user's own id_rsa key.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
           "label": "SSH key name",
           "min_length": 1,
           "name": "ssh_key",
@@ -157,8 +234,16 @@
               "value": "awscli"
             }
           ],
-          "default": "s3cmd",
-          "description": "Client used to download the backup. Only used for an s3:// source.",
+          "description": "Client used to download the backup. Defaults to s3cmd when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "s3"
+                }
+              }
+            }
+          ],
           "label": "S3 tool",
           "name": "s3_tool",
           "required": false,
@@ -166,6 +251,26 @@
         },
         {
           "description": "Path on the target host to the file holding the passphrase for a GPG-encrypted backup",
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_encryption": "gpg"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_encryption": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
           "label": "GPG password file",
           "min_length": 1,
           "name": "gpg_password_file",
@@ -287,14 +392,6 @@
           "name": "datadir",
           "required": false,
           "type": "string"
-        },
-        {
-          "default": false,
-          "description": "MySQL is always stopped before the data directory is replaced, so this setting changes nothing.",
-          "label": "Kill MySQL",
-          "name": "kill_mysql",
-          "required": false,
-          "type": "bool"
         },
         {
           "description": "Memory the prepare step may use, as a size such as 2G (defaults to 100M)",
@@ -549,5 +646,39 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "mysql_backups_restores"
+  "name": "mysql_backups_restores",
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

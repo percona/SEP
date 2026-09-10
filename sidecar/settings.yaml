@@ -142,6 +142,46 @@ default:
         results_pointer: /result
         reference_pointer: /number
         title_pointer: /short_description
+      # Targets the same table the case search above already reads, so the
+      # probe adds no ACL dependency the deployment does not already have.
+      probe:
+        path: api/now/table/sn_customerservice_case
+        query:
+          sysparm_limit: {source: literal, value: "1"}
+          sysparm_fields: {source: literal, value: sys_id}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+      connection_details:
+        path: api/now/table/api_key
+        query:
+          # Scope the read to the rows this identity owns rather than trusting
+          # the api_key row ACL to expose exactly one. It does not single out
+          # the key that signed the request: a second key issued to the same
+          # identity would make the row returned arbitrary.
+          sysparm_query:
+            source: literal
+            value: "user=javascript:gs.getUserID()"
+          # The projection is what keeps `token` and `token_hash` out of the
+          # response, not a tidiness preference. Do not widen it.
+          sysparm_fields:
+            source: literal
+            value: "name,active,expires,user.name,user.company.name,user.company.number"
+          # Reference fields come back as opaque sys_ids without this, so the
+          # account and the company would be reported as unreadable.
+          sysparm_display_value: {source: literal, value: "all"}
+          sysparm_limit: {source: literal, value: "1"}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+        # Every pointer ends at `display_value` because the parameter above
+        # wraps each field as {display_value, value}; one stopping at the field
+        # name lands on a container and its pair is dropped in silence.
+        details:
+          Account name: /result/0/user.company.name/display_value
+          Account number: /result/0/user.company.number/display_value
+          Key: /result/0/name/display_value
+          ServiceNow user: /result/0/user.name/display_value
+          Active: /result/0/active/display_value
+          Expires: /result/0/expires/display_value
       upload:
         path: api/now/attachment/upload
         headers:

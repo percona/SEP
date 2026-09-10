@@ -459,6 +459,23 @@ export interface RelatedApp {
   route_segment: string;
 }
 
+// ── Task status vocabulary ──────────────────────────────────────────────
+
+/**
+ * One task-status value and whether it ends a run. A client polling a task to
+ * completion re-reads until the row reaches a status whose `terminal` is true.
+ */
+export interface TaskStatusDescriptor {
+  /** A `TaskHistoryStatusEnum` member, deliberately widened to `string` here
+   * rather than typed as a literal union like `ColumnFormat`: the point of
+   * publishing this list is that a client discovers the vocabulary at runtime
+   * instead of hardcoding it. The generated client in `generated/sep.ts`
+   * narrows the same field to a union of the current members, so a consumer
+   * that wants runtime discovery should read this type rather than that one. */
+  value: string;
+  terminal: boolean;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface AppSchema {
@@ -485,4 +502,6 @@ export interface AppSchema {
   fail_when?: FailRule[];
   /** Separately registered apps rendered as sibling tabs in the React shell. */
   related_apps?: RelatedApp[];
+  /** Status vocabulary for task-style apps; omitted when `entities` is set. */
+  task_statuses?: TaskStatusDescriptor[];
 }

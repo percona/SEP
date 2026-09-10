@@ -32,8 +32,10 @@ from app.sep.apps.framework.form_backfill_registry import (
     collect_form_backfill_entries,
     FormBackfillEntry,
 )
-from app.sep.apps.mysql_backups.form_backfill import reconstruct_mysql_backups_form
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.form_backfill import (
+    LegacyBackupCreate,
+    reconstruct_mysql_backups_form,
+)
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     reconstruct_mysql_restores_form,
 )
@@ -43,7 +45,7 @@ from app.sep.config import App, sep_settings
 EXPECTED_DEFAULT_ENTRIES = [
     ("alters", "ALTERS", AltersCreate, reconstruct_alters_form),
     ("archives", "ARCHIVER", ArchivesCreate, reconstruct_archives_form),
-    ("mysql_backups", "BACKUPS", BackupCreate, reconstruct_mysql_backups_form),
+    ("mysql_backups", "BACKUPS", LegacyBackupCreate, reconstruct_mysql_backups_form),
     (
         "mysql_backups/restore",
         "RESTORES",

@@ -77,6 +77,7 @@ def _valid_body(
         "hostname": SYNTH_EXECUTOR_HOST,
         "service_id": MOCK_CREATED_SERVICE_ID,
         "backup_type": backup_type.value,
+        "backup_dir": "/backups",
         "upload": ["RSYNC"],
         "rsync_path": "/data/rsync",
     }
@@ -342,7 +343,28 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
             ("Task", "hostname"),
             ("Task", "service_id"),
             ("Task", "backup_type"),
+            ("Task", "backup_dir"),
         }
+
+    def test_update_rejects_a_body_without_a_backup_directory(
+        self, contract_client: Any
+    ) -> None:
+        """Refuse a PUT that drops the backup directory.
+
+        The update route is how an operator repairs a task saved before the
+        directory was required, so it has to insist on the value rather than
+        accept the stored ``None`` back.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_body(task_name=SEEDED_TASK_NAME)
+        body.pop("backup_dir", None)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert ["body", "backup_dir"] in [
+            error["loc"] for error in response.json()["detail"]
+        ]
 
     def test_update_round_trips_stored_form(
         self, contract_client: Any, mock_task_api: Any

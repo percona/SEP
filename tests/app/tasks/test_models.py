@@ -157,6 +157,20 @@ class TestTaskHistoryStatusEnum:
         """Assert is_terminal returns False for active statuses."""
         assert status.is_terminal() is False
 
+    @pytest.mark.parametrize("status", list(TaskHistoryStatusEnum))
+    def test_every_member_is_classified(self, status: TaskHistoryStatusEnum) -> None:
+        """Refuse a member that is neither terminal nor active.
+
+        The two parametrized lists above are hand-enumerated, so a member added
+        to the enum joins neither and is silently uncovered by them. Driving
+        this off the enum itself names the offender instead, which is what
+        keeps the published ``task_statuses`` vocabulary exhaustive.
+        """
+        assert status.is_terminal() != status.is_active(), (
+            f"{status.value}: is_terminal={status.is_terminal()} "
+            f"is_active={status.is_active()} -- expected exactly one"
+        )
+
     @pytest.mark.parametrize(
         ("status", "expected"),
         [

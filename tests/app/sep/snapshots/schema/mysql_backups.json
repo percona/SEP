@@ -390,6 +390,14 @@
           "name": "alias",
           "required": false,
           "type": "string"
+        },
+        {
+          "description": "Root directory on the database host where backups are written. XtraBackup adds a subdirectory per run, Mydumper one per day that a second run the same day writes into, and Binlog keeps its files directly under the server's own directory.",
+          "label": "Backup directory",
+          "min_length": 1,
+          "name": "backup_dir",
+          "required": true,
+          "type": "string"
         }
       ],
       "render_after_submit": false,
@@ -456,14 +464,6 @@
           "type": "string"
         },
         {
-          "description": "Root directory on the database host where backups are written. XtraBackup adds a subdirectory per run, Mydumper one per day that a second run the same day writes into, and Binlog keeps its files directly under the server's own directory.",
-          "label": "Backup directory",
-          "min_length": 1,
-          "name": "backup_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
           "description": "MySQL defaults file used for the connections SEP makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
           "label": "MySQL defaults file",
           "min_length": 1,
@@ -474,11 +474,11 @@
         {
           "choices": [
             {
-              "label": "zstd",
+              "label": "ZSTD",
               "value": "zstd"
             },
             {
-              "label": "lz4",
+              "label": "LZ4",
               "value": "lz4"
             },
             {
@@ -486,7 +486,7 @@
               "value": "gzip"
             },
             {
-              "label": "quicklz",
+              "label": "QuickLZ",
               "value": "quicklz"
             }
           ],
@@ -1425,6 +1425,40 @@
       "app_key": "mysql_backups/restore",
       "label": "Restore",
       "route_segment": "restores"
+    }
+  ],
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
     }
   ]
 }
