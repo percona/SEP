@@ -460,7 +460,7 @@ def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():
 
 
 def test_reconstruction_accepts_a_replication_option_with_the_toggle_off():
-    """Accept the combination the create form started rejecting in SEP-2039.
+    """Accept the combination the create form started rejecting when it nested.
 
     Nesting the replication options under ``slave_from_master`` put a
     ``Forbidden`` gate on each, because the ``Ui(parent=...)`` pointer is
@@ -487,7 +487,7 @@ def test_reconstruction_accepts_a_replication_option_with_the_toggle_off():
 
     with pytest.raises(ValidationError) as excinfo:
         RestoreCreate.model_validate(body)
-    assert excinfo.value.error_count() >= 1
+    assert "'slave_from_master' must be enabled" in str(excinfo.value)
 
 
 _DEFAULT_MASTER_PORT = 3306

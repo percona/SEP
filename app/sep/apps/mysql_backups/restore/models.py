@@ -1027,9 +1027,10 @@ class LegacyRestoreCreate(RestoreCreate):
     an Edit affordance — the only way an operator has to repair it.
 
     Each field is redeclared exactly as the create model declared it before the
-    tightening. The ``Ui`` pointer goes with the gate rather than being kept
-    here: the two are a pair, and a model carrying only the pointer would fail
-    the DSL's own conformance check.
+    tightening, which for these four is a bare annotation — none of them carried
+    another gate. The ``Ui`` pointer is dropped along with the gate because
+    nothing reads it here: this model is only ever validated against, never
+    derived into a schema, so its presentation markers are inert.
 
     :param wait_for_catchup: Whether to wait for the replica to catch up.
     :param master_ip: The replication source address.

@@ -643,7 +643,7 @@ _LEGACY_KILL_QUERIES_TIMEOUT = 300
 
 
 def test_reconstruction_accepts_a_dependent_option_whose_toggle_is_off():
-    """Accept the combinations the create form started rejecting in SEP-2039.
+    """Accept the combinations the create form started rejecting when it nested.
 
     Nesting the kill-queries and prepare options under their toggles put a
     ``Forbidden`` gate on each, because the ``Ui(parent=...)`` pointer is
@@ -673,4 +673,27 @@ def test_reconstruction_accepts_a_dependent_option_whose_toggle_is_off():
 
     with pytest.raises(ValidationError) as excinfo:
         BackupCreate.model_validate(body)
-    assert excinfo.value.error_count() >= 1
+    assert "'xtrabackup_kill_queries' must be enabled" in str(excinfo.value)
+    assert "'xtrabackup_prepare' must be enabled" in str(excinfo.value)
+
+
+def test_reconstruction_still_rejects_a_cross_mode_option():
+    """Keep the XtraBackup-only gate on the fields the leniency relaxes.
+
+    Only the parent-toggle gate is dropped here. A stored Mydumper config naming
+    an XtraBackup-only key was rejected before the toggles were nested and has to
+    stay rejected, or the reconstruction stamps a body the create and update
+    routes will not take back.
+    """
+    body = {
+        "task_name": "backups-legacy-mydumper",
+        "hostname": "executor-host",
+        "service_id": 1,
+        "backup_type": BackupType.MYDUMPER.value,
+        "backup_dir": "/data/backups",
+        "xtrabackup_kill_queries_timeout": _LEGACY_KILL_QUERIES_TIMEOUT,
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        LegacyBackupCreate.model_validate(body)
+    assert "'xtrabackup_kill_queries_timeout' must not be set" in str(excinfo.value)
