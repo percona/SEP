@@ -341,6 +341,7 @@ def _common_field_kwargs(
         "requires": _gates(metadata, Requires) or None,
         "forbidden": _gates(metadata, Forbidden) or None,
         "parent": ui.parent,
+        "help_placement": ui.help_placement,
     }
 
 
@@ -961,36 +962,6 @@ def _runtime_form_fields(model: type["AppFormModel"]) -> list[BaseField | OneOfG
     return fields
 
 
-def _validate_section_groups(sections: list[FormSection]) -> None:
-    """Reject a group whose members are not adjacent in the derived order.
-
-    The renderer builds a group from an adjacent *run* of sections, so a group
-    interrupted by a section outside it renders as two shells with the same
-    heading rather than failing. Adjacency is easy to break by accident because
-    ``group`` is declared on the layout while the derived section order comes
-    from field first-appearance on the model — a contributor reordering fields
-    for an unrelated reason moves sections apart without touching the layout at
-    all. Catching it here turns that into a startup error.
-
-    :param sections: The derived form sections, in wire order.
-    :raises ValueError: When a group value reappears after a gap.
-    """
-    seen: set[str] = set()
-    previous: str | None = None
-    for section in sections:
-        group = section.group
-        if group is not None and group != previous and group in seen:
-            raise ValueError(
-                f"section {section.title!r} rejoins group {group!r} after a "
-                "section outside it. Group members have to be adjacent in the "
-                "derived section order, which comes from field declaration "
-                "order on the model, not from the layout's tuple order."
-            )
-        if group is not None:
-            seen.add(group)
-        previous = group
-
-
 def _validate_parent_pointers(sections: list[FormSection]) -> None:
     """Reject ``Ui(parent=...)`` pointers that the renderer could not honour.
 
@@ -1065,8 +1036,7 @@ def derive_form_sections(
     :param layout: The section layout supplying each section's title and metadata.
     :return: The derived form sections in field-declaration order.
     :raises ValueError: When a field names a section absent from ``layout``, a
-        layout section has no fields, a ``group`` is not one adjacent run (see
-        :func:`_validate_section_groups`), or a ``Ui(parent=...)`` pointer names
+        layout section has no fields, or a ``Ui(parent=...)`` pointer names
         a target the renderer could not nest under (see
         :func:`_validate_parent_pointers`).
     """
@@ -1102,7 +1072,7 @@ def derive_form_sections(
                 title=section_layout.title,
                 description=section_layout.description,
                 fields=[spec.base_field for spec in members],
-                group=section_layout.group,
+                advanced=section_layout.advanced,
                 collapsible=section_layout.collapsible,
                 collapsed_by_default=section_layout.collapsed_by_default,
                 render_after_submit=section_layout.render_after_submit,
@@ -1113,7 +1083,6 @@ def derive_form_sections(
                 cardinality_rules=list(section_rules.cardinality_rules) or None,
             )
         )
-    _validate_section_groups(sections)
     _validate_parent_pointers(sections)
     return sections
 

@@ -31,6 +31,7 @@
   "display_name": "MySQL Restores",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -147,6 +148,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -238,6 +240,7 @@
       "title": "Mydumper"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -402,6 +405,7 @@
       "title": "XtraBackup"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -465,6 +469,7 @@
       "title": "Binlog"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [

@@ -240,8 +240,9 @@ class TestRestoreContract(DerivedRouterContractTests):
         every expert section is collapsible *and* collapsed. Section order is
         pinned too, since it derives from field first-appearance on the model —
         ``General`` sits after the mode sections so the expert block reads last.
-        ``group`` is pinned as ``None`` throughout: this form has one candidate
-        section, and wrapping it alone would add a shell rather than save a row.
+        ``advanced`` is pinned as ``False`` throughout: this form has one
+        candidate section, and putting it alone behind the reveal control would
+        add a click rather than save a row.
         """
         base = app_base_url(self.app_def)
 
@@ -263,7 +264,7 @@ class TestRestoreContract(DerivedRouterContractTests):
             ("Binlog", True, True),
             ("General", True, True),
         ]
-        assert [section.get("group") for section in sections] == [None] * len(sections)
+        assert [section["advanced"] for section in sections] == [False] * len(sections)
         task_fields = [field["name"] for field in sections[0]["fields"]]
         assert "service_id" in task_fields
         assert "backup_source" in task_fields

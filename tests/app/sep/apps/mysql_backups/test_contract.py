@@ -310,11 +310,9 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         required fields sit is pinned too, so none of them can drift behind a
         collapse toggle.
 
-        Order and ``group`` are pinned as a list rather than a mapping. The
-        renderer builds the ``Advanced`` shell from an *adjacent* run, and the
-        derived order comes from field declaration order on the model — so a
-        contributor reordering fields for an unrelated reason could split the
-        group in two, and a mapping would not notice.
+        Order and ``advanced`` are pinned as a list rather than a mapping, so a
+        section changing place or losing its advanced marking fails here rather
+        than quietly changing what the form opens on.
         """
         base = app_base_url(self.app_def)
 
@@ -327,17 +325,17 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
                 section["title"],
                 section["collapsible"],
                 section["collapsed_by_default"],
-                section.get("group"),
+                section["advanced"],
             )
             for section in sections
         ] == [
-            ("Task", False, False, None),
-            ("Mydumper", True, True, None),
-            ("XtraBackup", True, True, None),
-            ("Binlog", True, True, None),
-            ("General", True, True, "Advanced"),
-            ("Encryption", True, True, "Advanced"),
-            ("Upload", True, True, "Advanced"),
+            ("Task", False, False, False),
+            ("Mydumper", True, True, False),
+            ("XtraBackup", True, True, False),
+            ("Binlog", True, True, False),
+            ("General", True, True, True),
+            ("Encryption", True, True, True),
+            ("Upload", True, True, True),
         ]
         required_fields = {
             (section["title"], field["name"])

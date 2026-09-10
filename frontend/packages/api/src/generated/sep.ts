@@ -7176,6 +7176,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -7377,6 +7378,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -7505,6 +7507,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -7723,6 +7726,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -7770,6 +7774,7 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
@@ -7834,6 +7839,11 @@ export interface components {
      *         Author ``fail_when`` rules accordingly.
      */
     framework__FormSection: {
+      /**
+       * Advanced
+       * @default false
+       */
+      advanced: boolean;
       /** Cardinality Rules */
       cardinality_rules?: components['schemas']['framework__CardinalityRule'][] | null;
       /**
@@ -7876,8 +7886,6 @@ export interface components {
       )[];
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
-      /** Group */
-      group?: string | null;
       /**
        * Render After Submit
        * @default false
@@ -7886,6 +7894,18 @@ export interface components {
       /** Title */
       title: string;
     };
+    /**
+     * HelpPlacement
+     * @description Say where a field's ``description`` is shown, overriding the default.
+     *
+     *     The renderer otherwise places help by length — a description that fits
+     *     roughly one line sits under the input, a longer one goes behind a help icon
+     *     beside the label. Setting this is for the cases where that reads wrong: a
+     *     terse note that is still secondary, or a long one someone needs in front of
+     *     them while they type.
+     * @enum {string}
+     */
+    framework__HelpPlacement: 'tooltip' | 'inline';
     /**
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
@@ -7923,6 +7943,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -7972,6 +7993,7 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
@@ -8052,6 +8074,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8111,6 +8134,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8161,6 +8185,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8207,6 +8232,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8257,6 +8283,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8472,6 +8499,7 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8529,6 +8557,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8635,6 +8664,7 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Language */
@@ -8707,6 +8737,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8757,6 +8788,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Max Length */
@@ -8822,6 +8854,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8919,6 +8952,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
@@ -8964,6 +8998,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */

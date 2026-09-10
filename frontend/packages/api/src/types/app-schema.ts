@@ -108,6 +108,19 @@ interface BaseField {
    * keeps hiding the field.
    */
   parent?: string;
+  /**
+   * Where the field's `description` is shown. `inline` puts it under the
+   * input, where a format hint belongs; `tooltip` puts it behind a help icon
+   * beside the label, keeping prose from dominating a form that has a lot of
+   * it. Unset (the default) decides by length: roughly one line renders
+   * inline, longer prose goes behind the icon.
+   *
+   * Reference and selector fields (`service`, `host`, `schema`, `table`,
+   * `remote_choice`) ignore it and are always inline: their label is a plain
+   * string the renderer also uses in validation messages, so there is no node
+   * to hang a help icon from.
+   */
+  help_placement?: 'tooltip' | 'inline';
 }
 
 // ── Choice option ─────────────────────────────────────────────────────────
@@ -362,13 +375,17 @@ export interface FormSection {
   description?: string;
   fields: SectionField[];
   /**
-   * Heading of the collapsible group this section belongs to (for example
-   * `Advanced`). Runs of adjacent sections carrying the same value render
-   * inside one collapsed shell titled by it, so a form with many secondary
-   * sections costs one row instead of one per section. A section keeps its own
-   * `collapsible` / `collapsed_by_default` behaviour inside the group.
+   * Whether this section holds expert options rather than the common case.
+   *
+   * Advanced sections are withheld behind a single "Show advanced options"
+   * control rendered after the ordinary ones, and revealed as ordinary
+   * top-level sections. The renderer reveals them on its own, and expands the
+   * section concerned, whenever one holds a value other than its schema
+   * default or a field a backend error points into. Membership needs no
+   * adjacency — advanced sections are collected wherever they appear and
+   * rendered after the rest, in order.
    */
-  group?: string;
+  advanced?: boolean;
   /** Whether the section is wrapped in an expandable/collapsible shell. */
   collapsible?: boolean;
   /** Initial expansion state when collapsible is enabled. */

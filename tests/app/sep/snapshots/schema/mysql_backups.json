@@ -335,6 +335,7 @@
   ],
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -404,6 +405,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -511,6 +513,7 @@
       "title": "Mydumper"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -839,6 +842,7 @@
       "title": "XtraBackup"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -965,6 +969,7 @@
       "title": "Binlog"
     },
     {
+      "advanced": true,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -1058,11 +1063,11 @@
           "type": "choice"
         }
       ],
-      "group": "Advanced",
       "render_after_submit": false,
       "title": "General"
     },
     {
+      "advanced": true,
       "collapsed_by_default": true,
       "collapsible": true,
       "description": "Pick an 'Encryption format' first; the fields below are that format's parameters.",
@@ -1218,11 +1223,11 @@
           "type": "string"
         }
       ],
-      "group": "Advanced",
       "render_after_submit": false,
       "title": "Encryption"
     },
     {
+      "advanced": true,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -1370,7 +1375,6 @@
           "type": "string"
         }
       ],
-      "group": "Advanced",
       "render_after_submit": false,
       "title": "Upload"
     }

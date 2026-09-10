@@ -2,6 +2,7 @@
   "display_name": "Multi Ref",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [

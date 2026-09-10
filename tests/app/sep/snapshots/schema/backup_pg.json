@@ -46,6 +46,7 @@
   "display_name": "PostgreSQL Backups",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -77,6 +78,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [

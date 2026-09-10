@@ -44,6 +44,7 @@ from app.sep.apps.framework.rules import (
     FieldGate,
     Predicate,
 )
+from app.sep.apps.framework.schema import HelpPlacement
 
 __all__ = [
     "ArgFormat",
@@ -52,6 +53,7 @@ __all__ = [
     "Forbidden",
     "FormLayout",
     "FormRules",
+    "HelpPlacement",
     "Hidden",
     "HostRef",
     "Option",
@@ -139,6 +141,17 @@ class Ui:
         default; ``None`` sets the form default to ``None``; any other value sets
         the form default to that value. The model's own default — what the JSON
         body validates against — is never affected.
+    :param help_placement: Where the renderer shows this field's
+        ``description``. ``"inline"`` puts it under the input, where a format
+        hint belongs — visible while someone types into the field it describes.
+        ``"tooltip"`` puts it behind a help icon beside the label, which keeps
+        prose from dominating a form that has a lot of it. ``None`` (the
+        default) lets the renderer decide by length: a description that fits
+        roughly one line renders inline, a longer one goes behind the icon. Set
+        it only where that default reads wrong. Reference and selector fields
+        ignore it and are always inline — their label is a plain string the
+        renderer also uses in validation messages, so there is no node to hang
+        an icon from. Defaults to ``None``.
     :param parent: Name of a sibling ``bool`` field, in the same section, that
         this field parameterises. The renderer draws the field indented beneath
         that toggle and keeps it non-interactive until the toggle is on, rather
@@ -163,6 +176,7 @@ class Ui:
     widget: FieldWidget | None = None
     default: Any = _UNSET
     parent: str | None = None
+    help_placement: HelpPlacement | None = None
 
     def __post_init__(self) -> None:
         """Reject a marker whose opt-in string carries nothing.
@@ -176,6 +190,18 @@ class Ui:
                 "confirmation shows; omit the keyword to leave the field "
                 "unmarked"
             )
+        if self.help_placement is not None:
+            try:
+                object.__setattr__(
+                    self, "help_placement", HelpPlacement(self.help_placement)
+                )
+            except ValueError:
+                known = sorted(member.value for member in HelpPlacement)
+                raise ValueError(
+                    f"Ui(help_placement={self.help_placement!r}) is not one of "
+                    f"{known}; omit the keyword to let the renderer place the "
+                    "description by length"
+                ) from None
         if self.parent is not None and not self.parent.strip():
             raise ValueError(
                 "Ui(parent=...) must name the sibling bool field this field "
@@ -531,16 +557,15 @@ class SectionLayout:
     :param title: The section heading.
     :param description: Optional helper text beneath the heading. Defaults to
         ``None``.
-    :param group: Heading of the collapsible group this section belongs to (for
-        example ``"Advanced"``). A run of sections carrying the same value
-        renders inside one collapsed shell titled by it, so a form with many
-        secondary sections costs one row at rest instead of one per section. A
-        section keeps its own ``collapsible`` / ``collapsed_by_default``
-        behaviour inside the group. Members must be *adjacent* in the derived
-        section order — which comes from field declaration order on the model,
-        not from this tuple — because the renderer groups adjacent runs; a
-        broken run renders as two shells with the same heading. Defaults to
-        ``None`` (the section renders on its own).
+    :param advanced: Whether the section holds expert options rather than the
+        common case. The renderer withholds advanced sections behind a single
+        "Show advanced options" control placed after the ordinary ones, and
+        reveals them as ordinary top-level sections — so a form with several
+        expert sections costs one row at rest instead of one per section. It
+        reveals them on its own, and expands the section concerned, whenever
+        one holds a value other than its default or a field an error points
+        into. Membership needs no adjacency: the renderer collects them
+        wherever they appear, preserving order. Defaults to ``False``.
     :param collapsible: Whether the renderer may collapse the section. Defaults
         to ``False``.
     :param collapsed_by_default: Whether a collapsible section starts collapsed.
@@ -555,37 +580,22 @@ class SectionLayout:
     key: str
     title: str
     description: str | None = None
-    group: str | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
     forbidden: tuple[FieldGate, ...] | None = None
 
     def __post_init__(self) -> None:
-        """Normalise ``forbidden`` to a tuple so the layout stays hashable.
-
-        :raises ValueError: When ``group`` is set to a blank or whitespace-only
-            string, which would give the renderer no heading to show.
-        """
+        """Normalise ``forbidden`` to a tuple so the layout stays hashable."""
         if self.forbidden is not None:
             object.__setattr__(self, "forbidden", tuple(self.forbidden))
-        if self.group is not None and not self.group.strip():
-            raise ValueError(
-                "SectionLayout(group=...) must carry the heading the grouped "
-                "shell shows; omit the keyword to leave the section ungrouped"
-            )
 
 
 #: Shared Task-section layout adopted by every task app's ``FormLayout`` and the
 #: task scaffold template. Frozen (see :class:`SectionLayout`), so this single
 #: instance is safe to reference directly.
 TASK_SECTION_LAYOUT = SectionLayout(key="Task", title="Task")
-
-#: Conventional heading for the group holding a form's expert sections. Shared
-#: so the several :attr:`SectionLayout.group` values that have to match within
-#: one form cannot drift by a typo — which would split the group in two rather
-#: than fail.
-ADVANCED_GROUP = "Advanced"
 
 
 @dataclass(frozen=True, slots=True)

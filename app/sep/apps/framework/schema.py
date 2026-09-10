@@ -213,6 +213,20 @@ class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     YAML = auto()
 
 
+class HelpPlacement(StrEnum):
+    """Say where a field's ``description`` is shown, overriding the default.
+
+    The renderer otherwise places help by length — a description that fits
+    roughly one line sits under the input, a longer one goes behind a help icon
+    beside the label. Setting this is for the cases where that reads wrong: a
+    terse note that is still secondary, or a long one someone needs in front of
+    them while they type.
+    """
+
+    TOOLTIP = auto()
+    INLINE = auto()
+
+
 class BaseField(SchemaBaseModel):
     """Define the abstract base for every concrete field in the plugin schema DSL.
 
@@ -247,6 +261,14 @@ class BaseField(SchemaBaseModel):
     :param forbidden: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be absent.
         Defaults to ``None``.
+    :param help_placement: Optional override for where the field's
+        ``description`` is shown — ``"inline"`` under the input, ``"tooltip"``
+        behind a help icon beside the label. ``None`` (the default) lets the
+        renderer decide by length: roughly one line renders inline, longer
+        prose goes behind the icon. Reference and selector fields ignore it and
+        are always inline, having a plain-string label with no node to hang an
+        icon from. Typed optional so a route serialising with ``exclude_none``
+        keeps it off the wire until a field opts in.
     :param parent: Optional name of a sibling ``bool`` field, in the same
         section, that this field parameterises. The schema-driven React
         renderer draws the field indented beneath that toggle and inert until
@@ -270,6 +292,7 @@ class BaseField(SchemaBaseModel):
     requires: list[FieldGate] | None = None
     forbidden: list[FieldGate] | None = None
     parent: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)] | None = None
+    help_placement: HelpPlacement | None = None
 
 
 class BoolField(BaseField):
@@ -903,7 +926,7 @@ class FormSection(SchemaBaseModel):
     fields: list[AnyField]
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
-    group: NonEmptyStr | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False

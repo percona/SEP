@@ -34,6 +34,7 @@ from app.sep.apps.framework.form_dsl import (
     Forbidden,
     FormLayout,
     FormRules,
+    HelpPlacement,
     Hidden,
     HostRef,
     Option,
@@ -1319,17 +1320,17 @@ class TestDeriveAppSchemaItemDisplayNames:
 # ── Section grouping and parent toggles ──────────────────────────────────────
 
 
-class _GroupedLayoutModel(AppFormModel):
+class _AdvancedLayoutModel(AppFormModel):
     lead: Annotated[str, Ui(label="Lead", section="Task")] = ""
     general: Annotated[str, Ui(label="General", section="General")] = ""
     upload: Annotated[str, Ui(label="Upload", section="Upload")] = ""
 
 
-_GROUPED_LAYOUT = FormLayout(
+_ADVANCED_LAYOUT = FormLayout(
     sections=(
         SectionLayout(key="Task", title="Task"),
-        SectionLayout(key="General", title="General", group="Advanced"),
-        SectionLayout(key="Upload", title="Upload", group="Advanced"),
+        SectionLayout(key="General", title="General", advanced=True),
+        SectionLayout(key="Upload", title="Upload", advanced=True),
     )
 )
 
@@ -1352,34 +1353,29 @@ def _one_section_layout() -> FormLayout:
     return FormLayout(sections=(SectionLayout(key="s", title="S"),))
 
 
-class TestSectionGroup:
-    """Cover SectionLayout.group reaching the wire."""
+class TestAdvancedSection:
+    """Cover SectionLayout.advanced reaching the wire."""
 
-    def test_group_copied_onto_the_derived_section(self) -> None:
-        """Copy the layout's group onto every section that declares one."""
-        sections = derive_form_sections(_GroupedLayoutModel, _GROUPED_LAYOUT)
-        assert [(s.title, s.group) for s in sections] == [
-            ("Task", None),
-            ("General", "Advanced"),
-            ("Upload", "Advanced"),
+    def test_advanced_copied_onto_the_derived_section(self) -> None:
+        """Mark the sections the layout declares advanced, and no others."""
+        sections = derive_form_sections(_AdvancedLayoutModel, _ADVANCED_LAYOUT)
+        assert [(s.title, s.advanced) for s in sections] == [
+            ("Task", False),
+            ("General", True),
+            ("Upload", True),
         ]
 
-    def test_ungrouped_section_leaves_group_unset(self) -> None:
-        """Leave ``group`` unset so a route excluding nulls keeps it off the wire."""
+    def test_ordinary_section_defaults_to_not_advanced(self) -> None:
+        """Leave the flag false so an unmarked section renders as it always did."""
         sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
-        assert sections[0].group is None
+        assert sections[0].advanced is False
 
-    def test_blank_group_rejected(self) -> None:
-        """Reject a group heading the renderer would have nothing to show for."""
-        with pytest.raises(ValueError, match="must carry the heading"):
-            SectionLayout(key="s", title="S", group="   ")
+    def test_advanced_sections_need_not_be_adjacent(self) -> None:
+        """Accept advanced sections split by an ordinary one.
 
-    def test_non_adjacent_group_rejected(self) -> None:
-        """Reject a run the renderer would draw as two same-titled shells.
-
-        Adjacency is easy to break by accident: ``group`` is declared on the
-        layout, while the order that decides adjacency comes from field
-        declaration order on the model.
+        The renderer collects them wherever they appear rather than requiring a
+        run, so nothing here depends on field declaration order — which is what
+        a heading-based grouping did require.
         """
 
         class _Model(AppFormModel):
@@ -1389,31 +1385,54 @@ class TestSectionGroup:
 
         layout = FormLayout(
             sections=(
-                SectionLayout(key="a", title="A", group="Advanced"),
+                SectionLayout(key="a", title="A", advanced=True),
                 SectionLayout(key="b", title="B"),
-                SectionLayout(key="c", title="C", group="Advanced"),
+                SectionLayout(key="c", title="C", advanced=True),
             )
         )
-        with pytest.raises(ValueError, match="rejoins group 'Advanced'"):
-            derive_form_sections(_Model, layout)
+        assert [s.advanced for s in derive_form_sections(_Model, layout)] == [
+            True,
+            False,
+            True,
+        ]
 
-    def test_two_distinct_groups_may_follow_each_other(self) -> None:
-        """Accept back-to-back groups: each is still one adjacent run."""
+
+class TestHelpPlacement:
+    """Cover Ui(help_placement=...) reaching the wire."""
+
+    def test_placement_copied_onto_the_derived_field(self) -> None:
+        """Carry an explicit placement through to the field."""
 
         class _Model(AppFormModel):
-            first: Annotated[str, Ui(label="First", section="a")] = ""
-            second: Annotated[str, Ui(label="Second", section="b")] = ""
+            a: Annotated[
+                str,
+                Ui(label="A", section="s", description="x", help_placement="inline"),
+            ] = ""
+            b: Annotated[
+                str,
+                Ui(
+                    label="B",
+                    section="s",
+                    description="y",
+                    help_placement=HelpPlacement.TOOLTIP,
+                ),
+            ] = ""
 
-        layout = FormLayout(
-            sections=(
-                SectionLayout(key="a", title="A", group="One"),
-                SectionLayout(key="b", title="B", group="Two"),
-            )
-        )
-        assert [s.group for s in derive_form_sections(_Model, layout)] == [
-            "One",
-            "Two",
+        fields = derive_form_sections(_Model, _one_section_layout())[0].fields
+        assert [f.help_placement for f in fields] == [
+            HelpPlacement.INLINE,
+            HelpPlacement.TOOLTIP,
         ]
+
+    def test_unset_leaves_the_renderer_to_decide(self) -> None:
+        """Leave it unset so a route excluding nulls keeps it off the wire."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        assert all(f.help_placement is None for f in sections[0].fields)
+
+    def test_unknown_placement_rejected(self) -> None:
+        """Reject a value the renderer has no rule for."""
+        with pytest.raises(ValueError, match="is not one of"):
+            Ui(label="x", section="s", help_placement="popover")
 
 
 class TestParentToggle:
