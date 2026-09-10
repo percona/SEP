@@ -38,7 +38,6 @@ import asyncio
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Any, TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -55,6 +54,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
     load_service_id_lookup,
 )
 from app.sep.apps.framework.form_backfill_registry import (
+    add_owner_and_verbose_arguments,
     collect_form_backfill_entries,
     FormBackfillContext,
     FormBackfillEntry,
@@ -509,12 +509,7 @@ async def run_backfill(
     :return: Aggregate counters for the run.
     """
     active_log = log or logger
-    owner_filter = set(owners) if owners is not None else None
-    entries = [
-        entry
-        for entry in collect_form_backfill_entries()
-        if owner_filter is None or entry.owner in owner_filter
-    ]
+    entries = collect_form_backfill_entries(owners=owners)
     summary = BackfillSummary(dry_run=dry_run)
 
     if not entries:
@@ -552,27 +547,6 @@ async def run_backfill(
     return summary
 
 
-def _owner_from_cli(value: str, valid_owners: frozenset[str]) -> str:
-    """Parse a CLI ``--owner`` value into an in-scope owner string.
-
-    :param value: The owner string (for example ``CHECKSUMS``), case-insensitive.
-    :param valid_owners: The owners declared by the collected backfill entries.
-    :return: The normalized (upper-cased) owner string.
-    :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
-    """
-    normalized = value.strip().upper()
-    if normalized in valid_owners:
-        return normalized
-    if not valid_owners:
-        raise argparse.ArgumentTypeError(
-            f"unknown owner {value!r}; no activated app declares a form backfill"
-        )
-    valid = ", ".join(sorted(valid_owners))
-    raise argparse.ArgumentTypeError(
-        f"unknown owner {value!r}; expected one of: {valid}"
-    )
-
-
 def _build_arg_parser() -> argparse.ArgumentParser:
     """Return the CLI argument parser for the backfill entry point.
 
@@ -597,22 +571,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Log actions without writing stamped forms to the database.",
     )
-    parser.add_argument(
-        "--owner",
-        action="append",
-        type=partial(_owner_from_cli, valid_owners=valid_owners),
-        dest="owners",
-        metavar="OWNER",
-        help=(
-            "Limit the run to one or more task owners (repeatable). "
-            "Defaults to all in-scope owners."
-        ),
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable debug logging.",
-    )
+    add_owner_and_verbose_arguments(parser, valid_owners=valid_owners, subject="run")
     return parser
 
 

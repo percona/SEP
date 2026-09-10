@@ -221,6 +221,72 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+_BACKUP_BOOL_FAIL_RULES = (
+    *(
+        FailRule(
+            fail_when=truthy(name) & (F("backup_type") != owner_mode),
+            error_fields=[name],
+            message=(
+                f"{name!r} must not be set when backup_type is not {owner_mode!r}."
+            ),
+        )
+        for owner_mode, names in _MODE_BOOL_FIELDS.items()
+        for name in names
+    ),
+    *(
+        FailRule(
+            fail_when=truthy(name) & not_(_FMT_HAS_GPG),
+            error_fields=[name],
+            message=(
+                f"{name!r} must not be set when 'encryption_format' does "
+                "not include GPG."
+            ),
+        )
+        for name in _GPG_TIMING_FIELDS
+    ),
+    FailRule(
+        fail_when=_FMT_HAS_GPG & AllFalsy(_GPG_TIMING_FIELDS),
+        error_fields=list(_GPG_TIMING_FIELDS),
+        message=(
+            "A GPG 'encryption_format' requires 'encrypt' or "
+            "'post_run_encrypt' to select when the backup is encrypted."
+        ),
+    ),
+)
+
+# In-place GPG runs inside the upload provider loop, and a Binlog backup encrypts
+# nowhere else, so without a target those timings never run and the task reports a
+# GPG format over a plaintext backup. Mydumper and XtraBackup encrypt the finished
+# directory on the host, so their post-run timing needs no target.
+_UPLOAD_REACHABILITY_FAIL_RULES = (
+    FailRule(
+        fail_when=truthy("encrypt") & falsy("upload"),
+        error_fields=["encrypt", "upload"],
+        message=(
+            "'encrypt' encrypts the backup in place as part of an upload, so it "
+            "requires at least one upload provider. Use 'post_run_encrypt' "
+            "(Mydumper and XtraBackup only) to encrypt on the host instead."
+        ),
+    ),
+    FailRule(
+        fail_when=truthy("post_run_encrypt")
+        & (F("backup_type") == BackupType.BINLOG)
+        & falsy("upload"),
+        error_fields=["post_run_encrypt", "upload"],
+        message=(
+            "A Binlog backup encrypts only as part of an upload, so "
+            "'post_run_encrypt' requires at least one upload provider."
+        ),
+    ),
+)
+
+#: Every rule except the upload-reachability pair, for the backfill's lenient
+#: subclass: a task saved in the rejected shape has to keep reconstructing, or it
+#: loses the stamp its Edit affordance needs to correct it. Shared the way
+#: :data:`BACKUP_DIR_UI` is, so the two cannot drift.
+LENIENT_BACKUP_FORM_RULES = FormRules(fail_when=_BACKUP_BOOL_FAIL_RULES)
+
+
 class DirEncryptConfig(BaseModel):
     """Represent the encryption configuration for the backup task.
 
@@ -331,43 +397,12 @@ class BackupCreate(TaskFormModel):
 
     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-        validation with a per-field message, as does a GPG format with no timing.
+        validation with a per-field message, as does a GPG format with no timing
+        and a GPG timing no backup script would reach without an upload target.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=(
-            *(
-                FailRule(
-                    fail_when=truthy(name) & (F("backup_type") != owner_mode),
-                    error_fields=[name],
-                    message=(
-                        f"{name!r} must not be set when backup_type is not "
-                        f"{owner_mode!r}."
-                    ),
-                )
-                for owner_mode, names in _MODE_BOOL_FIELDS.items()
-                for name in names
-            ),
-            *(
-                FailRule(
-                    fail_when=truthy(name) & not_(_FMT_HAS_GPG),
-                    error_fields=[name],
-                    message=(
-                        f"{name!r} must not be set when 'encryption_format' does "
-                        "not include GPG."
-                    ),
-                )
-                for name in _GPG_TIMING_FIELDS
-            ),
-            FailRule(
-                fail_when=_FMT_HAS_GPG & AllFalsy(_GPG_TIMING_FIELDS),
-                error_fields=list(_GPG_TIMING_FIELDS),
-                message=(
-                    "A GPG 'encryption_format' requires 'encrypt' or "
-                    "'post_run_encrypt' to select when the backup is encrypted."
-                ),
-            ),
-        )
+        fail_when=(*_BACKUP_BOOL_FAIL_RULES, *_UPLOAD_REACHABILITY_FAIL_RULES)
     )
 
     service_id: Annotated[
@@ -918,13 +953,13 @@ class BackupCreate(TaskFormModel):
             section="Encryption",
             description=(
                 "Which encryption this task applies. 'GPG' needs a recipient and a "
-                "timing below: 'Encrypt backup' encrypts as part of an upload, so with "
-                "no upload target nothing is encrypted, while 'Encrypt after backup "
-                "completes' encrypts on the host for a Mydumper or XtraBackup backup "
-                "and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' "
-                "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
-                "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
-                "backend cannot apply on top of it."
+                "timing below: 'Encrypt backup' encrypts as part of an upload, so it "
+                "needs an upload provider, while 'Encrypt after backup completes' "
+                "encrypts on the host for a Mydumper or XtraBackup backup and during "
+                "the upload — needing a provider too — for a Binlog one. 'AES-256' "
+                "and 'AES-256 + GPG' need a key file and are XtraBackup-only. "
+                "'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the "
+                "GPG pass, which the backend cannot apply on top of it."
             ),
         ),
     ] = EncryptionFormat.NONE
@@ -960,9 +995,9 @@ class BackupCreate(TaskFormModel):
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "GPG-encrypt the backup as part of an upload. With no upload target "
-                "nothing is encrypted and the task still succeeds. Mydumper and Binlog "
-                "encrypt the backup where it is written, optionally by way of 'Encrypt "
+                "GPG-encrypt the backup as part of an upload, so it requires at "
+                "least one upload provider. Mydumper and Binlog encrypt the backup "
+                "where it is written, optionally by way of 'Encrypt "
                 "using tmpdir'; XtraBackup encrypts a copy and leaves the backup on "
                 "the host in plain text unless 'Encrypt after backup completes' is set "
                 "too. Needs a GPG 'Encryption format' and a recipient."
@@ -999,8 +1034,9 @@ class BackupCreate(TaskFormModel):
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
                 "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
-                "XtraBackup encrypt on the host; a Binlog backup encrypts only during "
-                "an upload, so with no upload target nothing is encrypted."
+                "XtraBackup encrypt on the host and need no upload target; a Binlog "
+                "backup encrypts only during an upload, so it requires at least one "
+                "upload provider."
             ),
         ),
     ] = False

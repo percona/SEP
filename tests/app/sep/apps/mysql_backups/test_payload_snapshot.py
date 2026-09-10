@@ -296,6 +296,10 @@ def _all_servers_config(
                 "encryption_format": "gpg",
                 "encrypt": True,
                 "encryption_recipient": "ops@example.com",
+                # In-place GPG runs inside the upload loop, so the form requires a
+                # provider for it; the builder's ENCRYPT key is what is under test.
+                "upload": ["S3"],
+                "s3_bucket": "backups-bucket",
             },
             id="encrypt_true",
         ),

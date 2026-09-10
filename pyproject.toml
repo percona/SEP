@@ -518,6 +518,9 @@ runtime-evaluated-base-classes = [
 "sidecar/verify_image_apps.py" = [
     "T201", # the verdict line is the gate's only non-silent success signal
 ]
+"app/sep/apps/framework/form_audit.py" = [
+    "T201", # the audit's report is its output, so it goes to stdout, not the log
+]
 "app/sep/apps/backup_mongo/pbm_creds_common.py" = [
     "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
     "PTH123", # payload preamble uses builtin open(), as the shipped payloads do
