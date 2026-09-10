@@ -38,7 +38,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy.pool import AsyncAdaptedQueuePool, StaticPool
 from sqlalchemy.sql import column
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -687,13 +687,19 @@ class TestCreateAppAsyncEngine:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "name_for",
+        ("name_for", "expected_pool"),
         [
-            pytest.param(lambda _tmp_path: "", id="in-memory"),
-            pytest.param(lambda tmp_path: str(tmp_path / "x.db"), id="file"),
+            pytest.param(lambda _tmp_path: "", StaticPool, id="in-memory"),
+            pytest.param(
+                lambda tmp_path: str(tmp_path / "x.db"),
+                AsyncAdaptedQueuePool,
+                id="file",
+            ),
         ],
     )
-    async def test_builds_a_sqlite_engine_of_either_backing(self, name_for, tmp_path):
+    async def test_builds_a_sqlite_engine_of_either_backing(
+        self, name_for, expected_pool, tmp_path
+    ):
         """Build both SQLite engines, whose pool classes differ in what they accept.
 
         An in-memory database gets a ``StaticPool``, which raises ``TypeError``
@@ -706,6 +712,7 @@ class TestCreateAppAsyncEngine:
             DatabaseOptions(ENGINE=AsyncDatabaseEngine.SQLITE, NAME=name_for(tmp_path))
         )
         try:
+            assert isinstance(engine.pool, expected_pool)
             assert engine.pool._pre_ping is True
         finally:
             await engine.dispose()
