@@ -23,8 +23,13 @@ name: Trivy scan
 
 on:
   pull_request:
+    # Both inputs the scan consumes: the workflow itself, and the exception
+    # list it applies. Without the second, a pull request that only edits
+    # .trivyignore.yaml would change what the gate suppresses without ever
+    # running it.
     paths:
       - .github/workflows/trivy-scan.yml
+      - .trivyignore.yaml
   schedule:
     # Mondays, 06:00 UTC.
     - cron: '0 6 * * 1'
