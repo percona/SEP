@@ -60,6 +60,9 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_EXECUTOR_IDS = frozenset({SYSTEM_USER, str(SERVICE_PRINCIPAL_ID)})
 
+#: Rows per batch for whole-population passes over the active tasks.
+ACTIVE_TASK_BATCH_SIZE = 500
+
 
 class TaskManager(BaseSQLModelManager):
     """Manage task operations, including retrieval, listing, and deletion.
@@ -138,6 +141,51 @@ class TaskManager(BaseSQLModelManager):
             kwargs["owner"] = owner
         cls._append_list_active_data_filters(where, session, target=target)
         return await cls.list(session, *where, **kwargs)
+
+    @classmethod
+    async def iter_active_batches(
+        cls,
+        session: AsyncSession,
+        *,
+        owner: str | None = None,
+        batch_size: int = ACTIVE_TASK_BATCH_SIZE,
+    ) -> AsyncGenerator[list[Task], None]:
+        """Yield every active task in ascending-id batches.
+
+        For whole-population passes, where :meth:`list_active` would materialize
+        every matching row — each with its full JSON ``data`` — before the caller
+        sees the first one. Keyset paging on the primary key rather than
+        ``offset`` so the batches stay disjoint and exhaustive: a concurrent
+        insert or delete shifts no row across a page boundary.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param owner: The owner of the tasks. If provided, only tasks for this
+            owner are yielded.
+        :param batch_size: The maximum number of tasks per batch.
+        :yield: Batches of active tasks, ordered by ascending id.
+        """
+        kwargs: dict[str, Any] = {}
+        if owner is not None:
+            kwargs["owner"] = owner
+        last_id = 0
+        while True:
+            batch = await cls.list(
+                session,
+                col(Task.deleted_at).is_(None),
+                col(Task.id) > last_id,
+                order_by=[col(Task.id)],
+                limit=batch_size,
+                **kwargs,
+            )
+            if not batch:
+                return
+            yield batch
+            if len(batch) < batch_size:
+                return
+            # ``id`` is typed optional for unpersisted instances; a queried row
+            # always carries one, and the ordering puts the highest last.
+            last_id = batch[-1].id or last_id + len(batch)
 
     @classmethod
     async def list_active_paginated(

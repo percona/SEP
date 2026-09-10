@@ -49,6 +49,7 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.rules import (
+    all_,
     AllFalsy,
     any_,
     AnyTruthy,
@@ -258,9 +259,16 @@ _BACKUP_BOOL_FAIL_RULES = (
 # nowhere else, so without a target those timings never run and the task reports a
 # GPG format over a plaintext backup. Mydumper and XtraBackup encrypt the finished
 # directory on the host, so their post-run timing needs no target.
+#
+# Scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``: under ``dual``
+# XtraBackup's own AES-256 pass runs whatever the timing says, so no plaintext
+# backup ships, and neither remedy the messages offer would make the GPG pass run
+# either — the upload path returns early once a key file is resolved.
+_FMT_IS_GPG_ONLY = _FMT == EncryptionFormat.GPG
+
 _UPLOAD_REACHABILITY_FAIL_RULES = (
     FailRule(
-        fail_when=truthy("encrypt") & falsy("upload"),
+        fail_when=all_(truthy("encrypt"), _FMT_IS_GPG_ONLY, falsy("upload")),
         error_fields=["encrypt", "upload"],
         message=(
             "'encrypt' encrypts the backup in place as part of an upload, so it "
@@ -269,9 +277,12 @@ _UPLOAD_REACHABILITY_FAIL_RULES = (
         ),
     ),
     FailRule(
-        fail_when=truthy("post_run_encrypt")
-        & (F("backup_type") == BackupType.BINLOG)
-        & falsy("upload"),
+        fail_when=all_(
+            truthy("post_run_encrypt"),
+            _FMT_IS_GPG_ONLY,
+            F("backup_type") == BackupType.BINLOG,
+            falsy("upload"),
+        ),
         error_fields=["post_run_encrypt", "upload"],
         message=(
             "A Binlog backup encrypts only as part of an upload, so "

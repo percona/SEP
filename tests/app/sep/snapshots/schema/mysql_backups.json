@@ -343,6 +343,11 @@
             "truthy": "encrypt"
           },
           {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
             "falsy": "upload"
           }
         ]
@@ -357,16 +362,17 @@
       "fail_when": {
         "all": [
           {
-            "all": [
-              {
-                "truthy": "post_run_encrypt"
-              },
-              {
-                "equals": {
-                  "backup_type": "B"
-                }
-              }
-            ]
+            "truthy": "post_run_encrypt"
+          },
+          {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
+            "equals": {
+              "backup_type": "B"
+            }
           },
           {
             "falsy": "upload"

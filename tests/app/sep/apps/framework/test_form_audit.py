@@ -16,6 +16,7 @@
 """Tests for the read-only ``data['_form']`` stamp audit."""
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock
@@ -44,11 +45,14 @@ from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.form_backfill import LegacyBackupCreate
 from app.sep.apps.mysql_backups.forms import BackupCreate, EncryptionFormat, OWNER
 from app.sep.apps.mysql_backups.models import BackupType
+from app.tasks.crud import TaskManager
 from app.tasks.models import Task, TaskBackendEnum
 
 _ARGPARSE_USAGE_ERROR = 2
 #: One task per outcome the audit distinguishes.
 _SCANNED_TASKS = 4
+#: Tasks seeded for the batching pass; two full batches of two plus a short one.
+_BATCHED_TASKS = 5
 _RECIPIENT = "ops@example.com"
 _KEYFILE = "/keys/aes.key"
 
@@ -241,10 +245,7 @@ class TestAuditSingleTask:
         error carries the value that failed, so a finding built from the raw errors
         would print both.
         """
-        stamp = _unreachable_timing_stamp(
-            encryption_format=EncryptionFormat.DUAL.value,
-            xtrabackup_aes256_keyfile=_KEYFILE,
-        )
+        stamp = _unreachable_timing_stamp(xtrabackup_aes256_keyfile=_KEYFILE)
 
         outcome = _audit_single_task(_task(form=stamp), BackupCreate)
 
@@ -307,6 +308,42 @@ class TestAuditApp:
         assert stats.errored == 1
         assert stats.rejected == 1
         assert "counting it unresolved" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_it_reads_the_population_in_bounded_batches(
+        self, tasks_session: AsyncSession, monkeypatch
+    ):
+        """Keep the rows in memory bounded by the batch, not by the table.
+
+        A stamp is a whole create body, and this runs against the installations
+        whose task table is the reason the audit exists, so reading the
+        population in one list is what would stop the report being produced.
+        """
+        for index in range(_BATCHED_TASKS):
+            tasks_session.add(
+                _task(form=_unreachable_timing_stamp(), name=f"task-{index}")
+            )
+        await tasks_session.commit()
+
+        read_sizes: list[int] = []
+        unpatched = TaskManager.iter_active_batches
+
+        def spy(*args: Any, **kwargs: Any) -> AsyncIterator[list[Task]]:
+            async def recorded() -> AsyncIterator[list[Task]]:
+                async for batch in unpatched(*args, **kwargs):
+                    read_sizes.append(len(batch))
+                    yield batch
+
+            return recorded()
+
+        monkeypatch.setattr(TaskManager, "iter_active_batches", spy)
+
+        stats = await _audit_app(
+            tasks_session, _entry(), log=logging.getLogger("test"), batch_size=2
+        )
+
+        assert read_sizes == [2, 2, 1]
+        assert stats.rejected == _BATCHED_TASKS
 
 
 class TestRunAudit:

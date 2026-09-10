@@ -704,6 +704,10 @@ class TestEncryptionNeedsAReachableRuntime:
     host-side pass either, so its post-run timing is upload-bound too. Accepted
     without a target, both make the reported format a claim rather than a fact:
     the task finishes green with a plaintext backup.
+
+    Scoped to the pure GPG format: ``dual`` encrypts with AES-256 whatever the
+    GPG timing says, so no plaintext backup ships there and the rule's remedies
+    would not change what runs.
     """
 
     _IN_PLACE_MESSAGE = "encrypts the backup in place as part of an upload"
@@ -797,18 +801,25 @@ class TestEncryptionNeedsAReachableRuntime:
                 )
             )
 
-    def test_dual_with_in_place_gpg_without_an_upload_target_fails(self):
-        """Reject in-place GPG under ``dual`` with no upload target."""
-        with pytest.raises(ValidationError, match=self._IN_PLACE_MESSAGE):
-            BackupCreate(
-                **self._no_upload(
-                    BackupType.XTRABACKUP,
-                    encryption_format=EncryptionFormat.DUAL,
-                    xtrabackup_aes256_keyfile="/keys/aes.key",
-                    encrypt=True,
-                    encryption_recipient="ops@example.com",
-                )
+    def test_dual_with_in_place_gpg_needs_no_upload_target(self):
+        """Accept in-place GPG under ``dual`` with no upload target.
+
+        The rule is scoped to the pure GPG format because ``dual`` is where its
+        remedies stop working: XtraBackup's built-in AES-256 pass runs regardless,
+        so nothing ships in plain text, and adding an upload target would not make
+        the GPG pass run either — the upload path returns early once a key file is
+        resolved. Rejecting it would only send the operator after a fix that
+        changes nothing.
+        """
+        BackupCreate(
+            **self._no_upload(
+                BackupType.XTRABACKUP,
+                encryption_format=EncryptionFormat.DUAL,
+                xtrabackup_aes256_keyfile="/keys/aes.key",
+                encrypt=True,
+                encryption_recipient="ops@example.com",
             )
+        )
 
     def test_the_in_place_message_names_the_engines_that_encrypt_on_the_host(self):
         """Keep the suggested alternative honest for a Binlog backup.
@@ -885,7 +896,7 @@ class TestEncryptionNeedsAReachableRuntime:
     def test_dual_with_post_run_gpg_needs_no_upload_target(self):
         """Accept ``dual`` with the host-side timing and no upload target.
 
-        Accepted for the upload rule's sake only: under ``dual`` XtraBackup
+        Out of this rule's scope rather than reachable: under ``dual`` XtraBackup
         applies its built-in AES-256 and no GPG pass at all — the upload path
         returns early once a key file is resolved, and the post-run path only
         logs — so the timing is inert rather than host-applied. Nothing ships in

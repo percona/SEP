@@ -54,7 +54,7 @@ from app.sep.apps.framework.form_backfill_registry import (
 )
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.tasks.crud import TaskManager
+from app.tasks.crud import ACTIVE_TASK_BATCH_SIZE, TaskManager
 from app.tasks.db import get_async_session_maker
 from app.tasks.models import Task
 
@@ -223,42 +223,53 @@ async def _audit_app(
     entry: FormBackfillEntry,
     *,
     log: logging.Logger,
+    batch_size: int = ACTIVE_TASK_BATCH_SIZE,
 ) -> AppAuditStats:
     """Audit every active task of a single app.
+
+    Reads the population in keyset batches rather than in one list: this runs
+    against installations whose task table is the reason the audit exists, and a
+    stamp is a whole create body, so holding every row at once is what would
+    stop the report being produced at all.
 
     :param session: The tasks database session; only read from.
     :param entry: The declaring app's backfill entry.
     :param log: Logger for the per-app summary lines.
+    :param batch_size: Rows to read per query.
     :return: Per-app outcome counters and findings.
     """
     stats = AppAuditStats(app_key=entry.app_key, owner=entry.owner)
     model = _route_create_model(entry)
-    tasks = await TaskManager.list_active(session, owner=entry.owner)
     log.info(
-        "[%s] auditing %s active task(s) for owner %s against %s",
+        "[%s] auditing active task(s) for owner %s against %s in batches of %s",
         entry.app_key,
-        len(tasks),
         entry.owner,
         model.__name__,
+        batch_size,
     )
 
-    for task in tasks:
-        # One unclassifiable row must not cost the run its whole report, which is
-        # the only record of how large the affected population is.
-        try:
-            outcome = _audit_single_task(task, model)
-        except Exception:
-            log.exception(
-                "[%s] %s: auditing the stamp raised; counting it unresolved",
-                entry.app_key,
-                task.name,
-            )
-            stats.errored += 1
-            continue
-        if outcome.finding is None:
-            setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
-            continue
-        stats.findings.append(outcome.finding)
+    batches = TaskManager.iter_active_batches(
+        session, owner=entry.owner, batch_size=batch_size
+    )
+    async for batch in batches:
+        for task in batch:
+            # One unclassifiable row must not cost the run its whole report, which
+            # is the only record of how large the affected population is.
+            try:
+                outcome = _audit_single_task(task, model)
+            except Exception:
+                log.exception(
+                    "[%s] %s: auditing the stamp raised; counting it unresolved",
+                    entry.app_key,
+                    task.name,
+                )
+                stats.errored += 1
+                continue
+            if outcome.finding is None:
+                setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
+                continue
+            stats.findings.append(outcome.finding)
+        log.debug("[%s] classified %s task(s) so far", entry.app_key, stats.scanned)
 
     log.info(
         "[%s] rejected=%s valid=%s unstamped=%s unreadable=%s errored=%s",
