@@ -2610,18 +2610,19 @@ class TestTaskHistoryManagerInFlightMetaValues:
         *,
         service_id: str,
         status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.RUNNING,
-    ) -> None:
+    ) -> TaskHistory:
         """Persist one in-flight history row carrying every leaf kind.
 
         :param session: The session to persist through.
         :param service_id: The plaintext ``_service_id`` the row records.
         :param status: The status the row is seeded in.
+        :return: The persisted history row.
         """
         task = await TaskManager.create(
             session,
             TaskWrite.model_validate(TaskFactory.build(name=f"meta-{service_id}")),
         )
-        await TaskHistoryManager.save(
+        return await TaskHistoryManager.save(
             session,
             TaskHistory(
                 task_id=task.id,
@@ -2648,9 +2649,9 @@ class TestTaskHistoryManagerInFlightMetaValues:
 
         :param session: The async session the manager queries.
         """
-        await self._seed(session, service_id="svc-1")
+        history = await self._seed(session, service_id="svc-1")
         await self._seed(session, service_id="svc-2")
-        stored = await stored_execution_request(session, 1)
+        stored = await stored_execution_request(session, history.id)
         for key in ENCRYPTED_META_KEYS:
             assert is_encrypted(stored["meta"][key])
         assert is_encrypted(stored["payload"])
