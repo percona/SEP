@@ -753,6 +753,39 @@ class TestCreateAppAsyncEngine:
 
         assert "connect_args" not in recorded
 
+    def test_applies_schema_translate_map_when_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Set execution_options' schema_translate_map when the options carry one."""
+        engine = MagicMock()
+        monkeypatch.setattr(
+            "app.core.db.utils.create_async_engine", lambda *_args, **_kwargs: engine
+        )
+        translate_map = {"om_schema": "om"}
+
+        result = create_app_async_engine(
+            self._postgres_options(SCHEMA_TRANSLATE_MAP=translate_map)
+        )
+
+        engine.execution_options.assert_called_once_with(
+            schema_translate_map=translate_map
+        )
+        assert result is engine.execution_options.return_value
+
+    def test_leaves_engine_untouched_when_schema_translate_map_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Skip execution_options entirely when there is no schema translation to apply."""
+        engine = MagicMock()
+        monkeypatch.setattr(
+            "app.core.db.utils.create_async_engine", lambda *_args, **_kwargs: engine
+        )
+
+        result = create_app_async_engine(self._postgres_options())
+
+        engine.execution_options.assert_not_called()
+        assert result is engine
+
 
 class TestTranslateMetadataSchemas:
     """Resolve symbolic schema tokens the way the bind's ``schema_translate_map`` does."""
