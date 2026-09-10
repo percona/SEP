@@ -17,6 +17,9 @@
 name: Trivy scan
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/trivy-scan.yml
   schedule:
     # Mondays, 06:00 UTC.
     - cron: '0 6 * * 1'
