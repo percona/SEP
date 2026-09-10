@@ -1042,9 +1042,10 @@ def _validate_parent_pointers(sections: list[FormSection]) -> None:
             if parent not in bools:
                 raise ValueError(
                     f"field {leaf.name!r} sets Ui(parent={parent!r}), which is not "
-                    f"a bool field in section {section.title!r} (bools there: "
-                    f"{sorted(bools)}). A parent toggle has to be a sibling the "
-                    "renderer can nest this field under."
+                    f"a bool field declared directly in section {section.title!r} "
+                    f"(bools there: {sorted(bools)}). A parent toggle has to be a "
+                    "bool the renderer can nest this field under, declared beside "
+                    "it at the top level of its own section."
                 )
             if parent in parented:
                 raise ValueError(

@@ -860,19 +860,14 @@ class FormSection(SchemaBaseModel):
     """Represent a labelled group of related fields rendered as one fieldset.
 
     :param title: The section heading displayed above the grouped fields.
-    :type title: NonEmptyStr
     :param description: Optional helper text rendered beneath the section
         heading. Defaults to ``None``.
-    :type description: NonEmptyStr | None
     :param fields: The list of fields belonging to this section. May include
         :class:`OneOfGroup` containers alongside leaf fields.
-    :type fields: list[AnyField]
     :param cardinality_rules: Optional cross-field cardinality constraints
         scoped to the fields in this section. Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional predicate-only invariants scoped to this
         section. Defaults to ``None``.
-    :type fail_when: list[FailRule] | None
     :param group: Optional heading of the collapsible group this section
         belongs to. A run of *adjacent* sections carrying the same value
         renders inside one collapsed shell titled by it, so a form with many
@@ -880,17 +875,13 @@ class FormSection(SchemaBaseModel):
         Each member keeps its own ``collapsible`` / ``collapsed_by_default``
         behaviour inside the group. Defaults to ``None`` — the section renders
         on its own.
-    :type group: NonEmptyStr | None
     :param collapsible: Whether the renderer may collapse this section behind
         a toggle. Defaults to ``False``.
-    :type collapsible: bool
     :param collapsed_by_default: Whether a collapsible section should start
         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
         ``False``.
-    :type collapsed_by_default: bool
     :param render_after_submit: Whether this section should render after the
         submit button instead of before it. Defaults to ``False``.
-    :type render_after_submit: bool
     :param forbidden: Optional gates that hide the entire section when any
         of them fires. The schema-driven React renderer skips the section
         and unregisters every child field from the form so stale values
@@ -903,7 +894,6 @@ class FormSection(SchemaBaseModel):
         ``truthy``/``present`` predicates silently pass while
         ``falsy``/``absent`` predicates see the children as missing.
         Author ``fail_when`` rules accordingly.
-    :type forbidden: list[FieldGate] | None
     """
 
     title: NonEmptyStr

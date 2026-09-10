@@ -1318,7 +1318,7 @@ class TestDeriveAppSchemaItemDisplayNames:
         assert schema.item_display_name_plural == "MySQL Backups"
 
 
-# ── Section grouping and parent toggles (SEP-2039) ───────────────────────────
+# ── Section grouping and parent toggles ──────────────────────────────────────
 
 
 class _GroupedLayoutModel(AppFormModel):
@@ -1471,7 +1471,7 @@ class TestParentToggle:
                 Ui(label="Timeout", section="s", parent="kill"),
             ] = None
 
-        with pytest.raises(ValueError, match="is not a bool field in section"):
+        with pytest.raises(ValueError, match="is not a bool field declared directly"):
             derive_form_sections(_Model, _one_section_layout())
 
     def test_cross_section_parent_rejected(self) -> None:
@@ -1491,7 +1491,7 @@ class TestParentToggle:
                 SectionLayout(key="b", title="B"),
             )
         )
-        with pytest.raises(ValueError, match="is not a bool field in section"):
+        with pytest.raises(ValueError, match="is not a bool field declared directly"):
             derive_form_sections(_Model, layout)
 
     def test_chained_parent_rejected(self) -> None:
