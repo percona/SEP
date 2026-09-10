@@ -8,11 +8,16 @@
 # scan would either never observe them or would block whichever unrelated pull
 # request happened to arrive first.
 #
-# Neither build reuses a layer cache, and both pass --pull: the shipping stage
-# of sidecar/Containerfile.sidecar is FROM a mutable tag
-# (docker.io/library/python:3.11.16-slim), so a cached layer would scan a
+# Neither build declares a layer cache. That is what keeps the scan honest: the
+# shipping stage of sidecar/Containerfile.sidecar is FROM a mutable tag
+# (docker.io/library/python:3.11.16-slim), so a reused cache entry would scan a
 # digest that never ships and would hide the upstream drift this job exists to
-# find. The published image is built with --no-cache for the same reason.
+# find. A hosted runner starts with an empty image store, so both FROM refs are
+# re-resolved from the registry every run without asking for it.
+#
+# Do not add --pull to the app image build: it re-resolves every FROM from a
+# registry, including the localhost/sep:builder that --build-context supplies
+# locally, which fails as "pull access denied" for docker.io/library/sep:builder.
 
 name: Trivy scan
 
@@ -50,7 +55,6 @@ jobs:
           tags: sep:builder
           load: true
           pull: true
-          no-cache: true
 
       - name: Prepare app bundle
         run: make pack
@@ -58,8 +62,6 @@ jobs:
       - name: Build app image
         run: >-
           docker build
-          --pull
-          --no-cache
           --build-context "localhost/sep:builder=docker-image://sep:builder"
           -f sidecar/Containerfile.sidecar
           --build-arg SEP_RESTRICT_APPS=1
