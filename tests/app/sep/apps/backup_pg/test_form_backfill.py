@@ -257,3 +257,21 @@ def test_backfill_single_task_stamps_backup_pg_form():
     assert stamped_form["service_id"] == expected_service_id
     assert stamped_form["stanza"] == "prod-main"
     assert stamped_form["backup_dir"] == "/var/lib/pgbackrest"
+
+
+def test_backfill_single_task_skips_invalid_incremental_cycle():
+    """Count a legacy out-of-vocabulary cycle as ``skipped_invalid``, not an error."""
+    lookup = _lookup(
+        _service(9, name="pg-prod", address="db.internal", port=5432),
+    )
+    task = _legacy_backup_pg_task(name="pg-bad-cycle")
+    config = yaml.safe_load(task.data["meta"]["config"])
+    config["ALL_SERVERS"]["PGBACKREST_INCREMENTAL_CYCLE"] = "monday"
+    task.data["meta"]["config"] = yaml.dump(config)
+    entry = FORM_BACKFILL_ENTRIES[0]
+    ctx = _ctx(lookup)
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_invalid"
+    assert outcome.stamped_data is None

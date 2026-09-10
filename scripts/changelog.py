@@ -72,6 +72,8 @@ UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
 VERSION_FOOTER_LINE_RE: re.Pattern[str] = re.compile(
     r"^\[v(?P<version>[\w.\-]+)\]: ",
 )
+#: Tracked names in ``changelog.d/`` that are documentation or scaffolding
+#: rather than fragments.
 RESERVED_FILENAMES: frozenset[str] = frozenset({"README.md", ".gitkeep"})
 CHANGELOG_D: Path = Path("changelog.d")
 CHANGELOG_MD: Path = Path("CHANGELOG.md")
@@ -83,12 +85,10 @@ class FragmentError(Exception):
 
 
 def _ticket_sort_key(ticket: str) -> int:
-    """Return the numeric sort key for a ticket like ``SEP-503``.
+    """Return the numeric sort key for a ticket key like ``SEP-<n>``.
 
     :param ticket: The ticket key.
-    :type ticket: str
     :return: The integer portion of the ticket key.
-    :rtype: int
     """
     match = TICKET_RE.match(ticket)
     if match is None:
@@ -101,11 +101,13 @@ def load_fragments(
 ) -> dict[str, list[tuple[str, list[str], Path]]]:
     """Load and validate all fragments under ``changelog_d``.
 
+    :data:`RESERVED_FILENAMES` and anything git ignores
+    (:func:`_git_ignored_names`) are skipped; every other file is held to
+    :data:`FRAGMENT_RE`, so a typo like ``SEP1892.added.md`` is still reported.
+
     :param changelog_d: The fragments directory.
-    :type changelog_d: Path
     :return: A mapping of display section name to ``(ticket, lines, path)``
         triples sorted by numeric ticket ID.
-    :rtype: dict[str, list[tuple[str, list[str], Path]]]
     :raises FragmentError: If any fragment has an invalid filename, an unknown
         section, or empty/malformed content.
     """
@@ -113,8 +115,11 @@ def load_fragments(
     errors = []
     if not changelog_d.exists():
         return {}
+    ignored = _git_ignored_names(str(changelog_d).rstrip("/"))
     for path in sorted(changelog_d.iterdir()):
-        if path.name in RESERVED_FILENAMES or not path.is_file():
+        if path.name in RESERVED_FILENAMES or path.name in ignored:
+            continue
+        if not path.is_file():
             continue
         match = FRAGMENT_RE.match(path.name)
         if match is None:
@@ -418,6 +423,46 @@ def _git_ls_tree(ref: str, path: str) -> set[str]:
         # ls-tree returns full paths; strip the directory prefix.
         names.add(name.rsplit("/", 1)[-1])
     return names
+
+
+def _git_ignored_names(path: str) -> frozenset[str]:
+    """Return the basenames git ignores under ``path``.
+
+    ``changelog.d/`` accumulates untracked files a contributor's own ignore
+    rules cover: editor swap files, OS metadata, personal notes. None of them is
+    a fragment. Skipping whatever git ignores leaves those alone while
+    :func:`load_fragments` still reports a genuinely misnamed fragment, which an
+    allowed-pattern filter could not do. Guarded like :func:`_git_ls_tree`, plus
+    the missing-executable case, so a checkout without git falls back to
+    considering every file.
+
+    :param path: The repository-relative directory path (no trailing slash).
+    :return: The ignored basenames; empty when git cannot answer.
+    """
+    git_exe = shutil.which("git") or "git"
+    try:
+        result = subprocess.run(
+            [
+                git_exe,
+                "ls-files",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                f"{path}/",
+            ],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except OSError:
+        return frozenset()
+    if result.returncode != 0:
+        return frozenset()
+    return frozenset(
+        stripped.rsplit("/", 1)[-1]
+        for line in result.stdout.splitlines()
+        if (stripped := line.strip())
+    )
 
 
 def _git_merge_base(ref_a: str, ref_b: str) -> str:
@@ -725,7 +770,7 @@ def ensure_terminal_punctuation(message: str) -> str:
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
     """Handle the ``add`` subcommand.
 
-    :param ticket: The ticket key, e.g. ``SEP-503``.
+    :param ticket: The ticket key, e.g. ``SEP-<n>``.
     :param section: The short section name, e.g. ``added``.
     :param message: The single-line description for the fragment.
     :param force: Overwrite an existing fragment when ``True``.

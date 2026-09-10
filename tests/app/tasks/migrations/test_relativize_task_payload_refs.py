@@ -16,17 +16,9 @@
 """Tests for the Tasks-track relativize-task-payload-refs data migration."""
 
 import json
-from pathlib import Path
 
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
-
-from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The head immediately before payload references are relativized.
 _PRE_RELATIVIZE_REVISION = "d25887ee3fea"
@@ -38,19 +30,6 @@ _INSERT_TASK = (
     "VALUES ('2026-01-01 00:00:00', '2026-01-01 00:00:00', ?, ?, "
     "'PROXY', 'BACKUPS', 0, 0, 0)"
 )
-
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
 
 
 def _seed(conn, name, data):
@@ -92,7 +71,7 @@ def test_heals_all_three_mysql_backup_types(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -121,7 +100,7 @@ def test_heals_doubled_app_prefix(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -149,7 +128,7 @@ def test_heals_apps_backup_form(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -179,7 +158,7 @@ def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -207,7 +186,7 @@ def test_relativizes_non_backup_plugin_without_renaming(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -233,7 +212,7 @@ def test_leaves_unrelated_rows_untouched(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -257,7 +236,7 @@ def test_is_idempotent(tasks_alembic_config):
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:

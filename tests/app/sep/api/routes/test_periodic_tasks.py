@@ -24,17 +24,23 @@ from fastapi.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 
+PREVIEW_CASE = pytest.param(
+    "post", "/api/sep/periodic-tasks/schedule/preview/", "post", {}, id="preview"
+)
+
 ROUTE_CASES = [
     pytest.param("get", "/api/sep/periodic-tasks/", "get", None, id="list"),
     pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
     pytest.param("put", "/api/sep/periodic-tasks/42", "put", {}, id="update"),
     pytest.param("delete", "/api/sep/periodic-tasks/42", "delete", None, id="delete"),
+    PREVIEW_CASE,
 ]
 
 MUTATION_CASES = [
     pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
     pytest.param("put", "/api/sep/periodic-tasks/42", "put", {}, id="update"),
     pytest.param("delete", "/api/sep/periodic-tasks/42", "delete", None, id="delete"),
+    PREVIEW_CASE,
 ]
 
 PROXY_PAGE_OFFSET = 10
@@ -169,6 +175,43 @@ class TestSepPeriodicTasksEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upstream
         mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
+
+    def test_preview_forwards_body_to_the_schedule_preview_path(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Forward the preview body verbatim and return the upstream payload."""
+        body = {"interval": {"every": 30, "period": "minutes"}}
+        upstream = {
+            "timezone": "UTC",
+            "next_run_at": "2026-09-08T00:30:00Z",
+            "next_runs": ["2026-09-08T00:30:00Z"],
+        }
+        mock_task_api_dep.post.return_value = upstream
+        response = test_client.post(
+            "/api/sep/periodic-tasks/schedule/preview/", json=body
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == upstream
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/periodic/schedule/preview/", json=body
+        )
+
+    def test_a_task_named_preview_still_creates_normally(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Assert the two-segment preview path reserves no task name.
+
+        A single-segment ``/preview/`` would be ambiguous with the sibling
+        ``POST /{task_name}/``, making ``preview`` unschedulable through the
+        proxy. Two segments remove the collision structurally.
+        """
+        body = {"interval": {"every": 30, "period": "minutes"}}
+        upstream = {"id": 9, "name": "run_preview"}
+        mock_task_api_dep.post.return_value = upstream
+        response = test_client.post("/api/sep/periodic-tasks/preview/", json=body)
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json() == upstream
+        mock_task_api_dep.post.assert_awaited_once_with("/preview/periodic/", json=body)
 
     def test_delete_returns_204_empty_body(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock

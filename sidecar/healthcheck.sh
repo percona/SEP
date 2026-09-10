@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Aggregate container health for the consolidated SEP side-car.
-# Exit 0 only if every non-one-shot supervisord program is RUNNING, all three
-# migrations completed, all three API /health endpoints return 200, and the
+# Exit 0 only if every non-one-shot supervisord program is RUNNING, all four
+# schema steps completed, all three API /health endpoints return 200, and the
 # bundled Valkey broker answers PING.
+#
+# An API program still inside its wait_for_schema.sh gate reports RUNNING, so
+# the process-state loop below cannot distinguish waiting from serving: the HTTP
+# probe is what keeps a healthy container meaning the APIs answer.
 set -o errexit -o nounset -o pipefail
 
 conf=/home/sep/app/supervisord.conf
@@ -26,9 +30,9 @@ for prog in "${programs[@]}"; do
     fi
 done
 
-for svc in sep inventory tasks; do
+for svc in sep inventory tasks beat; do
     if [[ ! -f /tmp/migrate-$svc.ok ]]; then
-        echo "unhealthy: $svc migrations did not complete successfully" >&2
+        echo "unhealthy: $svc schema step did not complete successfully" >&2
         exit 1
     fi
 done

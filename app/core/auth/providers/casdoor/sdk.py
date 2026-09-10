@@ -30,7 +30,7 @@ from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPUnauthorizedException,
 )
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, JSONBody, RemoteAPI
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField, StrHttpUrl, URL
 
 
@@ -167,20 +167,21 @@ class CasdoorSDK(RemoteAPI):
             "port": self.front_endpoint.port or base_url.port,
             "path": self.front_endpoint.path or base_url.path,
         }
-        return self.front_endpoint.replace(**url_data)
+        return URL(str(self.front_endpoint.replace(**url_data)))
 
     async def request(
         self,
         method: str,
         path: str,
         **kwargs: Any,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> JSONBody:
         """Perform an HTTP request and return the JSON response.
 
         :param method: The HTTP method to use for the request.
         :param path: The API endpoint path to request.
         :param kwargs: Additional keyword arguments to pass to the request.
-        :return: The JSON response as a Python object.
+        :return: The JSON response as a Python object, or ``None`` when Casdoor
+            answers HTTP 204 with no body.
         :raises HTTPException: If the request returns an error response.
         """
         try:
@@ -213,7 +214,9 @@ class CasdoorSDK(RemoteAPI):
             "scope": scope,
             "refresh_token": refresh_token,
         }
-        return await self.post("/api/login/oauth/refresh_token", json=data)
+        return as_json_object(
+            await self.post("/api/login/oauth/refresh_token", json=data)
+        )
 
     async def get_access_token(
         self,
@@ -253,7 +256,9 @@ class CasdoorSDK(RemoteAPI):
             data["grant_type"] = "password"
             invalid_grant_message = "Invalid username or password."
         try:
-            return await self.post("/api/login/oauth/access_token", json=data)
+            return as_json_object(
+                await self.post("/api/login/oauth/access_token", json=data)
+            )
         except HTTPException as exc:
             if exc.headers and exc.headers.get("X-Error-Code") == "invalid_grant":
                 raise HTTPUnauthorizedException(invalid_grant_message) from None
@@ -264,7 +269,7 @@ class CasdoorSDK(RemoteAPI):
 
         :return: A dictinoary containin Casdoor's version details.
         """
-        version = await self.get("/api/get-version-info")
+        version = as_json_object(await self.get("/api/get-version-info"))
         return version["data"]
 
     async def introspect_token(
@@ -292,10 +297,12 @@ class CasdoorSDK(RemoteAPI):
             token_type_hint = token_type.replace("-", "_")
         else:
             token_type_hint = token_type
-        return await self.post(
-            "/api/login/oauth/introspect",
-            data={"token": token, "token_type_hint": token_type_hint},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        return as_json_object(
+            await self.post(
+                "/api/login/oauth/introspect",
+                data={"token": token, "token_type_hint": token_type_hint},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
         )
 
     async def get_token(self, token_id: str) -> dict[str, Any]:
@@ -306,7 +313,9 @@ class CasdoorSDK(RemoteAPI):
         :param token_id: The ID of the token to retrieve.
         :return: The token details retrieved from Casdoor.
         """
-        response = await self.get("/api/get-token", params={"id": token_id})
+        response = as_json_object(
+            await self.get("/api/get-token", params={"id": token_id})
+        )
         return response["data"]
 
     async def get_tokens(
@@ -330,14 +339,18 @@ class CasdoorSDK(RemoteAPI):
             "pageSize": page_size,
             "p": 1,
         }
-        tokens = await self.get(
-            "/api/get-tokens",
-            params=params,
+        tokens: dict[str, Any] | None = as_json_object(
+            await self.get(
+                "/api/get-tokens",
+                params=params,
+            )
         )
         max_page = ceil((tokens.get("data2") or 0) / page_size)
         while params["p"] <= max_page:
             if tokens is None:
-                tokens = await self.get("/api/get-tokens", params=params)
+                tokens = as_json_object(
+                    await self.get("/api/get-tokens", params=params)
+                )
             for token in tokens["data"]:
                 if username is None or token["user"] == username:
                     yield token
@@ -370,7 +383,7 @@ class CasdoorSDK(RemoteAPI):
         :param token: The token to delete.
         :return: Whether the token was deleted.
         """
-        response = await self.post("/api/delete-token", json=token)
+        response = as_json_object(await self.post("/api/delete-token", json=token))
         return response["data"].lower() == "affected"
 
     @alru_cache(ttl=300)
@@ -381,8 +394,8 @@ class CasdoorSDK(RemoteAPI):
 
         :return: A list of user data.
         """
-        users = await self.get(
-            "/api/get-users", params={"owner": self.organization_name}
+        users = as_json_object(
+            await self.get("/api/get-users", params={"owner": self.organization_name})
         )
         return users["data"]
 
@@ -394,9 +407,11 @@ class CasdoorSDK(RemoteAPI):
         :param username: The username of the user to retrieve.
         :return: A dictionary containing the user's information.
         """
-        user = await self.get(
-            "/api/get-user",
-            params={"id": f"{self.organization_name}/{username}"},
+        user = as_json_object(
+            await self.get(
+                "/api/get-user",
+                params={"id": f"{self.organization_name}/{username}"},
+            )
         )
         return user["data"]
 
@@ -408,8 +423,10 @@ class CasdoorSDK(RemoteAPI):
         :param username: The username of the user to retrieve.
         :return: A dictionary containing the user's information.
         """
-        user = await self.get(
-            "/api/get-user-application",
-            params={"id": f"{self.organization_name}/{username}"},
+        user = as_json_object(
+            await self.get(
+                "/api/get-user-application",
+                params={"id": f"{self.organization_name}/{username}"},
+            )
         )
         return user["data"]

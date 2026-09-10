@@ -22,6 +22,7 @@ model cannot express: the section titles, the collapse metadata, the list column
 and the UI capability flags. These feed the derived ``GET /schema``.
 """
 
+from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
     FormLayout,
@@ -35,7 +36,7 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
+from app.sep.apps.shared.backups.columns import backup_type_column
 
 restore_views = Views(
     layout=FormLayout(
@@ -52,7 +53,7 @@ restore_views = Views(
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            BACKUP_TYPE_COLUMN,
+            backup_type_column(BackupType.LABELS),
             Column(key="backup_source", label="Backup Source"),
         ),
         default_sort="name",

@@ -55,7 +55,15 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
     registers whether or not the snippets app ships. Its schedule is therefore
     emitted unconditionally against the static path and carries no
-    ``owner_app_key`` -- disabling the snippets app must not gate it.
+    ``owner_app_key``, because disabling the snippets app must not gate it.
+
+    A ``qualified`` spec names a complete task path and is emitted without that
+    prefixing, so an app may own a schedule for a job the tasks service
+    dispatches through ``execute_task_by_name``. Such an app owns no registered
+    Celery task of its own, which is why the module lookup is scoped to the
+    unqualified specs rather than gating the whole app. A spec whose thunk
+    returns ``None`` contributes nothing this rebuild, which is how a nullable
+    interval setting spells "do not run".
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
@@ -87,27 +95,28 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         if app.periodic_task_schedules is None:
             continue
         celery_module = app_celery_module_for(app.key)
-        if not celery_module:
-            continue
-        specs = (
-            app.periodic_task_schedules()
-            if callable(app.periodic_task_schedules)
-            else app.periodic_task_schedules
-        )
-        system_tasks.extend(
-            SystemPeriodicTaskSchedule(
-                schedule=spec.schedule(),
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name=spec.name,
-                        task_name=f"{celery_module}.{spec.task}",
-                        extra_kwargs=spec.extra_kwargs,
-                        owner_app_key=app.key,
-                    ),
-                ],
+        schedules = app.periodic_task_schedules
+        specs = schedules if isinstance(schedules, list) else schedules()
+        for spec in specs:
+            if not spec.qualified and not celery_module:
+                continue
+            schedule = spec.schedule()
+            if schedule is None:
+                continue
+            task_name = spec.task if spec.qualified else f"{celery_module}.{spec.task}"
+            system_tasks.append(
+                SystemPeriodicTaskSchedule(
+                    schedule=schedule,
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name=spec.name,
+                            task_name=task_name,
+                            extra_kwargs=spec.extra_kwargs,
+                            owner_app_key=app.key,
+                        ),
+                    ],
+                )
             )
-            for spec in specs
-        )
 
     return system_tasks
 

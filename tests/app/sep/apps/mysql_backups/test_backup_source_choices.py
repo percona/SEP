@@ -25,13 +25,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.sep.apps.mysql_backups.backup_source_choices import (
-    backup_run_to_choice,
-    backup_source_value,
-)
+from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import MysqlBackupRun
-from app.sep.apps.mysql_backups.restore.deps import UNKNOWN_SERVICE_SENTINEL
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    MysqlBackupRun,
+    preferred_backup_source,
+    restore_valid_backup_source,
+    UNKNOWN_SERVICE_SENTINEL,
+)
 from tests.app.sep.apps.mysql_backups.conftest import (
     authenticated_get,
     inventory_mock,
@@ -43,47 +45,6 @@ _URL = "/api/apps/mysql_backups/backup-sources/choices"
 
 class TestBackupSourceMapper:
     """Map catalog rows onto restore-valid ``Choice`` options."""
-
-    def test_value_prefers_upload_destination(self) -> None:
-        """Prefer the upload destination when one was configured."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="X",
-            location="/backups/x/base",
-            upload_destination="s3://bucket/base",
-        )
-        assert backup_source_value(run) == "s3://bucket/base"
-
-    def test_value_falls_back_to_location(self) -> None:
-        """Fall back to the on-disk location when no upload destination exists."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="M",
-            location="/backups/mydumper/20240101",
-        )
-        assert backup_source_value(run) == "/backups/mydumper/20240101"
-
-    def test_value_none_when_both_missing(self) -> None:
-        """Return ``None`` when neither location nor upload destination is set."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="M",
-        )
-        assert backup_source_value(run) is None
-
-    def test_value_strips_and_ignores_blank_upload_destination(self) -> None:
-        """Strip whitespace and treat a blank upload destination as unset."""
-        run = MysqlBackupRun(
-            task_history_id=1,
-            service_name="svc",
-            backup_type="X",
-            location=" /data/xtrabackup/inc ",
-            upload_destination="  ",
-        )
-        assert backup_source_value(run) == "/data/xtrabackup/inc"
 
     def test_choice_skipped_when_no_usable_value(self) -> None:
         """Skip rows that cannot produce a non-empty Choice value."""
@@ -101,6 +62,22 @@ class TestBackupSourceMapper:
             service_name="svc",
             backup_type="M",
             location="$(id)/evil",
+        )
+        assert backup_run_to_choice(run) is None
+
+    def test_choice_skipped_when_preferred_candidate_is_unsafe(self) -> None:
+        """Skip a row whose upload destination is unsafe, without using its location.
+
+        Falling back would offer the local copy under a row whose authoritative
+        source is the upload destination, seeding a restore from a different
+        artifact than the one the caller picked.
+        """
+        run = MysqlBackupRun(
+            task_history_id=1,
+            service_name="svc",
+            backup_type="M",
+            location="/backups/mydumper/safe",
+            upload_destination="s3://bucket/`whoami`",
         )
         assert backup_run_to_choice(run) is None
 
@@ -122,6 +99,92 @@ class TestBackupSourceMapper:
         assert "2026-07-29" in choice.label
         assert "1.0 GiB" in choice.label
         assert "/backups/mydumper/20240101" in choice.label
+
+    @pytest.mark.parametrize(
+        ("backup_type", "expected"),
+        [(BackupType.MYDUMPER, "Mydumper"), (BackupType.XTRABACKUP, "XtraBackup")],
+    )
+    def test_choice_labels_a_catalogued_backup_type(
+        self, backup_type: BackupType, expected: str
+    ) -> None:
+        """Render a catalogued run's label from the enum's single label source.
+
+        Only mydumper and xtrabackup runs are ever catalogued, so those are the
+        values this selector can be asked to label.
+        """
+        run = MysqlBackupRun(
+            task_history_id=1,
+            service_name="svc",
+            backup_type=backup_type,
+            location=f"/backups/{backup_type.value}",
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert expected in choice.label
+
+    def test_choice_falls_back_to_the_raw_value_when_unlabelled(self) -> None:
+        """Render a stored code the enum no longer declares as the code itself."""
+        run = MysqlBackupRun.model_construct(
+            task_history_id=1,
+            service_name="svc",
+            backup_type="Z",
+            location="/backups/legacy",
+            finished_at=None,
+            size_bytes=None,
+        )
+
+        choice = backup_run_to_choice(run)
+
+        assert choice is not None
+        assert choice.label.startswith("Z ")
+
+
+class TestBackupSourceResolvers:
+    """Resolve a run's raw source fields to a restore-form-valid value."""
+
+    def test_prefers_upload_destination(self) -> None:
+        """Prefer the upload destination when one was configured."""
+        assert (
+            preferred_backup_source("s3://bucket/base", "/backups/x/base")
+            == "s3://bucket/base"
+        )
+
+    def test_falls_back_to_location(self) -> None:
+        """Fall back to the on-disk location when the upload destination is blank."""
+        assert preferred_backup_source("   ", "/backups/x/base") == "/backups/x/base"
+
+    def test_strips_the_chosen_candidate(self) -> None:
+        """Return the candidate with surrounding whitespace removed."""
+        assert (
+            preferred_backup_source("  s3://bucket/base  ", None) == "s3://bucket/base"
+        )
+
+    def test_none_when_both_blank(self) -> None:
+        """Return ``None`` when neither field holds a non-blank value."""
+        assert preferred_backup_source(None, "   ") is None
+
+    def test_restore_valid_returns_an_accepted_candidate(self) -> None:
+        """Return the preferred candidate when the restore form would accept it."""
+        assert (
+            restore_valid_backup_source(None, "/backups/mydumper/20240101")
+            == "/backups/mydumper/20240101"
+        )
+
+    def test_restore_valid_rejects_without_falling_back(self) -> None:
+        """Return ``None`` for a rejected candidate rather than using the other field.
+
+        Judging each field independently would return the location for a run whose
+        upload destination is the source it actually wrote to.
+        """
+        assert (
+            restore_valid_backup_source("s3://bucket/`whoami`", "/backups/safe") is None
+        )
+
+    def test_restore_valid_none_when_nothing_to_resolve(self) -> None:
+        """Return ``None`` when the run recorded no source at all."""
+        assert restore_valid_backup_source(None, None) is None
 
 
 class TestBackupSourceChoicesRoute:

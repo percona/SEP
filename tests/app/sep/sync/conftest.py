@@ -15,6 +15,10 @@
 
 """Define shared fixtures for sync tests."""
 
+from collections.abc import AsyncGenerator
+from typing import Any
+from unittest.mock import AsyncMock
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -23,18 +27,54 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
+
+#: The path suffix every per-entity sync-health write carries.
+SYNC_HEALTH_PATH_SUFFIX = "/sync-health"
+
+
+def sync_health_posts(inventory_api: AsyncMock) -> list[tuple[str, dict[str, Any]]]:
+    """Return the path and body of every sync-health POST the syncer issued.
+
+    :param inventory_api: The mocked inventory client the syncer posts through.
+    :return: One entry per sync-health write, in the order they were issued.
+    """
+    return [
+        (call.args[0], call.kwargs["json"])
+        for call in inventory_api.post.await_args_list
+        if call.args and call.args[0].endswith(SYNC_HEALTH_PATH_SUFFIX)
+    ]
+
+
+def entity_posts(inventory_api: AsyncMock) -> list[str]:
+    """Return the paths of the POSTs that are not sync-health bookkeeping.
+
+    Sync-health writes ride the same client as the creates and revives a syncer
+    issues, so a test asserting on those has to say which POSTs it means.
+
+    :param inventory_api: The mocked inventory client the syncer posts through.
+    :return: The remaining POST paths, in the order they were issued.
+    """
+    return [
+        call.args[0]
+        for call in inventory_api.post.await_args_list
+        if call.args and not call.args[0].endswith(SYNC_HEALTH_PATH_SUFFIX)
+    ]
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

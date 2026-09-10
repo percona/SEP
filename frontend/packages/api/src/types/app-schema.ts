@@ -79,6 +79,15 @@ interface BaseField {
   label: string;
   required?: boolean;
   description?: string;
+  /**
+   * Consequence text for a field whose enabled or set state irreversibly
+   * destroys user data. Presence is the mark — there is no separate boolean,
+   * so `if (field.destructive)` is the check, and the string is what a
+   * confirmation displays. Unmarked fields either omit the key or send it as
+   * null, depending on whether the serving route excludes nulls, so test
+   * truthiness rather than presence.
+   */
+  destructive?: string | null;
   default?: unknown;
   /** Self-cardinality gates: when matched, the field is required. */
   requires?: FieldGate[];
@@ -215,6 +224,11 @@ export interface HostField extends BaseField {
    * not cascaded.
    */
   depends_on?: string;
+  /**
+   * Service field for a non-blocking co-location warning. Independent of
+   * ``depends_on``. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
@@ -227,6 +241,11 @@ export interface MultiHostField extends BaseField {
    * today. Omitted when unset.
    */
   depends_on?: string;
+  /**
+   * Optional service field name mirrored for wire uniformity. The
+   * multi-host renderer ignores it. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
@@ -353,12 +372,21 @@ export interface ListColumn {
   label: string;
   sortable?: boolean;
   format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions' | 'schedule';
+  /** Optional map from a raw cell value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 export interface ListView {
   columns: ListColumn[];
   /** Column key to sort by. Prefix with '-' for descending (e.g. '-last_run'). */
   default_sort?: string;
+  /**
+   * When true and the list is also server-paginated, SchemaListView enables
+   * manualSorting/manualFiltering and drives them through server query params.
+   * A capability-on list rendered without pagination stays client-side.
+   * Omitted (or undefined) keeps client-side sort/filter over the loaded page.
+   */
+  server_side_query?: boolean;
   /** Extra record-level keys to hide from the detail Overview — both the list_view.columns rows and the extras loop, across single-task and multi-entity detail views — merged with the framework baseline. */
   overview_hidden_fields?: string[];
 }
@@ -382,6 +410,8 @@ export interface DetailField {
   label: string;
   /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
   highlight?: 'sql' | 'json' | 'bash' | 'yaml';
+  /** Optional map from a raw resolved value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 /** One titled section rendered on the task detail page. */
@@ -401,6 +431,11 @@ export interface DetailView {
 export interface AppEntitySchema {
   name: string;
   display_name: string;
+  /** What one record of this entity is called, in mid-sentence form — capitalise
+   * the first character when it opens a label. */
+  item_display_name: string;
+  /** What several records of this entity are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   forms: FormSection[];
   list_view: ListView;
@@ -424,11 +459,33 @@ export interface RelatedApp {
   route_segment: string;
 }
 
+// ── Task status vocabulary ──────────────────────────────────────────────
+
+/**
+ * One task-status value and whether it ends a run. A client polling a task to
+ * completion re-reads until the row reaches a status whose `terminal` is true.
+ */
+export interface TaskStatusDescriptor {
+  /** A `TaskHistoryStatusEnum` member, deliberately widened to `string` here
+   * rather than typed as a literal union like `ColumnFormat`: the point of
+   * publishing this list is that a client discovers the vocabulary at runtime
+   * instead of hardcoding it. The generated client in `generated/sep.ts`
+   * narrows the same field to a union of the current members, so a consumer
+   * that wants runtime discovery should read this type rather than that one. */
+  value: string;
+  terminal: boolean;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface AppSchema {
   name: string;
   display_name: string;
+  /** What one record this app's create form produces is called, in mid-sentence
+   * form — capitalise the first character when it opens a label. */
+  item_display_name: string;
+  /** What several such records are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   task_type?: string;
   /** Task-style single entity: forms + list_view (omit or leave entities unset). */
@@ -445,4 +502,6 @@ export interface AppSchema {
   fail_when?: FailRule[];
   /** Separately registered apps rendered as sibling tabs in the React shell. */
   related_apps?: RelatedApp[];
+  /** Status vocabulary for task-style apps; omitted when `entities` is set. */
+  task_statuses?: TaskStatusDescriptor[];
 }

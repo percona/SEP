@@ -35,6 +35,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import SettingsIcon from '@mui/icons-material/Settings';
+import { useAuth } from '@sep/api';
 import { useAlertBackups, useAlertsIndex } from './hooks';
 import { AlertsWizard } from './AlertsWizard';
 import type { AlertTemplate, WizardMode } from './types';
@@ -54,6 +55,7 @@ const SEVERITY_COLORS: Record<string, 'default' | 'info' | 'warning' | 'error'> 
  * AlertsWizard dialog.
  */
 export function AlertsListPage() {
+  const { canMutate } = useAuth();
   const { data, isLoading, error } = useAlertsIndex();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -133,30 +135,34 @@ export function AlertsListPage() {
               PMM not connected
             </Alert>
           )}
-          <Button
-            variant="contained"
-            startIcon={<NotificationsActiveIcon />}
-            disabled={selected.size === 0 || !data?.pmm_connected}
-            onClick={() => openWizard('push')}
-          >
-            Push Selected ({selected.size})
-          </Button>
-          <Button
-            variant="outlined"
-            onClick={() => openWizard('restore')}
-            disabled={(data?.recent_backups ?? []).length === 0}
-          >
-            Restore from Backup
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<SettingsIcon />}
-            onClick={() => openWizard('pagerduty')}
-            disabled={!data?.pmm_connected}
-            color={pagerdutyConfigured ? 'success' : 'primary'}
-          >
-            {pagerdutyConfigured ? 'PagerDuty Configured ✓' : 'Configure PagerDuty'}
-          </Button>
+          {canMutate && (
+            <>
+              <Button
+                variant="contained"
+                startIcon={<NotificationsActiveIcon />}
+                disabled={selected.size === 0 || !data?.pmm_connected}
+                onClick={() => openWizard('push')}
+              >
+                Push Selected ({selected.size})
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => openWizard('restore')}
+                disabled={(data?.recent_backups ?? []).length === 0}
+              >
+                Restore from Backup
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<SettingsIcon />}
+                onClick={() => openWizard('pagerduty')}
+                disabled={!data?.pmm_connected}
+                color={pagerdutyConfigured ? 'success' : 'primary'}
+              >
+                {pagerdutyConfigured ? 'PagerDuty Configured ✓' : 'Configure PagerDuty'}
+              </Button>
+            </>
+          )}
         </Box>
       </Box>
 
@@ -173,16 +179,19 @@ export function AlertsListPage() {
             <Accordion key={group.service_type} disableGutters sx={{ mb: 1 }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Checkbox
-                    checked={allChecked}
-                    indeterminate={someChecked && !allChecked}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleGroup(groupNames);
-                    }}
-                    size="small"
-                    inputProps={{ 'aria-label': `Select all ${group.label} templates` }}
-                  />
+                  {/* Selection exists only to feed Push Selected, so both go together. */}
+                  {canMutate && (
+                    <Checkbox
+                      checked={allChecked}
+                      indeterminate={someChecked && !allChecked}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroup(groupNames);
+                      }}
+                      size="small"
+                      inputProps={{ 'aria-label': `Select all ${group.label} templates` }}
+                    />
+                  )}
                   <Typography variant="subtitle1" fontWeight={500}>
                     {group.label} ({group.templates.length})
                   </Typography>
@@ -205,12 +214,14 @@ export function AlertsListPage() {
                           py: 0.5,
                         }}
                       >
-                        <Checkbox
-                          checked={selected.has(template.name)}
-                          onChange={() => toggleTemplate(template.name)}
-                          size="small"
-                          inputProps={{ 'aria-label': template.name }}
-                        />
+                        {canMutate && (
+                          <Checkbox
+                            checked={selected.has(template.name)}
+                            onChange={() => toggleTemplate(template.name)}
+                            size="small"
+                            inputProps={{ 'aria-label': template.name }}
+                          />
+                        )}
                         <Box sx={{ flex: 1, minWidth: 0 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="body2" fontWeight={500}>

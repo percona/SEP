@@ -17,7 +17,7 @@
 
 # ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` live
 # in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps; they are
-# re-exported here for existing importers (api_routes, celery, tests).
+# re-exported here for existing importers (api_routes, tests).
 from app.sep.deps import (
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,  # noqa: F401 -- re-exported for existing importers

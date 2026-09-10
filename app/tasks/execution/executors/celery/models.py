@@ -51,6 +51,27 @@ CELERY_CALLABLE_ALLOWED_PREFIX = "app."
 _RESERVED_META_KEYS = frozenset({"target"})
 
 
+def _callable_failure_reason(task: Task, exc: Exception) -> str:
+    """Compose the stored failure reason for a callable that raised.
+
+    ``Task.data`` is a raw JSON column with no validator behind it, so the
+    resolved callable path is echoed only when it is a string inside the
+    allowed namespace; any other stored value composes the generic reason
+    rather than being copied into an unmasked API field. The exception's own
+    message and traceback stay in the run's stderr log.
+
+    :param task: The task whose callable was invoked.
+    :param exc: The exception the invocation raised.
+    :return: The reason to store on the task history.
+    """
+    callable_path = task.data.get("callable") if isinstance(task.data, dict) else None
+    if isinstance(callable_path, str) and callable_path.startswith(
+        CELERY_CALLABLE_ALLOWED_PREFIX
+    ):
+        return f"Task callable {callable_path!r} raised {type(exc).__name__}."
+    return f"Task execution raised {type(exc).__name__}."
+
+
 class CeleryExecutor(BaseExecutor):
     """Execute tasks as Python callables directly in the Celery worker process.
 
@@ -114,10 +135,12 @@ class CeleryExecutor(BaseExecutor):
             )
             stdout_buffer.write(f"\nResult: {result}\n")
             queue_item.status = TaskHistoryStatusEnum.SUCCESS
-        except Exception:
+            queue_item.set_failure_reason(None)
+        except Exception as exc:
             logger.exception("Celery task %s failed", task.name)
             stderr_buffer.write(f"\nError:\n{traceback.format_exc()}")
             queue_item.status = TaskHistoryStatusEnum.FAILED
+            queue_item.set_failure_reason(_callable_failure_reason(task, exc))
         finally:
             queue_item.finished_at = utc_now()
 

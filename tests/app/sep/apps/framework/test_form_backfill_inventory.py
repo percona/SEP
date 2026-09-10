@@ -20,9 +20,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.inventory.models import ServiceTypeEnum
+from app.core.utils.date_time import utc_now
+from app.inventory.crud import (
+    NodeManager,
+    RetiredInclusiveServiceManager,
+    ServiceManager,
+)
+from app.inventory.models import Node, ServiceTypeEnum, SourceEnum
 from app.sep.apps.framework.form_backfill_inventory import (
     default_port_for_service_type,
+    load_service_id_lookup,
     meta_service_hints,
     resolve_service_from_meta,
     SchemaIdLookup,
@@ -30,6 +37,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
+from tests.app.factories import ServiceWriteFactory
 
 
 def _service(
@@ -162,6 +170,44 @@ def test_resolve_service_id_returns_none_for_ambiguous_address():
             service_type=ServiceTypeEnum.MYSQL,
             host="10.0.0.5",
             port=3306,
+        )
+        is None
+    )
+
+
+def test_ambiguous_address_does_not_fall_back_to_name():
+    """Leave a task unstamped when its address is shared, even by a named service.
+
+    Two databases behind one PostgreSQL server share that server's port, so the
+    address key is genuinely ambiguous. ``resolve`` fails closed on it and never
+    reaches the name lookup, which keeps the task's raw host/port metadata rather
+    than stamping an arbitrary one of two real services.
+    """
+    lookup = ServiceIdLookup.from_services(
+        [
+            _service(
+                1,
+                service_type=ServiceTypeEnum.POSTGRESQL,
+                name="pg-orders",
+                address="10.0.0.9",
+                port=5432,
+            ),
+            _service(
+                2,
+                service_type=ServiceTypeEnum.POSTGRESQL,
+                name="pg-billing",
+                address="10.0.0.9",
+                port=5432,
+            ),
+        ]
+    )
+
+    assert (
+        lookup.resolve(
+            service_type=ServiceTypeEnum.POSTGRESQL,
+            host="10.0.0.9",
+            port=5432,
+            service_name="pg-billing",
         )
         is None
     )
@@ -342,3 +388,47 @@ def test_resolve_schema_id_returns_none_for_ambiguous_name():
     )
 
     assert lookup.resolve(service_id=4, schema_name="appdb") is None
+
+
+@pytest.mark.asyncio
+async def test_collecting_a_service_leaves_the_legacy_backfill_unchanged(session):
+    """Name the legacy form backfill's behaviour for a collected service id.
+
+    ``load_service_id_lookup`` reads through the default ``ServiceManager``,
+    whose ``retired_at IS NULL`` guard already hides a tombstone. The legacy
+    form field is therefore unmatched from the moment the service is retired —
+    the operator re-picks, which was already the outcome for any id the lookup
+    missed — and hard-deleting the row later changes nothing. Collection
+    introduces no new degradation here, which is why
+    ``resolve_mysql_service``'s contract needed no amendment either.
+    """
+    node = await NodeManager.create(
+        session,
+        Node(
+            address="10.0.0.7",
+            name="db-node",
+            external_id="node-10-0-0-7",
+            source=SourceEnum.PMM,
+        ),
+    )
+    service = await ServiceManager.create(
+        session,
+        ServiceWriteFactory.build(type=ServiceTypeEnum.MYSQL, port=3306),
+        node_id=node.id,
+    )
+    hints = {"service_type": ServiceTypeEnum.MYSQL, "host": "10.0.0.7", "port": 3306}
+
+    active = await load_service_id_lookup(session)
+    assert active.resolve(**hints, service_name=None) == service.id
+
+    service.retired_at = utc_now()
+    service.retirement_key = service.id
+    session.add(service)
+    await session.commit()
+    retired = await load_service_id_lookup(session)
+
+    assert await RetiredInclusiveServiceManager.collect(session, [service.id]) == 1
+    collected = await load_service_id_lookup(session)
+
+    assert retired.resolve(**hints, service_name=None) is None
+    assert collected.resolve(**hints, service_name=None) is None

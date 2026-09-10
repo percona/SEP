@@ -15,15 +15,20 @@
 
 """Unit tests for the conditional-rule primitive DSL, evaluator, and wiring."""
 
+import re
+from collections.abc import Callable
 from enum import IntEnum
 from typing import Annotated, Literal, Self
 
 import pytest
-from pydantic import BaseModel, Field, model_validator, ValidationError
+from pydantic import BaseModel, create_model, Field, model_validator, ValidationError
 
 from app.sep.apps.framework.rules import (
     _extract_rule_plan,
+    _PreparedRule,
     _resolve_field,
+    _RuleKind,
+    _validate_plan_against_model_fields,
     absent,
     all_,
     all_equal,
@@ -68,6 +73,7 @@ from app.sep.apps.framework.rules import (
     Or,
     Predicate,
     present,
+    RulePlan,
     Truthy,
     truthy,
     value_is_present,
@@ -948,6 +954,109 @@ class TestConditionalRulesModel:
         assert observed == []
 
 
+class _IndexedRefBody(ConditionalRulesModel):
+    """Declare ``items`` without any bracket-indexed attribute."""
+
+    x: str = ""
+    items: list[str] = Field(default_factory=list)
+
+
+def _predicate_plan(name: str) -> RulePlan:
+    """Return a one-rule plan whose gating predicate references ``name``."""
+    return RulePlan(
+        rules=(
+            _PreparedRule(
+                kind=_RuleKind.FAIL,
+                scope_path="AppSchema 'test'",
+                predicate=F(name) == "v",
+                fields=(),
+                min=None,
+                max=None,
+                message=None,
+            ),
+        )
+    )
+
+
+def _cardinality_plan(name: str) -> RulePlan:
+    """Return a one-rule plan whose ``fields`` target is ``name``."""
+    return RulePlan(
+        rules=(
+            _PreparedRule(
+                kind=_RuleKind.CARDINALITY,
+                scope_path="AppSchema 'test'",
+                predicate=None,
+                fields=(name,),
+                min=1,
+                max=None,
+                message=None,
+            ),
+        )
+    )
+
+
+class TestDeclaredOnModelIndexHandling:
+    """Pin the decoration-time gate's rejection of bracket-indexed references.
+
+    A rule reference reaches this gate only after ``AppSchema`` has matched it
+    against the form tree's declared field names, and those names admit no
+    brackets, so an indexed reference cannot arrive through a schema that
+    validates — ``test_bracket_indexed_field_in_rule_rejected`` pins that outer
+    half. These cases therefore drive ``_validate_plan_against_model_fields``
+    directly. The gate rejects an indexed reference anyway, and must keep doing
+    so: ``_resolve_field`` walks paths with plain dotted ``getattr``, so one
+    allowed through here would silently evaluate to ``None`` on every request
+    rather than failing at import.
+
+    ``test_unknown_attribute_on_write_model_raises_at_import`` covers the
+    decoration route that feeds this gate its reference strings.
+    """
+
+    @pytest.mark.parametrize(
+        ("build_plan", "reference"),
+        [
+            (_predicate_plan, "items[0]"),
+            (_predicate_plan, "items[0].sub_field"),
+            (_cardinality_plan, "items[0]"),
+        ],
+        ids=["predicate_bare", "predicate_dotted", "cardinality_fields"],
+    )
+    def test_indexed_reference_rejected(
+        self, build_plan: Callable[[str], RulePlan], reference: str
+    ) -> None:
+        """Reject a bracket-indexed reference wherever a rule can carry one."""
+        with pytest.raises(TypeError, match=re.escape(reference)):
+            _validate_plan_against_model_fields(build_plan(reference), _IndexedRefBody)
+
+    def test_indexed_reference_that_is_a_literal_field_accepted(self) -> None:
+        """Accept ``items[0]`` when it is itself a declared field name.
+
+        Only ``create_model`` can declare that name — it is not an identifier,
+        so no hand-written model reaches this branch. It stays covered because
+        it is the sole exemption from the rejection above.
+        """
+        body = create_model(
+            "_LiteralIndexBody",
+            __base__=ConditionalRulesModel,
+            **{"items[0]": (str, "")},
+        )
+
+        # No raise: the reference is itself a declared field name.
+        _validate_plan_against_model_fields(_predicate_plan("items[0]"), body)
+
+    def test_plain_dotted_reference_with_declared_root_accepted(self) -> None:
+        """Accept a dotted path whose leading segment is a declared field."""
+
+        class Source(BaseModel):
+            mode: str = ""
+
+        class Body(ConditionalRulesModel):
+            source: Source = Source()
+
+        # No raise: the leading segment resolves to a declared field.
+        _validate_plan_against_model_fields(_predicate_plan("source.mode"), Body)
+
+
 # ── Layer C: cardinality semantics per pattern ──────────────────────────
 
 
@@ -1586,6 +1695,14 @@ class TestResolveField:
             source: None = None
 
         assert _resolve_field(Root(), "source.mode") is None
+
+    def test_resolve_indexed_segment_returns_none(self) -> None:
+        """Return ``None`` for a bracket-indexed segment; traversal is getattr-only."""
+
+        class Root(BaseModel):
+            items: list[str] = Field(default_factory=list)
+
+        assert _resolve_field(Root(items=["a"]), "items[0]") is None
 
 
 class TestOneOfGroupRules:

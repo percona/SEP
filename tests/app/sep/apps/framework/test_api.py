@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import column
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse
@@ -60,10 +61,7 @@ from app.sep.apps.framework.api import (
     schema_endpoint,
 )
 from app.sep.apps.framework.deps import make_task_dep
-from app.sep.apps.framework.list_query import (
-    default_in_memory_query,
-    in_memory_list_scripts,
-)
+from app.sep.apps.framework.list_query import in_memory_list_scripts
 from app.sep.apps.framework.rules import (
     CardinalityRule,
     F,
@@ -72,6 +70,7 @@ from app.sep.apps.framework.rules import (
     truthy,
 )
 from app.sep.apps.framework.schema import (
+    AppEntitySchema,
     AppSchema,
     BoolField,
     Capabilities,
@@ -115,6 +114,7 @@ from app.sep.deps import (
 )
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskWrite
 from tests.app.factories import GeneratedTaskFactory, TaskFactory
+from tests.app.sep.apps.framework.kit import EXECUTE_CREATED_AT, EXECUTE_STATUS
 
 _TEST_SCHEMA = AppSchema(
     name="test-schema-endpoint",
@@ -203,6 +203,25 @@ _EMPTY_FORMS_SCHEMA = AppSchema(
 )
 
 
+_ENTITIES_SCHEMA = AppSchema(
+    name="test-entities",
+    display_name="Test Entities",
+    entities=[
+        AppEntitySchema(
+            name="things",
+            display_name="Things",
+            forms=[
+                FormSection(
+                    title="Thing",
+                    fields=[StringField(name="title", label="Title")],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+        ),
+    ],
+)
+
+
 def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAPI:
     """Mount ``plugin_router`` under the production-shape router tree.
 
@@ -250,6 +269,14 @@ def authed_client(regular_user: CasdoorUser) -> TestClient:
 def authed_all_fields_client(regular_user: CasdoorUser) -> TestClient:
     """Return an authed ``TestClient`` whose schema exercises every field class."""
     app = _build_composed_app(_ALL_FIELDS_SCHEMA, "/test-all-fields")
+    app.dependency_overrides[get_current_user] = lambda: regular_user
+    return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def authed_entities_client(regular_user: CasdoorUser) -> TestClient:
+    """Return an authed ``TestClient`` whose schema declares entities."""
+    app = _build_composed_app(_ENTITIES_SCHEMA, "/test-entities")
     app.dependency_overrides[get_current_user] = lambda: regular_user
     return TestClient(app, raise_server_exceptions=False)
 
@@ -477,6 +504,30 @@ class TestSchemaEndpointUnauthenticated:
         )
 
         assert "location" not in {k.lower() for k in response.headers}
+
+
+class TestSchemaEndpointTaskStatuses:
+    """Cover how ``task_statuses`` reaches the ``GET /schema`` payload."""
+
+    def test_task_style_schema_publishes_the_vocabulary(
+        self, authed_all_fields_client: TestClient
+    ) -> None:
+        """Assert a task-style plugin serves one entry per status value."""
+        body = authed_all_fields_client.get("/api/apps/test-all-fields/schema").json()
+
+        assert body["task_statuses"] == [
+            {"value": status.value, "terminal": status.is_terminal()}
+            for status in TaskHistoryStatusEnum
+        ]
+
+    def test_entity_schema_omits_the_vocabulary(
+        self, authed_entities_client: TestClient
+    ) -> None:
+        """Assert an entity-declaring plugin serves no ``task_statuses`` key."""
+        body = authed_entities_client.get("/api/apps/test-entities/schema").json()
+
+        assert body["entities"]
+        assert "task_statuses" not in body
 
 
 class TestSchemaEndpointAllFieldsRoundTrip:
@@ -1315,6 +1366,8 @@ _STUB_SPEC = ListQuerySpec(
     searchable=(column("filename"),),
 )
 
+_STUB_APPLIER = InMemoryListQueryApplier(_STUB_SPEC)
+
 
 def _make_script_source(
     *,
@@ -1332,7 +1385,7 @@ def _make_script_source(
     async def _materialize() -> list[_StubScript]:
         return scripts
 
-    _list_scripts = in_memory_list_scripts(_materialize, _STUB_SPEC)
+    _list_scripts = in_memory_list_scripts(_materialize, _STUB_APPLIER)
 
     async def _load_script(filename: str) -> _StubScript:
         return _StubScript(filename)
@@ -1639,7 +1692,7 @@ class TestDeriveScriptRoutesListQueryGuard:
         """Reject a source supplying its own dependency when no spec was supplied."""
         source = replace(
             _make_script_source(),
-            list_query_dep=lambda: default_in_memory_query(_STUB_SPEC),
+            list_query_dep=_STUB_APPLIER.default_query,
         )
 
         with pytest.raises(ValueError, match="no list_query_spec was supplied"):
@@ -2797,6 +2850,8 @@ class _SyntheticExecutionResponse(BaseModel):
 
     task_name: str
     task_id: int | None = None
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 def _marker_dep() -> None:
@@ -2804,11 +2859,18 @@ def _marker_dep() -> None:
 
 
 def _execute_response_dict(task_id: int | None = _EXECUTE_TASK_ID) -> dict:
-    """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests."""
+    """Return a ``TaskHistoryResponse``-shaped upstream payload for execute tests.
+
+    ``status`` and ``created_at`` are pinned to values ``TaskHistoryResponse``
+    would not itself supply (``PENDING`` and ``utc_now()``), so an assertion on
+    them distinguishes a field forwarded from upstream from a defaulted one.
+    """
     return {
         "id": task_id,
         "execution_request": {"task": "t1", "target": "host"},
         "task": _task_dict("t1"),
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -2956,7 +3018,12 @@ class TestDeriveExecuteRouteOverHttp:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t1", "task_id": _EXECUTE_TASK_ID}
+        assert response.json() == {
+            "task_name": "t1",
+            "task_id": _EXECUTE_TASK_ID,
+            "status": EXECUTE_STATUS.value,
+            "created_at": EXECUTE_CREATED_AT,
+        }
         tasks_api.post.assert_awaited_once_with(
             "/execute/t1", json={"chain_on_failure": True}
         )

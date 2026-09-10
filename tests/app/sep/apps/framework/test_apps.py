@@ -88,6 +88,8 @@ from tests.app.sep.apps.framework.contract_suite import (
     routes_of as _routes,
 )
 from tests.app.sep.apps.framework.kit import (
+    EXECUTE_CREATED_AT,
+    EXECUTE_STATUS,
     synth_app,
     synth_app_kwargs,
     synth_reject_running_task,
@@ -116,6 +118,8 @@ from tests.app.sep.apps.framework.kit import (
     SynthResponse as _SynthResponse,
 )
 
+# scaffolding-dup-ok: pre-existing on main in both this file and
+# test_script_source.py; extracting it is unrelated to this change.
 _BASE = f"/api/apps{_PREFIX}"
 _SCRIPT_BASE = f"/api/apps{_SCRIPT_PREFIX}"
 
@@ -368,6 +372,8 @@ def _execute_response(name: str, task_id: int = 99) -> dict:
         "id": task_id,
         "execution_request": {"task": "synth-cmd", "target": "host1"},
         "task": {**_task_dict(name), "deleted_at": None},
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -876,7 +882,12 @@ class TestExecuteRoute:
         response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t-1", "task_id": 99}
+        assert response.json() == {
+            "task_name": "t-1",
+            "task_id": 99,
+            "status": EXECUTE_STATUS.value,
+            "created_at": EXECUTE_CREATED_AT,
+        }
 
 
 class TestVerbGating:
@@ -1278,6 +1289,26 @@ class TestDefinitionValidation:
         )
         assert app_def.api_router is not None
 
+    def test_response_builder_return_type_mismatch_raises(self) -> None:
+        """Reject a ``response_builder`` whose return type differs from ``response_model``."""
+        with pytest.raises(ValueError, match="_AltListResponse.*SynthResponse"):
+            _synth_app(response_builder=_alt_list_builder)
+
+    def test_response_builder_matching_return_type_constructs(self) -> None:
+        """Construct cleanly when ``response_builder`` return type matches ``response_model``."""
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
+        assert app_def.api_router is not None
+
+    def test_response_builder_without_return_annotation_raises_type_error(self) -> None:
+        """Assert an unannotated ``response_builder`` still raises ``TypeError``."""
+        with pytest.raises(TypeError, match="return type annotation"):
+            _synth_app(
+                response_builder=_unannotated_list_builder,
+                response_model=_AltListResponse,
+            )
+
     def test_create_model_with_malformed_arg_format_raises(self) -> None:
         """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
         with pytest.raises(ValueError, match="unsupported placeholder"):
@@ -1401,6 +1432,16 @@ def _alt_list_builder(
     context: dict | None = None,
 ) -> _AltListResponse:
     """Build the alternate list/detail response, accepting a bound context."""
+    return _AltListResponse(name=task.name)
+
+
+def _unannotated_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+):
+    """Stand in as a response builder with no return annotation."""
     return _AltListResponse(name=task.name)
 
 
@@ -1679,7 +1720,9 @@ class TestResponseAndFilterKnobs:
 
     def test_response_builder_override_drives_list_model(self) -> None:
         """Assert a ``response_builder`` override supplies the list response model."""
-        app_def = _synth_app(response_builder=_alt_list_builder)
+        app_def = _synth_app(
+            response_builder=_alt_list_builder, response_model=_AltListResponse
+        )
         list_route = next(
             route
             for route in app_def.api_router.routes
@@ -1781,6 +1824,37 @@ class TestRelatedAppsKnob:
             )
 
 
+class TestItemDisplayNamesKnob:
+    """Cover ``item_display_name``/``item_display_name_plural`` rejection."""
+
+    def test_item_display_names_accepted_on_derived_schema_app(self) -> None:
+        """Accept the record names on a plain derived-schema definition."""
+        app_def = _synth_app(
+            item_display_name="widget", item_display_name_plural="widgets"
+        )
+
+        assert app_def.item_display_name == "widget"
+        assert app_def.item_display_name_plural == "widgets"
+
+    def test_item_display_names_rejected_on_script_source_app(self) -> None:
+        """Reject ``item_display_name`` on a ``script_source`` definition."""
+        with pytest.raises(
+            ValueError, match="script_source app declares its record names"
+        ):
+            synth_script_app(item_display_name="widget")
+
+    def test_item_display_names_rejected_on_schema_passthrough_app(self) -> None:
+        """Reject ``item_display_name_plural`` on a ``schema=`` passthrough definition."""
+        with pytest.raises(ValueError, match="schema= app carries its record names"):
+            _synth_app(
+                create_model=None,
+                task_spec_builder=None,
+                schema=_PASSTHROUGH_SCHEMA,
+                payload_builder=_passthrough_payload_builder,
+                item_display_name_plural="widgets",
+            )
+
+
 class TestRegistryBinding:
     """Cover that binding an activation entry preserves the prebuilt router."""
 
@@ -1811,3 +1885,35 @@ class TestInheritedBaseAppFields:
     def test_defaults_uses_task_data_true(self) -> None:
         """Carry ``True`` by default: a derived task app always renders task data."""
         assert _synth_app().uses_task_data is True
+
+
+class TestItemDisplayNames:
+    """Cover the record names a ``TaskExecutionApp`` declares for its create form."""
+
+    def test_declared_record_names_reach_the_served_schema(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Carry both authoring fields into the derived ``GET /schema`` payload."""
+        app_def = _synth_app(
+            item_display_name="widget", item_display_name_plural="widgets"
+        )
+        client = _client(app_def, _make_tasks_api(), regular_user)
+
+        response = client.get(f"/api/apps{app_def.uri_path}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["item_display_name"] == "widget"
+        assert response.json()["item_display_name_plural"] == "widgets"
+
+    def test_omitted_record_names_default_from_display_name(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Fall back to ``display_name`` for both when the app declares neither."""
+        app_def = _synth_app()
+        client = _client(app_def, _make_tasks_api(), regular_user)
+
+        response = client.get(f"/api/apps{app_def.uri_path}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["item_display_name"] == app_def.display_name
+        assert response.json()["item_display_name_plural"] == app_def.display_name

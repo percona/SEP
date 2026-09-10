@@ -15,6 +15,7 @@
 
 """Test the LogContextMiddleware."""
 
+from collections.abc import AsyncGenerator
 from unittest.mock import patch
 
 import pytest
@@ -63,7 +64,7 @@ def app() -> FastAPI:
 
 
 @pytest_asyncio.fixture
-async def client(app: FastAPI) -> AsyncClient:
+async def client(app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     """Provide an async HTTP client for the test app."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"

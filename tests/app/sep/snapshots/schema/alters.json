@@ -63,6 +63,7 @@
           "label": "Execution Host",
           "name": "hostname",
           "required": true,
+          "target_service": "service_id",
           "type": "host"
         },
         {
@@ -330,6 +331,8 @@
       "title": "Advanced"
     }
   ],
+  "item_display_name": "schema change",
+  "item_display_name_plural": "schema changes",
   "list_view": {
     "columns": [
       {
@@ -369,6 +372,40 @@
       "name_suffix": "-pre-checks",
       "on_failure": "halt",
       "parent_link": true
+    }
+  ],
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
     }
   ]
 }

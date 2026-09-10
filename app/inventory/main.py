@@ -34,7 +34,7 @@ from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
 from app.inventory.db import get_async_session_maker
 from app.inventory.deps import SessionDep
-from app.inventory.routes import nodes, schemas, services, tables
+from app.inventory.routes import collection, nodes, schemas, services, tables
 from app.inventory.settings.routes import router as settings_router
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,7 @@ inventory_app = create_app(
     services.router,
     schemas.router,
     tables.router,
+    collection.router,
     settings_router,
     dependencies=[RequireMinimumRoleForUnsafeMethods],
     lifespan=lifespan,

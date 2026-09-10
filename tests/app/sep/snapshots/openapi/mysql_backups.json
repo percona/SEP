@@ -39,7 +39,7 @@
         "type": "string"
       },
       "TaskHistoryStatusEnum": {
-        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).",
+        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
         "enum": [
           "failed",
           "pending",
@@ -47,7 +47,8 @@
           "success",
           "stopped",
           "lost",
-          "stale"
+          "stale",
+          "unlaunchable"
         ],
         "title": "TaskHistoryStatusEnum",
         "type": "string"
@@ -94,7 +95,7 @@
       },
       "framework__AppEntitySchema": {
         "additionalProperties": false,
-        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:param display_name: Human-readable title for this entity's screens.\n:param item_display_name: What **one** record of this entity is called (for\n    example ``node``), as opposed to ``display_name``, which names the\n    entity's screens. Stored in mid-sentence form so a consumer composing a\n    label capitalises the first character itself. Defaults to this entity's\n    own ``display_name`` — not the parent app's, and never inferred from\n    ``item_display_name_plural``.\n:param item_display_name_plural: What **several** records of this entity are\n    called (for example ``nodes``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to this entity's own ``display_name``.\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:param forms: Form sections for create (and edit when the UI supports it).\n:param list_view: Column configuration for this entity's list table.\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.",
         "properties": {
           "cardinality_rules": {
             "anyOf": [
@@ -155,6 +156,16 @@
             "title": "Forms",
             "type": "array"
           },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
           "list_view": {
             "$ref": "#/components/schemas/framework__ListView"
           },
@@ -168,6 +179,8 @@
         "required": [
           "name",
           "display_name",
+          "item_display_name",
+          "item_display_name_plural",
           "forms",
           "list_view"
         ],
@@ -176,7 +189,7 @@
       },
       "framework__AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value whether it ends a run. Server-authored, so a\n    supplied value is replaced rather than honoured. Withheld (``None``) for\n    a plugin declaring ``entities``, whose records are not task runs.",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -278,6 +291,16 @@
             "title": "Forms",
             "type": "array"
           },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
           "list_view": {
             "anyOf": [
               {
@@ -322,6 +345,20 @@
             ],
             "title": "Related Apps"
           },
+          "task_statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__TaskStatusDescriptor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Statuses"
+          },
           "task_type": {
             "anyOf": [
               {
@@ -337,7 +374,9 @@
         },
         "required": [
           "name",
-          "display_name"
+          "display_name",
+          "item_display_name",
+          "item_display_name_plural"
         ],
         "title": "AppSchema",
         "type": "object"
@@ -366,6 +405,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -633,6 +684,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -697,7 +760,7 @@
       },
       "framework__Column": {
         "additionalProperties": false,
-        "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``).\n:type key: NonEmptyStr\n:param label: The human-readable column header.\n:type label: NonEmptyStr\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:type sortable: bool\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:type format: ColumnFormat | None",
+        "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``). Must be non-empty.\n:param label: The human-readable column header. Must be non-empty.\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:param value_labels: Optional map from a raw cell value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a column\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
         "properties": {
           "format": {
             "anyOf": [
@@ -723,6 +786,21 @@
             "default": false,
             "title": "Sortable",
             "type": "boolean"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
           }
         },
         "required": [
@@ -806,6 +884,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -931,7 +1021,7 @@
       },
       "framework__DetailField": {
         "additionalProperties": false,
-        "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:type path: DetailPath\n:param label: Human-readable label rendered alongside the resolved value.\n:type label: NonEmptyStr\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:type highlight: DetailHighlightLanguage | None",
+        "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:param label: Human-readable label rendered alongside the resolved value.\n    Must be non-empty.\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:param value_labels: Optional map from a raw resolved value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a field\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
         "properties": {
           "highlight": {
             "anyOf": [
@@ -953,6 +1043,21 @@
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*)*$",
             "title": "Path",
             "type": "string"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
           }
         },
         "required": [
@@ -975,7 +1080,7 @@
       },
       "framework__DetailSection": {
         "additionalProperties": false,
-        "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:type title: NonEmptyStr\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.\n:type fields: list[DetailField]",
+        "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.",
         "properties": {
           "fields": {
             "items": {
@@ -1118,6 +1223,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1203,6 +1320,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -1457,7 +1586,7 @@
       },
       "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1503,6 +1632,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1547,6 +1688,18 @@
             ],
             "title": "Requires"
           },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
+          },
           "type": {
             "const": "host",
             "default": "host",
@@ -1588,6 +1741,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -1685,7 +1850,7 @@
       },
       "framework__ListView": {
         "additionalProperties": false,
-        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:type columns: list[Column]\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:type default_sort: NonEmptyStr | None\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.\n:type overview_hidden_fields: list[str]",
+        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:param server_side_query: Opt-in capability flag declaring that the list\n    endpoint honors whole-result-set sort and search via server query\n    params. When ``True`` and the list is also server-paginated, the React\n    list view enables manual sorting and filtering and drives them through\n    those params instead of sorting the loaded page; a capability-on list\n    rendered without pagination stays client-side.\n    Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas.\n    Defaults to ``None``.\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.",
         "properties": {
           "columns": {
             "items": {
@@ -1713,6 +1878,17 @@
             },
             "title": "Overview Hidden Fields",
             "type": "array"
+          },
+          "server_side_query": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Side Query"
           }
         },
         "required": [
@@ -1753,6 +1929,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -1818,7 +2006,7 @@
       },
       "framework__MultiHostField": {
         "additionalProperties": false,
-        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n``target_service`` is mirrored the same way; the multi-host renderer\nignores it (no co-location warning).\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param target_service: Optional service field name mirrored for wire\n    uniformity with :class:`HostField`; ignored by the multi-host\n    renderer. ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -1864,6 +2052,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -1907,6 +2107,18 @@
               }
             ],
             "title": "Requires"
+          },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
           },
           "type": {
             "const": "multi_host",
@@ -1965,6 +2177,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2063,6 +2287,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2173,6 +2409,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -2666,6 +2914,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "endpoint_url": {
             "minLength": 1,
             "title": "Endpoint Url",
@@ -2774,6 +3034,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -2868,6 +3140,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "endpoint_url": {
             "minLength": 1,
@@ -2984,6 +3268,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3077,6 +3373,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -3228,6 +3536,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3335,8 +3655,16 @@
         "type": "object"
       },
       "framework__TaskExecutionResponse": {
-        "description": "Represent the default response from a task execute route.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "description": "Represent the default response from a task execute route.\n\n``started_at`` is deliberately not carried: the worker sets it, so it is\nstill ``None`` on the row this response is built from.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.\n    Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it\n    so, not because a dispatched run is expected to lack one.\n:param status: The status of the task-history row the tasks API created,\n    as it stood at dispatch.\n:param created_at: When the tasks API created that row.",
         "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+          },
           "task_id": {
             "anyOf": [
               {
@@ -3354,9 +3682,30 @@
           }
         },
         "required": [
-          "task_name"
+          "task_name",
+          "status",
+          "created_at"
         ],
         "title": "TaskExecutionResponse",
+        "type": "object"
+      },
+      "framework__TaskStatusDescriptor": {
+        "additionalProperties": false,
+        "description": "Declare one task-status value and whether it ends a run.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.",
+        "properties": {
+          "terminal": {
+            "title": "Terminal",
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+          }
+        },
+        "required": [
+          "value",
+          "terminal"
+        ],
+        "title": "TaskStatusDescriptor",
         "type": "object"
       },
       "framework__TextAreaField": {
@@ -3383,6 +3732,18 @@
               }
             ],
             "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
           },
           "forbidden": {
             "anyOf": [
@@ -3494,6 +3855,18 @@
             ],
             "title": "Description"
           },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
           "forbidden": {
             "anyOf": [
               {
@@ -3580,7 +3953,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encrypt`` (in-place) and ``post_run_encrypt`` are\nindependent encryption modes that both produce an encrypted backup;\n``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden alongside\n``post_run_encrypt`` so post-run takes precedence (matching the backend at\n``mydumper_payload``), and ``encryption_recipient`` is required iff either mode\nis on — and the per-mode bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encryption_format`` selects which encryption runs and the\nrest of the section parameterises it: the key file is required by the\nAES-bearing formats and forbidden outside them, a GPG-bearing format needs one\nof the two independent timings (``encrypt`` in place, ``post_run_encrypt``\nafter), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden\nalongside ``post_run_encrypt`` so post-run takes precedence (matching the\nbackend at ``mydumper_payload``), and ``encryption_recipient`` is required iff\neither timing is on — and the per-mode and encryption-format bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside\n    its mode, or a GPG timing outside a GPG ``encryption_format``, fails\n    validation with a per-field message, as does a GPG format with no timing.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -3612,16 +3985,9 @@
             "title": "Awscli S3 Upload Extra Args"
           },
           "backup_dir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Dir"
+            "minLength": 1,
+            "title": "Backup Dir",
+            "type": "string"
           },
           "backup_type": {
             "$ref": "#/components/schemas/mysql_backups__BackupType"
@@ -3744,6 +4110,10 @@
             "default": false,
             "title": "Encrypt Using Tmpdir",
             "type": "boolean"
+          },
+          "encryption_format": {
+            "$ref": "#/components/schemas/mysql_backups__EncryptionFormat",
+            "default": "none"
           },
           "encryption_recipient": {
             "anyOf": [
@@ -4134,14 +4504,28 @@
           "task_name",
           "hostname",
           "service_id",
-          "backup_type"
+          "backup_type",
+          "backup_dir"
         ],
         "title": "BackupCreate",
         "type": "object"
       },
       "mysql_backups__BackupRunResponse": {
-        "description": "Expose one catalog record over the per-service query path.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.",
+        "description": "Expose one catalog record over the service-scoped and task-scoped queries.\n\n:param id: The record's primary key.\n:param service_name: The inventory service the backup was taken from.\n:param service_id: The inventory id of that service, or ``None`` on a record\n    written before the id was stamped.\n:param hostname: The backup target host.\n:param backup_type: The backup tool, ``\"M\"`` (mydumper) or ``\"X\"`` (xtrabackup).\n    Narrower than :class:`BackupType`: binlog runs are never catalogued, so\n    ``\"B\"`` never appears here.\n:param location: The resolved on-disk directory the run produced.\n:param upload_destination: The upload destination when one was configured.\n:param size_bytes: The backup size in bytes, when the run reported it.\n:param started_at: When the run started.\n:param finished_at: When the run finished.\n:param backup_source: The run's restore-form-valid source, derived from\n    ``upload_destination`` and ``location``; read-only, and absent from the\n    table this response is built from.",
         "properties": {
+          "backup_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return the run's restore-form-valid source, or ``None``.\n\nResolved server-side so no caller re-derives it from the raw fields.\n``None`` means the run recorded no usable source, or recorded one the\nrestore form rejects — either way it cannot seed a restore.",
+            "readOnly": true,
+            "title": "Backup Source"
+          },
           "backup_type": {
             "enum": [
               "M",
@@ -4255,7 +4639,8 @@
           "upload_destination",
           "size_bytes",
           "started_at",
-          "finished_at"
+          "finished_at",
+          "backup_source"
         ],
         "title": "BackupRunResponse",
         "type": "object"
@@ -4426,7 +4811,7 @@
         "type": "object"
       },
       "mysql_backups__BackupType": {
-        "description": "Backup types.",
+        "description": "Represent the backup tools a run can be taken with.\n\n:cvar LABELS: Display text for each stored value, keyed as the value is\n    stored on the wire. A value with no entry is rendered as-is by the\n    caller. Wrapped in :func:`enum.nonmember` because ``enum`` would\n    otherwise treat a class-body dict as a member candidate.",
         "enum": [
           "M",
           "X",
@@ -4444,6 +4829,17 @@
           "quicklz"
         ],
         "title": "CompressionAlgorithm",
+        "type": "string"
+      },
+      "mysql_backups__EncryptionFormat": {
+        "description": "Represent the backup-time encryption formats an operator can select.",
+        "enum": [
+          "none",
+          "gpg",
+          "aes256",
+          "dual"
+        ],
+        "title": "EncryptionFormat",
         "type": "string"
       },
       "mysql_backups__PaginatedResponse_BackupRunResponse_": {
@@ -4918,6 +5314,72 @@
           }
         },
         "summary": "Update",
+        "tags": [
+          "mysql_backups"
+        ]
+      }
+    },
+    "/api/apps/mysql_backups/{task_name}/backups": {
+      "get": {
+        "description": "Return a page of a backup task's catalogued runs, newest run first.\n\nThe ``task_name`` path parameter is resolved by\n:data:`~app.sep.apps.mysql_backups.deps.CataloguedHistoryIds`, so a task that\ndoes not exist or belongs to another app surfaces as a ``404`` while a known\ntask with no catalogued backup yields an empty page — keeping \"this task has\nnever produced a backup\" distinguishable from \"this task does not exist\".\n\nThe discovery walk behind that dependency is capped, so ``total`` counts the\nruns within the scanned window rather than every run the task ever produced,\nand carries no marker distinguishing a truncated page from a complete one.\nA run older than the window is reachable through the per-service catalog\nroute, which is uncapped — but only while its inventory service still\nresolves, and only for a caller that knows which service the run was recorded\nunder, which a task since re-pointed at another target no longer answers.\n\n:param history_ids: The task's catalogued task-history ids, newest first.\n:param session: The database session the catalog is queried on.\n:param pagination: The requested offset/limit window.\n:return: The requested page of the task's recorded backup runs, newest run\n    first.",
+        "operationId": "mysql_backups_list_task_backups_api_apps_mysql_backups__task_name__backups_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/mysql_backups__PaginatedResponse_BackupRunResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Task Backups",
         "tags": [
           "mysql_backups"
         ]

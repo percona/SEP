@@ -48,8 +48,15 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
-import { useDebouncedValue, useSnippetDownload } from '@sep/framework';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET, useAuth } from '@sep/api';
+import {
+  ActionErrorAlert,
+  actionErrorMessage,
+  useActionError,
+  useDebouncedValue,
+  useSnippetDownload,
+  type ActionErrorState,
+} from '@sep/framework';
 import {
   useSnippets,
   useApproveSnippet,
@@ -67,10 +74,6 @@ import type {
   SnippetApprovalFilter,
   SnippetResponse,
 } from './types';
-
-interface SnippetsListPageProps {
-  isAdmin?: boolean;
-}
 
 type ApprovalFilter = SnippetApprovalFilter;
 
@@ -126,9 +129,12 @@ interface BatchResult {
 function DownloadButton({
   snippet,
   onDownloaded,
+  rowActionError,
 }: {
   snippet: SnippetResponse;
   onDownloaded: () => void;
+  /** Page-level failure state shared by every row action; see its declaration. */
+  rowActionError: ActionErrorState;
 }) {
   const download = useSnippetDownload();
 
@@ -140,7 +146,15 @@ function DownloadButton({
           download.isPending ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />
         }
         disabled={download.isPending}
-        onClick={() => download.mutate({ filename: snippet.filename }, { onSuccess: onDownloaded })}
+        onClick={() => {
+          // One alert serves every row, so each attempt starts by dropping the
+          // previous row's failure rather than leaving it standing.
+          rowActionError.clearError();
+          download.mutate(
+            { filename: snippet.filename },
+            { onSuccess: onDownloaded, onError: rowActionError.reportError },
+          );
+        }}
       >
         Download
       </Button>
@@ -151,9 +165,12 @@ function DownloadButton({
 function ApproveButton({
   snippet,
   hasDownloaded,
+  rowActionError,
 }: {
   snippet: SnippetResponse;
   hasDownloaded: boolean;
+  /** Page-level failure state shared by every row action; see its declaration. */
+  rowActionError: ActionErrorState;
 }) {
   const approve = useApproveSnippet(snippet.filename);
   const removeApproval = useRemoveSnippetApproval(snippet.filename);
@@ -170,7 +187,8 @@ function ApproveButton({
           disabled={isPending}
           onClick={(e) => {
             e.stopPropagation();
-            removeApproval.mutate();
+            rowActionError.clearError();
+            removeApproval.mutate(undefined, { onError: rowActionError.reportError });
           }}
         >
           Remove
@@ -207,8 +225,11 @@ function ApproveButton({
           <Button
             variant="contained"
             onClick={() => {
+              // The dialog closes on confirm, so the failure surfaces on the
+              // list behind it rather than in a dialog that is already gone.
               setConfirmOpen(false);
-              approve.mutate();
+              rowActionError.clearError();
+              approve.mutate(undefined, { onError: rowActionError.reportError });
             }}
           >
             Approve
@@ -223,17 +244,25 @@ function ApproveButton({
  * Snippet-centric list page rendered at `/snippets/`.
  *
  * Renders the snippet entities discovered by the backend (one row per
- * snippet file). When `isAdmin` is true, per-row approve / remove-approval
- * buttons and a multi-select batch-approve action are shown.
+ * snippet file). Approval and refresh are mutations, so per-row approve /
+ * remove-approval buttons, the multi-select batch-approve action and the
+ * manual refresh are shown only to a session that may mutate.
  */
-export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
+export function SnippetsListPage() {
   const navigate = useNavigate();
+  const { canMutate } = useAuth();
   const [listPage, setListPage] = useState({
     offset: DEFAULT_APP_LIST_OFFSET,
     limit: DEFAULT_APP_LIST_LIMIT,
   });
 
   const [search, setSearch] = useState('');
+  // Per-row download / approve / remove-approval failures. The buttons live in
+  // table cells that the refetch can unmount, and approve is confirmed in a
+  // dialog that closes first, so the page holds the failure and renders it.
+  // One alert covers every row, so each row action clears it before firing and a
+  // stale failure never outlives the attempt that produced it.
+  const rowActionError = useActionError();
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
   const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
 
@@ -305,7 +334,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshSuccess, setRefreshSuccess] = useState<RefreshResponse | null>(null);
 
-  const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
+  const showRefresh = canMutate && capabilities?.manual_sync_enabled;
 
   // Service-type options come from the whole-dataset facet, not the loaded page, so
   // a type unique to a later page is still selectable. The active selection is kept
@@ -383,7 +412,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
           if (err.structured) {
             setBatchResult({ error: err.detail });
           } else {
-            setBatchResult({ generic: 'Batch approval failed. Please try again.' });
+            // Any status, not just 400: a refusal, a 409, a 5xx and a transport
+            // failure all report, each carrying whatever reason it came with.
+            // The reason lives on `raw` — the hook wraps every unstructured
+            // failure in an Error of its own, whose message says nothing.
+            setBatchResult({
+              generic: actionErrorMessage(err.raw, 'Batch approval failed. Please try again.'),
+            });
           }
         },
       },
@@ -421,7 +456,14 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         history.
       </Typography>
 
-      {isAdmin && batchResult?.success && (
+      <ActionErrorAlert
+        error={rowActionError.error}
+        onClose={rowActionError.clearError}
+        sx={{ mb: 2 }}
+        testId="snippet-row-action-error"
+      />
+
+      {canMutate && batchResult?.success && (
         <Alert severity="success" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <Chip label={`${batchResult.success.count} approved`} color="success" size="small" />
@@ -436,13 +478,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </Alert>
       )}
 
-      {isAdmin && batchResult?.generic && (
+      {canMutate && batchResult?.generic && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           {batchResult.generic}
         </Alert>
       )}
 
-      {isAdmin && batchResult?.error && (
+      {canMutate && batchResult?.error && (
         <Alert severity="error" onClose={() => setBatchResult(null)} sx={{ mb: 2 }}>
           <Stack spacing={0.5}>
             {batchResult.error.missing_in_db.length > 0 && (
@@ -465,7 +507,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
         </Alert>
       )}
 
-      {isAdmin && selectedFilenames.length > 0 && (
+      {canMutate && selectedFilenames.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Button
             variant="contained"
@@ -636,7 +678,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  {isAdmin && (
+                  {canMutate && (
                     <TableCell padding="checkbox">
                       <Checkbox
                         indeterminate={someSelected}
@@ -653,7 +695,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                   <TableCell>Description</TableCell>
                   <TableCell>Approved</TableCell>
                   <TableCell>Reason</TableCell>
-                  {isAdmin && <TableCell>Actions</TableCell>}
+                  {canMutate && <TableCell>Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -664,7 +706,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                     sx={{ cursor: 'pointer' }}
                     onClick={() => navigate(encodeURIComponent(snippet.filename))}
                   >
-                    {isAdmin && (
+                    {canMutate && (
                       <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                         <Checkbox
                           checked={selected.has(snippet.filename)}
@@ -698,16 +740,18 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                     <TableCell>{snippet.description}</TableCell>
                     <TableCell>{snippet.is_approved ? 'Yes' : 'No'}</TableCell>
                     <TableCell>{snippet.reason}</TableCell>
-                    {isAdmin && (
+                    {canMutate && (
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Stack direction="row" spacing={1}>
                           <DownloadButton
                             snippet={snippet}
                             onDownloaded={() => markDownloaded(snippet.filename)}
+                            rowActionError={rowActionError}
                           />
                           <ApproveButton
                             snippet={snippet}
                             hasDownloaded={downloaded.has(snippet.filename)}
+                            rowActionError={rowActionError}
                           />
                         </Stack>
                       </TableCell>

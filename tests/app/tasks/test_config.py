@@ -34,6 +34,7 @@ EXPECTED_UVICORN_PORT = 8002
 EXPECTED_LOG_RETENTION_DAYS = 90
 EXPECTED_LOG_PURGE_BATCH_SIZE = 10_000
 MAX_LOG_RETENTION_DAYS = 365
+EXPECTED_INVENTORY_SYNC_MINUTES = 15
 
 
 class TestTasksSettings:
@@ -84,6 +85,31 @@ class TestTasksSettings:
         assert isinstance(interval, IntervalSchedule)
         assert interval.every == 1
         assert interval.period == Period.DAYS
+
+    def test_default_inventory_sync_interval_is_none(self):
+        """Assert INVENTORY_SYNC_INTERVAL is unset by default."""
+        assert TasksSettings().INVENTORY_SYNC_INTERVAL is None
+
+    def test_default_inventory_sync_syncer_is_none(self):
+        """Assert INVENTORY_SYNC_SYNCER is unset by default."""
+        assert TasksSettings().INVENTORY_SYNC_SYNCER is None
+
+    def test_inventory_sync_interval_parses_string_form(self):
+        """Assert INVENTORY_SYNC_INTERVAL accepts the ``"15 minutes"`` YAML form."""
+        interval = TasksSettings(
+            INVENTORY_SYNC_INTERVAL="15 minutes"
+        ).INVENTORY_SYNC_INTERVAL
+        assert interval is not None
+        assert (interval.every, interval.period) == (
+            EXPECTED_INVENTORY_SYNC_MINUTES,
+            Period.MINUTES,
+        )
+
+    def test_inventory_sync_syncer_rejects_blank_and_malformed_names(self):
+        """Assert a blank name is refused rather than read as the sync-all default."""
+        for value in ("", "   ", "not a path", "trailing."):
+            with pytest.raises(ValidationError):
+                TasksSettings(INVENTORY_SYNC_SYNCER=value)
 
     def test_log_retention_days_rejects_non_positive(self):
         """Assert LOG_RETENTION_DAYS rejects zero and negative values."""

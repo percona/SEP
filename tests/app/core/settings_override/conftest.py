@@ -17,7 +17,7 @@
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 
 import pytest
 import pytest_asyncio
@@ -26,12 +26,54 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
-from app.core.config import settings
+from app.core.alerts.config import AlertSettings
+from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.utils import json_serializer
+from app.inventory.config import InventorySettings
+from app.sep.config import SEPSettings
+from app.sep.snippets.config import SnippetsSettings
+from app.tasks.anonymizer.config import AnonymizerSettings
+from app.tasks.config import TasksSettings
+from tests.app.db_schema import apply_schema
 
 #: Importable path patched when tests replace ``start_refresh_task``.
 START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
+
+#: Plaintext secrets the encrypt-at-rest suites seed and assert round trips for.
+#: Shared so the settings-override and migration suites cannot drift apart on the
+#: value a stored ciphertext is expected to decrypt back to.
+PMM_API_KEY = "pmm-api-key-at-rest"
+PMM_ENDPOINT = "https://pmm.example.com"
+ROUTING_KEY = "pagerduty-routing-key-at-rest"
+
+#: Storage tokens for ``SettingOverride.setting_class`` (SCREAMING_SNAKE).
+ALERT_SETTINGS_TOKEN = setting_class_token(AlertSettings)
+ANONYMIZER_SETTINGS_TOKEN = setting_class_token(AnonymizerSettings)
+INVENTORY_SETTINGS_TOKEN = setting_class_token(InventorySettings)
+SEP_SETTINGS_TOKEN = setting_class_token(SEPSettings)
+SETTINGS_TOKEN = setting_class_token(Settings)
+SNIPPETS_SETTINGS_TOKEN = setting_class_token(SnippetsSettings)
+TASKS_SETTINGS_TOKEN = setting_class_token(TasksSettings)
+
+#: A username far longer than any bounded column would have allowed. Both the
+#: SQLite round-trip and its real-PostgreSQL sibling write one this long to
+#: prove ``settingoverride.updated_by`` carries no width.
+LONG_USERNAME_LENGTH = 512
+
+
+async def insert_override_row(
+    session: AsyncSession, **kwargs: object
+) -> SettingOverride:
+    """Insert one override row through the manager, bypassing the API.
+
+    :param session: The async DB session to write through.
+    :param kwargs: Fields forwarded to :class:`SettingOverride`.
+    :return: The persisted override row.
+    """
+    return await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
 class HangingSession:
@@ -76,7 +118,7 @@ def recording_start_refresh_task(
 
 
 @pytest.fixture(autouse=True)
-def _propagate_cache_logs() -> None:
+def _propagate_cache_logs() -> Iterator[None]:
     """Allow ``caplog`` to see ``app.core.settings_override.cache`` warnings.
 
     The application's ``LOGGING_CONFIG`` sets ``propagate=False`` on the
@@ -109,8 +151,11 @@ def restrict_fixture(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory SQLite async session for override tests."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -118,7 +163,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

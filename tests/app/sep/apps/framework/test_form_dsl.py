@@ -444,7 +444,12 @@ class _MultiRefModel(AppFormModel):
         int,
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
         SchemaRef(),
-        Ui(label="Target", section="s", depends_on="other"),
+        Ui(
+            label="Target",
+            section="s",
+            depends_on="other",
+            destructive="The selected target is dropped and rebuilt.",
+        ),
     ]
 
 
@@ -554,6 +559,32 @@ class _MultiHostCascadeModel(AppFormModel):
     ] = Field(default_factory=list)
 
 
+class _HostTargetServiceModel(AppFormModel):
+    """Cover ``HostRef(target_service=...)`` precedence and omit-when-unset."""
+
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Service", section="s"),
+    ]
+    other_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Other", section="s"),
+    ]
+    explicit_only: Annotated[
+        str,
+        HostRef(target_service="service_id"),
+        Ui(label="Explicit", section="s"),
+    ]
+    precedence: Annotated[
+        str,
+        HostRef(target_service="other_id"),
+        Ui(label="Precedence", section="s", depends_on="service_id"),
+    ]
+    plain_host: Annotated[str, HostRef(), Ui(label="Plain Host", section="s")]
+
+
 class TestReferenceFields:
     """Cover ref markers driving the schema field class and their extras."""
 
@@ -578,6 +609,10 @@ class TestReferenceFields:
         assert fields["hostname"].model_dump(exclude_none=True)["depends_on"] == (
             "service_id"
         )
+        assert fields["hostname"].target_service == "service_id"
+        assert "target_service" not in fields["plain_host"].model_dump(
+            exclude_none=True
+        )
 
     def test_multi_host_ref_depends_on_emitted_when_set(self) -> None:
         """Emit ``depends_on`` on MultiHostField for wire uniformity (no cascade).
@@ -588,6 +623,53 @@ class TestReferenceFields:
         fields = _fields_by_name(_MultiHostCascadeModel)
         assert isinstance(fields["hosts"], MultiHostField)
         assert fields["hosts"].depends_on == "service_id"
+        assert fields["hosts"].target_service == "service_id"
+
+    def test_host_ref_target_service_explicit_and_omitted(self) -> None:
+        """Emit ``target_service`` from the marker; omit it when neither source is set."""
+        fields = _fields_by_name(_HostTargetServiceModel)
+        assert isinstance(fields["explicit_only"], HostField)
+        assert fields["explicit_only"].target_service == "service_id"
+        assert fields["explicit_only"].depends_on is None
+        assert "depends_on" not in fields["explicit_only"].model_dump(exclude_none=True)
+        assert (
+            fields["explicit_only"].model_dump(exclude_none=True)["target_service"]
+            == "service_id"
+        )
+        assert "target_service" not in fields["plain_host"].model_dump(
+            exclude_none=True
+        )
+
+    def test_host_ref_target_service_marker_precedes_depends_on(self) -> None:
+        """Prefer ``HostRef(target_service=...)`` over ``Ui(depends_on=...)``."""
+        fields = _fields_by_name(_HostTargetServiceModel)
+        assert isinstance(fields["precedence"], HostField)
+        assert fields["precedence"].depends_on == "service_id"
+        assert fields["precedence"].target_service == "other_id"
+
+    def test_host_ref_empty_target_service_does_not_fall_back(self) -> None:
+        """Treat only ``None`` as unset — do not fall back on empty string via ``or``.
+
+        An explicit ``target_service=""`` must not silently inherit
+        ``Ui(depends_on=...)``. The wire type rejects empty strings
+        (``NonEmptyStr``), so derivation fails instead of emitting the
+        cascade field name.
+        """
+
+        class _EmptyTarget(AppFormModel):
+            service_id: Annotated[
+                int,
+                ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+                Ui(label="Service", section="s"),
+            ]
+            hostname: Annotated[
+                str,
+                HostRef(target_service=""),
+                Ui(label="Host", section="s", depends_on="service_id"),
+            ]
+
+        with pytest.raises(ValidationError):
+            derive_form_sections(_EmptyTarget, _SINGLE_SECTION)
 
     def test_allow_custom_emitted_only_when_true(self) -> None:
         """Emit ``allow_custom`` only when the ref opts in."""
@@ -613,6 +695,19 @@ class TestReferenceFields:
         assert branches["schema"].fields[0].name == "target"
         assert branches["schema"].fields[0].depends_on == "other"
         assert [field.name for field in sections[0].fields] == ["target"]
+
+    def test_multiple_ref_marker_branches_carry_destructive(self) -> None:
+        """Publish ``Ui(destructive=...)`` on every branch of a multi-reference one-of."""
+        sections = derive_form_sections(_MultiRefModel, _SINGLE_SECTION)
+        group = next(
+            field for field in sections[0].fields if isinstance(field, OneOfGroup)
+        )
+        assert {
+            branch.value: branch.fields[0].destructive for branch in group.branches
+        } == {
+            "service": "The selected target is dropped and rebuilt.",
+            "schema": "The selected target is dropped and rebuilt.",
+        }
 
     def test_allow_custom_requires_str_in_annotation(self) -> None:
         """Reject allow_custom on a field whose annotation cannot accept str."""
@@ -802,6 +897,91 @@ class TestUiDefaultTriState:
         """Honor ``Ui(default=None)`` as a form default of ``None`` over a value default."""
         assert _fields_by_name(_DefaultModel)["none_display"].default is None
         assert _DefaultModel.model_fields["none_display"].default == "body-default"
+
+
+class _DestructiveModel(AppFormModel):
+    wipe: Annotated[
+        bool,
+        Ui(label="Wipe", section="s", destructive="Existing rows are dropped."),
+    ] = False
+    strategy: Annotated[
+        str,
+        Ui(
+            label="Strategy",
+            section="s",
+            destructive="Choosing this recreates the table from scratch.",
+        ),
+    ] = ""
+    plain: Annotated[bool, Ui(label="Plain", section="s")] = False
+
+
+class _DestructiveBranchA(BaseModel):
+    mode: Literal["a"] = "a"
+    a_value: Annotated[str, Ui(label="A", section="s")] = ""
+
+
+class _DestructiveBranchB(BaseModel):
+    mode: Literal["b"] = "b"
+    b_value: Annotated[str, Ui(label="B", section="s")] = ""
+
+
+class TestUiDestructive:
+    """Cover the opt-in ``Ui(destructive=...)`` consequence notice."""
+
+    def test_marker_stores_the_consequence_text(self) -> None:
+        """Keep the consequence sentence verbatim on the marker."""
+        assert Ui(section="s", destructive="Drops tables.").destructive == (
+            "Drops tables."
+        )
+
+    def test_marker_is_unmarked_by_default(self) -> None:
+        """Leave ``destructive`` unset so an ordinary field carries no notice."""
+        assert Ui(section="s").destructive is None
+
+    @pytest.mark.parametrize("blank", ["", "   ", "\t\n"])
+    def test_marker_rejects_a_blank_consequence(self, blank: str) -> None:
+        """Reject a marker whose consequence text is empty or whitespace-only."""
+        with pytest.raises(ValueError, match="destructive"):
+            Ui(section="s", destructive=blank)
+
+    def test_bool_field_derives_the_consequence_text(self) -> None:
+        """Publish the notice on a derived ``bool`` field."""
+        assert (
+            _fields_by_name(_DestructiveModel)["wipe"].destructive
+            == "Existing rows are dropped."
+        )
+
+    def test_non_bool_field_derives_the_consequence_text(self) -> None:
+        """Publish the notice on a derived non-``bool`` field."""
+        assert _fields_by_name(_DestructiveModel)["strategy"].destructive == (
+            "Choosing this recreates the table from scratch."
+        )
+
+    def test_unmarked_field_derives_no_consequence_text(self) -> None:
+        """Leave an unmarked field's ``destructive`` at ``None``."""
+        assert _fields_by_name(_DestructiveModel)["plain"].destructive is None
+
+    def test_destructive_on_a_discriminated_union_is_rejected(self) -> None:
+        """Reject a mark on a discriminated union, which derives a group that cannot carry it.
+
+        A ``OneOfGroup`` is not a ``BaseField``, so it has no ``destructive``
+        and the branch leaves carry their own ``Ui``. Deriving silently would
+        drop the mark and leave the field looking safe, so the model is refused
+        as it is declared — ``AppFormModel`` builds the runtime schema in
+        ``__pydantic_init_subclass__``, so the failure lands at class creation.
+        """
+        with pytest.raises(ValueError, match="destructive"):
+
+            class _DestructiveOneOfModel(AppFormModel):
+                source: Annotated[
+                    _DestructiveBranchA | _DestructiveBranchB,
+                    Field(discriminator="mode"),
+                    Ui(
+                        label="Source",
+                        section="s",
+                        destructive="Everything is dropped.",
+                    ),
+                ] = Field(default_factory=_DestructiveBranchA)
 
 
 class TestHiddenExclusion:
@@ -1102,3 +1282,35 @@ class TestRemoteChoices:
         """Reject an empty (whitespace-only) endpoint at marker construction."""
         with pytest.raises(ValueError, match="endpoint"):
             RemoteChoices(endpoint="   ")
+
+
+class TestDeriveAppSchemaItemDisplayNames:
+    """Cover the record names threading through :func:`derive_app_schema`."""
+
+    def test_record_names_passed_through(self) -> None:
+        """Stamp both record names onto the derived schema unchanged."""
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+            item_display_name="backup",
+            item_display_name_plural="backups",
+        )
+
+        assert schema.item_display_name == "backup"
+        assert schema.item_display_name_plural == "backups"
+
+    def test_omitted_record_names_default_from_display_name(self) -> None:
+        """Leave the model's defaulting to fill both when the caller passes neither."""
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+        )
+
+        assert schema.item_display_name == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backups"

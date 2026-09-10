@@ -281,3 +281,175 @@ class TestListForServiceKey:
 
         assert page.total == 0
         assert page.items == []
+
+
+class TestReferencedServiceIds:
+    """Cover the inventory ids the catalog declares as still resolvable."""
+
+    @pytest.mark.asyncio
+    async def test_returns_the_distinct_recorded_ids(self, session) -> None:
+        """Collapse repeated runs of one service to a single id."""
+        for task_history_id, service_id in ((1, 7), (2, 7), (3, 9)):
+            await MysqlBackupRunManager.save(
+                session,
+                MysqlBackupRun(
+                    task_history_id=task_history_id,
+                    service_name="svc-a",
+                    service_id=service_id,
+                    backup_type="M",
+                ),
+            )
+
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == {7, 9}
+
+    @pytest.mark.asyncio
+    async def test_drops_rows_recorded_without_an_id(self, session) -> None:
+        """Skip a pre-snapshot row that carries only the service name."""
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc-a",
+                service_id=None,
+                backup_type="M",
+            ),
+        )
+
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == set()
+
+    @pytest.mark.asyncio
+    async def test_empty_catalog_references_nothing(self, session) -> None:
+        """Return an empty set rather than raising when no run was recorded."""
+        assert await MysqlBackupRunManager.referenced_service_ids(session) == set()
+
+    @pytest.mark.asyncio
+    async def test_a_referenced_service_still_resolves_after_collection(
+        self, session
+    ) -> None:
+        """Keep the catalog answering for a service collection had to retain.
+
+        The catalog's contract is that a retired service still resolves, because
+        the catalog is a historical record. Collection upholds it by retaining
+        any service a run points at rather than by amending the contract, so the
+        id the catalog queries by must survive a run that collected its peers.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            MysqlBackupRun(
+                task_history_id=1,
+                service_name="svc-a",
+                service_id=7,
+                backup_type="M",
+            ),
+        )
+        retained = await MysqlBackupRunManager.referenced_service_ids(session)
+        assert retained == {7}
+
+        page = await MysqlBackupRunManager.list_for_service(
+            session, _key("svc-a", 7), pagination=_PAGE
+        )
+
+        assert [run.service_id for run in page.items] == [7]
+
+
+class TestListForHistoryIds:
+    """Cover the task-history-keyed query behind the task-scoped catalog route."""
+
+    @pytest.mark.asyncio
+    async def test_orders_newest_finished_first(self, session) -> None:
+        """Sort by run completion, identically to the per-service query."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 3, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=3,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 5, 0, tzinfo=UTC),
+        )
+
+        by_history = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2, 3], pagination=_PAGE
+        )
+        by_service = await MysqlBackupRunManager.list_for_service(
+            session, _key("svc-a"), pagination=_PAGE
+        )
+
+        assert [r.task_history_id for r in by_history.items] == [3, 1, 2]
+        assert [r.task_history_id for r in by_history.items] == [
+            r.task_history_id for r in by_service.items
+        ]
+
+    @pytest.mark.asyncio
+    async def test_null_finished_at_sorts_last(self, session) -> None:
+        """Sort a run that never reported a finish time below one that did."""
+        await _save(session, task_history_id=1, service_name="svc-a")
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2], pagination=_PAGE
+        )
+
+        assert [r.task_history_id for r in page.items] == [2, 1]
+
+    @pytest.mark.asyncio
+    async def test_empty_id_list_returns_an_empty_page(self, session) -> None:
+        """Return an empty page for a task with no successful runs to select by.
+
+        An empty ``IN`` renders as a degenerate always-false predicate, so the
+        query is skipped outright rather than left to agree with its own count.
+        """
+        await _save(session, task_history_id=1, service_name="svc-a")
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [], pagination=_PAGE
+        )
+
+        assert page.items == []
+        assert page.total == 0
+
+    @pytest.mark.asyncio
+    async def test_selects_only_the_given_ids(self, session) -> None:
+        """Return the rows for the requested history ids and no others."""
+        for history_id in range(1, 5):
+            await _save(
+                session, task_history_id=history_id, service_name=f"svc-{history_id}"
+            )
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [2, 3], pagination=_PAGE
+        )
+
+        assert page.total == 2  # noqa: PLR2004
+        assert sorted(r.task_history_id for r in page.items) == [2, 3]
+
+    @pytest.mark.asyncio
+    async def test_spans_services(self, session) -> None:
+        """Return every catalogued run for the task, whatever service it named.
+
+        A task's target can be re-pointed, so keying on the history ids must not
+        silently drop the runs recorded under the previous service.
+        """
+        await _save(session, task_history_id=1, service_name="svc-old", service_id=1)
+        await _save(session, task_history_id=2, service_name="svc-new", service_id=2)
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2], pagination=_PAGE
+        )
+
+        assert page.total == 2  # noqa: PLR2004
+        assert {r.service_name for r in page.items} == {"svc-old", "svc-new"}

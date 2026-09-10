@@ -51,6 +51,7 @@ from app.sep.apps.framework.api import (
     derive_crud_routes,
     derive_execute_route,
     derive_script_routes,
+    resolve_response_model,
 )
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.connectivity import CONNECTIVITY_WARNING_FIELD
@@ -280,7 +281,10 @@ class TaskExecutionApp(BaseApp):
     :param create_model: The model-first ``AppFormModel`` subclass whose fields
         drive the derived schema and create form. Mutually exclusive with the
         transitional ``schema=`` passthrough; one of the two is required.
-    :param response_model: The list/detail response model. Defaults to
+    :param response_model: The list/detail response model. When an explicit
+        ``response_builder`` is set, must equal its return type — the derived list
+        route serializes the builder's model, and every ``response_model`` reader
+        (including the ``list_view`` column gate) measures this field. Defaults to
         :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.
@@ -407,6 +411,20 @@ class TaskExecutionApp(BaseApp):
         ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
+    :param item_display_name: The name for one record this app's create form
+        produces (for example ``backup``), threaded into the derived
+        ``GET /schema`` (``AppSchema.item_display_name``). Written in
+        mid-sentence form so a consumer capitalises the first character itself.
+        Defaults to ``None``, which leaves the schema to fall back to
+        ``display_name``. Read only on the derived-schema path: a
+        ``script_source`` app declares its record names on the source instead,
+        and a ``schema=`` app carries them on ``AppSchema`` directly, so setting
+        this on either is rejected at construction (see
+        :meth:`_validate_item_display_names`).
+    :param item_display_name_plural: The name for several such records (for
+        example ``backups``), threaded into
+        ``AppSchema.item_display_name_plural`` under the same condition.
+        Declared independently of the singular. Defaults to ``None``.
     :param related_apps: Separately registered apps the React shell surfaces as
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
@@ -417,6 +435,8 @@ class TaskExecutionApp(BaseApp):
     """
 
     owner: str
+    item_display_name: str | None = None
+    item_display_name_plural: str | None = None
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
@@ -499,8 +519,9 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
-            response/filter knobs, the list-view columns, or the ``ArgFormat`` markers
-            are inconsistent (see the per-aspect helpers).
+            response/filter knobs, the ``response_model`` / ``response_builder``
+            agreement, the list-view columns, the ``ArgFormat`` markers, or the
+            item display names are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -510,9 +531,11 @@ class TaskExecutionApp(BaseApp):
         self._validate_list_suppress()
         self._validate_list_query()
         self._validate_response_knobs()
+        self._validate_response_model_agreement()
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
+        self._validate_item_display_names()
 
     def _validate_related_apps(self) -> None:
         """Reject ``related_apps`` on definitions that do not derive a schema.
@@ -551,6 +574,35 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: duplicate related_apps route_segment "
                 f"values {duplicates}"
+            )
+
+    def _validate_item_display_names(self) -> None:
+        """Reject item display names on definitions that do not derive a schema.
+
+        ``item_display_name`` and ``item_display_name_plural`` are schema
+        metadata read only on the derived-schema path (``_resolve_plugin_schema``);
+        a ``schema=`` passthrough app carries its record names on ``AppSchema``
+        directly, and a ``script_source`` app serves ``static_schema`` instead, so
+        setting either field on those definitions is silently ignored downstream.
+
+        :raises ValueError: When ``item_display_name`` or
+            ``item_display_name_plural`` is set on a ``schema=`` or
+            ``script_source`` app.
+        """
+        if self.item_display_name is None and self.item_display_name_plural is None:
+            return
+        if self.script_source is not None:
+            raise ValueError(
+                "TaskExecutionApp: item_display_name/item_display_name_plural are "
+                "schema metadata for a model-first app; a script_source app "
+                "declares its record names on the source — drop them from the "
+                "definition"
+            )
+        if self.app_schema is not None:
+            raise ValueError(
+                "TaskExecutionApp: a schema= app carries its record names on "
+                "AppSchema — drop item_display_name/item_display_name_plural "
+                "from the definition"
             )
 
     def _validate_connectivity_refs(self) -> None:
@@ -824,6 +876,36 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: list_filter.service_type needs a service_type to "
                 "filter against; set service_type or drop the filter"
+            )
+
+    def _validate_response_model_agreement(self) -> None:
+        """Reject a ``response_builder`` whose return type is not ``response_model``.
+
+        The derived list route serializes the builder's return annotation, while
+        ``response_model`` is what every other reader — including the ``list_view``
+        column gate — measures. When an app supplies an explicit builder, the two
+        must agree.
+
+        :raises TypeError: When the explicit builder lacks a valid ``BaseModel``
+            return annotation.
+        :raises ValueError: When the explicit builder's return annotation is not
+            ``response_model``.
+        """
+        if self.response_builder is None or self.script_source is not None:
+            return
+        builder_model = resolve_response_model(
+            self.response_builder,
+            helper="TaskExecutionApp",
+            param="response_builder",
+        )
+        if builder_model is not self.response_model:
+            raise ValueError(
+                "TaskExecutionApp: response_builder returns "
+                f"{builder_model.__name__} but response_model declares "
+                f"{self.response_model.__name__}; the derived list route serializes "
+                "the builder's model, so every response_model reader (the list_view "
+                "column gate among them) measures the wrong object — set "
+                "response_model to the builder's return type"
             )
 
     def _extra_routes_have_detail(self) -> bool:
@@ -1212,6 +1294,8 @@ class TaskExecutionApp(BaseApp):
             self.views.layout,
             name=self.name,
             display_name=self.display_name,
+            item_display_name=self.item_display_name,
+            item_display_name_plural=self.item_display_name_plural,
             description=self.description,
             capabilities=self.views.capabilities,
             list_view=self.views.list_view,
@@ -1245,7 +1329,7 @@ class TaskExecutionApp(BaseApp):
             status: TaskHistoryStatusEnum | None = None,
             last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
-        ) -> response_model:
+        ) -> response_model:  # ty: ignore[invalid-type-form]
             mapping = context or {}
             return build_default_task_response(
                 response_model,
@@ -1315,7 +1399,7 @@ class TaskExecutionApp(BaseApp):
                 *,
                 status: TaskHistoryStatusEnum | None = None,
                 **_: Any,
-            ) -> create_response_model:
+            ) -> create_response_model:  # ty: ignore[invalid-type-form]
                 return build_default_task_response(create_response_model, task, status)
 
             return _builder
@@ -1359,7 +1443,9 @@ class TaskExecutionApp(BaseApp):
         alert_detail_builder = self.alert_detail_builder
         run_result_recorder = self.run_result_recorder
         body_marker = Form() if self.create_form_encoded else Body()
-        form_param = Annotated[self.create_model, body_marker]
+        form_param = Annotated[
+            self.create_model, body_marker  # ty: ignore[invalid-type-form]
+        ]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

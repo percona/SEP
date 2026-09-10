@@ -15,12 +15,16 @@
 
 """Define tests for the app.core.config module."""
 
+import base64
 import hashlib
 import hmac
+import secrets
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from pydantic import AliasChoices, Field, SecretStr, ValidationError
 from pydantic_settings import (
@@ -36,6 +40,7 @@ from pydantic_settings.sources import (
     InitSettingsSource,
 )
 
+from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
 from app.core.auth.config import AuthSettings
 from app.core.config import (
@@ -50,6 +55,10 @@ from app.core.config import (
     Settings,
     settings,
     YamlPrefixConfigSettingsSource,
+)
+from app.core.settings_override.registry import (
+    field_reload_classification,
+    ReloadClassification,
 )
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
@@ -504,6 +513,118 @@ class TestDeriveInternalToken:
             Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)
 
 
+class TestEncryptionKey:
+    """Cover ENCRYPTION_KEY validation and the absence of any committed key."""
+
+    def test_unset_key_fails(self, monkeypatch):
+        """Reject an absent key with the actionable remediation message.
+
+        The suite-wide key is cleared so no channel supplies one, which is the
+        state a fresh checkout starts in and the case the message exists for.
+
+        :param monkeypatch: The environment patcher.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings()
+
+    def test_empty_key_fails(self):
+        """Reject an empty key, which reads as configured but cannot encrypt."""
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings(ENCRYPTION_KEY=SecretStr(""))
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "not-a-fernet-key",
+            secrets.token_hex(32),
+            base64.urlsafe_b64encode(b"x" * 16).decode("ascii"),
+        ],
+        ids=["garbage", "openssl-rand-hex-32", "sixteen-byte-key"],
+    )
+    def test_malformed_key_fails(self, value):
+        """Reject a value Fernet cannot build a cipher from.
+
+        ``openssl rand -hex 32`` is covered explicitly: it is the remediation
+        ``SECRET_KEY`` documents and it yields 64 characters Fernet refuses, so
+        this case pins the remediation text against regressing to ``-hex``.
+        """
+        with pytest.raises(ValidationError, match="ENCRYPTION_KEY must be set"):
+            Settings(ENCRYPTION_KEY=SecretStr(value))
+
+    def test_valid_key_accepted(self):
+        """Accept a freshly generated Fernet key and keep it wrapped."""
+        key = Fernet.generate_key().decode("ascii")
+
+        instance = Settings(ENCRYPTION_KEY=SecretStr(key))
+
+        assert isinstance(instance.ENCRYPTION_KEY, SecretStr)
+        assert instance.ENCRYPTION_KEY.get_secret_value() == key
+
+    def test_no_key_is_committed(self):
+        """Reject a key resolved from the committed profile, whatever the environment.
+
+        The values this key protects are real credentials, and the repository is
+        public, so a committed key would be readable by anyone. Every
+        environment supplies its own; nothing ships one.
+        """
+        profile = yaml.safe_load(
+            (BASE_DIR / "settings.yaml").read_text(encoding="utf-8")
+        )
+
+        assert not [
+            name for name, block in profile.items() if "ENCRYPTION_KEY" in block
+        ]
+
+    def test_key_is_masked(self):
+        """Mask the key everywhere a settings dump could carry it."""
+        key = Fernet.generate_key().decode("ascii")
+
+        instance = Settings(ENCRYPTION_KEY=SecretStr(key))
+        dumps = [
+            repr(instance.ENCRYPTION_KEY),
+            repr(instance),
+            str(instance.model_dump()),
+            instance.model_dump_json(),
+        ]
+
+        assert all(dumps)
+        assert not [dump for dump in dumps if key in dump]
+
+    def test_key_resolves_from_secret_file(self, tmp_path, monkeypatch):
+        """Resolve the key from a mounted file named after the canonical variable.
+
+        The suite-wide key is cleared first because an environment variable
+        outranks a secret file, so leaving it set would test the environment
+        channel a second time rather than the file one.
+
+        :param tmp_path: The directory mounted as ``SECRETS_DIR``.
+        :param monkeypatch: The environment patcher.
+        """
+        monkeypatch.delenv("ENCRYPTION_KEY", raising=False)
+        key = Fernet.generate_key().decode("ascii")
+        (tmp_path / "ENCRYPTION_KEY").write_text(f"{key}\n", encoding="utf-8")
+
+        instance = Settings(_secrets_dir=tmp_path)
+
+        assert instance.ENCRYPTION_KEY.get_secret_value() == key
+
+    def test_key_is_not_overridable(self):
+        """Classify the key as not overridable, so the DB layer cannot rewrite it.
+
+        The settings-override layer is itself a consumer of this key, so a key
+        the override API could rewrite would orphan every row it had written.
+        """
+        classification = field_reload_classification(
+            Settings.model_fields["ENCRYPTION_KEY"],
+            owner_cls=Settings,
+            field_name="ENCRYPTION_KEY",
+        )
+
+        assert classification is ReloadClassification.NOT_OVERRIDABLE
+
+
 SECRET_FILE_MATRIX = [
     pytest.param(
         Settings,
@@ -877,6 +998,73 @@ def test_foreign_prefix_file_does_not_resolve(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "env_order",
+    [
+        ("DATABASE__PASSWORD", "SEP__DATABASE__PASSWORD"),
+        ("SEP__DATABASE__PASSWORD", "DATABASE__PASSWORD"),
+    ],
+    ids=["global-first", "per-service-first"],
+)
+def test_per_service_env_beats_global_env(monkeypatch, env_order):
+    """Prefer a per-service environment variable over the global spelling."""
+    values = {
+        "DATABASE__PASSWORD": "globalpw",
+        "SEP__DATABASE__PASSWORD": "seppw",
+    }
+    for name in values:
+        monkeypatch.delenv(name, raising=False)
+    for name in env_order:
+        monkeypatch.setenv(name, values[name])
+
+    assert SEPSettings().DATABASE.PASSWORD.get_secret_value() == "seppw"
+
+
+@pytest.mark.parametrize(
+    "dotenv_lines",
+    [
+        "DATABASE__PASSWORD=globalpw\nSEP__DATABASE__PASSWORD=seppw\n",
+        "SEP__DATABASE__PASSWORD=seppw\nDATABASE__PASSWORD=globalpw\n",
+    ],
+    ids=["global-first", "per-service-first"],
+)
+def test_per_service_dotenv_beats_global_dotenv(tmp_path, dotenv_lines):
+    """Prefer a per-service dotenv entry over the global spelling."""
+    env_file = tmp_path / "dotenv"
+    env_file.write_text(dotenv_lines, encoding="utf-8")
+
+    assert (
+        SEPSettings(_env_file=env_file).DATABASE.PASSWORD.get_secret_value() == "seppw"
+    )
+
+
+def test_per_service_secret_file_beats_global_secret_file(tmp_path):
+    """Prefer a per-service secret file over the global spelling."""
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "DATABASE__PASSWORD").write_text("globalpw", encoding="utf-8")
+    (secrets_dir / "SEP__DATABASE__PASSWORD").write_text("seppw", encoding="utf-8")
+
+    assert (
+        SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+        == "seppw"
+    )
+
+
+@pytest.mark.parametrize(
+    "settings_cls",
+    [SEPSettings, InventorySettings, TasksSettings],
+)
+def test_global_database_password_resolves_for_every_service(tmp_path, settings_cls):
+    """Resolve one global password file for every service when none overrides it."""
+    (tmp_path / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
+
+    assert (
+        settings_cls(_secrets_dir=tmp_path).DATABASE.PASSWORD.get_secret_value()
+        == "shared-pw"
+    )
+
+
+@pytest.mark.parametrize(
     ("settings_cls", "filename", "content", "expected", "read"), SECRET_FILE_MATRIX
 )
 def test_every_settings_class_reads_its_own_secret_file(
@@ -1100,6 +1288,16 @@ class TestDerivedBeatStoreDefault:
     def test_mounted_password_reaches_the_derived_store(self, tmp_path):
         """Carry a mounted password into the store without exporting it anywhere."""
         secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="pw")
+
+        assert (
+            Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
+            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        )
+
+    @pytest.mark.usefixtures("_postgres_profile")
+    def test_global_password_reaches_the_derived_store(self, tmp_path):
+        """Carry a global mounted password into the derived beat store."""
+        secrets_dir = _mounted_secrets(tmp_path, DATABASE__PASSWORD="pw")
 
         assert (
             Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi

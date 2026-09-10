@@ -58,12 +58,18 @@ class PoolEngineOptions(BaseModel):
     :param max_overflow: Connections allowed beyond ``pool_size``. ``0`` disables
         overflow.
     :param pool_timeout: Seconds to wait for a free connection. Must be ``> 0``.
+    :param pool_pre_ping: Whether to test each pooled connection for liveness
+        before handing it out. Defaults to ``True`` so a dead connection is
+        discarded and replaced transparently. Unlike the sizing fields, this is a
+        plain ``bool`` rather than optional because the point is to override
+        SQLAlchemy's ``False`` default, not to fall back to it.
     """
 
     model_config = ConfigDict(extra="forbid")
     pool_size: PositiveInt | None = None
     max_overflow: NonNegativeInt | None = None
     pool_timeout: PositiveFloat | None = None
+    pool_pre_ping: bool = True
 
 
 class CeleryOptions(BaseLowercaseModel):
@@ -86,11 +92,15 @@ class CeleryOptions(BaseLowercaseModel):
     :param global_expire_seconds: The number of seconds after which a periodic task
         will no longer run. Defaults to ``30``.
     :param beat_engine_options: SQLAlchemy pool options (``pool_size``,
-        ``max_overflow``, ``pool_timeout``) for both celery-beat-database engines
-        -- the async worker engine and the sync beat scheduler engine. Empty by
-        default: the non-forked path runs on ``NullPool``, which rejects
-        ``max_overflow`` outright and silently drops the other two, so only a
-        deployment running a forked beat should set it.
+        ``max_overflow``, ``pool_timeout``, ``pool_pre_ping``) for both
+        celery-beat-database engines — the async worker engine and the sync beat
+        scheduler engine. ``pool_pre_ping`` defaults to enabled; sizing keys are
+        unset by default. On SEP's non-forked beat path the scheduler pins
+        ``NullPool`` and strips every ``pool*`` kwarg (including
+        ``pool_pre_ping``) harmlessly; a forked-beat deployment inherits all
+        options from this dict, including pre-ping. Only sizing keys need care on
+        the non-forked path: ``NullPool`` rejects ``max_overflow`` outright and
+        silently drops ``pool_size`` and ``pool_timeout``.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -109,15 +119,15 @@ class CeleryOptions(BaseLowercaseModel):
     @field_serializer("beat_engine_options")
     def serialize_beat_engine_options(
         self, value: PoolEngineOptions
-    ) -> dict[str, int | float]:
-        """Dump only the explicitly-set pool options as plain kwargs.
+    ) -> dict[str, int | float | bool]:
+        """Dump pool options as plain kwargs for Celery conf and the worker engine.
 
-        ``model_dump`` feeds both ``Celery(**...)`` and the worker engine, so unset
-        fields must be omitted -- forwarding ``None`` pool kwargs would override
-        SQLAlchemy's own defaults instead of leaving them untouched.
+        ``pool_pre_ping`` is always emitted via ``model_dump(exclude_none=True)``.
+        Unset sizing fields are omitted so forwarding ``None`` would not override
+        SQLAlchemy's own defaults for those.
 
         :param value: The validated pool options.
-        :return: The set pool options keyed by their lowercase engine-kwarg names.
+        :return: Pool options keyed by their lowercase engine-kwarg names.
         """
         return value.model_dump(exclude_none=True)
 

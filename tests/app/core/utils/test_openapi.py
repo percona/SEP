@@ -715,10 +715,16 @@ class TestNamespacedOpenapi:
 
         app = FastAPI()
 
-        @app.get("/pg", response_model=PaginatedResponse[pg])
+        @app.get(
+            "/pg",
+            response_model=PaginatedResponse[pg],  # ty: ignore[invalid-type-form]
+        )
         def _pg() -> Any: ...
 
-        @app.get("/mongo", response_model=PaginatedResponse[mongo])
+        @app.get(
+            "/mongo",
+            response_model=PaginatedResponse[mongo],  # ty: ignore[invalid-type-form]
+        )
         def _mongo() -> Any: ...
 
         @app.get("/solo", response_model=solo)
@@ -784,7 +790,8 @@ class TestNamespacedOpenapi:
         app = FastAPI()
 
         @app.get("/ping")
-        def _ping() -> dict[str, str]: ...
+        def _ping() -> dict[str, str]:
+            return {}
 
         live = app.openapi()
         assert app.openapi_schema is live
@@ -802,7 +809,8 @@ class TestNamespacedOpenapi:
         app = FastAPI()
 
         @app.get("/x")
-        def _x() -> dict[str, str]: ...
+        def _x() -> dict[str, str]:
+            return {}
 
         original_generator = fastapi_compat_v2.GenerateJsonSchema
         sentinel = {"cached": "spec"}

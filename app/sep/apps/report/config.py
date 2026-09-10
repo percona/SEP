@@ -39,7 +39,6 @@ from pydantic import field_validator, PositiveInt, SecretStr
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
 from app.core.models import BaseLowercaseModel, BaseTransformFieldsModel
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.fields import StrRelativePath
 from app.core.utils.strings import lower_if_string
@@ -167,5 +166,5 @@ class HealthReportSettings(BaseYamlSettings, BaseTransformFieldsModel):
 
 
 health_report_settings: HealthReportSettings = OverridableSettingsProxy(
-    HealthReportSettings, setting_class=SettingClassEnum.HEALTH_REPORT_SETTINGS
+    HealthReportSettings, setting_class=HealthReportSettings.__name__
 )

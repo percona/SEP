@@ -18,7 +18,7 @@
 import importlib
 from unittest.mock import MagicMock, patch
 
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import app.tasks.db.engine as tasks_engine_module
 from app.tasks.config import tasks_settings
@@ -29,9 +29,9 @@ class TestGetAsyncSessionMaker:
     """Test the get_async_session_maker function."""
 
     def test_returns_sessionmaker(self):
-        """Assert get_async_session_maker returns a sessionmaker instance."""
+        """Assert get_async_session_maker returns an async session maker."""
         result = get_async_session_maker()
-        assert isinstance(result, sessionmaker)
+        assert isinstance(result, async_sessionmaker)
 
     def test_returns_new_instance_each_call(self):
         """Assert each call returns a distinct session maker instance."""

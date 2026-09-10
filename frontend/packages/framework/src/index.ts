@@ -30,6 +30,7 @@ export type {
   RenderListColumnArgs,
   RenderListColumnOverride,
   SchemaListServerPagination,
+  SchemaListServerQuery,
 } from './components/SchemaListView';
 export {
   SchemaDrivenApp,
@@ -45,6 +46,15 @@ export type { TaskExecuteAction } from './components/SchemaDrivenApp/AppDetailPa
 export type { TaskExecuteBody } from './hooks';
 export { pathToEntityList } from './components/SchemaDrivenApp/AppDetailPage';
 export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenApp';
+export { ReadOnlyNotice } from './components/ReadOnlyNotice';
+export type { ReadOnlyNoticeProps } from './components/ReadOnlyNotice';
+export {
+  ActionErrorAlert,
+  useActionError,
+  actionErrorMessage,
+  DEFAULT_ACTION_ERROR_FALLBACK,
+} from './components/ActionErrorAlert';
+export type { ActionErrorAlertProps, ActionErrorState } from './components/ActionErrorAlert';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
@@ -77,6 +87,7 @@ export {
 } from './components/TaskHistoryTable';
 export type {
   TaskHistoryTableProps,
+  TaskHistoryStopContract,
   TaskHistoryEntry,
   TaskHistoryStatus,
   PaginatedTaskHistory,

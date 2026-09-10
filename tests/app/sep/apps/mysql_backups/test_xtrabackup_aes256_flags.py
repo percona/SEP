@@ -73,23 +73,23 @@ _should_inline_encrypt = _load_function("_should_inline_encrypt", {})
 
 
 class TestShouldInlineEncrypt:
-    """Assert the inline-flag gate is keyed on binary and keyfile presence."""
+    """Assert the inline-flag gate is keyed on the binary and the resolved format."""
 
     @pytest.mark.parametrize(
-        ("bin_cmd", "keyfile", "expected"),
+        ("bin_cmd", "aes256", "expected"),
         [
-            ("xtrabackup", "/keys/aes.key", True),
-            ("innobackupex", "/keys/aes.key", True),
-            ("mariadb-backup", "/keys/aes.key", False),
-            ("xtrabackup", None, False),
-            ("xtrabackup", "", False),
+            ("xtrabackup", True, True),
+            ("innobackupex", True, True),
+            ("mariadb-backup", True, False),
+            ("xtrabackup", False, False),
+            ("mariadb-backup", False, False),
         ],
     )
-    def test_gate_per_binary_and_keyfile(
-        self, bin_cmd: str, keyfile: str | None, *, expected: bool
+    def test_gate_per_binary_and_format(
+        self, bin_cmd: str, *, aes256: bool, expected: bool
     ) -> None:
-        """Assert each (bin_cmd, keyfile) combination yields the expected gate result."""
-        assert _should_inline_encrypt(bin_cmd, keyfile) is expected
+        """Assert each (bin_cmd, aes256) combination yields the expected gate result."""
+        assert _should_inline_encrypt(bin_cmd, aes256) is expected
 
 
 class _StoppedAtDispatchError(Exception):
@@ -105,7 +105,9 @@ class TestInlineEncryptWiredIntoCommand:
     method never shells out or touches the filesystem beyond that point.
     """
 
-    def _run(self, tmp_path, *, bin_cmd: str, keyfile: str | None) -> list[str]:
+    def _run(
+        self, tmp_path, *, bin_cmd: str, keyfile: str | None, aes256: bool = True
+    ) -> list[str]:
         calls: list[list[str]] = []
 
         class _TripwireSubprocess:
@@ -139,7 +141,8 @@ class TestInlineEncryptWiredIntoCommand:
         inst.builtin_kill = False
         inst.incremental = False
         inst.prepare_backup = False
-        inst.xtrabackup_aes256_keyfile = keyfile
+        inst.aes_keyfile = keyfile
+        inst.enc_aes = aes256
         inst.xtrabackup_extra_args = None
         inst.host = "localhost"
         inst.cmd_shell = False
@@ -159,6 +162,19 @@ class TestInlineEncryptWiredIntoCommand:
         """Assert ``mariadb-backup`` never reaches the dispatched command with them."""
         cmd = self._run(tmp_path, bin_cmd="mariadb-backup", keyfile="/keys/aes.key")
         assert "--encrypt=AES256" not in cmd
+
+    def test_stale_key_file_omits_encrypt_flags(self, tmp_path) -> None:
+        """Assert a key file the selected format excludes never reaches the command.
+
+        A stored config can still carry ``XTRABACKUP_AES256_KEYFILE`` after the
+        operator selected a GPG-only format; the resolved format, not the leftover
+        field, must decide.
+        """
+        cmd = self._run(
+            tmp_path, bin_cmd="xtrabackup", keyfile="/keys/aes.key", aes256=False
+        )
+        assert "--encrypt=AES256" not in cmd
+        assert "--encrypt-key-file=/keys/aes.key" not in cmd
 
 
 class TestAes256VerifyWiredIntoRun:

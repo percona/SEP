@@ -15,13 +15,19 @@
 """Verify the baked PMM-embedded settings profile."""
 
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
+from aioresponses import aioresponses
+from fastapi import status
+from sqlalchemy_celery_beat.models import Period
 
 from app import BASE_DIR
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
+from app.core.requests import RemoteAPI
+from app.core.utils import import_var
 from app.inventory.config import InventorySettings
 from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
 from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
@@ -29,9 +35,16 @@ from app.sep.apps.framework.registry import (
     build_app_registry,
     collect_app_owned_settings_classes,
 )
-from app.sep.config import SEPSettings
+from app.sep.bundle_upload.plan import (
+    ConnectionDetail,
+    DeliveryPlanExecutor,
+    SecretValue,
+)
+from app.sep.config import SEPSettings, SyncOptions
 from app.sep.routes.artifacts import collect_base_dirs
 from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.sep.sync.syncers.pmm import PMMSyncer
+from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
 from tests.app.sep.conftest import REDUCED_ACTIVATION
@@ -72,6 +85,9 @@ SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
 ALLOWLIST_SIZE = 12
+
+#: The inventory-sync cadence the baked profile provisions.
+EMBEDDED_INVENTORY_SYNC_MINUTES = 15
 """How many entries the embedded override allowlist ships.
 
 Pinned so a silently truncated list -- which the policy suite's negative
@@ -82,6 +98,72 @@ UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV"})
 """Fields a dump comparison cannot use.
 
 ``FASTAPI_ENV`` is what the comparison varies, so it can never match.
+"""
+
+DELIVERY_SECRET_NAME = "sn_api_key"
+"""The credential every step of the baked plan carries to the receiver.
+
+Declared empty, so the two read-only steps add no credential of their own and
+delivery stays off until an operator supplies inputs.
+"""
+
+BAKED_CONNECTION_DETAIL_LABELS = [
+    "Account name",
+    "Account number",
+    "Key",
+    "ServiceNow user",
+    "Active",
+    "Expires",
+]
+"""The labels the baked connection-details step reports its pairs under.
+
+Held in declaration order, which is the order the panel renders them in. A
+label dropped from the block costs the panel a row and raises nothing, so the
+whole list is pinned rather than counted.
+"""
+
+IDENTITY_SCOPED_QUERY = "user=javascript:gs.getUserID()"
+"""The encoded query narrowing the ``api_key`` read to the caller's own rows.
+
+Pinned byte-exact because a weakened predicate still answers with a row: the
+read would widen to whatever the table's ACL exposes rather than fail.
+"""
+
+API_KEY_ROW = {
+    "result": [
+        {
+            "expires": {
+                "display_value": "2028-06-04 16:40:12",
+                "value": "2028-06-04 16:40:12",
+            },
+            "name": {
+                "display_value": "Percona GAS user",
+                "value": "Percona GAS user",
+            },
+            "user.company.number": {
+                "display_value": "ACCT0040479",
+                "value": "ACCT0040479",
+            },
+            "active": {"display_value": "true", "value": "true"},
+            "user.name": {
+                "display_value": "Percona GAS User",
+                "value": "Percona GAS User",
+            },
+            "user.company.name": {
+                "display_value": "Contrativa",
+                "value": "Contrativa",
+            },
+        }
+    ]
+}
+"""One ``api_key`` row as the receiver answered the baked request on perconadev.
+
+Inlined rather than read from the capture it was taken from, which lives under
+the gitignored ``env/`` tree. Every field arrives wrapped as
+``{display_value, value}`` because the request asks for
+``sysparm_display_value=all``, and the row carries no ``token`` or
+``token_hash`` because the projection never selects one. The keys are kept in
+the receiver's own order, which is neither the projection's nor the panel's.
 """
 
 
@@ -126,6 +208,25 @@ def secret_valued_leaves(data: Any) -> list[tuple[str, Any]]:
     return []
 
 
+def projected_field(pointer: str) -> str:
+    """Return the response field one baked connection-details pointer addresses.
+
+    :param pointer: A pointer from the baked ``details`` map, shaped
+        ``/result/0/<field>/display_value``.
+    :return: The field name the pointer walks into.
+    :raises ValueError: When the pointer is not that shape. A pointer that stops
+        at the field name lands on a container, and one ending at ``value``
+        reads the unresolved half, so either drops or degrades its pair in
+        silence. An off-shape pointer is a failure here rather than a skip.
+    """
+    _, root, index, field, terminus = pointer.split("/")
+    if (root, index, terminus) != ("result", "0", "display_value"):
+        raise ValueError(
+            f"{pointer!r} does not address one projected field's display value."
+        )
+    return field
+
+
 def resolved_profile() -> dict[str, dict[str, Any]]:
     """Return every prefixed settings class as resolved from the profile.
 
@@ -148,6 +249,31 @@ def test_profile_constructs_every_settings_class():
     assert SEPSettings().DIAGNOSTICS_DELIVERY is not None
     assert InventorySettings().DATABASE.NAME == SHARED_DATABASE_NAME
     assert TasksSettings().NOMAD.endpoint
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_seeds_a_pmm_pinned_inventory_sync_schedule():
+    """Assert the profile resolves the values the inventory-sync seeder reads.
+
+    A YAML indentation or key regression would otherwise leave both settings at
+    their ``None`` defaults, silently dropping the seeded schedule — or worse,
+    keeping the interval and losing the pin, which widens the 15-minute firing
+    to every configured syncer.
+    """
+    settings = TasksSettings()
+
+    assert settings.INVENTORY_SYNC_INTERVAL is not None
+    assert (
+        settings.INVENTORY_SYNC_INTERVAL.every,
+        settings.INVENTORY_SYNC_INTERVAL.period,
+    ) == (EMBEDDED_INVENTORY_SYNC_MINUTES, Period.MINUTES)
+    assert PMMSyncer.get_name() == settings.INVENTORY_SYNC_SYNCER
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_enables_beat_pool_pre_ping():
+    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
+    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -190,6 +316,52 @@ def test_override_allowlist_resolves_from_the_profile(embedded_profile_data: dic
 def test_profile_carries_a_single_default_block(embedded_profile_data: dict):
     """Assert one block keeps the profile independent of ``FASTAPI_ENV``."""
     assert set(embedded_profile_data) == {"default"}
+
+
+def test_profile_database_block_is_defined_once(embedded_profile_data: dict):
+    """Assert the shared database is anchored once and aliased to every service."""
+    default = embedded_profile_data["default"]
+    shared = default["DATABASE"]
+    assert default["SEP"]["DATABASE"] is shared
+    assert default["INVENTORY"]["DATABASE"] is shared
+    assert default["TASKS"]["DATABASE"] is shared
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_all_services_resolve_the_same_database_connection():
+    """Assert SEP, Inventory, and Tasks read identical connection values from the profile."""
+    databases = [
+        settings_cls().DATABASE
+        for settings_cls in (SEPSettings, InventorySettings, TasksSettings)
+    ]
+    reference = databases[0]
+    for database in databases[1:]:
+        assert database.ENGINE == reference.ENGINE
+        assert (database.HOST, database.NAME, database.PORT, database.USER) == (
+            reference.HOST,
+            reference.NAME,
+            reference.PORT,
+            reference.USER,
+        )
+    assert (reference.HOST, reference.NAME, reference.PORT, reference.USER) == (
+        "pmm-server",
+        "sep",
+        5432,
+        "sep",
+    )
+
+
+def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):
+    """Assert one global password file supplies all three services from the profile."""
+    secrets_dir = embedded_profile_cwd / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
+
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        assert (
+            settings_cls(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+            == "shared-pw"
+        )
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -268,6 +440,45 @@ def test_activation_list_builds_an_app_registry():
 
     assert {"inventory", "atw", "mysql_backups"} <= activated
     assert "snippets" not in activated
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_inventory_activates_without_a_sidebar_entry():
+    """Assert the profile's ``SIDEBAR: false`` reaches the bound inventory app.
+
+    PMM owns the embedded inventory UI, so inventory is activated for its
+    operator API while ``GET /api/apps/`` advertises no page for it.
+    """
+    registry = build_app_registry(SEPSettings().APPS)
+
+    assert registry.get("inventory").sidebar is False
+
+
+def test_profile_does_not_run_the_system_facts_syncer(
+    embedded_profile_data: dict[str, Any],
+):
+    """Assert the embedded profile leaves system-facts collection unscheduled.
+
+    The observations it wrote were read only by the retired inventory browser
+    page, so the profile runs the two catalog syncers and omits the collector.
+    """
+    declared = [
+        entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
+    ]
+
+    assert declared == ["PMMSyncer", "MySQLSyncer"]
+
+
+def test_the_system_facts_syncer_stays_re_enablable():
+    """Assert the mothball is configuration only, reversible without a deploy.
+
+    ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
+    and ``get_syncers`` imports it from there, so restoring the profile entry
+    through a settings override is the whole re-enable path.
+    """
+    resolved = SyncOptions.model_validate({"syncer": "SystemFactsSyncer"})
+
+    assert import_var(resolved.syncer) is SystemFactsSyncer
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -383,15 +594,15 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
     """
     reachable_tokens: set[str] = set()
     for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in INVENTORY_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
     for member, _, _ in TASKS_ADMIN_SETTINGS_CLASSES:
-        reachable_tokens.add(member.value)
+        reachable_tokens.add(str(member))
 
     profile_apps = SEPSettings().APPS
     for entry in collect_app_owned_settings_classes(profile_apps):
-        reachable_tokens.add(entry.setting_class.value)
+        reachable_tokens.add(str(entry.setting_class))
 
     allowlist = read_allowlist(embedded_profile_data)
     for key in allowlist:
@@ -400,3 +611,126 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
             f"Allowlist entry {key!r} names class {class_token!r} which is not "
             f"reachable in any service under the embedded profile"
         )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+class TestBakedDeliveryProbeAndConnectionDetails:
+    """Cover the two read-only steps the baked delivery plan declares.
+
+    Every assertion observes the plan ``SEPSettings()`` returns rather than the
+    profile's text: ``DeliveryPlan`` ignores keys it does not declare, so a
+    misspelled block name is dropped in silence and a file-content check would
+    pass on a plan carrying neither step.
+    """
+
+    def test_the_baked_plan_declares_a_probe(self):
+        """Assert the connectivity check has a request to issue."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+
+        assert plan.probe is not None
+        assert plan.probe.path == "api/now/table/sn_customerservice_case"
+
+    def test_the_baked_probe_requests_one_identifier(self):
+        """Assert the probe reads one row's identifier and nothing else."""
+        probe = SEPSettings().DIAGNOSTICS_DELIVERY.probe
+
+        assert probe.query["sysparm_limit"].value == "1"
+        assert probe.query["sysparm_fields"].value == "sys_id"
+
+    def test_the_baked_plan_declares_connection_details(self):
+        """Assert the connected-state panel has a request to issue."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+
+        assert plan.connection_details is not None
+        assert plan.connection_details.path == "api/now/table/api_key"
+
+    def test_the_baked_connection_details_declares_every_label(self):
+        """Assert the panel's rows are declared, in the order they render."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert list(step.details) == BAKED_CONNECTION_DETAIL_LABELS
+
+    def test_every_projected_field_is_rendered(self):
+        """Assert the projection and the pointer map name the same fields.
+
+        A projected field no pointer addresses is read for nothing; a pointer
+        addressing an unprojected field drops its own row in silence.
+        """
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        projected = step.query["sysparm_fields"].value.split(",")
+        addressed = [projected_field(pointer) for pointer in step.details.values()]
+
+        assert sorted(addressed) == sorted(projected)
+
+    def test_the_baked_projection_selects_no_credential_field(self):
+        """Assert the request never asks the receiver for the key material.
+
+        The projection is the only thing deciding what the receiver sends, so
+        it is the only place the key material can be kept out: a field selected
+        here travels back over the wire whatever the pointers later discard.
+        """
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        projected = step.query["sysparm_fields"].value.split(",")
+
+        assert "name" in projected
+        assert "token" not in projected
+        assert "token_hash" not in projected
+
+    def test_the_baked_connection_details_scopes_to_the_calling_identity(self):
+        """Assert the read is narrowed to the rows this identity owns."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert step.query["sysparm_query"].value == IDENTITY_SCOPED_QUERY
+
+    def test_the_baked_connection_details_requests_display_values(self):
+        """Assert reference fields arrive resolved rather than as opaque ids."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert step.query["sysparm_display_value"].value == "all"
+        assert step.query["sysparm_limit"].value == "1"
+
+    def test_the_baked_probe_and_details_use_the_declared_secret(self):
+        """Assert both steps cite a credential the plan declares."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        headers = [
+            plan.probe.headers["x-sn-apikey"],
+            plan.connection_details.headers["x-sn-apikey"],
+        ]
+
+        assert all(isinstance(header, SecretValue) for header in headers)
+        assert {header.name for header in headers} == {DELIVERY_SECRET_NAME}
+        assert DELIVERY_SECRET_NAME in plan.secrets
+
+    @pytest.mark.asyncio
+    async def test_the_baked_pointers_resolve_against_a_receiver_response(self):
+        """Assert the declared pointers report six facts, not an empty panel.
+
+        A step whose pointers all miss is answered as ``available`` carrying no
+        pairs, which is the same blank panel an undeclared step leaves, so
+        declaring the block is not on its own evidence that it reports anything.
+        """
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        api = RemoteAPI(endpoint=str(plan.endpoint))
+        executor = DeliveryPlanExecutor(plan, api)
+
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(
+                    rf"{re.escape(str(plan.endpoint) + plan.connection_details.path)}.*"
+                ),
+                status=status.HTTP_200_OK,
+                payload=API_KEY_ROW,
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        assert details == [
+            ConnectionDetail(label="Account name", value="Contrativa"),
+            ConnectionDetail(label="Account number", value="ACCT0040479"),
+            ConnectionDetail(label="Key", value="Percona GAS user"),
+            ConnectionDetail(label="ServiceNow user", value="Percona GAS User"),
+            ConnectionDetail(label="Active", value="true"),
+            ConnectionDetail(label="Expires", value="2028-06-04 16:40:12"),
+        ]

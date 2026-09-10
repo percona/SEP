@@ -20,15 +20,26 @@ import hmac
 import logging.config
 import re
 import secrets
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta
 from functools import cached_property
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, NoReturn, Self, TypeVar
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Literal,
+    NoReturn,
+    Protocol,
+    runtime_checkable,
+    Self,
+    TypeVar,
+)
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet
 from fastapi import APIRouter, FastAPI, params
 from fastapi.applications import AppType
 from fastapi.middleware.cors import CORSMiddleware
@@ -53,7 +64,7 @@ from pydantic_settings import (
     SettingsConfigDict,
     YamlConfigSettingsSource,
 )
-from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource, PathType
+from pydantic_settings.sources import DotEnvSettingsSource, PathType
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Lifespan
 
@@ -107,7 +118,19 @@ def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-LOGGING_CONFIG = {
+@runtime_checkable
+class _EnvVarsSource(Protocol):
+    """Expose the environment variables a settings source collected.
+
+    ``settings_customise_sources`` must declare its parameters as the widest
+    source type its base does, and this is the only capability it needs from the
+    environment and dotenv ones.
+    """
+
+    env_vars: Mapping[str, str | None]
+
+
+LOGGING_CONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
@@ -272,8 +295,8 @@ class BaseYamlSettings(BaseSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Return the settings sources, highest priority first.
@@ -282,6 +305,10 @@ class BaseYamlSettings(BaseSettings):
         then YAML profile; each overrides the ones after it. Secret files are read
         from the directory ``SECRETS_DIR`` names, keyed by the same canonical
         ``__``-nested variable names their environment twins use.
+
+        Within each of the environment, dotenv and secret-file sources, a name
+        spelled with this class's prefix outranks the unprefixed global spelling
+        of the same destination; the ranking between sources is unaffected.
 
         ``FASTAPI_ENV`` selects the YAML profile block, and is read from the same
         three sources in the same order, so the block loaded always matches the
@@ -296,7 +323,19 @@ class BaseYamlSettings(BaseSettings):
         :return: The settings sources, ordered highest-priority first.
         :raises SettingsError: When ``SECRETS_DIR`` names a path that is not a
             directory, or one whose contents exceed the source's size ceiling.
+        :raises TypeError: If pydantic-settings supplies an environment or dotenv
+            source that carries no ``env_vars`` mapping.
         """
+        # The base declares the widest source type for every parameter, so the
+        # two this reads ``env_vars`` off are narrowed here rather than in the
+        # signature, which would not be a valid override.
+        if not isinstance(env_settings, _EnvVarsSource) or not isinstance(
+            dotenv_settings, _EnvVarsSource
+        ):
+            raise TypeError(
+                "settings_customise_sources expects env and dotenv sources that "
+                "expose env_vars"
+            )
         secret_settings = NestedSecretsSettingsSource(file_secret_settings)
         env_key = "fastapi_env"
         yaml_prefix = (
@@ -305,14 +344,16 @@ class BaseYamlSettings(BaseSettings):
             or secret_settings.env_vars.get(env_key, pre_env_settings.FASTAPI_ENV)
         )
         if cls.SETTINGS_PREFIXES:
-            env_prefix = "__".join(cls.SETTINGS_PREFIXES).lower()
+            prefix_pattern = re.compile(
+                f"^{'__'.join(cls.SETTINGS_PREFIXES).lower()}__([a-zA-Z0-9_-]+)$"
+            )
             for env_source in [env_settings, dotenv_settings, secret_settings]:
-                env_vars = {}
+                unprefixed: dict[str, Any] = {}
+                prefixed: dict[str, Any] = {}
                 for key, value in env_source.env_vars.items():
-                    env_vars[
-                        re.sub(f"^{env_prefix}__([a-zA-Z0-9_-]+)$", r"\1", key)
-                    ] = value
-                env_source.env_vars = env_vars
+                    stripped = prefix_pattern.sub(r"\1", key)
+                    (unprefixed if stripped == key else prefixed)[stripped] = value
+                env_source.env_vars = {**unprefixed, **prefixed}
         return (
             init_settings,
             env_settings,
@@ -349,12 +390,22 @@ class PMMSettings(BaseLowercaseModel):
     """
 
     endpoint: StrCredentialHttpUrl | None = None
-    frontend: StrHttpUrl | None = hot_field(None, advanced=True)
+    frontend: StrHttpUrl | None = hot_field(  # ty: ignore[invalid-assignment]
+        None, advanced=True
+    )
     api_key: SecretStr | None = None
-    verify_ssl: bool = hot_field(default=True, advanced=True)
-    execution_target: str | None = hot_field(None, advanced=True)
-    annotations_enabled: bool = hot_field(default=False, advanced=True)
-    annotations_timeout: PositiveInt = hot_field(5, advanced=True)
+    verify_ssl: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=True, advanced=True
+    )
+    execution_target: str | None = hot_field(  # ty: ignore[invalid-assignment]
+        None, advanced=True
+    )
+    annotations_enabled: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=False, advanced=True
+    )
+    annotations_timeout: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        5, advanced=True
+    )
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:
@@ -380,6 +431,34 @@ class PMMSettings(BaseLowercaseModel):
 
 
 _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
+
+
+def _encryption_key_error() -> str:
+    """Return the remediation text for a missing or malformed key.
+
+    Names the absolute dotenv path rather than the default spelling.
+    ``ENV_FILE`` is a supported indirection and this repository's own checkouts
+    use it, so prose that hardcodes the default sends the reader to a file the
+    loader never reads: the append succeeds, the next start fails identically,
+    and the natural reading is a malformed key rather than an unread file. It
+    is resolved because the setting is a relative path by default, and a
+    process whose working directory is not the one the reader is standing in
+    would otherwise be told to edit ``.env`` without being told which.
+    ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
+    produces 64 characters Fernet rejects, so the two remediations are
+    deliberately different.
+
+    :return: The remediation sentence, naming the dotenv file in use.
+    """
+    return (
+        "ENCRYPTION_KEY must be set to a valid Fernet key (32 url-safe "
+        "base64-encoded bytes). Generate one with `make encryption-key` or "
+        "`openssl rand -base64 32`, then add it as ENCRYPTION_KEY=<key> to "
+        f"{pre_env_settings.ENV_FILE.resolve()} (the file ENV_FILE names), "
+        "export it, or mount it as a file named ENCRYPTION_KEY under "
+        "SECRETS_DIR. It has no default and is never derived from SECRET_KEY."
+    )
+
 
 SettingsOverrideKey = Annotated[str, StringConstraints(pattern=r"^[^\s.]+\.[^\s.]+$")]
 
@@ -417,7 +496,9 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         seconds=30
     )
     REFRESHER_ENABLED: bool = True
-    ALLOWED_KEYS: set[SettingsOverrideKey] | None = not_overridable_field(None)
+    ALLOWED_KEYS: set[SettingsOverrideKey] | None = (  # ty: ignore[invalid-assignment]
+        not_overridable_field(None)
+    )
 
 
 _REMOVED_SETTINGS_OVERRIDE_KEYS = {
@@ -576,6 +657,14 @@ class Settings(BaseYamlSettings):
         every process sharing ``SECRET_KEY`` resolves the identical token.
         Generate an explicit value with ``openssl rand -hex 32`` to rotate it
         independently of ``SECRET_KEY``.
+    :param ENCRYPTION_KEY: The Fernet key :mod:`app.core.encryption` uses to
+        encrypt values SEP stores in its own databases. It has no default and is
+        never derived from ``SECRET_KEY``: ciphertext outlives the process that
+        wrote it, so a key that changed on restart would orphan every encrypted
+        row. Every environment supplies its own, as an environment variable or
+        as a file named ``ENCRYPTION_KEY`` under ``SECRETS_DIR``. Nothing is
+        committed: a key in the repository would be readable by anyone who can
+        read the repository, and the values it protects are real credentials.
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :param LOGGING_CONFIG: dictConfig logging configuration.
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
@@ -598,14 +687,15 @@ class Settings(BaseYamlSettings):
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
-    LOGGING: LogLevel = hot_field(LogLevel.WARNING)
+    ENCRYPTION_KEY: SecretStr
+    LOGGING: LogLevel = hot_field(LogLevel.WARNING)  # ty: ignore[invalid-assignment]
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
     BASE_URL: URL | None = None
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
-    PMM: PMMSettings = hot_field(PMMSettings())
+    PMM: PMMSettings = hot_field(PMMSettings())  # ty: ignore[invalid-assignment]
     SETTINGS_OVERRIDE: SettingsOverrideOptions = SettingsOverrideOptions()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
 
@@ -680,13 +770,43 @@ class Settings(BaseYamlSettings):
         self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_encryption_key(cls, data: Any) -> Any:
+        """Reject an unset, empty, or malformed ``ENCRYPTION_KEY``.
+
+        The check runs ``before`` field validation so that an absent key reports
+        the remediation below rather than a generic ``Field required``: pydantic
+        resolves required-field presence ahead of any ``after`` model validator,
+        so an ``after`` check never sees the absent case at all. Running here
+        instead lets the field stay non-optional, which is what it is — nothing
+        downstream ever reads a ``None`` key.
+
+        :param data: The assembled settings sources, before field validation.
+        :return: ``data`` unchanged, once the key is known usable.
+        :raises ValueError: If the key is unset, empty, or not a valid Fernet key.
+        """
+        if not isinstance(data, dict):
+            return data
+        supplied = data.get("ENCRYPTION_KEY")
+        key = (
+            supplied.get_secret_value() if isinstance(supplied, SecretStr) else supplied
+        )
+        if not key:
+            raise ValueError(_encryption_key_error())
+        try:
+            Fernet(key.encode() if isinstance(key, str) else key)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(_encryption_key_error()) from exc
+        return data
+
     @classmethod
     def settings_customise_sources(
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Append the beat-store default below every configured source.

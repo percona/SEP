@@ -20,6 +20,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Body
+from pydantic import ValidationError
 
 from app.core.exceptions import (
     HTTPNotFoundException,
@@ -27,8 +28,8 @@ from app.core.exceptions import (
 )
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
-from app.sep.apps.framework.spec import stamp_form_input
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
+from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
@@ -37,8 +38,6 @@ from app.sep.apps.mysql_backups.restore.spec import (
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
-
-UNKNOWN_SERVICE_SENTINEL = "-1"
 
 
 async def resolve_restore_entities(
@@ -168,6 +167,44 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
         return None, host, port
 
 
+def _declared_source_override(task: Task) -> dict[str, Any]:
+    """Return a ``data`` override declaring the source of a stamp that predates it.
+
+    The edit form seeds each field from the served stamp and falls back to the
+    schema default where the stamp has no value, so a stamp written before the
+    source controls existed would seed ``source_transport`` to ``local``. The
+    gates then hide the SSH and object-store fields, and a hidden field is
+    dropped from the submission entirely, so saving that form would discard
+    credentials the restore still needs. Declaring the inferred source here means
+    the form opens on the transport the stored values imply and keeps them
+    visible.
+
+    Re-validating through :class:`RestoreCreate` rather than calling the
+    normalizer directly keeps the served stamp exactly what a subsequent ``PUT``
+    would accept. It is tolerant of a stamp that cannot be validated at all,
+    because this builder also serves the list route, where one unparseable task
+    must not take out the whole page.
+
+    :param task: The restore task being serialized.
+    :return: A single-key ``data`` override, or an empty mapping when the stamp
+        already declares a source, is absent, or does not validate.
+    """
+    data = task.data
+    if not data:
+        return {}
+    stored_form = data.get(RESERVED_FORM_KEY)
+    if (
+        not isinstance(stored_form, dict)
+        or stored_form.get("source_transport") is not None
+    ):
+        return {}
+    try:
+        declared = RestoreCreate.model_validate(stored_form).model_dump(mode="json")
+    except ValidationError:
+        return {}
+    return {"data": {**data, RESERVED_FORM_KEY: declared}}
+
+
 def build_restore_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
@@ -194,6 +231,7 @@ def build_restore_api_task_response(
             "host": host,
             "port": port,
             "hostname": meta.get("target") if meta else None,
+            **_declared_source_override(task),
         },
     )
 

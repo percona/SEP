@@ -34,7 +34,6 @@ from pydantic import ValidationError
 from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
 from app.core.config import Settings, settings, SettingsOverrideOptions
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,
@@ -59,18 +58,18 @@ from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowlist
 
-#: Every settings class reachable from the settings router, keyed by the enum
-#: member whose value is the class ``__name__``.
-SETTINGS_CLASSES: dict[SettingClassEnum, type] = {
-    SettingClassEnum.SETTINGS: Settings,
-    SettingClassEnum.SEP_SETTINGS: SEPSettings,
-    SettingClassEnum.TASKS_SETTINGS: TasksSettings,
-    SettingClassEnum.SNIPPETS_SETTINGS: SnippetsSettings,
-    SettingClassEnum.ALERT_SETTINGS: AlertSettings,
-    SettingClassEnum.ALERTS_SETTINGS: AlertsSettings,
-    SettingClassEnum.HEALTH_REPORT_SETTINGS: HealthReportSettings,
-    SettingClassEnum.ANONYMIZER_SETTINGS: AnonymizerSettings,
-    SettingClassEnum.INVENTORY_SETTINGS: InventorySettings,
+#: Every settings class reachable from the settings router, keyed by the
+#: Pydantic class ``__name__`` (the REST / allowlist spelling).
+SETTINGS_CLASSES: dict[str, type] = {
+    Settings.__name__: Settings,
+    SEPSettings.__name__: SEPSettings,
+    TasksSettings.__name__: TasksSettings,
+    SnippetsSettings.__name__: SnippetsSettings,
+    AlertSettings.__name__: AlertSettings,
+    AlertsSettings.__name__: AlertsSettings,
+    HealthReportSettings.__name__: HealthReportSettings,
+    AnonymizerSettings.__name__: AnonymizerSettings,
+    InventorySettings.__name__: InventorySettings,
 }
 
 #: Keys the ticket names as provisioned topology that the embedded image must
@@ -253,48 +252,78 @@ class TestPredicates:
 
     def test_inactive_allows_every_key(self) -> None:
         """Assert every key stays allowed while the restriction is unset."""
-        assert is_key_allowed(SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT")
-        assert has_allowed_key_under(SettingClassEnum.TASKS_SETTINGS, "NOMAD")
+        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT")
+        assert has_allowed_key_under("TasksSettings", "NOMAD")
 
     def test_active_locks_unlisted_key(self, restrict: Callable[..., None]) -> None:
         """Assert an entry set locks every key it does not name."""
         restrict("Settings.LOGGING")
         assert is_restriction_active() is True
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "LOGGING") is True
-        assert is_key_allowed(SettingClassEnum.SEP_SETTINGS, "LOGGING") is False
-        assert (
-            is_key_allowed(SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT") is False
-        )
+        assert is_key_allowed("Settings", "LOGGING") is True
+        assert is_key_allowed("SEPSettings", "LOGGING") is False
+        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT") is False
 
     def test_unknown_entry_allows_nothing(self, restrict: Callable[..., None]) -> None:
         """Assert an entry naming no real class or field grants no access."""
         restrict("BogusSettings.WHATEVER")
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "WHATEVER") is False
-        assert is_key_allowed(SettingClassEnum.SETTINGS, "LOGGING") is False
+        assert is_key_allowed("Settings", "WHATEVER") is False
+        assert is_key_allowed("Settings", "LOGGING") is False
+
+    def test_unregistered_class_matches_allowlist_by_name(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a class token outside the enum still matches ``ALLOWED_KEYS``.
+
+        ``_setting_class_or_none`` used to map ``settings_cls.__name__`` through
+        ``SettingClassEnum`` and withhold everything on ``ValueError``. App-owned
+        classes leaving the enum would then lock keys the allowlist already names.
+        """
+        restrict("UnregisteredSettings.FOO")
+        assert is_key_allowed("UnregisteredSettings", "FOO") is True
+        assert is_key_allowed("UnregisteredSettings", "BAR") is False
+        assert is_key_allowed("ALERTS_SETTINGS", "FOO") is False
+
+    def test_service_and_app_owned_classes_share_allowlist_spelling(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Match a core class and an app-owned class by ``__name__``, not the token.
+
+        ``AlertsSettings`` is no longer a ``SettingClassEnum`` member; the
+        allowlist must still address it the same way it addresses ``SEPSettings``.
+        The storage tokens (``SEP_SETTINGS``, ``ALERTS_SETTINGS``) grant nothing.
+        """
+        restrict(
+            "SEPSettings.CONNECTIVITY_CHECK_DEFAULT",
+            "AlertsSettings.BACKUP_RETENTION",
+        )
+        assert is_key_allowed("SEPSettings", "CONNECTIVITY_CHECK_DEFAULT") is True
+        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT") is False
+        assert is_key_allowed("AlertsSettings", "BACKUP_RETENTION") is True
+        assert is_key_allowed("AlertsSettings", "ALERT_FOLDER_NAME") is False
+        assert is_key_allowed("SEP_SETTINGS", "CONNECTIVITY_CHECK_DEFAULT") is False
+        assert is_key_allowed("ALERTS_SETTINGS", "BACKUP_RETENTION") is False
 
     def test_parent_addressable_via_allowed_leaf(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert an allowed leaf keeps its parent addressable for nested writes."""
         restrict(CARVE_OUT_KEY)
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "PMM") is True
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "SECURITY_HEADERS") is (
-            False
-        )
+        assert has_allowed_key_under("Settings", "PMM") is True
+        assert has_allowed_key_under("Settings", "SECURITY_HEADERS") is False
 
     def test_parent_addressable_via_exact_entry(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert an entry naming the parent itself keeps the parent addressable."""
         restrict("Settings.PMM")
-        assert has_allowed_key_under(SettingClassEnum.SETTINGS, "PMM") is True
+        assert has_allowed_key_under("Settings", "PMM") is True
 
     def test_prefix_match_requires_a_segment_boundary(
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert a shared textual prefix does not make an unrelated parent open."""
         restrict("SEPSettings.SESSION_REFRESH__ENABLED")
-        assert has_allowed_key_under(SettingClassEnum.SEP_SETTINGS, "SESSION") is False
+        assert has_allowed_key_under("SEPSettings", "SESSION") is False
 
 
 class TestShippedValue:
@@ -304,8 +333,7 @@ class TestShippedValue:
         """Assert each shipped entry names a real settings class and field."""
         for entry in shipped_allowed_keys():
             class_token, key = entry.split(".", 1)
-            setting_class = SettingClassEnum(class_token)
-            settings_cls = SETTINGS_CLASSES[setting_class]
+            settings_cls = SETTINGS_CLASSES[class_token]
             if "__" in key:
                 resolved = resolve_nested_field(settings_cls, key)
                 assert resolved is not None, f"{entry} does not resolve"
@@ -319,7 +347,7 @@ class TestShippedValue:
         """Assert each shipped entry leaves a key the settings list renders HOT."""
         for entry in shipped_allowed_keys():
             class_token, _, _key = entry.partition(".")
-            settings_cls = SETTINGS_CLASSES[SettingClassEnum(class_token)]
+            settings_cls = SETTINGS_CLASSES[class_token]
             restrict(entry)
             assert listed_hot_keys(settings_cls), f"{entry} unlocks no listed key"
 

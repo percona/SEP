@@ -21,7 +21,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPConflictException
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingOverride
+from tests.app.core.settings_override.conftest import (
+    SEP_SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 
 @pytest.mark.asyncio
@@ -30,7 +34,7 @@ async def test_create_and_get_roundtrip(session: AsyncSession) -> None:
     created = await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
             value=False,
             is_active=True,
@@ -38,6 +42,7 @@ async def test_create_and_get_roundtrip(session: AsyncSession) -> None:
     )
     fetched = await SettingsOverrideManager.get(session, id=created.id)
     assert fetched is not None
+    assert fetched.setting_class == "SEP_SETTINGS"
     assert fetched.key == "CONNECTIVITY_CHECK_DEFAULT"
     assert fetched.value is False
 
@@ -48,7 +53,7 @@ async def test_list_filters_by_setting_class(session: AsyncSession) -> None:
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=10,
         ),
@@ -56,16 +61,16 @@ async def test_list_filters_by_setting_class(session: AsyncSession) -> None:
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="STALENESS_THRESHOLD_SECONDS",
             value=7200,
         ),
     )
     sep_rows = await SettingsOverrideManager.list(
-        session, setting_class=SettingClassEnum.SEP_SETTINGS
+        session, setting_class=SEP_SETTINGS_TOKEN
     )
     tasks_rows = await SettingsOverrideManager.list(
-        session, setting_class=SettingClassEnum.TASKS_SETTINGS
+        session, setting_class=TASKS_SETTINGS_TOKEN
     )
     assert [r.key for r in sep_rows] == ["SYNC_REFRESH_TIME"]
     assert [r.key for r in tasks_rows] == ["STALENESS_THRESHOLD_SECONDS"]
@@ -79,7 +84,7 @@ async def test_duplicate_setting_class_and_key_raises_conflict(
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=5,
         ),
@@ -88,7 +93,7 @@ async def test_duplicate_setting_class_and_key_raises_conflict(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="SYNC_REFRESH_TIME",
                 value=10,
             ),
@@ -107,7 +112,7 @@ async def test_null_value_rejected_at_insert(session: AsyncSession) -> None:
         "VALUES (CURRENT_TIMESTAMP, 'SEP_SETTINGS', 'k', NULL, 1)"
     )
     with pytest.raises(IntegrityError):
-        await session.execute(insert_stmt)
+        await session.exec(insert_stmt)
 
 
 @pytest.mark.asyncio
@@ -124,13 +129,9 @@ async def test_value_roundtrips_for_json_types(session: AsyncSession) -> None:
     for key, value in samples:
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS, key=key, value=value
-            ),
+            SettingOverride(setting_class=SEP_SETTINGS_TOKEN, key=key, value=value),
         )
-    rows = await SettingsOverrideManager.list(
-        session, setting_class=SettingClassEnum.SEP_SETTINGS
-    )
+    rows = await SettingsOverrideManager.list(session, setting_class=SEP_SETTINGS_TOKEN)
     by_key = {row.key: row.value for row in rows}
     for key, value in samples:
         assert by_key[key] == value
@@ -143,7 +144,7 @@ async def test_update_where_bulk_deactivates(session: AsyncSession) -> None:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key=key,
                 value=True,
                 is_active=True,
@@ -152,9 +153,7 @@ async def test_update_where_bulk_deactivates(session: AsyncSession) -> None:
     await SettingsOverrideManager.update_where(
         session,
         {"is_active": False},
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SEP_SETTINGS_TOKEN,
     )
-    rows = await SettingsOverrideManager.list(
-        session, setting_class=SettingClassEnum.SEP_SETTINGS
-    )
+    rows = await SettingsOverrideManager.list(session, setting_class=SEP_SETTINGS_TOKEN)
     assert all(row.is_active is False for row in rows)

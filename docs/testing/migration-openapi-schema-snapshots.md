@@ -114,7 +114,7 @@ un-reviewed contract change.
 
 Migration tickets must **not** build a duplicate behavioral characterization
 suite. Per-app behavioral tests already exist (e.g.
-`tests/app/sep/apps/checksums/test_routes.py`) and must keep passing
+`tests/app/sep/apps/checksums/test_route_args.py`) and must keep passing
 **unmodified** through a migration — that is the no-op proof.
 
 Instead, each migration runs a kickoff **coverage gap-check** on the app's

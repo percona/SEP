@@ -36,11 +36,13 @@ from app.sep.apps.framework.form_dsl import (
 OWNER = "CHECKSUMS"
 
 
-def coerce_target_list(value: Any) -> list[int | str]:
+def coerce_target_list(value: Any) -> Any:
     """Normalize a legacy or wire-shaped target field into a reference list.
 
     Accepts the new ``list[int | str]`` shape, a legacy comma-separated string,
-    a bare inventory id, or an empty selection.
+    a bare inventory id, or an empty selection. Annotated ``Any`` because this
+    is a ``mode="before"`` validator: it normalizes shape, and pydantic checks
+    the elements against the field type afterwards.
 
     :param value: The submitted field value before element validation.
     :return: A list of inventory ids and/or free-typed names.

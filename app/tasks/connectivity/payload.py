@@ -114,7 +114,10 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     :param port: The database port number.
     :return: A dict with ``success`` and optionally ``error``.
     """
-    import pymongo
+    # optional-dependency: the payload runs standalone on a Nomad client that
+    # carries only the drivers that host needs, so a module-scope import would
+    # make it fail to load wherever pymongo is absent.
+    import pymongo.errors
 
     try:
         client = pymongo.MongoClient(

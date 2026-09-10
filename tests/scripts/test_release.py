@@ -495,8 +495,8 @@ def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
     assert os.environ["GH_TOKEN"] == "pat-token"
 
 
-def test_dev_pr_passes_skip_test_label(monkeypatch):
-    """``gh pr create`` is invoked with ``--label skip-test``."""
+def test_dev_pr_passes_qa_not_required_label(monkeypatch):
+    """``gh pr create`` is invoked with the ``qa not required`` label."""
     monkeypatch.setenv("GH_TOKEN", "pat-token")
     monkeypatch.delenv("GH_PR_TOKEN", raising=False)
     observed_tokens: list[str | None] = []
@@ -508,7 +508,7 @@ def test_dev_pr_passes_skip_test_label(monkeypatch):
     assert len(observed_argvs) == 1
     argv = observed_argvs[0]
     assert "--label" in argv
-    assert argv[argv.index("--label") + 1] == "skip-test"
+    assert argv[argv.index("--label") + 1] == "qa not required"
 
 
 # --- cmd_rc dev-version-bump call-site -------------------------------------

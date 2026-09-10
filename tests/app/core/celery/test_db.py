@@ -39,8 +39,8 @@ def test_worker_engine_forwards_beat_engine_options():
         importlib.reload(celery_db_module)
 
 
-def test_worker_engine_omits_pool_kwargs_by_default():
-    """Omit pool kwargs when beat_engine_options is empty, preserving current behavior."""
+def test_worker_engine_pre_pings_by_default():
+    """Forward pool_pre_ping=True when beat_engine_options uses defaults."""
     try:
         with (
             patch.object(settings.CELERY, "beat_engine_options", PoolEngineOptions()),
@@ -48,6 +48,21 @@ def test_worker_engine_omits_pool_kwargs_by_default():
         ):
             importlib.reload(celery_db_module)
             _, kwargs = create_engine.call_args
+            assert kwargs["pool_pre_ping"] is True
+    finally:
+        importlib.reload(celery_db_module)
+
+
+def test_worker_engine_omits_unset_sizing_kwargs_by_default():
+    """Omit unset pool sizing kwargs while still forwarding pool_pre_ping."""
+    try:
+        with (
+            patch.object(settings.CELERY, "beat_engine_options", PoolEngineOptions()),
+            patch("sqlalchemy.ext.asyncio.create_async_engine") as create_engine,
+        ):
+            importlib.reload(celery_db_module)
+            _, kwargs = create_engine.call_args
+            assert kwargs["pool_pre_ping"] is True
             assert "pool_size" not in kwargs
             assert "max_overflow" not in kwargs
             assert "pool_timeout" not in kwargs

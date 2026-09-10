@@ -15,17 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
-import {
+  AuthContext,
   postLogin,
   postLogout,
   postSession,
@@ -34,26 +26,18 @@ import {
   setOnRefreshed,
   setOnUnauthorized,
   setTokenProvider,
+  useAuth,
+  type AuthSession,
+  type AuthState,
   type SPAOAuthTokenResponse,
   type User,
 } from '@sep/api';
 import { useSilentRefresh } from '../hooks/useSilentRefresh';
 
-// ── Context shape ───────────────────────────────────────────────────────
-interface AuthState {
-  user: User | null;
-  accessToken: string | null;
-  isAuthenticated: boolean;
-  isAdmin: boolean;
-  /** true during initial session bootstrap & during login */
-  loading: boolean;
-  /** true after the initial session check finishes (success or failure) */
-  ready: boolean;
-  login: (username: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthState | null>(null);
+// ── Context ─────────────────────────────────────────────────────────────
+// The context and its ``useAuth`` reader live in ``@sep/api`` so the framework
+// and app packages can read the session without depending on the shell; this
+// module keeps ownership of the session and token state that fills it.
 
 // ── Provider ────────────────────────────────────────────────────────────
 // Access token lives only in React state. The refresh token lives in an
@@ -203,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Context value ─────────────────────────────────────────────────────
-  const value = useMemo<AuthState>(
+  const value = useMemo<AuthSession>(
     () => ({
       user,
       accessToken,
@@ -220,13 +204,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext value={value}>{children}</AuthContext>;
 }
 
-// ── Hook ────────────────────────────────────────────────────────────────
-export function useAuth(): AuthState {
-  const ctx = useContext(AuthContext);
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return ctx;
-}
-
-export type { User };
+// ── Re-exports ──────────────────────────────────────────────────────────
+// Shell-local imports keep pointing at this module; the implementation is
+// ``@sep/api``'s, so the framework and app packages read the same context.
+export { useAuth };
+export type { AuthSession, AuthState, User };

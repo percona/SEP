@@ -17,7 +17,7 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, TYPE_CHECKING
 
 from annotated_types import Gt, Le
 from pydantic import AfterValidator, Field, PositiveInt
@@ -34,8 +34,15 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
     not_overridable_field,
 )
-from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.hook_resolver import is_dotted_module_path
+
+if TYPE_CHECKING:
+    # The package export resolves through a PEP 562 __getattr__ that has to
+    # declare `object`, so import the class itself for annotations and keep the
+    # lazy path for the runtime binding that breaks the import cycle.
+    from app.tasks.execution.executors.nomad.models import NomadExecutor
+else:
+    from app.tasks.execution.executors.nomad import NomadExecutor
 
 MAX_LOG_RETENTION_DAYS = 365
 
@@ -60,6 +67,28 @@ def _validate_hook_module_root(root: str) -> str:
 #: check, so a root that could never admit a hook is refused at load rather than
 #: accepted and silently matched by nothing.
 HookModuleRoot = Annotated[str, AfterValidator(_validate_hook_module_root)]
+
+
+def _validate_syncer_name(name: str) -> str:
+    """Return ``name`` when it is a well-formed dotted syncer path, else raise.
+
+    :param name: A candidate :attr:`TasksSettings.INVENTORY_SYNC_SYNCER` value.
+    :return: The validated name, unchanged.
+    :raises ValueError: When ``name`` is blank or not a dotted path, in which
+        case it can only be read as the sync-all default or fail every firing.
+    """
+    if not is_dotted_module_path(name):
+        raise ValueError(
+            f"{name!r} is not a dotted 'module.ClassName' path, so it names no "
+            "syncer; omit the setting to run every configured syncer"
+        )
+    return name
+
+
+#: The value of :attr:`TasksSettings.INVENTORY_SYNC_SYNCER`. A blank string
+#: would otherwise be read as the sync-all default, silently widening a schedule
+#: that was pinned on purpose, and a whitespace-only one would fail every firing.
+SyncerName = Annotated[str, AfterValidator(_validate_syncer_name)]
 
 
 class PreExecutionCheckMode(StrEnum):
@@ -96,7 +125,6 @@ class TasksSettings(BaseYamlAppSettings):
         positive duration. Defaults to 5 minutes.
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
         checks. Defaults to ``PreExecutionCheckMode.DISABLED``.
-    :type PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
@@ -109,6 +137,18 @@ class TasksSettings(BaseYamlAppSettings):
     :param LOG_PURGE_INTERVAL: The schedule on which the log-purge periodic task
         runs. ``None`` disables seeding the task entirely. Read at startup (not
         runtime-overridable). Defaults to once per day.
+    :param INVENTORY_SYNC_INTERVAL: The schedule on which the inventory-sync task
+        runs. ``None`` disables seeding the schedule entirely, leaving the sync
+        to whatever interval an operator attaches. Read at startup (not
+        runtime-overridable). Defaults to ``None``.
+    :param INVENTORY_SYNC_SYNCER: The fully qualified syncer
+        (``"module.ClassName"``, matching ``BaseSyncer.get_name()``) the seeded
+        schedule targets; ``None`` runs every configured syncer. Must be a
+        dotted path, so a blank value is rejected rather than read as the
+        sync-all default. A well-formed name that no configured syncer matches
+        is still not rejected at seed time — the tasks service does not import
+        the sep syncers — so every firing of the schedule fails instead. Read at
+        startup. Defaults to ``None``.
     :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
         ``(task_history_id, source, stream)``. As a stream grows past the cap
         the writer drops the oldest chunks, keeping a bounded recent tail so a
@@ -131,27 +171,47 @@ class TasksSettings(BaseYamlAppSettings):
     UVICORN_PORT: int = 8002
     NOMAD: NomadExecutor = nested_overridable_field(...)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
-    SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
-        SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
+    SECURITY_HEADERS: (
+        SecurityHeadersOptions | None
+    ) = (  # ty: ignore[invalid-assignment]
+        nested_overridable_field(
+            SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
+        )
     )
-    SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
-        timedelta(minutes=5), advanced=True
+    SYNC_LOCK_TTL: Annotated[
+        timedelta, Gt(timedelta(0))
+    ] = (  # ty: ignore[invalid-assignment]
+        hot_field(timedelta(minutes=5), advanced=True)
     )
-    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
-        PreExecutionCheckMode.DISABLED
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = (  # ty: ignore[invalid-assignment]
+        hot_field(PreExecutionCheckMode.DISABLED)
     )
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600, advanced=True)
-    LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(
-        90, advanced=True
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(3600, advanced=True)
     )
-    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000, advanced=True)
+    LOG_RETENTION_DAYS: Annotated[
+        int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)
+    ] = (  # ty: ignore[invalid-assignment]
+        hot_field(90, advanced=True)
+    )
+    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        10_000, advanced=True
+    )
     LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
-    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
-    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
-    HOOK_MODULE_ALLOWLIST: tuple[HookModuleRoot, ...] = not_overridable_field(
-        ("app.sep.apps",)
+    INVENTORY_SYNC_INTERVAL: IntervalSchedule | None = None
+    INVENTORY_SYNC_SYNCER: SyncerName | None = None
+    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        104857600, advanced=True
+    )
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(1000, advanced=True)
+    )
+    HOOK_MODULE_ALLOWLIST: tuple[
+        HookModuleRoot, ...
+    ] = (  # ty: ignore[invalid-assignment]
+        not_overridable_field(("app.sep.apps",))
     )
 
 

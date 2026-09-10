@@ -38,9 +38,9 @@ jobs:
       - name: Require QA approval label
         if: >-
           !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
-          !contains(github.event.pull_request.labels.*.name, 'skip-test')
+          !contains(github.event.pull_request.labels.*.name, 'qa not required')
         run: |
-          echo "::error::PR requires 'qa passed' or 'skip-test' label to merge."
+          echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
           exit 1
 
   # Detect changed file types to gate downstream jobs.
@@ -79,8 +79,16 @@ jobs:
               - 'sidecar/settings-env.sh'
               - 'sidecar/supervisord.conf'
               - 'sidecar/healthcheck.sh'
+              - 'sidecar/entrypoint.sh'
+              - 'sidecar/wait_for_schema.sh'
+              - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
+              - '.github/labeler.yml'
+              - '.github/workflows/ci.yml'
+              # A skipped job counts as green in ci-success, so omitting the
+              # reusable workflow would let a PR editing only it merge unrun.
+              - '.github/workflows/python.yaml'
             precommit:
               - '.pre-commit-config.yaml'
               - '.github/workflows/ci.yml'
@@ -234,6 +242,49 @@ jobs:
       - label-gate
       - changes
 
+  # Advisory by design: intentionally omitted from `ci-success`'s `needs`. It
+  # sits here rather than in python.yaml because a reusable workflow cannot make
+  # one of its jobs advisory. See docs/development/ty-policy.md under `Enforcement`.
+  typecheck_diff:
+    # Not redundant with the draft test: on a non-pull_request event the absent
+    # `pull_request` object makes `draft == false` compare 0 to 0 and pass,
+    # through GitHub's numeric coercion of expression operands.
+    if: >-
+      ${{
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.draft == false &&
+        needs.changes.outputs.python == 'true' &&
+        !contains(github.event.pull_request.labels.*.name, 'lint-fmt-only')
+      }}
+    runs-on: ubuntu-latest
+    needs:
+      - label-gate
+      - changes
+    env:
+      POETRY: poetry
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The default depth of 1 cannot compute a merge-base.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+
+      # Sync explicitly: the `venv` prerequisite no-ops against the runner's
+      # pre-seeded environment, and ty then resolves no third-party import —
+      # here as false surplus, since an added file has no base-side counterpart.
+      - name: Install dependencies
+        run: poetry sync --no-root --all-extras --all-groups
+
+      - name: Report ty diagnostics the branch adds
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: make typecheck-diff
+
   frontend:
     if: >-
       ${{
@@ -303,6 +354,7 @@ jobs:
             test -f /home/sep/app/supervisord.conf
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
+            test -x /home/sep/app/wait_for_schema.sh
             test -f /home/sep/app/settings-env.sh
             test -f /home/sep/app/settings.yaml
           '
@@ -332,8 +384,37 @@ jobs:
       - name: Smoke test - restricted image ships exactly the activated apps
         run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
 
+      - name: Verify the purge layer is the last package-manager operation
+        run: python3 scripts/check_sidecar_purge.py --check-ordering
+
+      - name: Smoke test - purged packages are absent from the built image
+        run: |
+          pkgs="$(python3 scripts/check_sidecar_purge.py --print-packages | tr '\n' ' ')"
+          if [ -z "$pkgs" ]; then
+            echo "::error::the purge checker named no packages, so this check cannot run"
+            exit 1
+          fi
+          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "sep:HEAD" -c '
+            command -v dpkg-query > /dev/null 2>&1 || {
+              echo "::error::dpkg-query is absent, so package presence cannot be established"
+              exit 1
+            }
+            status=0
+            for p in $PURGED; do
+              if dpkg-query -s "$p" 2>/dev/null | grep -q "^Status: install ok installed"; then
+                echo "::error::$p is still installed in the built image"
+                status=1
+              fi
+            done
+            if command -v perl > /dev/null 2>&1; then
+              echo "::error::a perl binary resolves on PATH"
+              status=1
+            fi
+            exit $status
+          '
+
       # Trivy vulnerability scan: fails on any HIGH/CRITICAL finding not
-      # covered by .trivyignore.yaml.  The --ignorefile flag is required
+      # covered by .trivyignore.yaml. The --ignorefile flag is required
       # because Trivy's default ignore file is ".trivyignore" (no .yaml
       # extension), so without it the YAML-format exception list from
       # SEP-1864 would be silently ignored.

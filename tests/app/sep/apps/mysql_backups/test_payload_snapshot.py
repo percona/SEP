@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Freeze the byte-identity guardrail for the backups ``run-python`` payload.
+"""Freeze the byte-identity guardrails for the MySQL backup payloads.
 
 Capture the full ``TaskWrite`` envelope produced by the model-first spec path
 (``build_backup_spec`` + ``assemble_envelope``) across the three backup types and
@@ -28,6 +28,8 @@ so the golden is machine-independent (both the old builder and the new spec
 compute the same ``Path(__file__).parent`` within the package).
 """
 
+import ast
+
 import pytest
 import yaml
 
@@ -37,19 +39,39 @@ from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
+from tests.app.sep.apps.mysql_backups.conftest import xtrabackup_payload_tree
+from tests.app.sep.apps.mysql_backups.restore.conftest import restore_payload_tree
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
 PAYLOAD_DIR = SNAPSHOTS_DIR / "payload"
 
 _TASK_NAME = "backups-golden"
 _HOSTNAME = "executor-host"
+_BACKUP_DIR = "/backups"
 _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
+
+
+def _xtrabackup_binary_default(tree: ast.Module) -> str:
+    """Return the fallback for ``XTRABACKUP_BIN_CMD`` in a payload."""
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and len(node.args) > 1
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value == "XTRABACKUP_BIN_CMD"
+        ):
+            return ast.literal_eval(node.args[1])
+    raise AssertionError("XTRABACKUP_BIN_CMD fallback not found")
+
 
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
 # B → alternative host or service address), the requirements / payload-file
-# selection, and the encryption modes (tmpdir, post-run with in-place on, and
-# post-run standalone with in-place off).
+# selection, and every encryption format: GPG in its three timings (tmpdir,
+# post-run with in-place on, post-run standalone with in-place off), AES-256, and
+# the combined AES-256-plus-GPG selection.
 _CASES = [
     {
         "slug": "mydumper_rsync",
@@ -70,6 +92,7 @@ _CASES = [
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
             "s3_storage_class": "STANDARD",
+            "encryption_format": "gpg",
             "encrypt": True,
             "encryption_recipient": "ops@example.com",
             "compression_algorithm": "zstd",
@@ -83,6 +106,7 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
             "encrypt": True,
             "encrypt_using_tmpdir": True,
             "encryption_recipient": "ops@example.com",
@@ -95,6 +119,7 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
             "encrypt": True,
             "post_run_encrypt": True,
             "encryption_recipient": "ops@example.com",
@@ -107,6 +132,31 @@ _CASES = [
             "backup_type": "M",
             "upload": ["S3"],
             "s3_bucket": "my-s3-bucket",
+            "encryption_format": "gpg",
+            "post_run_encrypt": True,
+            "encryption_recipient": "ops@example.com",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "xtrabackup_s3_aes256",
+        "form": {
+            "backup_type": "X",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encryption_format": "aes256",
+            "xtrabackup_aes256_keyfile": "/etc/percona/aes.key",
+        },
+        "alert_on_fail": False,
+    },
+    {
+        "slug": "xtrabackup_s3_dual",
+        "form": {
+            "backup_type": "X",
+            "upload": ["S3"],
+            "s3_bucket": "my-s3-bucket",
+            "encryption_format": "dual",
+            "xtrabackup_aes256_keyfile": "/etc/percona/aes.key",
             "post_run_encrypt": True,
             "encryption_recipient": "ops@example.com",
         },
@@ -165,6 +215,7 @@ def _spec_envelope(service: CreatedService, case: dict) -> dict:
         task_name=_TASK_NAME,
         hostname=_HOSTNAME,
         service_id=service.id,
+        backup_dir=_BACKUP_DIR,
         alert_on_fail=case["alert_on_fail"],
         **case["form"],
     )
@@ -187,6 +238,30 @@ def test_spec_path_payload_matrix_matches_golden():
     )
 
 
+def test_backup_and_restore_payloads_share_xtrabackup_binary_default():
+    """Pin the backup and restore payload binary fallbacks to each other."""
+    assert _xtrabackup_binary_default(
+        xtrabackup_payload_tree()
+    ) == _xtrabackup_binary_default(restore_payload_tree())
+
+
+def test_build_backup_spec_preserves_explicit_xtrabackup_binary():
+    """Preserve an explicitly selected XtraBackup binary in backup config."""
+    envelope = _spec_envelope(
+        _service(),
+        {
+            "form": {
+                "backup_type": "X",
+                "xtrabackup_bin_cmd": "innobackupex",
+            },
+            "alert_on_fail": False,
+        },
+    )
+
+    config = yaml.safe_load(envelope["data"]["meta"]["config"])["ALL_SERVERS"]
+    assert config["XTRABACKUP_BIN_CMD"] == "innobackupex"
+
+
 def _all_servers_config(
     backup_type: str, encryption: dict[str, object]
 ) -> dict[str, object]:
@@ -206,6 +281,7 @@ def _all_servers_config(
         hostname=_HOSTNAME,
         service_id=service.id,
         backup_type=backup_type,
+        backup_dir=_BACKUP_DIR,
         **encryption,
     )
     return yaml.safe_load(build_backup_spec(form, resolved).config)["ALL_SERVERS"]
@@ -216,7 +292,11 @@ def _all_servers_config(
     "encryption",
     [
         pytest.param(
-            {"encrypt": True, "encryption_recipient": "ops@example.com"},
+            {
+                "encryption_format": "gpg",
+                "encrypt": True,
+                "encryption_recipient": "ops@example.com",
+            },
             id="encrypt_true",
         ),
         pytest.param({"encrypt": False}, id="encrypt_false"),
@@ -238,3 +318,6 @@ def test_build_backup_spec_always_emits_encrypt_key(backup_type: str, encryption
     all_servers = _all_servers_config(backup_type, encryption)
     assert "ENCRYPT" in all_servers
     assert all_servers["ENCRYPT"] is encryption.get("encrypt", False)
+    assert all_servers["ENCRYPTION_FORMAT"] == encryption.get(
+        "encryption_format", "none"
+    )

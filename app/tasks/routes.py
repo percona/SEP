@@ -20,7 +20,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator, Sequence
 from datetime import timedelta
-from typing import Annotated
+from typing import Annotated, cast
 
 import requests.exceptions
 from fastapi import APIRouter, Query, status
@@ -326,10 +326,13 @@ async def execute_task_name(
     if queue_item.execution_request.eta:
         history_recorded = await TaskHistoryManager.save(session, queue_item)
         await session.refresh(history_recorded, attribute_names=["execution_request"])
+        recorded_eta = history_recorded.execution_request.eta or (
+            queue_item.execution_request.eta
+        )
         celery_task = execute_task_queue.apply_async(
             args=[history_recorded.id],
-            eta=history_recorded.execution_request.eta,
-            expires=history_recorded.execution_request.eta
+            eta=recorded_eta,
+            expires=recorded_eta
             + timedelta(seconds=settings.CELERY.global_expire_seconds),
         )
         history_recorded.execution_request.tracking["celery_task_id"] = celery_task.id
@@ -403,6 +406,29 @@ async def _populate_log_metadata(
             has_logs=history.id in chunk_ids or has_legacy_logs(history),
             log_capture=capture_statuses.get(history.id, LogCaptureStatusEnum.UNKNOWN),
         )
+
+
+async def _get_history_for_response(
+    session: AsyncSession,
+    history_id: int,
+) -> TaskHistory:
+    """Re-read a task history with the columns its response model requires.
+
+    ``execution_request`` is deferred on the column and ``task`` is a lazy
+    relationship, so a row handed to :class:`TaskHistoryResponse` without both
+    resolved attempts IO from the async context.
+
+    :param session: The SQLAlchemy asynchronous session.
+    :param history_id: The task history to re-read.
+    :return: The task history with ``task`` joined and ``execution_request``
+        undeferred.
+    """
+    return await TaskHistoryManager.get_or_404(
+        session,
+        select_related=(TaskHistory.task,),
+        query_options=[undefer(TaskHistory.execution_request)],
+        id=history_id,
+    )
 
 
 @router.get(
@@ -662,11 +688,8 @@ async def sync_task_history(
     )
     if not claim_result.rowcount:
         session.expunge(task_history)
-        task_history = await TaskHistoryManager.get_or_404(
-            session,
-            select_related=(TaskHistory.task,),
-            query_options=[undefer(TaskHistory.execution_request)],
-            id=task_history.id,
+        task_history = await _get_history_for_response(
+            session, cast(int, task_history.id)
         )
         await _populate_log_metadata(session, [task_history])
         return task_history
@@ -686,6 +709,7 @@ async def sync_task_history(
                 "status",
                 "started_at",
                 "finished_at",
+                "failure_reason",
                 "sync_in_progress_started_at",
             ],
         )
@@ -696,15 +720,10 @@ async def sync_task_history(
             id=task_history.id,
         )
         raise
-    synced = await TaskHistoryManager.get_or_404(
-        session,
-        select_related=(TaskHistory.task,),
-        query_options=[undefer(TaskHistory.execution_request)],
-        id=saved.id,
-    )
+    synced = await _get_history_for_response(session, cast(int, saved.id))
     await maybe_dispatch_chain(synced, was_running=True)
     if synced.status.is_terminal():
-        await maybe_record_run(synced.id, executor)
+        await maybe_record_run(cast(int, synced.id), executor)
     await _populate_log_metadata(session, [synced])
     return synced
 
@@ -722,12 +741,23 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
     row that was just created has no chunk-store entry, legacy tracking blob or
     capture verdict yet, so both fall back to their serialization defaults.
 
+    A caller-supplied ``failure_reason`` is routed back through
+    :meth:`TaskHistory.set_failure_reason` so the single-line and length bounds
+    hold on every write path, not only on the reasons SEP composes itself.
+
+    The saved row is re-read with ``task`` joined and ``execution_request``
+    undeferred: ``save`` re-defers that column, and the response model requires
+    both, so serializing the save's own return value attempts lazy IO from an
+    async context.
+
     :param session: The SQLAlchemy asynchronous session.
     :param task: The task history to persist.
     :return: The saved task history record.
     """
-    logger.debug("Creating task history %s", task.name)
-    return await TaskHistoryManager.save(session, task)
+    logger.debug("Creating task history for task %s", task.task_id)
+    task.set_failure_reason(task.failure_reason)
+    saved = await TaskHistoryManager.save(session, task)
+    return await _get_history_for_response(session, cast(int, saved.id))
 
 
 @router.get("/stats/{task}", dependencies=[IsAuthenticatedDep])

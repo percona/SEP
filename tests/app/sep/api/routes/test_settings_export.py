@@ -36,6 +36,7 @@ from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
+from app.core.utils.date_time import utc_now
 from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
 from app.sep.deps import (
@@ -45,6 +46,11 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    SEP_SETTINGS_TOKEN,
+)
+from tests.app.db_schema import apply_schema
 
 EXPORT_URL = "/api/sep/admin/settings/export"
 SETTINGS_LIST_URL = "/api/sep/admin/settings/"
@@ -99,7 +105,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -235,6 +241,41 @@ class TestSepConfigExportYaml:
         assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
 
+    async def test_export_is_unchanged_by_an_overrides_provenance(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Emit byte-identical YAML whether or not a row carries an actor and a stamp.
+
+        The export renders values only, so recording who last saved an override
+        must not alter a single byte of what an operator downloads. The seeded
+        row stores ``SYNC_REFRESH_TIME``'s declared default, so any difference
+        between the two exports would be the provenance rather than the value.
+
+        LIST is asserted first because it shares the export's row-loading path.
+        Without it an export that never saw the seeded row would satisfy the
+        byte-identity assertion just as well as one that saw it and dropped the
+        provenance.
+        """
+        before = api_admin_client.get(EXPORT_URL).text
+        await insert_override_row(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
+            value=5,
+            updated_at=utc_now(),
+            updated_by="alice",
+        )
+
+        seeded = next(
+            entry
+            for group in api_admin_client.get(SETTINGS_LIST_URL).json()["groups"]
+            for entry in group["settings"]
+            if entry["key"] == "SYNC_REFRESH_TIME"
+        )
+        assert seeded["has_override"] is True
+        assert seeded["updated_by"] == "alice"
+        assert api_admin_client.get(EXPORT_URL).text == before
+
     async def test_export_keys_match_list_for_sep_classes(
         self, api_admin_client: TestClient
     ) -> None:
@@ -244,8 +285,8 @@ class TestSepConfigExportYaml:
         for setting_class in (
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.ALERTS_SETTINGS.value,
-            SettingClassEnum.HEALTH_REPORT_SETTINGS.value,
+            "AlertsSettings",
+            "HealthReportSettings",
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
 
@@ -255,10 +296,10 @@ class TestSepConfigExportYaml:
         """Export the new ``AlertsSettings`` section with its three fields."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
-        block = export[SettingClassEnum.ALERTS_SETTINGS.value]
+        block = export["AlertsSettings"]
         # Exported keys mirror the LIST projection exactly (including the
         # ``BACKUP_INTERVAL__*`` flattening and inherited ``FASTAPI_ENV``).
-        assert set(block) == list_keys[SettingClassEnum.ALERTS_SETTINGS.value]
+        assert set(block) == list_keys["AlertsSettings"]
         assert block["BACKUP_RETENTION"] == DEFAULT_ALERT_BACKUP_RETENTION
         assert block["ALERT_FOLDER_NAME"] == "SEP Alerts"
 
@@ -268,8 +309,8 @@ class TestSepConfigExportYaml:
         """Export the ``HealthReportSettings`` section with its fields."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
-        block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
-        assert set(block) == list_keys[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        block = export["HealthReportSettings"]
+        assert set(block) == list_keys["HealthReportSettings"]
         assert block["upload"] is False
 
     async def test_secret_fields_match_list_projection(
@@ -289,7 +330,7 @@ class TestSepConfigExportYaml:
         _configure_health_report_upload(mocker)
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
-        health_block = export[SettingClassEnum.HEALTH_REPORT_SETTINGS.value]
+        health_block = export["HealthReportSettings"]
         assert health_block["api_key"] == REDACTED_SECRET
         assert (
             export[SettingClassEnum.TASKS_SETTINGS.value]["API_SECRET"]
@@ -579,8 +620,9 @@ class TestSepConfigExportTasksFanOut:
 
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
-ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
-HEALTH_REPORT_CLASS = SettingClassEnum.HEALTH_REPORT_SETTINGS.value
+ALERTS_CLASS = "AlertsSettings"
+HEALTH_REPORT_CLASS = "HealthReportSettings"
+INVENTORY_APP_CLASS = "InventoryAppSettings"
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
@@ -589,6 +631,7 @@ FULL_EXPORT_CLASSES = {
     SNIPPETS_CLASS,
     ALERTS_CLASS,
     HEALTH_REPORT_CLASS,
+    INVENTORY_APP_CLASS,
     SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,

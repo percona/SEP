@@ -25,7 +25,12 @@ from app.sep.apps.mysql_backups.payload_variants import (
     selections,
     variant_name,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import (
+    RestoreConfigAll,
+    RestoreCreate,
+    SourceTransport,
+    XtraBackupTool,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -39,13 +44,17 @@ _PAYLOAD_DIR_BY_TYPE = {
 }
 
 
-def _form(backup_type: BackupType) -> RestoreCreate:
+def _form(
+    backup_type: BackupType,
+    xtrabackup_bin_cmd: XtraBackupTool | None = None,
+) -> RestoreCreate:
     return RestoreCreate(
         hostname="restore-host",
         task_name="restore-task",
         backup_type=backup_type,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
+        xtrabackup_bin_cmd=xtrabackup_bin_cmd,
     )
 
 
@@ -77,6 +86,20 @@ def test_build_restore_spec_xtrabackup_requires_filelock():
     assert "filelock" not in mydumper.data["meta"]["requirements"]
 
 
+@pytest.mark.parametrize("binary", list(XtraBackupTool))
+def test_build_restore_spec_preserves_explicit_xtrabackup_binary(
+    binary: XtraBackupTool,
+):
+    """Preserve an explicitly selected XtraBackup binary in restore config."""
+    spec = build_restore_spec(
+        _form(BackupType.XTRABACKUP, xtrabackup_bin_cmd=binary),
+        RestoreResolved(),
+    )
+
+    config = yaml.safe_load(spec.data["meta"]["config"])["SERVER_LIST"][0]
+    assert config["XTRABACKUP_BIN_CMD"] == binary.value
+
+
 def test_build_restore_spec_injects_resolved_destination_and_service_name():
     """Apply resolved host/port/database and service name to the config and meta."""
     resolved = RestoreResolved(
@@ -98,6 +121,49 @@ def test_build_restore_spec_injects_resolved_destination_and_service_name():
         "requirements",
         "_service_name",
     ]
+
+
+def test_gated_off_fields_emit_the_config_defaults_they_replaced():
+    """Emit the same global config whether the gated fields are absent or explicit.
+
+    The three fields lost their form-level defaults so their gates could not
+    reject them, which leaves the config models as the only place the values are
+    declared. The task config the payload consumes has to come out unchanged.
+    """
+    gated_off = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+        source_transport=SourceTransport.LOCAL,
+    )
+    spelled_out = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="db01:/var/backups/latest",
+        datadir="/var/lib/mysql",
+        source_transport=SourceTransport.SSH,
+        ssh_user="percona",
+        ssh_port=22,
+    )
+
+    gated_config = yaml.safe_load(
+        build_restore_spec(gated_off, RestoreResolved()).data["meta"]["config"]
+    )["ALL_SERVERS"]
+    explicit_config = yaml.safe_load(
+        build_restore_spec(spelled_out, RestoreResolved()).data["meta"]["config"]
+    )["ALL_SERVERS"]
+
+    assert gated_config == explicit_config
+    for alias, field_name in (
+        ("SSH_USER", "ssh_user"),
+        ("SSH_PORT", "ssh_port"),
+        ("S3_TOOL", "s3_tool"),
+    ):
+        expected = RestoreConfigAll.model_fields[field_name].default
+        assert gated_config[alias] == getattr(expected, "value", expected), alias
 
 
 class TestRestoreUsesTheCanonicalPayload:

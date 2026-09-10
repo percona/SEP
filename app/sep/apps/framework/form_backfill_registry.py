@@ -51,6 +51,7 @@ __all__ = [
     "FormBackfillContext",
     "FormBackfillEntry",
     "FormReconstructor",
+    "StampRepairer",
     "collect_form_backfill_entries",
 ]
 
@@ -77,21 +78,34 @@ FormReconstructor = Callable[["Task", FormBackfillContext], dict[str, Any] | Non
 """Reconstruct a legacy task's create-form body, or return ``None`` when impossible."""
 
 
+StampRepairer = Callable[
+    [dict[str, Any], "Task", FormBackfillContext], dict[str, Any] | None
+]
+"""Repair an existing ``data['_form']`` stamp, or return ``None`` to leave it alone."""
+
+
 @dataclass(frozen=True, slots=True)
 class FormBackfillEntry:
     """Declare that an app's legacy tasks are eligible for ``data['_form']`` backfill.
 
     :param app_key: The declaring app's registry key.
     :param owner: The task owner whose rows the backfill lists.
-    :param create_model: The create/update form model the reconstructed body
-        must validate against.
+    :param create_model: The form model the reconstructed body must validate
+        against. Usually the app's create/update model, but an app whose form
+        tightened after tasks were already saved may register a laxer subclass
+        so those tasks still stamp and stay repairable, in which case a stamp
+        this validates is not guaranteed to satisfy the route's own model.
     :param reconstructor: The app's legacy form reconstructor.
+    :param stamp_repairer: The app's repairer for stamps written against an older
+        revision of ``create_model``, or ``None`` to leave every existing stamp
+        untouched.
     """
 
     app_key: str
     owner: str
     create_model: type[AppFormModel]
     reconstructor: FormReconstructor
+    stamp_repairer: StampRepairer | None = None
 
 
 def collect_form_backfill_entries(

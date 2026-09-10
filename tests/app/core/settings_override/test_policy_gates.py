@@ -28,8 +28,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.config import Settings
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.registry import (
     chain_is_locked,
     coerce_nested_field_value,
@@ -39,16 +37,19 @@ from app.core.settings_override.registry import (
     ReloadClassification,
     resolve_nested_field_metadata,
 )
+from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
 
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 _SYNC_REFRESH_OVERRIDE = 11
-
-
-async def _insert(session: AsyncSession, **kwargs: object) -> None:
-    """Insert a setting override row via the manager."""
-    await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
+_BACKUP_RETENTION_OVERRIDE = 7
 
 
 def _reload_of(settings_cls: type, key: str) -> ReloadClassification:
@@ -94,14 +95,36 @@ class TestTopLevelGate:
     def test_fail_closed_for_unknown_settings_class(
         self, restrict: Callable[..., None]
     ) -> None:
-        """Assert a class the override table cannot name is locked, not allowed."""
+        """Assert a class with no allowlist entries is locked, not allowed."""
 
         class ProbeSettings(Settings):
-            """Stand in for a settings class the enum does not know."""
+            """Stand in for a settings class the allowlist does not name."""
 
         restrict("Settings.LOGGING")
         assert is_hot_reloadable(Settings, "LOGGING") is True
         assert is_hot_reloadable(ProbeSettings, "LOGGING") is False
+
+    def test_unregistered_class_honours_allowlist_by_name(
+        self, restrict: Callable[..., None]
+    ) -> None:
+        """Assert a class outside the enum still matches ``ALLOWED_KEYS`` by ``__name__``.
+
+        Once app-owned members leave ``SettingClassEnum``, mapping ``__name__``
+        through the enum would withhold every key, including ones the allowlist
+        already names. The gate must key on the class name as a string.
+        """
+
+        class ProbeSettings(Settings):
+            """Stand in for an app-owned class that has left the enum."""
+
+        restrict("ProbeSettings.LOGGING")
+        assert is_hot_reloadable(ProbeSettings, "LOGGING") is True
+        assert is_hot_reloadable(Settings, "LOGGING") is False
+        assert is_nested_overridable_parent(ProbeSettings, "PMM") is False
+
+        restrict("ProbeSettings.PMM__annotations_enabled")
+        assert is_nested_overridable_parent(ProbeSettings, "PMM") is True
+        assert is_nested_overridable_parent(Settings, "PMM") is False
 
     def test_listing_reports_the_gated_classification(
         self, restrict: Callable[..., None]
@@ -242,9 +265,9 @@ class TestSnapshotFiltering:
         """Assert a pre-lockdown row for a now-locked field never reaches readers."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict("SEPSettings.SYNC_REFRESH_TIME")
-        await _insert(
+        await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
             value=False,
             is_active=True,
@@ -259,15 +282,39 @@ class TestSnapshotFiltering:
     ) -> None:
         """Assert an allowed field's row still lands in the snapshot."""
         restrict("SEPSettings.SYNC_REFRESH_TIME")
-        await _insert(
+        await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=_SYNC_REFRESH_OVERRIDE,
             is_active=True,
         )
         snapshot = await build_snapshot(session, SEPSettings)
         assert snapshot["SYNC_REFRESH_TIME"] == _SYNC_REFRESH_OVERRIDE
+
+    @pytest.mark.asyncio
+    async def test_app_owned_class_honours_allowlist_like_core(
+        self, session: AsyncSession, restrict: Callable[..., None]
+    ) -> None:
+        """Apply an allowed ``AlertsSettings`` row and skip a sibling the same way as core."""
+        restrict("AlertsSettings.BACKUP_RETENTION")
+        await insert_override_row(
+            session,
+            setting_class="ALERTS_SETTINGS",
+            key="BACKUP_RETENTION",
+            value=_BACKUP_RETENTION_OVERRIDE,
+            is_active=True,
+        )
+        await insert_override_row(
+            session,
+            setting_class="ALERTS_SETTINGS",
+            key="ALERT_FOLDER_NAME",
+            value="Locked Folder",
+            is_active=True,
+        )
+        snapshot = await build_snapshot(session, AlertsSettings)
+        assert snapshot["BACKUP_RETENTION"] == _BACKUP_RETENTION_OVERRIDE
+        assert "ALERT_FOLDER_NAME" not in snapshot
 
     @pytest.mark.asyncio
     async def test_locked_nested_row_is_skipped(
@@ -279,9 +326,9 @@ class TestSnapshotFiltering:
         """Assert a row under a fully locked parent never reaches readers."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__timeout",
             value=30,
             is_active=True,
@@ -302,9 +349,9 @@ class TestSnapshotFiltering:
         """Assert the per-leaf coercion gate skips a locked sibling of an open leaf."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=SETTINGS_TOKEN,
             key="PMM__endpoint",
             value="https://stale.example.com",
             is_active=True,
@@ -321,9 +368,9 @@ class TestSnapshotFiltering:
     ) -> None:
         """Assert an allowed leaf's row still merges into its parent."""
         restrict(ANNOTATIONS_KEY)
-        await _insert(
+        await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SETTINGS,
+            setting_class=SETTINGS_TOKEN,
             key="PMM__annotations_enabled",
             value=True,
             is_active=True,

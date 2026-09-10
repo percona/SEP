@@ -30,18 +30,17 @@ from pydantic import (
 from app.core.utils.fields import AsyncDatabaseEngine
 
 #: The driver kwarg each async dialect uses for its connect timeout. asyncpg
-#: takes ``timeout``, aiomysql takes ``connect_timeout``; aiosqlite's
-#: ``timeout`` means lock wait, not connect, so SQLite is absent.
+#: takes ``timeout``; aiosqlite's ``timeout`` means lock wait, not connect, so
+#: SQLite is absent.
 _CONNECT_TIMEOUT_KEYS: dict[AsyncDatabaseEngine, str] = {
     AsyncDatabaseEngine.POSTGRESQL: "timeout",
-    AsyncDatabaseEngine.MYSQL: "connect_timeout",
 }
 
 
 class DatabaseOptions(BaseModel):
     """Define configuration options for a database connection.
 
-    :param ENGINE: The database engine to use (e.g., SQLite, MySQL, PostgreSQL).
+    :param ENGINE: The database engine to use (e.g., SQLite, PostgreSQL).
         Defaults to SQLite.
     :param USER: The username for the database connection.
     :param PASSWORD: The password for the database connection.
@@ -58,9 +57,13 @@ class DatabaseOptions(BaseModel):
         SQLAlchemy's default. Must be ``> 0``.
     :param CONNECT_TIMEOUT: Seconds to wait for a TCP connect. Unset passes no
         ``connect_args``, leaving the driver's own default. Forwarded as
-        ``timeout`` for asyncpg and ``connect_timeout`` for aiomysql; omitted
-        for SQLite, where that key means lock wait rather than connect. Must
-        be ``> 0``.
+        ``timeout`` for asyncpg; omitted for SQLite, where that key means lock
+        wait rather than connect. Must be ``> 0``.
+    :param POOL_PRE_PING: Whether to test each pooled connection for liveness
+        before handing it out. Defaults to ``True`` so a dead connection is
+        discarded and replaced transparently. Unlike the sizing fields, this
+        is a plain ``bool`` rather than ``bool | None`` because the point is
+        to override SQLAlchemy's ``False`` default, not to fall back to it.
     """
 
     ENGINE: AsyncDatabaseEngine = AsyncDatabaseEngine.SQLITE
@@ -73,6 +76,7 @@ class DatabaseOptions(BaseModel):
     MAX_OVERFLOW: NonNegativeInt | None = None
     POOL_TIMEOUT: PositiveFloat | None = None
     CONNECT_TIMEOUT: PositiveFloat | None = None
+    POOL_PRE_PING: bool = True
 
     @computed_field(repr=False)
     @property
@@ -103,22 +107,26 @@ class DatabaseOptions(BaseModel):
         )
 
     @property
-    def pool_engine_kwargs(self) -> dict[str, int | float]:
-        """Return only the explicitly-set pool options as ``create_engine`` kwargs.
+    def pool_engine_kwargs(self) -> dict[str, int | float | bool]:
+        """Return pool options as ``create_engine`` kwargs.
 
-        An unset field is omitted entirely so the engine keeps SQLAlchemy's own
-        default, leaving standalone deployments byte-for-byte unchanged.
+        ``pool_pre_ping`` is always emitted so the engine overrides SQLAlchemy's
+        ``False`` default. Sizing fields are omitted when unset so the engine
+        keeps SQLAlchemy's own defaults for those.
 
-        :return: The set pool options keyed by their lowercase engine-kwarg names.
+        :return: Pool options keyed by their lowercase engine-kwarg names.
         """
         return {
-            key: value
-            for key, value in {
-                "pool_size": self.POOL_SIZE,
-                "max_overflow": self.MAX_OVERFLOW,
-                "pool_timeout": self.POOL_TIMEOUT,
-            }.items()
-            if value is not None
+            "pool_pre_ping": self.POOL_PRE_PING,
+            **{
+                key: value
+                for key, value in {
+                    "pool_size": self.POOL_SIZE,
+                    "max_overflow": self.MAX_OVERFLOW,
+                    "pool_timeout": self.POOL_TIMEOUT,
+                }.items()
+                if value is not None
+            },
         }
 
     @property

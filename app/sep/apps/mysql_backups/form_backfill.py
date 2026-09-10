@@ -17,16 +17,24 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Annotated, Any, TYPE_CHECKING
 
 import yaml
 
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
-from app.sep.apps.mysql_backups.forms import BackupCreate, OWNER, UploadProvider
+from app.sep.apps.mysql_backups.forms import (
+    BACKUP_DIR_UI,
+    BackupCreate,
+    encryption_format_for_passes,
+    OWNER,
+    UploadProvider,
+)
+from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY as RESTORE_FORM_BACKFILL_ENTRY,
 )
@@ -35,7 +43,12 @@ if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["FORM_BACKFILL_ENTRIES", "reconstruct_mysql_backups_form"]
+__all__ = [
+    "FORM_BACKFILL_ENTRIES",
+    "LegacyBackupCreate",
+    "reconstruct_mysql_backups_form",
+    "repair_mysql_backups_stamp",
+]
 
 _MYSQL_BACKUPS_FORM_FIELDS = frozenset(BackupCreate.model_fields)
 _UPLOAD_PROVIDER_BY_ALIAS = {provider.name: provider for provider in UploadProvider}
@@ -55,6 +68,30 @@ _EXPLICIT_FORM_KEYS = frozenset(
     }
 )
 _PARSE_ONLY_KEYS = frozenset({"name", "host", "port"})
+
+
+class LegacyBackupCreate(BackupCreate):
+    """Validate a reconstructed form body against the create form's older contract.
+
+    A stored config written before the create form required a backup directory has
+    no ``BACKUP_DIR`` key, so the reconstructed body omits ``backup_dir``.
+    Validating that against the strict create model would skip the task, and a task
+    with no ``_form`` stamp has no Edit affordance at all — leaving an operator able
+    to delete and recreate it but not to repair it. The rejection belongs on the
+    create and update routes, which keep
+    :class:`~app.sep.apps.mysql_backups.forms.BackupCreate`.
+
+    The field is declared exactly as the create model declared it before the
+    tightening, ``NonEmptyStr`` and not ``StrippedNonEmptyStr``: the older form
+    accepted a whitespace-only directory, the payload joined it as a relative path,
+    and those tasks ran and reported success, so they are part of the population
+    that has to reconstruct rather than be skipped.
+
+    :param backup_dir: The backup root directory; optional here and un-stripped,
+        unlike on the create model.
+    """
+
+    backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
@@ -160,12 +197,44 @@ def reconstruct_mysql_backups_form(
     }
 
 
+def repair_mysql_backups_stamp(
+    stored_form: dict[str, Any],
+    _task: Task,
+    _ctx: FormBackfillContext,
+) -> dict[str, Any] | None:
+    """Add ``encryption_format`` to a stamp written before the selector existed.
+
+    A stamp created through the schema form predating the selector names the GPG
+    timings and the AES-256 key file but not the format they add up to, and the
+    edit form fills that gap from the schema default — ``none`` — so an encrypted
+    task reloads looking unencrypted. The format is derived from the stamp's own
+    fields rather than from the task config, because the stamp is the record of
+    what the operator submitted. Neither the task row nor the backfill context is
+    read: the stamp carries every field the derivation needs.
+
+    :param stored_form: A copy of the task's existing ``data['_form']``.
+    :param _task: The stamped task row.
+    :param _ctx: Shared backfill context.
+    :return: The repaired form, or ``None`` when the stamp already names a format.
+    """
+    if stored_form.get("encryption_format") is not None:
+        return None
+
+    stored_form["encryption_format"] = encryption_format_for_passes(
+        aes256=stored_form.get("backup_type") == BackupType.XTRABACKUP
+        and bool(stored_form.get("xtrabackup_aes256_keyfile")),
+        gpg=bool(stored_form.get("encrypt") or stored_form.get("post_run_encrypt")),
+    )
+    return stored_form
+
+
 FORM_BACKFILL_ENTRIES = [
     FormBackfillEntry(
         app_key="mysql_backups",
         owner=OWNER,
-        create_model=BackupCreate,
+        create_model=LegacyBackupCreate,
         reconstructor=reconstruct_mysql_backups_form,
+        stamp_repairer=repair_mysql_backups_stamp,
     ),
     RESTORE_FORM_BACKFILL_ENTRY,
 ]

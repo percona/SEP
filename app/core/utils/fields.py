@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Self, TypeVar
+from typing import Annotated, Any, Generic, Self, TypeVar
 from urllib.parse import urlparse, urlunparse
 
 from annotated_types import Interval
@@ -34,8 +34,10 @@ from pydantic import (
     Field,
     FilePath,
     GetCoreSchemaHandler,
+    GetJsonSchemaHandler,
     HttpUrl,
     PlainSerializer,
+    SecretStr,
     StringConstraints,
     TypeAdapter,
     UrlConstraints,
@@ -94,7 +96,9 @@ def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], 
     """
     enum_class_name = enum_class.__name__
 
-    def get_enum_from_value_or_name(value_or_name: Any) -> enum_class:
+    def get_enum_from_value_or_name(
+        value_or_name: Any,
+    ) -> enum_class:  # ty: ignore[invalid-type-form]
         """Return the {enum_class} from its value or name.
 
         :param value_or_name: The value or name of the {enum_class} to return.
@@ -135,7 +139,7 @@ R = TypeVar("R")
 
 
 @dataclass(frozen=True)
-class AsTypeValidator:
+class AsTypeValidator(Generic[V, R]):
     """Validate an object with a specified class and optionally apply post-processing.
 
     This validator uses a designated type (`validate_class`) to validate an object. If a
@@ -247,7 +251,7 @@ class URL(StarletteURL):
     def __get_pydantic_json_schema__(
         cls,
         core_schema: core_schema.CoreSchema,
-        handler: GetCoreSchemaHandler,
+        handler: GetJsonSchemaHandler,
     ) -> JsonSchemaValue:
         """Provide the JSON schema for the custom URL type.
 
@@ -255,11 +259,8 @@ class URL(StarletteURL):
         that it should be treated as a string with a URI format.
 
         :param core_schema: The core schema for the URL.
-        :type core_schema: core_schema.CoreSchema
         :param handler: The handler for JSON schema retrieval.
-        :type handler: GetCoreSchemaHandler
         :return: The JSON schema for the `URL` type.
-        :rtype: JsonSchemaValue
         """
         json_schema = handler(core_schema)
         json_schema.update(
@@ -339,59 +340,41 @@ class LogLevel(EnumFieldMixin, IntEnum):
 
 
 class DatabaseDialect(EnumFieldMixin, StrEnum):
-    """Enum representing supported database dialect names."""
+    """Represent supported database dialect names."""
 
     SQLITE = "sqlite"
-    MYSQL = "mysql"
     POSTGRESQL = "postgresql"
 
 
 class DatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported database engines.
-
-    :cvar SQLITE: SQLite engine string.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `pymysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `psycopg2` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite"
-    MYSQL = "mysql+pymysql"
     POSTGRESQL = "postgresql+psycopg2"
 
 
 class AsyncDatabaseEngine(EnumFieldMixin, StrEnum):
-    """Enum representing supported async database engines.
-
-    :cvar SQLITE: SQLite engine string, using the `aiosqlite` driver.
-    :vartype SQLITE: str
-    :cvar MYSQL: MySQL engine string, using the `aiomysql` driver.
-    :vartype MYSQL: str
-    :cvar POSTGRESQL: PostgreSQL engine string, using the `asyncpg` driver.
-    :vartype POSTGRESQL: str
-    """
+    """Represent supported async database engines as SQLAlchemy engine strings."""
 
     SQLITE = "sqlite+aiosqlite"
-    MYSQL = "mysql+aiomysql"
     POSTGRESQL = "postgresql+asyncpg"
 
 
 def database_url_normalized_scheme_field_factory(
     engine_enum_class: type[DatabaseEngine] | type[AsyncDatabaseEngine],
-) -> type[Url]:
+) -> Any:
     """Generate and return an Url field that normalizes the scheme of a database URL.
+
+    Annotated ``Any`` because the result is an ``Annotated[...]`` type expression
+    assembled here, not a class.
 
     This factory function generates an annotated Url field with a BeforeValidator that
     normalizes the scheme of a database URL according to the `engine_enum_class`
     specified.
 
     :param engine_enum_class: The database engine enum type to use. Either
-        `DatabaseEngineEnum` or `AsyncDatabaseEngineEnum`.
-    :type engine_enum_class: type[DatabaseEngineEnum] | type[AsyncDatabaseEngineEnum]
+        ``DatabaseEngine`` or ``AsyncDatabaseEngine``.
     :return: The annotated Url field with the attached validator.
-    :rtype: type[Url]
     """
     get_database_engine_enum = get_enum_from_value_or_name_factory(engine_enum_class)
 
@@ -425,6 +408,18 @@ def database_url_normalized_scheme_field_factory(
 
 NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
 """Define a string field that must not be empty."""
+
+AuthSchemeStr = Annotated[
+    str, StringConstraints(pattern=r"^[0-9A-Za-z!#$%&'*+.^_`|~-]+$")
+]
+"""Define an HTTP authentication scheme, the ``token`` production of RFC 7230.
+
+A scheme is spliced into an ``Authorization`` header value, and a header value
+cannot carry whitespace-leading, ``CR``, ``LF`` or ``NUL`` bytes under any
+escaping — ``requests`` raises ``InvalidHeader`` and ``aiohttp`` raises
+``ValueError`` at send time. Constraining the field rejects such a value where
+an operator sets it, rather than leaving every later request to fail.
+"""
 
 ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
 """Advertise a free-form argument map for OpenAPI / TypeScript clients.
@@ -625,7 +620,8 @@ This annotated type validates the string as any valid URL without additional pro
 """
 
 CREDENTIAL_URL_MASK = "****"
-PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {"preserve_credentials": True}
+_PRESERVE_CREDENTIALS_KEY = "preserve_credentials"
+PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {_PRESERVE_CREDENTIALS_KEY: True}
 
 
 def _netloc_host(netloc: str) -> str:
@@ -656,6 +652,38 @@ def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
         (
             parsed.scheme,
             netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+def strip_credential_url_userinfo(url: str) -> str:
+    """Return ``url`` with any embedded userinfo segment removed.
+
+    ``requests`` and ``aiohttp`` both derive basic auth from a URL's userinfo and
+    let it override an explicit ``Authorization`` header, so a caller presenting
+    a header of its own must remove the userinfo rather than rely on precedence.
+    This differs from :func:`redact_credential_url`, which only masks the
+    password: a masked URL still puts basic auth on the wire.
+
+    The presence test reads the ``@`` delimiter rather than the parsed username
+    and password, so the degenerate ``http://@host`` and ``http://:@host``
+    shapes — whose parsed halves are both empty strings — lose their delimiter
+    too.
+
+    :param url: The URL string to strip.
+    :return: The URL without its userinfo segment, or ``url`` when it carries none.
+    """
+    parsed = urlparse(url)
+    if "@" not in parsed.netloc:
+        return url
+    return urlunparse(
+        (
+            parsed.scheme,
+            _netloc_host(parsed.netloc),
             parsed.path,
             parsed.params,
             parsed.query,
@@ -720,7 +748,7 @@ def _credential_url_serializer(
     """Serialize a URL value, redacting embedded passwords unless context opts out."""
     serialized = handler(value)
     context = getattr(info, "context", None) or {}
-    if context.get("preserve_credentials"):
+    if context.get(_PRESERVE_CREDENTIALS_KEY):
         return serialized
     return redact_credential_url(str(serialized))
 
@@ -805,6 +833,87 @@ Use for broker/backend URLs that may carry credentials in the userinfo segment.
 Validation rejects a URL whose userinfo password equals
 :data:`CREDENTIAL_URL_MASK`. A literal ``****`` password is therefore
 unusable on this type: it is indistinguishable from the mask by construction.
+"""
+
+
+def _preserve_secret_serializer(
+    value: Any,
+    handler: Callable[[Any], Any],
+    info: Any,
+) -> Any:
+    """Serialize a secret, emitting the real value only under the preserve context.
+
+    :param value: The secret being serialized.
+    :param handler: Pydantic's default serializer for the field, which masks.
+    :param info: Pydantic serialization info; its ``context`` opts out of masking.
+    :return: The plain secret under :data:`PRESERVE_CREDENTIALS_CONTEXT`, else the
+        masked value ``handler`` produces.
+    """
+    context = getattr(info, "context", None) or {}
+    if context.get(_PRESERVE_CREDENTIALS_KEY) and isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return handler(value)
+
+
+PreservableSecretStr = Annotated[
+    SecretStr,
+    WrapSerializer(_preserve_secret_serializer, when_used="json"),
+]
+"""Define a secret string whose JSON dump can opt out of masking.
+
+JSON dumps carry Pydantic's mask
+(:data:`~app.core.settings_override.registry.SECRET_STR_MASK`) unless
+:data:`PRESERVE_CREDENTIALS_CONTEXT` is passed, which emits the plain secret so a
+config fingerprint survives a JSON round-trip and a rotated credential compares
+unequal to the one it replaces.
+
+:class:`~pydantic.SecretStr` remains reachable from the annotation, so
+:func:`~app.core.settings_override.registry.annotation_contains_secret` still
+classifies the field as a secret and settings-API masking and at-rest encryption
+are unchanged.
+"""
+
+_HEADER_UNSENDABLE_CHARACTERS = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+
+
+def _reject_header_unsendable_characters(value: Any) -> Any:
+    """Reject a credential carrying a byte one of the HTTP clients refuses to send.
+
+    :param value: The raw value on its way into the secret wrapper.
+    :return: ``value`` unchanged when it is safe to splice into a header.
+    :raises ValueError: If the value contains a character neither client will send.
+    """
+    if isinstance(value, str) and _HEADER_UNSENDABLE_CHARACTERS.search(value):
+        raise ValueError(
+            "cannot contain control characters: the HTTP clients refuse to send "
+            "them, so every request presenting this credential would fail when it "
+            "is sent rather than where it is set"
+        )
+    return value
+
+
+AuthCredentialSecretStr = Annotated[
+    PreservableSecretStr, BeforeValidator(_reject_header_unsendable_characters)
+]
+"""Define a :data:`PreservableSecretStr` safe to splice into an ``Authorization`` header.
+
+The companion of :data:`AuthSchemeStr` for the other half of the header value.
+A credential is *not* held to RFC 7230's ``token`` — base64 padding and other
+non-``token`` bytes are legitimate in a real key — so the rejected set is
+exactly what one of the two clients refuses to put on the wire: every control
+character except ``HTAB``. Swept byte by byte against both, ``requests`` rejects
+only ``LF`` and ``CR`` while ``aiohttp`` rejects the rest, and ``HTAB`` and space
+are sent by both. A key pasted with a trailing newline is the ordinary way such a
+value arrives, and it would otherwise fail every request rather than the
+assignment.
+
+The constraint sits in a ``BeforeValidator`` rather than
+:class:`~pydantic.StringConstraints` because a constraint cannot be applied to
+:class:`~pydantic.SecretStr`'s schema, and wrapping a constrained ``str`` in
+:class:`~pydantic.Secret` instead would drop ``SecretStr`` from the annotation —
+which is what
+:func:`~app.core.settings_override.registry.annotation_contains_secret` reads to
+classify the field, so masking and at-rest encryption would silently stop.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]

@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 from starlette.datastructures import URL
 
+from app.core.db.in_memory_list_query import InMemoryListQuery
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPNotFoundException,
@@ -40,7 +41,6 @@ from app.sep.apps.field_names import (
     RESERVED_EXECUTION_FIELD_NAMES,
     SUDO_FIELD_NAME,
 )
-from app.sep.apps.framework.list_query import InMemoryListQuery
 from app.sep.apps.framework.schema import (
     BoolField,
     ChoiceField,
@@ -558,3 +558,47 @@ class TestExecuteMeta:
             source.build_execution_meta(
                 script, _framework_processed_body(source, script, body)
             )
+
+
+class TestRecordDisplayNames:
+    """Cover the record nouns the disk-backed source puts on its two schemas."""
+
+    async def test_per_script_schema_names_the_record_a_run(
+        self, source: ScriptSource, script_dir: Path
+    ) -> None:
+        """Name the per-script record a run, never the script's own title."""
+        _write_script(script_dir, "ok.sh", _SHELL_NO_PARAMS)
+        script = await source.load_script("ok.sh")
+
+        schema = source.build_form_schema(script)
+
+        assert schema.item_display_name == "run"
+        assert schema.item_display_name_plural == "runs"
+
+    async def test_static_schema_carries_the_passed_record_names(
+        self, script_dir: Path
+    ) -> None:
+        """Stamp the app-level record nouns the builder was given onto ``static_schema``."""
+
+        class _KitScript(BaseSnippet):
+            BASE_DIR = script_dir
+
+        source = build_disk_script_source(
+            script_dir=script_dir,
+            script_cls=_KitScript,
+            artifact_type="testkit",
+            name="testkit",
+            display_name="Test Kit",
+            item_display_name="kit script",
+            item_display_name_plural="kit scripts",
+        )
+
+        assert source.static_schema.item_display_name == "kit script"
+        assert source.static_schema.item_display_name_plural == "kit scripts"
+
+    async def test_static_schema_record_names_default_to_display_name(
+        self, source: ScriptSource
+    ) -> None:
+        """Leave both app-level nouns defaulted when the caller passes neither."""
+        assert source.static_schema.item_display_name == "Test Kit"
+        assert source.static_schema.item_display_name_plural == "Test Kit"

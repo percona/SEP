@@ -86,13 +86,17 @@ def mock_pymongo():
     mock.errors.OperationFailure = type(
         "OperationFailure", (Exception,), {"code": None}
     )
-    old = sys.modules.get("pymongo")
+    # The production code imports the errors submodule explicitly, as importing
+    # the package alone does not guarantee it is bound; register both.
+    previous = {name: sys.modules.get(name) for name in ("pymongo", "pymongo.errors")}
     sys.modules["pymongo"] = mock
+    sys.modules["pymongo.errors"] = mock.errors
     yield mock
-    if old is None:
-        sys.modules.pop("pymongo", None)
-    else:
-        sys.modules["pymongo"] = old
+    for name, old in previous.items():
+        if old is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = old
 
 
 class TestCheckMySQL:
@@ -160,8 +164,8 @@ class TestCheckMySQL:
     ):
         """Verify server-side auth/authorization rejections report success.
 
-        Per SEP-927, the goal is to test connectivity. An auth-denied response
-        from the server proves the server is reachable.
+        The goal is to test connectivity: an auth-denied response from the
+        server proves the server is reachable.
         """
         from app.tasks.connectivity.payload import check_mysql
 
@@ -185,7 +189,9 @@ class TestCheckMySQL:
 
         result = check_mysql("db-host", 3306)
         assert result["success"] is False
-        assert "Can't connect" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "Can't connect" in error
 
     def test_operational_error_with_empty_args_remains_failure(
         self, mock_myloginpath, mock_pymysql
@@ -236,8 +242,8 @@ class TestCheckPostgreSQL:
     def test_auth_failure_by_sqlstate_treated_as_success(self, pgcode, mock_psycopg2):
         """Verify SQLSTATE class 28 (auth rejection) reports success.
 
-        Per SEP-927, an auth-rejected response from the server proves the
-        server is reachable, which is what this check measures.
+        An auth-rejected response from the server proves the server is
+        reachable, which is what this check measures.
         """
         from app.tasks.connectivity.payload import check_postgresql
 
@@ -262,7 +268,9 @@ class TestCheckPostgreSQL:
 
         result = check_postgresql("db-host", 5432)
         assert result["success"] is False
-        assert "password authentication failed" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "password authentication failed" in error
 
 
 class TestCheckMongoDB:
@@ -298,8 +306,8 @@ class TestCheckMongoDB:
     def test_auth_failure_treated_as_success(self, code, mock_pymongo):
         """Verify ``OperationFailure`` codes 13 and 18 report success.
 
-        Per SEP-927, a server-side auth rejection (``13`` Unauthorized,
-        ``18`` AuthenticationFailed) proves the server is reachable.
+        A server-side auth rejection (``13`` Unauthorized, ``18``
+        AuthenticationFailed) proves the server is reachable.
         """
         from app.tasks.connectivity.payload import check_mongodb
 
@@ -323,7 +331,9 @@ class TestCheckMongoDB:
 
         result = check_mongodb("db-host", 27017)
         assert result["success"] is False
-        assert "namespace not found" in result["error"]
+        error = result["error"]
+        assert isinstance(error, str)
+        assert "namespace not found" in error
 
 
 class TestMain:

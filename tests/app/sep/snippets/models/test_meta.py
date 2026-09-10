@@ -16,6 +16,7 @@
 """Tests for SnippetMetaParameter model validators and computed properties."""
 
 from datetime import datetime, timedelta, timezone, UTC
+from typing import get_args
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -477,8 +478,7 @@ class TestValidationType:
             name="start", type=SnippetMetaParameterType.DATETIME, required=False
         )
         vtype = param.validation_type
-        assert hasattr(vtype, "__args__")
-        assert UTCDatetime in vtype.__args__
+        assert UTCDatetime in get_args(vtype)
 
 
 class TestToValidationField:

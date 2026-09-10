@@ -17,7 +17,7 @@
 
 import sys
 
-from tests.scripts import load_script
+from tests.scripts import load_script, write_file
 
 check_nomad_payload_size = load_script("check_nomad_payload_size")
 
@@ -34,26 +34,9 @@ def hello(name: str = "world") -> str:
 INVALID_SCRIPT = "def oops(:\n"
 
 
-def _write(tmp_path, name, text):
-    """Write ``text`` to ``tmp_path/name`` and return the path.
-
-    :param tmp_path: pytest's per-test temporary directory.
-    :type tmp_path: pathlib.Path
-    :param name: The filename to create under ``tmp_path``.
-    :type name: str
-    :param text: UTF-8 contents to write.
-    :type text: str
-    :return: The newly-written path.
-    :rtype: pathlib.Path
-    """
-    p = tmp_path / name
-    p.write_text(text, encoding="utf-8")
-    return p
-
-
 def test_check_payload_uses_minified_text_for_size(tmp_path, monkeypatch):
     """Gzip-compress the minified source in ``check_payload``, not the original text."""
-    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    path = write_file(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     seen = {}
     real_minify = check_nomad_payload_size.minify
 
@@ -71,7 +54,7 @@ def test_check_payload_uses_minified_text_for_size(tmp_path, monkeypatch):
 
 def test_check_payload_falls_back_on_syntax_error(tmp_path, monkeypatch):
     """Ignore ``SyntaxError`` from ``minify`` in ``check_payload`` and use raw source."""
-    path = _write(tmp_path, "broken.py", INVALID_SCRIPT)
+    path = write_file(tmp_path, "broken.py", INVALID_SCRIPT)
 
     def raise_syntax(src, **kwargs):
         raise SyntaxError("boom")
@@ -86,7 +69,7 @@ def test_check_payload_falls_back_on_syntax_error(tmp_path, monkeypatch):
 
 def test_main_reports_oversized_file_and_returns_one(tmp_path, monkeypatch, capsys):
     """Exit 1 from ``main`` and print path, size, and limit when a file exceeds the limit."""
-    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    path = write_file(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", 1)
     monkeypatch.setattr(sys, "argv", ["check_nomad_payload_size.py", str(path)])
     assert check_nomad_payload_size.main() == 1
@@ -98,7 +81,7 @@ def test_main_reports_oversized_file_and_returns_one(tmp_path, monkeypatch, caps
 
 def test_main_returns_zero_when_within_limit(tmp_path, monkeypatch, capsys):
     """Exit 0 from ``main`` and print nothing when all files are within the limit."""
-    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    path = write_file(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     monkeypatch.setattr(sys, "argv", ["check_nomad_payload_size.py", str(path)])
     assert check_nomad_payload_size.main() == 0
     assert capsys.readouterr().out == ""
@@ -106,7 +89,7 @@ def test_main_returns_zero_when_within_limit(tmp_path, monkeypatch, capsys):
 
 def test_report_prints_size_headroom_and_returns_zero(tmp_path, monkeypatch, capsys):
     """Print size, limit, and headroom for a within-limit payload and exit 0."""
-    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    path = write_file(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     limit = 10_000
     monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)
     size = check_nomad_payload_size.payload_size(str(path))
@@ -118,7 +101,7 @@ def test_report_prints_size_headroom_and_returns_zero(tmp_path, monkeypatch, cap
 
 def test_report_returns_zero_when_over_limit(tmp_path, monkeypatch, capsys):
     """Exit 0 from ``--report`` even when a payload exceeds the limit."""
-    path = _write(tmp_path, "verbose.py", VERBOSE_SCRIPT)
+    path = write_file(tmp_path, "verbose.py", VERBOSE_SCRIPT)
     monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", 1)
     size = check_nomad_payload_size.payload_size(str(path))
     over = size - 1
@@ -131,8 +114,8 @@ def test_report_returns_zero_when_over_limit(tmp_path, monkeypatch, capsys):
 
 def test_report_prints_one_line_per_path(tmp_path, monkeypatch, capsys):
     """Print one line per path when ``--report`` is given multiple paths."""
-    path_a = _write(tmp_path, "a.py", VERBOSE_SCRIPT)
-    path_b = _write(tmp_path, "b.py", VERBOSE_SCRIPT)
+    path_a = write_file(tmp_path, "a.py", VERBOSE_SCRIPT)
+    path_b = write_file(tmp_path, "b.py", VERBOSE_SCRIPT)
     paths = [str(path_a), str(path_b)]
     limit = 10_000
     monkeypatch.setattr(check_nomad_payload_size, "NOMAD_PAYLOAD_SIZE_LIMIT", limit)

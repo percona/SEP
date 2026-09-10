@@ -34,6 +34,9 @@ const MOCK_USER = {
   email: 'smoke@percona.com',
   firstName: 'Smoke',
   lastName: 'Test',
+  // Deliberately non-admin: snippet download is a GET, still permitted for a
+  // read-only session, so this keeps end-to-end proof that the read path works
+  // for exactly the users whose write controls are hidden.
   isAdmin: false,
 };
 

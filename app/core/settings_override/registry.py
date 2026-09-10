@@ -29,6 +29,8 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
+    "SettingProvenance",
+    "annotation_contains_secret",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -52,7 +54,8 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "override_keys_for_rows",
+    "override_provenance_for_rows",
+    "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
     "resolve_nested_field",
@@ -74,13 +77,15 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.manager import SettingsOverrideManager
+from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,
     is_restriction_active,
 )
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.fields import (
     _credential_url_serializer,
     preserve_credential_url_password,
@@ -92,7 +97,10 @@ from app.core.utils.pydantic import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pydantic.fields import FieldInfo
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
     # Imported only for annotations: the override substrate must not depend on
     # the concrete settings classes at runtime, which lets ``app.core.config``
@@ -315,24 +323,14 @@ def _effective_field_markers(
     return {**entry, **markers}
 
 
-def _setting_class_or_none(settings_cls: type[BaseModel]) -> SettingClassEnum | None:
-    """Return the override-table identifier for a settings class, if it has one.
-
-    Every class a settings router exposes is an enum member, so ``None`` means
-    the class can carry no override row at all. Each policy gate reads that as
-    "withhold", closing rather than widening the overridable surface.
-
-    :param settings_cls: The Pydantic settings class to identify.
-    :return: The matching enum member, or ``None`` when the class has none.
-    """
-    try:
-        return SettingClassEnum(settings_cls.__name__)
-    except ValueError:
-        return None
-
-
 def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """Return whether ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds one canonical key.
+
+    Keys the allowlist on ``settings_cls.__name__``, the same token
+    ``ALLOWED_KEYS`` entries use. A class that is not a
+    :class:`~app.core.settings_override.models.SettingClassEnum` member is
+    therefore still reachable when the allowlist names it, and still withheld
+    when it does not.
 
     :param settings_cls: The top-level Pydantic settings class owning the key.
     :param canonical_key: The canonical override key: a top-level field name or
@@ -341,10 +339,7 @@ def _policy_locked(settings_cls: type[BaseModel], canonical_key: str) -> bool:
     """
     if not is_restriction_active():
         return False
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return True
-    return not is_key_allowed(setting_class, canonical_key)
+    return not is_key_allowed(settings_cls.__name__, canonical_key)
 
 
 def is_hot_reloadable(
@@ -502,7 +497,9 @@ def _annotated_type(field_info: FieldInfo) -> Any:
         if not isinstance(item, CustomFieldMetadata)
     )
     if constraints:
-        return Annotated[(field_info.annotation, *constraints)]
+        return Annotated[
+            (field_info.annotation, *constraints)  # ty: ignore[invalid-type-form]
+        ]
     return field_info.annotation
 
 
@@ -782,10 +779,7 @@ def is_nested_overridable_parent(
         return False
     if not include_policy_gate or not is_restriction_active():
         return True
-    setting_class = _setting_class_or_none(settings_cls)
-    if setting_class is None:
-        return False
-    return has_allowed_key_under(setting_class, field_name)
+    return has_allowed_key_under(settings_cls.__name__, field_name)
 
 
 def nested_overridable_field_names(
@@ -1119,38 +1113,152 @@ def canonical_override_key(settings_cls: type[BaseModel], key: str) -> str:
     return "__".join(chain)
 
 
-def override_keys_for_rows(
+class SettingProvenance(NamedTuple):
+    """Carry the last-written stamp reported for one overridden key.
+
+    :param updated_at: When the contributing row was last written, falling back
+        to its creation time for a row that predates explicit stamping. Stamps
+        carry second granularity.
+    :param updated_by: The username that last wrote the contributing row, or
+        ``None`` for a row written before the actor column existed.
+    """
+
+    updated_at: datetime
+    updated_by: str | None
+
+
+def _provenance_keys_for_row(
+    settings_cls: type[BaseModel],
+    row: SettingOverride,
+) -> Iterator[str]:
+    """Yield every key one override row reports an override for.
+
+    The row's own stored ``key`` always counts, which keeps the report correct
+    when a row was stored under a non-canonical casing. A ``__``-delimited row
+    additionally contributes every canonical prefix of its resolved chain: the
+    top-level parent, each intermediate sub-model path, and the canonical leaf
+    key. A promoted parent therefore reports an override when only deeper nested
+    rows exist.
+
+    :param settings_cls: The Pydantic settings class the row belongs to.
+    :param row: One active override row.
+    :return: The stored key followed by each canonical prefix of its chain.
+    """
+    yield row.key
+    if "__" not in row.key:
+        return
+    resolved = resolve_nested_field(settings_cls, row.key)
+    if resolved is None:
+        return
+    chain, _ = resolved
+    for i in range(1, len(chain) + 1):
+        yield "__".join(chain[:i])
+
+
+def override_provenance_for_rows(
     settings_cls: type[BaseModel],
     rows: list[SettingOverride],
-) -> set[str]:
-    """Return the set of keys (and canonical prefixes) with active overrides.
+) -> dict[str, SettingProvenance]:
+    """Return the last-written stamp for every key with an active override.
 
-    Each row's own ``key`` is included; additionally, every ``__``-delimited row
-    contributes every canonical prefix of its resolved chain -- the top-level
-    parent, each intermediate sub-model path, and the canonical leaf key. This
-    lets a ``field_meta.key in override_keys`` lookup report ``has_override=True``
-    for a promoted parent or an intermediate sub-model when only deeper nested
-    rows exist, and keeps the flag correct when a row was stored under a
-    non-canonical casing.
+    The mapping's key set is exactly the set of keys carrying an override, so a
+    caller derives ``has_override`` as ``key in mapping`` and the flag cannot
+    drift from the stamps beside it. :func:`_provenance_keys_for_row` decides
+    which keys each row contributes.
+
+    When several rows contribute to one key, which is the ordinary case for a
+    nested parent, the row with the latest stamp wins, breaking ties on the
+    higher ``id``. Ties are the common case rather than a corner: ``utc_now``
+    zeroes microseconds and one PATCH batch stamps every key it writes with a
+    single shared timestamp.
+
+    ``id`` is creation order, not write order, so the tie-break orders rows the
+    same batch wrote but cannot order two separate writes that land in the same
+    second: there the reported pair comes from whichever contributing row was
+    created later, which need not be the one written later. Second-granularity
+    stamps make that distinction unrecoverable rather than merely unqueried, so
+    the tie-break buys determinism, not accuracy.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
-    :type settings_cls: type[BaseModel]
     :param rows: The active override rows for the class.
-    :type rows: list[SettingOverride]
-    :return: The set of keys and canonical prefixes carrying an override.
-    :rtype: set[str]
+    :return: One :class:`SettingProvenance` per key carrying an override.
     """
-    keys = {row.key for row in rows}
+    ranked: dict[str, tuple[tuple[datetime, int], SettingOverride]] = {}
     for row in rows:
-        if "__" not in row.key:
-            continue
-        resolved = resolve_nested_field(settings_cls, row.key)
-        if resolved is None:
-            continue
-        chain, _ = resolved
-        for i in range(1, len(chain) + 1):
-            keys.add("__".join(chain[:i]))
-    return keys
+        # SQLModel skips validation on a ``table=True`` model, so a stamp loaded
+        # from the database bypasses the ``UTCDatetime`` normalizer and can
+        # arrive naive, which would not compare against an aware sibling.
+        rank = (make_datetime_utc(row.updated_at or row.created_at), row.id or 0)
+        for key in _provenance_keys_for_row(settings_cls, row):
+            current = ranked.get(key)
+            if current is None or rank > current[0]:
+                ranked[key] = (rank, row)
+    return {
+        key: SettingProvenance(updated_at=rank[0], updated_by=row.updated_by)
+        for key, (rank, row) in ranked.items()
+    }
+
+
+def _stored_key_matches_override_key(
+    settings_cls: type[BaseModel],
+    stored_key: str,
+    key: str,
+) -> bool:
+    """Return whether a stored override key resolves to the same field as ``key``.
+
+    Nested keys go through :func:`canonical_override_key`. Top-level keys also
+    match case-insensitively so mixed-case stored keys remain visible to
+    DELETE/PATCH after the filter moved into Python. Snapshot application still
+    ignores unknown casing via
+    :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
+    removes those inert rows, and PATCH heals their stored key to the
+    canonical spelling so the next snapshot can read them.
+
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param stored_key: The key column value from an override row.
+    :param key: The canonical override key requested by the caller.
+    :return: ``True`` when ``stored_key`` should be treated as the same override.
+    """
+    if canonical_override_key(settings_cls, stored_key) == key:
+        return True
+    if "__" in key or "__" in stored_key:
+        return False
+    return stored_key.casefold() == key.casefold()
+
+
+async def override_rows_for_key(
+    session: AsyncSession,
+    *,
+    settings_cls: type[BaseModel],
+    setting_class: str,
+    key: str,
+) -> list[SettingOverride]:
+    """Return the :class:`SettingOverride` rows whose stored key resolves to ``key``.
+
+    Lists every row for ``setting_class`` and keeps those whose stored ``key``
+    matches via :func:`_stored_key_matches_override_key`. That makes a legacy
+    non-canonically-cased nested or top-level row visible to DELETE and PATCH,
+    which previously matched the stored column with dialect-dependent SQL
+    equality and, after the filter moved into Python, missed mixed-case
+    top-level rows.
+
+    Inactive rows are included: both write paths currently match on
+    ``(setting_class, key)`` alone, so an inactive row stays deletable and
+    re-activatable.
+
+    :param session: The sub-app's database session.
+    :param settings_cls: The Pydantic settings class the rows belong to.
+    :param setting_class: The class identifier used to filter override rows.
+    :param key: The canonical override key to resolve against.
+    :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
+        returns them.
+    """
+    rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
+    return [
+        row
+        for row in rows
+        if _stored_key_matches_override_key(settings_cls, row.key, key)
+    ]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:
@@ -1239,7 +1347,7 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         seen.add(ident)
         yield current
         origin = typing.get_origin(current)
-        if origin in {Union, UnionType} or origin is not None:
+        if origin is not None:
             stack.extend(typing.get_args(current))
             continue
         if isinstance(current, type) and issubclass(current, BaseModel):
@@ -1253,21 +1361,34 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
 SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 
 
+def annotation_contains_secret(annotation: Any) -> bool:
+    """Return whether a Pydantic secret type is reachable from ``annotation``.
+
+    Walks the annotation recursively (nested models and imported concrete
+    subclasses of polymorphic bases), looking for
+    :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
+
+    Public because the at-rest walker in
+    :mod:`app.core.settings_override.secret_storage` decides which leaves to
+    encrypt with this exact rule, and a second copy of it there would let the
+    two drift into disagreeing about which fields are credentials.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a secret type is reachable from the annotation.
+    """
+    return any(
+        isinstance(arg, type) and issubclass(arg, SecretStr | SecretBytes)
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
-
-    Walks the annotation recursively via :func:`_iter_type_arguments`
-    (nested models and imported concrete subclasses of polymorphic bases),
-    looking for :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :return: ``True`` when a secret type is reachable from the annotation.
     """
-    secret_types = (SecretStr, SecretBytes)
-    for arg in _iter_type_arguments(field_info.annotation):
-        if isinstance(arg, type) and issubclass(arg, secret_types):
-            return True
-    return False
+    return annotation_contains_secret(field_info.annotation)
 
 
 def _unwrap_secret_value(current: Any) -> str | bytes | None:
@@ -2031,19 +2152,16 @@ def iter_nested_leaf_keys(
     ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
     single leaf (their items are not expanded). Segments are the canonical
     attribute names from ``model_fields``, so each yielded key matches the form
-    :func:`resolve_nested_field` and :func:`override_keys_for_rows` produce, and
-    ``"__".join(chain) == key`` holds by construction.
+    :func:`resolve_nested_field` and :func:`override_provenance_for_rows`
+    produce, and ``"__".join(chain) == key`` holds by construction.
 
     Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
     submodel (e.g. a scalar HOT field), letting the caller fall back to a single
     top-level entry.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.
-    :type settings_cls: type[BaseModel]
     :param parent_field_name: The top-level field whose leaves to enumerate.
-    :type parent_field_name: str
-    :yield: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
-    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    :return: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
     """
     parent_info = settings_cls.model_fields.get(parent_field_name)
     if parent_info is None:

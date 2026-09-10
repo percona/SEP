@@ -44,12 +44,12 @@ REALLOCATION_EPOCH = 1
 def _reset_tasks_settings():
     """Clear any override snapshot after each test so caps do not leak."""
     yield
-    tasks_settings._set_snapshot({})
+    tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 def _set_cap(cap_bytes: int, max_rows: int = 1000) -> None:
     """Publish a cap/eviction-row override snapshot for the tasks settings proxy."""
-    tasks_settings._set_snapshot(
+    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {
             "LOG_STREAM_CAP_BYTES": cap_bytes,
             "LOG_STREAM_EVICTION_MAX_ROWS": max_rows,

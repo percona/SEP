@@ -40,7 +40,6 @@ from typing import NamedTuple, TYPE_CHECKING
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.settings_override.cache import build_snapshot
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
 if TYPE_CHECKING:
@@ -109,7 +108,7 @@ def previous_or_base(
 #: exception it raises is caught and logged by :func:`fire_change_callbacks`
 #: so one failing callback cannot break the cycle.
 RefreshCallback = Callable[[SnapshotChange], Awaitable[None]]
-CallbackRegistry = dict[tuple[SettingClassEnum, str], RefreshCallback]
+CallbackRegistry = dict[tuple[str, str], RefreshCallback]
 
 
 async def publish_snapshot(
@@ -153,12 +152,12 @@ class ProxyEntry(NamedTuple):
     settings_cls: type[BaseYamlSettings]
 
 
-ProxyRegistry = dict[SettingClassEnum, ProxyEntry]
+ProxyRegistry = dict[str, ProxyEntry]
 
 
 async def fire_change_callbacks(
     callbacks: CallbackRegistry,
-    setting_class: SettingClassEnum,
+    setting_class: str,
     previous: Mapping[str, object],
     current: Mapping[str, object],
 ) -> None:
@@ -199,7 +198,7 @@ async def fire_change_callbacks(
         except Exception:
             logger.exception(
                 "Rebind callback for %s.%s failed; keeping previous binding",
-                setting_class.name,
+                setting_class,
                 key,
             )
 
@@ -257,7 +256,7 @@ async def refresh_all(
             except Exception:
                 logger.exception(
                     "Failed to refresh overrides for %s; keeping previous snapshot",
-                    setting_class.name,
+                    setting_class,
                 )
                 # Roll back so a Postgres ``InFailedSqlTransaction`` from this
                 # proxy does not cascade into every subsequent proxy's

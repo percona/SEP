@@ -16,6 +16,7 @@
 """Define tests for the Tasks worker's settings-override wiring."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -55,14 +56,16 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.core.settings_override.conftest import (
+    ANONYMIZER_SETTINGS_TOKEN,
     HangingSession,
     recording_start_refresh_task,
     START_REFRESH_TASK,
+    TASKS_SETTINGS_TOKEN,
 )
+from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
 
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
-WorkerLoopEnv = tuple[asyncio.AbstractEventLoop, async_sessionmaker]
 
 
 def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
@@ -83,8 +86,11 @@ def _write_cert(path: Path, *, not_valid_after: datetime) -> None:
 
 
 @pytest_asyncio.fixture(name="override_session_maker")
-async def _override_session_maker() -> async_sessionmaker:
+async def _override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker isolated from the main test DB."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -92,7 +98,7 @@ async def _override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -130,7 +136,7 @@ def worker_loop_env(monkeypatch):
 async def _create_schema(engine) -> None:
     """Create every SQLModel table on ``engine``."""
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
 
 
 async def _seed_override(maker, *, setting_class, key, value) -> None:
@@ -226,7 +232,7 @@ class TestAnonymizerDefaultEntitiesOverride:
         """Resolve each override shape to the value the owning model produces."""
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.ANONYMIZER_SETTINGS,
+            setting_class=ANONYMIZER_SETTINGS_TOKEN,
             key="DEFAULT_ENTITIES",
             value=raw,
         )
@@ -252,7 +258,7 @@ class TestSyncLockTtlPositivityGuard:
         baseline = tasks_settings.SYNC_LOCK_TTL
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="SYNC_LOCK_TTL",
             value=0,
         )
@@ -268,7 +274,7 @@ class TestSyncLockTtlPositivityGuard:
         override = timedelta(minutes=10)
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="SYNC_LOCK_TTL",
             value=int(override.total_seconds()),
         )
@@ -299,9 +305,9 @@ class TestWorkerRefresherHandlers:
         stop_settings_override_refresher()
         assert celery_module._refresher.task is None
 
-    def test_shutdown_cancels_and_drains_started_refresher(self, worker_loop_env):
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_shutdown_cancels_and_drains_started_refresher(self):
         """Stop and drain the started refresher, clearing the handle."""
-        loop, _ = worker_loop_env
         start_settings_override_refresher()
         task = celery_module._refresher.task
         assert task is not None
@@ -311,9 +317,9 @@ class TestWorkerRefresherHandlers:
         assert celery_module._refresher.task is None
         assert task.cancelled() or task.done()
 
-    def test_init_is_idempotent_when_already_running(self, worker_loop_env):
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_init_is_idempotent_when_already_running(self):
         """Keep the running refresher and start no second task on re-entry."""
-        loop, _ = worker_loop_env
         start_settings_override_refresher()
         first_task = celery_module._refresher.task
         assert first_task is not None
@@ -331,7 +337,7 @@ class TestWorkerRefresherHandlers:
         loop.run_until_complete(
             _seed_override(
                 maker,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=baseline + 1234,
             )
@@ -339,9 +345,9 @@ class TestWorkerRefresherHandlers:
         loop.run_until_complete(refresh_all(lambda: maker, _tasks_proxies()))
         assert baseline + 1234 == tasks_settings.STALENESS_THRESHOLD_SECONDS
 
+    @pytest.mark.usefixtures("worker_loop_env")
     def test_init_forwards_a_budget_from_worker_proc_alive_timeout(
         self,
-        worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
@@ -353,9 +359,9 @@ class TestWorkerRefresherHandlers:
 
         assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
 
+    @pytest.mark.usefixtures("worker_loop_env")
     def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
         self,
-        worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Keep the periodic refresher after a hanging seed hits its budget."""
@@ -405,7 +411,7 @@ class TestSyncRunningItemsRespectsOverriddenTtl:
         loop.run_until_complete(
             _seed_override(
                 maker,
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="SYNC_LOCK_TTL",
                 value=int(override_ttl.total_seconds()),
             )
@@ -446,19 +452,19 @@ class TestCheckNomadCertExpiryWithOverride:
         _write_cert(client, not_valid_after=ANCHOR + timedelta(days=30))
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__ssl_cafile",
             value=str(ca),
         )
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__ssl_certfile",
             value=str(client),
         )
         await _seed_override(
             override_session_maker,
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="NOMAD__cert_expiry_warn_days",
             value=7,
         )

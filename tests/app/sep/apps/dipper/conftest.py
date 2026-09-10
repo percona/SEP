@@ -15,6 +15,7 @@
 
 """Define fixtures for dipper plugin tests."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -30,7 +31,7 @@ from tests.app.sep.conftest import (  # noqa: F401
 
 
 @pytest.fixture
-def mock_pmm_api_dep() -> AsyncMock:
+def mock_pmm_api_dep() -> Iterator[AsyncMock]:
     """Override the Dipper ``get_pmm_api`` dependency with a mock PMM client.
 
     Tests set ``.get_nodes`` / ``.get_services`` return values (or side effects)

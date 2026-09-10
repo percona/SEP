@@ -15,6 +15,7 @@
 
 """Define test fixtures for tasks tests."""
 
+from collections.abc import AsyncGenerator, Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -35,6 +36,7 @@ from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.main import tasks_app
 from app.tasks.models import TaskHistory, TaskWrite
+from tests.app.db_schema import apply_schema
 from tests.app.factories import build_task_history, TaskFactory
 
 #: The per-task hook-path fields the ``TaskWrite`` allow-list constrains.
@@ -52,8 +54,11 @@ REJECTED_HOOK_PATHS = (
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -61,7 +66,7 @@ async def session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -83,7 +88,7 @@ def mock_executor() -> AsyncMock:
 @pytest.fixture
 def test_client(
     regular_user: CasdoorUser, session: AsyncSession, mock_executor: AsyncMock
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Create an authenticated test client for the app.
 
     Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``

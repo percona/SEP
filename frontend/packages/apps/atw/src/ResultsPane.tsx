@@ -36,6 +36,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import SendIcon from '@mui/icons-material/Send';
+import { useAuth } from '@sep/api';
 import {
   TaskFilesDialog,
   TaskHistoryStatusBadge,
@@ -71,7 +72,7 @@ interface ResendContext {
  * error rather than a silently unselectable row.
  */
 const FINISHED_TASK_STATUSES: ReadonlySet<NonNullable<AtwIncidentExecution['task_status']>> =
-  new Set(['success', 'failed', 'stopped', 'stale']);
+  new Set(['success', 'failed', 'stopped', 'stale', 'unlaunchable']);
 
 const SEND_STATUS_COLORS = {
   success: 'success',
@@ -94,6 +95,7 @@ function isSelectable(execution: AtwIncidentExecution): boolean {
  * chosen on an earlier page.
  */
 export function ResultsPane({ incidentId }: ResultsPaneProps) {
+  const { canMutate } = useAuth();
   const [page, setPage] = useState({ offset: 0, limit: ATW_PAGE_SIZE });
   const { data, isLoading, error } = useAtwIncidentExecutions(incidentId, page);
   const { data: incident } = useAtwIncident(incidentId);
@@ -253,7 +255,8 @@ export function ResultsPane({ incidentId }: ResultsPaneProps) {
         </Alert>
       )}
 
-      {rows && rows.length > 0 && (
+      {/* Selection exists only to feed the send action, so both go together. */}
+      {rows && rows.length > 0 && canMutate && (
         <Stack
           direction="row"
           spacing={2}
@@ -367,6 +370,7 @@ function SendHistory({
   onResend: (context: ResendContext) => void;
   disabledReasons: string[];
 }) {
+  const { canMutate } = useAuth();
   const resendDisabled = disabledReasons.length > 0;
   const resendTooltip = disabledReasons.join('; ');
 
@@ -403,7 +407,7 @@ function SendHistory({
                 {job.case_ref} · {job.requested_by}
                 {job.finished_at ? ` · ${new Date(job.finished_at).toLocaleString()}` : ''}
               </Typography>
-              {job.status === 'failed' && (
+              {job.status === 'failed' && canMutate && (
                 <Tooltip title={resendTooltip}>
                   <span>
                     <Button
@@ -450,6 +454,7 @@ function ExecutionRow({
   onToggleSelected: () => void;
   onOpenFiles: () => void;
 }) {
+  const { canMutate } = useAuth();
   const { snippet_filename, task_status, task_history_id, has_logs, masked_args, args_withheld } =
     execution;
   const selectable = isSelectable(execution);
@@ -466,18 +471,20 @@ function ExecutionRow({
           alignItems="center"
           sx={{ width: '100%', pr: 1, flexWrap: 'wrap' }}
         >
-          <Tooltip title={selectable ? '' : 'Only finished executions can be sent.'}>
-            <span>
-              <Checkbox
-                size="small"
-                checked={selected}
-                disabled={!selectable}
-                onChange={onToggleSelected}
-                onClick={(event) => event.stopPropagation()}
-                inputProps={{ 'aria-label': `Select ${snippet_filename}` }}
-              />
-            </span>
-          </Tooltip>
+          {canMutate && (
+            <Tooltip title={selectable ? '' : 'Only finished executions can be sent.'}>
+              <span>
+                <Checkbox
+                  size="small"
+                  checked={selected}
+                  disabled={!selectable}
+                  onChange={onToggleSelected}
+                  onClick={(event) => event.stopPropagation()}
+                  inputProps={{ 'aria-label': `Select ${snippet_filename}` }}
+                />
+              </span>
+            </Tooltip>
+          )}
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>
             <Typography variant="subtitle2" sx={{ wordBreak: 'break-all' }}>
               {snippet_filename}

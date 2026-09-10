@@ -276,11 +276,41 @@ class AtwSendLogResponse(BaseModel):
     detail: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
+class AtwCaseMatch(BaseModel):
+    """Represent one support case the delivery provider matched.
+
+    :param reference: The case reference to send diagnostics against.
+    :param title: The case title, shown beside the reference to tell two
+        similar references apart.
+    """
+
+    reference: str
+    title: str
+
+
+class AtwCaseSearchResponse(BaseModel):
+    """Report the cases matching a typed term, or that the search could not run.
+
+    :param available: Whether the search ran at all. This is what keeps an
+        unavailable search distinct from an available one that matched nothing:
+        a caller must not render the first as the second.
+    :param matches: The matched cases, empty when there are none and when the
+        search could not run.
+    """
+
+    available: bool
+    matches: list[AtwCaseMatch]
+
+
 class AtwConfigResponse(BaseModel):
     """Report whether the incident send action is available.
 
     :param send_disabled_reasons: Why sending is unavailable; empty when the
         receiver is configured and the action is offered.
+    :param case_search_available: Whether the case-reference field may query the
+        receiver for matches. Defaults to ``False`` so a client built against
+        the response before this field existed keeps validating.
     """
 
     send_disabled_reasons: list[str]
+    case_search_available: bool = False

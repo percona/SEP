@@ -26,7 +26,7 @@ runs green. The mocks mirror the real Tasks/Inventory boundary semantics
 execute paths are tested against the same shapes production sees.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from itertools import count
 from pathlib import Path
@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import Pagination
+from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.apps import (
@@ -82,6 +83,13 @@ SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
+
+#: Run state pinned on the upstream history row execute fixtures return. Both
+#: differ from every value the field would otherwise take -- the model defaults
+#: (``PENDING`` and ``utc_now()``) and ``TaskHistoryResponseFactory``'s declared
+#: ``SUCCESS`` -- so asserting them tells a forwarded field from a defaulted one.
+EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 SYNTH_CREATED_BY = "synth-user-id"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
@@ -114,7 +122,7 @@ class MockTaskAPI:
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._ids = count(1)
         self.create_count = 0
-        self.last_create_payload: dict[str, Any] | None = None
+        self.last_create_payload: dict[str, Any] = {}
         self.last_update_payload: dict[str, Any] | None = None
 
     def seed_task(
@@ -197,9 +205,11 @@ class MockTaskAPI:
         if path == "/connectivity-check/":
             return {"success": True, "error": None}
         if path.startswith("/execute/"):
-            return TaskHistoryResponseFactory.build(id=next(self._ids)).model_dump(
-                mode="json"
-            )
+            return TaskHistoryResponseFactory.build(
+                id=next(self._ids),
+                status=EXECUTE_STATUS,
+                created_at=EXECUTE_CREATED_AT,
+            ).model_dump(mode="json")
         return self._create(json)
 
     async def put(
@@ -321,6 +331,11 @@ class MockInventoryAPI:
     single-type ``ServiceRef(MYSQL)`` selector resolves through
     ``get_created_entity``'s equality filter. Unknown ids raise
     :class:`HTTPNotFoundException`.
+
+    The default seeds materialise on first resolution rather than in
+    ``__init__``, so a test that never resolves an entity pays nothing for them.
+    An explicit ``seed_*`` call drops the matching default, so a test re-seeding
+    an id — ``backup_pg``'s PostgreSQL-typed service, say — always wins over it.
     """
 
     def __init__(self) -> None:
@@ -330,13 +345,24 @@ class MockInventoryAPI:
             "/tables": {},
             "/nodes": {},
         }
-        self.seed_node(MOCK_CREATED_NODE_ID)
-        self.seed_service(MOCK_CREATED_SERVICE_ID)
-        self.seed_schema(MOCK_CREATED_SCHEMA_ID)
-        self.seed_table(MOCK_CREATED_TABLE_ID)
+        self._pending: dict[tuple[str, int], Callable[[], None]] = {
+            ("/nodes", MOCK_CREATED_NODE_ID): lambda: self.seed_node(
+                MOCK_CREATED_NODE_ID
+            ),
+            ("/services", MOCK_CREATED_SERVICE_ID): lambda: self.seed_service(
+                MOCK_CREATED_SERVICE_ID
+            ),
+            ("/schemas", MOCK_CREATED_SCHEMA_ID): lambda: self.seed_schema(
+                MOCK_CREATED_SCHEMA_ID
+            ),
+            ("/tables", MOCK_CREATED_TABLE_ID): lambda: self.seed_table(
+                MOCK_CREATED_TABLE_ID
+            ),
+        }
 
     def seed_node(self, node_id: int) -> None:
         """Seed a created node at ``node_id``."""
+        self._pending.pop(("/nodes", node_id), None)
         self._entities["/nodes"][node_id] = CreatedNodeFactory.build(
             id=node_id, address=SYNTH_SERVICE_HOST
         ).model_dump(mode="json")
@@ -348,6 +374,7 @@ class MockInventoryAPI:
         service_type: ServiceTypeEnum = ServiceTypeEnum.MYSQL,
     ) -> None:
         """Seed a created service at ``service_id`` with ``service_type``."""
+        self._pending.pop(("/services", service_id), None)
         self._entities["/services"][service_id] = CreatedServiceFactory.build(
             id=service_id,
             node=CreatedNodeFactory.build(address=SYNTH_SERVICE_HOST),
@@ -358,6 +385,7 @@ class MockInventoryAPI:
 
     def seed_schema(self, schema_id: int) -> None:
         """Seed a created schema at ``schema_id``."""
+        self._pending.pop(("/schemas", schema_id), None)
         self._entities["/schemas"][schema_id] = CreatedSchemaFactory.build(
             id=schema_id
         ).model_dump(mode="json")
@@ -369,19 +397,30 @@ class MockInventoryAPI:
         distinct table ids never collide by name — some task plugins guard against
         operations where source and destination resolve to the same table name.
         """
+        self._pending.pop(("/tables", table_id), None)
         self._entities["/tables"][table_id] = CreatedTableFactory.build(
             id=table_id, name=f"tbl-{table_id}"
         ).model_dump(mode="json")
 
     async def get(self, path: str, **_: Any) -> dict[str, Any]:
-        """Resolve ``GET /{collection}/{id}`` against the seeded entity store."""
+        """Resolve ``GET /{collection}/{id}`` against the seeded entity store.
+
+        A miss falls back to the default seed pending for that id, so the
+        ``MOCK_*_ID`` entities cost their factory build only in a test that
+        actually resolves them.
+        """
         collection, _, entity_id = path.rpartition("/")
         store = self._entities.get(collection)
         if store is None or not entity_id.isdigit():
             raise HTTPNotFoundException
-        entity = store.get(int(entity_id))
+        key = int(entity_id)
+        entity = store.get(key)
         if entity is None:
-            raise HTTPNotFoundException
+            seed = self._pending.pop((collection, key), None)
+            if seed is None:
+                raise HTTPNotFoundException
+            seed()
+            entity = store[key]
         return entity
 
 
@@ -536,10 +575,12 @@ class SynthExecuteWrite(BaseModel):
 
 
 class SynthExecuteResponse(BaseModel):
-    """Represent the execute response carrying the dispatched task name and id."""
+    """Represent the execute response carrying the dispatched run's identity and state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 class SynthCapabilities(BaseModel):
@@ -685,7 +726,7 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
     :param tasks_api: The Tasks API client used to look up the owner's tasks.
     :raises HTTPConflictException: When any owned task's latest status is RUNNING.
     """
-    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER})
+    listing = as_json_object(await tasks_api.get("/", params={"owner": SYNTH_OWNER}))
     names = [item["name"] for item in listing["items"]]
     statuses = await batch_get_latest_statuses(tasks_api, names)
     if any(

@@ -18,8 +18,12 @@
 __all__ = [
     "UPSTREAM_NON_JSON_HEADER",
     "BaseRemoteAPI",
+    "JSONBody",
     "RemoteAPI",
+    "as_json_array",
+    "as_json_object",
     "exception_for_status",
+    "is_non_json_success",
 ]
 
 import asyncio
@@ -94,6 +98,9 @@ _SENSITIVE_HEADERS = frozenset(
 # logs. Compared case-insensitively against JSON/form body keys.
 _SENSITIVE_BODY_FIELDS = frozenset({"password", "secret", "token"})
 _REDACTED_VALUE = "****"
+# Stands in for a response body a caller withheld from the log, so the line
+# keeps naming the request that produced it.
+_WITHHELD_BODY = "<withheld>"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -107,6 +114,10 @@ FileContent = bytes | BinaryIO | AsyncIterable[bytes]
 
 #: A single multipart file part: ``(filename, content, content_type)``.
 FileSpec = tuple[str, FileContent, str]
+
+#: The parsed body of a JSON response: an object, an array of objects, or
+#: ``None`` when the server answered HTTP 204 with no body.
+JSONBody = dict[str, Any] | list[dict[str, Any]] | None
 
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
@@ -159,6 +170,64 @@ def exception_for_status(
     return exc_class(detail, headers=headers)
 
 
+def as_json_object(payload: JSONBody) -> dict[str, Any]:
+    """Return ``payload`` as a JSON object, rejecting any other shape.
+
+    The verb methods declare the whole union a JSON body may take — an object,
+    an array, or ``None`` on HTTP 204. A caller that reads the result as a
+    mapping is asserting a shape the transport never checked; this checks it and
+    turns a mis-shaped upstream answer into a 502 rather than a ``TypeError``
+    further down.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload as a plain dict.
+    :raises HTTPBadGatewayException: If the payload is not a JSON object.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
+    """Return ``payload`` as a JSON array of objects, rejecting any other shape.
+
+    The elements are checked too, so the returned ``list[dict[str, Any]]`` is a
+    verified claim rather than an asserted one.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload itself, once every element is confirmed to be an object.
+    :raises HTTPBadGatewayException: If the payload is not a JSON array, or any
+        element of it is not a JSON object.
+    """
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def is_non_json_success(exc: HTTPException) -> bool:
+    """Return whether ``exc`` reports a successful answer whose body was not JSON.
+
+    :meth:`RemoteAPI.request` parses every body but a ``204`` before it checks
+    the status, so a receiver answering ``200 text/plain`` (an acknowledgement
+    string, an HTML health page, an empty non-``204`` body) surfaces as a
+    ``2xx`` :class:`fastapi.HTTPException` rather than as the success it is.
+    Callers that do not need the parsed body use this to tell that case from a
+    real upstream error.
+
+    :param exc: The exception :meth:`RemoteAPI.request` raised.
+    :return: ``True`` when the status is below 400 and the body was not JSON.
+    """
+    return exc.status_code < status.HTTP_400_BAD_REQUEST and bool(
+        (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+    )
+
+
 def _sanitize_request_kwargs(
     kwargs: dict[str, Any],
     *,
@@ -206,9 +275,7 @@ def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
     """Raise :class:`ValueError` for a stream line larger than the cap.
 
     :param size: Size in bytes of the offending line or pending buffer.
-    :type size: int
     :param path: The stream path, included in the error message.
-    :type path: str
     :raises ValueError: Always — this function never returns.
     """
     msg = (
@@ -229,36 +296,43 @@ async def _iter_lines_from_chunks(
     line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
     runaway producer.
 
+    Every chunk consumes the newlines it introduced and drops what precedes
+    them, so the carried remainder is newline-free when the next chunk arrives.
+    Searching only the arriving bytes therefore finds exactly what a search from
+    the front finds, at a cost proportional to the chunk rather than to the
+    remainder behind it.
+
     :param chunks: An async iterator producing byte chunks (e.g. from
         ``aiohttp`` ``StreamReader.iter_any()``).
-    :type chunks: AsyncIterator[bytes]
     :param path: The stream path, included in the error message when a single
         line exceeds the cap.
-    :type path: str
     :yield: Each line as ``bytes`` with its trailing newline preserved; the
         final unterminated chunk is also yielded when the stream ends without
         a newline.
-    :rtype: AsyncGenerator[bytes, None]
     :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
     """
     buffer = bytearray()
     async for chunk in chunks:
         if not chunk:
             continue
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier chunks sits.
+        search_from = len(buffer)
         buffer.extend(chunk)
-        offset = 0
+        line_start = 0
         while True:
-            newline_pos = buffer.find(b"\n", offset)
+            newline_pos = buffer.find(b"\n", search_from)
             if newline_pos == -1:
                 break
             line_end = newline_pos + 1
-            line_size = line_end - offset
+            line_size = line_end - line_start
             if line_size > _MAX_STREAM_LINE_BYTES:
                 _raise_stream_line_too_big(line_size, path)
-            yield bytes(buffer[offset:line_end])
-            offset = line_end
-        if offset:
-            del buffer[:offset]
+            yield bytes(buffer[line_start:line_end])
+            line_start = search_from = line_end
+        if line_start:
+            del buffer[:line_start]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
             _raise_stream_line_too_big(len(buffer), path)
     if buffer:
@@ -299,6 +373,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
     _session: ClientSession | None = None
+    _in_flight: int = 0
+    _close_when_idle: bool = False
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
     )
@@ -311,6 +387,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         default_factory=lambda: ContextVar(
             "api_extra_sensitive_body_fields", default=frozenset()
         )
+    )
+    _suppress_response_log: ContextVar[bool] = PrivateAttr(
+        default_factory=lambda: ContextVar("api_suppress_response_log", default=False)
     )
 
     def __hash__(self) -> int:
@@ -398,6 +477,45 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """
         await self.__aexit__(None, None, None)
 
+    @asynccontextmanager
+    async def hold(self) -> AsyncGenerator[Self, None]:
+        """Count the caller as an in-flight consumer for the duration of the block.
+
+        A consumer that resolved this client keeps it for every call it makes,
+        including the ones it issues after an earlier response finished, so the
+        accounting unit is the hold rather than the individual HTTP call. The
+        releaser that drops the count to zero performs a close that
+        :meth:`close_when_idle` deferred.
+
+        The release runs during cancellation too, when the consuming task is
+        cancelled by a client disconnecting mid-response, so the deferred close
+        is shielded; a bare ``await`` would leave it interrupted with the
+        session still open.
+
+        :return: This client, unchanged.
+        """
+        self._in_flight += 1
+        try:
+            yield self
+        finally:
+            self._in_flight -= 1
+            if not self._in_flight and self._close_when_idle:
+                self._close_when_idle = False
+                await asyncio.shield(self.close())
+
+    async def close_when_idle(self) -> None:
+        """Close the session now when idle, or once the last consumer releases.
+
+        Unlike :meth:`close`, which closes unconditionally, this waits on the
+        consumers registered by :meth:`hold`, and imposes no deadline on them.
+        Callers that retire a client on a settings rebind use this so an
+        in-flight stream or download is not cut off mid-response.
+        """
+        if self._in_flight:
+            self._close_when_idle = True
+            return
+        await self.close()
+
     def set_extra_headers(self, extra_headers: dict[str, str] | None) -> Token:
         """Set extra headers to be included in API requests.
 
@@ -472,6 +590,35 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         finally:
             self._extra_sensitive_body_fields.reset(token)
 
+    @contextmanager
+    def suppress_response_log(self) -> Generator[Self]:
+        """Withhold the response body from the debug log for the call.
+
+        Register that the parsed response body must not reach the log for the
+        duration of the call. Use this where the caller keeps only the values it
+        names itself and the rest of the body is data it must neither retain nor
+        return, so the body must not outlive the request in a log line either.
+
+        Guards the two response-logging sites in :meth:`request` and nothing
+        else: :meth:`stream` logs no response body of its own, so a caller
+        wrapping it gains no guarantee here. The second of the two sites reports
+        a non-JSON response, and today renders a stream handle rather than the
+        content itself, so the substitution there is a placeholder against the
+        argument changing rather than a leak being closed.
+
+        Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
+        accumulate onto the set an enclosing block registered, this flag has
+        nothing to union; an enclosing suppression survives an inner block's
+        exit unchanged.
+
+        :return: The instance with response logging withheld.
+        """
+        token = self._suppress_response_log.set(True)
+        try:
+            yield self
+        finally:
+            self._suppress_response_log.reset(token)
+
     @cached_property
     def logger(self) -> logging.Logger:
         """Return logger object to use.
@@ -483,11 +630,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return logging.getLogger(self.logger_name)
 
     @property
-    def session(self) -> ClientSession:
+    def session(self) -> ClientSession | None:
         """Get the ClientSession used in requests.
 
-        :return: The ClientSession used in requests.
-        :rtype: ClientSession
+        :return: The ClientSession used in requests, or ``None`` before the
+            client is opened and after it is closed — which is what callers
+            test for to decide whether to enter it.
         """
         return self._session
 
@@ -610,7 +758,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 extra_sensitive_body_fields=self._extra_sensitive_body_fields.get(),
             ),
         )
-        async with self._session.request(method, prepared_path, **kwargs) as response:
+        async with (
+            self.hold(),
+            self._session.request(method, prepared_path, **kwargs) as response,
+        ):
             yield response
 
     @staticmethod
@@ -817,15 +968,12 @@ class RemoteAPI(BaseRemoteAPI):
         }
 
     @contextmanager
-    def auth(self, api_key: str, auth_scheme: str = "Bearer") -> AsyncGenerator[Self]:
+    def auth(self, api_key: str, auth_scheme: str = "Bearer") -> Generator[Self]:
         """Define context manager to temporarily set authentication for API requests.
 
         :param api_key: The API key to use for authentication.
-        :type api_key: str
         :param auth_scheme: The authentication scheme to use. Defaults to "Bearer".
-        :type auth_scheme: str
-        :yield: The `RemoteAPI` instance with authentication headers set.
-        :rtype: AsyncGenerator[Self]
+        :return: The `RemoteAPI` instance with authentication headers set.
         """
         with self.extra_headers(
             {"Authorization": f"{auth_scheme} {api_key}".strip()}
@@ -903,6 +1051,8 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            withhold_body = self._suppress_response_log.get()
+            response_data: JSONBody = None
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -911,18 +1061,17 @@ class RemoteAPI(BaseRemoteAPI):
                     method,
                     path,
                     response.status,
-                    response_data,
+                    _WITHHELD_BODY if withhold_body else response_data,
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
-                response_content = response.content
                 self.logger.exception(
                     "RemoteAPI (%s): %s request to %s response content (%s): %s",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
-                    response_content,
+                    _WITHHELD_BODY if withhold_body else response.content,
                 )
                 raise exception_for_status(
                     err.status,
@@ -1058,8 +1207,6 @@ class RemoteAPI(BaseRemoteAPI):
                 "POST", path, data=payload, headers=headers, **kwargs
             )
         except HTTPException as exc:
-            if exc.status_code < status.HTTP_400_BAD_REQUEST and (
-                exc.headers or {}
-            ).get(UPSTREAM_NON_JSON_HEADER):
+            if is_non_json_success(exc):
                 return None
             raise

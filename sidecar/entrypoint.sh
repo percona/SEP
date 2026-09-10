@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Side-car PID 1: expand the per-deployment inputs into canonical settings
 # variables, mint the bundled Valkey broker's credential for this container run,
-# then hand off to supervisord.
+# resolve SEP's Grafana service-account token, then hand off to supervisord.
 #
 # The credential reaches valkey-server through a generated config file rather
 # than a --requirepass flag, and reaches healthcheck.sh by being read back out of
@@ -9,10 +9,29 @@
 # image's ENV, never what this script exports.
 set -o errexit -o nounset -o pipefail
 
+# Resolved from this script rather than written absolute so the start path can be
+# exercised outside an image; in the image it is $APP_HOME either way.
+app_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 # Sourced first, so a misconfigured container's first log line is the actionable
 # message rather than a Valkey mint that was never going to be reached.
 # shellcheck source=sidecar/settings-env.sh
-. /home/sep/app/settings-env.sh
+. "$app_dir/settings-env.sh"
+
+# Ahead of both steps below, because the Grafana helper resolves the settings
+# stack and that refuses to build without this key -- and its failure is
+# absorbed, so a key arriving after it would degrade auth with no diagnostic.
+#
+# Guarded on the file channel as well as the variable: the helper resolves a
+# SECRETS_DIR file too, and exporting that answer would put a mounted secret
+# into every supervised program's environment, which is the one thing mounting
+# it avoids. Unlike the Grafana mint, the failure is not absorbed -- a non-zero
+# exit means minting could not be proven safe, and starting anyway is what
+# silently reverts every encrypted override to its YAML default.
+if [[ -z ${ENCRYPTION_KEY:-} ]] && ! secret_file_supplies ENCRYPTION_KEY; then
+    ENCRYPTION_KEY="$(python3 "$app_dir/encryption_key.py")"
+    export ENCRYPTION_KEY
+fi
 
 valkey_conf=/tmp/valkey.conf
 
@@ -44,4 +63,27 @@ EOF
 export CELERY__BROKER_URL="redis://:${valkey_password}@127.0.0.1:6379/0"
 export CELERY__RESULT_BACKEND="redis://:${valkey_password}@127.0.0.1:6379/1"
 
-exec supervisord -c /home/sep/app/supervisord.conf "$@"
+# Absorbing the helper's failure is load-bearing under errexit: auth degrading to
+# what it does today is survivable, a PID 1 that dies before supervisord is not.
+# The value arrives by command substitution for the same reason the Valkey
+# password above does -- an argv is readable across the whole PID namespace.
+grafana_token="$(python3 "$app_dir/grafana_service_account.py")" || grafana_token=""
+if [[ -n $grafana_token ]]; then
+    export_grafana_token "$grafana_token"
+fi
+
+# The admin pair is more privileged than the token it mints and only the step
+# above reads it, so leaving it exported would hand every supervised program a
+# Grafana administrator credential for the life of the container.
+unset grafana_token GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD
+
+# /tmp survives a container restart, and each schema one-shot clears its own
+# sentinel only after being spawned -- concurrently with the API programs now
+# gated on it, which could therefore read a previous run's marker. PID 1 runs
+# before supervisord starts anything, so clearing here covers every container
+# start and restart. A `supervisorctl restart` does not re-enter this script and
+# still races; nothing in the documented operation of the image does that.
+rm -f /tmp/migrate-sep.ok /tmp/migrate-inventory.ok /tmp/migrate-tasks.ok \
+    /tmp/migrate-beat.ok
+
+exec supervisord -c "$app_dir/supervisord.conf" "$@"

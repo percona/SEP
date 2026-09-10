@@ -17,11 +17,10 @@
 
 import ast
 import pathlib
-from typing import Any, get_args
+from typing import Any
 from unittest.mock import AsyncMock
 
 from httpx import ASGITransport, AsyncClient, Response
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
@@ -31,6 +30,7 @@ from app.sep.deps import (
     get_current_user,
     get_inventory_api,
     get_session,
+    get_tasks_api,
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
@@ -78,6 +78,7 @@ def service_payload(
     """Build a minimal inventory service payload a service-resolving route accepts."""
     return {
         "id": service_id,
+        "service_id": f"/service_id/{service_id}",
         "name": name,
         "type": service_type.value,
         "node_id": 1,
@@ -103,12 +104,15 @@ async def authenticated_get(
     inventory: AsyncMock,
     user: object,
     params: dict[str, Any] | None = None,
+    tasks: AsyncMock | None = None,
 ) -> Response:
     """GET ``url`` against the sep app with the given session + inventory mock.
 
     Installs the authentication overrides an ``/api/apps/*`` route needs, so a
     route test asserts on the route's own behavior rather than on the auth gate,
-    and restores any previously installed overrides afterwards.
+    and restores any previously installed overrides afterwards. Only a route that
+    reaches the Tasks API needs ``tasks``; the dependency is left un-overridden
+    otherwise.
     """
     previous_overrides = sep_app.dependency_overrides.copy()
     sep_app.dependency_overrides[get_session] = lambda: session
@@ -116,6 +120,8 @@ async def authenticated_get(
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[get_inventory_api] = lambda: inventory
+    if tasks is not None:
+        sep_app.dependency_overrides[get_tasks_api] = lambda: tasks
     try:
         transport = ASGITransport(app=sep_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -123,22 +129,3 @@ async def authenticated_get(
     finally:
         sep_app.dependency_overrides.clear()
         sep_app.dependency_overrides.update(previous_overrides)
-
-
-def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
-    """Return the string ``Literal`` members a model field accepts.
-
-    Reaches through the optional wrapper (``Literal[...] | EmptyStrToNone``) so a
-    test can parametrize over the vocabulary a form declares instead of restating
-    it and drifting from the model.
-
-    :param model: The model owning the field.
-    :param field: The field name whose annotation carries the ``Literal``.
-    :return: The declared members, in declaration order.
-    """
-    return tuple(
-        arg
-        for member in get_args(model.model_fields[field].annotation)
-        for arg in get_args(member)
-        if isinstance(arg, str)
-    )

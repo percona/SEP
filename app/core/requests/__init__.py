@@ -14,4 +14,10 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.core.requests.registry import ClientRegistry
-from app.core.requests.remote_api import BaseRemoteAPI, RemoteAPI
+from app.core.requests.remote_api import (
+    as_json_array,
+    as_json_object,
+    BaseRemoteAPI,
+    JSONBody,
+    RemoteAPI,
+)

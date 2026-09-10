@@ -81,6 +81,7 @@
           "label": "Execution Host",
           "name": "hostname",
           "required": true,
+          "target_service": "service_id",
           "type": "host"
         },
         {
@@ -366,6 +367,8 @@
       "title": "Backup Options"
     }
   ],
+  "item_display_name": "backup",
+  "item_display_name_plural": "backups",
   "list_view": {
     "columns": [
       {
@@ -388,7 +391,15 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "pbm_config": "PBM Config",
+          "pbm_incremental": "PBM Incremental",
+          "pbm_logical": "PBM Logical",
+          "pbm_physical": "PBM Physical",
+          "pbm_snapshot": "PBM Snapshot",
+          "pbm_status": "PBM Status"
+        }
       },
       {
         "format": "relative",
@@ -417,6 +428,40 @@
       "app_key": "backup_mongo/restore",
       "label": "Restore",
       "route_segment": "restores"
+    }
+  ],
+  "task_statuses": [
+    {
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "terminal": true,
+      "value": "unlaunchable"
     }
   ]
 }

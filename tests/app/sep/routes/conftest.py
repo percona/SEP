@@ -15,9 +15,17 @@
 
 """Shared pytest fixtures for ``app.sep.routes`` tests."""
 
+from collections.abc import AsyncGenerator, Generator
+from types import SimpleNamespace
+
 import pytest
+import pytest_asyncio
 from faker import Faker
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.requests import RemoteAPI
+from app.sep.deps import get_current_user, get_task_history, get_tasks_client
+from app.sep.main import sep_app
 from app.tasks.models import (
     Task,
     TaskExecutionRequest,
@@ -25,6 +33,8 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
 )
 from tests.app.factories import TaskFactory
+
+TASKS_ENDPOINT = "http://tasks.example.org"
 
 
 @pytest.fixture
@@ -51,3 +61,53 @@ def task_history_response(faker: Faker, created_task: Task) -> TaskHistoryRespon
         finished_at=started_at + faker.time_delta(end_datetime="+1h"),
         executed_by=None,
     )
+
+
+@pytest.fixture
+def real_client_route_overrides(
+    task_history_response: TaskHistoryResponse, regular_user: CasdoorUser
+) -> Generator[None]:
+    """Stub the routes' own dependencies, leaving the client one live.
+
+    Tests of the request-scoped client hold must let ``get_tasks_client`` run,
+    so they stub the task history and the current user only. The token is set on
+    ``regular_user`` rather than on a stand-in user, because ``async_test_client``
+    installs that same object as the ``get_current_user`` override and either
+    fixture may be the one to set it up last.
+    """
+    regular_user.access_token = "test-token"
+    sep_app.dependency_overrides[get_task_history] = lambda: task_history_response
+    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest_asyncio.fixture
+async def app_state_tasks_client(
+    real_client_route_overrides: None,
+) -> AsyncGenerator[RemoteAPI]:
+    """Publish a real ``app.state.tasks_api``: the standalone deployment shape.
+
+    :return: The client the SEP routes will resolve.
+    """
+    client = await RemoteAPI(endpoint=TASKS_ENDPOINT).open()
+    sep_app.state.tasks_api = client
+    yield client
+    del sep_app.state.tasks_api
+    await client.close()
+
+
+async def resolve_registry_tasks_client() -> RemoteAPI:
+    """Return the registry-cached Tasks client the SEP routes would resolve.
+
+    Goes through the dependency itself rather than rebuilding it from copied
+    kwargs, so the registry entry a test evicts is the one the routes will hit.
+    Requires ``sep_settings.TASKS_ENDPOINT`` to already point at the stubbed
+    upstream and no ``app.state.tasks_api`` to be published.
+
+    :return: The registry-cached client.
+    """
+    resolver = get_tasks_client(SimpleNamespace(app=sep_app))
+    client = await anext(resolver)
+    await resolver.aclose()
+    return client

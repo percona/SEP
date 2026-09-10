@@ -103,6 +103,7 @@ class TestHostFacts:
             return_value=MagicMock(returncode=0, stdout="libc6\t2.36-9\nbash\t5.2\n"),
         )
         packages = collect_installed_packages()
+        assert packages is not None
         assert {"name": "libc6", "version": "2.36-9"} in packages
         assert {"name": "bash", "version": "5.2"} in packages
 
@@ -131,6 +132,7 @@ class TestHostFacts:
             ),
         )
         packages = collect_installed_packages()
+        assert packages is not None
         assert {"name": "glibc", "version": "2.35-1"} in packages
         assert {"name": "openssl", "version": "3.0.2"} in packages
 

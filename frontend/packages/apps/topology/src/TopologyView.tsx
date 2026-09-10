@@ -40,6 +40,7 @@ import { ClusterGroup } from './ClusterGroup';
 import { MySQLNode } from './MySQLNode';
 import { UnknownSourceNode } from './UnknownSourceNode';
 import { applyDagreLayout } from './layout';
+import { useAuth } from '@sep/api';
 import { useCollectTopology, useTopologyResult } from './hooks';
 import type { TopologyEdge, TopologyGraph, TopologyNode } from './types';
 
@@ -215,6 +216,7 @@ function TopologyCanvas({ graph }: { graph: TopologyGraph | null }) {
  * away and back is instant.
  */
 export function TopologyView() {
+  const { canMutate } = useAuth();
   const [taskIds, setTaskIdsState] = useState<number[] | null>(readPersistedTaskIds);
   const setTaskIds = useCallback((ids: number[] | null) => {
     setTaskIdsState(ids);
@@ -258,14 +260,16 @@ export function TopologyView() {
             </>
           ) : null}
         </Stack>
-        <Button
-          variant="contained"
-          onClick={handleRefresh}
-          disabled={collect.isPending}
-          data-testid="topology-refresh-button"
-        >
-          {taskIds ? 'Refresh' : 'Collect'}
-        </Button>
+        {canMutate && (
+          <Button
+            variant="contained"
+            onClick={handleRefresh}
+            disabled={collect.isPending}
+            data-testid="topology-refresh-button"
+          >
+            {taskIds ? 'Refresh' : 'Collect'}
+          </Button>
+        )}
       </Stack>
 
       {collect.error ? <Alert severity="error">{collect.error.message}</Alert> : null}

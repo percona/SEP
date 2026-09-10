@@ -16,11 +16,13 @@
 """Define the API routes for User actions."""
 
 import logging
+from collections.abc import Sequence
 
 from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, IsAdminDep
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.auth.models import BaseUser
 from app.core.auth.utils import get_user_model
 
 logger = logging.getLogger(__name__)
@@ -30,18 +32,24 @@ router = APIRouter()
 User = get_user_model()
 
 
-@router.get("/", dependencies=[IsAdminDep])
-async def list_users() -> list[User]:
+@router.get(
+    "/",
+    dependencies=[IsAdminDep],
+    # pagination-ok: the provider SDK returns the whole organization in one call
+    # (Casdoor /api/get-users, Grafana /api/org/users), so there is no upstream
+    # window to page against; the cardinality is the operator's own user count.
+    response_model=list[User],  # ty: ignore[invalid-type-form]
+)
+async def list_users() -> Sequence[BaseUser]:
     """List users.
 
     :return: The list of users.
-    :rtype: list[User]
     """
     return await User.get_users()
 
 
-@router.get("/me")
-async def retrieve_current_user(current_user: CurrentUser) -> User:
+@router.get("/me", response_model=User)
+async def retrieve_current_user(current_user: CurrentUser) -> BaseUser:
     """Retrieve the current authenticated user.
 
     :param current_user: The current authenticated user.
@@ -52,8 +60,8 @@ async def retrieve_current_user(current_user: CurrentUser) -> User:
     return current_user
 
 
-@router.get("/{username}")
-async def retrieve_user(current_user: CurrentUser, username: str) -> User:
+@router.get("/{username}", response_model=User)
+async def retrieve_user(current_user: CurrentUser, username: str) -> BaseUser:
     """Retrieve a user by username.
 
     :param current_user: The current authenticated user.

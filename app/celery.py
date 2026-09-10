@@ -42,7 +42,7 @@ settings.CELERY.include = build_celery_include()
 celery = Celery("sep", **settings.CELERY.model_dump())
 
 celery.loop = asyncio.new_event_loop()
-asyncio.set_event_loop(celery.loop)
+asyncio.set_event_loop(celery.loop)  # ty: ignore[unresolved-attribute]
 
 
 @setup_logging.connect
@@ -56,7 +56,7 @@ def init_child_event_loop(**kwargs: Any) -> None:
     """Initialize a new event loop for each worker process."""
     logger.debug("Initializing new event loop for worker process")
     celery.loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(celery.loop)
+    asyncio.set_event_loop(celery.loop)  # ty: ignore[unresolved-attribute]
 
 
 CORRELATION_ID_HEADER_KEY = "correlation_id"

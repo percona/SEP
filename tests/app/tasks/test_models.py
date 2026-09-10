@@ -39,6 +39,7 @@ from app.tasks.models import (
     DispatchLock,
     FileMetadata,
     LogCaptureStatusEnum,
+    MAX_FAILURE_REASON_LENGTH,
     Task,
     TaskBackendEnum,
     TaskBase,
@@ -91,7 +92,7 @@ class TestTaskHistoryStatusEnum:
     """Test TaskHistoryStatusEnum values and is_finished method."""
 
     def test_all_values_exist(self) -> None:
-        """Assert all seven status values exist."""
+        """Assert all eight status values exist."""
         expected = {
             "FAILED",
             "PENDING",
@@ -100,6 +101,7 @@ class TestTaskHistoryStatusEnum:
             "STOPPED",
             "LOST",
             "STALE",
+            "UNLAUNCHABLE",
         }
         assert {s.name for s in TaskHistoryStatusEnum} == expected
 
@@ -110,6 +112,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -136,6 +139,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.LOST,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_terminal_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -152,6 +156,55 @@ class TestTaskHistoryStatusEnum:
     def test_is_terminal_false(self, status: TaskHistoryStatusEnum) -> None:
         """Assert is_terminal returns False for active statuses."""
         assert status.is_terminal() is False
+
+    @pytest.mark.parametrize("status", list(TaskHistoryStatusEnum))
+    def test_every_member_is_classified(self, status: TaskHistoryStatusEnum) -> None:
+        """Refuse a member that is neither terminal nor active.
+
+        The two parametrized lists above are hand-enumerated, so a member added
+        to the enum joins neither and is silently uncovered by them. Driving
+        this off the enum itself names the offender instead, which is what
+        keeps the published ``task_statuses`` vocabulary exhaustive.
+        """
+        assert status.is_terminal() != status.is_active(), (
+            f"{status.value}: is_terminal={status.is_terminal()} "
+            f"is_active={status.is_active()} -- expected exactly one"
+        )
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            (TaskHistoryStatusEnum.FAILED, "failed"),
+            (TaskHistoryStatusEnum.LOST, "execution tracking lost"),
+            (
+                TaskHistoryStatusEnum.STALE,
+                "skipped as stale (executor placement delayed past threshold)",
+            ),
+            (
+                TaskHistoryStatusEnum.UNLAUNCHABLE,
+                "could not be launched (the executor node cannot run the "
+                "requested command)",
+            ),
+        ],
+    )
+    def test_operator_summary_prose(
+        self, status: TaskHistoryStatusEnum, expected: str
+    ) -> None:
+        """Assert operator_summary returns the operator-facing prose per status."""
+        assert status.operator_summary() == expected
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.PENDING,
+            TaskHistoryStatusEnum.RUNNING,
+            TaskHistoryStatusEnum.STOPPED,
+        ],
+    )
+    def test_operator_summary_none(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert operator_summary returns None for statuses carrying no prose."""
+        assert status.operator_summary() is None
 
 
 class TestTaskLogType:
@@ -512,6 +565,24 @@ class TestTaskExecuteRequest:
         )
         assert req.meta == {"existing": "val", "new": "val2"}
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value: Any) -> None:
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
+
+    def test_populate_meta_rejects_non_mapping_without_meta_key(self) -> None:
+        """Assert bare non-mapping meta keeps Pydantic's field-scoped error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskExecuteRequest.model_validate({"meta": "oops"})
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("meta",)
+        assert errors[0]["type"] == "dict_type"
+
     def test_empty_str_to_none_for_eta(self) -> None:
         """Assert empty string for eta is converted to None."""
         req = TaskExecuteRequest.model_validate({"eta": ""})
@@ -597,6 +668,52 @@ class TestTaskHistoryBase:
             started_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
         assert history.duration is None
+
+    def test_failure_reason_defaults_to_none(self) -> None:
+        """Assert failure_reason defaults to None on a fresh history."""
+        req = TaskExecutionRequest(task="t", target="n")
+        assert TaskHistoryBase(execution_request=req).failure_reason is None
+
+
+class TestSetFailureReason:
+    """Test TaskHistory.set_failure_reason normalization and bounding."""
+
+    @staticmethod
+    def _history() -> TaskHistory:
+        """Return a TaskHistory with no failure reason set."""
+        return TaskHistory(
+            id=1,
+            task_id=1,
+            execution_request=TaskExecutionRequest(task="t", target="n"),
+        )
+
+    def test_collapses_whitespace_to_one_line(self) -> None:
+        """Assert a multi-line reason is collapsed to a single space-joined line."""
+        history = self._history()
+        history.set_failure_reason("Step failed\n  with   detail\nand more")
+        assert history.failure_reason == "Step failed with detail and more"
+
+    def test_truncates_past_the_bound(self) -> None:
+        """Assert an over-long reason is truncated to the stored maximum."""
+        history = self._history()
+        history.set_failure_reason("x" * (MAX_FAILURE_REASON_LENGTH * 2))
+        reason = history.failure_reason
+        assert reason is not None
+        assert len(reason) == MAX_FAILURE_REASON_LENGTH
+
+    @pytest.mark.parametrize("reason", [None, "", "   ", "\n\t "])
+    def test_blank_stores_none(self, reason: str | None) -> None:
+        """Assert a None or blank reason is stored as None, never as an empty string."""
+        history = self._history()
+        history.set_failure_reason(reason)
+        assert history.failure_reason is None
+
+    def test_clears_a_previously_set_reason(self) -> None:
+        """Assert passing None clears a reason recorded earlier."""
+        history = self._history()
+        history.set_failure_reason("The run failed.")
+        history.set_failure_reason(None)
+        assert history.failure_reason is None
 
 
 class TestTaskHistory:
@@ -723,7 +840,39 @@ class TestTaskHistory:
             assert resolved_keys == [
                 "task:test-task:node-1",
                 "task:test-task:node-1:stale",
+                "task:test-task:node-1:unlaunchable",
             ]
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_unlaunchable(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert UNLAUNCHABLE triggers its own WARNING alert under a suffixed key.
+
+        A suffixed key keeps the incident distinct from a plain task failure
+        while still scoping it to the same task/target pair — and the paired
+        ``SUCCESS`` resolve above is what lets it ever clear.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            mock_trigger.assert_called_once()
+            alert_data = mock_trigger.call_args[0][0]
+            assert alert_data["severity"] == AlertSeverity.WARNING
+            assert alert_data["class"] == "task_unlaunchable"
+            assert alert_data["dedup_key"] == "task:test-task:node-1:unlaunchable"
+            assert (
+                "could not be launched (the executor node cannot run the "
+                "requested command)" in alert_data["summary"]
+            )
+            assert "node-1" in alert_data["summary"]
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stale(

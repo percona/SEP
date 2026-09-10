@@ -15,6 +15,8 @@
 
 """End-to-end-ish integration tests for the Tasks-side override layer."""
 
+from collections.abc import AsyncGenerator
+
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -32,11 +34,16 @@ from app.tasks.config import (
     tasks_settings,
     TasksSettings,
 )
+from tests.app.core.settings_override.conftest import TASKS_SETTINGS_TOKEN
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="override_session_maker")
-async def _override_session_maker() -> async_sessionmaker:
+async def _override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker isolated from the main test DB."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -44,7 +51,7 @@ async def _override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -67,7 +74,7 @@ async def test_pre_execution_connectivity_check_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="PRE_EXECUTION_CONNECTIVITY_CHECK",
                 value="block",
             ),
@@ -91,7 +98,7 @@ async def test_staleness_threshold_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -121,7 +128,7 @@ async def test_tasks_proxy_visible_after_refresh(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="PRE_EXECUTION_CONNECTIVITY_CHECK",
                 value=target,
             ),
@@ -139,7 +146,7 @@ async def test_log_retention_days_override_applies_at_runtime(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=_OVERRIDE_LOG_RETENTION_DAYS,
             ),
@@ -160,7 +167,7 @@ async def test_log_retention_days_invalid_override_falls_back(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=invalid_value,
             ),
@@ -185,7 +192,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -193,7 +200,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="LOG_RETENTION_DAYS",
                 value=_OVERRIDE_LOG_RETENTION_DAYS,
             ),
@@ -213,7 +220,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=_OVERRIDE_STALENESS_SECONDS,
             ),
@@ -225,7 +232,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.update_where(
             session,
             {"is_active": False},
-            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            setting_class=TASKS_SETTINGS_TOKEN,
             key="STALENESS_THRESHOLD_SECONDS",
         )
     await refresh_all(lambda: override_session_maker, _tasks_proxies())
