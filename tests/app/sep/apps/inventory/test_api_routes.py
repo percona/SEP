@@ -31,15 +31,19 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.requests import RemoteAPI
+from app.core.utils.fields import UniqueList
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.inventory.deps import get_syncers
+from app.sep.config import sep_settings, SyncOptions
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_created_service,
     get_current_user,
+    get_inventory_client,
     get_session,
     get_tasks_api,
+    get_tasks_client,
 )
 from app.sep.main import sep_app
 from app.sep.models import (
@@ -437,6 +441,34 @@ class TestInventorySyncTrigger:
         """Without API auth the gateway returns 401."""
         response = unauthenticated_client.post("/api/apps/inventory/sync/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        mock_run_sync_funcs["inventory"].assert_not_awaited()
+
+    def test_unusable_syncer_settings_return_503(
+        self, test_client, mock_run_sync_funcs, mocker
+    ):
+        """Report a misconfigured syncer as unavailable, and schedule nothing.
+
+        Settings load rejects such a value, so this covers the residual path: a bare
+        500 repeated on every trigger tells an operator nothing about the cause.
+        """
+        option = SyncOptions(
+            syncer="app.sep.sync.syncers.pmm.PMMSyncer", stale_run_after="60"
+        )
+        mocker.patch.object(sep_settings, "SYNCERS", UniqueList([option]))
+        sep_app.dependency_overrides[get_inventory_client] = lambda: AsyncMock(
+            spec=RemoteAPI
+        )
+        sep_app.dependency_overrides[get_tasks_client] = lambda: AsyncMock(
+            spec=RemoteAPI
+        )
+        try:
+            response = test_client.post("/api/apps/inventory/sync/")
+        finally:
+            sep_app.dependency_overrides.pop(get_inventory_client, None)
+            sep_app.dependency_overrides.pop(get_tasks_client, None)
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "STALE_RUN_AFTER" in response.json()["detail"]
         mock_run_sync_funcs["inventory"].assert_not_awaited()
 
 

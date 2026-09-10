@@ -18,9 +18,8 @@
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Self, TypeVar
+from typing import Any, ClassVar, Self, TypeVar
 
-from annotated_types import Ge
 from async_lru import alru_cache
 
 from app.core.config import settings
@@ -39,6 +38,7 @@ from app.sep.inventory import (
     Service,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.sync.fields import MissingGraceGenerations
 from app.sep.sync.models import BaseSyncer, claim_identity
 
 logger = logging.getLogger(__name__)
@@ -88,10 +88,7 @@ class PMMSyncer(BaseSyncer):
         )
     )
     keepalive_api: bool = True
-    # The floor is 2, not 1: at 1 the grace counter collapses back to acting on a
-    # single reported absence, which is the behaviour it exists to end.
-    # Expressed as an annotation constraint for the reason ``stale_run_after`` is.
-    missing_grace_generations: Annotated[int, Ge(2)] = 2
+    missing_grace_generations: MissingGraceGenerations = 2
     _pmm_api: PMMRemoteAPI | None = None
     _generation: PMMInventorySnapshot | None = None
 
