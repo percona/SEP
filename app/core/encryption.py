@@ -35,14 +35,6 @@ from cryptography.fernet import Fernet, InvalidToken
 _FERNET_VERSION = 0x80
 """The first byte of every decoded Fernet token, which is its version marker."""
 
-_MIN_TOKEN_BYTES = 73
-"""The shortest decodable Fernet token: version, timestamp, IV, one block, HMAC.
-
-CBC pads even an empty plaintext to a full 16-byte block, so no shorter value is
-decryptable. Accepting one would make a migration *skip* a value it can never
-decrypt, leaving it in the clear for good.
-"""
-
 _TOKEN_ENVELOPE_BYTES = 57
 """Bytes a Fernet token spends outside its ciphertext: version, timestamp, IV, HMAC.
 
@@ -53,6 +45,14 @@ always this plus a positive multiple of the block size.
 
 _CIPHER_BLOCK_BYTES = 16
 """The AES block size every Fernet ciphertext is padded to."""
+
+_MIN_TOKEN_BYTES = _TOKEN_ENVELOPE_BYTES + _CIPHER_BLOCK_BYTES
+"""The shortest decodable Fernet token: the envelope plus the single block CBC
+pads even an empty plaintext to.
+
+Accepting anything shorter would make a migration *skip* a value it can never
+decrypt, leaving it in the clear for good.
+"""
 
 _URLSAFE_TO_STANDARD = str.maketrans("-_", "+/")
 """Maps the URL-safe base64 alphabet onto the standard one.
