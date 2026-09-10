@@ -93,6 +93,7 @@ class WorkerRefresher:
         self._last_refresh: float = 0.0
         self._proxies: ProxyRegistry | None = None
         self._callbacks: CallbackRegistry | None = None
+        self._pending_refresh: asyncio.Task | None = None
 
     def start(
         self,
@@ -113,9 +114,12 @@ class WorkerRefresher:
         :func:`~app.core.settings_override.lifecycle.bounded_seed` so a hanging
         database cannot push the child past the prefork pool's liveness window.
         On seed-budget expiry the child is still armed — the next due
-        ``task_prerun`` will refresh — and may retain a possibly incomplete
-        seed (proxies published before the hang keep DB overrides; others stay
-        on their prior snapshots) until then.
+        ``task_prerun`` will refresh once any cancelled seed has finished
+        unwinding — and may retain a possibly incomplete seed (proxies
+        published before the hang keep DB overrides; others stay on their prior
+        snapshots) until then. A cancelled seed that is still unwinding is
+        retained on ``_pending_refresh`` so :meth:`maybe_refresh` does not open
+        another session while the stuck cleanup holds a pool connection.
 
         :param interval: Minimum delay between boundary refreshes. ``None``,
             the default, reads
@@ -149,12 +153,16 @@ class WorkerRefresher:
             if proc_alive_timeout is None
             else proc_alive_timeout * SEED_TIMEOUT_FRACTION
         )
-        seeded = self._loop_getter().run_until_complete(
+        seeded, pending = self._loop_getter().run_until_complete(
             bounded_seed(self._session_maker_factory, proxies, seed_timeout)
         )
         # A completed seed starts the interval clock; an expired seed leaves
-        # the stamp at 0.0 so the next task boundary is immediately due.
+        # the stamp at 0.0 so the next task boundary is immediately due once
+        # any cancelled seed has finished unwinding.
         self._last_refresh = time.monotonic() if seeded else 0.0
+        self._pending_refresh = (
+            pending if pending is not None and not pending.done() else None
+        )
         self._interval_seconds = interval.total_seconds()
         self._proxies = proxies
         self._callbacks = callbacks
@@ -165,27 +173,36 @@ class WorkerRefresher:
 
         Intended for ``task_prerun`` receivers. The due-check is a monotonic
         comparison with no I/O: tasks arriving inside the interval no-op.
+        When a prior bounded refresh (seed or boundary) was cancelled and is
+        still unwinding, this method also no-ops without awaiting that task —
+        so a stuck ``AsyncSession.__aexit__`` cannot pile up further pool
+        checkouts at later boundaries.
         When due, ``refresh_all`` runs to completion inside a single
         ``run_until_complete`` window, bounded by the refresh interval itself
         via :func:`~app.core.settings_override.lifecycle.bounded_refresh`
         (``asyncio.wait``, cancel without awaiting unwind — not
         ``wait_for``, which would still hang on a stuck
-        ``AsyncSession.__aexit__``). Budget expiry logs once at WARNING; any
-        other failure is logged and swallowed. Neither case fails or aborts
-        the task that triggered the refresh. Because proxies publish
-        sequentially, a timed-out or failed cycle may leave a split registry
-        (earlier proxies refreshed, later ones on their prior snapshots)
-        rather than rolling everything back. The interval stamp advances on
-        every attempted due refresh so a failing cycle cannot hammer the
-        database on every subsequent dispatch.
+        ``AsyncSession.__aexit__``). Budget expiry logs once at WARNING and
+        retains the cancelled task handle; any other failure is logged and
+        swallowed. Neither case fails or aborts the task that triggered the
+        refresh. Because proxies publish sequentially, a timed-out or failed
+        cycle may leave a split registry (earlier proxies refreshed, later
+        ones on their prior snapshots) rather than rolling everything back.
+        The interval stamp advances on every attempted due refresh so a
+        failing cycle cannot hammer the database on every subsequent
+        dispatch.
         """
         if not self._armed or self._proxies is None:
             return
+        if self._pending_refresh is not None:
+            if not self._pending_refresh.done():
+                return
+            self._pending_refresh = None
         now = time.monotonic()
         if now - self._last_refresh < self._interval_seconds:
             return
         try:
-            completed = self._loop_getter().run_until_complete(
+            completed, pending = self._loop_getter().run_until_complete(
                 bounded_refresh(
                     self._session_maker_factory,
                     self._proxies,
@@ -194,6 +211,9 @@ class WorkerRefresher:
                 )
             )
             if not completed:
+                self._pending_refresh = (
+                    pending if pending is not None and not pending.done() else None
+                )
                 logger.warning(
                     "Settings-override boundary refresh exceeded its %.2fs budget; "
                     "leaving a possibly incomplete refresh in place",
@@ -212,8 +232,11 @@ class WorkerRefresher:
 
         After disarm, :meth:`maybe_refresh` no-ops so a shut-down child
         performs no further boundary refresh. There is no periodic task to
-        cancel.
+        cancel. A cancelled refresh still unwinding is dropped from
+        ``_pending_refresh`` without being awaited — the prefork child is
+        exiting.
         """
         self._armed = False
         self._proxies = None
         self._callbacks = None
+        self._pending_refresh = None

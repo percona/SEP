@@ -17,6 +17,7 @@
 
 import asyncio
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 from datetime import timedelta
 
 import pytest
@@ -500,9 +501,12 @@ async def test_bounded_seed_completes_and_returns_true(
             ),
         )
 
-    seeded = await bounded_seed(lambda: session_maker, registry, seed_timeout=5.0)
+    seeded, pending = await bounded_seed(
+        lambda: session_maker, registry, seed_timeout=5.0
+    )
 
     assert seeded is True
+    assert pending is None
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
 
@@ -515,12 +519,17 @@ async def test_bounded_seed_expiry_returns_false_and_logs_error(
     seed_timeout = 0.05
 
     with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
-        seeded = await asyncio.wait_for(
+        seeded, pending = await asyncio.wait_for(
             bounded_seed(hanging_session_maker_factory, registry, seed_timeout),
             timeout=1.0,
         )
 
     assert seeded is False
+    # HangingSession blocks on enter; cancel completes promptly once delivered.
+    if pending is not None and not pending.done():
+        pending.cancel()
+        with suppress(asyncio.CancelledError):
+            await pending
     assert any(
         record.levelname == "ERROR"
         and f"{seed_timeout:.2f}s" in record.message

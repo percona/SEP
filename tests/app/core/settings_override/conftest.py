@@ -39,9 +39,6 @@ from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.db_schema import apply_schema
 
-#: Importable path patched when tests replace ``start_refresh_task``.
-START_REFRESH_TASK = "app.core.settings_override.worker.start_refresh_task"
-
 #: Importable path patched when tests replace ``bounded_seed``.
 BOUNDED_SEED = "app.core.settings_override.worker.bounded_seed"
 
@@ -99,34 +96,9 @@ def hanging_session_maker_factory() -> type[HangingSession]:
     return HangingSession
 
 
-def recording_start_refresh_task(
-    recorded: dict[str, object],
-) -> Callable[..., Awaitable[asyncio.Task]]:
-    """Build a stand-in ``start_refresh_task`` that records call kwargs.
-
-    :param recorded: Mutable mapping filled with ``callbacks`` and
-        ``seed_timeout`` from each invocation.
-    :return: An async callable matching ``start_refresh_task``'s signature.
-    """
-
-    async def _fake_start(
-        session_maker_factory: object,
-        proxies: object,
-        interval: object,
-        callbacks: object = None,
-        *,
-        seed_timeout: float | None = None,
-    ) -> asyncio.Task:
-        recorded["callbacks"] = callbacks
-        recorded["seed_timeout"] = seed_timeout
-        return asyncio.create_task(asyncio.sleep(3600))
-
-    return _fake_start
-
-
 def recording_bounded_seed(
     recorded: dict[str, object],
-) -> Callable[..., Awaitable[bool]]:
+) -> Callable[..., Awaitable[tuple[bool, asyncio.Task | None]]]:
     """Build a stand-in ``bounded_seed`` that records the seed budget.
 
     :param recorded: Mutable mapping filled with ``seed_timeout`` from each
@@ -138,9 +110,9 @@ def recording_bounded_seed(
         session_maker_factory: object,
         proxies: object,
         seed_timeout: float | None,
-    ) -> bool:
+    ) -> tuple[bool, asyncio.Task | None]:
         recorded["seed_timeout"] = seed_timeout
-        return True
+        return True, None
 
     return _fake_seed
 

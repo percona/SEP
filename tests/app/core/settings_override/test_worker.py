@@ -17,6 +17,7 @@
 
 import asyncio
 from collections.abc import Iterator
+from contextlib import suppress
 from datetime import timedelta
 
 import pytest
@@ -450,15 +451,21 @@ class TestWorkerRefresherMaybeRefresh:
 
         ``asyncio.wait_for`` would await the cancelled coroutine's ``finally`` /
         ``__aexit__`` and hang past the interval; ``bounded_refresh`` must not.
+        The try body blocks until cancellation; ``finally`` then blocks on a
+        separately releasable gate so cleanup stays stuck after cancel — the
+        hang-safe path, not ordinary cancellation of an idle wait.
         """
         refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
         refresher.start(SHORT_INTERVAL, enabled=True)
+        unwind_gate = asyncio.Event()
+        calls: list[object] = []
 
         async def _hang_on_unwind(*_args: object, **_kwargs: object) -> None:
+            calls.append(True)
             try:
-                return
-            finally:
                 await asyncio.Event().wait()
+            finally:
+                await unwind_gate.wait()
 
         # Patch after the inline seed so only the boundary refresh hangs on unwind.
         monkeypatch.setattr(WORKER_REFRESH_ALL, _hang_on_unwind)
@@ -468,12 +475,26 @@ class TestWorkerRefresherMaybeRefresh:
             # A wait_for-based bound would hang here indefinitely on unwind.
             refresher.maybe_refresh()
 
+        pending = refresher._pending_refresh
         try:
             assert any(
                 record.levelname == "WARNING" and "budget" in record.message
                 for record in caplog.records
             )
+            assert pending is not None
+            assert not pending.done()
+            assert calls == [True]
+
+            # Still unwinding: a later due boundary must not open another refresh.
+            refresher._last_refresh = 0.0
+            refresher.maybe_refresh()
+            assert calls == [True]
+            assert refresher._pending_refresh is pending
         finally:
+            unwind_gate.set()
+            if pending is not None:
+                with suppress(asyncio.CancelledError):
+                    loop.run_until_complete(pending)
             refresher.stop()
 
     def test_refresh_failure_does_not_propagate(
@@ -564,6 +585,7 @@ class TestWorkerRefresherStop:
         assert not refresher._armed
         assert refresher._proxies is None
         assert refresher._callbacks is None
+        assert refresher._pending_refresh is None
 
     def test_stop_without_start_resolves_nothing(self) -> None:
         """Return without touching the loop when never started."""
