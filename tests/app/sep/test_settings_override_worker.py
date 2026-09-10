@@ -53,6 +53,7 @@ from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
+    refresh_sep_overrides_if_due,
     republish_sep_settings_snapshot,
     start_sep_settings_override_refresher,
     stop_sep_settings_override_refresher,
@@ -60,9 +61,9 @@ from app.sep.settings_override import (
 )
 from app.tasks.celery import build_tasks_override_proxies
 from tests.app.core.settings_override.conftest import (
+    BOUNDED_SEED,
     HangingSession,
-    recording_start_refresh_task,
-    START_REFRESH_TASK,
+    recording_bounded_seed,
 )
 from tests.app.db_schema import apply_schema
 
@@ -167,7 +168,7 @@ def worker_loop_env_fixture(
     """
     loop = asyncio.new_event_loop()
     monkeypatch.setattr(sep_worker.celery, "loop", loop)
-    monkeypatch.setattr(sep_worker._refresher, "task", None)
+    sep_worker._refresher.stop()
     monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
     monkeypatch.setattr(sep_worker, "collect_app_owned_settings_classes", list)
     engine = create_async_engine(
@@ -249,56 +250,57 @@ class TestSepWorkerHandlers:
     """Cover the worker_process_init / worker_process_shutdown SEP handlers."""
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_init_starts_a_refresher(self) -> None:
-        """Start this child's SEP refresher on ``worker_process_init``."""
+    def test_init_arms_a_refresher(self) -> None:
+        """Seed and arm this child's SEP refresher on ``worker_process_init``."""
         start_sep_settings_override_refresher()
 
-        assert sep_worker._refresher.task is not None
+        assert sep_worker._refresher._armed
 
-    def test_disabled_starts_no_task(
-        self, monkeypatch: pytest.MonkeyPatch, mocker
+    def test_disabled_arms_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
     ) -> None:
-        """Start no refresh task when the refresher is disabled."""
+        """Arm nothing when the refresher is disabled."""
         monkeypatch.setattr(settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", False)
-        monkeypatch.setattr(sep_worker._refresher, "task", None)
-        start = mocker.patch("app.core.settings_override.worker.start_refresh_task")
+        sep_worker._refresher.stop()
+        refresh = mocker.patch("app.core.settings_override.lifecycle.refresh_all")
 
         start_sep_settings_override_refresher()
 
-        start.assert_not_called()
-        assert sep_worker._refresher.task is None
+        refresh.assert_not_called()
+        assert not sep_worker._refresher._armed
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_init_is_idempotent_when_already_running(self) -> None:
-        """Keep the running refresher and start no second task on re-entry."""
+    def test_init_is_idempotent_when_already_armed(self) -> None:
+        """Keep the armed refresher and skip a second seed on re-entry."""
         start_sep_settings_override_refresher()
-        first_task = sep_worker._refresher.task
+        first_proxies = sep_worker._refresher._proxies
+        first_stamp = sep_worker._refresher._last_refresh
 
         start_sep_settings_override_refresher()
 
-        assert sep_worker._refresher.task is first_task
-        assert not first_task.done()
+        assert sep_worker._refresher._armed
+        assert sep_worker._refresher._proxies is first_proxies
+        assert sep_worker._refresher._last_refresh == first_stamp
 
     @pytest.mark.usefixtures("worker_loop_env")
-    def test_shutdown_cancels_and_drains_started_refresher(self) -> None:
-        """Stop and drain the started refresher, clearing the handle."""
+    def test_shutdown_disarms_started_refresher(self) -> None:
+        """Disarm the started refresher so further boundaries no-op."""
         start_sep_settings_override_refresher()
-        task = sep_worker._refresher.task
 
         stop_sep_settings_override_refresher()
 
-        assert sep_worker._refresher.task is None
-        assert task.cancelled() or task.done()
+        assert not sep_worker._refresher._armed
+        assert sep_worker._refresher._proxies is None
 
     def test_shutdown_is_noop_when_not_started(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Handle a never-started refresher as a no-op on shutdown."""
-        monkeypatch.setattr(sep_worker._refresher, "task", None)
+        sep_worker._refresher.stop()
 
         stop_sep_settings_override_refresher()
 
-        assert sep_worker._refresher.task is None
+        assert not sep_worker._refresher._armed
 
     def test_init_seeds_a_sep_override_into_the_worker_proxy(
         self, worker_loop_env: WorkerLoopEnv
@@ -325,19 +327,19 @@ class TestSepWorkerHandlers:
     ) -> None:
         """Derive the seed budget from Celery's prefork liveness deadline."""
         recorded: dict[str, object] = {}
-        monkeypatch.setattr(START_REFRESH_TASK, recording_start_refresh_task(recorded))
+        monkeypatch.setattr(BOUNDED_SEED, recording_bounded_seed(recorded))
         monkeypatch.setattr(sep_worker.celery.conf, "worker_proc_alive_timeout", 6.0)
 
         start_sep_settings_override_refresher()
 
         assert recorded["seed_timeout"] == pytest.approx(6.0 * SEED_TIMEOUT_FRACTION)
 
-    def test_init_returns_with_a_running_refresher_when_the_seed_hangs(
+    def test_init_arms_when_the_seed_hangs(
         self,
         worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Keep the periodic refresher after a hanging seed hits its budget."""
+        """Keep the child armed after a hanging seed hits its budget."""
         monkeypatch.setattr(
             sep_worker, "get_async_session_maker", lambda: HangingSession
         )
@@ -345,8 +347,26 @@ class TestSepWorkerHandlers:
 
         start_sep_settings_override_refresher()
 
-        assert sep_worker._refresher.task is not None
-        assert not sep_worker._refresher.task.done()
+        assert sep_worker._refresher._armed
+        assert sep_worker._refresher._last_refresh == 0.0
+
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_task_prerun_receiver_calls_maybe_refresh(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Wire ``refresh_sep_overrides_if_due`` to the boundary due-check."""
+        maybe = mocker.spy(sep_worker._refresher, "maybe_refresh")
+
+        refresh_sep_overrides_if_due()
+
+        maybe.assert_called_once_with()
+
+    @pytest.mark.usefixtures("worker_loop_env")
+    def test_init_registers_worker_override_callbacks(self) -> None:
+        """Store WORKER_OVERRIDE_CALLBACKS for boundary rebinds."""
+        start_sep_settings_override_refresher()
+
+        assert sep_worker._refresher._callbacks is WORKER_OVERRIDE_CALLBACKS
 
 
 class TestWorkerPmmClientInvalidation:
