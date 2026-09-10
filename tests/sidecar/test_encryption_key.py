@@ -70,7 +70,30 @@ UNREACHABLE_PORT = 1
 SHORT_PROBE_TIMEOUT = "1.5"
 """Short enough that an unreachable database is refused inside a test's patience."""
 
-BLOCKED_RUN_SECONDS = 6.0
+LOCK_WAIT_SECONDS = float(SHORT_PROBE_TIMEOUT) * helper.LOCK_WAIT_PROBE_BUDGETS
+"""How long the helper waits on a peer's lock before refusing.
+
+Derived rather than restated so the bound below and the elapsed-time assertion
+that reads it cannot drift from the helper's own budget arithmetic.
+"""
+
+HELPER_STARTUP_ALLOWANCE_SECONDS = 60.0
+"""Slack over the lock wait for interpreter start and the helper's imports.
+
+Deliberately generous. This bound is a hang guard, not a performance assertion:
+the only thing it has to distinguish is "refused after waiting" from "never came
+back", and the elapsed-time assertion below is what pins the waiting. Sizing it
+close to the observed cost instead made it fail on load -- at ``6.0`` it raised
+``TimeoutExpired`` during a full ``-n auto`` run whose captured stderr already
+carried the correct refusal, so the helper had done its job and only the bound
+disagreed. Interpreter start plus the settings-stack import is the variable part
+and it swings with CPU contention and page-cache state, which is why the margin
+is wide rather than fitted. It still sits under the 120s ``pytest-timeout``
+ceiling, so this bound fires first and kills the child rather than leaving the
+global guard to orphan it.
+"""
+
+BLOCKED_RUN_SECONDS = LOCK_WAIT_SECONDS + HELPER_STARTUP_ALLOWANCE_SECONDS
 """A subprocess bound comfortably past the lock wait, so a timeout means a hang."""
 
 RETRIED_PROBE_TIMEOUT = 2.0
@@ -567,7 +590,6 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
     """
     lock_path = fresh_deployment / "state" / helper.LOCK_FILENAME
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    bound = float(SHORT_PROBE_TIMEOUT) * helper.LOCK_WAIT_PROBE_BUDGETS
 
     with lock_path.open("w", encoding="utf-8") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -577,7 +599,7 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
 
     assert result.returncode != 0
     assert not result.stdout.strip()
-    assert elapsed >= bound
+    assert elapsed >= LOCK_WAIT_SECONDS
     assert str(lock_path) in result.stderr
     assert not persisted_key_path(fresh_deployment).exists()
 

@@ -1368,7 +1368,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         self.ssh_key = server_data.get('SSH_KEY', 'id_rsa')
         self.pre_script = server_data.get('PRE_SCRIPT')
         self.post_script = server_data.get('POST_SCRIPT')
-        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', "innobackupex")
+        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
         self.s3_tool = server_data.get('S3_TOOL', 's3cmd')
         self.keyring_file_data = server_data.get('KEYRING_FILE_DATA')
 

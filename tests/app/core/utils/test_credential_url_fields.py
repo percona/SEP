@@ -18,14 +18,21 @@
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from app.core.settings_override.registry import (
+    annotation_contains_secret,
+    SECRET_STR_MASK,
+)
 from app.core.utils.fields import (
+    AuthCredentialSecretStr,
     CREDENTIAL_URL_MASK,
     CredentialHttpUrl,
+    PreservableSecretStr,
     preserve_credential_url_password,
     PRESERVE_CREDENTIALS_CONTEXT,
     redact_credential_url,
     StrCredentialAnyUrl,
     StrCredentialHttpUrl,
+    strip_credential_url_userinfo,
 )
 
 _CREDENTIAL_URL = "http://nomad-user:nomad-secret@nomad.internal:4646/v1/jobs"
@@ -232,3 +239,134 @@ class TestStrCredentialAnyUrl:
         with pytest.raises(ValidationError, match="broker_url") as exc_info:
             _Model(broker_url=_REDACTED_BROKER_URL)
         assert "cannot be stored" in str(exc_info.value)
+
+
+class TestStripCredentialUrlUserinfo:
+    """Cover :func:`strip_credential_url_userinfo` over every userinfo shape."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (_CREDENTIAL_URL, "http://nomad.internal:4646/v1/jobs"),
+            ("http://nomad-user@nomad.internal:4646/v1/jobs", _PLAIN_URL + "/v1/jobs"),
+            (_PLAIN_URL, _PLAIN_URL),
+            ("https://admin:admin@pmm-server/nomad", "https://pmm-server/nomad"),
+            ("http://user:p@ss@[::1]:4646/v1", "http://[::1]:4646/v1"),
+            (
+                "http://@nomad.internal:4646/v1/jobs",
+                "http://nomad.internal:4646/v1/jobs",
+            ),
+            (
+                "http://:@nomad.internal:4646/v1/jobs",
+                "http://nomad.internal:4646/v1/jobs",
+            ),
+        ],
+    )
+    def test_removes_userinfo_and_preserves_the_rest(
+        self, url: str, expected: str
+    ) -> None:
+        """Drop the userinfo segment while leaving every other component intact."""
+        assert strip_credential_url_userinfo(url) == expected
+
+    def test_keeps_the_query_and_fragment(self) -> None:
+        """Preserve query and fragment components alongside the stripped host."""
+        stripped = strip_credential_url_userinfo(
+            "http://u:p@host:4646/v1/jobs?region=eu#frag"
+        )
+        assert stripped == "http://host:4646/v1/jobs?region=eu#frag"
+
+
+class TestPreservableSecretStr:
+    """Cover :data:`PreservableSecretStr`'s masked and preserved JSON dumps."""
+
+    class _Model(BaseModel):
+        api_key: PreservableSecretStr | None = None
+
+    def test_json_dump_masks_the_secret(self) -> None:
+        """Mask the secret in JSON-mode dumps, which is what the settings API reads."""
+        model = self._Model(api_key="glsa_realtoken")
+        assert model.model_dump(mode="json")["api_key"] == SECRET_STR_MASK
+
+    def test_preserve_context_emits_the_real_secret(self) -> None:
+        """Emit the plain secret under the preserve context, so the round-trip survives."""
+        model = self._Model(api_key="glsa_realtoken")
+        dumped = model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["api_key"] == "glsa_realtoken"
+
+    def test_round_trip_under_the_preserve_context_keeps_the_secret(self) -> None:
+        """Rebuild the model from a preserved dump and recover the original secret."""
+        model = self._Model(api_key="glsa_realtoken")
+        rebuilt = self._Model.model_validate(
+            model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        )
+        assert rebuilt.api_key is not None
+        assert rebuilt.api_key.get_secret_value() == "glsa_realtoken"
+
+    def test_two_distinct_secrets_dump_differently(self) -> None:
+        """Distinguish a rotated secret from an unrotated one in a preserved dump."""
+        first = self._Model(api_key="OLDKEY").model_dump(
+            mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+        )
+        second = self._Model(api_key="NEWKEY").model_dump(
+            mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+        )
+        assert first != second
+
+    def test_none_stays_none(self) -> None:
+        """Leave an unset secret as ``None`` under both dump modes."""
+        model = self._Model()
+        assert model.model_dump(mode="json")["api_key"] is None
+        assert (
+            model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)[
+                "api_key"
+            ]
+            is None
+        )
+
+    def test_repr_masks_the_secret(self) -> None:
+        """Keep the secret out of ``repr`` so it cannot leak into a log line."""
+        rendered = repr(self._Model(api_key="glsa_realtoken"))
+        assert SECRET_STR_MASK in rendered
+        assert "glsa_realtoken" not in rendered
+
+    def test_annotation_is_classified_secret(self) -> None:
+        """Keep the annotation recognisable to the settings-override secret walker."""
+        assert annotation_contains_secret(PreservableSecretStr | None) is True
+
+
+class TestAuthCredentialSecretStr:
+    """Cover :data:`AuthCredentialSecretStr`'s header-safety constraint."""
+
+    class _Model(BaseModel):
+        api_key: AuthCredentialSecretStr | None = None
+
+    @pytest.mark.parametrize(
+        "value", ["tok\n", "tok\r\nX-Injected: yes", "tok\x00", "tok\x0b", "tok\x7f"]
+    )
+    def test_rejects_a_character_one_client_will_not_send(self, value: str) -> None:
+        """Refuse a credential the HTTP clients will not put on the wire."""
+        with pytest.raises(ValidationError):
+            self._Model(api_key=value)
+
+    @pytest.mark.parametrize("value", ["tok", "Sf-Kx==", "a b", "tok\ttok"])
+    def test_accepts_a_credential_both_clients_will_send(self, value: str) -> None:
+        """Accept every shape both clients send, including ``HTAB`` and space."""
+        model = self._Model(api_key=value)
+        assert model.api_key is not None
+        assert model.api_key.get_secret_value() == value
+
+    def test_annotation_is_still_classified_secret(self) -> None:
+        """Keep the wrapped annotation recognisable to the secret walker.
+
+        Constraining the value by wrapping a constrained ``str`` in
+        :class:`~pydantic.Secret` would drop ``SecretStr`` from the annotation and
+        silently disable settings-API masking and at-rest encryption.
+        """
+        assert annotation_contains_secret(AuthCredentialSecretStr | None) is True
+
+    def test_the_preserve_context_still_reaches_the_secret(self) -> None:
+        """Keep the inherited preserve-context dump working through the constraint."""
+        model = self._Model(api_key="glsa_realtoken")
+        assert model.model_dump(mode="json")["api_key"] == SECRET_STR_MASK
+        dumped = model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["api_key"] == "glsa_realtoken"
