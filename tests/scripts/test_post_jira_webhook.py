@@ -15,23 +15,14 @@
 
 """Tests for the ``scripts/post_jira_webhook.py`` helper."""
 
-import importlib.util
 import json
-import sys
 import urllib.error
-from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "post_jira_webhook.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("post_jira_webhook", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-post_jira_webhook = importlib.util.module_from_spec(_spec)
-sys.modules["post_jira_webhook"] = post_jira_webhook
-_spec.loader.exec_module(post_jira_webhook)
+post_jira_webhook = load_script("post_jira_webhook")
 
 
 WEBHOOK_URL = "https://api-private.atlassian.com/automation/webhooks/jira/a/abc/xyz"
