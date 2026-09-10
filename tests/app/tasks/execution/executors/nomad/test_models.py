@@ -2496,6 +2496,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.finished_at == now
+        assert result.failure_reason == "Execution tracking lost."
         mock_backend.job.deregister_job.assert_called_once_with("job-1")
 
     @pytest.mark.asyncio
@@ -2804,6 +2805,48 @@ class TestSyncTaskHistoryFailureReason:
         )
 
         result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.failure_reason == "Execution tracking lost."
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_timeout_stores_the_lost_prose(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert pending-allocation escalation stores the LOST prose.
+
+        This is the only ``_apply_terminal_status`` arm that previously stamped
+        LOST without ``set_failure_reason``; operators see ``failure_reason``
+        through the history field list, and ``None`` there means unknown.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        alloc = {
+            "ID": "alloc-2",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.PENDING,
+        }
+        mock_backend.allocation.get_allocation.return_value = alloc
+        mock_backend.allocations.get_allocations.return_value = [alloc]
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": "running",
+            "Stop": False,
+        }
+        queue_item = self._queue_item()
+        queue_item.started_at = utc_now() - timedelta(
+            seconds=PENDING_ALLOCATION_PAST_BOUND_AGE
+        )
+
+        result = await _build_executor()._sync_task_history(queue_item)
 
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.failure_reason == "Execution tracking lost."

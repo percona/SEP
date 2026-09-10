@@ -1622,6 +1622,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 )
             queue_item.finished_at = utc_now()
             queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, alloc)
+            )
 
     def _should_escalate_pending_allocation(self, queue_item: TaskHistory) -> bool:
         """Return whether a TaskStates-less allocation has outlived the age bound.
