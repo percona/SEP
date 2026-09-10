@@ -108,18 +108,18 @@ class TestAdvancedMarkers:
             "check_cert_expiry_interval",
             "log_anonymization_max_withheld_bytes",
             "log_capture_hold_seconds",
+            "auth_scheme",
         ],
     )
     def test_nomad_secondary_leaves_advanced(self, field: str) -> None:
         """Assert each NOMAD TLS/tuning leaf carries the advanced marker."""
         assert _advanced(NomadExecutor, field) is True
 
-    def test_nomad_endpoint_not_advanced(self) -> None:
-        """Assert the NOMAD ``endpoint`` leaf stays unmarked and overridable."""
-        assert _advanced(NomadExecutor, "endpoint") is False
-        assert is_explicit_not_overridable(NomadExecutor.model_fields["endpoint"]) is (
-            False
-        )
+    @pytest.mark.parametrize("field", ["endpoint", "api_key"])
+    def test_nomad_connection_leaves_not_advanced(self, field: str) -> None:
+        """Assert the NOMAD connection leaves stay unmarked and overridable."""
+        assert _advanced(NomadExecutor, field) is False
+        assert is_explicit_not_overridable(NomadExecutor.model_fields[field]) is False
 
     def test_nomad_frozen_tls_leaves_preserved(self) -> None:
         """Assert the inherited TLS leaves keep ``frozen`` for hash stability."""

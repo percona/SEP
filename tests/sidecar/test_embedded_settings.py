@@ -19,11 +19,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from aioresponses import aioresponses
+from fastapi import status
 from sqlalchemy_celery_beat.models import Period
 
 from app import BASE_DIR
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
+from app.core.requests import RemoteAPI
 from app.core.utils import import_var
 from app.inventory.config import InventorySettings
 from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
@@ -31,6 +34,11 @@ from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
 from app.sep.apps.framework.registry import (
     build_app_registry,
     collect_app_owned_settings_classes,
+)
+from app.sep.bundle_upload.plan import (
+    ConnectionDetail,
+    DeliveryPlanExecutor,
+    SecretValue,
 )
 from app.sep.config import SEPSettings, SyncOptions
 from app.sep.routes.artifacts import collect_base_dirs
@@ -92,6 +100,72 @@ UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV"})
 ``FASTAPI_ENV`` is what the comparison varies, so it can never match.
 """
 
+DELIVERY_SECRET_NAME = "sn_api_key"
+"""The credential every step of the baked plan carries to the receiver.
+
+Declared empty, so the two read-only steps add no credential of their own and
+delivery stays off until an operator supplies inputs.
+"""
+
+BAKED_CONNECTION_DETAIL_LABELS = [
+    "Account name",
+    "Account number",
+    "Key",
+    "ServiceNow user",
+    "Active",
+    "Expires",
+]
+"""The labels the baked connection-details step reports its pairs under.
+
+Held in declaration order, which is the order the panel renders them in. A
+label dropped from the block costs the panel a row and raises nothing, so the
+whole list is pinned rather than counted.
+"""
+
+IDENTITY_SCOPED_QUERY = "user=javascript:gs.getUserID()"
+"""The encoded query narrowing the ``api_key`` read to the caller's own rows.
+
+Pinned byte-exact because a weakened predicate still answers with a row: the
+read would widen to whatever the table's ACL exposes rather than fail.
+"""
+
+API_KEY_ROW = {
+    "result": [
+        {
+            "expires": {
+                "display_value": "2028-06-04 16:40:12",
+                "value": "2028-06-04 16:40:12",
+            },
+            "name": {
+                "display_value": "Percona GAS user",
+                "value": "Percona GAS user",
+            },
+            "user.company.number": {
+                "display_value": "ACCT0040479",
+                "value": "ACCT0040479",
+            },
+            "active": {"display_value": "true", "value": "true"},
+            "user.name": {
+                "display_value": "Percona GAS User",
+                "value": "Percona GAS User",
+            },
+            "user.company.name": {
+                "display_value": "Contrativa",
+                "value": "Contrativa",
+            },
+        }
+    ]
+}
+"""One ``api_key`` row as the receiver answered the baked request on perconadev.
+
+Inlined rather than read from the capture it was taken from, which lives under
+the gitignored ``env/`` tree. Every field arrives wrapped as
+``{display_value, value}`` because the request asks for
+``sysparm_display_value=all``, and the row carries no ``token`` or
+``token_hash`` because the projection never selects one. The keys are kept in
+the receiver's own order, which is neither the projection's nor the panel's.
+"""
+
 
 def uncommented(text: str) -> str:
     """Return ``text`` without its whole-line comments.
@@ -132,6 +206,25 @@ def secret_valued_leaves(data: Any) -> list[tuple[str, Any]]:
     if isinstance(data, list):
         return [pair for item in data for pair in secret_valued_leaves(item)]
     return []
+
+
+def projected_field(pointer: str) -> str:
+    """Return the response field one baked connection-details pointer addresses.
+
+    :param pointer: A pointer from the baked ``details`` map, shaped
+        ``/result/0/<field>/display_value``.
+    :return: The field name the pointer walks into.
+    :raises ValueError: When the pointer is not that shape. A pointer that stops
+        at the field name lands on a container, and one ending at ``value``
+        reads the unresolved half, so either drops or degrades its pair in
+        silence. An off-shape pointer is a failure here rather than a skip.
+    """
+    _, root, index, field, terminus = pointer.split("/")
+    if (root, index, terminus) != ("result", "0", "display_value"):
+        raise ValueError(
+            f"{pointer!r} does not address one projected field's display value."
+        )
+    return field
 
 
 def resolved_profile() -> dict[str, dict[str, Any]]:
@@ -518,3 +611,126 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
             f"Allowlist entry {key!r} names class {class_token!r} which is not "
             f"reachable in any service under the embedded profile"
         )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+class TestBakedDeliveryProbeAndConnectionDetails:
+    """Cover the two read-only steps the baked delivery plan declares.
+
+    Every assertion observes the plan ``SEPSettings()`` returns rather than the
+    profile's text: ``DeliveryPlan`` ignores keys it does not declare, so a
+    misspelled block name is dropped in silence and a file-content check would
+    pass on a plan carrying neither step.
+    """
+
+    def test_the_baked_plan_declares_a_probe(self):
+        """Assert the connectivity check has a request to issue."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+
+        assert plan.probe is not None
+        assert plan.probe.path == "api/now/table/sn_customerservice_case"
+
+    def test_the_baked_probe_requests_one_identifier(self):
+        """Assert the probe reads one row's identifier and nothing else."""
+        probe = SEPSettings().DIAGNOSTICS_DELIVERY.probe
+
+        assert probe.query["sysparm_limit"].value == "1"
+        assert probe.query["sysparm_fields"].value == "sys_id"
+
+    def test_the_baked_plan_declares_connection_details(self):
+        """Assert the connected-state panel has a request to issue."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+
+        assert plan.connection_details is not None
+        assert plan.connection_details.path == "api/now/table/api_key"
+
+    def test_the_baked_connection_details_declares_every_label(self):
+        """Assert the panel's rows are declared, in the order they render."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert list(step.details) == BAKED_CONNECTION_DETAIL_LABELS
+
+    def test_every_projected_field_is_rendered(self):
+        """Assert the projection and the pointer map name the same fields.
+
+        A projected field no pointer addresses is read for nothing; a pointer
+        addressing an unprojected field drops its own row in silence.
+        """
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        projected = step.query["sysparm_fields"].value.split(",")
+        addressed = [projected_field(pointer) for pointer in step.details.values()]
+
+        assert sorted(addressed) == sorted(projected)
+
+    def test_the_baked_projection_selects_no_credential_field(self):
+        """Assert the request never asks the receiver for the key material.
+
+        The projection is the only thing deciding what the receiver sends, so
+        it is the only place the key material can be kept out: a field selected
+        here travels back over the wire whatever the pointers later discard.
+        """
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        projected = step.query["sysparm_fields"].value.split(",")
+
+        assert "name" in projected
+        assert "token" not in projected
+        assert "token_hash" not in projected
+
+    def test_the_baked_connection_details_scopes_to_the_calling_identity(self):
+        """Assert the read is narrowed to the rows this identity owns."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert step.query["sysparm_query"].value == IDENTITY_SCOPED_QUERY
+
+    def test_the_baked_connection_details_requests_display_values(self):
+        """Assert reference fields arrive resolved rather than as opaque ids."""
+        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+
+        assert step.query["sysparm_display_value"].value == "all"
+        assert step.query["sysparm_limit"].value == "1"
+
+    def test_the_baked_probe_and_details_use_the_declared_secret(self):
+        """Assert both steps cite a credential the plan declares."""
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        headers = [
+            plan.probe.headers["x-sn-apikey"],
+            plan.connection_details.headers["x-sn-apikey"],
+        ]
+
+        assert all(isinstance(header, SecretValue) for header in headers)
+        assert {header.name for header in headers} == {DELIVERY_SECRET_NAME}
+        assert DELIVERY_SECRET_NAME in plan.secrets
+
+    @pytest.mark.asyncio
+    async def test_the_baked_pointers_resolve_against_a_receiver_response(self):
+        """Assert the declared pointers report six facts, not an empty panel.
+
+        A step whose pointers all miss is answered as ``available`` carrying no
+        pairs, which is the same blank panel an undeclared step leaves, so
+        declaring the block is not on its own evidence that it reports anything.
+        """
+        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        api = RemoteAPI(endpoint=str(plan.endpoint))
+        executor = DeliveryPlanExecutor(plan, api)
+
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(
+                    rf"{re.escape(str(plan.endpoint) + plan.connection_details.path)}.*"
+                ),
+                status=status.HTTP_200_OK,
+                payload=API_KEY_ROW,
+            )
+            async with api:
+                details = await executor.read_connection_details()
+
+        assert details == [
+            ConnectionDetail(label="Account name", value="Contrativa"),
+            ConnectionDetail(label="Account number", value="ACCT0040479"),
+            ConnectionDetail(label="Key", value="Percona GAS user"),
+            ConnectionDetail(label="ServiceNow user", value="Percona GAS User"),
+            ConnectionDetail(label="Active", value="true"),
+            ConnectionDetail(label="Expires", value="2028-06-04 16:40:12"),
+        ]
