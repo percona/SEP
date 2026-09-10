@@ -170,13 +170,16 @@ vulnerabilities:
   - id: CVE-2026-16742
     purls:
       - pkg:deb/debian/libsystemd0
+      - pkg:deb/debian/libudev1
     statement: >-
-      libsystemd0. Local privilege escalation through arbitrary system group
+      libsystemd0 and libudev1. Local privilege escalation through arbitrary
+      system group
       addition to a logged-in homed-managed user, CVSS 6.7 AV:L/AC:H/PR:L/UI:R.
       The defect is in systemd-homed, which this image does not ship: only the
-      libsystemd0 shared library is installed, and neither the systemd-homed
-      binary nor homectl is present. Trivy reports the CVE against the library
-      because Debian builds both from the systemd source package. There is also
+      libsystemd0 and libudev1 shared libraries are installed, and neither the
+      systemd-homed binary nor homectl is present. Trivy reports the CVE
+      against both libraries because Debian builds all three from the systemd
+      source package. There is also
       no homed-managed user to target -- the image runs supervisord as PID 1,
       not systemd. No upstream fix. Remove when Debian ships one, or if the
       image ever installs systemd-homed.
