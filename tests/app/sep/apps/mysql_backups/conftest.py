@@ -40,9 +40,9 @@ from tests.app.sep.conftest import (  # noqa: F401
     unauthenticated_client,
 )
 
-XTRABACKUP_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
-)
+_APPS_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups"
+XTRABACKUP_PAYLOAD_PATH = _APPS_DIR / "xtrabackup_payload"
+MYDUMPER_PAYLOAD_PATH = _APPS_DIR / "mydumper_payload"
 
 # Spelled out on purpose: this is the cadence vocabulary the product promises, so a
 # test that read it back off a model or the payload would assert a surface against
@@ -61,13 +61,21 @@ XTRABACKUP_INCREMENTAL_CYCLES = (
 )
 
 
-def xtrabackup_payload_tree() -> ast.Module:
-    """Parse and return the xtrabackup payload's AST, fresh on every call.
+def payload_tree(path: pathlib.Path) -> ast.Module:
+    """Parse and return a payload script's AST, fresh on every call.
 
-    Centralizes the payload-path lookup so the per-file AST-extraction helpers
-    in this directory's test modules do not each re-derive it independently.
+    Centralizes the parse so the per-file AST-extraction helpers in this
+    directory's test modules do not each re-derive it independently.
+
+    :param path: Path to the payload script.
+    :return: The parsed module.
     """
-    return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
+    return ast.parse(path.read_text(encoding="utf-8"))
+
+
+def xtrabackup_payload_tree() -> ast.Module:
+    """Parse and return the xtrabackup payload's AST, fresh on every call."""
+    return payload_tree(XTRABACKUP_PAYLOAD_PATH)
 
 
 def service_payload(
