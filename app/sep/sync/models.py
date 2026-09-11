@@ -24,11 +24,10 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, NamedTuple, Self, TypeVar
+from typing import Any, ClassVar, NamedTuple, Self, TypeVar
 from uuid import uuid4
 
 from aiohttp import ClientError
-from annotated_types import Gt
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
@@ -68,6 +67,7 @@ from app.sep.sync.exceptions import (
     SyncFailError,
     SyncItemAlreadyInProgressError,
 )
+from app.sep.sync.fields import StaleRunAfter
 from app.sep.sync.health import SyncHealthReporter
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
@@ -227,11 +227,7 @@ class BaseSyncer(BaseCaseInsensitiveModel):
     sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem] = {}
     sync_id: UUID4 = Field(default_factory=uuid4)
     break_on_error: bool = False
-    # Positivity uses the ``Gt`` annotation constraint rather than a
-    # ``field_validator`` because ``SyncOptions`` carries ``extra="allow"`` and
-    # forwards every extra key verbatim, and runtime-override coercion re-checks
-    # annotated-type constraints but does not re-run field validators.
-    stale_run_after: Annotated[timedelta, Gt(timedelta(0))] = timedelta(hours=1)
+    stale_run_after: StaleRunAfter = timedelta(hours=1)
     _session: AsyncSession
     _snapshot_complete: bool | None = None
 

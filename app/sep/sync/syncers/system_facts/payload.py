@@ -275,6 +275,7 @@ def _mysql_creds(address: str) -> dict[str, str]:
     :return: A mapping with ``user``/``password`` keys, or an empty mapping.
     :rtype: dict[str, str]
     """
+    # optional-dependency: mysql
     import myloginpath
 
     try:
@@ -325,6 +326,7 @@ def _collect_mysql_version(address: str) -> str | None:
     :return: The MySQL version string, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: mysql
     import pymysql
 
     creds = _mysql_creds(address)
@@ -352,6 +354,7 @@ def _collect_postgresql_version(address: str) -> str | None:
     :return: The PostgreSQL ``server_version``, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: postgresql
     import psycopg
 
     host, port = parse_host_port(address, default_port=DefaultPort.POSTGRESQL)
@@ -433,6 +436,7 @@ def _collect_mongodb_version(address: str) -> str | None:
     :return: The MongoDB ``buildInfo`` version, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: mongodb
     import pymongo
 
     args, kwargs = _mongo_connect_params(address)

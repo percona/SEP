@@ -4,10 +4,10 @@ This file gives GitHub Copilot the project context it needs when working on SEP.
 
 ## Project shape
 
-SEP is a FastAPI application with three mounted sub-applications, each with its own database, Alembic migration chain, and Celery beat:
+SEP is a FastAPI application with three mounted sub-applications, each with its own database and Alembic migration chain. One Celery app (`app/celery.py`) and one beat process serve all three; each service contributes its schedules through its own seed module.
 
 - `app/inventory/` — nodes, services, schemas, tables; mounted at `/api/inventory`.
-- `app/tasks/` — task execution, Nomad/local executors, periodic tasks; mounted at `/api/tasks`.
+- `app/tasks/` — task execution, the Nomad and Celery executors, periodic tasks; mounted at `/api/tasks`.
 - `app/sep/` — the SEP API gateway, OAuth, apps; mounted at `/`. It serves the React SPA's static assets, not server-rendered pages.
 
 SEP apps are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
@@ -16,9 +16,9 @@ The UI is **API-first + React** — see `api-first.instructions.md` for rules th
 
 ## Repo-wide rules (apply to every PR)
 
-- **PR title** follows `SEP-XXX: <description>` — colon, space, non-empty description — when a Jira ticket is associated. Exempt: dependency bumps, version bumps, release branches.
+- **PR title** — with a Jira ticket, `SEP-XXX: <description>` (or `PMM-XXXXX: ` for PMM-tracked work): key, colon, space, non-empty description. **Internal-only work needs no ticket** — a change with no product-facing effect: dependency and security bumps, version bumps, release branches, CI, dev tooling, feature-build pins, docs and review instructions. Its title takes a conventional-commit prefix instead (`fix(deps):`, `chore(release):`, `docs(copilot):`). Flag a ticketless title with no prefix, and a ticketless PR whose diff changes product behaviour — that needs a ticket, not a prefix. Bot-authored PRs are held to the same rule.
 - **HTTP status codes**: `fastapi.status` constants (`status.HTTP_404_NOT_FOUND`) — never raw integers — in route decorators, exception raises, test assertions, `JSONResponse`.
-- **Prefer named project exceptions over raw `fastapi.HTTPException`.** Direct `fastapi.HTTPException` is a tech-debt signal — check `app/core/exceptions.py` and `app/core/auth/exceptions.py` first (`HTTPNotFoundException`, `HTTPConflictException`, `HTTPForbiddenException`, `HTTPGoneException`, `HTTPBadRequestException`, etc. already exist). This matters especially when the same `fastapi.HTTPException(status_code=…, detail=…)` shape appears in 2+ places with the same custom params — that repetition should become a named exception class.
+- **Prefer named project exceptions over raw `fastapi.HTTPException`.** Direct `fastapi.HTTPException` is a tech-debt signal — check `app/core/exceptions.py` and `app/core/auth/exceptions.py` first (`HTTPNotFoundException`, `HTTPConflictException`, `HTTPForbiddenException`, `HTTPGoneException`, `HTTPBadRequestException`, `HTTPUnprocessableEntityException`, and for upstream failures `HTTPInternalServerErrorException` / `HTTPBadGatewayException` / `HTTPServiceUnavailableException` already exist). This matters especially when the same `fastapi.HTTPException(status_code=…, detail=…)` shape appears in 2+ places with the same custom params — that repetition should become a named exception class.
 - **Changelog fragments** — user-facing PRs add a file under `changelog.d/` via `make changelog-add TICKET=SEP-XXX SECTION=<added|changed|fixed|security|breaking|config> MSG="…"`. Skip for purely internal changes (CI, refactors, tooling, docs with no user-visible effect), for same-release-cycle fixes (regression from a sibling ticket sharing the unreleased `Fix Version`, linked in Jira via `is caused by`), and for framework-spine-uniform surface (a verb/param/field a shared framework like `TaskExecutionApp` ships once and every migrating app inherits identically — documented once when the framework ships it; add a fragment only for the app-specific delta). Don't expect edits to `[Unreleased]` in `CHANGELOG.md` — that section is assembled at release time.
 - **No emojis** in code, comments, docstrings, or commit messages unless the file already uses them.
 - **No new files** unless required by the change. Prefer editing existing modules.
