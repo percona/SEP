@@ -108,7 +108,8 @@ class Ui:
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
     :param destructive: Opt-in notice that *setting or enabling* this field
-        causes irreversible loss of user data; the value is the consequence
+        causes irreversible loss — of user data, or of operator-managed state
+        such as a hand-tuned configuration file; the value is the consequence
         sentence a confirmation surfaces. Presence is the mark — deliberately
         one string rather than the ``disabled`` / ``disabled_reason`` pair used
         by :class:`Option`, because a field marked destructive with no text

@@ -13,12 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Assert helper-text coverage over the MySQL Backups create and restore forms.
+"""Assert ``Ui`` text coverage over the MySQL Backups create and restore forms.
 
+Covers the two operator-facing texts a form declares: the helper text every
+declared field owes, and the consequence text only the destructive ones carry.
 Shared by the two apps' contract tests, which make the same promise about two
-different forms. The check stays app-local on purpose: the other schema-driven
-apps are only partly described, so promoting it to a registry-wide conformance
-rule would fail them.
+different forms. The checks stay app-local on purpose: the other schema-driven
+apps are only partly described, so promoting them to a registry-wide
+conformance rule would fail them.
 """
 
 import re
@@ -61,6 +63,23 @@ def _declared_names(create_model: type[TaskFormModel]) -> set[str]:
     return (served - set(TaskFormModel.model_fields)) | (re_declared & served)
 
 
+def _ui_marker(create_model: type[TaskFormModel], name: str) -> Ui | None:
+    """Return a field's ``Ui`` marker, or ``None`` when it carries none.
+
+    :param create_model: The form model to inspect.
+    :param name: The field to read the marker off.
+    :return: The field's ``Ui`` marker when it has one.
+    """
+    return next(
+        (
+            entry
+            for entry in create_model.model_fields[name].metadata
+            if isinstance(entry, Ui)
+        ),
+        None,
+    )
+
+
 def _marker_descriptions(create_model: type[TaskFormModel]) -> dict[str, str]:
     """Return each declared field's ``Ui`` description text, empty when absent.
 
@@ -70,16 +89,36 @@ def _marker_descriptions(create_model: type[TaskFormModel]) -> dict[str, str]:
     """
     descriptions: dict[str, str] = {}
     for name in _declared_names(create_model):
-        marker = next(
-            (
-                entry
-                for entry in create_model.model_fields[name].metadata
-                if isinstance(entry, Ui)
-            ),
-            None,
-        )
+        marker = _ui_marker(create_model, name)
         descriptions[name] = (marker.description if marker else None) or ""
     return descriptions
+
+
+def _marker_destructive_marks(create_model: type[TaskFormModel]) -> dict[str, str]:
+    """Return the ``Ui`` consequence text of each declared field that carries one.
+
+    Unmarked fields are left out rather than mapped to ``""``: presence is the
+    mark, so an empty entry would read as a field marking itself with nothing to
+    display.
+
+    :param create_model: The form model to inspect.
+    :return: Declared field name to its consequence text, marked fields only.
+    """
+    marks: dict[str, str] = {}
+    for name in _declared_names(create_model):
+        marker = _ui_marker(create_model, name)
+        if marker and marker.destructive:
+            marks[name] = marker.destructive
+    return marks
+
+
+def _served_fields(schema_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return every field entry in the payload, flattened across its forms.
+
+    :param schema_payload: The decoded ``GET /schema`` response body.
+    :return: The field entries, in served order.
+    """
+    return [field for form in schema_payload["forms"] for field in form["fields"]]
 
 
 def assert_every_declared_field_is_described(
@@ -138,8 +177,7 @@ def assert_schema_serves_only_declared_descriptions(
     """
     entries = [
         (field["name"], field.get("description") or "")
-        for form in schema_payload["forms"]
-        for field in form["fields"]
+        for field in _served_fields(schema_payload)
     ]
     repeated = sorted(
         name
@@ -167,3 +205,46 @@ def assert_schema_serves_only_declared_descriptions(
         if served[name]
     }
     assert not inherited, f"inherited fields described here: {sorted(inherited)}"
+
+
+def assert_schema_serves_only_declared_destructive_marks(
+    schema_payload: dict[str, Any],
+    create_model: type[TaskFormModel],
+    expected_marked: set[str],
+) -> None:
+    """Assert the schema marks the model's destructive fields, and only those.
+
+    Reads the consequence text off the model instead of restating it, so the
+    assertion cannot drift from what the form declares; ``expected_marked``
+    carries the names alone, which is the part a reviewer has to agree with. A
+    mark added to a fourth field therefore fails here until someone names it:
+    a confirmation operators learn to click through costs the fields that do
+    qualify the attention they need.
+
+    Marked fields are picked out by truthiness rather than key presence, which
+    is the check a consumer makes — a route serving without
+    ``response_model_exclude_none`` publishes ``destructive: null`` on every
+    unmarked field.
+
+    :param schema_payload: The decoded ``GET /schema`` response body.
+    :param create_model: The form model the payload derives from.
+    :param expected_marked: The field names expected to carry a mark.
+    :raises AssertionError: When the model's marked set differs from
+        ``expected_marked``, or when a mark reaches the wire altered or not at
+        all.
+    """
+    declared = _marker_destructive_marks(create_model)
+    drifted = sorted(set(declared) ^ expected_marked)
+    assert not drifted, f"marked fields no longer as agreed: {drifted}"
+
+    served = {
+        field["name"]: field["destructive"]
+        for field in _served_fields(schema_payload)
+        if field.get("destructive")
+    }
+    mismatched = sorted(
+        name
+        for name in set(served) | set(declared)
+        if served.get(name) != declared.get(name)
+    )
+    assert not mismatched, f"marks not served as declared: {mismatched}"

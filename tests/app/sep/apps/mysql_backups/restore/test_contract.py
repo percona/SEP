@@ -52,6 +52,7 @@ from tests.app.sep.apps.framework.kit import (
 from tests.app.sep.apps.mysql_backups.description_coverage import (
     assert_every_declared_field_is_described,
     assert_schema_serves_only_declared_descriptions,
+    assert_schema_serves_only_declared_destructive_marks,
 )
 from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
@@ -136,6 +137,26 @@ class TestRestoreContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_200_OK, response.text
         assert_schema_serves_only_declared_descriptions(response.json(), RestoreCreate)
+
+    def test_schema_marks_only_the_destructive_fields(
+        self, contract_client: Any
+    ) -> None:
+        """Publish the consequence text on exactly the fields that destroy something.
+
+        Pinning the whole marked set rather than one field is what makes an
+        over-application visible: a confirmation operators learn to click
+        through costs the qualifying fields the attention they need.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_destructive_marks(
+            response.json(),
+            RestoreCreate,
+            {"overwrite_tables", "datadir", "restore_mycnf"},
+        )
 
     def test_create_201(self, contract_client: Any, mock_task_api: Any) -> None:
         """Create a task via a real JSON POST with a valid body, returning 201.

@@ -230,8 +230,10 @@ class BaseField(SchemaBaseModel):
     :param description: Optional helper text rendered beneath the field.
         Defaults to ``None``.
     :param destructive: Optional consequence text marking the field as one
-        whose enabled or set state irreversibly destroys user data; presence
-        is the mark and the value is what a confirmation displays. Typed
+        whose enabled or set state irreversibly destroys something the operator
+        cannot get back — user data, or operator-managed state such as a
+        hand-tuned configuration file; presence is the mark and the value is
+        what a confirmation displays. Typed
         optional so a route serialising with ``exclude_none`` drops it from the
         wire until a field opts in, which is what keeps the discovery schemas
         byte-identical; a route without that posture publishes it as an
