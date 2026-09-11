@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, delete, select
 
@@ -47,6 +48,44 @@ class ProbeRunManager(BaseSQLModelManager):
     """
 
     Model = ProbeRun
+
+
+class OmHostManager(BaseSQLModelManager):
+    """Manage :class:`OmHost` CRUD operations, including paginated estate reads.
+
+    Neither ``OmHost`` nor ``OmService`` extends ``BaseSQLModel``, so the base
+    manager's ``created_at``-descending fallback ordering does not apply to them --
+    every call here has to pass its own ``order_by``.
+
+    :cvar Model: The SQLModel class this manager is responsible for.
+    """
+
+    Model = OmHost
+
+
+class OmServiceManager(BaseSQLModelManager):
+    """Manage :class:`OmService` CRUD operations, including paginated estate reads.
+
+    :cvar Model: The SQLModel class this manager is responsible for.
+    """
+
+    Model = OmService
+
+
+def has_service_clause() -> Any:
+    """Return the correlated ``EXISTS`` clause for "this host has a service row".
+
+    A plain FK-existence check, not a JSON one -- portable across every dialect OM
+    runs on, unlike the ``executor`` filter this deliberately does not join:
+    :func:`~app.sep.apps.om_inventory.api_routes._executor_usable` reads
+    ``observed.executor``, and pushing *that* into SQL would mean a dialect-specific
+    JSON path expression for SQLite, MySQL and PostgreSQL each.
+
+    :return: A boolean SQL expression, true for a host with at least one service row.
+    """
+    return (
+        select(literal(1)).where(col(OmService.node_id) == col(OmHost.node_id)).exists()
+    )
 
 
 def _apply_attempt(
