@@ -64,14 +64,14 @@ from app.core.utils.fields import UTCDatetime
 #: is spelled rather than imported.
 OM_SCHEMA = "om_schema"
 
-# Table names carry an ``om_`` prefix -- ``om_host``, ``om_service``,
-# ``om_inventory_run`` -- on top of the ``om`` schema that already qualifies them,
+# Table names carry an ``om_`` prefix — ``om_host``, ``om_service``,
+# ``om_inventory_run`` — on top of the ``om`` schema that already qualifies them,
 # which looks redundant until the schema stops actually separating anything.
 # ``om.om_service`` would be a different table from SEP inventory's bare ``service``
 # even without the prefix wherever schemas are real: on PostgreSQL in production, and
 # on SQLite once the root conftest gives each connection a real ``om`` schema via
 # ``ATTACH``. But the real-MySQL and real-PostgreSQL test lanes translate *every*
-# declared schema token -- ``om_schema`` included -- into the same single per-worker
+# declared schema token — ``om_schema`` included — into the same single per-worker
 # schema for teardown simplicity, which collapses ``om_schema.service`` onto
 # ``None.service`` and makes them the same physical table. That is not hypothetical
 # either: it produced a ``CREATE TABLE`` emitted twice for one name, the second call
@@ -182,7 +182,7 @@ class ObservedEntity(SQLModel):
         # rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns
         # (error 1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL
         # treats the parentheses as ordinary grouping, so the same clause resolves
-        # to the identical literal there -- one server_default, both dialects.
+        # to the identical literal there — one server_default, both dialects.
         sa_column_kwargs={"server_default": text("('{}')")},
     )
     first_seen_at: UTCDatetime = SQLField(
@@ -219,7 +219,7 @@ class OmHost(ObservedEntity, table=True):
     inferred ``AutoString`` rather than pinned to ``sa_type=Text``, since this column is
     a primary key: MySQL refuses to index a ``TEXT``/``BLOB`` column without an explicit
     key length (error 1170), which ``AutoString`` already works around by falling back
-    to ``VARCHAR(255)`` on that one dialect while staying unbounded everywhere else --
+    to ``VARCHAR(255)`` on that one dialect while staying unbounded everywhere else —
     the same type :attr:`app.inventory.models.NodeBase.external_id` uses for the same
     reason.
 
@@ -235,7 +235,7 @@ class OmHost(ObservedEntity, table=True):
     Class named ``OmHost`` rather than ``Host``, and the table ``om_host`` rather
     than bare ``host``: SQLModel keeps one registry for the whole application and
     it already carries ``app.inventory.models.Service``, so the short class name
-    is genuinely taken -- and that table is also named plain ``service`` with no
+    is genuinely taken — and that table is also named plain ``service`` with no
     schema of its own (``schema=None``), which OM's ``service`` would collide with
     the moment anything collapses schemas into one physical namespace, as the
     real-MySQL/real-PostgreSQL test lanes deliberately do for worker isolation.
@@ -299,7 +299,7 @@ class OmService(ObservedEntity, table=True):
     __tablename__ = "om_service"
     __table_args__ = (
         # Named rather than left to ``index=True``, which derives the name from the
-        # *declared* table -- and the declared schema is the symbolic token, so the
+        # *declared* table — and the declared schema is the symbolic token, so the
         # index would ship into the real ``om`` schema called
         # ``ix_om_schema_service_node_id``.
         Index("ix_om_service_node_id", "node_id"),
@@ -414,7 +414,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         sa_column=Column(
             JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
             nullable=False,
-            # Parenthesised expression default, not a bare literal -- see
+            # Parenthesised expression default, not a bare literal — see
             # ObservedEntity.observed's own server_default for why: MySQL 8 rejects
             # a plain DEFAULT '[]' on JSON columns (error 1101).
             server_default=text("('[]')"),
@@ -423,7 +423,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     # The one nullable JSON column in this app, and it needs ``none_as_null`` to be
     # honest about it. SQLAlchemy's JSON types default to storing a Python ``None`` as
     # the JSON scalar ``null``, so without this a full-estate run is written as
-    # ``'null'::jsonb`` and `WHERE scope IS NULL` finds none of them -- the Python side
+    # ``'null'::jsonb`` and `WHERE scope IS NULL` finds none of them — the Python side
     # reads back ``None`` either way, so nothing complains until someone asks the
     # database which runs were full sweeps. Measured happening before it was set.
     # ``none_as_null`` is set on both the ``JSON`` base and the ``JSONB`` variant, for
@@ -443,7 +443,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
 # api_routes.py's request/response DTOs, moved here to match the sibling apps'
 # convention (report, mysql_backups, atw all keep theirs in their own models.py)
 # rather than declaring them inline in the routes file. Plain ``pydantic.BaseModel``
-# subclasses, not table models -- unlike everything above them in this file.
+# subclasses, not table models — unlike everything above them in this file.
 
 
 class ProbeCounts(BaseModel):

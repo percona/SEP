@@ -40,7 +40,7 @@ class TestPackageManagerDetection:
         assert facts["package_manager"] == "apt"
 
     def test_dnf_is_preferred_over_the_yum_symlink(self) -> None:
-        """RHEL8+ symlinks ``yum`` to ``dnf`` -- report the tool that is actually there."""
+        """RHEL8+ symlinks ``yum`` to ``dnf`` — report the tool that is actually there."""
         with patch("shutil.which", side_effect=lambda binary: binary in {"dnf", "yum"}):
             facts = collect_install_readiness()
 

@@ -123,7 +123,7 @@ async def get_executor_states(tasks_api: RemoteAPI) -> dict[str, ExecutorState]:
         # One name, several registrations: restarting a host's agent leaves the old
         # registration behind as ``down`` beside the new one, so a plain dict
         # comprehension would keep whichever came last and call a running machine
-        # unreachable. Measured in this workspace's sandbox -- ``pmm-client-node00``
+        # unreachable. Measured in this workspace's sandbox — ``pmm-client-node00``
         # was registered once ready and twice down, and the sweep refused to dispatch
         # to a host that was up. ``get_hosts`` never had to care, because everything
         # in it was usable by construction.
@@ -165,7 +165,7 @@ def map_service(
             if address == service.node_address:
                 return MappedService(service, host, NodeResolution.ADDRESS)
 
-    # Deliberately not falling back to an arbitrary host -- see the module docstring.
+    # Deliberately not falling back to an arbitrary host — see the module docstring.
     logger.info(
         "OM inventory: service %r is orphaned (node name=%r address=%r matches no "
         "executor host); it will not be probed",

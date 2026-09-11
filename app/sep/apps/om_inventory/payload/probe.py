@@ -371,8 +371,8 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
     # layer runs this file through it before dispatch, see build_uri's note above)
     # aliases the set comprehension's loop variable onto the hoisted "pid" literal
     # this function also reads, and the resulting ``UnboundLocalError`` reaches
-    # every real dispatch. It does not reproduce minifying this function alone --
-    # confirmed twice, independently, on two different pieces of it -- only whole
+    # every real dispatch. It does not reproduce minifying this function alone —
+    # confirmed twice, independently, on two different pieces of it — only whole
     # file, where hoist_literals shares "pid" and "port" across every function that
     # reads them. ``test_find_unregistered_survives_minification`` below minifies
     # the whole file for exactly that reason. Loops don't trigger the collision.
@@ -489,7 +489,7 @@ def build_uri(target, userinfo, auth_source, connect_timeout_ms):
     # Every value is bound to a name before the f-string rather than subscripted or
     # joined inside it. That is not style: the Tasks layer runs this file through
     # ``python-minifier`` before dispatch, and the minifier normalises inner string
-    # quotes to double -- turning ``{target['host']}`` into ``{target["host"]}``,
+    # quotes to double — turning ``{target['host']}`` into ``{target["host"]}``,
     # which is a quote nested inside a double-quoted f-string. That is PEP 701 syntax
     # and parses only on Python 3.12 and later.
     #
@@ -659,14 +659,14 @@ def credentials_path(config):
 
 
 #: The file every Percona repository client needs before it can install anything.
-#: Small (about 3 KB), stable, and *load-bearing* -- an unreachable packaging key is a
+#: Small (about 3 KB), stable, and *load-bearing* — an unreachable packaging key is a
 #: real install blocker rather than a synthetic reachability check, which is what makes
 #: it worth fetching rather than pinging the host.
 DEFAULT_REPO_URL = "https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY"
 
 #: What the packaging key's body starts with. Checked so that a proxy or captive
 #: portal answering 200 with its own page is reported as unreachable rather than as a
-#: healthy repository -- which is the failure a status-code-only check gets wrong, and
+#: healthy repository — which is the failure a status-code-only check gets wrong, and
 #: the one most likely in the networks this exists to describe.
 PACKAGING_KEY_MARKER = b"-----BEGIN PGP PUBLIC KEY BLOCK-----"
 
@@ -702,7 +702,7 @@ def redact_userinfo(url):
 
 
 #: Short on purpose. This runs once per dispatch on the request path of a sweep, and
-#: "the repository is slow" is itself the finding -- a package manager with a 30-second
+#: "the repository is slow" is itself the finding — a package manager with a 30-second
 #: stall is not usable in practice, so waiting 30 seconds to discover that adds nothing.
 DEFAULT_REPO_TIMEOUT = 8
 
@@ -777,7 +777,7 @@ def collect_repo_facts(config):
 
 #: Package-manager binaries checked, in the order tried and paired with the name
 #: reported. First match wins. ``dnf`` before ``yum`` because RHEL8+ symlinks the
-#: latter to the former -- checking ``dnf`` first reports the tool the host's own
+#: latter to the former — checking ``dnf`` first reports the tool the host's own
 #: package metadata actually understands.
 _PACKAGE_MANAGERS = (
     ("apt-get", "apt"),
@@ -843,7 +843,7 @@ def main():
 
     # Collected once: properties of the machine, identical for every target on this
     # dispatch because they all run on the same executor host. The process and the
-    # installed version are *not* in here -- they belong to one server process, and a
+    # installed version are *not* in here — they belong to one server process, and a
     # host may run several.
     host_facts = {
         "system": collect_os_facts(),
@@ -884,8 +884,8 @@ def main():
     # shape before anyone needs it. Dropping them instead would let the estate view
     # claim a host is empty while a mongod is running on it.
     # Resolved before the port filter runs, so a process match_process already gave a
-    # target -- including the single-process shortcut, which has no port of its own to
-    # match on -- is not also reported as a stranger here.
+    # target — including the single-process shortcut, which has no port of its own to
+    # match on — is not also reported as a stranger here.
     host_record["unregistered_mongods"] = find_unregistered(
         processes, targets, matched_process_pids(processes, targets)
     )
