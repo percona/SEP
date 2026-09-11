@@ -71,112 +71,6 @@ vulnerabilities:
       tar, sed and passwd, so not removable. Remove when Debian ships a fix.
     expired_at: 2027-02-19
 
-  # --- util-linux -------------------------------------------------------------
-  # The four entries below share a precondition: each vector is reached through
-  # an /etc/fstab entry that authorizes an unprivileged mount. The image ships
-  # Debian's unconfigured stub, whose only line is a comment, and it is
-  # 644 root:root while every supervisord program runs as the unprivileged sep
-  # user -- so writing such an entry needs the root the CVE is meant to obtain.
-  # mount(8) and umount(8) ARE setuid here; the argument is the absent fstab
-  # authorization, not an absent setuid bit.
-  #
-  # Removal was attempted and does not work. Trivy reports an OS finding
-  # against every binary package built from the affected source, so clearing
-  # these four means purging all nine -- bsdutils, libblkid1, liblastlog2-2,
-  # libmount1, libsmartcols1, libuuid1, login, mount and util-linux. Dropping
-  # only the two that carry the vulnerable mount(8) and nsenter leaves the
-  # other seven reporting all four. That purge fails: login is a *protected*
-  # package, which --force-remove-essential does not cover, so it needs
-  # --force-remove-protected and a matching change to the purge checker that
-  # parses the recipe. Removing libuuid1 would also silently degrade uuid1(),
-  # since CPython's _uuid extension links it and falls back when absent.
-  - id: CVE-2026-76642
-    purls:
-      - pkg:deb/debian/bsdutils
-      - pkg:deb/debian/libblkid1
-      - pkg:deb/debian/liblastlog2-2
-      - pkg:deb/debian/libmount1
-      - pkg:deb/debian/libsmartcols1
-      - pkg:deb/debian/libuuid1
-      - pkg:deb/debian/login
-      - pkg:deb/debian/mount
-      - pkg:deb/debian/util-linux
-    statement: >-
-      util-linux. mount(8) runs post-mount hooks without checking the mount
-      helper's exit status, so an unprivileged user can clone a filesystem with
-      inherited suid bits or change a target inode's ownership, CVSS 8.5
-      AV:L/AC:L/PR:L/UI:N. Exploitation needs an fstab entry that both
-      authorizes the unprivileged mount and carries X-mount.idmap or
-      X-mount.owner; this image's fstab declares no entries at all. No upstream
-      fix. Remove when Debian ships one, or if the image starts shipping an
-      fstab entry carrying user, users, or any X-mount.* option.
-    expired_at: 2027-02-19
-  - id: CVE-2026-78408
-    purls:
-      - pkg:deb/debian/bsdutils
-      - pkg:deb/debian/libblkid1
-      - pkg:deb/debian/liblastlog2-2
-      - pkg:deb/debian/libmount1
-      - pkg:deb/debian/libsmartcols1
-      - pkg:deb/debian/libuuid1
-      - pkg:deb/debian/login
-      - pkg:deb/debian/mount
-      - pkg:deb/debian/util-linux
-    statement: >-
-      util-linux. nsenter --join-cgroup leaves a root-opened cgroup.procs
-      descriptor open across credential changes and execve, letting a process
-      in the target inherit root's ability to migrate and kill host processes,
-      CVSS 7.9 AV:L/AC:L/PR:L/UI:R. This one is not gated by fstab: it requires
-      a privileged operator to run nsenter --join-cgroup against an
-      attacker-controlled target. nsenter ships with util-linux but is invoked
-      by nothing in the image -- no Containerfile stage, entrypoint script or
-      supervisord program references it -- and no process runs as root to
-      invoke it. No upstream fix. Remove when Debian ships one, or if anything
-      in the image starts calling nsenter.
-    expired_at: 2027-02-19
-  - id: CVE-2026-78409
-    purls:
-      - pkg:deb/debian/bsdutils
-      - pkg:deb/debian/libblkid1
-      - pkg:deb/debian/liblastlog2-2
-      - pkg:deb/debian/libmount1
-      - pkg:deb/debian/libsmartcols1
-      - pkg:deb/debian/libuuid1
-      - pkg:deb/debian/login
-      - pkg:deb/debian/mount
-      - pkg:deb/debian/util-linux
-    statement: >-
-      util-linux. X-mount.subdir takes a detached-tree fast path on Linux 6.15+
-      and passes the subdirectory to open_tree() with AT_SYMLINK_NOFOLLOW,
-      which stops neither intermediate symlink traversal nor escape from the
-      newly mounted filesystem, CVSS 7.0 AV:L/AC:H/PR:L/UI:N. The CVE states
-      the precondition directly -- a local unprivileged user with an
-      fstab-authorized X-mount.subdir entry -- and this image's fstab declares
-      no entries. No upstream fix. Remove when Debian ships one, or if the
-      image starts shipping an fstab entry using X-mount.subdir.
-    expired_at: 2027-02-19
-  - id: CVE-2026-78410
-    purls:
-      - pkg:deb/debian/bsdutils
-      - pkg:deb/debian/libblkid1
-      - pkg:deb/debian/liblastlog2-2
-      - pkg:deb/debian/libmount1
-      - pkg:deb/debian/libsmartcols1
-      - pkg:deb/debian/libuuid1
-      - pkg:deb/debian/login
-      - pkg:deb/debian/mount
-      - pkg:deb/debian/util-linux
-    statement: >-
-      util-linux. Restricted bind mounts read the source path from fstab
-      without pinning it, so a user who can replace the authorized source or a
-      writable ancestor redirects setuid mount(8) at another directory, and an
-      accompanying X-mount.owner, X-mount.group or X-mount.mode then has root
-      change that inode, CVSS 7.8 AV:L/AC:L/PR:L/UI:N. Both halves start from
-      an authorized fstab source; this image's fstab declares none. No upstream
-      fix. Remove when Debian ships one, or if the image starts shipping a bind
-      mount entry in fstab.
-    expired_at: 2027-02-19
-
   # --- systemd (libsystemd0) ----------------------------------------------------
   - id: CVE-2026-16742
     purls:
@@ -191,9 +85,10 @@ vulnerabilities:
       systemd-homed binary nor homectl is present. Trivy reports the CVE
       against both libraries because Debian builds all three from the systemd
       source package. There is also no homed-managed user to target -- the
-      image runs supervisord as PID 1, not systemd. Neither library can be
-      purged either: valkey-server links libsystemd.so.0, and dropping only
-      libudev1 clears nothing because both packages carry this finding. No
-      upstream fix. Remove when Debian ships one, if the image ever installs
-      systemd-homed, or if valkey-server stops linking libsystemd.
+      image runs supervisord as PID 1, not systemd. Unlike the packages the
+      recipe purges, neither library can be removed: valkey-server links
+      libsystemd.so.0, and dropping only libudev1 clears nothing because both
+      packages carry this finding. No upstream fix. Remove when Debian ships
+      one, if the image ever installs systemd-homed, or if valkey-server stops
+      linking libsystemd.
     expired_at: 2027-02-19
