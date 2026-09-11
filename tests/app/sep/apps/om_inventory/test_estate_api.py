@@ -168,6 +168,69 @@ class TestHosts:
         assert "id-down00" in {h["node_id"] for h in unusable.json()["items"]}
 
     @pytest.mark.asyncio
+    async def test_failing_true_finds_the_host_with_no_recent_success(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """``?failing=`` is a column predicate, pushed into the query like the rest.
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        await upsert_host(
+            session,
+            node_id="id-ok00",
+            name="ok00",
+            address="10.0.0.3",
+            executor_host="ok00",
+            observed={"os": "Ubuntu 24.04"},
+        )
+        await upsert_host(
+            session,
+            node_id="id-down01",
+            name="down01",
+            address="10.0.0.4",
+            executor_host="down01",
+            error="connection refused",
+        )
+        await session.commit()
+
+        failing = await api.get(f"{BASE}/hosts", params={"failing": "true"})
+        healthy = await api.get(f"{BASE}/hosts", params={"failing": "false"})
+
+        assert [h["node_id"] for h in failing.json()["items"]] == ["id-down01"]
+        assert [h["node_id"] for h in healthy.json()["items"]] == ["id-ok00"]
+
+    @pytest.mark.asyncio
+    async def test_total_counts_every_matching_host_not_only_the_page(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """A caller must be able to tell "the whole estate" from "this page of it".
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        host_count = 3
+        page_limit = 2
+        for i in range(host_count):
+            await upsert_host(
+                session,
+                node_id=f"id-page{i}",
+                name=f"page{i}",
+                address="10.0.0.5",
+                executor_host=f"page{i}",
+                observed={"os": "Ubuntu 24.04"},
+            )
+        await session.commit()
+
+        response = await api.get(f"{BASE}/hosts", params={"limit": page_limit})
+        payload = response.json()
+
+        assert payload["total"] == host_count
+        assert len(payload["items"]) == page_limit
+        assert payload["offset"] == 0
+        assert payload["limit"] == page_limit
+
+    @pytest.mark.asyncio
     async def test_one_host_by_pmms_node_id(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
@@ -237,6 +300,32 @@ class TestServices:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["observed"]["installed_version"] == "7.0.39-21"
+
+    @pytest.mark.asyncio
+    async def test_failing_true_finds_the_service_with_no_recent_success(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """``?failing=`` is a column predicate, pushed into the query like ``node_id``.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        await upsert_service(
+            estate,
+            service_id="svc-down00",
+            node_id=NODE_WITH_DB,
+            name="down00",
+            port=27018,
+            role=None,
+            error="connection refused",
+        )
+        await estate.commit()
+
+        failing = await api.get(f"{BASE}/services", params={"failing": "true"})
+        healthy = await api.get(f"{BASE}/services", params={"failing": "false"})
+
+        assert [s["service_id"] for s in failing.json()["items"]] == ["svc-down00"]
+        assert [s["service_id"] for s in healthy.json()["items"]] == [SERVICE_ID]
 
 
 class TestDelete:

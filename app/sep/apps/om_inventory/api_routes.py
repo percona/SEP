@@ -44,6 +44,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 from fastapi import status as http_status
+from sqlmodel import col
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
@@ -75,8 +76,10 @@ from app.sep.apps.om_inventory.crud import (
     get_host,
     get_run,
     get_service,
-    list_hosts,
+    has_service_clause,
     list_services,
+    OmHostManager,
+    OmServiceManager,
     ProbeRunManager,
     recent_runs,
 )
@@ -264,22 +267,52 @@ async def list_estate_hosts(
     :param executor: Filter on whether an executor serves it.
     :return: One page of hosts, by name, with the matching total.
     """
-    hosts = await list_hosts(session)
-    services = await list_services(session)
+    clauses = []
+    if has_service is not None:
+        exists_clause = has_service_clause()
+        clauses.append(exists_clause if has_service else ~exists_clause)
+    if failing is not None:
+        clauses.append(
+            col(OmHost.failing_since).is_not(None)
+            if failing
+            else col(OmHost.failing_since).is_(None)
+        )
 
+    if executor is None:
+        page = await OmHostManager.list_paginated(
+            session, *clauses, pagination=pagination, order_by=[col(OmHost.name)]
+        )
+        hosts, total = page.items, page.total
+    else:
+        # executor reads observed.executor, a JSON sub-document -- not something
+        # worth a dialect-specific path expression for SQLite, MySQL and
+        # PostgreSQL each, unlike has_service and failing above. Still bounded by
+        # those two when given, rather than always reading the whole table: this
+        # filter is the rare, deliberate query, not the default estate browse.
+        candidates = await OmHostManager.list(
+            session, *clauses, order_by=[col(OmHost.name)]
+        )
+        matching = [host for host in candidates if _executor_usable(host) is executor]
+        total = len(matching)
+        hosts = pagination.slice(matching)
+
+    node_ids = [host.node_id for host in hosts]
+    services = (
+        await OmServiceManager.list(
+            session,
+            col(OmService.node_id).in_(node_ids),
+            order_by=[col(OmService.name)],
+        )
+        if node_ids
+        else []
+    )
     by_node: dict[str, list[OmService]] = {}
     for service in services:
         by_node.setdefault(service.node_id, []).append(service)
 
-    matching = [
-        _host_response(host, by_node.get(host.node_id, []))
-        for host in hosts
-        if (has_service is None or bool(by_node.get(host.node_id)) is has_service)
-        and (failing is None or (host.failing_since is not None) is failing)
-        and (executor is None or _executor_usable(host) is executor)
-    ]
-    return PaginatedResponse.from_pagination(
-        pagination.slice(matching), len(matching), pagination
+    items = [_host_response(host, by_node.get(host.node_id, [])) for host in hosts]
+    return PaginatedResponse(
+        items=items, total=total, offset=pagination.offset, limit=pagination.limit
     )
 
 
@@ -322,14 +355,19 @@ async def list_estate_services(
     :param failing: Filter on whether the service is currently failing.
     :return: One page of services, by name, with the matching total.
     """
-    matching = [
-        _service_response(service)
-        for service in await list_services(session, node_id=node_id)
-        if failing is None or (service.failing_since is not None) is failing
-    ]
-    return PaginatedResponse.from_pagination(
-        pagination.slice(matching), len(matching), pagination
+    clauses = []
+    if node_id is not None:
+        clauses.append(col(OmService.node_id) == node_id)
+    if failing is not None:
+        clauses.append(
+            col(OmService.failing_since).is_not(None)
+            if failing
+            else col(OmService.failing_since).is_(None)
+        )
+    page = await OmServiceManager.list_paginated(
+        session, *clauses, pagination=pagination, order_by=[col(OmService.name)]
     )
+    return page.map_items(_service_response)
 
 
 @router.get("/services/{service_id}")
