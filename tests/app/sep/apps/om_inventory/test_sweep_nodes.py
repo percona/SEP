@@ -416,6 +416,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
                     "system": {
                         "os_name": "Ubuntu 24.04",
                         "os_id": "ubuntu",
+                        "os_version_id": "24.04",
                         "arch": "x86_64",
                     },
                 },
@@ -431,6 +432,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
     assert document["arch"] == "x86_64"
     # Machine-readable, distinct from "os"'s pretty name.
     assert document["os_id"] == "ubuntu"
+    assert document["os_version_id"] == "24.04"
 
 
 @pytest.mark.asyncio
