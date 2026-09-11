@@ -90,6 +90,11 @@ default:
     NAME: sep
     PORT: 5432
     USER: sep
+    # `om_schema` is OM's shared symbolic schema token (app/sep/apps/shared/om/
+    # __init__.py); see the equivalent block in the repo-root settings.yaml for the
+    # full explanation of SCHEMA_TRANSLATE_MAP.
+    SCHEMA_TRANSLATE_MAP:
+      om_schema: om
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -142,6 +147,12 @@ default:
       - MODULE_NAME: inventory
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
+      # OM's on-host half. It sweeps the MongoDB estate over Nomad for the facts
+      # no metric carries and serves them at /api/apps/om_inventory/services,
+      # which pmm-managed pulls. The topology and health half is in pmm-managed,
+      # so a PMM that ships this app also needs a build carrying
+      # managed/services/om.
+      - MODULE_NAME: om_inventory
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync

@@ -2,6 +2,10 @@ default:
   ALLOWED_HOSTS:
     - "localhost"
     - "127.0.0.1"
+    # pmm-managed reaches SEP from inside the pmm-server container, where the host is
+    # only addressable by this name. Without it TrustedHostMiddleware answers 400 to
+    # every cross-container request, whatever the credentials.
+    - "host.docker.internal"
   ALLOW_CONCURRENT_SESSIONS: False
   SECRET_KEY: "dev-only-not-for-production"  # Dev only; production must override
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -101,6 +105,8 @@ default:
       - MODULE_NAME: alerts
       - MODULE_NAME: alert_troubleshooting
       - MODULE_NAME: report
+      - MODULE_NAME: om_inventory
+        ENABLED: true
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
@@ -139,6 +145,21 @@ default:
       ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
+    # OM inventory's own knobs (app.sep.apps.om_inventory.config.OmInventorySettings)
+    # are read from SEP.OM_INVENTORY, entirely commented out below: every value
+    # shown is that class's own default, and the sidecar ships defaults-only.
+    # OM_INVENTORY:
+    #   SCHEDULE: {EVERY: 10, PERIOD: minutes}  # null unregisters the periodic sweep
+    #   PROBE_DATABASE: true
+    #   REPO_URL: https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY
+    #   REPO_TIMEOUT: 8
+    #   CREDENTIALS_PATH: null  # falls back to ~/.mongodb_uri; YAML/env only, not hot
+    #   CONNECT_TIMEOUT: 5
+    #   TASK_TIMEOUT: 180
+    #   POLL_INTERVAL: 3
+    #   MAX_CONCURRENT_PROBES: 8
+    #   RUN_RETENTION: 50
+    #   STALE_RUN_AFTER: 1800  # seconds (30 minutes)
     # Diagnostic bundle delivery plan - unset by default (no receiver configured).
     # The skeleton below is settable through this file and environment variables
     # only: the whole plan is cross-validated as a unit at settings load, so the
@@ -239,6 +260,17 @@ default:
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
       NAME: sep.db
+      # Symbolic schema tokens declared by apps that share this database, resolved
+      # to a real schema on a bind that has one. Automatically ignored off
+      # PostgreSQL: SQLite has no schemas, and MySQL's "schema" is a database, so on
+      # either of those every value here is forced to the default schema instead
+      # (app/core/db/config.py).
+      #
+      # `om_schema` is shared by every OM app (app/sep/apps/shared/om/__init__.py),
+      # so it lives here rather than under one of them. `null` would put OM's tables
+      # in the default schema alongside everything else.
+      SCHEMA_TRANSLATE_MAP:
+        om_schema: om
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync

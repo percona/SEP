@@ -16,7 +16,7 @@
 """Define database utilities."""
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
@@ -25,10 +25,13 @@ from sqlalchemy import (
     Column,
     ColumnClause,
     ColumnElement,
+    ForeignKeyConstraint,
     func,
     inspect,
     JSON,
     literal,
+    MetaData,
+    Table,
     Text,
     text,
     TypeDecorator,
@@ -42,6 +45,7 @@ from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
 from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
+from sqlalchemy.sql.schema import BLANK_SCHEMA, RETAIN_SCHEMA, SchemaConst
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlalchemy.sql.visitors import InternalTraversal
 from sqlmodel import AutoString, col
@@ -74,24 +78,96 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
 
 
 def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
-    """Build a service API async engine with pool and connect options.
+    """Build a service API async engine with pool, connect and schema options.
 
     ``pool_pre_ping`` is always forwarded; unset pool sizing fields are omitted
     so the engine keeps SQLAlchemy's own defaults for those. An unset or
     SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise omits ``connect_args``
-    entirely.
+    entirely. A non-empty ``database.SCHEMA_TRANSLATE_MAP`` is applied via
+    ``execution_options`` here, once, so every caller that shares a
+    ``DatabaseOptions`` gets the same translation without composing its own.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
     :return: A configured asynchronous engine.
     """
-    return create_async_engine(
+    engine = create_async_engine(
         database.URL,
         echo=False,
         json_serializer=json_serializer,
         **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
+    if database.SCHEMA_TRANSLATE_MAP:
+        engine = engine.execution_options(
+            schema_translate_map=database.SCHEMA_TRANSLATE_MAP
+        )
+    return engine
+
+
+def translate_metadata_schemas(
+    metadata: MetaData, translate_map: Mapping[str, str | None]
+) -> MetaData:
+    """Return ``metadata`` with every symbolic schema token resolved through the map.
+
+    Alembic's autogenerate compares ``Table`` objects against the reflected
+    database before any statement executes, so a connection's
+    ``schema_translate_map`` never reaches the comparison. Applying the same
+    map to a copy lets ``check`` and ``--autogenerate`` see the schema each
+    table actually lands in: the default schema for a token mapped to ``None``,
+    the mapped name otherwise. A schema absent from the map is kept as
+    declared, so an unconfigured token still fails the check loudly.
+    Foreign-key targets are resolved by the same rule.
+
+    Two declared tables can resolve to the same physical table on a bind — a
+    token mapped to the bind's default schema beside an untokened table of the
+    same name, for instance. The first one reached in dependency order is
+    copied; the rest are skipped rather than raising, since that is the table
+    the bind actually has. This cannot hide a real conflict from ``check``:
+    the physical table then carries only one of the two definitions, so the
+    comparison reports a mismatch against whichever declared table it does
+    not match, exactly where the diff would show it.
+
+    :param metadata: The metadata whose tables may declare symbolic schemas.
+    :param translate_map: The bind's ``schema_translate_map``.
+    :return: ``metadata`` itself when the map is empty, otherwise a copy.
+    """
+    if not translate_map:
+        return metadata
+
+    def resolve(schema: str | None) -> str | SchemaConst:
+        if schema not in translate_map:
+            return RETAIN_SCHEMA
+        mapped = translate_map[schema]
+        return BLANK_SCHEMA if mapped is None else mapped
+
+    def referred_schema(
+        _table: Table,
+        _to_schema: str | None,
+        _constraint: ForeignKeyConstraint,
+        referred: str | None,
+    ) -> str | SchemaConst:
+        return resolve(referred)
+
+    translated = MetaData()
+    for table in metadata.sorted_tables:
+        resolved = resolve(table.schema)
+        schema_arg = None if resolved is BLANK_SCHEMA else resolved
+        key_schema = table.schema if resolved is RETAIN_SCHEMA else schema_arg
+        key = f"{key_schema}.{table.name}" if key_schema is not None else table.name
+        if key in translated.tables:
+            continue
+        # SQLAlchemy annotates ``schema`` as ``str | Literal[RETAIN_SCHEMA]`` and
+        # ``referred_schema_fn`` as returning ``str | None``, but its own docstring
+        # says ``None`` selects the target metadata's schema and ``BLANK_SCHEMA``
+        # resets a referred schema: the annotations are narrower than the
+        # documented runtime contract.
+        table.to_metadata(
+            translated,
+            schema=schema_arg,  # ty: ignore[invalid-argument-type]
+            referred_schema_fn=referred_schema,  # ty: ignore[invalid-argument-type]
+        )
+    return translated
 
 
 def json_join_path_elems(*path_elems: str) -> str:

@@ -123,6 +123,12 @@ app:mysql_backups:
       - 'app/sep/apps/mysql_backups/**'
       - 'tests/app/sep/apps/mysql_backups/**'
       - 'frontend/packages/e2e/tests/mysql-backups*.spec.ts'
+app:om_inventory:
+- any:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'app/sep/apps/om_inventory/**'
+      - 'tests/app/sep/apps/om_inventory/**'
 app:report:
 - any:
   - changed-files:

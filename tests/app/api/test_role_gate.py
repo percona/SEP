@@ -44,6 +44,7 @@ GATED_APPS: Final = {"sep": sep_app, "inventory": inventory_app, "tasks": tasks_
 NON_ADMIN_MINIMUMS: Final = {
     ("sep", "POST", "/api/apps/alerts/restore"): UserRole.EDITOR,
     ("sep", "POST", "/api/apps/alerts/push"): UserRole.EDITOR,
+    ("sep", "POST", "/api/apps/om_inventory/runs"): UserRole.EDITOR,
     ("tasks", "POST", "/history/latest"): UserRole.NONE,
 }
 
