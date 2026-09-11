@@ -27,8 +27,7 @@ from fastapi.testclient import TestClient
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.om_inventory.app import app as om_inventory_app
 from app.sep.deps import get_current_user, IsApiAuthenticated
-
-_BASE = "/api/apps/om_inventory"
+from tests.app.sep.apps.om_inventory.conftest import BASE
 
 
 def _client(user: CasdoorUser) -> TestClient:
@@ -47,7 +46,7 @@ def _client(user: CasdoorUser) -> TestClient:
 
 def test_schema_200(regular_user: CasdoorUser) -> None:
     """Serve the plugin schema at ``GET /schema``."""
-    response = _client(regular_user).get(f"{_BASE}/schema")
+    response = _client(regular_user).get(f"{BASE}/schema")
 
     assert response.status_code == status.HTTP_200_OK
 
@@ -63,8 +62,8 @@ def test_declares_no_custom_ui() -> None:
 
 
 # The scaffold's ``test_list_200`` was removed rather than repaired. It asserted a
-# ``GET /`` list route this app has never had -- it declares a purpose-built router
-# instead of the derived task contract -- so it had been failing since the app was
+# ``GET /`` list route this app has never had — it declares a purpose-built router
+# instead of the derived task contract — so it had been failing since the app was
 # written, asserting a shape nobody intended. What it meant to prove, that the router
 # is mounted and reachable behind the auth guard, is proved by ``test_schema_200``
 # above without needing a database; what the routes actually serve is pinned in

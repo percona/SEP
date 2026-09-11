@@ -135,7 +135,7 @@ def build_config(entries: list[MappedService]) -> str:
                 {
                     "service": entry.service.name,
                     # PMM's service id, echoed back by the payload on this target's
-                    # record and what parse_ndjson / _record_for key on -- see
+                    # record and what parse_ndjson / _record_for key on — see
                     # record_key. The name alone is not unique per node.
                     "service_id": entry.service.external_id,
                     # The node name is preferred over the address: in a sidecar
@@ -250,7 +250,7 @@ async def _release(tasks_api: RemoteAPI, task_history_id: int) -> str | None:
     """
     try:
         history = await tasks_api.get(f"/history/{task_history_id}")
-        # Not every failure after a dispatch leaves the queue item in flight -- losing
+        # Not every failure after a dispatch leaves the queue item in flight — losing
         # the log stream of a run that already finished is a failure of collection,
         # not of the run. Stopping a terminal item answers 400, and reporting that as
         # "could not be released" would raise an alarm about a queue that is clean.
@@ -378,7 +378,7 @@ async def probe_host(
         # In a finally so a host that failed or returned early is still timed: how
         # long a broken host took before giving up is as diagnostic as how long a
         # working one took. Mutating the object the early return already yielded is
-        # visible to the caller -- the return value is this reference.
+        # visible to the caller — the return value is this reference.
         result.duration_seconds = monotonic() - started
     return result
 

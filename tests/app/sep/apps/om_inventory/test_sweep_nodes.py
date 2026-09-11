@@ -183,7 +183,7 @@ async def test_records_the_host_it_probed_and_the_services_on_it() -> None:
             "node00": HostProbeResult(
                 executor_host="node00",
                 host_record={"os": "Ubuntu 24.04"},
-                # Keyed by PMM's service id, as dispatch.py's record_key produces --
+                # Keyed by PMM's service id, as dispatch.py's record_key produces —
                 # not by the name "svc-a" the mapping carries.
                 records={DEFAULT_EXTERNAL_ID: RECORD},
                 duration_seconds=HOST_SECONDS,
@@ -335,7 +335,7 @@ async def test_a_service_pmm_does_not_know_is_still_listed() -> None:
     service = outcome.nodes[0]["services"][0]
     assert service["service_id"] is None
     assert service["service_name"] == "svc-d"
-    # It answered -- the host ran the payload. What is missing is a key to join on,
+    # It answered — the host ran the payload. What is missing is a key to join on,
     # which is a different failure from the host not answering.
     assert service["answered"] is True
 

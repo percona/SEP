@@ -284,7 +284,7 @@ async def list_estate_hosts(
         )
         hosts, total = page.items, page.total
     else:
-        # executor reads observed.executor, a JSON sub-document -- not something
+        # executor reads observed.executor, a JSON sub-document — not something
         # worth a dialect-specific path expression for SQLite, MySQL and
         # PostgreSQL each, unlike has_service and failing above. Still bounded by
         # those two when given, rather than always reading the whole table: this
