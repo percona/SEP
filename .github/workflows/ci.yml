@@ -6,6 +6,11 @@ on:
   pull_request:
     branches:
     - main
+    # TEMPORARY: lets CI run on PRs staged against this long-lived integration
+    # branch before it goes to main. Remove this line once PMM-15299-open-manager
+    # merges to main -- it exists only so the OpenManager PRs stacked on it get
+    # CI at all instead of merging with zero automated signal.
+    - PMM-15299-open-manager
     types:
     - labeled
     - ready_for_review
