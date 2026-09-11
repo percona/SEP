@@ -30,26 +30,42 @@ import sys
 import time as real_time
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from tests.app.sep.apps.mysql_backups.conftest import MYDUMPER_PAYLOAD_PATH
 from tests.app.sep.apps.mysql_backups.payload_harness import (
+    load_constant,
     payload_instance,
     Recorder,
 )
 
+
+def _payload_constant(name: str) -> object:
+    """Return one of the mydumper payload's own module-level constants.
+
+    Reading the value out of the payload keeps the tests from re-stating a
+    contract the payload owns.
+
+    :param name: The constant's name.
+    :return: Its value.
+    """
+    return load_constant(name, payload_path=MYDUMPER_PAYLOAD_PATH)
+
+
 TODAY = datetime.date(2026, 1, 5)
 TODAY_STR = "20260105"
 YESTERDAY_STR = "20260104"
-PARTIAL_SUFFIX = ".partial"
-REPLACED_SUFFIX = ".replaced"
-OLDER_THAN_ANY_GRACE_PERIOD = 86400
+PARTIAL_SUFFIX = cast("str", _payload_constant("PARTIAL_SUFFIX"))
+REPLACED_SUFFIX = cast("str", _payload_constant("REPLACED_SUFFIX"))
+PARTIAL_MAX_AGE_SECONDS = cast("int", _payload_constant("PARTIAL_MAX_AGE_SECONDS"))
+OLDER_THAN_ANY_GRACE_PERIOD = PARTIAL_MAX_AGE_SECONDS * 2
 UPDATED_SINCE_DAYS = 3
 _RECLAIM_METHODS = (
     "_reclaim_interrupted_publish",
     "_reclaim_scratch_dir",
+    "_scratch_name_parts",
     "_staging_owner_is_alive",
 )
 _FIRST_DUMP = {
@@ -76,6 +92,21 @@ def _write_dump(target: Path, marker: str) -> None:
     (target / "sakila.film.sql").write_text(f"dump {marker}\n")
 
 
+def _scratch_name(suffix: str, *parts: object) -> str:
+    """Build the name a run gives one of its scratch directories.
+
+    :param suffix: The scratch suffix, read off the payload.
+    :param parts: The dot-separated segments between the day and the suffix --
+        a run's start time and the pid owning it, where the case under test has
+        them.
+    :return: The directory name, dot-prefixed so retention ignores it.
+    """
+    return ".".join((f".{TODAY_STR}", *(str(part) for part in parts))) + suffix
+
+
+_DEFAULT_WORK_DIR_NAME = _scratch_name(PARTIAL_SUFFIX, "030000", 4242)
+
+
 def _exited_pid() -> int:
     """Return the pid of a process that has already exited and been reaped."""
     proc = subprocess.Popen([sys.executable, "-c", ""])
@@ -92,7 +123,12 @@ class _DumpWriter:
         self.calls = calls
 
     def __call__(self, cmd: list[str], **_kwargs: object) -> Any:
-        """Write this run's dump files and report the configured exit status."""
+        """Write this run's dump files and report the configured exit status.
+
+        :param cmd: The argv the payload dispatched.
+        :param _kwargs: The stream options the payload passes, all ignored.
+        :return: A stand-in for the process the payload would have spawned.
+        """
         self.calls.append(list(cmd))
         outputdir = next(
             Path(arg.split("=", 1)[1])
@@ -149,7 +185,11 @@ def _mydumper_instance(
 
 
 def _tripwire(calls: list[list[str]]) -> Any:
-    """Return a ``Popen`` stand-in that records the argv and aborts the run."""
+    """Return a ``Popen`` stand-in that records the argv and aborts the run.
+
+    :param calls: The list each dispatched argv is appended to.
+    :return: The ``Popen`` stand-in.
+    """
 
     def popen(cmd: list[str], **_kwargs: object) -> None:
         calls.append(list(cmd))
@@ -159,12 +199,22 @@ def _tripwire(calls: list[list[str]]) -> Any:
 
 
 def _dump_writer(*, returncode: int = 0, marker: str = "first") -> Any:
-    """Return a ``_DumpWriter`` factory for ``_mydumper_instance``."""
+    """Return a ``_DumpWriter`` factory for ``_mydumper_instance``.
+
+    :param returncode: The exit status the faked mydumper reports.
+    :param marker: The token identifying the dump it writes.
+    :return: A factory taking the recording list and returning the stand-in.
+    """
     return lambda calls: _DumpWriter(returncode, marker, calls)
 
 
 def _existing_dump(server_dir: Path, day: str = TODAY_STR) -> Path:
-    """Lay down a completed dump for ``day`` the way an earlier run leaves it."""
+    """Lay down a completed dump for ``day`` the way an earlier run leaves it.
+
+    :param server_dir: The server directory the day directory goes in.
+    :param day: The day the dump is published under.
+    :return: The day directory holding the dump.
+    """
     day_dir = server_dir / day
     day_dir.mkdir(parents=True)
     _write_dump(day_dir, "first")
@@ -177,9 +227,18 @@ def _dumper(
     *,
     popen: Any = None,
     extra: dict[str, object] | None = None,
-    work_dir_name: str = f".{TODAY_STR}.030000.4242.partial",
+    work_dir_name: str = _DEFAULT_WORK_DIR_NAME,
 ) -> tuple[Any, type[Exception], list[list[str]]]:
-    """Build an instance whose paths point into a real server directory."""
+    """Build an instance whose paths point into a real server directory.
+
+    :param tmp_path: The server directory the run works in.
+    :param method_names: The payload methods to lift.
+    :param popen: A ``subprocess.Popen`` stand-in, or ``None`` to keep the
+        harness's recording fake.
+    :param extra: Stand-ins for the module-level functions the lifted methods call.
+    :param work_dir_name: The name of the staging directory this run owns.
+    :return: The instance, the payload's ``BackupError``, and the recorded argv lists.
+    """
     instance, backup_error, calls = _mydumper_instance(
         method_names, popen=popen, extra=extra
     )
@@ -228,7 +287,11 @@ def _dumper(
 
 
 def _dir_snapshot(path: Path) -> dict[str, str]:
-    """Return every file under ``path`` keyed by its relative name."""
+    """Return every file under ``path`` keyed by its relative name.
+
+    :param path: The directory to read.
+    :return: Each file's contents, keyed by its path relative to ``path``.
+    """
     return {
         str(item.relative_to(path)): item.read_text()
         for item in sorted(path.rglob("*"))
@@ -237,12 +300,31 @@ def _dir_snapshot(path: Path) -> dict[str, str]:
 
 
 def _scratch_names(path: Path) -> list[str]:
-    """Return the names of the scratch directories left in a server directory."""
+    """Return the names of the scratch directories left in a server directory.
+
+    :param path: The server directory to read.
+    :return: The scratch directory names, sorted.
+    """
     return sorted(
         item.name
         for item in path.iterdir()
         if item.name.endswith((PARTIAL_SUFFIX, REPLACED_SUFFIX))
     )
+
+
+class _StubRecord:
+    """Collect what the stubbed collaborators of a lifted method were handed.
+
+    Attributes rather than dictionary keys, so a test that asserts a stub was
+    never reached fails on a misspelled name instead of passing vacuously.
+    """
+
+    def __init__(self) -> None:
+        self.encrypted: Path | None = None
+        self.saved: Path | None = None
+        self.purged: bool = False
+        self.checksummed: Path | None = None
+        self.hardlinked: tuple[Path, Path] | None = None
 
 
 def _runner(
@@ -251,20 +333,25 @@ def _runner(
     free_space: bool = True,
     post_run_encrypt: bool = False,
     encrypt_error: Exception | None = None,
-) -> tuple[Any, type[Exception], dict[str, Any]]:
+    popen: Any = None,
+    work_dir_name: str = _DEFAULT_WORK_DIR_NAME,
+) -> tuple[Any, type[Exception], _StubRecord]:
     """Build an instance carrying ``run`` with its module-level calls stubbed.
 
     :param tmp_path: The server directory the run works in.
     :param free_space: What the stubbed free-space check reports.
     :param post_run_encrypt: Whether the run takes the GPG branch.
     :param encrypt_error: An error the stubbed encryption raises, if any.
+    :param popen: A faked mydumper, which makes the run dispatch the dump command
+        for real rather than take a stub in its place.
+    :param work_dir_name: The name of the staging directory this run owns.
     :return: The instance, the payload's ``BackupError``, and a record of what the
         stubbed collaborators were handed.
     """
-    seen: dict[str, Any] = {}
+    record = _StubRecord()
 
     def _encrypt(path: Path, *_args: object, **_kwargs: object) -> None:
-        seen["encrypted"] = path
+        record.encrypted = path
         if encrypt_error is not None:
             raise encrypt_error
 
@@ -282,30 +369,34 @@ def _runner(
         "S3UploadProvider": object,
         "GSUploadProvider": object,
     }
+    methods = ("run", "_publish_backup", "_needs_double_space", *_RECLAIM_METHODS)
     instance, backup_error, _ = _dumper(
         tmp_path,
-        (
-            "run",
-            "_publish_backup",
-            "_reclaim_interrupted_publish",
-            "_reclaim_scratch_dir",
-            "_staging_owner_is_alive",
-            "_needs_double_space",
-        ),
+        methods + (("_run_backup_cmd",) if popen is not None else ()),
+        popen=popen,
         extra=extra,
+        work_dir_name=work_dir_name,
     )
+
+    def _save_disk_space() -> None:
+        record.saved = instance.work_dir
+
+    def _purge_old_backups() -> None:
+        record.purged = True
+
     instance.post_run_encrypt = post_run_encrypt
     instance.notify = lambda *_a, **_k: None
     instance._get_version = lambda: "0.19.3"
-    instance._run_backup_cmd = lambda: _write_dump(instance.work_dir, "second")
-    instance._save_disk_space = lambda: seen.setdefault("saved", instance.work_dir)
-    instance._purge_old_backups = lambda: seen.setdefault("purged", True)
-    return instance, backup_error, seen
+    if popen is None:
+        instance._run_backup_cmd = lambda: _write_dump(instance.work_dir, "second")
+    instance._save_disk_space = _save_disk_space
+    instance._purge_old_backups = _purge_old_backups
+    return instance, backup_error, record
 
 
 def _saver(
     tmp_path: Path, *, daily_purge: int = 7, weekly_purge: int = 4
-) -> tuple[Any, dict[str, Any]]:
+) -> tuple[Any, _StubRecord]:
     """Build an instance carrying the space-saving pass with its helpers stubbed.
 
     :param tmp_path: The server directory the run works in.
@@ -313,14 +404,14 @@ def _saver(
     :param weekly_purge: How many weekly backups retention keeps.
     :return: The instance and a record of the directories the helpers were handed.
     """
-    seen: dict[str, Any] = {}
+    record = _StubRecord()
 
     def _get_dir_dict(path: Path, **_kwargs: object) -> dict[str, object]:
-        seen["checksummed"] = path
+        record.checksummed = path
         return {}
 
     def _hardlink_dirs(src: Path, dest: Path, **_kwargs: object) -> dict[str, object]:
-        seen["hardlinked"] = (src, dest)
+        record.hardlinked = (src, dest)
         return {}
 
     extra: dict[str, object] = {
@@ -331,13 +422,13 @@ def _saver(
     }
     instance, _, _ = _dumper(
         tmp_path,
-        ("_save_disk_space", "_day_is_retained", "_list_backups"),
+        ("_save_disk_space", "_day_is_retained", "_retained_days", "_list_backups"),
         extra=extra,
     )
     instance.hardlink = True
     instance.daily_purge = daily_purge
     instance.weekly_purge = weekly_purge
-    return instance, seen
+    return instance, record
 
 
 class TestStagedOutputDir:
@@ -458,7 +549,7 @@ class TestPublish:
     def test_leaves_another_runs_moved_aside_dump_alone(self, tmp_path: Path) -> None:
         """Assert promotion never touches scratch directories it does not own."""
         _existing_dump(tmp_path)
-        sibling = tmp_path / f".{TODAY_STR}.235959.999999{REPLACED_SUFFIX}"
+        sibling = tmp_path / _scratch_name(REPLACED_SUFFIX, "235959", 999999)
         sibling.mkdir()
         _write_dump(sibling, "sibling")
         instance, _, _ = _dumper(tmp_path, ("_publish_backup",))
@@ -515,6 +606,10 @@ class TestFailedRerunKeepsFirstDump:
         with pytest.raises(backup_error) as excinfo:
             instance._run_backup_cmd()
 
+        assert "Mydumper failed (1)" in str(excinfo.value)
+        assert any(
+            str(instance.work_dir) in message for message in instance.logger.messages
+        ), "the dispatch has to be logged for the next assertion to mean anything"
         assert "Directory is not empty" not in str(excinfo.value)
         assert not any(
             "Directory is not empty" in message for message in instance.logger.messages
@@ -528,7 +623,7 @@ class TestReclaimInterruptedPublish:
         self, tmp_path: Path
     ) -> None:
         """Assert a moved-aside dump is put back when the day directory is missing."""
-        aside = tmp_path / f".{TODAY_STR}.replaced"
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX)
         aside.mkdir()
         (aside / "metadata").write_text("Finished dump at: first\n")
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
@@ -545,7 +640,7 @@ class TestReclaimInterruptedPublish:
     ) -> None:
         """Assert the superseded copy is dropped when the day directory is present."""
         day_dir = _existing_dump(tmp_path)
-        aside = tmp_path / f".{TODAY_STR}.replaced"
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX)
         aside.mkdir()
         (aside / "metadata").write_text("Finished dump at: older\n")
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
@@ -559,7 +654,7 @@ class TestReclaimInterruptedPublish:
         self, tmp_path: Path
     ) -> None:
         """Assert abandoned staging directories are removed and the cleanup is logged."""
-        stale = tmp_path / f".{TODAY_STR}.010000.{_exited_pid()}{PARTIAL_SUFFIX}"
+        stale = tmp_path / _scratch_name(PARTIAL_SUFFIX, "010000", _exited_pid())
         stale.mkdir()
         (stale / "sakila.film.sql").write_text("half a dump\n")
         aged = real_time.time() - 7200
@@ -575,7 +670,7 @@ class TestReclaimInterruptedPublish:
         self, tmp_path: Path
     ) -> None:
         """Assert the age grace covers a name no owning process can be read out of."""
-        live = tmp_path / f".{TODAY_STR}.030000.unknown{PARTIAL_SUFFIX}"
+        live = tmp_path / _scratch_name(PARTIAL_SUFFIX, "030000", "unknown")
         live.mkdir()
         (live / "sakila.film.sql").write_text("dump in flight\n")
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
@@ -592,7 +687,7 @@ class TestReclaimInterruptedPublish:
         The grace period exists for names that carry no readable pid; a name whose
         pid is gone already answers the question.
         """
-        stale = tmp_path / f".{TODAY_STR}.030000.{_exited_pid()}{PARTIAL_SUFFIX}"
+        stale = tmp_path / _scratch_name(PARTIAL_SUFFIX, "030000", _exited_pid())
         stale.mkdir()
         (stale / "sakila.film.sql").write_text("half a dump\n")
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
@@ -610,8 +705,8 @@ class TestReclaimInterruptedPublish:
         would restore by run start time, which is not the order they published in,
         and the copies left over are then deleted against the restored day.
         """
-        stale = tmp_path / f".{TODAY_STR}.010000.11{REPLACED_SUFFIX}"
-        newest = tmp_path / f".{TODAY_STR}.020000.22{REPLACED_SUFFIX}"
+        stale = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", 11)
+        newest = tmp_path / _scratch_name(REPLACED_SUFFIX, "020000", 22)
         for aside, marker in ((stale, "first"), (newest, "second")):
             aside.mkdir()
             _write_dump(aside, marker)
@@ -632,7 +727,7 @@ class TestReclaimInterruptedPublish:
         A directory's mtime does not advance while mydumper appends to a chunk file
         it already created, so age alone cannot tell a slow dump from a dead one.
         """
-        live = tmp_path / f".{TODAY_STR}.010000.{os.getpid()}{PARTIAL_SUFFIX}"
+        live = tmp_path / _scratch_name(PARTIAL_SUFFIX, "010000", os.getpid())
         live.mkdir()
         (live / "sakila.film.sql").write_text("dump in flight\n")
         aged = real_time.time() - OLDER_THAN_ANY_GRACE_PERIOD
@@ -663,7 +758,7 @@ class TestReclaimInterruptedPublish:
         """Assert an unremovable leftover is reported and the run carries on."""
         server_dir = tmp_path / "server"
         server_dir.mkdir()
-        stale = server_dir / f".{TODAY_STR}.010000.{_exited_pid()}{PARTIAL_SUFFIX}"
+        stale = server_dir / _scratch_name(PARTIAL_SUFFIX, "010000", _exited_pid())
         stale.mkdir()
         aged = real_time.time() - OLDER_THAN_ANY_GRACE_PERIOD
         os.utime(stale, (aged, aged))
@@ -682,7 +777,7 @@ class TestReclaimInterruptedPublish:
         target = tmp_path / "target"
         target.mkdir()
         (target / "keep").write_text("untouched\n")
-        link = tmp_path / f".{TODAY_STR}.020000.1.partial"
+        link = tmp_path / _scratch_name(PARTIAL_SUFFIX, "020000", 1)
         link.symlink_to(target, target_is_directory=True)
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
 
@@ -697,8 +792,8 @@ class TestScratchDirsAreInvisibleToRetention:
     def test_listing_ignores_scratch_directories(self, tmp_path: Path) -> None:
         """Assert only day-stamped directories are listed as backups."""
         _existing_dump(tmp_path)
-        (tmp_path / f".{TODAY_STR}.030000.1.partial").mkdir()
-        (tmp_path / f".{TODAY_STR}.replaced").mkdir()
+        (tmp_path / _scratch_name(PARTIAL_SUFFIX, "030000", 1)).mkdir()
+        (tmp_path / _scratch_name(REPLACED_SUFFIX)).mkdir()
         instance, _, _ = _dumper(tmp_path, ("_list_backups",))
 
         assert instance._list_backups(tmp_path) == [TODAY_STR]
@@ -709,9 +804,11 @@ class TestScratchDirsAreInvisibleToRetention:
         """Assert purging by day count neither counts nor deletes scratch directories."""
         _existing_dump(tmp_path)
         _existing_dump(tmp_path, day="20260101")
-        staging = tmp_path / f".{TODAY_STR}.030000.1.partial"
+        staging = tmp_path / _scratch_name(PARTIAL_SUFFIX, "030000", 1)
         staging.mkdir()
-        instance, _, _ = _dumper(tmp_path, ("_list_backups", "_purge_old_backups"))
+        instance, _, _ = _dumper(
+            tmp_path, ("_list_backups", "_purge_old_backups", "_retained_days")
+        )
         instance.daily_purge = 1
         instance.weekly_purge = 0
 
@@ -722,6 +819,27 @@ class TestScratchDirsAreInvisibleToRetention:
         assert not (tmp_path / "20260101").exists()
         assert staging.is_dir()
 
+    def test_purge_keeps_only_the_newest_weeklies(self, tmp_path: Path) -> None:
+        """Assert the purge drops a Monday the weekly allowance no longer reaches.
+
+        This is the rule the hardlink and ``--updated-since`` gates read, so the
+        two have to be asserted against one another.
+        """
+        for day in ("20251222", "20251229", TODAY_STR):
+            _existing_dump(tmp_path, day=day)
+        instance, _, _ = _dumper(
+            tmp_path, ("_list_backups", "_purge_old_backups", "_retained_days")
+        )
+        instance.daily_purge = 1
+        instance.weekly_purge = 2
+
+        purged = instance._purge_old_backups()
+
+        assert purged == 1
+        assert not (tmp_path / "20251222").exists()
+        assert (tmp_path / "20251229").is_dir()
+        assert (tmp_path / TODAY_STR).is_dir()
+
 
 class TestScratchDirsAreInvisibleToUpload:
     """Cover the upload collector's view of the scratch directories."""
@@ -730,7 +848,10 @@ class TestScratchDirsAreInvisibleToUpload:
         """Assert a staged or moved-aside dump is never queued for upload."""
         day_dir = _existing_dump(tmp_path)
         (day_dir / ".uploadme").touch()
-        for name in (f".{TODAY_STR}.030000.1.partial", f".{TODAY_STR}.replaced"):
+        for name in (
+            _scratch_name(PARTIAL_SUFFIX, "030000", 1),
+            _scratch_name(REPLACED_SUFFIX),
+        ):
             scratch_dir = tmp_path / name
             scratch_dir.mkdir()
             (scratch_dir / ".uploadme").touch()
@@ -751,24 +872,29 @@ class TestSameDayRerunEndToEnd:
     def test_both_runs_complete_and_the_day_holds_the_newer_dump(
         self, tmp_path: Path
     ) -> None:
-        """Assert a second same-day run succeeds and publishes over the first."""
-        methods = ("_run_backup_cmd", "_publish_backup", *_RECLAIM_METHODS)
-        for run_index, marker in ((1, "first"), (2, "second")):
-            instance, _, calls = _dumper(
-                tmp_path,
-                methods,
-                popen=_dump_writer(marker=marker),
-                work_dir_name=f".{TODAY_STR}.03000{run_index}.{run_index}.partial",
-            )
-            instance._reclaim_interrupted_publish()
-            instance.work_dir.mkdir()
-            instance._run_backup_cmd()
-            instance._publish_backup()
-            if not instance.latest_link.is_symlink():
-                instance.latest_link.symlink_to(TODAY_STR)
+        """Assert a second same-day execution of one task publishes over the first.
 
-            assert calls, "each run has to dispatch mydumper"
+        Each iteration is a whole execution: ``run`` reclaims, stages, dispatches
+        the faked mydumper, publishes and repoints ``latest`` itself, so the
+        ordering under test is the payload's rather than this test's.
+        """
+        for run_index, marker in ((1, "first"), (2, "second")):
+            instance, _, record = _runner(
+                tmp_path,
+                popen=_dump_writer(marker=marker),
+                work_dir_name=_scratch_name(
+                    PARTIAL_SUFFIX, f"03000{run_index}", run_index
+                ),
+            )
+
+            instance.run()
+
+            assert record.purged is True
             assert not instance.logger.errors
+            assert not any(
+                "Directory is not empty" in message
+                for message in instance.logger.messages
+            )
 
         assert _dir_snapshot(tmp_path / TODAY_STR) == _SECOND_DUMP
         assert (tmp_path / "latest" / "metadata").is_file()
@@ -782,20 +908,20 @@ class TestRunIsolatesFailuresFromThePublishedDump:
         self, tmp_path: Path
     ) -> None:
         """Assert the staged dump is promoted and the run's own scratch is gone."""
-        instance, _, seen = _runner(tmp_path)
+        instance, _, record = _runner(tmp_path)
 
         instance.run()
 
         assert _dir_snapshot(instance.backup_dir) == _SECOND_DUMP
-        assert seen["saved"] == instance.work_dir
-        assert seen["purged"] is True
+        assert record.saved == instance.work_dir
+        assert record.purged is True
         assert not _scratch_names(tmp_path)
         assert instance.latest_link.resolve() == instance.backup_dir
 
     def test_a_failed_dump_keeps_the_published_dump(self, tmp_path: Path) -> None:
         """Assert a dump that raises costs only the staged copy."""
         day_dir = _existing_dump(tmp_path)
-        instance, backup_error, seen = _runner(tmp_path)
+        instance, backup_error, record = _runner(tmp_path)
 
         def _raise() -> None:
             raise backup_error("Mydumper failed (1)")
@@ -807,14 +933,14 @@ class TestRunIsolatesFailuresFromThePublishedDump:
 
         assert _dir_snapshot(day_dir) == _FIRST_DUMP
         assert not _scratch_names(tmp_path)
-        assert "saved" not in seen
+        assert record.saved is None
 
     def test_a_failure_after_the_dump_keeps_the_published_dump(
         self, tmp_path: Path
     ) -> None:
         """Assert a raising space-saving pass costs only the staged copy."""
         day_dir = _existing_dump(tmp_path)
-        instance, _, seen = _runner(tmp_path)
+        instance, _, record = _runner(tmp_path)
 
         def _raise() -> None:
             raise RuntimeError("hardlinking failed")
@@ -826,19 +952,19 @@ class TestRunIsolatesFailuresFromThePublishedDump:
 
         assert _dir_snapshot(day_dir) == _FIRST_DUMP
         assert not _scratch_names(tmp_path)
-        assert "purged" not in seen
+        assert record.purged is False
 
     def test_a_failed_encryption_keeps_the_published_dump(self, tmp_path: Path) -> None:
         """Assert the GPG branch also fails without touching the published dump."""
         day_dir = _existing_dump(tmp_path)
-        instance, _, seen = _runner(
+        instance, _, record = _runner(
             tmp_path, post_run_encrypt=True, encrypt_error=RuntimeError("gpg failed")
         )
 
         with pytest.raises(RuntimeError):
             instance.run()
 
-        assert seen["encrypted"] == instance.work_dir
+        assert record.encrypted == instance.work_dir
         assert _dir_snapshot(day_dir) == _FIRST_DUMP
         assert not _scratch_names(tmp_path)
 
@@ -846,12 +972,12 @@ class TestRunIsolatesFailuresFromThePublishedDump:
         self, tmp_path: Path
     ) -> None:
         """Assert encryption is applied before the dump is published, not after."""
-        instance, _, seen = _runner(tmp_path, post_run_encrypt=True)
+        instance, _, record = _runner(tmp_path, post_run_encrypt=True)
         staged = instance.work_dir
 
         instance.run()
 
-        assert seen["encrypted"] == staged
+        assert record.encrypted == staged
         assert instance.report_options["encryption"] == "gpg"
 
     def test_a_rejected_free_space_check_stages_nothing(self, tmp_path: Path) -> None:
@@ -873,12 +999,12 @@ class TestSpaceSavingTargetsTheStagedDump:
     ) -> None:
         """Assert both passes are pointed at the staged dump, not the day directory."""
         _existing_dump(tmp_path, day=YESTERDAY_STR)
-        instance, seen = _saver(tmp_path)
+        instance, record = _saver(tmp_path)
 
         instance._save_disk_space()
 
-        assert seen["checksummed"] == instance.work_dir
-        assert seen["hardlinked"] == (instance.prev_backup_dir, instance.work_dir)
+        assert record.checksummed == instance.work_dir
+        assert record.hardlinked == (instance.prev_backup_dir, instance.work_dir)
 
     def test_skips_a_previous_day_this_run_purges(self, tmp_path: Path) -> None:
         """Assert no dedup is attempted against a day the purge is about to remove.
@@ -887,23 +1013,43 @@ class TestSpaceSavingTargetsTheStagedDump:
         leave its removal freeing nothing.
         """
         _existing_dump(tmp_path, day=YESTERDAY_STR)
-        instance, seen = _saver(tmp_path, daily_purge=1, weekly_purge=0)
+        instance, record = _saver(tmp_path, daily_purge=1, weekly_purge=0)
 
         instance._save_disk_space()
 
-        assert seen["checksummed"] == instance.work_dir
-        assert "hardlinked" not in seen
+        assert record.checksummed == instance.work_dir
+        assert record.hardlinked is None
 
     def test_keeps_a_previous_day_the_weeklies_retain(self, tmp_path: Path) -> None:
-        """Assert a Monday the weeklies keep is still worth hardlinking against."""
+        """Assert a Monday the weeklies keep is still worth hardlinking against.
+
+        Today is a Monday too and takes the newest weekly slot, so the run has to
+        keep two of them for the previous one to survive.
+        """
         monday = "20251229"
         _existing_dump(tmp_path, day=monday)
-        instance, seen = _saver(tmp_path, daily_purge=1, weekly_purge=1)
+        instance, record = _saver(tmp_path, daily_purge=1, weekly_purge=2)
         instance.prev_backup_dir = tmp_path / monday
 
         instance._save_disk_space()
 
-        assert seen["hardlinked"] == (instance.prev_backup_dir, instance.work_dir)
+        assert record.hardlinked == (instance.prev_backup_dir, instance.work_dir)
+
+    def test_skips_a_monday_the_weeklies_no_longer_reach(self, tmp_path: Path) -> None:
+        """Assert only the Mondays the purge actually keeps count as retained.
+
+        Retention keeps the newest few Mondays, not every Monday, so an older one
+        is removed like any other day and dedup against it would be lost.
+        """
+        older_monday = "20251222"
+        _existing_dump(tmp_path, day=older_monday)
+        _existing_dump(tmp_path, day="20251229")
+        instance, record = _saver(tmp_path, daily_purge=1, weekly_purge=1)
+        instance.prev_backup_dir = tmp_path / older_monday
+
+        instance._save_disk_space()
+
+        assert record.hardlinked is None
 
 
 class TestUpdatedSinceBaseIsRetained:
@@ -924,7 +1070,13 @@ class TestUpdatedSinceBaseIsRetained:
         yesterday = (today - datetime.timedelta(days=1)).strftime("%Y%m%d")
         _existing_dump(tmp_path, day=yesterday)
         instance, _, _ = _dumper(
-            tmp_path, ("_validate_updated_since", "_day_is_retained", "_list_backups")
+            tmp_path,
+            (
+                "_validate_updated_since",
+                "_day_is_retained",
+                "_retained_days",
+                "_list_backups",
+            ),
         )
         instance.today_str = today.strftime("%Y%m%d")
         instance.updated_since = UPDATED_SINCE_DAYS

@@ -2170,22 +2170,35 @@ class MyDumper(Backup):
                 round(bytes_saved / 1024 / 1024),
             )
 
+    def _retained_days(self) -> tuple[list[str], list[str]]:
+        """Return the day directories this run's purge keeps, newest first.
+
+        Today counts even before it is published, because the purge runs after
+        publication.
+
+        :return: The days kept as dailies and the days kept as weeklies.
+        """
+        days = sorted(
+            {*self._list_backups(self.backup_server_dir), self.today_str}, reverse=True
+        )
+        mondays = [
+            day
+            for day in days
+            if datetime.datetime.strptime(day, "%Y%m%d").date().isoweekday() == 1
+        ]
+        return days[: max(self.daily_purge, 0)], mondays[: max(self.weekly_purge, 0)]
+
     def _day_is_retained(self, day_name: str) -> bool:
         """Return whether this run's purge keeps a given day's directory.
 
         Hardlinking into a day the purge then removes costs the run its dedup: the
-        removal frees nothing while this dump holds the inodes. The purge counts
-        today, which is published after the hardlinking, so count it here too.
+        removal frees nothing while this dump holds the inodes.
 
         :param day_name: The day directory's name.
         :return: True when that day survives this run's purge.
         """
-        days = sorted({*self._list_backups(self.backup_server_dir), self.today_str})
-        kept = days[-self.daily_purge :] if self.daily_purge > 0 else []
-        if day_name in kept:
-            return True
-        day = datetime.datetime.strptime(day_name, "%Y%m%d")
-        return self.weekly_purge > 0 and day.date().isoweekday() == 1
+        dailies, weeklies = self._retained_days()
+        return day_name in dailies or day_name in weeklies
 
     def _needs_double_space(self) -> bool:
         """Return whether the run needs room for two copies of the dump.
@@ -2246,7 +2259,7 @@ class MyDumper(Backup):
         :return: Whether the pid in the name is running, or None when it carries no
             readable pid.
         """
-        pid = name.removesuffix(PARTIAL_SUFFIX).rsplit(".", 1)[-1]
+        pid = self._scratch_name_parts(name)[-1]
         if not pid.isdigit():
             return None
         try:
@@ -2258,6 +2271,18 @@ class MyDumper(Backup):
             return True
         return True
 
+    @staticmethod
+    def _scratch_name_parts(name: str) -> list[str]:
+        """Split a scratch directory's name into the fields a run encoded in it.
+
+        :param name: The directory's name, dot-prefixed and suffixed.
+        :return: The day, the run's start time and the owning pid, as far as this
+            name carries them.
+        """
+        for suffix in (PARTIAL_SUFFIX, REPLACED_SUFFIX):
+            name = name.removesuffix(suffix)
+        return name.lstrip(".").split(".")
+
     def _reclaim_scratch_dir(self, scratch_dir: Path) -> None:
         """Restore or discard one leftover scratch directory.
 
@@ -2265,7 +2290,7 @@ class MyDumper(Backup):
         :raises OSError: If the restore or the removal fails.
         """
         if scratch_dir.name.endswith(REPLACED_SUFFIX):
-            day_name = scratch_dir.name[1:].split(".", 1)[0]
+            day_name = self._scratch_name_parts(scratch_dir.name)[0]
             day_dir = self.backup_server_dir / day_name
             if re.search(BACKUP_DIR_REGEX, day_name) and not day_dir.exists():
                 scratch_dir.rename(day_dir)
@@ -2292,9 +2317,9 @@ class MyDumper(Backup):
         A moved-aside dump is put back when its day directory is gone, which is the
         only state a crash between the two publication renames can produce; where
         several runs each moved one aside, the newest is restored and the rest are
-        dropped. A staging directory is dropped once the process named in it is gone; a run
-        holding the backup lock of a different logging directory can be writing into
-        its own staging directory while this one starts.
+        dropped. A staging directory is dropped once the process named in it is
+        gone; a run holding the backup lock of a different logging directory can be
+        writing into its own staging directory while this one starts.
         """
         scratch_dirs: list[Path] = []
         for suffix in (REPLACED_SUFFIX, PARTIAL_SUFFIX):
@@ -2459,51 +2484,21 @@ class MyDumper(Backup):
         :return: Number of purged directories.
         """
         self.logger.info("Purging old backups...")
-        dir_list = self._list_backups(self.backup_server_dir)
-        dir_map = {dname: 0 for dname in dir_list}
+        dailies, weeklies = self._retained_days()
+        for label, limit, kept in (
+            ("weeklies", self.weekly_purge, weeklies),
+            ("dailies", self.daily_purge, dailies),
+        ):
+            if kept:
+                self.logger.info(
+                    "Keeping %s (max %s): %s", label, limit, ",".join(kept)
+                )
 
-        # Weeklies iteration (keep certain Mondays)
-        weekly_age = self.weekly_purge
-        for i in sorted(dir_map.keys(), reverse=True):
-            wkday = datetime.datetime.strptime(i, "%Y%m%d").date().isoweekday()
-            if wkday == 1:
-                if weekly_age > 0:
-                    weekly_age -= 1
-                    dir_map[i] = 2  # Mark to not delete
-                else:
-                    dir_map[i] = 1  # Mark to delete
-
-        saved_weeklies = [k for k, v in dir_map.items() if v == 2]
-        if saved_weeklies:
-            self.logger.info(
-                "Keeping weeklies (max %s): %s",
-                self.weekly_purge,
-                ",".join(sorted(saved_weeklies, reverse=True)),
-            )
-
-        # Dailies iteration
-        daily_age = self.daily_purge
-        for i in sorted(dir_map.keys(), reverse=True):
-            if daily_age > 0:
-                daily_age -= 1
-                # Mark to not delete if not weekly
-                if dir_map[i] != 2:
-                    dir_map[i] = 0
-            elif dir_map[i] != 2:
-                dir_map[i] = 1  # Mark to delete
-
-        saved_dailies = [k for k, v in dir_map.items() if v == 0]
-        if saved_dailies:
-            self.logger.info(
-                "Keeping dailies (max %s): %s",
-                self.daily_purge,
-                ",".join(sorted(saved_dailies, reverse=True)),
-            )
-
-        # Purging
-        purge_dir_list = [k for k, v in dir_map.items() if v == 1]
+        retained = {*dailies, *weeklies}
         purges = 0
-        for dir_ in sorted(purge_dir_list):
+        for dir_ in self._list_backups(self.backup_server_dir):
+            if dir_ in retained:
+                continue
             shutil.rmtree(self.backup_server_dir / dir_)
             self.logger.info("* Dir %s removed.", dir_)
             purges += 1

@@ -94,13 +94,20 @@ def base_namespace() -> dict:
     return namespace
 
 
-def load_constant(name: str) -> object:
-    """Return a whitelisted module-level constant's value from the payload source."""
+def load_constant(
+    name: str, *, payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH
+) -> object:
+    """Return a whitelisted module-level constant's value from a payload's source.
+
+    :param name: The constant to read; it has to be in ``_CONST_NAMES``.
+    :param payload_path: The payload script to read the constant out of.
+    :return: The constant's value.
+    """
     namespace = base_namespace()
     exec(  # noqa: S102
         compile(
-            ast.Module(body=const_nodes(xtrabackup_payload_tree()), type_ignores=[]),
-            str(XTRABACKUP_PAYLOAD_PATH),
+            ast.Module(body=const_nodes(payload_tree(payload_path)), type_ignores=[]),
+            str(payload_path),
             "exec",
         ),
         namespace,
@@ -236,27 +243,46 @@ class Recorder:
         self.errors: list[str] = []
 
     def info(self, msg: str, *args: object) -> None:
-        """Record an informational message."""
+        """Record an informational message.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
         self.infos.append(msg % args if args else msg)
 
     def warning(self, msg: str, *args: object) -> None:
-        """Record a warning."""
+        """Record a warning.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
         self.warnings.append(msg % args if args else msg)
 
     warn = warning
 
     def debug(self, msg: str, *args: object) -> None:
-        """Discard a debug message."""
+        """Discard a debug message.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
 
     def error(self, msg: str, *args: object) -> None:
-        """Record an error."""
+        """Record an error.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
         self.errors.append(msg % args if args else msg)
 
     exception = error
 
     @property
     def messages(self) -> list[str]:
-        """Return every recorded message regardless of level."""
+        """Return every recorded message regardless of level.
+
+        :return: The recorded messages, informational ones first.
+        """
         return [*self.infos, *self.warnings, *self.errors]
 
 
