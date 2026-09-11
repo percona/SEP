@@ -110,6 +110,20 @@ class TestCeleryExecutorGetHosts:
         assert "local" in hosts
         assert hosts["local"] == "localhost"
 
+    def test_host_states_inherit_the_usable_default(self, executor) -> None:
+        """Assert the base implementation reports the local host as usable.
+
+        Celery has no notion of a host that is registered but cannot run anything —
+        the work happens in this process — so it does not override
+        ``get_host_states``. Asserted because a backend silently returning an empty
+        list here would read to a caller as "the whole fleet is gone".
+        """
+        states = executor.get_host_states()
+
+        assert [state.name for state in states] == ["local"]
+        assert states[0].usable is True
+        assert states[0].status is None
+
 
 class TestCeleryExecutorValidateJob:
     """Test CeleryExecutor.validate_job."""
