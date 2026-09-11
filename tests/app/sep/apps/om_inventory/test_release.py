@@ -124,7 +124,7 @@ async def test_a_run_we_stop_waiting_for_is_released() -> None:
 
     assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
     assert "TimeoutError" in (result.error or "")
-    # The sweep still reports the probe as failed -- releasing the queue item is
+    # The sweep still reports the probe as failed — releasing the queue item is
     # cleanup, not a rescue of the data this host owed.
     assert result.records == {}
 
