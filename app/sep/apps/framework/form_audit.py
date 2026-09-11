@@ -42,7 +42,7 @@ from pydantic import ValidationError
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlmodel.ext.asyncio.session import AsyncSession
 
     from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
     from app.sep.apps.framework.form_dsl import AppFormModel
