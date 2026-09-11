@@ -406,6 +406,108 @@
     {
       "collapsed_by_default": true,
       "collapsible": true,
+      "fail_when": [
+        {
+          "error_fields": [
+            "compression_algorithm"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "backup_type": "X"
+                }
+              },
+              {
+                "any": [
+                  {
+                    "equals": {
+                      "xtrabackup_bin_cmd": "xtrabackup"
+                    }
+                  },
+                  {
+                    "falsy": "xtrabackup_bin_cmd"
+                  }
+                ]
+              },
+              {
+                "equals": {
+                  "compression_algorithm": "quicklz"
+                }
+              }
+            ]
+          },
+          "message": "'compression_algorithm' must be lz4 or zstd when the backup binary is 'xtrabackup', which is what a blank binary selects."
+        },
+        {
+          "error_fields": [
+            "compression_algorithm"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "backup_type": "X"
+                }
+              },
+              {
+                "equals": {
+                  "xtrabackup_bin_cmd": "innobackupex"
+                }
+              },
+              {
+                "any": [
+                  {
+                    "equals": {
+                      "compression_algorithm": "zstd"
+                    }
+                  },
+                  {
+                    "equals": {
+                      "compression_algorithm": "lz4"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "message": "'compression_algorithm' must be quicklz when the backup binary is 'innobackupex'."
+        },
+        {
+          "error_fields": [
+            "compression_algorithm"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "backup_type": "X"
+                }
+              },
+              {
+                "equals": {
+                  "xtrabackup_bin_cmd": "mariadb-backup"
+                }
+              },
+              {
+                "any": [
+                  {
+                    "equals": {
+                      "compression_algorithm": "zstd"
+                    }
+                  },
+                  {
+                    "equals": {
+                      "compression_algorithm": "lz4"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "message": "'compression_algorithm' must be quicklz when the backup binary is 'mariadb-backup'."
+        }
+      ],
       "fields": [
         {
           "default": false,
@@ -490,7 +592,7 @@
               "value": "quicklz"
             }
           ],
-          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
+          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type and, for XtraBackup, on the selected backup binary — xtrabackup takes lz4 or zstd; innobackupex takes quicklz; mariadb-backup takes quicklz. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
           "label": "Compression algorithm",
           "name": "compression_algorithm",
           "required": false,
@@ -892,16 +994,16 @@
         {
           "choices": [
             {
+              "label": "innobackupex",
+              "value": "innobackupex"
+            },
+            {
               "label": "xtrabackup",
               "value": "xtrabackup"
             },
             {
               "label": "mariadb-backup",
               "value": "mariadb-backup"
-            },
-            {
-              "label": "innobackupex",
-              "value": "innobackupex"
             }
           ],
           "description": "Which backup binary to run; pick the one matching the server's fork and version",

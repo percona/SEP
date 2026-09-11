@@ -4531,7 +4531,7 @@
         "type": "string"
       },
       "mysql_backups__XtraBackupTool": {
-        "description": "Allowed commands for XtraBackup-style restores.",
+        "description": "Represent the XtraBackup-family binaries a backup or restore can run.",
         "enum": [
           "innobackupex",
           "xtrabackup",

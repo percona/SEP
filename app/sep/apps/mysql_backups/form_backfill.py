@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, TYPE_CHECKING
+from typing import Annotated, Any, ClassVar, TYPE_CHECKING
 
 import yaml
 
@@ -26,11 +26,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
+from app.sep.apps.framework.form_dsl import FormRules
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
 from app.sep.apps.mysql_backups.forms import (
     BACKUP_DIR_UI,
     BackupCreate,
     encryption_format_for_passes,
+    MODE_AND_ENCRYPTION_FAIL_RULES,
     OWNER,
     UploadProvider,
 )
@@ -87,9 +89,21 @@ class LegacyBackupCreate(BackupCreate):
     and those tasks ran and reported success, so they are part of the population
     that has to reconstruct rather than be skipped.
 
+    The binary/compression rules are dropped for the same reason: a task saved
+    before the form gated compression on the backup binary can hold a pairing the
+    create model now rejects, and the operator needs the edit form to load in order
+    to correct it. The rejection stays on the create and update routes, so saving
+    the reopened form still fails until the algorithm matches the binary.
+
     :param backup_dir: The backup root directory; optional here and un-stripped,
         unlike on the create model.
+    :cvar __form_rules__: The create model's app-scoped rules, declared without the
+        section the binary/compression rules live in.
     """
+
+    __form_rules__: ClassVar[FormRules] = FormRules(
+        fail_when=MODE_AND_ENCRYPTION_FAIL_RULES
+    )
 
     backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 

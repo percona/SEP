@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 from app.core.utils.path import resolve_payload_reference
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.mysql_backups.payload_variants import (
     CANONICAL_PAYLOAD_NAME,
     selections,
@@ -29,7 +29,6 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreConfigAll,
     RestoreCreate,
     SourceTransport,
-    XtraBackupTool,
 )
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,

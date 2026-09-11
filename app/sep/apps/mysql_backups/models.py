@@ -27,10 +27,11 @@ checkmigrations`` reproduces, however import-free the sibling itself is.
 Pulling in the heavier modules would additionally bleed their tables into the
 sep autogenerate comparison.
 
-That constraint is why the ``backup_source`` resolution below lives here rather
-than beside the restore form that also needs it: this module is the one both
-the catalog response and :mod:`app.sep.apps.mysql_backups.restore.models` can
-depend on, and the latter already imports ``BackupType`` from it.
+That constraint is also what decides where a piece two siblings both need goes
+— the ``backup_source`` resolution below, and the vocabulary enums the backup
+and restore forms share: this module is the one both the catalog response and
+:mod:`app.sep.apps.mysql_backups.restore.models` can depend on, so anything
+either would otherwise import from the other lands here instead.
 
 The split mirrors ``app.sep.apps.atw``, in the direction that matters: there,
 ``atw.models`` is the self-contained module and the one inventory-dependent
@@ -146,6 +147,14 @@ class BackupType(EnumFieldMixin, StrEnum):
             "B": "Binlog",
         }
     )
+
+
+class XtraBackupTool(EnumFieldMixin, StrEnum):
+    """Represent the XtraBackup-family binaries a backup or restore can run."""
+
+    INNOBACKUPEX = "innobackupex"
+    XTRABACKUP = "xtrabackup"
+    MARIADB_BACKUP = "mariadb-backup"
 
 
 class MysqlBackupRun(BaseSQLModel, table=True):

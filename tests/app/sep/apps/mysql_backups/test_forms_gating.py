@@ -15,17 +15,24 @@
 
 """Conditional-rule gating tests for ``BackupCreate``."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
+from app.sep.apps.framework.rules import FailRule
 from app.sep.apps.mysql_backups.forms import (
+    ALLOWED_COMPRESSIONS,
+    ALLOWED_XTRABACKUP_BIN_COMPRESSIONS,
     BackupConfigAll,
     BackupCreate,
+    CompressionAlgorithm,
     EncryptionFormat,
     UploadProvider,
+    XTRABACKUP_BIN_DEFAULT,
 )
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.mysql_backups.views import mysql_backups_views
 
 
@@ -793,3 +800,210 @@ class TestBackupDirectoryIsRequired:
         )
 
         assert model.backup_dir == "/backups"
+
+
+_XTRABACKUP_ALGORITHMS = tuple(ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP])
+
+
+def _binary_pairs(
+    *, supported: bool
+) -> list[tuple[XtraBackupTool, CompressionAlgorithm]]:
+    """Return the binary/algorithm pairs the measured matrix does or does not accept.
+
+    Driven off the matrix so a row added there is exercised without restating it,
+    and so a row that loses an algorithm moves both halves of the gate's coverage
+    at once.
+    """
+    return [
+        (binary, algorithm)
+        for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+        for algorithm in _XTRABACKUP_ALGORITHMS
+        if (algorithm in allowed) is supported
+    ]
+
+
+class TestBinaryCompressionGate:
+    """Gate XtraBackup compression on the binary that will run the backup."""
+
+    @pytest.mark.parametrize(("binary", "algorithm"), _binary_pairs(supported=True))
+    def test_supported_pairing_validates(
+        self, binary: XtraBackupTool, algorithm: CompressionAlgorithm
+    ):
+        """Accept every pairing the selected binary supports."""
+        model = BackupCreate(
+            **_base_payload(
+                BackupType.XTRABACKUP,
+                xtrabackup_bin_cmd=binary,
+                compression_algorithm=algorithm,
+            )
+        )
+
+        assert model.compression_algorithm == algorithm
+
+    @pytest.mark.parametrize(("binary", "algorithm"), _binary_pairs(supported=False))
+    def test_unsupported_pairing_is_rejected(
+        self, binary: XtraBackupTool, algorithm: CompressionAlgorithm
+    ):
+        """Reject a pairing the binary cannot run, naming what it does support."""
+        with pytest.raises(ValidationError) as excinfo:
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    xtrabackup_bin_cmd=binary,
+                    compression_algorithm=algorithm,
+                )
+            )
+
+        message = str(excinfo.value)
+        assert "compression_algorithm" in message
+        assert binary in message
+        for supported in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[binary]:
+            assert supported.value in message
+
+    @pytest.mark.parametrize("blank", ["", None])
+    def test_blank_binary_is_gated_as_the_binary_that_will_run(self, blank: str | None):
+        """Gate a blank binary against the one execution defaults to.
+
+        A blank field never reaches the payload, so the payload's own default
+        decides — validating against anything else would pass a form whose run
+        fails.
+        """
+        payload = _base_payload(
+            BackupType.XTRABACKUP,
+            compression_algorithm=CompressionAlgorithm.QUICKLZ,
+        )
+        if blank is not None:
+            payload["xtrabackup_bin_cmd"] = blank
+
+        with pytest.raises(ValidationError, match="compression_algorithm"):
+            BackupCreate(**payload)
+
+    @pytest.mark.parametrize(
+        "algorithm", ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[XTRABACKUP_BIN_DEFAULT]
+    )
+    def test_blank_binary_accepts_the_default_binary_algorithms(
+        self, algorithm: CompressionAlgorithm
+    ):
+        """Accept what the defaulted binary supports when the field is blank."""
+        model = BackupCreate(
+            **_base_payload(BackupType.XTRABACKUP, compression_algorithm=algorithm)
+        )
+
+        assert model.compression_algorithm == algorithm
+
+    def test_gate_ignores_the_compression_toggle(self):
+        """Reject an unsupported pairing even with compression currently off.
+
+        The stored form outlives the toggle: accepting the pairing here leaves a
+        task that fails the first time an operator turns compression on.
+        """
+        with pytest.raises(ValidationError, match="compression_algorithm"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    compress=False,
+                    xtrabackup_bin_cmd=XTRABACKUP_BIN_DEFAULT,
+                    compression_algorithm=CompressionAlgorithm.QUICKLZ,
+                )
+            )
+
+    @pytest.mark.parametrize("binary", [*ALLOWED_XTRABACKUP_BIN_COMPRESSIONS, "", None])
+    def test_unset_algorithm_validates_for_every_binary(
+        self, binary: XtraBackupTool | str | None
+    ):
+        """Leave a backup with no compression algorithm untouched."""
+        payload = _base_payload(BackupType.XTRABACKUP)
+        if binary is not None:
+            payload["xtrabackup_bin_cmd"] = binary
+
+        assert BackupCreate(**payload).compression_algorithm is None
+
+    @pytest.mark.parametrize(
+        "algorithm", [CompressionAlgorithm.GZIP, CompressionAlgorithm.ZSTD]
+    )
+    def test_mydumper_is_unaffected(self, algorithm: CompressionAlgorithm):
+        """Leave Mydumper alone: its binary field is blank and its list differs.
+
+        The blank-binary arm of the gate would otherwise reach a Mydumper form,
+        whose algorithms have nothing to do with the XtraBackup binaries.
+        """
+        model = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, compression_algorithm=algorithm)
+        )
+
+        assert model.compression_algorithm == algorithm
+
+    def test_binlog_is_unaffected(self):
+        """Leave Binlog's gzip-only list alone."""
+        model = BackupCreate(
+            **_base_payload(
+                BackupType.BINLOG, compression_algorithm=CompressionAlgorithm.GZIP
+            )
+        )
+
+        assert model.compression_algorithm == CompressionAlgorithm.GZIP
+
+    def test_backup_type_map_still_rejects_gzip(self):
+        """Keep the two gates distinguishable by their message.
+
+        ``gzip`` is outside the XtraBackup list entirely, so it is the outer
+        backup-type filter that must reject it — a binary-shaped message here
+        would point the operator at the wrong field.
+        """
+        with pytest.raises(ValidationError, match="Invalid compression algorithm"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.XTRABACKUP,
+                    xtrabackup_bin_cmd=XtraBackupTool.INNOBACKUPEX,
+                    compression_algorithm=CompressionAlgorithm.GZIP,
+                )
+            )
+
+
+class TestBinaryCompressionGateWireShape:
+    """Serve the default binary's rule so a blank field matches it too.
+
+    The served rule set is asserted in the contract tests; what only shows here is
+    the shape of the predicate, which is what the renderer evaluates from — a
+    predicate matching only the explicit spelling would let the frontend stay
+    quiet on a defaulted form the server then rejects.
+    """
+
+    @staticmethod
+    def _default_binary_rule() -> FailRule:
+        """Return the served rule gating the binary a blank field resolves to."""
+        return next(
+            rule
+            for rule in BackupCreate.__form_rules__.sections["General"].fail_when
+            if rule.message and f"is {XTRABACKUP_BIN_DEFAULT.value!r}" in rule.message
+        )
+
+    def test_default_binary_rule_carries_a_blank_field_arm(self):
+        """Name ``xtrabackup_bin_cmd`` in the wire predicate's own falsy arm.
+
+        Asserted as the arm rather than as a substring of the whole predicate: a
+        ``falsy`` over any other field would satisfy a substring match while
+        leaving a blank binary ungated.
+        """
+        wire = self._default_binary_rule().fail_when.to_dict()
+
+        binary_arm = next(
+            arm for arm in wire["all"] if "xtrabackup_bin_cmd" in json.dumps(arm)
+        )
+
+        assert {"falsy": "xtrabackup_bin_cmd"} in binary_arm["any"]
+
+    def test_default_binary_rule_fires_on_a_blank_field(self):
+        """Evaluate the served predicate the way the renderer will.
+
+        Pairs with the arm assertion above: the wire shape being right is only
+        useful if evaluating it also rejects the pairing.
+        """
+        rule = self._default_binary_rule()
+        blank = BackupCreate.model_construct(
+            backup_type=BackupType.XTRABACKUP,
+            xtrabackup_bin_cmd=None,
+            compression_algorithm=CompressionAlgorithm.QUICKLZ,
+        )
+
+        assert rule.fail_when.evaluate(blank)

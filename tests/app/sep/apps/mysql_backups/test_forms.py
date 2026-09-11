@@ -22,15 +22,24 @@ from pydantic import ValidationError
 
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import Choices, Ui
+from app.sep.apps.mysql_backups.form_backfill import LegacyBackupCreate
 from app.sep.apps.mysql_backups.forms import (
+    _BINARY_COMPRESSION_FAIL_RULES,
+    ALLOWED_COMPRESSIONS,
+    ALLOWED_XTRABACKUP_BIN_COMPRESSIONS,
     BackupConfigAll,
     BackupCreate,
     BackupTaskResponse,
+    XTRABACKUP_BIN_DEFAULT,
 )
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.tasks.models import TaskBackendEnum
 from tests.app.sep.apps.conftest import literal_members
-from tests.app.sep.apps.mysql_backups.conftest import XTRABACKUP_INCREMENTAL_CYCLES
+from tests.app.sep.apps.mysql_backups.conftest import (
+    xtrabackup_binary_default,
+    XTRABACKUP_INCREMENTAL_CYCLES,
+    xtrabackup_payload_tree,
+)
 
 
 class TestXtrabackupQuietField:
@@ -292,3 +301,133 @@ class TestXtrabackupIncrementalCycleField:
         assert "ISO weekday" in description
         assert "1-7" in description
         assert "less_space" in description
+
+
+class TestXtrabackupBinaryCompressionMatrix:
+    """Hold the per-binary compression matrix to the surfaces around it."""
+
+    _FIELD = "xtrabackup_bin_cmd"
+
+    def test_matrix_covers_every_declared_binary(self):
+        """Hold a row for each binary the vocabulary declares.
+
+        A binary added to the enum with no row would fall through the gate
+        entirely and reach a host that cannot run the chosen algorithm. Asserted
+        against the enum rather than each model's annotation now that both models
+        and the restore form share it.
+        """
+        assert set(ALLOWED_XTRABACKUP_BIN_COMPRESSIONS) == set(XtraBackupTool)
+
+    @pytest.mark.parametrize("binary", list(XtraBackupTool))
+    def test_config_model_accepts_every_binary(self, binary: XtraBackupTool):
+        """Accept the whole vocabulary on the configuration-file model.
+
+        The matrix parity check above compares the matrix to the enum, so it
+        stays green if a model's field drifts off the enum; this is what notices.
+        ``BackupCreate``'s side of that is covered by the gating suite, which
+        builds a form per matrix row.
+        """
+        config = BackupConfigAll.model_validate({"XTRABACKUP_BIN_CMD": binary.value})
+        assert config.xtrabackup_bin_cmd is binary
+
+    @pytest.mark.parametrize("model", [BackupCreate, BackupConfigAll])
+    def test_both_models_reject_a_binary_outside_the_enum(
+        self, model: type[BackupCreate] | type[BackupConfigAll]
+    ):
+        """Refuse a binary the vocabulary does not declare.
+
+        The ``Literal`` these fields carried gave this for free; the enum has to
+        be shown to keep it, or a typo reaches a host as an unrunnable command.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            model.model_validate({self._FIELD: "not-a-backup-binary"})
+
+        # Case-folded: the config model reports the uppercase YAML alias, the form
+        # model the field name, and the claim is about the field either way.
+        reported = {str(error["loc"][0]).lower() for error in excinfo.value.errors()}
+        assert self._FIELD in reported
+
+    def test_every_row_narrows_the_backup_type_list(self):
+        """Offer only algorithms the XtraBackup type already publishes."""
+        offered = set(ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP])
+        for allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.values():
+            # vacuous-ok: test_every_row_leaves_a_usable_algorithm rejects an empty
+            # row, and test_matrix_covers_every_declared_binary an empty matrix.
+            assert set(allowed) <= offered
+
+    def test_every_row_leaves_a_usable_algorithm(self):
+        """Keep at least one algorithm per binary.
+
+        An empty row rejects every algorithm for that binary, which reads as
+        "compression is unavailable" without saying so anywhere.
+        """
+        assert all(ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.values())
+
+    def test_default_binary_has_a_row(self):
+        """Give the defaulted binary a row: blank forms are gated against it."""
+        assert XTRABACKUP_BIN_DEFAULT in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS
+
+    def test_default_binary_matches_the_payload(self):
+        """Pin the form's blank-field resolution to the payload's own default."""
+        assert (
+            xtrabackup_binary_default(xtrabackup_payload_tree())
+            == XTRABACKUP_BIN_DEFAULT
+        )
+
+    @staticmethod
+    def _compression_description() -> str:
+        """Return the create form's compression-algorithm help text."""
+        marker = next(
+            entry
+            for entry in BackupCreate.model_fields["compression_algorithm"].metadata
+            if isinstance(entry, Ui)
+        )
+        return marker.description or ""
+
+    def test_field_description_names_every_row(self):
+        """Keep the field's help text and the gate telling one story.
+
+        The description is the operator's only sight of the matrix before they
+        submit; a row it omits or misstates contradicts the message they then get.
+        """
+        description = self._compression_description()
+
+        for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items():
+            assert binary in description
+            for algorithm in allowed:
+                assert algorithm.value in description
+
+    def test_every_row_carries_a_rule_or_needs_none(self):
+        """Emit one gate per binary that rejects something, and none otherwise.
+
+        A row accepting the whole XtraBackup list has nothing to reject, and the
+        predicate DSL refuses an empty disjunction — so the builder has to skip it
+        rather than raise at import and take the app down with it.
+        """
+        gating = {
+            binary
+            for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+            if set(allowed) != set(ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP])
+        }
+
+        assert len(_BINARY_COMPRESSION_FAIL_RULES) == len(gating)
+        for binary in gating:
+            assert any(
+                rule.message and f"is {binary.value!r}" in rule.message
+                for rule in _BINARY_COMPRESSION_FAIL_RULES
+            )
+
+    def test_lenient_backfill_model_drops_only_the_binary_rules(self):
+        """Pin the split the backfill model's leniency is carved out of.
+
+        Derived from both rule sets rather than restated: a rule appended straight
+        to :attr:`BackupCreate.__form_rules__` would otherwise never reach the
+        lenient model, silently, which is the failure the split exists to avoid.
+        """
+        strict = BackupCreate.__form_rules__
+        lenient = LegacyBackupCreate.__form_rules__
+
+        assert lenient.fail_when == strict.fail_when
+        assert set(strict.sections) == {"General"}
+        assert strict.sections["General"].fail_when == _BINARY_COMPRESSION_FAIL_RULES
+        assert not lenient.sections

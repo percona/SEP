@@ -637,3 +637,54 @@ class TestEncryptionFormatStampRepair:
             outcome.stamped_data[RESERVED_FORM_KEY]["encryption_format"]
             == EncryptionFormat.GPG
         )
+
+
+class TestBinaryCompressionBackfillLeniency:
+    """Reconstruct a stored pairing the create form now rejects."""
+
+    def test_reconstruction_accepts_a_pairing_the_running_binary_rejects(self):
+        """Pin the split for a pairing saved before the binary gate existed.
+
+        Those tasks were accepted by the form that wrote them, and a task with no
+        stamp has no Edit affordance at all — so refusing them here would leave an
+        operator able to delete the task but not to correct the algorithm. Both
+        halves belong in one test because the claim is the difference between the
+        two models.
+        """
+        lookup = _lookup(
+            _service(1, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+        task = _legacy_mysql_backup_task(
+            upload=["S3"],
+            all_servers={
+                "S3_BUCKET": "my-bucket",
+                "BACKUP_DIR": "/backups",
+                "COMPRESSION_ALGORITHM": "quicklz",
+            },
+        )
+
+        body = reconstruct_mysql_backups_form(task, _ctx(lookup))
+
+        assert body is not None
+        assert body["compression_algorithm"] == "quicklz"
+        assert (
+            LegacyBackupCreate.model_validate(body).compression_algorithm == "quicklz"
+        )
+
+        with pytest.raises(ValidationError, match="compression_algorithm"):
+            BackupCreate.model_validate(body)
+
+    def test_lenient_model_still_enforces_the_mode_rules(self):
+        """Narrow the leniency to the binary gate and nothing else."""
+        body = {
+            "task_name": "backups-legacy",
+            "hostname": "executor-host",
+            "service_id": 1,
+            "backup_type": BackupType.MYDUMPER.value,
+            "backup_dir": "/backups",
+            "upload": [],
+            "xtrabackup_verify": True,
+        }
+
+        with pytest.raises(ValidationError, match="xtrabackup_verify"):
+            LegacyBackupCreate.model_validate(body)
