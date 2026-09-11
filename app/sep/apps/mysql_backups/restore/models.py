@@ -777,6 +777,12 @@ class RestoreCreate(TaskFormModel):
                 "preparing it, rewriting server id to a fresh value. Choosing one that "
                 "is not already taken queries the replication source below."
             ),
+            destructive=(
+                "Each configuration file saved in the backup is written over "
+                "the live file at its original path, outside the data "
+                "directory. No copy of what those files held is kept, so "
+                "hand-tuned settings are lost."
+            ),
         ),
     ] = False
     incremental_dest_path: Annotated[

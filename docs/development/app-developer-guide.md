@@ -524,14 +524,16 @@ declaration order governs a section until a field pins an explicit `order`.
 Checksums' Advanced section uses `Ui(order=...)` to reorder a few fields away
 from their declaration order (see the model's docstring).
 
-`Ui(destructive=...)` marks a field whose value irreversibly destroys user
-data, and its value is the consequence sentence a renderer shows in a
-confirmation. Presence is the mark — there is no separate boolean — so a blank
-or whitespace-only string is rejected at construction rather than published as
-a mark with nothing to display. Like everything else on `Ui` it is presentation
-only: the API accepts exactly the same bodies either way. Whether an unmarked
-field omits the key or publishes `destructive: null` depends on the route:
-those serialising with `response_model_exclude_none` drop it, while
+`Ui(destructive=...)` marks a field whose value irreversibly destroys
+something the operator cannot get back — user data, or operator-managed state
+such as a hand-tuned configuration file — and its value is the consequence
+sentence a renderer shows in a confirmation. Presence is the mark — there is
+no separate boolean — so a blank or whitespace-only string is rejected at
+construction rather than published as a mark with nothing to display. Like
+everything else on `Ui` it is presentation only: the API accepts exactly the
+same bodies either way. Whether an unmarked field omits the key or publishes
+`destructive: null` depends on the route: those serialising with
+`response_model_exclude_none` drop it, while
 `GET /api/apps/atw/execution-schema/` and `GET /api/apps/dipper/form-schema`
 set no such posture and emit an explicit null on every field — the same way
 they already do for `description`, `requires` and `forbidden`. Consumers must
@@ -554,10 +556,15 @@ delete_data: Annotated[
 ```
 
 Mark a field when **enabling or setting it** is what causes the irreversible
-loss. Do not mark one because the surrounding operation is dangerous, because
-the flag is inverted (a `no_drop_*` whose *enabled* state is the safe
-direction), or because what gets destroyed is a tool's own bookkeeping rather
-than user data.
+loss. Configuration state counts as much as table rows: a live `my.cnf`
+overwritten with no on-disk copy is as unrecoverable as a dropped table, and
+harder to spot. Where the loss is unconditional the mark goes on the field
+naming what gets destroyed rather than on a toggle, which is why the restore
+form marks `datadir`: every restore empties it. Do not mark one because the
+surrounding operation is dangerous, because the flag is inverted (a
+`no_drop_*` whose *enabled* state is the safe direction), or because what gets
+destroyed is a tool's own bookkeeping — scratch state the tool wrote and
+rebuilds — rather than something the operator authored.
 
 A field whose annotation is a discriminated union cannot carry the marker: it
 derives a one-of group rather than a field, and the group has nowhere to put
