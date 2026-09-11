@@ -187,7 +187,7 @@ async def upsert_service(
 
     :param session: The database session.
     :param service_id: PMM's service id.
-    :param node_id: The host it runs on; its ``om.host`` row must exist.
+    :param node_id: The host it runs on; its ``om.om_host`` row must exist.
     :param name: The service name.
     :param port: The port it listens on.
     :param role: The observed role, or ``None`` when this attempt did not see one.

@@ -291,7 +291,7 @@ class TestTriggerScope:
         await api.post(f"{BASE}/runs")
 
         full = await two_hosts.exec(
-            text("select count(*) from om_schema.inventory_run where scope is null")
+            text("select count(*) from om_schema.om_inventory_run where scope is null")
         )
         assert full.scalar() == 1
 

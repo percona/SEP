@@ -374,19 +374,22 @@ class TestRunLinkage:
 
 @pytest.mark.asyncio
 async def test_tables_live_in_oms_own_schema(session: AsyncSession) -> None:
-    """The tables are ``om.host`` and ``om.service``, not SEP's ``service``.
+    """The tables are ``om.om_host`` and ``om.om_service``, not SEP's ``service``.
 
-    Named plainly because the schema qualifies them — which means SEP inventory's
-    ``service`` and OM's are two different tables, and on a bind without schemas they
-    would not be. Asserting the declared schema is what keeps that from regressing
-    into a table name collision nobody notices until ``create_all`` fails.
+    Two guards, not one, against colliding with SEP inventory's own ``service``
+    (``schema=None``): the declared schema, and the ``om_`` prefix on the table name
+    itself. The schema alone was once considered enough -- but the real-MySQL and
+    real-PostgreSQL test lanes translate every declared schema token into the same
+    per-worker schema for teardown simplicity, which collapses ``om_schema.service``
+    onto the bare, schema-less ``service`` the moment both are exercised against a
+    real database. The prefix is what still holds when the schema does not.
 
     :param session: The database session.
     """
     assert OmHost.__table__.schema == "om_schema"
     assert OmService.__table__.schema == "om_schema"
-    assert OmHost.__tablename__ == "host"
-    assert OmService.__tablename__ == "service"
+    assert OmHost.__tablename__ == "om_host"
+    assert OmService.__tablename__ == "om_service"
 
 
 class TestExecutorFactsReachTheRow:
