@@ -75,6 +75,15 @@ LOGGING_FORMAT_DEBUG = (
 LOGGING_NAME = "mydumper.log"
 MD5SUM_FILE = "md5sum"
 MYDUMPER_METADATA = "metadata"
+# Fallback age before a staging directory whose name carries no readable pid counts
+# as abandoned. The backup lock is per server alias and lives in the logging
+# directory, so two tasks configured with different logging directories can run
+# against one server at once, and clearing a live staging directory breaks its dump.
+PARTIAL_MAX_AGE_SECONDS = 3600
+# Scratch-directory suffixes. Both names are dot-prefixed in use, which keeps them
+# out of ``_list_backups`` and therefore out of retention.
+PARTIAL_SUFFIX = ".partial"
+REPLACED_SUFFIX = ".replaced"
 UPLOADME_FILE = ".uploadme"
 EXCLUDE_FILES = [MD5SUM_FILE, UPLOADME_FILE]
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
@@ -1972,6 +1981,10 @@ class MyDumper(Backup):
             .resolve()
         )
         self.backup_dir = self.backup_server_dir / self.today_str
+        self.work_dir = self.backup_server_dir / (
+            f".{self.today_str}.{time.strftime('%H%M%S')}."
+            f"{os.getpid()}{PARTIAL_SUFFIX}"
+        )
         self.latest_link = self.backup_server_dir / "latest"
         self.prev_backup_dir = self.backup_server_dir / yesterday_str
         self.last_backup_dir = self.backup_dir
@@ -1996,13 +2009,14 @@ class MyDumper(Backup):
                 self.logger.info("Not read_only, ignoring this host.")
                 return
 
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
+        self.backup_server_dir.mkdir(parents=True, exist_ok=True)
+        self._reclaim_interrupted_publish()
 
         if self.check_disk_space:
             is_free, msg = is_free_space(
                 self.backup_server_dir,
                 self.logger,
-                double_space_needed=self.encrypt_using_tmpdir,
+                double_space_needed=self._needs_double_space(),
             )
             if not is_free:
                 raise BackupError(msg)
@@ -2015,8 +2029,24 @@ class MyDumper(Backup):
         if not self.mydumper_for_schemas:
             raise BackupError("MYDUMPER_SCHEMAS has been disabled, please enable it")
 
-        # Run actual backup
-        self._run_backup_cmd()
+        self.work_dir.mkdir(parents=True)
+
+        # Everything that shapes the dump runs against the staging directory, so a
+        # failure at any point leaves an earlier same-day dump published and intact.
+        try:
+            self._run_backup_cmd()
+
+            if self.post_run_encrypt:
+                self.report_options["encryption"] = "gpg"
+                self.logger.info("Post-run backup encryption is enabled.")
+                encrypt_dir(self.work_dir, self.logger, **self.dir_encrypt_config)
+            else:
+                self._save_disk_space()
+
+            self._publish_backup()
+        except Exception:
+            shutil.rmtree(self.work_dir, ignore_errors=True)
+            raise
 
         # Update latest link
         if self.latest_link.is_symlink():
@@ -2025,14 +2055,6 @@ class MyDumper(Backup):
 
         # Purge old backups
         self._purge_old_backups()
-
-        # Encrypt backup or hardlink to save space
-        if self.post_run_encrypt:
-            self.report_options["encryption"] = "gpg"
-            self.logger.info("Post-run backup encryption is enabled.")
-            encrypt_dir(self.backup_dir, self.logger, **self.dir_encrypt_config)
-        else:
-            self._save_disk_space()
 
         # Upload if needed
         upload_providers = {
@@ -2115,7 +2137,7 @@ class MyDumper(Backup):
             self.logger.info("Hardlinking not dumped tables...")
             ret_code, ret_info = hardlink_listed_files(
                 self.valid_prev_backup_dir,
-                self.backup_dir,
+                self.work_dir,
                 compress=self.compress,
                 encrypted=self.s3_daily and self.s3_encrypt,
             )
@@ -2127,15 +2149,19 @@ class MyDumper(Backup):
         if not self.hardlink:
             return
 
-        if not self.prev_backup_dir.is_dir() or self.prev_encrypted:
+        if (
+            not self.prev_backup_dir.is_dir()
+            or self.prev_encrypted
+            or not self._prev_day_is_retained()
+        ):
             self.logger.info("Checksumming backup...")
-            get_dir_dict(self.backup_dir, md5=self.cache_md5)
+            get_dir_dict(self.work_dir, md5=self.cache_md5)
             self.logger.info("OK Checksum complete.")
         else:
             self.logger.info("Hardlinking backups...")
-            get_dir_dict(self.backup_dir, md5=self.cache_md5)
+            get_dir_dict(self.work_dir, md5=self.cache_md5)
             hl_files = hardlink_dirs(
-                self.prev_backup_dir, self.backup_dir, encrypted=self.prev_encrypted
+                self.prev_backup_dir, self.work_dir, encrypted=self.prev_encrypted
             )
             bytes_saved = sum(file_data[1] for file_data in hl_files.values())
             self.report_options["hl_mb"] = round(bytes_saved / 1024 / 1024)
@@ -2143,6 +2169,142 @@ class MyDumper(Backup):
                 "OK Hardlinking complete: %d MB saved.",
                 round(bytes_saved / 1024 / 1024),
             )
+
+    def _prev_day_is_retained(self) -> bool:
+        """Return whether this run's purge keeps the previous day's directory.
+
+        Hardlinking into a day the purge then removes costs the run its dedup: the
+        removal frees nothing while this dump holds the inodes. The purge counts
+        today, which is published after the hardlinking, so count it here too.
+
+        :return: True when the previous day survives this run's purge.
+        """
+        days = sorted({*self._list_backups(self.backup_server_dir), self.today_str})
+        kept = days[-self.daily_purge :] if self.daily_purge > 0 else []
+        if self.prev_backup_dir.name in kept:
+            return True
+        prev_day = datetime.datetime.strptime(self.prev_backup_dir.name, "%Y%m%d")
+        return self.weekly_purge > 0 and prev_day.date().isoweekday() == 1
+
+    def _needs_double_space(self) -> bool:
+        """Return whether the run needs room for two copies of the dump.
+
+        A run that replaces an existing same-day dump holds the staged and the
+        published copy at once, as does the tmpdir-based upload encryption path.
+
+        :return: True when room for both copies has to be free.
+        """
+        return self.encrypt_using_tmpdir or self.backup_dir.is_dir()
+
+    def _publish_backup(self) -> None:
+        """Move this run's staged dump into the day directory.
+
+        An already-published dump is moved aside under a name unique to this run
+        rather than deleted, so a failed rename puts it straight back and a crash
+        between the two renames leaves it for :meth:`_reclaim_interrupted_publish`.
+
+        :raises BackupError: If the day path is not a directory, or a rename fails.
+        """
+        replaced_dir = self.backup_server_dir / (
+            f"{self.work_dir.name.removesuffix(PARTIAL_SUFFIX)}{REPLACED_SUFFIX}"
+        )
+        if self.backup_dir.is_symlink() or (
+            self.backup_dir.exists() and not self.backup_dir.is_dir()
+        ):
+            msg = f"Refusing to publish over {self.backup_dir}: not a directory."
+            raise BackupError(msg)
+
+        published = self.backup_dir.is_dir()
+        try:
+            if published:
+                self.backup_dir.rename(replaced_dir)
+            self.work_dir.rename(self.backup_dir)
+        except OSError as exc:
+            # Leaving the earlier dump aside would strand it behind a name that
+            # retention, restore and upload all ignore, until this server happens to
+            # run again.
+            if published and not self.backup_dir.exists():
+                with suppress(OSError):
+                    replaced_dir.rename(self.backup_dir)
+            msg = f"Failed to publish {self.work_dir} as {self.backup_dir}: {exc}"
+            raise BackupError(msg) from exc
+
+        if published:
+            shutil.rmtree(replaced_dir, ignore_errors=True)
+        self.logger.info("OK Backup published to %s.", self.backup_dir)
+
+    def _staging_owner_is_alive(self, name: str) -> bool:
+        """Return whether the run that owns a staging directory is still going.
+
+        The owning pid is part of the directory name and every staging directory
+        belongs to a process on this host. The directory's own mtime cannot answer
+        this: it does not advance while mydumper appends to a chunk file it already
+        created, so a slow dump looks abandoned long before it is.
+
+        :param name: The staging directory's name.
+        :return: True when the name carries a pid that is still running.
+        """
+        pid = name.removesuffix(PARTIAL_SUFFIX).rsplit(".", 1)[-1]
+        if not pid.isdigit():
+            return False
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            # The pid exists but is not ours to signal.
+            return True
+        return True
+
+    def _reclaim_scratch_dir(self, scratch_dir: Path) -> None:
+        """Restore or discard one leftover scratch directory.
+
+        :param scratch_dir: A moved-aside or staging directory from an earlier run.
+        :raises OSError: If the restore or the removal fails.
+        """
+        if scratch_dir.name.endswith(REPLACED_SUFFIX):
+            day_name = scratch_dir.name[1:].split(".", 1)[0]
+            day_dir = self.backup_server_dir / day_name
+            if re.search(BACKUP_DIR_REGEX, day_name) and not day_dir.exists():
+                scratch_dir.rename(day_dir)
+                self.logger.info(
+                    "Restored %s from an interrupted publication.", day_dir.name
+                )
+                return
+        elif self._staging_owner_is_alive(scratch_dir.name) or (
+            time.time() - scratch_dir.stat().st_mtime < PARTIAL_MAX_AGE_SECONDS
+        ):
+            return
+
+        shutil.rmtree(scratch_dir)
+        self.logger.info(
+            "Dropped leftover %s from an interrupted run.", scratch_dir.name
+        )
+
+    def _reclaim_interrupted_publish(self) -> None:
+        """Restore or discard the scratch directories earlier runs left behind.
+
+        A moved-aside dump is put back when its day directory is gone, which is the
+        only state a crash between the two publication renames can produce. A
+        staging directory is dropped once the process named in it is gone; a run
+        holding the backup lock of a different logging directory can be writing into
+        its own staging directory while this one starts.
+        """
+        scratch_dirs = sorted(
+            self.backup_server_dir.glob(f"*{REPLACED_SUFFIX}")
+        ) + sorted(self.backup_server_dir.glob(f"*{PARTIAL_SUFFIX}"))
+        for scratch_dir in scratch_dirs:
+            if scratch_dir.is_symlink() or not scratch_dir.is_dir():
+                self.logger.warning(
+                    "Ignoring unexpected scratch path %s; remove it by hand.",
+                    scratch_dir.name,
+                )
+                continue
+
+            try:
+                self._reclaim_scratch_dir(scratch_dir)
+            except OSError as exc:
+                self.logger.warning("Leaving %s in place: %s", scratch_dir.name, exc)
 
     def _validate_updated_since(self) -> None:
         """Validate previous backups that can be used with mydumper's --updated-since option."""
@@ -2183,7 +2345,7 @@ class MyDumper(Backup):
 
             default_args = [
                 f"--defaults-file={self.defaults_cnf_file}",
-                f"--outputdir={self.backup_dir}",
+                f"--outputdir={self.work_dir}",
                 f"--verbose={self.mydumper_verbose}",
                 f"--host={self.host}",
                 f"--port={self.port}",
@@ -2243,9 +2405,6 @@ class MyDumper(Backup):
                 with md_log_file.open("r") as md_log_stream:
                     lines = md_log_stream.readlines()
                 err = lines[-1] if lines else "Unknown error"
-                if self.post_run_encrypt:
-                    # remove failed backups if post encrypt is enabled
-                    shutil.rmtree(self.backup_dir)
                 msg = f"Mydumper failed ({ret_code}): {err} For more details, see {md_log_file}"
                 raise BackupError(msg)
 

@@ -13,17 +13,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Share the AST-extraction harness for exercising the xtrabackup payload's methods.
+"""Share the AST-extraction harness for exercising a backup payload's methods.
 
-The payload cannot be imported directly (it pulls boto3 and other heavy
-runtime deps), so callers locate the relevant symbols in the source via AST
-and exec them in an isolated namespace. This module holds the shared pieces
-so every test module that reaches into the payload — encryption, restore, the
-incremental base guards — builds on one harness instead of re-exporting private
-helpers from each other.
+A payload cannot be imported directly (it pulls boto3 and other heavy runtime
+deps), so callers locate the relevant symbols in the source via AST and exec them
+in an isolated namespace. This module holds the shared pieces so every test module
+that reaches into a payload builds on one harness instead of re-exporting private
+helpers from each other. ``payload_path`` selects the payload; it defaults to
+xtrabackup, which most of the callers here exercise.
 """
 
 import ast
+import contextlib
 import logging
 import multiprocessing.pool
 import os
@@ -35,6 +36,7 @@ from collections.abc import Callable
 from typing import Any
 
 from tests.app.sep.apps.mysql_backups.conftest import (
+    payload_tree,
     XTRABACKUP_PAYLOAD_PATH,
     xtrabackup_payload_tree,
 )
@@ -54,6 +56,12 @@ _CONST_NAMES = frozenset(
         "XTRABACKUP_BIN",
         "XTRABACKUP_BIN_REAL",
         "XTRABACKUP_BIN_MARIADB",
+        "BACKUP_DIR_REGEX",
+        "MYDUMPER_BIN",
+        "MYDUMPER_METADATA",
+        "PARTIAL_MAX_AGE_SECONDS",
+        "PARTIAL_SUFFIX",
+        "REPLACED_SUFFIX",
     }
 )
 
@@ -79,6 +87,7 @@ def base_namespace() -> dict:
         "re": re,
         "Path": pathlib.Path,
         "Any": object,
+        "suppress": contextlib.suppress,
         "thread_pool": multiprocessing.pool,
     }
     exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
@@ -137,6 +146,7 @@ def payload_method(
     method_name: str,
     *,
     extra_namespace: dict[str, object] | None = None,
+    payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH,
 ) -> Callable[..., object]:
     """Return one payload method lifted out of its class as a plain function.
 
@@ -150,9 +160,10 @@ def payload_method(
     :param method_name: The method to lift.
     :param extra_namespace: Globals the method body reads that are not whitelisted
         constants — module-level payload functions, or stand-ins for them.
+    :param payload_path: The payload script to lift the method out of.
     :return: The lifted method, called as ``fn(self, ...)``.
     """
-    tree = xtrabackup_payload_tree()
+    tree = payload_tree(payload_path)
     class_nodes = [
         node
         for node in ast.walk(tree)
@@ -160,7 +171,7 @@ def payload_method(
     ]
     if not class_nodes:
         raise RuntimeError(
-            f"{class_name} not found in {XTRABACKUP_PAYLOAD_PATH}. Renamed or removed?"
+            f"{class_name} not found in {payload_path}. Renamed or removed?"
         )
     method_nodes = [
         node
@@ -169,14 +180,14 @@ def payload_method(
     ]
     if not method_nodes:
         raise RuntimeError(
-            f"{class_name}.{method_name} not found in {XTRABACKUP_PAYLOAD_PATH}. "
+            f"{class_name}.{method_name} not found in {payload_path}. "
             "Renamed or removed?"
         )
     namespace = base_namespace()
     module = ast.fix_missing_locations(
         ast.Module(body=const_nodes(tree) + method_nodes, type_ignores=[])
     )
-    exec(compile(module, str(XTRABACKUP_PAYLOAD_PATH), "exec"), namespace)  # noqa: S102
+    exec(compile(module, str(payload_path), "exec"), namespace)  # noqa: S102
     namespace.update(extra_namespace or {})
     return namespace[method_name]
 
@@ -216,6 +227,39 @@ def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[st
     return namespace["is_encrypted_dir"], calls
 
 
+class Recorder:
+    """Collect the messages a payload method logs, in order."""
+
+    def __init__(self) -> None:
+        self.infos: list[str] = []
+        self.warnings: list[str] = []
+        self.errors: list[str] = []
+
+    def info(self, msg: str, *args: object) -> None:
+        """Record an informational message."""
+        self.infos.append(msg % args if args else msg)
+
+    def warning(self, msg: str, *args: object) -> None:
+        """Record a warning."""
+        self.warnings.append(msg % args if args else msg)
+
+    warn = warning
+
+    def debug(self, msg: str, *args: object) -> None:
+        """Discard a debug message."""
+
+    def error(self, msg: str, *args: object) -> None:
+        """Record an error."""
+        self.errors.append(msg % args if args else msg)
+
+    exception = error
+
+    @property
+    def messages(self) -> list[str]:
+        """Return every recorded message regardless of level."""
+        return [*self.infos, *self.warnings, *self.errors]
+
+
 class FakeProc:
     """Stand in for a ``Popen`` result with a fixed return code and canned stderr."""
 
@@ -233,6 +277,7 @@ def payload_instance(
     returncode: int = 0,
     extra_namespace: dict[str, object] | None = None,
     real_subprocess: bool = False,
+    payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH,
 ) -> tuple[object, type[Exception], list[list[str]]]:
     """Build an instance of a synthetic class carrying the named payload methods.
 
@@ -251,8 +296,9 @@ def payload_instance(
         of faking ``Popen`` -- for integration tests that need a real process (e.g.
         a stand-in ``xbcrypt`` executable) to actually run. ``calls`` is unused
         (always ``[]``) in this mode.
+    :param payload_path: The payload script to lift the methods out of.
     """
-    tree = xtrabackup_payload_tree()
+    tree = payload_tree(payload_path)
     method_nodes = [
         node
         for node in ast.walk(tree)
@@ -260,7 +306,7 @@ def payload_instance(
     ]
     missing = set(method_names) - {node.name for node in method_nodes}
     if missing:
-        raise RuntimeError(f"{sorted(missing)} not found in {XTRABACKUP_PAYLOAD_PATH}.")
+        raise RuntimeError(f"{sorted(missing)} not found in {payload_path}.")
 
     calls: list[list[str]] = []
 
@@ -281,7 +327,7 @@ def payload_instance(
     exec(  # noqa: S102
         compile(
             ast.Module(body=const_nodes(tree), type_ignores=[]),
-            str(XTRABACKUP_PAYLOAD_PATH),
+            str(payload_path),
             "exec",
         ),
         namespace,
@@ -295,7 +341,7 @@ def payload_instance(
         decorator_list=[],
     )
     module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
-    exec(compile(module, str(XTRABACKUP_PAYLOAD_PATH), "exec"), namespace)  # noqa: S102
+    exec(compile(module, str(payload_path), "exec"), namespace)  # noqa: S102
 
     inst = namespace["_Payload"]()
     inst.logger = types.SimpleNamespace(
