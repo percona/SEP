@@ -200,6 +200,11 @@ HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # inventory fact any task type can use to branch on OS, not specific to any one
     # consumer.
     ("os_id", ("system", "os_id")),
+    # The distro's own version string ("22.04", "9.3") alongside os_id, since a
+    # strategy keyed on distro alone cannot yet tell an EOL release from a current
+    # one, and collecting it only once a second consumer needs it means a second
+    # pass over the estate for a field the payload already produces.
+    ("os_version_id", ("system", "os_version_id")),
     ("kernel", ("system", "kernel")),
     ("arch", ("system", "arch")),
     # The installed server binary, on the *host* as well as on its services. A
