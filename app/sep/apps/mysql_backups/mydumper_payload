@@ -2152,7 +2152,7 @@ class MyDumper(Backup):
         if (
             not self.prev_backup_dir.is_dir()
             or self.prev_encrypted
-            or not self._prev_day_is_retained()
+            or not self._day_is_retained(self.prev_backup_dir.name)
         ):
             self.logger.info("Checksumming backup...")
             get_dir_dict(self.work_dir, md5=self.cache_md5)
@@ -2170,21 +2170,22 @@ class MyDumper(Backup):
                 round(bytes_saved / 1024 / 1024),
             )
 
-    def _prev_day_is_retained(self) -> bool:
-        """Return whether this run's purge keeps the previous day's directory.
+    def _day_is_retained(self, day_name: str) -> bool:
+        """Return whether this run's purge keeps a given day's directory.
 
         Hardlinking into a day the purge then removes costs the run its dedup: the
         removal frees nothing while this dump holds the inodes. The purge counts
         today, which is published after the hardlinking, so count it here too.
 
-        :return: True when the previous day survives this run's purge.
+        :param day_name: The day directory's name.
+        :return: True when that day survives this run's purge.
         """
         days = sorted({*self._list_backups(self.backup_server_dir), self.today_str})
         kept = days[-self.daily_purge :] if self.daily_purge > 0 else []
-        if self.prev_backup_dir.name in kept:
+        if day_name in kept:
             return True
-        prev_day = datetime.datetime.strptime(self.prev_backup_dir.name, "%Y%m%d")
-        return self.weekly_purge > 0 and prev_day.date().isoweekday() == 1
+        day = datetime.datetime.strptime(day_name, "%Y%m%d")
+        return self.weekly_purge > 0 and day.date().isoweekday() == 1
 
     def _needs_double_space(self) -> bool:
         """Return whether the run needs room for two copies of the dump.
@@ -2233,7 +2234,7 @@ class MyDumper(Backup):
             shutil.rmtree(replaced_dir, ignore_errors=True)
         self.logger.info("OK Backup published to %s.", self.backup_dir)
 
-    def _staging_owner_is_alive(self, name: str) -> bool:
+    def _staging_owner_is_alive(self, name: str) -> bool | None:
         """Return whether the run that owns a staging directory is still going.
 
         The owning pid is part of the directory name and every staging directory
@@ -2242,11 +2243,12 @@ class MyDumper(Backup):
         created, so a slow dump looks abandoned long before it is.
 
         :param name: The staging directory's name.
-        :return: True when the name carries a pid that is still running.
+        :return: Whether the pid in the name is running, or None when it carries no
+            readable pid.
         """
         pid = name.removesuffix(PARTIAL_SUFFIX).rsplit(".", 1)[-1]
         if not pid.isdigit():
-            return False
+            return None
         try:
             os.kill(int(pid), 0)
         except ProcessLookupError:
@@ -2271,10 +2273,13 @@ class MyDumper(Backup):
                     "Restored %s from an interrupted publication.", day_dir.name
                 )
                 return
-        elif self._staging_owner_is_alive(scratch_dir.name) or (
-            time.time() - scratch_dir.stat().st_mtime < PARTIAL_MAX_AGE_SECONDS
-        ):
-            return
+        else:
+            alive = self._staging_owner_is_alive(scratch_dir.name)
+            if alive or (
+                alive is None
+                and time.time() - scratch_dir.stat().st_mtime < PARTIAL_MAX_AGE_SECONDS
+            ):
+                return
 
         shutil.rmtree(scratch_dir)
         self.logger.info(
@@ -2285,22 +2290,33 @@ class MyDumper(Backup):
         """Restore or discard the scratch directories earlier runs left behind.
 
         A moved-aside dump is put back when its day directory is gone, which is the
-        only state a crash between the two publication renames can produce. A
-        staging directory is dropped once the process named in it is gone; a run
+        only state a crash between the two publication renames can produce; where
+        several runs each moved one aside, the newest is restored and the rest are
+        dropped. A staging directory is dropped once the process named in it is gone; a run
         holding the backup lock of a different logging directory can be writing into
         its own staging directory while this one starts.
         """
-        scratch_dirs = sorted(
-            self.backup_server_dir.glob(f"*{REPLACED_SUFFIX}")
-        ) + sorted(self.backup_server_dir.glob(f"*{PARTIAL_SUFFIX}"))
-        for scratch_dir in scratch_dirs:
-            if scratch_dir.is_symlink() or not scratch_dir.is_dir():
-                self.logger.warning(
-                    "Ignoring unexpected scratch path %s; remove it by hand.",
-                    scratch_dir.name,
-                )
-                continue
+        scratch_dirs: list[Path] = []
+        for suffix in (REPLACED_SUFFIX, PARTIAL_SUFFIX):
+            aged: list[tuple[float, Path]] = []
+            for scratch_dir in self.backup_server_dir.glob(f"*{suffix}"):
+                if scratch_dir.is_symlink() or not scratch_dir.is_dir():
+                    self.logger.warning(
+                        "Ignoring unexpected scratch path %s; remove it by hand.",
+                        scratch_dir.name,
+                    )
+                    continue
+                # A concurrent run can drop a scratch directory between the check
+                # above and this stat.
+                with suppress(OSError):
+                    aged.append((scratch_dir.stat().st_mtime, scratch_dir))
+            # Newest first. Several runs can each have moved a dump aside for one
+            # day, and only the newest holds what was published; a rename leaves the
+            # mtime alone, while the name carries the run's start time, which is not
+            # the order the runs published in.
+            scratch_dirs += [path for _, path in sorted(aged, reverse=True)]
 
+        for scratch_dir in scratch_dirs:
             try:
                 self._reclaim_scratch_dir(scratch_dir)
             except OSError as exc:
@@ -2312,6 +2328,8 @@ class MyDumper(Backup):
             dayago = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime(
                 "%Y%m%d"
             )
+            if not self._day_is_retained(dayago):
+                continue
             check_backup_dir = self.backup_server_dir / dayago
             if self.s3_daily and self.s3_encrypt:
                 if (check_backup_dir / f"{MYDUMPER_METADATA}.gpg").is_file():

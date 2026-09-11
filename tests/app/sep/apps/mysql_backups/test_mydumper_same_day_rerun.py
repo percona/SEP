@@ -46,6 +46,7 @@ YESTERDAY_STR = "20260104"
 PARTIAL_SUFFIX = ".partial"
 REPLACED_SUFFIX = ".replaced"
 OLDER_THAN_ANY_GRACE_PERIOD = 86400
+UPDATED_SINCE_DAYS = 3
 _RECLAIM_METHODS = (
     "_reclaim_interrupted_publish",
     "_reclaim_scratch_dir",
@@ -330,7 +331,7 @@ def _saver(
     }
     instance, _, _ = _dumper(
         tmp_path,
-        ("_save_disk_space", "_prev_day_is_retained", "_list_backups"),
+        ("_save_disk_space", "_day_is_retained", "_list_backups"),
         extra=extra,
     )
     instance.hardlink = True
@@ -570,11 +571,11 @@ class TestReclaimInterruptedPublish:
         assert not stale.exists()
         assert any(stale.name in message for message in instance.logger.messages)
 
-    def test_leaves_a_staging_directory_a_live_run_may_own(
+    def test_leaves_a_fresh_staging_directory_whose_name_carries_no_pid(
         self, tmp_path: Path
     ) -> None:
-        """Assert a freshly written staging directory is left for its own run to finish."""
-        live = tmp_path / f".{TODAY_STR}.030000.777.partial"
+        """Assert the age grace covers a name no owning process can be read out of."""
+        live = tmp_path / f".{TODAY_STR}.030000.unknown{PARTIAL_SUFFIX}"
         live.mkdir()
         (live / "sakila.film.sql").write_text("dump in flight\n")
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
@@ -582,6 +583,46 @@ class TestReclaimInterruptedPublish:
         instance._reclaim_interrupted_publish()
 
         assert (live / "sakila.film.sql").read_text() == "dump in flight\n"
+
+    def test_discards_a_fresh_staging_directory_whose_process_is_gone(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a killed run's leftovers go at once rather than after the grace period.
+
+        The grace period exists for names that carry no readable pid; a name whose
+        pid is gone already answers the question.
+        """
+        stale = tmp_path / f".{TODAY_STR}.030000.{_exited_pid()}{PARTIAL_SUFFIX}"
+        stale.mkdir()
+        (stale / "sakila.film.sql").write_text("half a dump\n")
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+
+        instance._reclaim_interrupted_publish()
+
+        assert not stale.exists()
+
+    def test_restores_the_newest_moved_aside_dump_and_drops_the_rest(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert the copy published last is the one put back.
+
+        Two runs can each have moved a dump aside for one day. Restoring by name
+        would restore by run start time, which is not the order they published in,
+        and the copies left over are then deleted against the restored day.
+        """
+        stale = tmp_path / f".{TODAY_STR}.010000.11{REPLACED_SUFFIX}"
+        newest = tmp_path / f".{TODAY_STR}.020000.22{REPLACED_SUFFIX}"
+        for aside, marker in ((stale, "first"), (newest, "second")):
+            aside.mkdir()
+            _write_dump(aside, marker)
+        aged = real_time.time() - OLDER_THAN_ANY_GRACE_PERIOD
+        os.utime(stale, (aged, aged))
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+
+        instance._reclaim_interrupted_publish()
+
+        assert _dir_snapshot(instance.backup_dir) == _SECOND_DUMP
+        assert not _scratch_names(tmp_path)
 
     def test_keeps_a_staging_directory_its_process_is_still_writing_to(
         self, tmp_path: Path
@@ -863,6 +904,59 @@ class TestSpaceSavingTargetsTheStagedDump:
         instance._save_disk_space()
 
         assert seen["hardlinked"] == (instance.prev_backup_dir, instance.work_dir)
+
+
+class TestUpdatedSinceBaseIsRetained:
+    """Cover the incremental base the ``--updated-since`` validation settles on."""
+
+    @staticmethod
+    def _validator(tmp_path: Path, *, daily_purge: int) -> tuple[Any, str]:
+        """Build an instance carrying the validation pass over real calendar days.
+
+        The pass walks back from the current date, so the frozen clock the rest of
+        this module uses cannot drive it.
+
+        :param tmp_path: The server directory the run works in.
+        :param daily_purge: How many daily backups retention keeps.
+        :return: The instance and the day name of the dump laid down for yesterday.
+        """
+        today = datetime.date(*real_time.localtime()[:3])
+        yesterday = (today - datetime.timedelta(days=1)).strftime("%Y%m%d")
+        _existing_dump(tmp_path, day=yesterday)
+        instance, _, _ = _dumper(
+            tmp_path, ("_validate_updated_since", "_day_is_retained", "_list_backups")
+        )
+        instance.today_str = today.strftime("%Y%m%d")
+        instance.updated_since = UPDATED_SINCE_DAYS
+        instance.daily_purge = daily_purge
+        instance.weekly_purge = 0
+        return instance, yesterday
+
+    def test_selects_a_previous_day_retention_keeps(self, tmp_path: Path) -> None:
+        """Assert a base that survives the purge is still selected."""
+        instance, yesterday = self._validator(tmp_path, daily_purge=7)
+
+        instance._validate_updated_since()
+
+        assert instance.valid_prev_backup_dir == str(tmp_path / yesterday)
+        assert instance.updated_since == UPDATED_SINCE_DAYS
+
+    def test_rejects_a_previous_day_this_run_purges(self, tmp_path: Path) -> None:
+        """Assert a doomed base is passed over and the option switched off.
+
+        Hardlinking listed files out of a day this run removes leaves the removal
+        freeing nothing, because the staged dump holds those inodes.
+        """
+        instance, _ = self._validator(tmp_path, daily_purge=1)
+
+        instance._validate_updated_since()
+
+        assert instance.valid_prev_backup_dir is None
+        assert instance.updated_since == 0
+        assert any(
+            "no valid previous backup" in message
+            for message in instance.logger.warnings
+        )
 
 
 class TestDoubleSpaceDecision:

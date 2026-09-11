@@ -70,7 +70,7 @@ def payload_tree(path: pathlib.Path) -> ast.Module:
     :param path: Path to the payload script.
     :return: The parsed module.
     """
-    return ast.parse(path.read_text())
+    return ast.parse(path.read_text(encoding="utf-8"))
 
 
 def xtrabackup_payload_tree() -> ast.Module:
