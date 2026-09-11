@@ -19,11 +19,17 @@ Revision ID: a3f1c8d24b71
 Revises:
 Create Date: 2026-08-11 12:00:00.000000
 
-The whole OM schema in one revision: ``om.host`` and ``om.service`` for what the
-estate *is*, ``om.inventory_run`` for what one sweep *did*.
+The whole OM schema in one revision: ``om.om_host`` and ``om.om_service`` for what the
+estate *is*, ``om.om_inventory_run`` for what one sweep *did*. Table names carry an
+``om_`` prefix on top of the schema that already qualifies them, because the schema
+alone does not: the real-MySQL and real-PostgreSQL test lanes translate every
+declared schema token into the same per-worker schema, which collapsed bare
+``service`` onto SEP inventory's own ``service`` (``schema=None``) the first time
+this app's tables were exercised against a real, non-SQLite database -- see
+``app/sep/apps/om_inventory/models.py``'s module comment for the full account.
 
 Rewritten in place rather than extended by follow-up revisions - the host counters on
-``inventory_run`` and the ``SKIPPED`` run status were each a revision of their own
+``om_inventory_run`` and the ``SKIPPED`` run status were each a revision of their own
 while this branch was being written, and both are folded in here - because none of this
 has shipped — there is no deployment whose data a move migration would preserve. The
 cost is local: a machine that ran an earlier version of this revision has to drop
@@ -50,6 +56,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+from sqlmodel.sql.sqltypes import AutoString
 
 from app.sep.apps.shared.om.config import OM_SCHEMA_SYMBOL, om_schema
 from app.sep.config import sep_settings
@@ -69,6 +76,12 @@ def _observed_column() -> sa.Column:
     stores a Python ``None`` as the JSON scalar ``null``, which would make "never
     probed" and "probed, found nothing" the same value in the column.
 
+    The default is the parenthesised expression form, not a bare literal: MySQL 8
+    rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns (error
+    1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL treats the
+    parentheses as ordinary grouping, so the same clause resolves to the identical
+    literal there -- one server_default, both dialects.
+
     :return: The column.
     """
     return sa.Column(
@@ -77,7 +90,7 @@ def _observed_column() -> sa.Column:
             postgresql.JSONB(astext_type=sa.Text()), "postgresql"
         ),
         nullable=False,
-        server_default="{}",
+        server_default=sa.text("('{}')"),
     )
 
 
@@ -126,14 +139,18 @@ def upgrade() -> None:
     # schema would report "absent" against a database that already has them.
     existing = set(sa.inspect(op.get_bind()).get_table_names(schema=schema))
 
-    if "host" not in existing:
+    if "om_host" not in existing:
         op.create_table(
-            "host",
-            # PMM's node id. text, not uuid: PMM's ids are usually UUIDs but not
-            # always -- the PMM server's own node is the literal string
-            # ``pmm-server``, in every deployment, so a uuid column would reject the
-            # one node every installation has.
-            sa.Column("node_id", sa.Text(), nullable=False),
+            "om_host",
+            # PMM's node id. AutoString, not uuid or Text: PMM's ids are usually
+            # UUIDs but not always -- the PMM server's own node is the literal
+            # string ``pmm-server``, in every deployment, so a uuid column would
+            # reject the one node every installation has. Not Text either, because
+            # this is the primary key: MySQL refuses to index a TEXT/BLOB column
+            # without an explicit key length (error 1170), which AutoString already
+            # works around by falling back to VARCHAR(255) on that one dialect
+            # while staying unbounded everywhere else.
+            sa.Column("node_id", AutoString(), nullable=False),
             sa.Column("name", sa.Text(), nullable=False),
             sa.Column("address", sa.Text(), nullable=True),
             sa.Column("executor_host", sa.Text(), nullable=True),
@@ -144,7 +161,7 @@ def upgrade() -> None:
         )
         op.create_index(
             "ix_om_host_failing_since",
-            "host",
+            "om_host",
             ["failing_since"],
             unique=False,
             schema=OM_SCHEMA_SYMBOL,
@@ -153,11 +170,15 @@ def upgrade() -> None:
             postgresql_where=sa.text("failing_since IS NOT NULL"),
         )
 
-    if "service" not in existing:
+    if "om_service" not in existing:
         op.create_table(
-            "service",
-            sa.Column("service_id", sa.Text(), nullable=False),
-            sa.Column("node_id", sa.Text(), nullable=False),
+            "om_service",
+            # AutoString for the same reason as om_host.node_id: both are indexed
+            # (this one is the primary key, node_id below carries
+            # ix_om_service_node_id), and MySQL cannot index TEXT/BLOB without an
+            # explicit key length.
+            sa.Column("service_id", AutoString(), nullable=False),
+            sa.Column("node_id", AutoString(), nullable=False),
             sa.Column("name", sa.Text(), nullable=True),
             sa.Column("port", sa.Integer(), nullable=True),
             # Observed rather than declared, so plain text: a role nobody thought of
@@ -173,22 +194,22 @@ def upgrade() -> None:
             # a table that legitimately vanishes.
             sa.ForeignKeyConstraint(
                 ["node_id"],
-                [f"{OM_SCHEMA_SYMBOL}.host.node_id"],
+                [f"{OM_SCHEMA_SYMBOL}.om_host.node_id"],
                 ondelete="CASCADE",
             ),
             schema=OM_SCHEMA_SYMBOL,
         )
         op.create_index(
             "ix_om_service_node_id",
-            "service",
+            "om_service",
             ["node_id"],
             unique=False,
             schema=OM_SCHEMA_SYMBOL,
         )
 
-    if "inventory_run" not in existing:
+    if "om_inventory_run" not in existing:
         op.create_table(
-            "inventory_run",
+            "om_inventory_run",
             sa.Column("id", sa.Uuid(), autoincrement=False, nullable=False),
             # BaseUUIDSQLModel's own columns. Omitting them is the mistake that makes
             # the table exist and every query against it fail.
@@ -233,7 +254,10 @@ def upgrade() -> None:
                     postgresql.JSONB(astext_type=sa.Text()), "postgresql"
                 ),
                 nullable=False,
-                server_default="[]",
+                # Parenthesised expression default, not a bare literal -- see
+                # _observed_column's own server_default for why: MySQL 8 rejects a
+                # plain DEFAULT '[]' on JSON columns (error 1101).
+                server_default=sa.text("('[]')"),
             ),
             # NULL means the whole estate. A scoped run stores the node ids it was
             # asked about, because a receipt cannot be read honestly without them and
@@ -254,14 +278,14 @@ def upgrade() -> None:
         )
         op.create_index(
             op.f("ix_om_inventory_run_started_at"),
-            "inventory_run",
+            "om_inventory_run",
             ["started_at"],
             unique=False,
             schema=OM_SCHEMA_SYMBOL,
         )
         op.create_index(
             op.f("ix_om_inventory_run_status"),
-            "inventory_run",
+            "om_inventory_run",
             ["status"],
             unique=False,
             schema=OM_SCHEMA_SYMBOL,
@@ -278,20 +302,20 @@ def downgrade() -> None:
     """
     op.drop_index(
         op.f("ix_om_inventory_run_status"),
-        table_name="inventory_run",
+        table_name="om_inventory_run",
         schema=OM_SCHEMA_SYMBOL,
     )
     op.drop_index(
         op.f("ix_om_inventory_run_started_at"),
-        table_name="inventory_run",
+        table_name="om_inventory_run",
         schema=OM_SCHEMA_SYMBOL,
     )
-    op.drop_table("inventory_run", schema=OM_SCHEMA_SYMBOL)
+    op.drop_table("om_inventory_run", schema=OM_SCHEMA_SYMBOL)
     op.drop_index(
-        "ix_om_service_node_id", table_name="service", schema=OM_SCHEMA_SYMBOL
+        "ix_om_service_node_id", table_name="om_service", schema=OM_SCHEMA_SYMBOL
     )
-    op.drop_table("service", schema=OM_SCHEMA_SYMBOL)
+    op.drop_table("om_service", schema=OM_SCHEMA_SYMBOL)
     op.drop_index(
-        "ix_om_host_failing_since", table_name="host", schema=OM_SCHEMA_SYMBOL
+        "ix_om_host_failing_since", table_name="om_host", schema=OM_SCHEMA_SYMBOL
     )
-    op.drop_table("host", schema=OM_SCHEMA_SYMBOL)
+    op.drop_table("om_host", schema=OM_SCHEMA_SYMBOL)

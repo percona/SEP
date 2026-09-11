@@ -2189,7 +2189,7 @@ export interface paths {
      *     hold an opinion about it.
      *
      *     Its services go with it. That is done explicitly rather than left to the
-     *     ``ON DELETE CASCADE`` on ``om.service.node_id``, because SQLite enforces no
+     *     ``ON DELETE CASCADE`` on ``om.om_service.node_id``, because SQLite enforces no
      *     foreign key without a per-connection pragma SEP never sets — and SQLite is the
      *     shipped default. See :func:`~app.sep.apps.om_inventory.crud.delete_host`.
      *

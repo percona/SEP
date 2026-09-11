@@ -17,14 +17,14 @@
 
 Three tables, and the split between them is the design:
 
-``om.host`` and ``om.service``
+``om.om_host`` and ``om.om_service``
     What the estate *is*, one row per entity, upserted. A host row exists whether or
     not any MongoDB was found on it, which is what makes "which pmm-clients have no
     database" answerable at all — and it is not hypothetical: the sandbox carries
     hosts with a PMM client and nothing else beside arbiters running a mongod PMM has
     no service for, and PMM's inventory describes the two identically.
 
-``om.inventory_run``
+``om.om_inventory_run``
     What one sweep *did*. A receipt, not a copy of the estate: which entity was
     attempted, on which executor host, whether it answered, and any error. Keeping
     the collected attributes out of it is load-bearing — with ``RUN_RETENTION``
@@ -54,6 +54,7 @@ from sqlalchemy import Enum as EnumField
 from sqlalchemy.dialects import postgresql
 from sqlmodel import Field as SQLField
 from sqlmodel import SQLModel
+from sqlmodel.sql.sqltypes import AutoString
 
 from app.core.db.models import BaseUUIDSQLModel, DateTimeWithTimezone
 from app.core.utils.date_time import utc_now
@@ -63,14 +64,20 @@ from app.core.utils.fields import UTCDatetime
 #: is spelled rather than imported.
 OM_SCHEMA = "om_schema"
 
-# Table names are short -- ``host``, ``service``, ``inventory_run`` -- because the
-# schema is what qualifies them. ``om.service`` is a different table from SEP
-# inventory's ``service``, and in production nothing has to arrange that: on
-# PostgreSQL the schema separates them, and on SQLite the two services keep separate
-# database files. The one place they *would* collide is the test suite, which creates
-# every service's metadata in a single in-memory database -- so the root conftest
-# gives each SQLite connection a real ``om`` schema with ``ATTACH`` rather than
-# letting the token fall back to the default one.
+# Table names carry an ``om_`` prefix -- ``om_host``, ``om_service``,
+# ``om_inventory_run`` -- on top of the ``om`` schema that already qualifies them,
+# which looks redundant until the schema stops actually separating anything.
+# ``om.om_service`` would be a different table from SEP inventory's bare ``service``
+# even without the prefix wherever schemas are real: on PostgreSQL in production, and
+# on SQLite once the root conftest gives each connection a real ``om`` schema via
+# ``ATTACH``. But the real-MySQL and real-PostgreSQL test lanes translate *every*
+# declared schema token -- ``om_schema`` included -- into the same single per-worker
+# schema for teardown simplicity, which collapses ``om_schema.service`` onto
+# ``None.service`` and makes them the same physical table. That is not hypothetical
+# either: it produced a ``CREATE TABLE`` emitted twice for one name, the second call
+# failing as a duplicate, the first time this app's tables were ever exercised against
+# a real, non-SQLite database. The prefix survives being redundant under schemas
+# because it is the one thing that holds even when schemas do not.
 
 
 def _observed_document_type() -> Any:
@@ -171,7 +178,12 @@ class ObservedEntity(SQLModel):
         default_factory=dict,
         sa_type=_observed_document_type(),
         nullable=False,
-        sa_column_kwargs={"server_default": "{}"},
+        # The parenthesised expression-default form, not a bare literal: MySQL 8
+        # rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns
+        # (error 1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL
+        # treats the parentheses as ordinary grouping, so the same clause resolves
+        # to the identical literal there -- one server_default, both dialects.
+        sa_column_kwargs={"server_default": text("('{}')")},
     )
     first_seen_at: UTCDatetime = SQLField(
         default_factory=utc_now, sa_type=DateTimeWithTimezone, nullable=False
@@ -201,9 +213,15 @@ class OmHost(ObservedEntity, table=True):
     nothing needs translating anywhere — including the scoped refresh, which takes
     the ``node_id`` PMM already has.
 
-    ``text``, not ``uuid``: PMM's ids are usually UUIDs but not always. The PMM
+    Plain ``str``, not ``uuid``: PMM's ids are usually UUIDs but not always. The PMM
     server's own node is the literal string ``pmm-server`` in every deployment, and a
-    ``uuid`` column would reject the one node every installation has.
+    ``uuid`` column would reject the one node every installation has. Left as SQLModel's
+    inferred ``AutoString`` rather than pinned to ``sa_type=Text``, since this column is
+    a primary key: MySQL refuses to index a ``TEXT``/``BLOB`` column without an explicit
+    key length (error 1170), which ``AutoString`` already works around by falling back
+    to ``VARCHAR(255)`` on that one dialect while staying unbounded everywhere else --
+    the same type :attr:`app.inventory.models.NodeBase.external_id` uses for the same
+    reason.
 
     The consequence to accept openly is that if PMM re-registers a node under a new
     id, OM gets a second row and the old one stays — there is no host retention, only
@@ -214,10 +232,15 @@ class OmHost(ObservedEntity, table=True):
     merge unrelated hosts. Hence no surrogate key: it would only move the guess into a
     matching function.
 
-    Class named ``OmHost`` rather than ``Host`` even though the *table* is
-    ``om.host``: the schema qualifies the table, but SQLModel keeps one registry for
-    the whole application and it already carries ``app.inventory.models.Service``, so
-    the short class names are genuinely taken. The pair is kept symmetrical.
+    Class named ``OmHost`` rather than ``Host``, and the table ``om_host`` rather
+    than bare ``host``: SQLModel keeps one registry for the whole application and
+    it already carries ``app.inventory.models.Service``, so the short class name
+    is genuinely taken -- and that table is also named plain ``service`` with no
+    schema of its own (``schema=None``), which OM's ``service`` would collide with
+    the moment anything collapses schemas into one physical namespace, as the
+    real-MySQL/real-PostgreSQL test lanes deliberately do for worker isolation.
+    Prefixing both avoids the class collision and the table collision the same
+    way. The pair is kept symmetrical.
 
     :param node_id: PMM's node id, the primary key.
     :param name: The node's registered name.
@@ -225,7 +248,7 @@ class OmHost(ObservedEntity, table=True):
     :param executor_host: The Nomad client that serves it, ``None`` when none does.
     """
 
-    __tablename__ = "host"
+    __tablename__ = "om_host"
     __table_args__ = (
         # Partial: the healthy majority is not in the index at all. Expressed here
         # rather than with ``index=True`` because a ``WHERE`` clause cannot be, and
@@ -238,7 +261,7 @@ class OmHost(ObservedEntity, table=True):
         {"schema": OM_SCHEMA},
     )
 
-    node_id: str = SQLField(sa_type=Text, primary_key=True)
+    node_id: str = SQLField(primary_key=True)
     name: str = SQLField(sa_type=Text, nullable=False)
     address: str | None = SQLField(default=None, sa_type=Text)
     executor_host: str | None = SQLField(default=None, sa_type=Text)
@@ -261,8 +284,8 @@ class OmService(ObservedEntity, table=True):
     directory, and there is no guaranteed ordering between branches — so an FK into
     another app's table can reference something that legitimately vanishes.
 
-    :param service_id: PMM's service id, the primary key. ``text`` for the same
-        reason as :attr:`OmHost.node_id`.
+    :param service_id: PMM's service id, the primary key. Plain ``str`` for the same
+        reason as :attr:`OmHost.node_id`, including the ``AutoString`` inference.
     :param node_id: The host it runs on.
     :param name: The service name as PMM registered it.
     :param port: The port it listens on.
@@ -273,7 +296,7 @@ class OmService(ObservedEntity, table=True):
         *name*, so a CHECK constraint listing lowercase values rejects every insert.)
     """
 
-    __tablename__ = "service"
+    __tablename__ = "om_service"
     __table_args__ = (
         # Named rather than left to ``index=True``, which derives the name from the
         # *declared* table -- and the declared schema is the symbolic token, so the
@@ -283,13 +306,15 @@ class OmService(ObservedEntity, table=True):
         {"schema": OM_SCHEMA},
     )
 
-    service_id: str = SQLField(sa_type=Text, primary_key=True)
+    service_id: str = SQLField(primary_key=True)
     node_id: str = SQLField(
         sa_column=Column(
-            Text,
+            AutoString(),
             # Qualified with the symbolic schema: the FK target is resolved against
             # the *declared* name, and the connection translates both sides together.
-            ForeignKey(f"{OM_SCHEMA}.host.node_id", ondelete="CASCADE"),
+            # AutoString, not Text: this column carries ix_om_service_node_id, and
+            # MySQL refuses to index TEXT/BLOB without an explicit key length.
+            ForeignKey(f"{OM_SCHEMA}.om_host.node_id", ondelete="CASCADE"),
             nullable=False,
         )
     )
@@ -335,7 +360,7 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     :param error: The failure detail when the sweep itself raised.
     """
 
-    __tablename__ = "inventory_run"
+    __tablename__ = "om_inventory_run"
     # A *symbolic* schema, translated per bind by the engine
     # (``app/sep/apps/shared/om/config.py``). Never a literal: SQLite has no schemas, so a real
     # name here would make the table uncreatable in the unit suite, and the
@@ -389,7 +414,10 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
         sa_column=Column(
             JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
             nullable=False,
-            server_default="[]",
+            # Parenthesised expression default, not a bare literal -- see
+            # ObservedEntity.observed's own server_default for why: MySQL 8 rejects
+            # a plain DEFAULT '[]' on JSON columns (error 1101).
+            server_default=text("('[]')"),
         ),
     )
     # The one nullable JSON column in this app, and it needs ``none_as_null`` to be

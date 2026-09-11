@@ -714,9 +714,9 @@ async def finalise(
 
 
 async def persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
-    """Write what the sweep saw into ``om.host`` and ``om.service``.
+    """Write what the sweep saw into ``om.om_host`` and ``om.om_service``.
 
-    Hosts first, and in one transaction with the services: ``om.service.node_id`` is
+    Hosts first, and in one transaction with the services: ``om.om_service.node_id`` is
     a real foreign key, so a service whose host row does not exist yet cannot be
     inserted.
 
@@ -750,7 +750,7 @@ async def persist_estate(outcome: SweepOutcome, run_id: UUID) -> None:
                 run_id=run_id,
                 attempted=attempted,
             )
-        # Before the services: ``om.service.node_id`` is a real foreign key, so the
+        # Before the services: ``om.om_service.node_id`` is a real foreign key, so the
         # host rows have to be in the transaction first.
         await session.flush()
 
