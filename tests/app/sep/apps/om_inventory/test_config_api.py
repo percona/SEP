@@ -363,7 +363,7 @@ class TestPatchConfig:
         assert om_inventory_settings.RUN_RETENTION == DEFAULTS.RUN_RETENTION
         assert not await SettingsOverrideManager.list(
             session,
-            setting_class=OmInventorySettings.__name__,
+            setting_class=setting_class_token(OmInventorySettings),
             is_active=True,
         )
 
