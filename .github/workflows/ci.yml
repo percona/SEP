@@ -11,6 +11,12 @@ on:
     # merges to main -- it exists only so the OpenManager PRs stacked on it get
     # CI at all instead of merging with zero automated signal.
     - PMM-15299-open-manager
+    # TEMPORARY: PMM-15326-om-switch-gate (#1437) is stacked directly on this
+    # branch rather than on PMM-15299-open-manager, so it needs this branch's
+    # own name here too, the same way PMM-15299-open-manager itself carries an
+    # entry for the OpenManager PRs staged on it. Remove once #1437 is rebased
+    # onto PMM-15299-open-manager, or once this branch merges there.
+    - PMM-15326-om-inventory
     types:
     - labeled
     - ready_for_review
