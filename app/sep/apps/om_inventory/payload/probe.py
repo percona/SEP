@@ -65,6 +65,7 @@ pip requirements by the dispatcher. It is imported lazily so that a run with
 import json
 import os
 import platform
+import shutil
 import subprocess  # nosec B404 - the payload's whole job is asking the host
 import sys
 import time
@@ -774,6 +775,55 @@ def collect_repo_facts(config):
     return facts
 
 
+#: Package-manager binaries checked, in the order tried and paired with the name
+#: reported. First match wins. ``dnf`` before ``yum`` because RHEL8+ symlinks the
+#: latter to the former -- checking ``dnf`` first reports the tool the host's own
+#: package metadata actually understands.
+_PACKAGE_MANAGERS = (
+    ("apt-get", "apt"),
+    ("dnf", "dnf"),
+    ("yum", "yum"),
+    ("zypper", "zypper"),
+)
+
+
+def collect_install_readiness():
+    """Return facts describing whether this host is ready to receive an install.
+
+    Collected for every host, not only ones already running a database: a machine
+    with nothing installed on it yet is exactly the case an install decision is
+    about, and it has no service row for either fact to land on.
+
+    :return: A mapping with ``package_manager`` and ``data_dir_free_bytes``; either
+        is ``None`` when the fact could not be determined.
+    """
+    return {
+        "package_manager": next(
+            (name for binary, name in _PACKAGE_MANAGERS if shutil.which(binary)),
+            None,
+        ),
+        "data_dir_free_bytes": _free_bytes("/"),
+    }
+
+
+def _free_bytes(path):
+    """Return the free byte count on the filesystem holding ``path``, or ``None``.
+
+    Measured at ``/`` rather than a database's own data directory: this runs before
+    an install decision is made, when no mongod has been installed yet to have a
+    ``dbPath`` of its own to measure. A coarser number now is what makes "is there
+    room to install here at all" answerable for a bare host; a per-database number
+    is a question for after an install decision, not before one.
+
+    :param path: The path whose filesystem to measure.
+    :return: The free byte count, or ``None`` if it could not be read.
+    """
+    try:
+        return shutil.disk_usage(path).free
+    except OSError:
+        return None
+
+
 def main():
     """Print one JSON object for the host, then one per configured target.
 
@@ -800,6 +850,9 @@ def main():
         # Once per dispatch, like the OS facts: it is a property of the host, and
         # asking once per service would multiply the wait by the services on it.
         "repo": collect_repo_facts(config),
+        # Whether this host is ready to receive an install, not only whether a
+        # database is already running on it.
+        "install_readiness": collect_install_readiness(),
     }
     # Enumerated once and shared, because ``ps`` is the same answer for every target
     # on this dispatch. Which line belongs to which target is decided per target.

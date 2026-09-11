@@ -50,6 +50,8 @@ SHARED_HOST_SECONDS = 8.25
 TASK_HISTORY_ID = 4711
 #: One refused connection then an answer: the cold start this workspace measured.
 RETRIED_ONCE = 2
+#: A host's free root-filesystem space, as ``collect_install_readiness`` would report it.
+FREE_BYTES = 107374182400
 
 #: A probe record shaped like the payload's NDJSON, trimmed to the fields asserted.
 RECORD: dict[str, Any] = {
@@ -419,6 +421,10 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
                         "os_version_id": "24.04",
                         "arch": "x86_64",
                     },
+                    "install_readiness": {
+                        "package_manager": "apt",
+                        "data_dir_free_bytes": FREE_BYTES,
+                    },
                 },
             )
         },
@@ -433,6 +439,9 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
     # Machine-readable, distinct from "os"'s pretty name.
     assert document["os_id"] == "ubuntu"
     assert document["os_version_id"] == "24.04"
+    # Install-readiness facts, collected for a host with nothing on it yet.
+    assert document["package_manager"] == "apt"
+    assert document["data_dir_free_bytes"] == FREE_BYTES
 
 
 @pytest.mark.asyncio

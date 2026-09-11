@@ -226,6 +226,12 @@ HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # status code, the latency and the proxy in effect are what tell an operator
     # whether to fix DNS, a certificate, or a proxy allow-list.
     ("repo", ("repo",)),
+    # Install-readiness facts, collected the same way and for the same reason as
+    # the OS facts above: a machine with nothing installed on it yet is exactly
+    # the case an install decision is about, and it has no service row to carry
+    # either fact.
+    ("package_manager", ("install_readiness", "package_manager")),
+    ("data_dir_free_bytes", ("install_readiness", "data_dir_free_bytes")),
 )
 
 #: Probe-record fields that belong to one **service**.
