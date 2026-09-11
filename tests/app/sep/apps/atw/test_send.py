@@ -29,6 +29,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from aiohttp import ClientError
 from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
@@ -171,6 +172,21 @@ async def _ndjson(records: list[dict[str, Any] | bytes]) -> AsyncIterator[bytes]
             yield json.dumps(record).encode() + b"\n"
 
 
+async def _ndjson_then_raise(
+    records: list[dict[str, Any] | bytes], error: Exception
+) -> AsyncIterator[bytes]:
+    """Yield each record as one line, then raise as a mid-group stream cut does.
+
+    :param records: Log records to serialize before the failure.
+    :param error: The exception to raise once the records are exhausted.
+    :return: One line of the NDJSON log stream.
+    :raises Exception: ``error``, once every record has been yielded.
+    """
+    async for line in _ndjson(records):
+        yield line
+    raise error
+
+
 def _patch_tasks_api(mocker: MockerFixture, api: AsyncMock) -> AsyncMock:
     """Point the orchestrator at ``api``, yielding it from the auth context.
 
@@ -187,8 +203,10 @@ def _fake_tasks_api(
     mocker: MockerFixture,
     *,
     files: dict[str, Any] | None = None,
-    files_error: Exception | None = None,
+    files_listing_error: Exception | None = None,
+    file_stream_error: Exception | None = None,
     logs: list[dict[str, Any] | bytes] | None = None,
+    log_stream_error: Exception | None = None,
     status: str = TaskHistoryStatusEnum.SUCCESS.value,
 ) -> AsyncMock:
     """Provide a Tasks API client answering the status, files, and logs routes.
@@ -199,9 +217,11 @@ def _fake_tasks_api(
 
     :param mocker: The patching fixture.
     :param files: The output-files listing; two files by default.
-    :param files_error: Raised instead of answering the files listing.
+    :param files_listing_error: Raised instead of answering the files listing.
+    :param file_stream_error: Raised instead of streaming an output file's bytes.
     :param logs: The records the log stream yields; one stdout and one stderr
         group by default.
+    :param log_stream_error: Raised instead of opening the log stream.
     :param status: The status reported for every execution.
     :return: The faked client, for the caller to assert against.
     """
@@ -219,14 +239,22 @@ def _fake_tasks_api(
     def _get(path: str, **_kwargs: Any) -> dict[str, Any]:
         if not path.endswith("/files/"):
             return {"status": status}
-        if files_error is not None:
-            raise files_error
+        if files_listing_error is not None:
+            raise files_listing_error
         return listing
 
     api = AsyncMock(spec=RemoteAPI)
     api.get.side_effect = _get
-    api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
-    api.stream.side_effect = lambda *_a, **_k: _ndjson(records)
+    api.stream_chunks.side_effect = (
+        (lambda *_a, **_k: _chunks(b"data!"))
+        if file_stream_error is None
+        else file_stream_error
+    )
+    api.stream.side_effect = (
+        (lambda *_a, **_k: _ndjson(records))
+        if log_stream_error is None
+        else log_stream_error
+    )
     return _patch_tasks_api(mocker, api)
 
 
@@ -878,7 +906,9 @@ class TestRunSendLogStatusGate:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "status of execution 11 (cpu.sh)" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == (
+            "Could not read the status of execution 11 (cpu.sh): tasks api unreachable"
+        )
 
 
 @pytest.mark.asyncio
@@ -1155,7 +1185,8 @@ class TestRunSendFailures:
     ) -> None:
         """Fail naming the execution whose output files are not ready."""
         _fake_tasks_api(
-            mocker, files_error=HTTPConflictException(detail="Task is still running")
+            mocker,
+            files_listing_error=HTTPConflictException(detail="Task is still running"),
         )
         row = await _seed_send_log(send_session)
 
@@ -1163,7 +1194,10 @@ class TestRunSendFailures:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "11" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == (
+            "Could not list output files for execution 11 (cpu.sh): "
+            "Task is still running"
+        )
 
     async def test_zero_files_and_zero_log_bytes_sends_nothing(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
@@ -1411,6 +1445,100 @@ class TestRunSendFailures:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("uploader")
+class TestRunSendUpstreamFailures:
+    """Cover how an upstream Tasks-API failure is reported per collection step.
+
+    The rendered text is asserted in full rather than by containment: these
+    messages are a support engineer's only account of why a send failed, and a
+    substring check would not notice a step naming the wrong thing.
+    """
+
+    async def test_an_entry_stream_failure_names_the_file(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Name the file that could not be streamed, not merely its execution."""
+        _fake_tasks_api(
+            mocker,
+            files={"diag/report.txt": {"is_dir": False, "size": 7}},
+            file_stream_error=ClientError("connection reset"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read 'diag/report.txt' from execution 11 (cpu.sh): "
+            "connection reset"
+        )
+
+    async def test_a_log_stream_failure_names_the_execution(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Fail naming the execution whose logs the upstream refused."""
+        _fake_tasks_api(
+            mocker, log_stream_error=HTTPBadRequestException(detail="Logs unavailable")
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read logs for execution 11 (cpu.sh): Logs unavailable"
+        )
+
+    async def test_a_log_stream_failing_mid_group_still_fails_cleanly(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Report the upstream cut, not the open archive member it interrupted.
+
+        The stream is cut only after a member is already open, which is the one
+        arrangement where abandoning the member could surface a :mod:`zipfile`
+        error ahead of the real cause.
+        """
+        api = _fake_tasks_api(mocker, files={})
+        api.stream.side_effect = lambda *_a, **_k: _ndjson_then_raise(
+            [_log_record("out-1\n"), _log_record("out-2\n")],
+            ClientError("connection reset"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read logs for execution 11 (cpu.sh): connection reset"
+        )
+
+    async def test_an_overlong_log_line_is_not_reported_as_an_upstream_failure(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Let the line-cap error stand on its own instead of blaming the upstream.
+
+        ``RemoteAPI.stream`` raises ``ValueError`` part-way through for a log line
+        outgrowing its cap. That is a local limit, not an upstream fault, so it
+        must not be dressed up as one.
+        """
+        api = _fake_tasks_api(mocker, files={})
+        api.stream.side_effect = lambda *_a, **_k: _ndjson_then_raise(
+            [_log_record("out-1\n")],
+            ValueError("log line exceeds the line cap"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == "log line exceeds the line cap"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("uploader")
 class TestRunSendSizeCap:
     """Cover the configured bundle-size cap enforced while the zip is built."""
 
@@ -1441,6 +1569,7 @@ class TestRunSendSizeCap:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "1 MiB" in reloaded.detail["error"]
+        assert not reloaded.detail["error"].startswith("Could not read")
         assert uploader.called is False
         assert list(tmp_path.glob("*.zip")) == []
 
