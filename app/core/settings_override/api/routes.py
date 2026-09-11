@@ -16,12 +16,12 @@
 """Build a settings REST API router parameterised by sub-app wiring."""
 
 __all__ = [
-    "apply_class_overrides",
     "AppOwnedClassEntry",
-    "clear_class_override",
     "ClassEntry",
     "RemoteClassEntry",
+    "apply_class_overrides",
     "build_settings_router",
+    "clear_class_override",
     "collect_class_setting_responses",
 ]
 
