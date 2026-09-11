@@ -25,7 +25,7 @@ estate *is*, ``om.om_inventory_run`` for what one sweep *did*. Table names carry
 alone does not: the real-MySQL and real-PostgreSQL test lanes translate every
 declared schema token into the same per-worker schema, which collapsed bare
 ``service`` onto SEP inventory's own ``service`` (``schema=None``) the first time
-this app's tables were exercised against a real, non-SQLite database -- see
+this app's tables were exercised against a real, non-SQLite database — see
 ``app/sep/apps/om_inventory/models.py``'s module comment for the full account.
 
 Rewritten in place rather than extended by follow-up revisions - the host counters on
@@ -80,7 +80,7 @@ def _observed_column() -> sa.Column:
     rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns (error
     1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL treats the
     parentheses as ordinary grouping, so the same clause resolves to the identical
-    literal there -- one server_default, both dialects.
+    literal there — one server_default, both dialects.
 
     :return: The column.
     """
@@ -134,7 +134,7 @@ def _create_schema_if_needed() -> str | None:
 def upgrade() -> None:
     schema = _create_schema_if_needed()
 
-    # Inspect the schema the tables actually land in, asking for the *real* name --
+    # Inspect the schema the tables actually land in, asking for the *real* name —
     # the token is not a schema anything can be inspected in. Inspecting the default
     # schema would report "absent" against a database that already has them.
     existing = set(sa.inspect(op.get_bind()).get_table_names(schema=schema))
@@ -143,7 +143,7 @@ def upgrade() -> None:
         op.create_table(
             "om_host",
             # PMM's node id. AutoString, not uuid or Text: PMM's ids are usually
-            # UUIDs but not always -- the PMM server's own node is the literal
+            # UUIDs but not always — the PMM server's own node is the literal
             # string ``pmm-server``, in every deployment, so a uuid column would
             # reject the one node every installation has. Not Text either, because
             # this is the primary key: MySQL refuses to index a TEXT/BLOB column
@@ -166,7 +166,7 @@ def upgrade() -> None:
             unique=False,
             schema=OM_SCHEMA_SYMBOL,
             # Partial: the healthy majority never enters the index. Ignored on
-            # SQLite, which is fine -- the index is still created, just complete.
+            # SQLite, which is fine — the index is still created, just complete.
             postgresql_where=sa.text("failing_since IS NOT NULL"),
         )
 
@@ -190,7 +190,7 @@ def upgrade() -> None:
             # Safe because both tables belong to this app. Across apps the om schema
             # takes no foreign keys at all: every app's migrations are an independent
             # branch, an image that strips an app removes its versions/ directory, and
-            # there is no ordering between branches -- so a cross-app FK can reference
+            # there is no ordering between branches — so a cross-app FK can reference
             # a table that legitimately vanishes.
             sa.ForeignKeyConstraint(
                 ["node_id"],
@@ -223,7 +223,7 @@ def upgrade() -> None:
                 # Enum persists by name, so a constraint listing the lowercase values
                 # rejects every insert the model makes. ``EnumField`` stores
                 # ``ProbeRunStatus.RUNNING`` as ``"RUNNING"`` while its value is
-                # ``"running"`` -- the same trap ``SettingClassEnum``'s docstring
+                # ``"running"`` — the same trap ``SettingClassEnum``'s docstring
                 # records.
                 sa.Enum(
                     "RUNNING",
@@ -254,7 +254,7 @@ def upgrade() -> None:
                     postgresql.JSONB(astext_type=sa.Text()), "postgresql"
                 ),
                 nullable=False,
-                # Parenthesised expression default, not a bare literal -- see
+                # Parenthesised expression default, not a bare literal — see
                 # _observed_column's own server_default for why: MySQL 8 rejects a
                 # plain DEFAULT '[]' on JSON columns (error 1101).
                 server_default=sa.text("('[]')"),

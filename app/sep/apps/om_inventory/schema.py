@@ -31,8 +31,8 @@ om_inventory_schema = AppSchema(
     name="om_inventory",
     display_name="OpenManager Inventory",
     description=(
-        "Probes MongoDB nodes over Nomad for the facts no metric carries -- the "
-        "installed binary version, the command line, the config file -- and serves "
+        "Probes MongoDB nodes over Nomad for the facts no metric carries — the "
+        "installed binary version, the command line, the config file — and serves "
         "them for PMM to merge into its topology document."
     ),
     forms=[],

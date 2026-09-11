@@ -120,7 +120,7 @@ def _dig(record: dict[str, Any], path: tuple[str, ...]) -> Any:
 #:
 #: Order matters: an arbiter *is* a ``mongod`` process, so it has to be tested before
 #: the ``mongod`` fallback or it would be misclassified as one; mongos is tested before
-#: config for the same reason -- both run distinct programs, but checking the more
+#: config for the same reason — both run distinct programs, but checking the more
 #: specific signal first keeps the table readable top to bottom.
 #:
 #: ============  =========================================================
@@ -180,7 +180,7 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
     result = host_results.get(entry.executor_host or "")
     if result is None:
         return None
-    # Keyed the same way dispatch.py's parse_ndjson stores these records -- PMM's
+    # Keyed the same way dispatch.py's parse_ndjson stores these records — PMM's
     # service id where the target carried one, since two same-named services on one
     # host are not two same-id services. See record_key.
     return result.records.get(record_key(entry.service.external_id, entry.service.name))
@@ -196,7 +196,7 @@ def _record_for(entry: Any, host_results: dict[str, HostProbeResult]) -> dict | 
 HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("os", ("system", "os_name")),
     # The machine-readable `/etc/os-release` ID ("ubuntu", "rocky"), distinct from
-    # ``os``'s human-readable PRETTY_NAME above ("Ubuntu 22.04.3 LTS") -- a general
+    # ``os``'s human-readable PRETTY_NAME above ("Ubuntu 22.04.3 LTS") — a general
     # inventory fact any task type can use to branch on OS, not specific to any one
     # consumer.
     ("os_id", ("system", "os_id")),
@@ -212,11 +212,11 @@ HOST_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # about, and it has no service row for this to land on: without it here the
     # payload collected the version, shipped it over the wire, and it was dropped on
     # exactly the hosts the question is asked about. The process facts stay off the
-    # host on purpose -- they belong to one server process, and a host may run
+    # host on purpose — they belong to one server process, and a host may run
     # several, so a service takes its own from the process on its port.
     ("installed_version", ("binary_version",)),
     # Mongods running here that PMM has no service for. They are host observations
-    # rather than service rows because there is no service id to key a row on -- see
+    # rather than service rows because there is no service id to key a row on — see
     # the payload's find_unregistered. An arbiter is the ordinary case: it holds no
     # data, therefore no user documents, therefore SCRAM cannot authenticate and
     # `pmm-admin add mongodb` fails for it.
@@ -340,7 +340,7 @@ class SweepOutcome:
 #: The sweep reads the estate over HTTP from SEP itself, so a restart races its own
 #: web server: beat's ``DatabaseScheduler`` sets "last run" to now on startup and fires
 #: the sweep on its first tick, seconds before uvicorn has finished binding. Measured
-#: on this workspace -- the sweep dispatched 6 seconds before "Application startup
+#: on this workspace — the sweep dispatched 6 seconds before "Application startup
 #: complete" and wrote a terminal ``FAILED`` carrying ``Cannot connect to host
 #: localhost:8000``, on an estate where nothing was wrong. Both consumers lead with the
 #: newest run, so a healthy estate presented as a failed sweep until the next tick.
@@ -453,7 +453,7 @@ async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOut
 
     # ...and one error per host that did not, keyed by node id because that is what
     # both the estate row and the receipt are keyed by. The dispatch already knows why
-    # -- a timeout, a 409, a release that failed, a payload that crashed -- and losing
+    # — a timeout, a 409, a release that failed, a payload that crashed — and losing
     # it here is losing it for good: ``last_error`` is what an operator reads, and a
     # generic string sends them to look for a fault the sweep could already name.
     for host in hosts:
@@ -551,7 +551,7 @@ def _build_receipt(
                 "answered": bool(result and result.host_record is not None),
                 "duration_seconds": result.duration_seconds if result else None,
                 # The dispatch's own task history id, so a reader can open the
-                # probe's raw output -- the receipt keeps outcomes only, and this is
+                # probe's raw output — the receipt keeps outcomes only, and this is
                 # how it stays reachable rather than gone. ``None`` when the dispatch
                 # never got one back (see ``HostProbeResult.task_history_id``).
                 "task_history_id": result.task_history_id if result else None,
@@ -716,7 +716,7 @@ async def finalise(
     finished.services_answered = outcome.answered
     # Hosts as well as services, because a sweep attempts both. A host-only refresh
     # would otherwise report "0 of 0 services", which reads exactly like a run that
-    # did nothing -- on the one host OM most exists to describe.
+    # did nothing — on the one host OM most exists to describe.
     finished.hosts_total = len(outcome.hosts)
     finished.hosts_probeable = sum(1 for host in outcome.hosts if host.has_executor)
     finished.hosts_answered = len(outcome.host_documents)
@@ -863,7 +863,7 @@ async def run_probe(
         # task directly, so with the check only in the handler a scheduled sweep would
         # start on top of one already dispatching. Both then enqueue the same job for
         # the same host, the Tasks layer refuses the duplicate, and the loser records
-        # a 409 against a host that is perfectly healthy -- moving its failure
+        # a 409 against a host that is perfectly healthy — moving its failure
         # timestamps for a race rather than a fault. Measured happening on this
         # workspace's sandbox: two full sweeps 31 seconds apart, four healthy hosts
         # marked unanswered.
@@ -903,7 +903,7 @@ async def run_probe(
 
     # Deliberately outside the failure path above: a run that persisted and
     # finalised successfully is done, and a pruning failure afterwards is its own
-    # problem -- it must not rewrite a completed run's status to failed.
+    # problem — it must not rewrite a completed run's status to failed.
     async with session_maker() as session:
         await prune_runs(session, om_inventory_settings.RUN_RETENTION)
     status = terminal_status(outcome)

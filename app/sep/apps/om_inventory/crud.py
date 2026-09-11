@@ -54,7 +54,7 @@ class OmHostManager(BaseSQLModelManager):
     """Manage :class:`OmHost` CRUD operations, including paginated estate reads.
 
     Neither ``OmHost`` nor ``OmService`` extends ``BaseSQLModel``, so the base
-    manager's ``created_at``-descending fallback ordering does not apply to them --
+    manager's ``created_at``-descending fallback ordering does not apply to them —
     every call here has to pass its own ``order_by``.
 
     :cvar Model: The SQLModel class this manager is responsible for.
@@ -75,7 +75,7 @@ class OmServiceManager(BaseSQLModelManager):
 def has_service_clause() -> Any:
     """Return the correlated ``EXISTS`` clause for "this host has a service row".
 
-    A plain FK-existence check, not a JSON one -- portable across every dialect OM
+    A plain FK-existence check, not a JSON one — portable across every dialect OM
     runs on, unlike the ``executor`` filter this deliberately does not join:
     :func:`~app.sep.apps.om_inventory.api_routes._executor_usable` reads
     ``observed.executor``, and pushing *that* into SQL would mean a dialect-specific
