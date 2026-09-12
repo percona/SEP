@@ -25,7 +25,6 @@ from collections.abc import MutableMapping
 from typing import Any
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import BaseModel, SecretStr
 
 from app.core.alerts.config import AlertSettings
@@ -39,28 +38,12 @@ from app.core.settings_override.secret_storage import (
     reencrypt_secret_leaves,
 )
 from app.sep.config import SEPSettings
+from tests.app.encryption_fixtures import FERNET_SHAPED_PLAINTEXT, foreign_token
 
 PMM_KEY = "PMM"
 PMM_NESTED_KEY = "PMM__API_KEY"
 PROVIDERS_KEY = "PROVIDERS"
 DELIVERY_INPUTS_KEY = "DIAGNOSTICS_DELIVERY_INPUTS"
-
-#: A plaintext credential ``is_encrypted`` misreads as a Fernet token: 100
-#: base64url characters decoding to a leading ``0x80``. Every test using it
-#: asserts that misreading first, so the literal cannot go stale unnoticed.
-FERNET_SHAPED_PLAINTEXT = (
-    "gBrle-7Zwz135751BZtx8xwcbtxmKhU1YI8Owrth49_"
-    "fdSL8gSiBYnsom2i4yH0ezlpcaER2qVlAGyLicNyLdNIrX7yiZdZ7uJIX"
-)
-
-
-def foreign_token(value: str = "written under another key") -> str:
-    """Return ciphertext minted with a key the configured one cannot decrypt.
-
-    :param value: The plaintext to encrypt with the foreign key.
-    :return: The foreign Fernet token.
-    """
-    return Fernet(Fernet.generate_key()).encrypt(value.encode()).decode("ascii")
 
 
 def pmm_payload(api_key: object = "pmm-secret") -> dict[str, object]:

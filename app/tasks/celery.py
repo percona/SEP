@@ -37,6 +37,7 @@ from sqlalchemy import cast, func, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import undefer
+from sqlalchemy.sql import ColumnElement
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -74,6 +75,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -429,15 +431,22 @@ async def _pre_dispatch_payload_check(
     periodic_task_name: str | None,
     session: AsyncSession | None = None,
 ) -> TaskHistory | None:
-    """Gate dispatch on payload resolvability, failing terminally when it cannot resolve.
+    """Gate dispatch on a resolvable execution request, failing terminally otherwise.
 
-    Resolve and read the ``file://`` payload reference before dispatch so that a
-    reference which is unresolvable (orphaned or missing file) or unreadable
-    (permission, decode, or a file removed between the existence check and the
-    read) raises here — before dispatch — and becomes a terminal FAILED via
-    :func:`_persist_failed_dispatch` instead of an endless Celery retry that
+    Two conditions, both becoming a terminal FAILED via
+    :func:`_persist_failed_dispatch` rather than an endless Celery retry that
     leaves the history non-terminal. Return ``None`` to proceed with normal
     dispatch.
+
+    The first is a leaf this deployment's ``ENCRYPTION_KEY`` could not decrypt.
+    It is checked before the payload read, and not merely as a precaution: the
+    stored ciphertext carries no ``file://`` prefix, so the read below would
+    succeed and hand the token itself to the executor as the payload. A row
+    loaded by id is re-dispatched, so that is reachable rather than theoretical.
+
+    The second is a ``file://`` payload reference that is unresolvable (orphaned
+    or missing file) or unreadable (permission, decode, or a file removed
+    between the existence check and the read).
 
     :param task_history: The TaskHistory to dispatch, from any gated path
         (sync, connectivity, chain, queue, or periodic).
@@ -447,9 +456,19 @@ async def _pre_dispatch_payload_check(
     :param session: The caller's session, forwarded to
         :func:`_persist_failed_dispatch` so a caller-attached ``task_history`` is
         persisted through its own session rather than a second one.
-    :return: The saved FAILED TaskHistory when the payload cannot resolve;
+    :return: The saved FAILED TaskHistory when the request cannot be resolved;
         ``None`` to proceed with normal dispatch.
     """
+    if unreadable := task_history.execution_request.unreadable_leaves:
+        reason = (
+            f"Task execution request could not be decrypted for "
+            f"{periodic_task_name or task_name!r}: {', '.join(unreadable)} "
+            f"could not be read with the configured ENCRYPTION_KEY"
+        )
+        logger.error(reason)
+        return await _persist_failed_dispatch(
+            task_history, task_name, periodic_task_name, reason, session
+        )
     try:
         _ = task_history.execution_request.payload_content
     except (PayloadReferenceError, OSError, UnicodeDecodeError) as exc:
@@ -613,9 +632,10 @@ async def dispatch_queue_item(
 ) -> TaskHistory:
     """Process an item from the history table.
 
-    Gate every caller on payload resolvability via
+    Gate every caller on a resolvable execution request via
     :func:`_pre_dispatch_payload_check` before touching the dispatch lock, so an
-    unresolvable ``file://`` payload short-circuits to a terminal FAILED
+    unresolvable ``file://`` payload, or a leaf this deployment's
+    ``ENCRYPTION_KEY`` cannot decrypt, short-circuits to a terminal FAILED
     TaskHistory instead of surfacing as an unhandled error on the callers that
     do not run the gate themselves (the sync, connectivity, and chain paths).
 
@@ -630,7 +650,7 @@ async def dispatch_queue_item(
         payload gate so a periodic dispatch failure enriches the failure reason
         and alert source consistently with :func:`_pre_dispatch_health_check`.
     :return: The TaskHistory object post execution, or the FAILED TaskHistory
-        persisted by the payload gate when the payload cannot resolve.
+        persisted by the pre-dispatch gate when the request cannot be resolved.
     :raises HTTPConflictException: If the queue item status is not PENDING,
         raises a 409 Conflict error.
     :raises HTTPBadRequestException: If the task backend is unsupported,
@@ -711,66 +731,171 @@ async def _dispatch_queue_item(
     return result
 
 
+def _postgresql_meta_clauses(queued: TaskExecutionRequest) -> list[ColumnElement[bool]]:
+    """Return the ``jsonb`` predicates narrowing candidates by ``queued``'s meta.
+
+    A key in :data:`ENCRYPTED_META_KEYS` carries no predicate: it is ciphertext
+    at rest and encryption is non-deterministic, so no SQL comparison can match
+    it. Every other key keeps its containment or per-key equality, which is what
+    lets the GIN index on ``execution_request->'meta'`` still serve the query.
+
+    :param queued: The execution request being dispatched.
+    :return: One predicate per comparable meta key, empty when there is none.
+    """
+    scalar_subset: dict[str, Any] = {}
+    container_items: list[tuple[str, Any]] = []
+    for field, raw_value in (queued.meta or {}).items():
+        if field in ENCRYPTED_META_KEYS:
+            continue
+        if isinstance(raw_value, list | dict):
+            container_items.append((field, raw_value))
+        else:
+            scalar_subset[field] = raw_value
+    meta_jsonb = col(TaskHistory.execution_request).op("->")(
+        literal("meta", Text, literal_execute=True)
+    )
+    clauses: list[ColumnElement[bool]] = []
+    if scalar_subset:
+        clauses.append(
+            meta_jsonb.op("@>")(cast(literal(json.dumps(scalar_subset), Text), JSONB))
+        )
+    clauses.extend(
+        meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
+        == cast(literal(json.dumps(raw_value), Text), JSONB)
+        for field, raw_value in container_items
+    )
+    return clauses
+
+
+def _json_extract_meta_clauses(
+    engine_name: str, queued: TaskExecutionRequest
+) -> list[ColumnElement[bool]]:
+    """Return the per-key text-equality predicates for a non-PostgreSQL engine.
+
+    An encrypted key is skipped for the same reason as in the ``jsonb`` branch.
+
+    :param engine_name: The bound engine's dialect name.
+    :param queued: The execution request being dispatched.
+    :return: One predicate per comparable meta key, empty when there is none.
+    """
+    clauses: list[ColumnElement[bool]] = []
+    for field, raw_value in (queued.meta or {}).items():
+        if field in ENCRYPTED_META_KEYS:
+            continue
+        extracted = func_json_extract(
+            engine_name, TaskHistory.execution_request, "meta", field
+        )
+        if isinstance(raw_value, list | dict):
+            comparable = json.dumps(raw_value, separators=(",", ":"))
+            extracted = cast(extracted, Text)
+        else:
+            comparable = prepare_unsafe_value_for_json_comparison(
+                engine_name, raw_value
+            )
+        clauses.append(extracted == comparable)
+    return clauses
+
+
+def _encrypted_leaves_match(
+    candidate: TaskExecutionRequest, queued: TaskExecutionRequest
+) -> bool:
+    """Return whether two execution requests agree on their encrypted leaves.
+
+    ``payload`` and every key in :data:`ENCRYPTED_META_KEYS` are stored as
+    ciphertext, and encryption derives a fresh IV per call, so two encryptions of
+    one value never compare equal in SQL. Both sides here are plaintext, which
+    makes this the comparison the SQL predicates used to make, but only because
+    the caller has already excluded a candidate carrying unreadable leaves, whose
+    values stay ciphertext and would compare unequal to anything.
+
+    :param candidate: The execution request of a row the query narrowed to, with
+        every protected leaf readable.
+    :param queued: The execution request being dispatched.
+    :return: Whether every encrypted leaf holds an equal value on both sides.
+    """
+    if candidate.payload != queued.payload:
+        return False
+    candidate_meta = candidate.meta or {}
+    queued_meta = queued.meta or {}
+    return all(
+        candidate_meta.get(key) == queued_meta.get(key) for key in ENCRYPTED_META_KEYS
+    )
+
+
 async def _raise_if_identical_task_conflict(
     queue_item: TaskHistory, session: AsyncSession
 ) -> None:
+    """Refuse a dispatch duplicating one already in flight for the same task.
+
+    Matching runs in two stages because several leaves of the execution request
+    are stored encrypted and encryption is non-deterministic: SQL narrows on
+    every plaintext leaf (task name, target, active status, ``task_id``, and each
+    ``meta`` key the column still holds in the clear), then ``payload`` and every
+    encrypted ``meta`` key are compared in Python against the decrypted
+    candidates. The candidate set is bounded by how many runs of one task are in
+    flight at once, and the deferred ``execution_request`` is undeferred so
+    reading it triggers no per-row load.
+
+    The two stages differ in kind, and the encrypted keys changed sides: SQL
+    matches a ``meta`` key by containment, which ignores a key the incoming
+    request does not carry, while the Python stage compares those keys by
+    equality on both sides. A request carrying no ``args`` therefore no longer
+    matches an in-flight one that carries some. That is correct, since the two
+    are not the same request, but it is a narrowing rather than a straight
+    translation.
+
+    A candidate whose stored document does not validate comes back as the raw
+    value rather than a request, and is skipped: it cannot be compared, and a
+    document that will not parse is not a duplicate of one that did. Only leaves
+    the SQL never reads can produce this, since a row malformed in ``task``,
+    ``target`` or a compared ``meta`` key fails the narrowing first.
+
+    A candidate whose protected leaves this key cannot read is refused instead of
+    skipped. Its values stay ciphertext, so they compare unequal to every
+    plaintext and the row would silently stop deduplicating, which for a
+    schema-changing task means two concurrent runs against one table. The queued
+    side is always readable here, because dispatch is gated on that before this
+    runs, so the mismatch is one-sided and cannot be resolved by comparing.
+
+    :param queue_item: The history row about to be dispatched.
+    :param session: The session to query candidates through.
+    :raises HTTPConflictException: If an active row for the same task carries an
+        identical execution request, or carries one that cannot be read and so
+        cannot be ruled out as a duplicate.
+    """
     engine_name = session.get_bind().name
-    is_postgresql = engine_name.startswith(DatabaseDialect.POSTGRESQL)
-    meta_where_clauses = []
-    if queue_item.execution_request.meta:
-        if is_postgresql:
-            scalar_subset = {}
-            container_items = []
-            for field, raw_value in queue_item.execution_request.meta.items():
-                if isinstance(raw_value, list | dict):
-                    container_items.append((field, raw_value))
-                else:
-                    scalar_subset[field] = raw_value
-            meta_jsonb = col(TaskHistory.execution_request).op("->")(
-                literal("meta", Text, literal_execute=True)
+    queued = queue_item.execution_request
+    meta_where_clauses = (
+        _postgresql_meta_clauses(queued)
+        if engine_name.startswith(DatabaseDialect.POSTGRESQL)
+        else _json_extract_meta_clauses(engine_name, queued)
+    )
+    candidates = await TaskHistoryManager.list(
+        session,
+        func_json_extract(engine_name, TaskHistory.execution_request, "task")
+        == queued.task,
+        func_json_extract(engine_name, TaskHistory.execution_request, "target")
+        == queued.target,
+        *meta_where_clauses,
+        col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
+        col(TaskHistory.id) != queue_item.id,
+        query_options=[undefer(TaskHistory.execution_request)],
+        task_id=queue_item.task_id,
+    )
+    for identical_task in candidates:
+        candidate = identical_task.execution_request
+        if not isinstance(candidate, TaskExecutionRequest):
+            continue
+        if candidate.unreadable_leaves:
+            raise HTTPConflictException(
+                f"In-flight queue item ({identical_task.id}) cannot be compared: "
+                "its stored execution request could not be read with the "
+                "configured ENCRYPTION_KEY."
             )
-            if scalar_subset:
-                meta_where_clauses.append(
-                    meta_jsonb.op("@>")(
-                        cast(literal(json.dumps(scalar_subset), Text), JSONB)
-                    )
-                )
-            for field, raw_value in container_items:
-                meta_where_clauses.append(
-                    meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
-                    == cast(literal(json.dumps(raw_value), Text), JSONB)
-                )
-        else:
-            for field, raw_value in queue_item.execution_request.meta.items():
-                extracted = func_json_extract(
-                    engine_name, TaskHistory.execution_request, "meta", field
-                )
-                if isinstance(raw_value, list | dict):
-                    comparable = json.dumps(raw_value, separators=(",", ":"))
-                    extracted = cast(extracted, Text)
-                else:
-                    comparable = prepare_unsafe_value_for_json_comparison(
-                        engine_name, raw_value
-                    )
-                meta_where_clauses.append(extracted == comparable)
-    if identical_task := (
-        await TaskHistoryManager.first(
-            session,
-            func_json_extract(engine_name, TaskHistory.execution_request, "task")
-            == queue_item.execution_request.task,
-            func_json_extract(engine_name, TaskHistory.execution_request, "target")
-            == queue_item.execution_request.target,
-            func_json_extract(engine_name, TaskHistory.execution_request, "payload")
-            == queue_item.execution_request.payload,
-            *meta_where_clauses,
-            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
-            col(TaskHistory.id) != queue_item.id,
-            task_id=queue_item.task_id,
-        )
-    ):
-        raise HTTPConflictException(
-            f"Identical queue item already running ({identical_task.id})."
-        )
+        if _encrypted_leaves_match(candidate, queued):
+            raise HTTPConflictException(
+                f"Identical queue item already running ({identical_task.id})."
+            )
 
 
 async def sync_running_items() -> None:

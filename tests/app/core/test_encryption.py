@@ -28,11 +28,13 @@ from app.core.config import settings
 from app.core.encryption import (
     _FERNET_VERSION,
     _get_fernet,
+    _MIN_TOKEN_BYTES,
     decrypt,
     DecryptionError,
     encrypt,
     is_encrypted,
 )
+from tests.app.encryption_fixtures import foreign_token
 
 URLSAFE_B64_ALPHABET = frozenset(string.ascii_letters + string.digits + "-_=")
 """The character set ``base64.urlsafe_b64encode`` can emit, padding included."""
@@ -44,15 +46,6 @@ def _reset_fernet_cache() -> Iterator[None]:
     _get_fernet.cache_clear()
     yield
     _get_fernet.cache_clear()
-
-
-def foreign_token(value: str = "written under another key") -> str:
-    """Return ciphertext minted with a key the configured one cannot decrypt.
-
-    :param value: The plaintext to encrypt with the foreign key.
-    :return: The foreign Fernet token.
-    """
-    return Fernet(Fernet.generate_key()).encrypt(value.encode()).decode("ascii")
 
 
 def test_round_trip():
@@ -193,6 +186,43 @@ def test_is_encrypted_false_for_undersized_token_shape():
     undersized = base64.urlsafe_b64encode(bytes([_FERNET_VERSION]) + bytes(56))
 
     assert is_encrypted(undersized.decode("ascii")) is False
+
+
+def test_is_encrypted_false_when_a_token_carries_a_non_base64_character():
+    """Assert a stray space is rejected rather than silently discarded.
+
+    ``base64.urlsafe_b64decode`` drops every character outside the alphabet
+    before decoding, which makes the classification a question about whatever
+    survives rather than about the value stored. Ordinary prose passes it often
+    enough to matter: such a value is skipped by a migration and left in the
+    clear, then reported as undecryptable ciphertext on every later read.
+    """
+    token = encrypt("hunter2")
+    tampered = f"{token[:20]} {token[20:]}"
+
+    assert is_encrypted(tampered) is False
+
+
+def test_is_encrypted_false_for_a_block_misaligned_payload():
+    """Assert a value the block framing rules out is reported as plaintext.
+
+    A Fernet token is a 57-byte envelope around a whole number of cipher
+    blocks, so a decoded length that is long enough and starts with the version
+    marker can still be one no token could have.
+    """
+    misaligned = bytes([_FERNET_VERSION]) + b"\x00" * 80
+
+    assert len(misaligned) > _MIN_TOKEN_BYTES
+    assert is_encrypted(base64.urlsafe_b64encode(misaligned).decode("ascii")) is False
+
+
+@pytest.mark.parametrize("length", [0, 1, 15, 16, 17, 200, 1000])
+def test_is_encrypted_true_for_every_real_token_length(length: int):
+    """Assert tightening the check still accepts every token this key mints.
+
+    :param length: The plaintext length whose token is classified.
+    """
+    assert is_encrypted(encrypt("x" * length)) is True
 
 
 @pytest.mark.parametrize(

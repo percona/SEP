@@ -94,6 +94,7 @@ from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
+from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +572,22 @@ def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return meta if isinstance(meta, Mapping) else None
 
 
+def _args_unreadable_upstream(history: Mapping[str, Any]) -> bool:
+    """Return whether the tasks service could not read an execution's arguments.
+
+    Read off the documented ``unreadable_request_leaves`` field rather than
+    inferred from the value: the service serialises a leaf it could not decrypt
+    as ``null``, which is exactly what an execution recording no arguments also
+    looks like. The field is shape-checked because ``history`` is unvalidated on
+    this side, matching :func:`_execution_meta`.
+
+    :param history: The upstream task-history payload.
+    :return: Whether the recorded arguments are unreadable upstream.
+    """
+    unreadable = history.get("unreadable_request_leaves")
+    return isinstance(unreadable, list) and ARGS_LEAF in unreadable
+
+
 def _execution_args(
     history: dict[str, Any], script: SnippetScript | None
 ) -> tuple[str | None, bool]:
@@ -597,13 +614,19 @@ def _execution_args(
     separate arm: they arrive as the ``ValueError`` and ``TypeError`` they
     respectively subclass.
 
+    A row the tasks service stored encrypted and could not read back also
+    withholds. It is recognised from the documented ``unreadable_request_leaves``
+    field, never by inspecting the value: the service already serialises such a
+    leaf as ``null``, which is otherwise indistinguishable from an execution that
+    recorded no arguments.
+
     :param history: The upstream task-history payload, empty when unavailable.
     :param script: The resolved snippet, or ``None`` when its filename no longer
         resolves and the parameter metadata masking needs is unavailable.
     :return: The masked argument string paired with the withheld flag; a ``None``
         string and a false flag mean the execution recorded no arguments.
     """
-    if not history:
+    if not history or _args_unreadable_upstream(history):
         return None, True
     if (meta := _execution_meta(history)) is None:
         return None, True
