@@ -35,6 +35,7 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
     SecretStr,
+    ValidationError,
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
 
@@ -79,6 +80,7 @@ from app.core.utils.fields import (
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.sync.fields import CONSTRAINED_SYNCER_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +366,39 @@ def _reject_removed_syncer_pmm(data: Any) -> Any:
             "'pmm' key from SEP.SYNCERS / SEP.SYNCER_EXTRA_KWARGS."
         )
     return data
+
+
+def _validate_constrained_syncer_extras(
+    merged: dict[str, Any], extra_kwargs: dict[str, Any]
+) -> None:
+    """Reject a configured syncer threshold its field would refuse at construction.
+
+    :param merged: One syncer's settings, with ``SYNCER_EXTRA_KWARGS`` merged in.
+    :param extra_kwargs: The global extras merged in. ``SEP.SYNCER_EXTRA_KWARGS`` is
+        a YAML surface as well as an env one, so a string reaching a syncer through it
+        gets the env leaf's quoting offered as a possibility, never as the diagnosis.
+    :raises ValueError: When a constrained field carries an unusable value.
+    """
+    for key, constrained in CONSTRAINED_SYNCER_FIELDS.items():
+        raw = merged.get(key)
+        if raw is None:
+            continue
+        try:
+            constrained.adapter.validate_python(raw)
+        except ValidationError as exc:
+            quoting_note = (
+                f" If this came from a SEP__SYNCER_EXTRA_KWARGS__{key.upper()} env "
+                f"override, note that such a leaf always reaches settings as a "
+                f"string; spell the value under SEP.SYNCERS in the YAML profile, or "
+                f"as JSON in SEP__SYNCERS, to have it read as a number."
+                if isinstance(raw, str) and key in extra_kwargs
+                else ""
+            )
+            raise ValueError(
+                f"{key.upper()} is set to {raw!r} for syncer "
+                f"{merged.get('syncer')!r}, which is not a usable value: give "
+                f"{constrained.accepted}.{quoting_note}"
+            ) from exc
 
 
 class SyncerExtraKwargs(BaseLowercaseModel):
@@ -814,16 +849,19 @@ class SEPSettings(BaseYamlAppSettings):
         """Integrate extra keyword arguments into synchronizers.
 
         Merge additional keyword arguments from ``SYNCER_EXTRA_KWARGS`` into each
-        synchronizer in ``SYNCERS`` and update the list accordingly.
+        synchronizer in ``SYNCERS`` and update the list accordingly. Every override
+        surface lands in this merge, so it is also where a constrained threshold is
+        checked against the type its syncer field declares.
 
         :return: The updated ``SEPSettings`` instance with modified ``SYNCERS``.
-        :rtype: Self
+        :raises ValueError: When a merged threshold carries an unusable value.
         """
         syncers = UniqueList()
         extra_kwargs = self.SYNCER_EXTRA_KWARGS.model_dump(exclude_none=True)
         for syncer in self.SYNCERS:
             syncer_data = syncer.model_dump()
             deep_dict_update(syncer_data, extra_kwargs)
+            _validate_constrained_syncer_extras(syncer_data, extra_kwargs)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
         return self

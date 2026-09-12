@@ -15,23 +15,17 @@
 
 """Tests for the ``scripts/release.py`` CLI."""
 
-import importlib.util
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "release.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("release", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-release = importlib.util.module_from_spec(_spec)
-sys.modules["release"] = release
-_spec.loader.exec_module(release)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+release = load_script("release")
 
 
 SAMPLE_PYPROJECT = """\

@@ -60,7 +60,7 @@ name. What a file supplies is a *canonical destination*:
 | `ENCRYPTION_KEY` | **Yes.** A file suppresses the mint below it and is never exported, so each process reads it from the file. Mount it only carrying a value: the deferral is on the file *existing*, so a blank one pins the key empty and the container refuses to start. |
 | `DATABASE__PASSWORD` | **Yes.** One file supplies all three services. A per-service `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file or variable overrides it for that service only. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` | **Yes.** Per-service names; host and port reach every service through the `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs (see below), not through a global name in this image. |
-| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
+| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `TASKS__NOMAD__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from the resolved SEP database, which a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD` outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
@@ -181,9 +181,9 @@ each is both an input here and mountable. See the note under
 | `SEP_DB_PASSWORD` | yes in practice | none | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` |
 | `SEP_DB_HOST` | no | `pmm-server` | `SEP__DATABASE__HOST`, `INVENTORY__DATABASE__HOST`, `TASKS__DATABASE__HOST`, and the three supervisord wait loops |
 | `SEP_DB_PORT` | no | `5432` | same as `SEP_DB_HOST` |
-| `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` |
+| `SEP_GRAFANA_TOKEN` | no | none | `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `TASKS__NOMAD__API_KEY` |
 | `SEP_PMM_ENDPOINT` | no | `https://pmm-server:8443` | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT` (with `/graph` appended) |
-| `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT` |
+| `SEP_NOMAD_ENDPOINT` | no | the profile's credential-free URL | `TASKS__NOMAD__ENDPOINT`. The address only — the executor's credential is `TASKS__NOMAD__API_KEY`, which the Grafana fan-out above supplies |
 
 `SECRET_KEY` is the only input with no fallback of any kind — the container
 exits unless one is supplied, as an environment variable or as a mounted file.
@@ -342,22 +342,44 @@ alphabets are accepted.
 
 `SEP_GRAFANA_TOKEN` is the last value an operator supplies. Below it,
 `entrypoint.sh` runs `grafana_service_account.py` once, before supervisord, and
-fans its answer out to both canonical names through the same
-`export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses — so all five programs
-inherit one resolved value, and nothing in the application copies one setting
-into the other.
+fans its answer out to all three canonical names — the Grafana provider's
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, the PMM client's
+`PMM__API_KEY`, and the Nomad executor's `TASKS__NOMAD__API_KEY` — through the
+same `export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses, so all five
+programs inherit one resolved value and nothing in the application copies one
+setting into the other.
 
-The helper does nothing at all when either canonical name already resolves, from
-an explicit variable or from a file under `SECRETS_DIR`, or when the active auth
-provider is not Grafana. A blank value counts as absent at every rank the helper
-reads.
+`TASKS__NOMAD__API_KEY` is what lets the executor reach PMM's `/nomad/` location,
+whose server-level `auth_request` the embedded profile's credential-free endpoint
+cannot otherwise satisfy. The executor sends it as
+`Authorization: Bearer <key>`, and it takes precedence over any `user:password`
+embedded in `TASKS__NOMAD__ENDPOINT`: while a key is set the endpoint's userinfo
+is stripped, because both HTTP clients would otherwise derive basic auth from it
+and override the header.
+
+The helper does nothing at all when either the Grafana service-account token or
+`PMM__API_KEY` already resolves, from an explicit variable or from a file under
+`SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
+counts as absent at every rank the helper reads.
+
+**Those two names are the mint gate, and the gate controls the whole fan-out.**
+Supplying either of them suppresses minting, and `entrypoint.sh` calls
+`export_grafana_token` only when a token was actually minted — so a deployment
+that mounts `PMM__API_KEY` (or the Grafana token) and leaves `SEP_GRAFANA_TOKEN`
+unset gets **no** `TASKS__NOMAD__API_KEY` at all, and the Nomad executor falls
+back to whatever `TASKS__NOMAD__ENDPOINT` carries. `TASKS__NOMAD__API_KEY` is a
+destination only: mounting *it* alone does not suppress minting, but it also
+cannot make the fan-out run. Supply all three explicitly whenever you supply any
+of the mint-gate two. The same applies to a non-Grafana deployment, which mints
+nothing and must set `TASKS__NOMAD__API_KEY` itself if its Nomad requires a
+credential.
 
 One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
 on the file *existing*, not on it holding a value, because the settings source
 resolves an empty secret file to the empty string rather than falling through. So
-a mounted-but-empty file named for either canonical name pins that name to the
-empty string, and a token minted below it cannot displace it. Mount a file only
-when it carries a value; to leave a name to the mint, do not mount it at all.
+a mounted-but-empty file named for any of the three pins that name to the empty
+string, and a token minted below it cannot displace it. Mount a file only when it
+carries a value; to leave a name to the mint, do not mount it at all.
 
 Otherwise it finds or creates a service account named `sep` with the `Admin` org
 role and asks it for a non-expiring token, authenticating as Grafana's admin.
