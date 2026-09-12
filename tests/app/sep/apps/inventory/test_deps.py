@@ -15,12 +15,17 @@
 
 """Define tests for the app.sep.apps.inventory.deps module."""
 
+import logging
 import re
 from typing import cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import status
+from pytest_mock import MockerFixture
 
+from app.core.config import Settings
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.utils.fields import UniqueList
 from app.sep.apps.inventory.deps import (
@@ -29,8 +34,10 @@ from app.sep.apps.inventory.deps import (
     build_available_syncers,
     filter_syncers_by_name,
     get_syncers,
+    get_syncers_standalone,
 )
 from app.sep.config import sep_settings, SyncOptions
+from app.sep.sync.exceptions import SyncerConfigurationError
 from app.sep.sync.models import BaseSyncer
 from app.sep.sync.syncers.pmm import PMMSyncer
 
@@ -231,3 +238,74 @@ def test_get_syncers_omits_unset_pmm_none() -> None:
         syncers = get_syncers(inventory_api, tasks_api)
     assert len(syncers) == 1
     assert isinstance(syncers[0], PMMSyncer)
+
+
+class TestSyncerConstructionFailure:
+    """Report an unusable syncer setting as a configuration error, never a 500.
+
+    Settings load rejects a bad threshold, so construction only sees one when the
+    settings object was assembled some other way — but the sync trigger must not
+    answer such a state with a bare 500 either.
+    """
+
+    @pytest.fixture
+    def unusable_syncers(self, mocker: MockerFixture) -> None:
+        """Configure a single syncer whose stale-run threshold cannot be applied."""
+        option = SyncOptions(
+            syncer="app.sep.sync.syncers.pmm.PMMSyncer", stale_run_after="60"
+        )
+        mocker.patch.object(sep_settings, "SYNCERS", UniqueList([option]))
+
+    def test_get_syncers_raises_service_unavailable(
+        self, unusable_syncers: None
+    ) -> None:
+        """Answer a request with 503, naming the syncer and the offending field."""
+        with pytest.raises(HTTPServiceUnavailableException) as excinfo:
+            get_syncers(AsyncMock(spec=RemoteAPI), AsyncMock(spec=RemoteAPI))
+
+        assert excinfo.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "PMMSyncer" in excinfo.value.detail
+        assert "STALE_RUN_AFTER" in excinfo.value.detail
+
+    def test_service_unavailable_detail_withholds_the_raw_validation_error(
+        self, unusable_syncers: None
+    ) -> None:
+        """Keep the value and pydantic's internals out of a client-facing body."""
+        with pytest.raises(HTTPServiceUnavailableException) as excinfo:
+            get_syncers(AsyncMock(spec=RemoteAPI), AsyncMock(spec=RemoteAPI))
+
+        detail = excinfo.value.detail
+        assert "input_value" not in detail
+        assert "errors.pydantic.dev" not in detail
+
+    def test_rejected_configuration_is_logged_with_the_syncer(
+        self, unusable_syncers: None, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Make the log line greppable back to the entry that has to be fixed."""
+        with (
+            caplog.at_level(logging.ERROR, logger="app.sep.apps.inventory.deps"),
+            pytest.raises(HTTPServiceUnavailableException),
+        ):
+            get_syncers(AsyncMock(spec=RemoteAPI), AsyncMock(spec=RemoteAPI))
+
+        assert len(caplog.records) == 1
+        assert "app.sep.sync.syncers.pmm.PMMSyncer" in caplog.records[0].getMessage()
+        assert caplog.records[0].exc_info is not None
+
+    @pytest.mark.asyncio
+    async def test_get_syncers_standalone_raises_configuration_error(
+        self, unusable_syncers: None, mocker: MockerFixture
+    ) -> None:
+        """Fail a scheduled run with a configuration error, not a pydantic error."""
+        mocker.patch(
+            "app.sep.apps.inventory.deps.get_inventory_api_standalone",
+            new=AsyncMock(return_value=AsyncMock(spec=RemoteAPI)),
+        )
+        mocker.patch.object(
+            Settings,
+            "get_remote_api",
+            new=AsyncMock(return_value=AsyncMock(spec=RemoteAPI)),
+        )
+
+        with pytest.raises(SyncerConfigurationError, match="STALE_RUN_AFTER"):
+            await get_syncers_standalone()

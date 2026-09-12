@@ -24,7 +24,7 @@
     "jsdom": "^29.1.1",
     "material-react-table": "1.15.1",
     "typescript": "~6.0.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "@emotion/react": "^11.0.0",

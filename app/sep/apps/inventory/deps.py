@@ -15,13 +15,15 @@
 
 """Define dependencies for the Inventory plugin."""
 
+import logging
 from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.core.config import settings
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import require_internal_token
 from app.core.utils import import_var
@@ -29,8 +31,11 @@ from app.inventory.config import inventory_settings
 from app.sep.apps.inventory.models import SyncRunSummary
 from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
+from app.sep.sync.exceptions import SyncerConfigurationError
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
+
+logger = logging.getLogger(__name__)
 
 
 class InventorySyncTriggerWrite(BaseModel):
@@ -205,6 +210,35 @@ def _syncer_init_kwargs(sync_option: SyncOptions) -> dict[str, Any]:
     return sync_option.model_dump(exclude={"syncer"}, exclude_none=True)
 
 
+def _build_syncers(inventory_api: RemoteAPI, tasks_api: RemoteAPI) -> list[BaseSyncer]:
+    """Construct every configured syncer with the given API clients.
+
+    :param inventory_api: The API client used to interact with the inventory service.
+    :param tasks_api: The API client used to interact with the task service.
+    :return: A list of initialized ``BaseSyncer`` instances.
+    :raises SyncerConfigurationError: When a syncer refuses one of its settings.
+    :raises ImportError: When a configured syncer's module cannot be imported.
+    :raises AttributeError: When a configured syncer's module carries no such
+        attribute. ``StrImportableAttribute`` only checks the module at settings
+        load, so ``validate_importable_settings`` in ``app.main`` is what normally
+        catches this before a request arrives.
+    """
+    syncers = []
+    for sync_option in sep_settings.SYNCERS:
+        syncer_class = import_var(sync_option.syncer)
+        try:
+            syncers.append(
+                syncer_class(
+                    inventory_api=inventory_api,
+                    tasks_api=tasks_api,
+                    **_syncer_init_kwargs(sync_option),
+                ),
+            )
+        except ValidationError as exc:
+            raise SyncerConfigurationError(sync_option.syncer, exc) from exc
+    return syncers
+
+
 def get_syncers(
     inventory_api: InventoryClient, tasks_api: TasksClient
 ) -> list[BaseSyncer]:
@@ -214,23 +248,15 @@ def get_syncers(
     the necessary API clients and configuration parameters.
 
     :param inventory_api: The API client used to interact with the inventory service.
-    :type inventory_api: InventoryClient
     :param tasks_api: The API client used to interact with the task service.
-    :type tasks_api: TasksClient
     :return: A list of initialized ``BaseSyncer`` instances.
-    :rtype: list[BaseSyncer]
+    :raises HTTPServiceUnavailableException: When a syncer refuses one of its settings.
     """
-    syncers = []
-    for sync_option in sep_settings.SYNCERS:
-        syncer_class = import_var(sync_option.syncer)
-        syncers.append(
-            syncer_class(
-                inventory_api=inventory_api,
-                tasks_api=tasks_api,
-                **_syncer_init_kwargs(sync_option),
-            ),
-        )
-    return syncers
+    try:
+        return _build_syncers(inventory_api, tasks_api)
+    except SyncerConfigurationError as exc:
+        logger.exception("Syncer %s rejected its configuration", exc.syncer)
+        raise HTTPServiceUnavailableException(detail=str(exc)) from exc
 
 
 SyncersDep = Annotated[list[BaseSyncer], Depends(get_syncers)]
@@ -279,7 +305,8 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
     context.
 
     :return: A list of initialized ``BaseSyncer`` instances.
-    :rtype: list[BaseSyncer]
+    :raises SyncerConfigurationError: When a syncer refuses one of its settings; a
+        scheduled run fails outright rather than syncing a subset.
     """
     inventory_api = await get_inventory_api_standalone()
     tasks_api = await settings.get_remote_api(
@@ -289,17 +316,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         logger_name="tasks_api",
     )
-    syncers = []
-    for sync_option in sep_settings.SYNCERS:
-        syncer_class = import_var(sync_option.syncer)
-        syncers.append(
-            syncer_class(
-                inventory_api=inventory_api,
-                tasks_api=tasks_api,
-                **_syncer_init_kwargs(sync_option),
-            ),
-        )
-    return syncers
+    return _build_syncers(inventory_api, tasks_api)
 
 
 InternalTokenDep = Annotated[str, Depends(require_internal_token)]
