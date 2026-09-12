@@ -23,7 +23,10 @@ from fastapi import status
 from httpx import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+)
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
@@ -357,6 +360,27 @@ class TestBackupSourceChoicesRoute:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_unavailable_inventory_surfaces_as_503(
+        self, session, regular_user
+    ) -> None:
+        """Return 503 for an unavailable inventory instead of swallowing it to ``[]``.
+
+        Only the unknown-service 404 above is swallowed. A capacity refusal
+        reaches this route as ``HTTPServiceUnavailableException`` and must stay
+        distinguishable from "this service has no backups", or the selector
+        silently renders an empty list during an outage.
+        """
+        response = await self._get(
+            session,
+            7,
+            inventory_mock(raises=HTTPServiceUnavailableException()),
+            regular_user,
+        )
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "detail" in response.json()
 
     @pytest.mark.asyncio
     async def test_sentinel_service_returns_empty_list(

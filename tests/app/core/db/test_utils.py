@@ -38,6 +38,7 @@ from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.pool import AsyncAdaptedQueuePool, StaticPool
 from sqlalchemy.sql import column
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -634,8 +635,9 @@ class TestFuncJsonExtractOnRealPostgres:
         assert result.scalar_one() == "mysqldump"
 
 
-_SQLALCHEMY_DEFAULT_POOL_SIZE = 5
-_SQLALCHEMY_DEFAULT_MAX_OVERFLOW = 10
+_BOUNDED_DEFAULT_POOL_SIZE = 3
+_BOUNDED_DEFAULT_MAX_OVERFLOW = 2
+_BOUNDED_DEFAULT_POOL_TIMEOUT = 10.0
 
 
 class TestCreateAppAsyncEngine:
@@ -667,12 +669,51 @@ class TestCreateAppAsyncEngine:
             await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_preserves_sqlalchemy_defaults_when_unset(self):
-        """Preserve SQLAlchemy's own defaults when pool fields are unset."""
+    async def test_applies_bounded_defaults_when_unset(self):
+        """Apply the bounded defaults to an unconfigured PostgreSQL engine.
+
+        Five concurrent connections per engine, where SQLAlchemy's own defaults
+        would have allowed fifteen.
+        """
         engine = create_app_async_engine(self._postgres_options())
         try:
-            assert engine.pool.size() == _SQLALCHEMY_DEFAULT_POOL_SIZE
-            assert engine.pool._max_overflow == _SQLALCHEMY_DEFAULT_MAX_OVERFLOW
+            pool = engine.pool
+            assert isinstance(pool, AsyncAdaptedQueuePool)
+            assert pool.size() == _BOUNDED_DEFAULT_POOL_SIZE
+            assert pool._max_overflow == _BOUNDED_DEFAULT_MAX_OVERFLOW
+            assert pool._timeout == _BOUNDED_DEFAULT_POOL_TIMEOUT
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("name_for", "expected_pool"),
+        [
+            pytest.param(lambda _tmp_path: "", StaticPool, id="in-memory"),
+            pytest.param(
+                lambda tmp_path: str(tmp_path / "x.db"),
+                AsyncAdaptedQueuePool,
+                id="file",
+            ),
+        ],
+    )
+    async def test_builds_a_sqlite_engine_of_either_backing(
+        self, name_for, expected_pool, tmp_path
+    ):
+        """Build both SQLite engines, whose pool classes differ in what they accept.
+
+        An in-memory database gets a ``StaticPool``, which raises ``TypeError``
+        if the sizing kwargs reach it; a file-backed one gets an
+        ``AsyncAdaptedQueuePool``, which accepts them. Only the dialect carve-out
+        in :attr:`DatabaseOptions.pool_engine_kwargs` keeps both constructible,
+        and no other test builds a SQLite engine through that property.
+        """
+        engine = create_app_async_engine(
+            DatabaseOptions(ENGINE=AsyncDatabaseEngine.SQLITE, NAME=name_for(tmp_path))
+        )
+        try:
+            assert isinstance(engine.pool, expected_pool)
+            assert engine.pool._pre_ping is True
         finally:
             await engine.dispose()
 
