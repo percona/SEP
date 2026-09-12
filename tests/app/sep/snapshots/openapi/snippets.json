@@ -689,6 +689,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -699,6 +709,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -967,6 +990,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -977,6 +1010,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1133,6 +1179,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1143,6 +1199,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1471,6 +1540,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1481,6 +1560,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1580,6 +1672,16 @@
             ],
             "title": "Ge"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1601,6 +1703,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1651,8 +1766,13 @@
       },
       "framework__FormSection": {
         "additionalProperties": false,
-        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:param group: Optional heading of the collapsible group this section\n    belongs to. A run of *adjacent* sections carrying the same value\n    renders inside one collapsed shell titled by it, so a form with many\n    secondary sections costs one row at rest instead of one per section.\n    Each member keeps its own ``collapsible`` / ``collapsed_by_default``\n    behaviour inside the group. Defaults to ``None`` — the section renders\n    on its own.\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.",
         "properties": {
+          "advanced": {
+            "default": false,
+            "title": "Advanced",
+            "type": "boolean"
+          },
           "cardinality_rules": {
             "anyOf": [
               {
@@ -1806,6 +1926,15 @@
         "title": "FormSection",
         "type": "object"
       },
+      "framework__HelpPlacement": {
+        "description": "Say where a field's ``description`` is shown, overriding the default.\n\nThe renderer otherwise places help by length — a description that fits\nroughly one line sits under the input, a longer one goes behind a help icon\nbeside the label. Setting this is for the cases where that reads wrong: a\nterse note that is still secondary, or a long one someone needs in front of\nthem while they type.",
+        "enum": [
+          "tooltip",
+          "inline"
+        ],
+        "title": "HelpPlacement",
+        "type": "string"
+      },
       "framework__HostField": {
         "additionalProperties": false,
         "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
@@ -1880,6 +2009,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1890,6 +2029,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2001,6 +2153,16 @@
             ],
             "title": "Ge"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2022,6 +2184,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2178,6 +2353,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2188,6 +2373,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2300,6 +2498,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2310,6 +2518,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2426,6 +2647,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2436,6 +2667,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2536,6 +2780,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2546,6 +2800,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2658,6 +2925,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2668,6 +2945,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3003,6 +3293,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3013,6 +3313,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3118,6 +3431,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3128,6 +3451,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3288,6 +3624,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3310,6 +3656,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3434,6 +3793,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3444,6 +3813,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3540,6 +3922,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3574,6 +3966,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "pattern": {
             "anyOf": [
@@ -3702,6 +4107,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3712,6 +4127,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3820,6 +4248,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3830,6 +4268,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "placeholder": {
             "anyOf": [
@@ -3942,6 +4393,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3952,6 +4413,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "placeholder": {
             "anyOf": [

@@ -44,6 +44,7 @@ from app.sep.apps.framework.rules import (
     FieldGate,
     Predicate,
 )
+from app.sep.apps.framework.schema import HelpPlacement
 
 __all__ = [
     "ArgFormat",
@@ -52,6 +53,7 @@ __all__ = [
     "Forbidden",
     "FormLayout",
     "FormRules",
+    "HelpPlacement",
     "Hidden",
     "HostRef",
     "Option",
@@ -139,6 +141,29 @@ class Ui:
         default; ``None`` sets the form default to ``None``; any other value sets
         the form default to that value. The model's own default — what the JSON
         body validates against — is never affected.
+    :param help_placement: Where the renderer shows this field's
+        ``description``. ``"inline"`` puts it under the input, where a format
+        hint belongs — visible while someone types into the field it describes.
+        ``"tooltip"`` puts it behind a help icon beside the label, which keeps
+        prose from dominating a form that has a lot of it. ``None`` (the
+        default) lets the renderer decide by length: a description that fits
+        roughly one line renders inline, a longer one goes behind the icon. Set
+        it only where that default reads wrong. Reference and selector fields
+        ignore it and are always inline — their label is a plain string the
+        renderer also uses in validation messages, so there is no node to hang
+        an icon from. Defaults to ``None``.
+    :param parent: Name of a sibling ``bool`` field, in the same section, that
+        this field parameterises. The renderer draws the field indented beneath
+        that toggle and keeps it non-interactive until the toggle is on, rather
+        than hiding it, so a reader can see what enabling the toggle will offer.
+        Presentation only, per this class's governing rule: it changes nothing
+        about what the server accepts. A field that must also be *rejected*
+        while its toggle is off says so with its own ``Forbidden``, which is a
+        per-field validation decision rather than something the pointer
+        implies.
+        :func:`~app.sep.apps.framework.form_dsl.derivation.derive_form_sections`
+        checks only that the target is a same-section ``bool`` that is not
+        itself parented. Defaults to ``None``.
     """
 
     label: str | None = None
@@ -150,18 +175,37 @@ class Ui:
     required: bool | None = None
     widget: FieldWidget | None = None
     default: Any = _UNSET
+    parent: str | None = None
+    help_placement: HelpPlacement | None = None
 
     def __post_init__(self) -> None:
-        """Reject a destructive marker that carries no consequence text.
+        """Reject a marker whose opt-in string carries nothing.
 
-        :raises ValueError: When ``destructive`` is set to a blank or
-            whitespace-only string.
+        :raises ValueError: When ``destructive`` or ``parent`` is set to a blank
+            or whitespace-only string.
         """
         if self.destructive is not None and not self.destructive.strip():
             raise ValueError(
                 "Ui(destructive=...) must carry the consequence text a "
                 "confirmation shows; omit the keyword to leave the field "
                 "unmarked"
+            )
+        if self.help_placement is not None:
+            try:
+                object.__setattr__(
+                    self, "help_placement", HelpPlacement(self.help_placement)
+                )
+            except ValueError:
+                known = sorted(member.value for member in HelpPlacement)
+                raise ValueError(
+                    f"Ui(help_placement={self.help_placement!r}) is not one of "
+                    f"{known}; omit the keyword to let the renderer place the "
+                    "description by length"
+                ) from None
+        if self.parent is not None and not self.parent.strip():
+            raise ValueError(
+                "Ui(parent=...) must name the sibling bool field this field "
+                "parameterises; omit the keyword to leave the field unparented"
             )
 
     @property
@@ -513,6 +557,15 @@ class SectionLayout:
     :param title: The section heading.
     :param description: Optional helper text beneath the heading. Defaults to
         ``None``.
+    :param advanced: Whether the section holds expert options rather than the
+        common case. The renderer withholds advanced sections behind a single
+        "Show advanced options" control placed after the ordinary ones, and
+        reveals them as ordinary top-level sections — so a form with several
+        expert sections costs one row at rest instead of one per section. It
+        reveals them on its own, and expands the section concerned, whenever
+        one holds a value other than its default or a field an error points
+        into. Membership needs no adjacency: the renderer collects them
+        wherever they appear, preserving order. Defaults to ``False``.
     :param collapsible: Whether the renderer may collapse the section. Defaults
         to ``False``.
     :param collapsed_by_default: Whether a collapsible section starts collapsed.
@@ -527,6 +580,7 @@ class SectionLayout:
     key: str
     title: str
     description: str | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False

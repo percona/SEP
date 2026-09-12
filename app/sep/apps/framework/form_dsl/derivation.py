@@ -340,6 +340,8 @@ def _common_field_kwargs(
         "default": _field_default(field_info, ui),
         "requires": _gates(metadata, Requires) or None,
         "forbidden": _gates(metadata, Forbidden) or None,
+        "parent": ui.parent,
+        "help_placement": ui.help_placement,
     }
 
 
@@ -960,6 +962,62 @@ def _runtime_form_fields(model: type["AppFormModel"]) -> list[BaseField | OneOfG
     return fields
 
 
+def _validate_parent_pointers(sections: list[FormSection]) -> None:
+    """Reject ``Ui(parent=...)`` pointers that the renderer could not honour.
+
+    ``Ui`` is presentation-only, so a pointer changes nothing about what the
+    server accepts: it says where the renderer draws the field and when to grey
+    it out, and nothing more. What it can still get wrong is naming a target the
+    renderer cannot nest under — a field in another section, one that is not a
+    toggle, or one that is itself nested — and none of those is visible in a
+    wire snapshot, so they are caught here, where every migrated app derives its
+    schema.
+
+    A field may still carry its own ``Forbidden`` gate on the same parent when
+    the combination is genuinely invalid, but that is a validation decision made
+    per field, not something the pointer implies.
+
+    :param sections: The derived form sections.
+    :raises ValueError: When a pointer names a field outside its own section, a
+        field that is not a bool, or a field that is itself parented.
+    """
+    for section in sections:
+        bools = {
+            item.name
+            for item in section.fields
+            if isinstance(item, BaseField) and item.field_type == "bool"
+        }
+        parented = {
+            item.name
+            for item in section.fields
+            if isinstance(item, BaseField) and item.parent is not None
+        }
+        leaves: list[BaseField] = []
+        for item in section.fields:
+            if isinstance(item, BaseField):
+                leaves.append(item)
+                continue
+            leaves.extend(leaf for branch in item.branches for leaf in branch.fields)
+        for leaf in leaves:
+            parent = leaf.parent
+            if parent is None:
+                continue
+            if parent not in bools:
+                raise ValueError(
+                    f"field {leaf.name!r} sets Ui(parent={parent!r}), which is not "
+                    f"a bool field declared directly in section {section.title!r} "
+                    f"(bools there: {sorted(bools)}). A parent toggle has to be a "
+                    "bool the renderer can nest this field under, declared beside "
+                    "it at the top level of its own section."
+                )
+            if parent in parented:
+                raise ValueError(
+                    f"field {leaf.name!r} sets Ui(parent={parent!r}), which is "
+                    "itself parented. Chained parents are not supported, and a "
+                    "cycle would leave both toggles permanently inert."
+                )
+
+
 def derive_form_sections(
     model: type["AppFormModel"], layout: FormLayout
 ) -> list[FormSection]:
@@ -977,8 +1035,10 @@ def derive_form_sections(
     :param model: The create model carrying the field markers.
     :param layout: The section layout supplying each section's title and metadata.
     :return: The derived form sections in field-declaration order.
-    :raises ValueError: When a field names a section absent from ``layout``, or a
-        layout section has no fields.
+    :raises ValueError: When a field names a section absent from ``layout``, a
+        layout section has no fields, or a ``Ui(parent=...)`` pointer names
+        a target the renderer could not nest under (see
+        :func:`_validate_parent_pointers`).
     """
     specs = _derive_field_specs(model)
     layout_by_key = {section.key: section for section in layout.sections}
@@ -1012,6 +1072,7 @@ def derive_form_sections(
                 title=section_layout.title,
                 description=section_layout.description,
                 fields=[spec.base_field for spec in members],
+                advanced=section_layout.advanced,
                 collapsible=section_layout.collapsible,
                 collapsed_by_default=section_layout.collapsed_by_default,
                 render_after_submit=section_layout.render_after_submit,
@@ -1022,6 +1083,7 @@ def derive_form_sections(
                 cardinality_rules=list(section_rules.cardinality_rules) or None,
             )
         )
+    _validate_parent_pointers(sections)
     return sections
 
 

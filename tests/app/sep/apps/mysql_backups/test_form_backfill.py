@@ -637,3 +637,28 @@ class TestEncryptionFormatStampRepair:
             outcome.stamped_data[RESERVED_FORM_KEY]["encryption_format"]
             == EncryptionFormat.GPG
         )
+
+
+_LEGACY_KILL_QUERIES_TIMEOUT = 300
+
+
+def test_reconstruction_still_rejects_a_cross_mode_option():
+    """Keep the mode gates reaching the lenient model through inheritance.
+
+    This model relaxes exactly one thing, ``backup_dir``, by redeclaring it. Any
+    further redeclaration silently drops every marker it does not repeat, and a
+    mode gate lost that way lets the reconstruction stamp a body the create and
+    update routes will not take back.
+    """
+    body = {
+        "task_name": "backups-legacy-mydumper",
+        "hostname": "executor-host",
+        "service_id": 1,
+        "backup_type": BackupType.MYDUMPER.value,
+        "backup_dir": "/data/backups",
+        "xtrabackup_kill_queries_timeout": _LEGACY_KILL_QUERIES_TIMEOUT,
+    }
+
+    with pytest.raises(ValidationError) as excinfo:
+        LegacyBackupCreate.model_validate(body)
+    assert "'xtrabackup_kill_queries_timeout' must not be set" in str(excinfo.value)

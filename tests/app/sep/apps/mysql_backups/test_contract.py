@@ -309,6 +309,10 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         a section added later without a posture decision fails here. Where the
         required fields sit is pinned too, so none of them can drift behind a
         collapse toggle.
+
+        Order and ``advanced`` are pinned as a list rather than a mapping, so a
+        section changing place or losing its advanced marking fails here rather
+        than quietly changing what the form opens on.
         """
         base = app_base_url(self.app_def)
 
@@ -316,22 +320,23 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_200_OK, response.text
         sections = response.json()["forms"]
-        posture = {
-            section["title"]: (
+        assert [
+            (
+                section["title"],
                 section["collapsible"],
                 section["collapsed_by_default"],
+                section["advanced"],
             )
             for section in sections
-        }
-        assert posture == {
-            "Task": (False, False),
-            "General": (True, True),
-            "Mydumper": (True, True),
-            "XtraBackup": (True, True),
-            "Binlog": (True, True),
-            "Encryption": (True, True),
-            "Upload": (True, True),
-        }
+        ] == [
+            ("Task", False, False, False),
+            ("Mydumper", True, True, False),
+            ("XtraBackup", True, True, False),
+            ("Binlog", True, True, False),
+            ("General", True, True, True),
+            ("Encryption", True, True, True),
+            ("Upload", True, True, True),
+        ]
         required_fields = {
             (section["title"], field["name"])
             for section in sections

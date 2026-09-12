@@ -51,7 +51,7 @@ OWNER = "RESTORES"
 
 
 class S3Tool(EnumFieldMixin, StrEnum):
-    """Allowed tools to interact with S3-compatible services."""
+    """Enumerate the clients that can download a backup from S3-compatible storage."""
 
     S3CMD = "s3cmd"
     AWSCLI = "awscli"
@@ -439,10 +439,8 @@ class RestoreCreate(TaskFormModel):
             label="Destination Database Service",
             section="Task",
             description=(
-                "Database service being restored into. A Mydumper restore needs an "
-                "existing MySQL service, whose address and port become the load "
-                "destination; an XtraBackup or Binlog restore only records the name, "
-                "so a typed one is accepted there."
+                "Mydumper loads into this service's address and port. XtraBackup and "
+                "Binlog only record the name, so a typed one works."
             ),
         ),
     ] = None
@@ -456,11 +454,9 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             depends_on="service_id",
             description=(
-                "Where the backup is stored. Select a database service above to list "
-                "its completed backups, then pick one — or enter a local path "
-                "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
-                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these to "
-                "restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
+                "Pick a service above to list its backups, or type a path: "
+                "/backups/mydumper/20240101, db01:/path, s3://bucket/path or "
+                "gs://bucket/path. Add /latest for the most recent."
             ),
         ),
     ]
@@ -503,101 +499,6 @@ class RestoreCreate(TaskFormModel):
         ),
     ] = EncryptionFormat.NONE
 
-    logging_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Logging directory",
-            section="General",
-            description="Directory on the target host for this restore's log files",
-        ),
-    ] = None
-    port: Annotated[
-        int | None,
-        Ui(
-            section="General",
-            description=(
-                "Port SEP connects to on the target host when it queries the server "
-                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
-                "loads over the destination service's own address and a Binlog restore "
-                "replays through a local client, so neither uses it."
-            ),
-        ),
-    ] = None
-    custom_mysql_init_command: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Custom MySQL init command",
-            section="General",
-            description=(
-                "Service command used to stop and start MySQL during an XtraBackup "
-                "restore, such as /usr/bin/systemctl; detected automatically when left "
-                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
-                "it."
-            ),
-        ),
-    ] = None
-    ssh_user: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH user",
-            section="General",
-            description=(
-                "SSH user for fetching a backup stored on a remote host. "
-                "Defaults to percona when left blank."
-            ),
-        ),
-    ] = None
-    ssh_port: Annotated[
-        int | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH port",
-            section="General",
-            description=(
-                "SSH port for fetching a backup stored on a remote host. "
-                "Defaults to 22 when left blank."
-            ),
-        ),
-    ] = None
-    ssh_key: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _SSH_ONLY,
-        Ui(
-            label="SSH key name",
-            section="General",
-            description=(
-                "Unused for the sources above: a local path, remote host, S3 or "
-                "Google Cloud Storage fetch always authenticates with the SSH "
-                "user's own id_rsa key."
-            ),
-        ),
-    ] = None
-    s3_tool: Annotated[
-        S3Tool | EmptyStrToNone,
-        _S3_ONLY,
-        Choices(((S3Tool.S3CMD, "s3cmd"), (S3Tool.AWSCLI, "awscli"))),
-        Ui(
-            label="S3 tool",
-            section="General",
-            description=(
-                "Client used to download the backup. Defaults to s3cmd when left blank."
-            ),
-        ),
-    ] = None
-    gpg_password_file: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _GPG_SOURCE_ONLY,
-        Ui(
-            label="GPG password file",
-            section="General",
-            description=(
-                "Path on the target host to the file holding the passphrase for a "
-                "GPG-encrypted backup"
-            ),
-        ),
-    ] = None
-
     schema_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
         SchemaRef(allow_custom=True),
@@ -606,9 +507,9 @@ class RestoreCreate(TaskFormModel):
             section="Mydumper",
             depends_on="service_id",
             description=(
-                "Database the backup is loaded into; pick one from inventory. Leave "
-                "empty to restore into the databases the backup came from. A name "
-                "typed here instead of picked is ignored and does the same."
+                "Database the backup is loaded into. Leave empty to restore into the "
+                "backup's own databases. A typed name is ignored — same as leaving it "
+                "empty."
             ),
         ),
     ] = None
@@ -838,6 +739,7 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Wait for catchup",
             section="XtraBackup",
+            parent="slave_from_master",
             description=(
                 "Wait for the restored replica to catch up and fail the task if it "
                 "does not. Needs replication to be started above."
@@ -849,6 +751,7 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master IP",
             section="XtraBackup",
+            parent="slave_from_master",
             description=(
                 "Replication source the restored instance connects to. Used when "
                 "replication is started above."
@@ -857,6 +760,13 @@ class RestoreCreate(TaskFormModel):
     ] = None
     master_port: Annotated[
         int | EmptyStrToNone,
+        # Deliberately unparented, unlike its four neighbours: the field's own
+        # description says it is read when 'Restore my.cnf' is set, and that
+        # starting replication uses the port in the backup's coordinates
+        # instead — so nesting it under 'Slave from master' would grey it out
+        # for the one toggle that does not use it. Whether it belongs under
+        # 'Restore my.cnf' is a question for the backups owner; until then it
+        # stays a plain field, as it is on main.
         Ui(
             label="Master port",
             section="XtraBackup",
@@ -872,6 +782,7 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master user",
             section="XtraBackup",
+            parent="slave_from_master",
             description="Account the restored instance replicates with",
         ),
     ] = None
@@ -880,6 +791,7 @@ class RestoreCreate(TaskFormModel):
         Ui(
             label="Master password",
             section="XtraBackup",
+            parent="slave_from_master",
             description="Password for the replication account",
         ),
     ] = None
@@ -934,6 +846,101 @@ class RestoreCreate(TaskFormModel):
             label="Binlog restore extra args",
             section="Binlog",
             description="Extra arguments appended to the mysqlbinlog replay command",
+        ),
+    ] = None
+
+    logging_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Logging directory",
+            section="General",
+            description="Directory on the target host for this restore's log files",
+        ),
+    ] = None
+    port: Annotated[
+        int | None,
+        Ui(
+            section="General",
+            description=(
+                "Port SEP connects to on the target host when it queries the server "
+                "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
+                "loads over the destination service's own address and a Binlog restore "
+                "replays through a local client, so neither uses it."
+            ),
+        ),
+    ] = None
+    custom_mysql_init_command: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Custom MySQL init command",
+            section="General",
+            description=(
+                "Service command used to stop and start MySQL during an XtraBackup "
+                "restore, such as /usr/bin/systemctl; detected automatically when left "
+                "empty. Mydumper and Binlog restores never stop MySQL, so they ignore "
+                "it."
+            ),
+        ),
+    ] = None
+    ssh_user: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH user",
+            section="General",
+            description=(
+                "SSH user for fetching a backup stored on a remote host. "
+                "Defaults to percona when left blank."
+            ),
+        ),
+    ] = None
+    ssh_port: Annotated[
+        int | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH port",
+            section="General",
+            description=(
+                "SSH port for fetching a backup stored on a remote host. "
+                "Defaults to 22 when left blank."
+            ),
+        ),
+    ] = None
+    ssh_key: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _SSH_ONLY,
+        Ui(
+            label="SSH key name",
+            section="General",
+            description=(
+                "Unused for the sources above: a local path, remote host, S3 or "
+                "Google Cloud Storage fetch always authenticates with the SSH "
+                "user's own id_rsa key."
+            ),
+        ),
+    ] = None
+    s3_tool: Annotated[
+        S3Tool | EmptyStrToNone,
+        _S3_ONLY,
+        Choices(((S3Tool.S3CMD, "s3cmd"), (S3Tool.AWSCLI, "awscli"))),
+        Ui(
+            label="S3 tool",
+            section="General",
+            description=(
+                "Client used to download the backup. Defaults to s3cmd when left blank."
+            ),
+        ),
+    ] = None
+    gpg_password_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _GPG_SOURCE_ONLY,
+        Ui(
+            label="GPG password file",
+            section="General",
+            description=(
+                "Path on the target host to the file holding the passphrase for a "
+                "GPG-encrypted backup"
+            ),
         ),
     ] = None
 

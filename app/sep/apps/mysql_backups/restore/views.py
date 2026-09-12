@@ -19,12 +19,17 @@ Section membership and order are declared on
 :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate` (via
 ``Ui(section=...)`` and field-declaration order); what lives here is the part the
 model cannot express: the section titles, the per-``backup_type`` visibility
-gates, and the list columns. The per-``backup_type`` gates are declared here (not
-as field-level ``Forbidden`` markers) so the permissive create model keeps
-accepting the mode-specific fields' non-``None`` defaults on a cross-mode
-restore. The transport and decryption fields are gated on the model instead,
-which is why ``ssh_user``, ``ssh_port`` and ``s3_tool`` gave up theirs; see
-:class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate`.
+gates and the list columns. No section here is marked ``advanced``: ``General``
+is the only candidate, and putting one section behind the reveal control adds a
+click rather than saving a row. ``General``'s fields still sit below
+the mode sections on the create model — derived section order comes from field
+declaration order, not from the tuple below, and this form reads the same way
+the backup form does with the expert block last. The per-``backup_type`` gates
+are declared here (not as field-level ``Forbidden`` markers) so the permissive
+create model keeps accepting the mode-specific fields' non-``None`` defaults on
+a cross-mode restore. The transport and decryption fields are gated on the model
+instead, which is why ``ssh_user``, ``ssh_port`` and ``s3_tool`` gave up theirs;
+see :class:`~app.sep.apps.mysql_backups.restore.models.RestoreCreate`.
 """
 
 from app.sep.apps.framework.apps import Views

@@ -93,6 +93,34 @@ interface BaseField {
   requires?: FieldGate[];
   /** Self-cardinality gates: when matched, the field is forbidden. */
   forbidden?: FieldGate[];
+  /**
+   * Name of a sibling `bool` field in the same section that this field
+   * parameterises. The renderer draws the field indented beneath that parent
+   * and keeps it non-interactive until the parent is on, instead of hiding it
+   * — a reader can see what enabling the parent will offer.
+   *
+   * Presentation only, and taken on trust: the disable state comes from the
+   * named field's truthiness alone, and nesting a field says nothing about
+   * whether the backend accepts a value for it. A parented field may also
+   * carry its own `forbidden` gate on the parent being falsy — where it does,
+   * the renderer recognises that shape structurally and consumes it as the
+   * disable condition rather than applying it as a hide. Every other gate
+   * keeps hiding the field.
+   */
+  parent?: string;
+  /**
+   * Where the field's `description` is shown. `inline` puts it under the
+   * input, where a format hint belongs; `tooltip` puts it behind a help icon
+   * beside the label, keeping prose from dominating a form that has a lot of
+   * it. Unset (the default) decides by length: roughly one line renders
+   * inline, longer prose goes behind the icon.
+   *
+   * Reference and selector fields (`service`, `host`, `schema`, `table`,
+   * `remote_choice`) ignore it and are always inline: their label is a plain
+   * string the renderer also uses in validation messages, so there is no node
+   * to hang a help icon from.
+   */
+  help_placement?: 'tooltip' | 'inline';
 }
 
 // ── Choice option ─────────────────────────────────────────────────────────
@@ -346,6 +374,18 @@ export interface FormSection {
   title: string;
   description?: string;
   fields: SectionField[];
+  /**
+   * Whether this section holds expert options rather than the common case.
+   *
+   * Advanced sections are withheld behind a single "Show advanced options"
+   * control rendered after the ordinary ones, and revealed as ordinary
+   * top-level sections. The renderer reveals them on its own, and expands the
+   * section concerned, whenever one holds a value other than its schema
+   * default or a field a backend error points into. Membership needs no
+   * adjacency — advanced sections are collected wherever they appear and
+   * rendered after the rest, in order.
+   */
+  advanced?: boolean;
   /** Whether the section is wrapped in an expandable/collapsible shell. */
   collapsible?: boolean;
   /** Initial expansion state when collapsible is enabled. */

@@ -213,6 +213,20 @@ class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     YAML = auto()
 
 
+class HelpPlacement(StrEnum):
+    """Say where a field's ``description`` is shown, overriding the default.
+
+    The renderer otherwise places help by length — a description that fits
+    roughly one line sits under the input, a longer one goes behind a help icon
+    beside the label. Setting this is for the cases where that reads wrong: a
+    terse note that is still secondary, or a long one someone needs in front of
+    them while they type.
+    """
+
+    TOOLTIP = "tooltip"
+    INLINE = "inline"
+
+
 class BaseField(SchemaBaseModel):
     """Define the abstract base for every concrete field in the plugin schema DSL.
 
@@ -247,6 +261,26 @@ class BaseField(SchemaBaseModel):
     :param forbidden: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be absent.
         Defaults to ``None``.
+    :param help_placement: Optional override for where the field's
+        ``description`` is shown — ``"inline"`` under the input, ``"tooltip"``
+        behind a help icon beside the label. ``None`` (the default) lets the
+        renderer decide by length: roughly one line renders inline, longer
+        prose goes behind the icon. Reference and selector fields ignore it and
+        are always inline, having a plain-string label with no node to hang an
+        icon from. Typed optional so a route serialising with ``exclude_none``
+        keeps it off the wire until a field opts in.
+    :param parent: Optional name of a sibling ``bool`` field, in the same
+        section, that this field parameterises. The schema-driven React
+        renderer draws the field indented beneath that toggle and inert until
+        it is on, rather than hiding it. Presentation only — it does not change
+        what the server accepts, and the disable state comes from the named
+        field's truthiness alone. A field that additionally declares a
+        ``forbidden`` gate on the parent being falsy is still nested rather
+        than hidden: the renderer recognises that shape and consumes it as the
+        disable condition, while every other gate keeps hiding the field.
+        Typed optional so a route serialising with ``exclude_none`` drops it
+        from the wire until a field opts in, the same posture as
+        ``destructive``. Defaults to ``None``.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -257,6 +291,8 @@ class BaseField(SchemaBaseModel):
     default: Any | None = None
     requires: list[FieldGate] | None = None
     forbidden: list[FieldGate] | None = None
+    parent: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)] | None = None
+    help_placement: HelpPlacement | None = None
 
 
 class BoolField(BaseField):
@@ -849,29 +885,28 @@ class FormSection(SchemaBaseModel):
     """Represent a labelled group of related fields rendered as one fieldset.
 
     :param title: The section heading displayed above the grouped fields.
-    :type title: NonEmptyStr
     :param description: Optional helper text rendered beneath the section
         heading. Defaults to ``None``.
-    :type description: NonEmptyStr | None
     :param fields: The list of fields belonging to this section. May include
         :class:`OneOfGroup` containers alongside leaf fields.
-    :type fields: list[AnyField]
     :param cardinality_rules: Optional cross-field cardinality constraints
         scoped to the fields in this section. Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional predicate-only invariants scoped to this
         section. Defaults to ``None``.
-    :type fail_when: list[FailRule] | None
+    :param group: Optional heading of the collapsible group this section
+        belongs to. A run of *adjacent* sections carrying the same value
+        renders inside one collapsed shell titled by it, so a form with many
+        secondary sections costs one row at rest instead of one per section.
+        Each member keeps its own ``collapsible`` / ``collapsed_by_default``
+        behaviour inside the group. Defaults to ``None`` — the section renders
+        on its own.
     :param collapsible: Whether the renderer may collapse this section behind
         a toggle. Defaults to ``False``.
-    :type collapsible: bool
     :param collapsed_by_default: Whether a collapsible section should start
         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
         ``False``.
-    :type collapsed_by_default: bool
     :param render_after_submit: Whether this section should render after the
         submit button instead of before it. Defaults to ``False``.
-    :type render_after_submit: bool
     :param forbidden: Optional gates that hide the entire section when any
         of them fires. The schema-driven React renderer skips the section
         and unregisters every child field from the form so stale values
@@ -884,7 +919,6 @@ class FormSection(SchemaBaseModel):
         ``truthy``/``present`` predicates silently pass while
         ``falsy``/``absent`` predicates see the children as missing.
         Author ``fail_when`` rules accordingly.
-    :type forbidden: list[FieldGate] | None
     """
 
     title: NonEmptyStr
@@ -892,6 +926,7 @@ class FormSection(SchemaBaseModel):
     fields: list[AnyField]
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
