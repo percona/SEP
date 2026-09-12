@@ -59,6 +59,12 @@ UNKNOWN_SERVICE_SENTINEL = "-1"
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
 
+#: The forbidden set spelled out for the operator who just hit it. Derived from
+#: the set rather than written beside it, and sorted so the wording is stable:
+#: the form's own help text no longer lists these, so this message is where a
+#: rejected path gets told what to remove.
+BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY = " ".join(sorted(BACKUP_SOURCE_SHELL_FORBIDDEN))
+
 
 def ensure_backup_source_shell_safe(value: str) -> str:
     """Reject shell metacharacters in a backup-source path (defense in depth).
@@ -76,8 +82,8 @@ def ensure_backup_source_shell_safe(value: str) -> str:
         raise ValueError("backup_source must not contain newline characters")
     if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
         raise ValueError(
-            "backup_source contains disallowed shell metacharacters; "
-            "remove special characters from the backup source field"
+            "backup_source contains disallowed shell metacharacters; remove any "
+            f"of {BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY} from the backup source"
         )
     return value
 

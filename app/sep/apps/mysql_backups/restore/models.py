@@ -439,10 +439,8 @@ class RestoreCreate(TaskFormModel):
             label="Destination Database Service",
             section="Task",
             description=(
-                "Database service being restored into. A Mydumper restore needs an "
-                "existing MySQL service, whose address and port become the load "
-                "destination; an XtraBackup or Binlog restore only records the name, "
-                "so a typed one is accepted there."
+                "Mydumper loads into this service's address and port. XtraBackup and "
+                "Binlog only record the name, so a typed one works."
             ),
         ),
     ] = None
@@ -456,11 +454,9 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             depends_on="service_id",
             description=(
-                "Where the backup is stored. Select a database service above to list "
-                "its completed backups, then pick one — or enter a local path "
-                "(/backups/mydumper/20240101), a remote host (db01:/path/to/backup), "
-                "s3://bucket/path, or gs://bucket/path. Add /latest to any of these to "
-                "restore the most recent backup. Avoid these characters: $ ; | & ( ) `"
+                "Pick a service above to list its backups, or type a path: "
+                "/backups/mydumper/20240101, db01:/path, s3://bucket/path or "
+                "gs://bucket/path. Add /latest for the most recent."
             ),
         ),
     ]
@@ -511,9 +507,9 @@ class RestoreCreate(TaskFormModel):
             section="Mydumper",
             depends_on="service_id",
             description=(
-                "Database the backup is loaded into; pick one from inventory. Leave "
-                "empty to restore into the databases the backup came from. A name "
-                "typed here instead of picked is ignored and does the same."
+                "Database the backup is loaded into. Leave empty to restore into the "
+                "backup's own databases. A typed name is ignored — same as leaving it "
+                "empty."
             ),
         ),
     ] = None
