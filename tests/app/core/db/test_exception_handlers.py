@@ -69,7 +69,9 @@ def _dialect_wrapped(driver_error: BaseException) -> DBAPIError:
     """
     shim = AsyncpgDBAPI.Error(f"{type(driver_error)}: {driver_error}")
     shim.__cause__ = driver_error
-    return DBAPIError.instance("SELECT 1", {}, shim, AsyncpgDBAPI.Error)
+    wrapped = DBAPIError.instance("SELECT 1", {}, shim, AsyncpgDBAPI.Error)
+    assert isinstance(wrapped, DBAPIError)
+    return wrapped
 
 
 #: The shapes a database capacity refusal arrives in, as factories so that the
