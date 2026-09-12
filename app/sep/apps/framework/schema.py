@@ -223,8 +223,8 @@ class HelpPlacement(StrEnum):
     them while they type.
     """
 
-    TOOLTIP = auto()
-    INLINE = auto()
+    TOOLTIP = "tooltip"
+    INLINE = "inline"
 
 
 class BaseField(SchemaBaseModel):
