@@ -1,10 +1,10 @@
 ---
-applyTo: "app/core/**/*.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/framework/**/*.py"
+applyTo: "app/core/**/*.py,app/api/deps.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/framework/**/*.py"
 ---
 
 # Cross-Cutting Changes — Shared Helpers & Side Effects
 
-Diffs to these paths fan out across all three sub-applications. The bug class this file targets is a change that **passes its own tests** but breaks a caller elsewhere because the new behaviour wasn't audited against every call site.
+Diffs to these paths fan out across all three sub-applications and the shared auth/user API package (`app/api/`). The bug class this file targets is a change that **passes its own tests** but breaks a caller elsewhere because the new behaviour wasn't audited against every call site.
 
 ## Shared-helper changes — audit every caller
 

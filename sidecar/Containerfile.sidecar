@@ -51,12 +51,40 @@ RUN apt-get update && \
 #   libncursesw6  - a shipped program links wide-character ncurses
 #   ncurses-base  - a supported workflow needs terminfo inside the container
 #   ncurses-bin   - a supported workflow needs tput/clear/infocmp
-RUN dpkg --purge --force-remove-essential \
+#
+# The util-linux set goes as one unit. Trivy reports an OS finding against
+# every binary package built from the affected source, so removing only the
+# packages that carry the vulnerable binaries clears no finding at all.
+#   mount         - anything in this container mounts or unmounts a filesystem
+#   util-linux    - a shipped program runs nsenter, su, flock, dmesg or lsblk
+#   login         - a shipped workflow logs in or switches user
+#   bsdutils      - a shipped program runs logger, renice or wall
+#   libuuid1      - a shipped wheel links libuuid; CPython's _uuid extension
+#                   does, and falls back silently, so uuid1() degrades here
+#   libblkid1     - a retained program links libblkid
+#   libmount1     - a retained program links libmount
+#   libsmartcols1 - a retained program links libsmartcols
+#   liblastlog2-2 - a retained program links liblastlog2
+#
+# libsystemd0 and libudev1 are deliberately NOT here: valkey-server links
+# libsystemd.so.0, and both packages carry the same finding, so neither can go.
+# login is a *protected* package, which --force-remove-essential does not
+# cover on its own; without the second flag dpkg exits 1 and the build fails.
+RUN dpkg --purge --force-remove-essential --force-remove-protected \
         perl-base \
         gzip \
         libncursesw6 \
         ncurses-base \
-        ncurses-bin
+        ncurses-bin \
+        mount \
+        util-linux \
+        login \
+        bsdutils \
+        libuuid1 \
+        libblkid1 \
+        libmount1 \
+        libsmartcols1 \
+        liblastlog2-2
 
 COPY --from=builder /usr/src/sep/wheels /wheels
 COPY --from=builder /usr/src/sep/requirements.txt .

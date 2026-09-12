@@ -15,22 +15,13 @@
 
 """Tests for the ``scripts/changelog.py`` CLI."""
 
-import importlib.util
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "changelog.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("changelog", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-changelog = importlib.util.module_from_spec(_spec)
-sys.modules["changelog"] = changelog
-_spec.loader.exec_module(changelog)
+changelog = load_script("changelog")
 
 
 SAMPLE_CHANGELOG = """\
