@@ -9065,7 +9065,8 @@ export interface components {
      *
      *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
      *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-     *         validation with a per-field message, as does a GPG format with no timing.
+     *         validation with a per-field message, as does a GPG format with no timing
+     *         and a GPG timing no backup script would reach without an upload target.
      */
     mysql_backups__BackupCreate: {
       /**

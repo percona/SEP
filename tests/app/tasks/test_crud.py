@@ -252,6 +252,82 @@ class TestTaskManagerListActive:
 
 
 # ---------------------------------------------------------------------------
+# TaskManager.iter_active_batches
+# ---------------------------------------------------------------------------
+
+
+class TestTaskManagerIterActiveBatches:
+    """Test TaskManager.iter_active_batches."""
+
+    @staticmethod
+    async def _collect(
+        session: AsyncSession, *, owner: str | None = None, batch_size: int
+    ) -> list[list[str]]:
+        """Return the yielded batches as lists of task names.
+
+        :param session: The async database session.
+        :param owner: The owner filter to pass through, or ``None`` for all.
+        :param batch_size: Rows per batch.
+        :return: One list of task names per yielded batch, in yield order.
+        """
+        return [
+            [task.name for task in batch]
+            async for batch in TaskManager.iter_active_batches(
+                session, owner=owner, batch_size=batch_size
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_yields_every_active_task_in_id_order(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the batches partition the active population by ascending id."""
+        for index in range(5):
+            await _create_task(session, name=f"task-{index}")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [
+            ["task-0", "task-1"],
+            ["task-2", "task-3"],
+            ["task-4"],
+        ]
+
+    @pytest.mark.asyncio
+    async def test_skips_deleted_and_other_owners(self, session: AsyncSession) -> None:
+        """Assert the same active-and-owner scope as ``list_active``."""
+        await _create_task(session, name="kept", owner="BACKUPS")
+        await _create_task(session, name="other-owner", owner="ALTERS")
+        await _create_task(session, name="deleted", owner="BACKUPS")
+        await TaskManager.delete_by_name(session, "deleted")
+
+        batches = await self._collect(session, owner="BACKUPS", batch_size=10)
+
+        assert batches == [["kept"]]
+
+    @pytest.mark.asyncio
+    async def test_empty_db_yields_nothing(self, session: AsyncSession) -> None:
+        """Assert an empty population yields no batch at all."""
+        assert await self._collect(session, batch_size=10) == []
+
+    @pytest.mark.asyncio
+    async def test_a_full_final_batch_ends_the_pass(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a population that divides evenly does not repeat its last batch.
+
+        The keyset cursor advances past the highest id seen, so a re-queried
+        final page would surface as a duplicate batch rather than as an error.
+        """
+        for index in range(4):
+            await _create_task(session, name=f"task-{index}")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [["task-0", "task-1"], ["task-2", "task-3"]]
+
+
+# ---------------------------------------------------------------------------
 # TaskManager.retrieve_by_name
 # ---------------------------------------------------------------------------
 

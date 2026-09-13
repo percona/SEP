@@ -16,19 +16,12 @@
 """Tests for the legacy form backfill orchestrator."""
 
 import logging
-from collections.abc import AsyncIterator
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.pool import StaticPool
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
 from app.sep.apps.framework.form_backfill import (
     _backfill_app,
@@ -49,7 +42,6 @@ from app.sep.apps.framework.form_backfill_registry import (
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
-from tests.app.db_schema import apply_schema
 
 
 def _minimal_task(*, data: dict) -> Task:
@@ -87,25 +79,6 @@ def _entry(
 _EMPTY_SERVICE_LOOKUP = ServiceIdLookup.from_services([])
 
 _ARGPARSE_USAGE_ERROR = 2
-
-
-@pytest_asyncio.fixture
-async def tasks_session() -> AsyncIterator[AsyncSession]:
-    """Provide an in-memory tasks DB session that runs real flushes."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await apply_schema(conn, SQLModel.metadata)
-    session_maker = get_async_session_maker_from_engine(engine)
-    try:
-        async with session_maker() as session:
-            yield session
-    finally:
-        await engine.dispose()
 
 
 async def _persisted_task(session: AsyncSession, *, data: dict) -> Task:

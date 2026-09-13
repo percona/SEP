@@ -331,6 +331,55 @@
         ]
       },
       "message": "A GPG 'encryption_format' requires 'encrypt' or 'post_run_encrypt' to select when the backup is encrypted."
+    },
+    {
+      "error_fields": [
+        "encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "encrypt"
+          },
+          {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "'encrypt' encrypts the backup in place as part of an upload, so it requires at least one upload provider. Use 'post_run_encrypt' (Mydumper and XtraBackup only) to encrypt on the host instead."
+    },
+    {
+      "error_fields": [
+        "post_run_encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "post_run_encrypt"
+          },
+          {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
+            "equals": {
+              "backup_type": "B"
+            }
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "A Binlog backup encrypts only as part of an upload, so 'post_run_encrypt' requires at least one upload provider."
     }
   ],
   "forms": [
@@ -1083,7 +1132,7 @@
             }
           ],
           "default": "none",
-          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so with no upload target nothing is encrypted, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so it needs an upload provider, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload — needing a provider too — for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
           "label": "Encryption format",
           "name": "encryption_format",
           "required": false,
@@ -1146,7 +1195,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the backup as part of an upload. With no upload target nothing is encrypted and the task still succeeds. Mydumper and Binlog encrypt the backup where it is written, optionally by way of 'Encrypt using tmpdir'; XtraBackup encrypts a copy and leaves the backup on the host in plain text unless 'Encrypt after backup completes' is set too. Needs a GPG 'Encryption format' and a recipient.",
+          "description": "GPG-encrypt the backup as part of an upload, so it requires at least one upload provider. Mydumper and Binlog encrypt the backup where it is written, optionally by way of 'Encrypt using tmpdir'; XtraBackup encrypts a copy and leaves the backup on the host in plain text unless 'Encrypt after backup completes' is set too. Needs a GPG 'Encryption format' and a recipient.",
           "label": "Encrypt backup",
           "name": "encrypt",
           "required": false,
@@ -1176,7 +1225,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host; a Binlog backup encrypts only during an upload, so with no upload target nothing is encrypted.",
+          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host and need no upload target; a Binlog backup encrypts only during an upload, so it requires at least one upload provider.",
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,
