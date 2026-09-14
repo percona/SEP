@@ -1074,31 +1074,24 @@
               "value": "gpg"
             },
             {
-              "label": "AES-256 (XtraBackup only)",
+              "label": "AES-256",
               "value": "aes256"
             },
             {
-              "label": "AES-256 + GPG (XtraBackup only)",
+              "label": "AES-256 + GPG",
               "value": "dual"
             }
           ],
           "default": "none",
-          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so with no upload target nothing is encrypted, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so with no upload target nothing is encrypted, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file. 'AES-256 + GPG' selects AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
           "label": "Encryption format",
           "name": "encryption_format",
           "required": false,
           "type": "choice"
         },
         {
-          "description": "Path on the database host to the AES-256 key file. Required by the AES-256 formats, which are XtraBackup-only.",
+          "description": "Path on the database host to the AES-256 key file. Required by the AES-256 formats.",
           "forbidden": [
-            {
-              "when": {
-                "not_equals": {
-                  "backup_type": "X"
-                }
-              }
-            },
             {
               "message": "'xtrabackup_aes256_keyfile' must not be set when 'encryption_format' does not include AES-256.",
               "when": {

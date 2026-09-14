@@ -811,14 +811,11 @@ class TestParseBackupTaskDataEncryptionFormat:
         assert result["encryption_format"] == EncryptionFormat.NONE
 
     @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
-    def test_leftover_key_file_never_infers_aes_off_xtrabackup(
-        self, backup_type: BackupType
-    ):
-        """Ignore a leftover key file for engines with no AES-256 path.
+    def test_key_file_infers_aes_for_mydumper_and_binlog(self, backup_type: BackupType):
+        """Infer ``aes256`` from a key file on Mydumper and Binlog tasks too.
 
-        ``xtrabackup_aes256_keyfile`` is XtraBackup-only, so inferring ``aes256``
-        for a Mydumper or Binlog task would produce a format its own backup type
-        rejects, and the reconstructed form could never validate.
+        AES-256 is no longer XtraBackup-only; a leftover key file on these engines
+        is a real AES configuration, not noise to ignore.
         """
         result = parse_backup_task_data(
             self._make_task_dict(
@@ -826,7 +823,7 @@ class TestParseBackupTaskDataEncryptionFormat:
                 backup_type=backup_type,
             )
         )
-        assert result["encryption_format"] == EncryptionFormat.NONE
+        assert result["encryption_format"] == EncryptionFormat.AES256
 
     def test_stored_format_passes_through_unchanged(self):
         """Keep an explicit stored format rather than re-inferring it.
