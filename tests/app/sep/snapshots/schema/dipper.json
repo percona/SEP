@@ -31,6 +31,7 @@
   "display_name": "Collect Diagnostic Data",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [

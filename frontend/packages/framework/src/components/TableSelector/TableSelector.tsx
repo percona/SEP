@@ -39,6 +39,8 @@ export interface TableSelectorProps {
    * either a `SchemaOption` or a raw schema id.
    */
   dependsOn: string;
+  /** Field help shown under the control when no cascade hint takes the slot. */
+  description?: string;
   disabled?: boolean;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allowCustom?: boolean;
@@ -60,6 +62,7 @@ export function TableSelector({
   label,
   required,
   dependsOn,
+  description,
   disabled,
   allowCustom,
   multiple,
@@ -98,7 +101,7 @@ export function TableSelector({
       ? (error?.message ?? 'Failed to load tables')
       : empty
         ? 'No tables in this schema'
-        : undefined;
+        : description;
 
   // Only a truly absent parent disables the control; a custom (free-typed)
   // parent keeps it enabled so the user can type a custom table too.
@@ -115,7 +118,7 @@ export function TableSelector({
         required={required}
         disabled={disabled || parentMissing || isError}
         loading={isLoading}
-        helperText={parentMissing ? 'Select a schema first' : isError ? helperText : undefined}
+        helperText={parentMissing ? 'Select a schema first' : isError ? helperText : description}
         error={isError}
         noOptionsText={
           parentMissing
@@ -140,7 +143,7 @@ export function TableSelector({
         required={required}
         disabled={disabled || parentMissing || isError}
         loading={isLoading}
-        helperText={parentMissing ? 'Select a schema first' : isError ? helperText : undefined}
+        helperText={parentMissing ? 'Select a schema first' : isError ? helperText : description}
         error={isError}
         noOptionsText={
           parentMissing

@@ -1019,6 +1019,22 @@ def test_per_service_env_beats_global_env(monkeypatch, env_order):
     assert SEPSettings().DATABASE.PASSWORD.get_secret_value() == "seppw"
 
 
+def test_shipped_profile_resolves_the_bounded_pool_defaults():
+    """Assert the shipped profile leaves the bounded pool sizing in force.
+
+    The profile's own ``DATABASE`` blocks set no sizing, so each service
+    takes this class's defaults; its SQLite engine still emits none of them.
+    """
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        database = settings_cls().DATABASE
+        assert (database.POOL_SIZE, database.MAX_OVERFLOW, database.POOL_TIMEOUT) == (
+            3,
+            2,
+            10.0,
+        )
+        assert database.pool_engine_kwargs == {"pool_pre_ping": True}
+
+
 @pytest.mark.parametrize(
     "dotenv_lines",
     [
