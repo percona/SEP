@@ -1081,8 +1081,11 @@ class RemoteAPI(BaseRemoteAPI):
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
+                # %r, not %s: the body is untrusted upstream text, so rendering it
+                # raw would let its own newlines and control characters forge
+                # further log lines out of one record.
                 self.logger.exception(
-                    "RemoteAPI (%s): %s request to %s response content (%s): %s",
+                    "RemoteAPI (%s): %s request to %s response content (%s): %r",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,

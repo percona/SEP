@@ -315,6 +315,11 @@ class TestNonJsonResponseLogging:
                 id="over-the-cap",
             ),
             pytest.param("", "", id="empty"),
+            pytest.param(
+                f"<html>\r\n  {_BODY_SENTINEL}\r\n</html>",
+                f"<html>\r\n  {_BODY_SENTINEL}\r\n</html>",
+                id="multiline",
+            ),
         ],
     )
     async def test_the_response_text_is_logged(
@@ -336,7 +341,9 @@ class TestNonJsonResponseLogging:
         assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
         assert _logged_non_json_body(caplog.records) == expected
         messages = [record.getMessage() for record in caplog.records]
+        assert any(repr(expected) in message for message in messages)
         assert all("StreamReader" not in message for message in messages)
+        assert all("\n" not in message for message in messages)
 
     async def test_a_non_json_success_text_is_logged(self, remote_api, caplog):
         """Log the body of a 2xx answer that was not JSON."""
