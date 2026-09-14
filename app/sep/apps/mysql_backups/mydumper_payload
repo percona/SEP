@@ -79,8 +79,10 @@ MYDUMPER_METADATA = "metadata"
 UPLOADME_FILE = ".uploadme"
 EXCLUDE_FILES = [MD5SUM_FILE, UPLOADME_FILE]
 # Backup metadata SEP keeps in plaintext to read post-backup; excluded from
-# every encryption/verification pass regardless of method.
-PLAINTEXT_METADATA_FILES = tuple(EXCLUDE_FILES)
+# every encryption/verification pass regardless of method. Includes mydumper's
+# ``metadata`` so ``_validate_updated_since`` can still find it after AES-256
+# (GPG leaves ``metadata.gpg`` and that path already handles it).
+PLAINTEXT_METADATA_FILES = (MD5SUM_FILE, UPLOADME_FILE, MYDUMPER_METADATA)
 ENCRYPTION_FORMATS = ("none", "gpg", "aes256", "dual")
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
 MYDUMPER_BIN = os.getenv("PERCONA_BACKUP_MYDUMPER_BIN", "/usr/bin/mydumper")

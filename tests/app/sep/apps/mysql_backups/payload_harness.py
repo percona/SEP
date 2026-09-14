@@ -47,6 +47,7 @@ _CONST_NAMES = frozenset(
     {
         "MD5SUM_FILE",
         "UPLOADME_FILE",
+        "MYDUMPER_METADATA",
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
         "EXCLUDE_FILES",

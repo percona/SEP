@@ -71,7 +71,7 @@ class TestIsEncryptedDirAes256:
     def test_plaintext_straggler_returns_false(self, tmp_path: Path) -> None:
         """Assert a single plaintext non-excluded file fails verification."""
         (tmp_path / "table.sql.xbcrypt").write_text("x")
-        (tmp_path / "metadata").write_text("plaintext")
+        (tmp_path / "rows.sql").write_text("plaintext")
         assert _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is False
 
     def test_unknown_method_raises(self, tmp_path: Path) -> None:
@@ -82,7 +82,7 @@ class TestIsEncryptedDirAes256:
     def test_excluded_metadata_left_plaintext_still_true(self, tmp_path: Path) -> None:
         """Assert plaintext metadata SEP reads post-backup do not fail verification."""
         (tmp_path / "table.sql.xbcrypt").write_text("x")
-        for name in ("md5sum", ".uploadme"):
+        for name in ("md5sum", ".uploadme", "metadata"):
             (tmp_path / name).write_text("meta")
         assert _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is True
 
@@ -111,6 +111,7 @@ class TestEncryptFilesAes256:
         (tmp_path / "done.sql.xbcrypt").write_text("enc")
         (tmp_path / "md5sum").write_text("meta")
         (tmp_path / ".uploadme").write_text("meta")
+        (tmp_path / "metadata").write_text("meta")
         (tmp_path / "rows.sql").write_text("plain")
         inst, _, calls = payload_instance(_ENCRYPT_METHODS, payload_path=_PATH)
         inst.encrypt_files_aes256(str(tmp_path))
