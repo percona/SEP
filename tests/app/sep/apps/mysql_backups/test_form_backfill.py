@@ -639,7 +639,6 @@ class TestEncryptionFormatStampRepair:
         )
 
 
-<<<<<<< HEAD
 class TestBinaryCompressionBackfillLeniency:
     """Reconstruct a stored pairing the create form now rejects."""
 
@@ -689,7 +688,8 @@ class TestBinaryCompressionBackfillLeniency:
 
         with pytest.raises(ValidationError, match="xtrabackup_verify"):
             LegacyBackupCreate.model_validate(body)
-=======
+
+
 _LEGACY_KILL_QUERIES_TIMEOUT = 300
 
 
@@ -713,4 +713,3 @@ def test_reconstruction_still_rejects_a_cross_mode_option():
     with pytest.raises(ValidationError) as excinfo:
         LegacyBackupCreate.model_validate(body)
     assert "'xtrabackup_kill_queries_timeout' must not be set" in str(excinfo.value)
->>>>>>> origin/main
