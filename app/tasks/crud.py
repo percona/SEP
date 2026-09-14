@@ -186,7 +186,9 @@ class TaskManager(BaseSQLModelManager):
                 return
             # ``id`` is typed optional for unpersisted instances; a queried row
             # always carries one, and the ordering puts the highest last.
-            last_id = batch[-1].id or last_id + len(batch)
+            last_id = batch[-1].id
+            if last_id is None:
+                return
 
     @classmethod
     async def list_active_paginated(

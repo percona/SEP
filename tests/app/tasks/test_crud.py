@@ -331,6 +331,22 @@ class TestTaskManagerIterActiveBatches:
 
         assert batches == [["task-0", "task-1"], ["task-2", "task-3"]]
 
+    @pytest.mark.asyncio
+    async def test_a_gap_in_the_ids_skips_no_row(self, session: AsyncSession) -> None:
+        """Assert the cursor tracks the last id seen, not the count of rows seen.
+
+        Ids are only contiguous until something is hard-deleted, and the pass an
+        exhaustive count rests on must not step over the rows either side of the
+        hole.
+        """
+        for index in range(5):
+            await _create_task(session, name=f"task-{index}")
+        await TaskManager.delete_where(session, col(Task.name) == "task-1")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [["task-0", "task-2"], ["task-3", "task-4"]]
+
 
 # ---------------------------------------------------------------------------
 # TaskManager.retrieve_by_name
