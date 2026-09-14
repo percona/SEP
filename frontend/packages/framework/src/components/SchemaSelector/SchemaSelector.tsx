@@ -40,6 +40,8 @@ export interface SchemaSelectorProps {
    * either a `ServiceOption` (from `<ServiceSelector>`) or a raw service id.
    */
   dependsOn: string;
+  /** Field help shown under the control when no cascade hint takes the slot. */
+  description?: string;
   disabled?: boolean;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allowCustom?: boolean;
@@ -61,6 +63,7 @@ export function SchemaSelector({
   label,
   required,
   dependsOn,
+  description,
   disabled,
   allowCustom,
   multiple,
@@ -105,7 +108,7 @@ export function SchemaSelector({
       ? (error?.message ?? 'Failed to load schemas')
       : empty
         ? 'No schemas in this service'
-        : undefined;
+        : description;
 
   // Only a truly absent parent disables the control; a custom (free-typed)
   // parent keeps it enabled so the user can type a custom schema too.
@@ -122,7 +125,7 @@ export function SchemaSelector({
         required={required}
         disabled={disabled || parentMissing || isError}
         loading={isLoading}
-        helperText={parentMissing ? 'Select a service first' : isError ? helperText : undefined}
+        helperText={parentMissing ? 'Select a service first' : isError ? helperText : description}
         error={isError}
         noOptionsText={
           parentMissing
@@ -147,7 +150,7 @@ export function SchemaSelector({
         required={required}
         disabled={disabled || parentMissing || isError}
         loading={isLoading}
-        helperText={parentMissing ? 'Select a service first' : isError ? helperText : undefined}
+        helperText={parentMissing ? 'Select a service first' : isError ? helperText : description}
         error={isError}
         noOptionsText={
           parentMissing

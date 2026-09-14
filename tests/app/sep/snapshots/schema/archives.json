@@ -40,6 +40,7 @@
   ],
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -71,6 +72,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -100,6 +102,7 @@
       "title": "Archive Type"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -155,6 +158,7 @@
       "title": "Source"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -210,6 +214,7 @@
       "title": "Destination"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -266,6 +271,7 @@
       "title": "Destination Host"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -299,6 +305,7 @@
       "title": "Options"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
