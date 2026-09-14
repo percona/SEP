@@ -606,6 +606,39 @@ class TestDisableSchedulesForOwners:
         )
         assert await _read_enabled(celery_beat_session, SNIPPETS_TASK) is True
 
+    async def test_rows_running_another_celery_callable_are_never_examined(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Ignore a beat row whose callable is not the task-execution entry point.
+
+        ``PeriodicTaskManager`` pins ``task`` to ``execute_task_by_name``, so a row
+        running anything else is never enumerated — not switched off even when its
+        arguments name an unschedulable task, and not warned about when it carries
+        no task name at all.
+        """
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_periodic_task(
+            celery_beat_session,
+            "impostor",
+            enabled=True,
+            task="app.sep.snippets.celery.sync_snippets",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == []
+        assert await _read_enabled(celery_beat_session, "impostor") is True
+        assert await _read_enabled(celery_beat_session, SNIPPETS_TASK) is True
+        assert _sweep_warnings(caplog) == []
+
     async def test_second_run_is_a_no_op(
         self,
         session: AsyncSession,
