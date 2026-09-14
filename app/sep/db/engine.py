@@ -25,6 +25,15 @@ from app.core.db.utils import (
 )
 from app.sep.config import sep_settings
 
+# Any symbolic schema token an app declares under ``sep_settings.DATABASE.
+# SCHEMA_TRANSLATE_MAP`` (for OM's tables, ``app/sep/apps/shared/om/config.py``)
+# becomes a real schema, or the default one, here -- inside
+# ``create_app_async_engine``. It belongs on the engine rather than at the call
+# sites because both paths that reach those tables come from here: the routes
+# through ``SessionDep`` and the Celery task through ``get_async_session_maker``.
+# One option therefore covers the HTTP path and the background path together --
+# which is the whole reason a schema was affordable where a second database
+# would not have been.
 engine = create_app_async_engine(sep_settings.DATABASE)
 
 

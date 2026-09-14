@@ -1,0 +1,380 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Test the estate the API serves: hosts, their services, and forgetting a row.
+
+Two contracts here are load-bearing and neither is obvious from the handler code.
+
+``GET /hosts?has_service=false`` is the question the host table exists to answer —
+which machines carry a PMM client and no database — so it is asserted rather than
+assumed, and asserted as a *filter* on the ordinary list rather than a second
+endpoint.
+
+``DELETE`` exists because stale rows are real: restarting a node's pmm-agent runs
+``setup --force``, which replaces the node in PMM and mints a new id, so OM gains a
+row and keeps the old one. It is emphatically not suppression — an entity PMM still
+knows about returns on the next sweep — and the tests say so, because a reader who
+mistakes it for suppression will use it that way exactly once.
+"""
+
+import pytest
+import pytest_asyncio
+from fastapi import status
+from httpx import AsyncClient
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.sep.apps.om_inventory.crud import upsert_host, upsert_service
+from tests.app.sep.apps.om_inventory.conftest import BASE
+
+NODE_WITH_DB = "id-db00"
+NODE_EMPTY = "id-pmm-client-node00"
+SERVICE_ID = "svc-db00"
+
+
+@pytest_asyncio.fixture
+async def estate(session: AsyncSession) -> AsyncSession:
+    """Populate the two-host estate every test here reads.
+
+    One host runs a registered database; the other is a PMM client with nothing on it,
+    which is the case the whole table exists for.
+
+    :param session: The database session.
+    :return: The same session, with rows.
+    """
+    await upsert_host(
+        session,
+        node_id=NODE_WITH_DB,
+        name="db00",
+        address="10.0.0.1",
+        executor_host="db00",
+        observed={"collected_at": "2026-08-17T09:00:00+00:00", "os": "Ubuntu 24.04"},
+    )
+    await upsert_host(
+        session,
+        node_id=NODE_EMPTY,
+        name="pmm-client-node00",
+        address="10.0.0.2",
+        executor_host="pmm-client-node00",
+        observed={"collected_at": "2026-08-17T09:00:00+00:00", "os": "Ubuntu 24.04"},
+    )
+    await session.flush()
+    await upsert_service(
+        session,
+        service_id=SERVICE_ID,
+        node_id=NODE_WITH_DB,
+        name="db00",
+        port=27017,
+        role="mongod",
+        observed={"installed_version": "7.0.39-21"},
+    )
+    await session.commit()
+    return session
+
+
+class TestHosts:
+    """Assert the host listing and its filters."""
+
+    @pytest.mark.asyncio
+    async def test_lists_every_host_with_its_services_nested(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """A host carries its services, so a consumer needs one request.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts")
+
+        assert response.status_code == status.HTTP_200_OK
+        hosts = {host["node_id"]: host for host in response.json()["items"]}
+        assert set(hosts) == {NODE_WITH_DB, NODE_EMPTY}
+        assert [s["service_id"] for s in hosts[NODE_WITH_DB]["services"]] == [
+            SERVICE_ID
+        ]
+        assert hosts[NODE_EMPTY]["services"] == []
+
+    @pytest.mark.asyncio
+    async def test_has_service_false_finds_the_hosts_with_no_database(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """The question the host table exists to answer.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts", params={"has_service": "false"})
+
+        assert [host["node_id"] for host in response.json()["items"]] == [NODE_EMPTY]
+
+    @pytest.mark.asyncio
+    async def test_has_service_true_is_the_ordinary_estate_view(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """The same list, inverted — which is why it is a filter, not an endpoint.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts", params={"has_service": "true"})
+
+        assert [host["node_id"] for host in response.json()["items"]] == [NODE_WITH_DB]
+
+    @pytest.mark.asyncio
+    async def test_executor_true_excludes_a_registered_but_down_agent(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """``?executor=`` means *usable*, not merely matched.
+
+        A host whose agent is registered but unreachable, or reachable with an
+        unhealthy driver, has ``executor_host`` set — matching is against every known
+        executor, broken ones included, so an onboarding problem does not masquerade
+        as "no executor". ``?executor=true`` asks a different question: can a payload
+        actually run here, which is exactly the query a dispatch target picker needs.
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        await upsert_host(
+            session,
+            node_id="id-down00",
+            name="down00",
+            address="10.0.0.9",
+            executor_host="down00",
+            executor={
+                "registered": True,
+                "reachable": True,
+                "driver_healthy": False,
+                "detail": "Failed to find raw_exec",
+            },
+        )
+        await session.commit()
+
+        usable = await api.get(f"{BASE}/hosts", params={"executor": "true"})
+        unusable = await api.get(f"{BASE}/hosts", params={"executor": "false"})
+
+        assert "id-down00" not in {h["node_id"] for h in usable.json()["items"]}
+        assert "id-down00" in {h["node_id"] for h in unusable.json()["items"]}
+
+    @pytest.mark.asyncio
+    async def test_failing_true_finds_the_host_with_no_recent_success(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """``?failing=`` is a column predicate, pushed into the query like the rest.
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        await upsert_host(
+            session,
+            node_id="id-ok00",
+            name="ok00",
+            address="10.0.0.3",
+            executor_host="ok00",
+            observed={"os": "Ubuntu 24.04"},
+        )
+        await upsert_host(
+            session,
+            node_id="id-down01",
+            name="down01",
+            address="10.0.0.4",
+            executor_host="down01",
+            error="connection refused",
+        )
+        await session.commit()
+
+        failing = await api.get(f"{BASE}/hosts", params={"failing": "true"})
+        healthy = await api.get(f"{BASE}/hosts", params={"failing": "false"})
+
+        assert [h["node_id"] for h in failing.json()["items"]] == ["id-down01"]
+        assert [h["node_id"] for h in healthy.json()["items"]] == ["id-ok00"]
+
+    @pytest.mark.asyncio
+    async def test_total_counts_every_matching_host_not_only_the_page(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """A caller must be able to tell "the whole estate" from "this page of it".
+
+        :param api: The authenticated client.
+        :param session: The database session.
+        """
+        host_count = 3
+        page_limit = 2
+        for i in range(host_count):
+            await upsert_host(
+                session,
+                node_id=f"id-page{i}",
+                name=f"page{i}",
+                address="10.0.0.5",
+                executor_host=f"page{i}",
+                observed={"os": "Ubuntu 24.04"},
+            )
+        await session.commit()
+
+        response = await api.get(f"{BASE}/hosts", params={"limit": page_limit})
+        payload = response.json()
+
+        assert payload["total"] == host_count
+        assert len(payload["items"]) == page_limit
+        assert payload["offset"] == 0
+        assert payload["limit"] == page_limit
+
+    @pytest.mark.asyncio
+    async def test_one_host_by_pmms_node_id(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """The path is the id every consumer already holds.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts/{NODE_WITH_DB}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["name"] == "db00"
+
+    @pytest.mark.asyncio
+    async def test_unknown_host_is_404(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Answer 404 for an id OM does not hold, rather than an empty host.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts/nope")
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestServices:
+    """Assert the flat service listing."""
+
+    @pytest.mark.asyncio
+    async def test_lists_services_without_walking_hosts(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Serve a consumer that works in services rather than hosts.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/services")
+
+        assert [s["service_id"] for s in response.json()["items"]] == [SERVICE_ID]
+
+    @pytest.mark.asyncio
+    async def test_filters_by_host(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """``?node_id=`` is why there is no ``/hosts/{id}/services`` collection.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/services", params={"node_id": NODE_EMPTY})
+
+        assert response.json()["items"] == []
+
+    @pytest.mark.asyncio
+    async def test_one_service_by_pmms_service_id(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Use PMM's id as the path, which keeps it free of a lookup step.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/services/{SERVICE_ID}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["observed"]["installed_version"] == "7.0.39-21"
+
+    @pytest.mark.asyncio
+    async def test_failing_true_finds_the_service_with_no_recent_success(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """``?failing=`` is a column predicate, pushed into the query like ``node_id``.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        await upsert_service(
+            estate,
+            service_id="svc-down00",
+            node_id=NODE_WITH_DB,
+            name="down00",
+            port=27018,
+            role=None,
+            error="connection refused",
+        )
+        await estate.commit()
+
+        failing = await api.get(f"{BASE}/services", params={"failing": "true"})
+        healthy = await api.get(f"{BASE}/services", params={"failing": "false"})
+
+        assert [s["service_id"] for s in failing.json()["items"]] == ["svc-down00"]
+        assert [s["service_id"] for s in healthy.json()["items"]] == [SERVICE_ID]
+
+
+class TestDelete:
+    """Assert forgetting a row, and what forgetting does not mean."""
+
+    @pytest.mark.asyncio
+    async def test_deleting_a_host_takes_its_services_with_it(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """The cascade is the database's, so no service can outlive its host.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.delete(f"{BASE}/hosts/{NODE_WITH_DB}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        gone = await api.get(f"{BASE}/hosts/{NODE_WITH_DB}")
+        assert gone.status_code == status.HTTP_404_NOT_FOUND
+        remaining = await api.get(f"{BASE}/services")
+        assert remaining.json()["items"] == []
+
+    @pytest.mark.asyncio
+    async def test_deleting_a_service_leaves_its_host(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """A stale service is not a reason to forget the machine it ran on.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.delete(f"{BASE}/services/{SERVICE_ID}")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        host = await api.get(f"{BASE}/hosts/{NODE_WITH_DB}")
+        assert host.status_code == status.HTTP_200_OK
+        assert host.json()["services"] == []
+
+    @pytest.mark.asyncio
+    async def test_deleting_something_absent_is_404(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Refuse a typo rather than letting silence read as a successful cleanup.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        host = await api.delete(f"{BASE}/hosts/nope")
+        service = await api.delete(f"{BASE}/services/nope")
+
+        assert host.status_code == status.HTTP_404_NOT_FOUND
+        assert service.status_code == status.HTTP_404_NOT_FOUND

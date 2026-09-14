@@ -15,12 +15,23 @@
 
 """Define tests for the app.core.db.utils module."""
 
+import warnings
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    MetaData,
+    select,
+    Table,
+    Text,
+)
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -36,6 +47,7 @@ from app.core.db.utils import (
     get_async_session_maker_from_engine,
     idempotent_insert,
     NullsLastOrdering,
+    translate_metadata_schemas,
 )
 from app.core.utils.fields import AsyncDatabaseEngine, DatabaseDialect
 from app.tasks.crud import TaskHistoryManager, TaskManager
@@ -740,3 +752,123 @@ class TestCreateAppAsyncEngine:
         create_app_async_engine(self._postgres_options())
 
         assert "connect_args" not in recorded
+
+    def test_applies_schema_translate_map_when_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Set execution_options' schema_translate_map when the options carry one."""
+        engine = MagicMock()
+        monkeypatch.setattr(
+            "app.core.db.utils.create_async_engine", lambda *_args, **_kwargs: engine
+        )
+        translate_map = {"om_schema": "om"}
+
+        result = create_app_async_engine(
+            self._postgres_options(SCHEMA_TRANSLATE_MAP=translate_map)
+        )
+
+        engine.execution_options.assert_called_once_with(
+            schema_translate_map=translate_map
+        )
+        assert result is engine.execution_options.return_value
+
+    def test_leaves_engine_untouched_when_schema_translate_map_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Skip execution_options entirely when there is no schema translation to apply."""
+        engine = MagicMock()
+        monkeypatch.setattr(
+            "app.core.db.utils.create_async_engine", lambda *_args, **_kwargs: engine
+        )
+
+        result = create_app_async_engine(self._postgres_options())
+
+        engine.execution_options.assert_not_called()
+        assert result is engine
+
+
+class TestTranslateMetadataSchemas:
+    """Resolve symbolic schema tokens the way the bind's ``schema_translate_map`` does."""
+
+    @staticmethod
+    def _tokened_metadata() -> MetaData:
+        """Build a parent/child pair at the ``tok`` schema plus one untokened table."""
+        metadata = MetaData()
+        Table("parent", metadata, Column("id", Integer, primary_key=True), schema="tok")
+        Table(
+            "child",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("parent_id", Integer, ForeignKey("tok.parent.id")),
+            Index("ix_child_parent_id", "parent_id"),
+            schema="tok",
+        )
+        Table("other", metadata, Column("id", Integer, primary_key=True))
+        return metadata
+
+    def test_token_mapped_to_none_lands_in_the_default_schema(self):
+        """Drop the schema of every tokened table, foreign-key target included."""
+        translated = translate_metadata_schemas(self._tokened_metadata(), {"tok": None})
+
+        assert set(translated.tables) == {"parent", "child", "other"}
+        (constraint,) = translated.tables["child"].foreign_key_constraints
+        assert constraint.referred_table is translated.tables["parent"]
+
+    def test_token_mapped_to_a_name_lands_in_that_schema(self):
+        """Resolve every tokened table into the mapped schema, foreign-key target included."""
+        translated = translate_metadata_schemas(
+            self._tokened_metadata(), {"tok": "real"}
+        )
+
+        assert set(translated.tables) == {"real.parent", "real.child", "other"}
+        (constraint,) = translated.tables["real.child"].foreign_key_constraints
+        assert constraint.referred_table is translated.tables["real.parent"]
+
+    def test_unmapped_token_is_kept_as_declared(self):
+        """Leave a schema the map does not name untouched, so it still fails a check."""
+        translated = translate_metadata_schemas(
+            self._tokened_metadata(), {"unrelated": None}
+        )
+
+        assert set(translated.tables) == {"tok.parent", "tok.child", "other"}
+
+    def test_indexes_survive_the_copy(self):
+        """Carry a named index across so the comparison still sees it."""
+        translated = translate_metadata_schemas(self._tokened_metadata(), {"tok": None})
+
+        assert {index.name for index in translated.tables["child"].indexes} == {
+            "ix_child_parent_id"
+        }
+
+    def test_empty_map_returns_the_same_metadata(self):
+        """Skip the copy entirely when there is nothing to translate."""
+        metadata = self._tokened_metadata()
+
+        assert translate_metadata_schemas(metadata, {}) is metadata
+
+    def test_input_metadata_is_not_mutated(self):
+        """Leave the caller's metadata exactly as declared."""
+        metadata = self._tokened_metadata()
+
+        translate_metadata_schemas(metadata, {"tok": None})
+
+        assert set(metadata.tables) == {"tok.parent", "tok.child", "other"}
+
+    def test_colliding_translated_keys_keep_the_first_table_without_warning(self):
+        """Skip a later table whose translated key a prior one already claimed."""
+        metadata = MetaData()
+        Table("service", metadata, Column("id", Integer, primary_key=True))
+        Table(
+            "service",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("port", Integer),
+            schema="tok",
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            translated = translate_metadata_schemas(metadata, {"tok": None})
+
+        assert set(translated.tables) == {"service"}
+        assert "port" not in translated.tables["service"].c

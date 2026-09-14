@@ -247,6 +247,7 @@ class TestSepConfigExportYaml:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             "AlertsSettings",
             "HealthReportSettings",
+            "OmInventorySettings",
         ):
             assert set(export[setting_class]) == list_keys[setting_class]
 
@@ -586,6 +587,7 @@ INVENTORY_APP_CLASS = "InventoryAppSettings"
 SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
+OM_INVENTORY_CLASS = "OmInventorySettings"
 FULL_EXPORT_CLASSES = {
     SEP_CLASS,
     SNIPPETS_CLASS,
@@ -595,6 +597,7 @@ FULL_EXPORT_CLASSES = {
     SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,
+    OM_INVENTORY_CLASS,
 }
 TASKS_SAMPLE_KEY = "STALENESS_THRESHOLD_SECONDS"
 MIN_MULTI_KEYS = 2

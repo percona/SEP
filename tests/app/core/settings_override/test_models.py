@@ -35,6 +35,7 @@ from app.sep import apps
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.framework.registry import collect_app_owned_settings_classes
 from app.sep.apps.inventory.config import InventoryAppSettings
+from app.sep.apps.om_inventory.config import OmInventorySettings
 from app.sep.apps.report.config import HealthReportSettings
 from app.sep.config import App, SEPSettings
 from app.sep.snippets.config import SnippetsSettings
@@ -51,6 +52,7 @@ _HISTORICAL_TOKENS: tuple[tuple[type[BaseYamlSettings], str], ...] = (
     (HealthReportSettings, "HEALTH_REPORT_SETTINGS"),
     (InventoryAppSettings, "INVENTORY_APP_SETTINGS"),
     (InventorySettings, "INVENTORY_SETTINGS"),
+    (OmInventorySettings, "OM_INVENTORY_SETTINGS"),
     (SEPSettings, "SEP_SETTINGS"),
     (Settings, "SETTINGS"),
     (SnippetsSettings, "SNIPPETS_SETTINGS"),
