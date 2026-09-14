@@ -388,7 +388,7 @@
 | app/tasks/anonymizer/config.py                                                                                               |       30 |        1 |        6 |        1 |     94% |        81 |
 | app/tasks/anonymizer/entities.py                                                                                             |       28 |        0 |        2 |        0 |    100% |           |
 | app/tasks/celery.py                                                                                                          |      381 |       10 |       88 |        8 |     96% |264-\>278, 273-\>275, 490, 563-567, 752, 759-\>763, 818, 1021, 1090, 1113-1114, 1217-\>1232 |
-| app/tasks/config.py                                                                                                          |       48 |        0 |        4 |        0 |    100% |           |
+| app/tasks/config.py                                                                                                          |       49 |        0 |        4 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                                          |        5 |        0 |        0 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                                             |       11 |        0 |        0 |        0 |    100% |           |
 | app/tasks/connectivity/payload.py                                                                                            |       69 |        1 |        8 |        1 |     97% |       168 |
@@ -402,7 +402,7 @@
 | app/tasks/execution/executors/celery/models.py                                                                               |       87 |        0 |       16 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/constants.py                                                                             |        1 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/exceptions.py                                                                            |        4 |        0 |        0 |        0 |    100% |           |
-| app/tasks/execution/executors/nomad/models.py                                                                                |      919 |       68 |      316 |       19 |     92% |191, 370, 440-443, 444-\>exit, 484, 486-\>480, 535, 578, 913, 975-\>977, 1192-\>1197, 1201, 1207, 1242-1247, 1338-\>1334, 1485-\>1507, 1737, 1828, 2212-2214, 2240-2241, 2278-2279, 2313-2314, 2360-\>2405, 2395-\>2360, 2629-2630, 2671, 2769-2770, 2844-2845, 2868-2924 |
+| app/tasks/execution/executors/nomad/models.py                                                                                |      935 |       68 |      320 |       19 |     92% |191, 370, 440-443, 444-\>exit, 484, 486-\>480, 535, 578, 913, 975-\>977, 1192-\>1197, 1201, 1207, 1242-1247, 1338-\>1334, 1485-\>1507, 1792, 1883, 2267-2269, 2295-2296, 2333-2334, 2368-2369, 2415-\>2460, 2450-\>2415, 2684-2685, 2726, 2824-2825, 2899-2900, 2923-2979 |
 | app/tasks/execution/executors/nomad/steps.py                                                                                 |       20 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/models.py                                                                                                |       71 |        2 |       14 |        0 |     98% |  210, 265 |
 | app/tasks/execution/nomad\_lifecycle.py                                                                                      |       54 |        0 |       12 |        2 |     97% |145-\>148, 187-\>exit |
@@ -474,7 +474,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29591** | **1714** | **7268** |  **658** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29608** | **1714** | **7272** |  **658** | **93%** |           |
 
 
 ## Setup coverage badge
