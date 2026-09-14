@@ -137,14 +137,14 @@ def upgrade() -> None:
         schema=OM_SCHEMA_SYMBOL,
     )
     op.create_index(
-        op.f("ix_om_bootstrap_run_started_at"),
+        op.f("ix_bootstrap_run_started_at"),
         "bootstrap_run",
         ["started_at"],
         unique=False,
         schema=OM_SCHEMA_SYMBOL,
     )
     op.create_index(
-        op.f("ix_om_bootstrap_run_status"),
+        op.f("ix_bootstrap_run_status"),
         "bootstrap_run",
         ["status"],
         unique=False,
@@ -157,12 +157,12 @@ def downgrade() -> None:
     # so dropping it here would take another app's tables with it, and each app's
     # migrations are an independent branch with no ordering between them.
     op.drop_index(
-        op.f("ix_om_bootstrap_run_status"),
+        op.f("ix_bootstrap_run_status"),
         table_name="bootstrap_run",
         schema=OM_SCHEMA_SYMBOL,
     )
     op.drop_index(
-        op.f("ix_om_bootstrap_run_started_at"),
+        op.f("ix_bootstrap_run_started_at"),
         table_name="bootstrap_run",
         schema=OM_SCHEMA_SYMBOL,
     )
