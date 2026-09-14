@@ -40,9 +40,10 @@ from tests.app.sep.conftest import (  # noqa: F401
     unauthenticated_client,
 )
 
-XTRABACKUP_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups/xtrabackup_payload"
-)
+_MYSQL_BACKUPS_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups"
+XTRABACKUP_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "xtrabackup_payload"
+MYDUMPER_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "mydumper_payload"
+BINLOG_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "binlog_payload"
 
 # Spelled out on purpose: this is the cadence vocabulary the product promises, so a
 # test that read it back off a model or the payload would assert a surface against
@@ -68,6 +69,16 @@ def xtrabackup_payload_tree() -> ast.Module:
     in this directory's test modules do not each re-derive it independently.
     """
     return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
+
+
+def mydumper_payload_tree() -> ast.Module:
+    """Parse and return the mydumper payload's AST, fresh on every call."""
+    return ast.parse(MYDUMPER_PAYLOAD_PATH.read_text())
+
+
+def binlog_payload_tree() -> ast.Module:
+    """Parse and return the binlog payload's AST, fresh on every call."""
+    return ast.parse(BINLOG_PAYLOAD_PATH.read_text())
 
 
 def service_payload(
