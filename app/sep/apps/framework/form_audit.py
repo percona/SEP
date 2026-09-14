@@ -24,9 +24,15 @@ app's create and update routes enforce, and names the tasks a save would now
 reject. Deactivated rows are out of scope, as they are for the backfill.
 
 The report goes to stdout, because the report *is* the output; progress goes to
-the log. It never writes, and it never prints a submitted value: a form body
-holds GPG recipients and key-file paths, and every pydantic error carries the
-input that failed, so findings carry field locations and the rule messages only.
+the log. It never writes, and it never prints the input pydantic records against
+an error: a form body holds GPG recipients and key-file paths. Findings carry
+field locations and message text, so a model-level validator must not
+interpolate the value it rejects into its own message.
+
+A task carrying no stamp is counted ``unstamped`` and never validated, so the
+``rejected`` total answers "how many saved tasks would a save now reject?" only
+once ``form_backfill`` has run: until then a legacy task sits outside the
+population the count covers.
 """
 
 from __future__ import annotations
@@ -35,7 +41,7 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING
 
 from pydantic import ValidationError
 
@@ -133,6 +139,11 @@ class AuditSummary:
         return sum(app.scanned for app in self.apps)
 
     @property
+    def unstamped(self) -> int:
+        """Return the total number of tasks carrying no stamp across all apps."""
+        return sum(app.unstamped for app in self.apps)
+
+    @property
     def unreadable(self) -> int:
         """Return the total number of unreadable stamps across all apps."""
         return sum(app.unreadable for app in self.apps)
@@ -147,11 +158,13 @@ class AuditSummary:
 class _TaskAuditOutcome:
     """Pair one task's outcome label with its finding, if any.
 
-    :param label: The :class:`AppAuditStats` counter name, or ``"rejected"``.
+    :param label: The :class:`AppAuditStats` counter to increment. Read only
+        when ``finding`` is ``None``: ``rejected`` is a read-only property
+        derived from the findings, so it names no assignable counter.
     :param finding: The finding to report, or ``None``.
     """
 
-    label: str
+    label: Literal["valid", "unstamped", "unreadable"] = "valid"
     finding: StampFinding | None = None
 
 
@@ -214,7 +227,7 @@ def _audit_single_task(task: Task, model: type[AppFormModel]) -> _TaskAuditOutco
     try:
         model.model_validate(stored_form)
     except ValidationError as exc:
-        return _TaskAuditOutcome("rejected", _finding_from_error(task, exc))
+        return _TaskAuditOutcome(finding=_finding_from_error(task, exc))
     return _TaskAuditOutcome("valid")
 
 
@@ -322,7 +335,8 @@ def format_summary(summary: AuditSummary) -> str:
     """Render an audit summary as the operator-facing report.
 
     :param summary: The counters and findings to render.
-    :return: One line per app, one indented line per finding, then a total.
+    :return: One line per app, one indented line per finding, then a total,
+        qualified when an unstamped task leaves that total a lower bound.
     """
     lines: list[str] = []
     for app in summary.apps:
@@ -342,6 +356,11 @@ def format_summary(summary: AuditSummary) -> str:
         f"Total: scanned={summary.scanned} rejected={summary.rejected} "
         f"unreadable={summary.unreadable} errored={summary.errored}"
     )
+    if summary.unstamped:
+        lines.append(
+            f"Note: {summary.unstamped} task(s) carry no stamp and were not "
+            "validated, so rejected is a lower bound until form_backfill has run."
+        )
     return "\n".join(lines)
 
 

@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import BaseModel, model_validator, ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.framework import form_audit
@@ -29,6 +30,7 @@ from app.sep.apps.framework.form_audit import (
     _audit_app,
     _audit_single_task,
     _build_arg_parser,
+    _finding_from_error,
     _route_create_model,
     AppAuditStats,
     AuditSummary,
@@ -188,7 +190,6 @@ class TestAuditSingleTask:
             _task(form=_unreachable_timing_stamp()), BackupCreate
         )
 
-        assert outcome.label == "rejected"
         assert outcome.finding is not None
         assert outcome.finding.task_name == "nightly"
         assert any(
@@ -211,10 +212,8 @@ class TestAuditSingleTask:
         """
         stamp = _unreachable_timing_stamp()
 
-        assert (
-            _audit_single_task(_task(form=stamp), LegacyBackupCreate).label == "valid"
-        )
-        assert _audit_single_task(_task(form=stamp), BackupCreate).label == "rejected"
+        assert _audit_single_task(_task(form=stamp), LegacyBackupCreate).finding is None
+        assert _audit_single_task(_task(form=stamp), BackupCreate).finding is not None
 
     def test_an_unstamped_task_is_not_reported(self):
         """Count a task with no stamp separately: there is nothing to validate."""
@@ -234,7 +233,6 @@ class TestAuditSingleTask:
         """Name the offending field for a failure pydantic attributes to one."""
         outcome = _audit_single_task(_task(form=_stamp(backup_dir="")), BackupCreate)
 
-        assert outcome.label == "rejected"
         assert outcome.finding is not None
         assert "backup_dir" in outcome.finding.fields
 
@@ -253,6 +251,30 @@ class TestAuditSingleTask:
         rendered = repr(outcome.finding)
         assert _RECIPIENT not in rendered
         assert _KEYFILE not in rendered
+
+    def test_a_model_level_message_is_forwarded_verbatim(self):
+        """Pin what the audit's value-free report actually rests on.
+
+        ``include_input=False`` drops pydantic's own record of the input, but a
+        whole-model message is reported as the validator wrote it — so a validator
+        that interpolates the value it rejects puts that value in the report. The
+        audit cannot filter that, which is why the guarantee is stated as a rule
+        for model-level validators rather than as a property of this module.
+        """
+
+        class _Leaky(BaseModel):
+            secret: str
+
+            @model_validator(mode="after")
+            def _reject(self) -> "_Leaky":
+                raise ValueError(f"rejected {self.secret}")
+
+        with pytest.raises(ValidationError) as exc_info:
+            _Leaky(secret=_KEYFILE)
+
+        finding = _finding_from_error(_task(), exc_info.value)
+
+        assert any(_KEYFILE in reason for reason in finding.reasons)
 
 
 class TestAuditApp:
@@ -497,3 +519,25 @@ class TestFormatSummary:
         assert format_summary(summary).endswith(
             "Total: scanned=0 rejected=0 unreadable=0 errored=0"
         )
+
+    def test_an_unstamped_task_qualifies_the_total(self):
+        """Say so when the rejected total is a lower bound.
+
+        An unstamped task is never validated, so it sits outside the population
+        the count covers — which makes the headline number incomplete on an
+        install where the backfill has not run yet.
+        """
+        rendered = format_summary(_summary_with_one_finding())
+
+        assert (
+            "Note: 1 task(s) carry no stamp and were not validated, so rejected "
+            "is a lower bound until form_backfill has run." in rendered
+        )
+
+    def test_a_fully_stamped_population_carries_no_qualifier(self):
+        """Leave the total unqualified when every task was validated."""
+        summary = AuditSummary(
+            apps=[AppAuditStats(app_key="checksums", owner="CHECKSUMS", valid=3)]
+        )
+
+        assert "lower bound" not in format_summary(summary)
