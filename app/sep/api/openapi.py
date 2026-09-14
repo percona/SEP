@@ -19,18 +19,20 @@ from typing import Any
 
 from fastapi import status
 
+_DETAIL_JSON_CONTENT: dict[str, Any] = {
+    "application/json": {
+        "schema": {
+            "type": "object",
+            "properties": {"detail": {"type": "string"}},
+            "required": ["detail"],
+        },
+    },
+}
+
 UPSTREAM_TASKS_502_RESPONSE: dict[int | str, dict[str, Any]] = {
     status.HTTP_502_BAD_GATEWAY: {
         "description": "Upstream Tasks API failure.",
-        "content": {
-            "application/json": {
-                "schema": {
-                    "type": "object",
-                    "properties": {"detail": {"type": "string"}},
-                    "required": ["detail"],
-                },
-            },
-        },
+        "content": _DETAIL_JSON_CONTENT,
     },
 }
 """OpenAPI ``responses=`` entry for an SEP proxy route's upstream-Tasks-API ``502``.
@@ -41,3 +43,13 @@ handler renders that as a JSON ``{"detail": ...}`` body; this constant declares
 the matching response schema in OpenAPI so the generated typed client sees the
 502 branch and consumers can model the error shape.
 """
+
+SCHEDULING_UNSUPPORTED_400_RESPONSE: dict[int | str, dict[str, Any]] = {
+    status.HTTP_400_BAD_REQUEST: {
+        "description": (
+            "The schedule would run a task whose app does not offer scheduling."
+        ),
+        "content": _DETAIL_JSON_CONTENT,
+    },
+}
+"""OpenAPI ``responses=`` entry for a schedule the scheduling guard refuses."""

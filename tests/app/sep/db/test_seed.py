@@ -36,12 +36,14 @@ from app.sep import periodic_tasks as periodic_tasks_module
 from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.inventory.config import inventory_app_settings
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 from tests.app.db_schema import apply_schema
+from tests.app.factories import TaskFactory
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
@@ -92,13 +94,19 @@ async def seed_maker_fixture() -> AsyncIterator:
 def patched_seed(mocker, seed_maker):
     """Patch the seed module's session maker and stub the periodic-task work.
 
-    Both the celery-beat task seeding (``init_periodic_tasks_db``) and the
-    cross-database gating (``sync_app_periodic_task_gating``) are stubbed so the
-    AppState-only tests never reach a real scheduler database.
+    The celery-beat task seeding (``init_periodic_tasks_db``), the cross-database
+    gating (``sync_app_periodic_task_gating``) and the unschedulable-owner sweep
+    (``disable_unschedulable_task_schedules``) are stubbed so the AppState-only
+    tests never reach a real scheduler or tasks database.
     """
     mocker.patch.object(seed_module, "get_async_session_maker", return_value=seed_maker)
     mocker.patch.object(
         seed_module, "sync_app_periodic_task_gating", new_callable=mocker.AsyncMock
+    )
+    mocker.patch.object(
+        seed_module,
+        "disable_unschedulable_task_schedules",
+        new_callable=mocker.AsyncMock,
     )
     return mocker.patch.object(
         seed_module, "init_periodic_tasks_db", new_callable=mocker.AsyncMock
@@ -688,6 +696,43 @@ class TestInitSepDbPeriodicTaskGating:
             "get_celery_beat_session_maker",
             return_value=beat_maker,
         )
+        mocker.patch.object(
+            periodic_tasks_module, "get_tasks_session_maker", return_value=seed_maker
+        )
+
+    async def test_restore_schedules_are_switched_off(
+        self, mocker, seed_maker, beat_maker
+    ) -> None:
+        """Disable a stored restore schedule on the first startup after upgrade."""
+        async with beat_maker() as session:
+            schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+            session.add(schedule)
+            await session.flush()
+            session.add(
+                PeriodicTask(
+                    name="nightly-restore",
+                    task="app.tasks.celery.execute_task_by_name",
+                    enabled=True,
+                    kwargs=json.dumps({"task_name": "r1"}),
+                    schedule_model=schedule,
+                )
+            )
+            await session.commit()
+        async with seed_maker() as session:
+            session.add(
+                TaskFactory.build(name="r1", owner=RESTORES_OWNER, deleted_at=None)
+            )
+            await session.commit()
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings, "APPS", [_plugin("mysql_backups")]
+        )
+
+        await seed_module.init_sep_db()
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name="nightly-restore")
+        assert task.enabled is False
 
     @pytest.mark.parametrize("app_enabled", [True, False])
     async def test_gate_reflects_app_state(

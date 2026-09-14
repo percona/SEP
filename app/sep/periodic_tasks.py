@@ -28,8 +28,17 @@ database, while ``PeriodicTask`` lives in the celery-beat database — so it can
 ride on a single manager ``save()``. It is instead invoked from the two
 enumerated writers of ``AppState.lifecycle_state``: startup seeding
 (:func:`app.sep.db.seed.init_sep_db`) and the runtime toggle endpoint.
+
+The module carries a second, narrower concern with the same shape: a *user*
+schedule whose task belongs to an app that does not offer scheduling at all. Such
+a schedule predates the app withdrawing the capability, and the gateway guard only
+refuses new writes, so :func:`disable_unschedulable_task_schedules` switches the
+stored ones off once per SEP startup. It reads a third database — the Tasks one,
+which owns the ``Task.owner`` those schedules resolve against.
 """
 
+import json
+import logging
 from collections.abc import Collection
 
 from sqlalchemy_celery_beat import PeriodicTask
@@ -39,6 +48,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.db import get_async_session_maker as get_celery_beat_session_maker
 from app.core.celery.utils import SystemPeriodicTaskSchedule
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import get_async_session_maker as get_sep_session_maker
 from app.sep.models import (
@@ -46,6 +56,13 @@ from app.sep.models import (
     SEPPluginPeriodicTask,
     SEPPluginPeriodicTaskBase,
 )
+from app.tasks.crud import TaskManager
+from app.tasks.db import get_async_session_maker as get_tasks_session_maker
+from app.tasks.models import Task
+from app.tasks.periodic.crud import PeriodicTaskManager
+from app.tasks.periodic.models import resolve_task_name
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_app_periodic_task_rows(
@@ -183,3 +200,97 @@ async def sync_app_periodic_task_gating(
         await seed_app_periodic_task_rows(sep_session, system_tasks)
         await release_unowned_task_gating(celery_beat_session, system_tasks)
         await apply_effective_enabled(sep_session, celery_beat_session)
+
+
+def _scheduled_task_name(schedule: PeriodicTask) -> str | None:
+    """Return the task name a Tasks-service schedule runs, or ``None``.
+
+    :param schedule: The celery-beat row to inspect.
+    :return: The name :func:`~app.tasks.periodic.models.resolve_task_name` derives,
+        or ``None`` when ``args``/``kwargs`` is not JSON of the expected shape or
+        names no task.
+    """
+    try:
+        args = json.loads(schedule.args) if schedule.args else None
+        kwargs = json.loads(schedule.kwargs) if schedule.kwargs else None
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(args, list | None) or not isinstance(kwargs, dict | None):
+        return None
+    name = resolve_task_name(args, kwargs)
+    return name if isinstance(name, str) and name else None
+
+
+async def disable_schedules_for_owners(
+    tasks_session: AsyncSession,
+    celery_beat_session: AsyncSession,
+    owners: Collection[str],
+) -> list[str]:
+    """Switch off every enabled schedule whose task is owned by one of ``owners``.
+
+    Resolve the task each enabled ``execute_task_by_name`` schedule runs from its
+    ``args``/``kwargs`` the way the Tasks service reads them, and match it against
+    the active tasks under ``owners``. A row whose arguments cannot be read is
+    skipped with a warning, so one corrupt schedule cannot stop the rest from being
+    switched off. The write is an ORM-instance mutation, so the library's
+    ``after_update`` listener bumps ``PeriodicTaskChanged.last_update`` and a
+    running scheduler reloads without a restart. Only enabled rows are selected, so
+    a second run changes nothing.
+
+    :param tasks_session: The Tasks database session (``Task``).
+    :param celery_beat_session: The celery-beat database session (``PeriodicTask``).
+    :param owners: The ``Task.owner`` values whose schedules to switch off.
+    :return: The names of the schedules switched off, empty when none were.
+    """
+    if not owners:
+        return []
+    tasks = await TaskManager.list(
+        tasks_session,
+        col(Task.owner).in_(owners),
+        col(Task.deleted_at).is_(None),
+    )
+    owned_names = {task.name for task in tasks}
+    if not owned_names:
+        return []
+    schedules: list[PeriodicTask] = []
+    for candidate in await PeriodicTaskManager.list(celery_beat_session, enabled=True):
+        task_name = _scheduled_task_name(candidate)
+        if task_name is None:
+            logger.warning(
+                "Skipped periodic task %r: its args/kwargs do not name a task.",
+                candidate.name,
+            )
+        elif task_name in owned_names:
+            schedules.append(candidate)
+    if not schedules:
+        return []
+    names = [schedule.name for schedule in schedules]
+    for schedule in schedules:
+        schedule.enabled = False
+        celery_beat_session.add(schedule)
+    await celery_beat_session.commit()
+    for name in names:
+        logger.warning(
+            "Switched off periodic task %r: its task's app does not offer scheduling.",
+            name,
+        )
+    return names
+
+
+async def disable_unschedulable_task_schedules() -> None:
+    """Switch off existing schedules of tasks whose app does not offer scheduling.
+
+    Startup entry point. The owners come from the app registry, so no app is named
+    here and an app absent from the activation list is not swept. No session is
+    opened when no owner qualifies.
+    """
+    owners = get_app_registry().unschedulable_task_owners()
+    if not owners:
+        return
+    tasks_session_maker = get_tasks_session_maker()
+    celery_beat_session_maker = get_celery_beat_session_maker()
+    async with (
+        tasks_session_maker() as tasks_session,
+        celery_beat_session_maker() as celery_beat_session,
+    ):
+        await disable_schedules_for_owners(tasks_session, celery_beat_session, owners)

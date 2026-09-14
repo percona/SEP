@@ -3080,6 +3080,8 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to update the periodic task.
      *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
      *     :return: The updated periodic task as returned by the Tasks API.
+     *     :raises HTTPBadRequestException: If the task the schedule would run belongs
+     *         to an app that does not offer scheduling.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -3121,6 +3123,7 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to create the periodic task.
      *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
      *     :return: The created periodic task as returned by the Tasks API.
+     *     :raises HTTPBadRequestException: If the task's app does not offer scheduling.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -15046,6 +15049,17 @@ export interface operations {
           };
         };
       };
+      /** @description The schedule would run a task whose app does not offer scheduling. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -15133,6 +15147,17 @@ export interface operations {
         content: {
           'application/json': {
             [key: string]: unknown;
+          };
+        };
+      };
+      /** @description The schedule would run a task whose app does not offer scheduling. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
           };
         };
       };

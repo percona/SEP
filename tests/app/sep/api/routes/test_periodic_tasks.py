@@ -15,6 +15,7 @@
 
 """Tests for the SEP periodic-task JSON proxy at ``/api/sep/periodic-tasks/``."""
 
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -22,7 +23,13 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
+from app.sep.apps.backup_mongo.restore.models import OWNER as RESTORE_MONGO_OWNER
+from app.sep.apps.mysql_backups.forms import OWNER as BACKUPS_OWNER
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
+from app.tasks.models import ANY_OWNER
+from tests.app.factories import TaskResponseFactory
 
 PREVIEW_CASE = pytest.param(
     "post", "/api/sep/periodic-tasks/schedule/preview/", "post", {}, id="preview"
@@ -152,6 +159,7 @@ class TestSepPeriodicTasksEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == _empty_envelope()
 
+    @pytest.mark.usefixtures("schedulable_upstream_task")
     def test_create_forwards_body_and_returns_201(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
@@ -164,6 +172,7 @@ class TestSepPeriodicTasksEndpoint:
         assert response.json() == upstream
         mock_task_api_dep.post.assert_awaited_once_with("/my-task/periodic/", json=body)
 
+    @pytest.mark.usefixtures("schedulable_upstream_task")
     def test_update_forwards_body(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock
     ) -> None:
@@ -207,6 +216,7 @@ class TestSepPeriodicTasksEndpoint:
         """
         body = {"interval": {"every": 30, "period": "minutes"}}
         upstream = {"id": 9, "name": "run_preview"}
+        mock_task_api_dep.get.return_value = _task_payload("preview", BACKUPS_OWNER)
         mock_task_api_dep.post.return_value = upstream
         response = test_client.post("/api/sep/periodic-tasks/preview/", json=body)
         assert response.status_code == status.HTTP_201_CREATED
@@ -224,6 +234,7 @@ class TestSepPeriodicTasksEndpoint:
         mock_task_api_dep.delete.assert_awaited_once_with("/periodic/42")
 
 
+@pytest.mark.usefixtures("schedulable_upstream_task")
 @pytest.mark.parametrize(("http_method", "url", "mock_attr", "json_body"), ROUTE_CASES)
 class TestSepPeriodicTasksErrorSplit:
     """The 4xx-passthrough / 5xx-502 error split applies to every periodic route."""
@@ -321,10 +332,15 @@ class TestSepPeriodicTasksAuth:
         mock_attr: str,
         json_body: dict[str, Any] | None,
     ) -> None:
-        """Reject a cookie-only mutation that lacks a Bearer token with 401."""
+        """Reject a cookie-only mutation that lacks a Bearer token with 401.
+
+        The router-level gate resolves before the route's scheduling guard, so an
+        unauthenticated mutation reaches no upstream read at all.
+        """
         response = _issue(api_admin_client_no_bearer, http_method, url, json_body)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         getattr(mock_task_api_dep, mock_attr).assert_not_awaited()
+        mock_task_api_dep.get.assert_not_awaited()
 
     def test_cookie_only_get_allowed(
         self, api_admin_client_no_bearer: TestClient, mock_task_api_dep: AsyncMock
@@ -334,3 +350,320 @@ class TestSepPeriodicTasksAuth:
         response = api_admin_client_no_bearer.get("/api/sep/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == _empty_envelope()
+
+
+GUARD_READ_CASES = [
+    pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
+    pytest.param("put", "/api/sep/periodic-tasks/42", "put", {"task": ""}, id="update"),
+]
+
+NON_STRING_TASKS = [5, 0, False, [], {}, ["r1"]]
+
+
+def _task_payload(name: str, owner: str) -> dict[str, Any]:
+    """Build the upstream JSON for a task named ``name`` owned by ``owner``."""
+    return TaskResponseFactory.build(name=name, owner=owner).model_dump(mode="json")
+
+
+def _schedule_payload(task_name: str) -> dict[str, Any]:
+    """Build the upstream JSON of a stored schedule running ``task_name``."""
+    return {"id": 42, "name": "nightly", "task": task_name}
+
+
+def _get_by_path(responses: dict[str, Any]) -> Callable[..., Any]:
+    """Return an upstream ``get`` side effect answering per requested path."""
+
+    def _get(path: str, **_kwargs: Any) -> Any:
+        return responses[path]
+
+    return _get
+
+
+@pytest.fixture
+def schedulable_upstream_task(mock_task_api_dep: AsyncMock) -> AsyncMock:
+    """Answer every upstream read with a schedulable task the guard admits.
+
+    The payload doubles as the stored schedule the update guard falls back to, so
+    a body carrying no ``task`` resolves to the same allowed task.
+    """
+    mock_task_api_dep.get.return_value = _task_payload("my-task", BACKUPS_OWNER) | {
+        "task": "my-task"
+    }
+    return mock_task_api_dep
+
+
+@pytest.mark.usefixtures("schedulable_upstream_task")
+class TestSepPeriodicTasksSchedulingGuard:
+    """Cover the gateway refusing a schedule whose task app offers no scheduling."""
+
+    def test_create_refuses_a_mysql_restore_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Refuse creating a schedule for a MySQL restore with ``400``."""
+        mock_task_api_dep.get.return_value = _task_payload("r1", RESTORES_OWNER)
+
+        response = test_client.post("/api/sep/periodic-tasks/r1/", json={})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.post.assert_not_awaited()
+        mock_task_api_dep.get.assert_awaited_once_with("/r1")
+
+    def test_create_refuses_a_mongodb_restore_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Refuse creating a schedule for a MongoDB restore with ``400``."""
+        mock_task_api_dep.get.return_value = _task_payload("m1", RESTORE_MONGO_OWNER)
+
+        response = test_client.post("/api/sep/periodic-tasks/m1/", json={})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.post.assert_not_awaited()
+
+    def test_create_accepts_a_mysql_backup_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Forward a schedule whose task belongs to an app offering scheduling."""
+        body = {"period": 5, "kwargs": "{}"}
+        mock_task_api_dep.get.return_value = _task_payload("b1", BACKUPS_OWNER)
+        mock_task_api_dep.post.return_value = {"id": 9, **body}
+
+        response = test_client.post("/api/sep/periodic-tasks/b1/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        mock_task_api_dep.post.assert_awaited_once_with("/b1/periodic/", json=body)
+
+    def test_create_refuses_a_task_with_an_unregistered_owner(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Fail closed for an owner no registered app claims."""
+        mock_task_api_dep.get.return_value = _task_payload(
+            "x1", "NOT_A_REGISTERED_OWNER"
+        )
+
+        response = test_client.post("/api/sep/periodic-tasks/x1/", json={})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.post.assert_not_awaited()
+
+    def test_create_refuses_an_any_owner_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Fail closed for an unclaimed task defaulting to ``ANY_OWNER``."""
+        mock_task_api_dep.get.return_value = _task_payload("inventory-sync", ANY_OWNER)
+
+        response = test_client.post("/api/sep/periodic-tasks/inventory-sync/", json={})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.post.assert_not_awaited()
+
+    def test_create_unknown_task_returns_upstream_404(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Pass the upstream ``404`` for an unknown task through unchanged."""
+        mock_task_api_dep.get.side_effect = HTTPNotFoundException()
+
+        response = test_client.post("/api/sep/periodic-tasks/nope/", json={})
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        mock_task_api_dep.post.assert_not_awaited()
+
+    def test_update_refuses_editing_a_mysql_restore_schedule(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Refuse every edit of a restore schedule, a disable-only one included."""
+        mock_task_api_dep.get.return_value = _task_payload("r1", RESTORES_OWNER)
+
+        response = test_client.put(
+            "/api/sep/periodic-tasks/42", json={"task": "r1", "enabled": False}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_refuses_repointing_a_backup_schedule_at_a_restore_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Guard on the task the body names, without reading the stored schedule."""
+        mock_task_api_dep.get.side_effect = _get_by_path(
+            {
+                "/periodic/42": _schedule_payload("b1"),
+                "/r1": _task_payload("r1", RESTORES_OWNER),
+            }
+        )
+
+        response = test_client.put(
+            "/api/sep/periodic-tasks/42", json={"task": "r1", "enabled": True}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.put.assert_not_awaited()
+        mock_task_api_dep.get.assert_awaited_once_with("/r1")
+
+    def test_update_falls_back_to_the_existing_schedule_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Resolve an empty body ``task`` from the stored schedule, as Tasks does."""
+        mock_task_api_dep.get.side_effect = _get_by_path(
+            {
+                "/periodic/42": _schedule_payload("r1"),
+                "/r1": _task_payload("r1", RESTORES_OWNER),
+            }
+        )
+
+        response = test_client.put(
+            "/api/sep/periodic-tasks/42", json={"task": "", "enabled": True}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_accepts_a_backup_schedule(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Forward an update whose task belongs to an app offering scheduling."""
+        body = {"task": "b1", "period": 10}
+        mock_task_api_dep.get.return_value = _task_payload("b1", BACKUPS_OWNER)
+        mock_task_api_dep.put.return_value = {"id": 42, **body}
+
+        response = test_client.put("/api/sep/periodic-tasks/42", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
+
+    def test_update_accepts_repointing_a_restore_schedule_at_a_backup_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Allow an edit that moves a schedule off a restore onto a backup task."""
+        body = {"task": "b1", "period": 10}
+        mock_task_api_dep.get.side_effect = _get_by_path(
+            {
+                "/periodic/42": _schedule_payload("r1"),
+                "/b1": _task_payload("b1", BACKUPS_OWNER),
+            }
+        )
+        mock_task_api_dep.put.return_value = {"id": 42, **body}
+
+        response = test_client.put("/api/sep/periodic-tasks/42", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
+
+    @pytest.mark.parametrize("task", NON_STRING_TASKS)
+    def test_update_refuses_a_non_string_task(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock, task: Any
+    ) -> None:
+        """Refuse a non-string ``task`` with ``422`` before any upstream call.
+
+        The Tasks service accepts one and writes it into the schedule's
+        ``kwargs.task_name``, so a falsy non-string would slip past the fallback.
+        """
+        response = test_client.put(
+            "/api/sep/periodic-tasks/42", json={"task": task, "period": 10}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_awaited()
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_schedule_without_task_is_a_bad_gateway(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Fail with ``502`` when the stored schedule names no task."""
+        mock_task_api_dep.get.return_value = {"id": 42}
+
+        response = test_client.put("/api/sep/periodic-tasks/42", json={"task": ""})
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_delete_is_not_guarded(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Leave deletion unguarded so a stored restore schedule stays removable."""
+        mock_task_api_dep.delete.return_value = None
+
+        response = test_client.delete("/api/sep/periodic-tasks/42")
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        mock_task_api_dep.delete.assert_awaited_once_with("/periodic/42")
+        mock_task_api_dep.get.assert_not_awaited()
+
+    def test_list_is_not_guarded(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Leave listing unguarded: the guard adds no upstream task read."""
+        mock_task_api_dep.get.return_value = _empty_envelope()
+
+        response = test_client.get("/api/sep/periodic-tasks/")
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/periodic/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": DEFAULT_PAGINATION_LIMIT,
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    ("http_method", "url", "mock_attr", "json_body"), GUARD_READ_CASES
+)
+class TestSepPeriodicTasksGuardErrorSplit:
+    """Cover the gateway 4xx/5xx error split on the guard's own upstream reads."""
+
+    def test_upstream_client_error_passes_through(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        http_method: str,
+        url: str,
+        mock_attr: str,
+        json_body: dict[str, Any] | None,
+    ) -> None:
+        """Return the guard read's upstream client error unchanged."""
+        mock_task_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="upstream detail"
+        )
+
+        response = _issue(test_client, http_method, url, json_body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json() == {"detail": "upstream detail"}
+        getattr(mock_task_api_dep, mock_attr).assert_not_awaited()
+
+    def test_upstream_server_error_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        http_method: str,
+        url: str,
+        mock_attr: str,
+        json_body: dict[str, Any] | None,
+    ) -> None:
+        """Fail the guard read with ``502`` on an upstream server error."""
+        mock_task_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="tasks down"
+        )
+
+        response = _issue(test_client, http_method, url, json_body)
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        getattr(mock_task_api_dep, mock_attr).assert_not_awaited()
+
+    def test_upstream_oserror_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        http_method: str,
+        url: str,
+        mock_attr: str,
+        json_body: dict[str, Any] | None,
+    ) -> None:
+        """Fail the guard read with ``502`` on a connection-level ``OSError``."""
+        mock_task_api_dep.get.side_effect = OSError("connection refused")
+
+        response = _issue(test_client, http_method, url, json_body)
+
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        getattr(mock_task_api_dep, mock_attr).assert_not_awaited()

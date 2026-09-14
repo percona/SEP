@@ -28,7 +28,10 @@ from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
-from app.sep.periodic_tasks import sync_app_periodic_task_gating
+from app.sep.periodic_tasks import (
+    disable_unschedulable_task_schedules,
+    sync_app_periodic_task_gating,
+)
 from app.sep.snippets.config import snippets_settings
 
 
@@ -132,7 +135,10 @@ async def init_sep_db() -> None:
     that has since become a child is removed by the orphan cleanup below. Removes
     rows for apps no longer configured, then seeds the SEP
     periodic tasks and gates each plugin-owned schedule by its app state via
-    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`, and finally
+    switches off every stored schedule whose task belongs to an app that does not
+    offer scheduling via
+    :func:`app.sep.periodic_tasks.disable_unschedulable_task_schedules`.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -160,3 +166,4 @@ async def init_sep_db() -> None:
     system_tasks = get_system_periodic_tasks()
     await init_periodic_tasks_db(system_tasks, "sep__")
     await sync_app_periodic_task_gating(system_tasks)
+    await disable_unschedulable_task_schedules()
