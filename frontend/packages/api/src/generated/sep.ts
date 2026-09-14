@@ -3080,8 +3080,8 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to update the periodic task.
      *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
      *     :return: The updated periodic task as returned by the Tasks API.
-     *     :raises HTTPBadRequestException: If the task the schedule would run belongs
-     *         to an app that does not offer scheduling.
+     *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
+     *         task the schedule would run.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -3123,7 +3123,8 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to create the periodic task.
      *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
      *     :return: The created periodic task as returned by the Tasks API.
-     *     :raises HTTPBadRequestException: If the task's app does not offer scheduling.
+     *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
+     *         task.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -15049,7 +15050,7 @@ export interface operations {
           };
         };
       };
-      /** @description The schedule would run a task whose app does not offer scheduling. */
+      /** @description The schedule would run a task no installed app offers scheduling for. */
       400: {
         headers: {
           [name: string]: unknown;
@@ -15150,7 +15151,7 @@ export interface operations {
           };
         };
       };
-      /** @description The schedule would run a task whose app does not offer scheduling. */
+      /** @description The schedule would run a task no installed app offers scheduling for. */
       400: {
         headers: {
           [name: string]: unknown;

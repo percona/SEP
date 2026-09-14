@@ -47,7 +47,7 @@ the matching response schema in OpenAPI so the generated typed client sees the
 SCHEDULING_UNSUPPORTED_400_RESPONSE: dict[int | str, dict[str, Any]] = {
     status.HTTP_400_BAD_REQUEST: {
         "description": (
-            "The schedule would run a task whose app does not offer scheduling."
+            "The schedule would run a task no installed app offers scheduling for."
         ),
         "content": _DETAIL_JSON_CONTENT,
     },

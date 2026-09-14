@@ -758,10 +758,10 @@ class TestDisableSchedulesForOwners:
         assert await _read_enabled(celery_beat_session, "list-kwargs") is True
         assert [m for m in _sweep_warnings(caplog) if "list-kwargs" in m]
 
-    async def test_no_owners_returns_without_querying(
+    async def test_no_owners_returns_an_empty_list(
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
-        """Return immediately when the caller supplies no owners."""
+        """Return an empty list when the caller supplies no owners."""
         assert (
             await disable_schedules_for_owners(session, celery_beat_session, []) == []
         )

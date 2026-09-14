@@ -35,24 +35,61 @@ from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.deps import get_task_by_name, TaskAPI
 
+_PATH_UNSAFE_CHARACTERS = frozenset("/?#%:")
+"""Characters that let a task name restructure the upstream request URL."""
+
+_PATH_UNSAFE_NAMES = frozenset({".", ".."})
+"""Dot-segments that resolve to a different upstream path rather than a task."""
+
+
+def _require_one_path_segment(task_name: str) -> None:
+    """Refuse a task name that is more than one URL path segment.
+
+    The guard reads the task through ``GET /{task_name}``, and
+    :meth:`~app.core.requests.remote_api.BaseRemoteAPI.prepare_path` resolves that
+    with ``urljoin``, which interprets ``/``, ``?``, ``#``, ``:`` and dot-segments
+    rather than encoding them: a leading ``/`` makes the composed path ``//host/…``,
+    which yarl reads as an absolute URL, so the request leaves the Tasks API for
+    another host carrying the caller's bearer token. Against an endpoint whose
+    ``base_path`` is not ``/``, ``prepare_path`` strips the leading slash first, so
+    a ``:`` is read as a URI scheme and reaches ``urljoin`` as a scheme-relative
+    reference. None of these are escapable at that layer, and a task named with one
+    is unreachable through that endpoint anyway, so the name is refused here.
+
+    :param task_name: The task name resolved from the request.
+    :raises HTTPUnprocessableEntityException: If the name is a dot-segment or
+        carries a character that would restructure the upstream path.
+    """
+    if task_name in _PATH_UNSAFE_NAMES or _PATH_UNSAFE_CHARACTERS.intersection(
+        task_name
+    ):
+        raise HTTPUnprocessableEntityException(
+            "The schedule's task must be a plain task name."
+        )
+
 
 async def ensure_task_schedulable(tasks_api: TaskAPI, task_name: str) -> None:
-    """Refuse to schedule ``task_name`` unless its owning app offers scheduling.
+    """Refuse to schedule ``task_name`` unless an installed app offers scheduling.
 
     :param tasks_api: The Tasks API client used to read the task.
     :param task_name: The name of the task a schedule would run.
-    :raises HTTPBadRequestException: If no registered app owning the task offers
-        scheduling.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
+    :raises HTTPBadRequestException: If no installed app offers scheduling for the
+        task — because no registered app claims its owner, or because one does and
+        withholds the capability.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500), including the ``404`` for an unknown task.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
+    _require_one_path_segment(task_name)
     with reraise_upstream_tasks_errors():
         task = await get_task_by_name(tasks_api, task_name)
     if not get_app_registry().owner_offers_scheduling(task.owner):
         raise HTTPBadRequestException(
-            f"Task {task_name!r} cannot be scheduled: its app does not offer scheduling."
+            f"Task {task_name!r} cannot be scheduled: "
+            "no installed app offers scheduling for it."
         )
 
 
@@ -61,8 +98,8 @@ async def require_schedulable_task(task_name: str, tasks_api: TaskAPI) -> None:
 
     :param task_name: The path's task name, which the new schedule runs.
     :param tasks_api: The Tasks API client used to read the task.
-    :raises HTTPBadRequestException: If no registered app owning the task offers
-        scheduling.
+    :raises HTTPBadRequestException: If no installed app offers scheduling for the
+        task.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500), including the ``404`` for an unknown task.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -87,14 +124,14 @@ async def require_schedulable_update(
     :param tasks_api: The Tasks API client used to read the schedule and its task.
     :param body: The ``PeriodicTaskUpdate`` JSON body, read and left unaltered.
     :raises HTTPUnprocessableEntityException: If the body's ``task`` is present and
-        not a string.
-    :raises HTTPBadRequestException: If no registered app owning the resolved task
-        offers scheduling.
+        not a string, or if the resolved name is not a single plain path segment.
+    :raises HTTPBadRequestException: If no installed app offers scheduling for the
+        resolved task.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500), including the ``404`` for an unknown schedule or task.
-    :raises HTTPBadGatewayException: If the existing schedule carries no task name,
-        and for an upstream server error (status >= 500) or a connection-level
-        ``OSError``.
+    :raises HTTPBadGatewayException: If the existing schedule carries no task name
+        or is not a JSON object, and for an upstream server error (status >= 500)
+        or a connection-level ``OSError``.
     """
     requested = body.get("task")
     if requested is not None and not isinstance(requested, str):

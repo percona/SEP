@@ -359,6 +359,19 @@ GUARD_READ_CASES = [
 
 NON_STRING_TASKS = [5, 0, False, [], {}, ["r1"]]
 
+PATH_UNSAFE_TASKS = [
+    "/evil.example.com:80/x",
+    "//evil.example.com/x",
+    "../hosts",
+    "a/b",
+    "x?q=1",
+    "x#f",
+    "a%2Fb",
+    "..",
+    "foo:bar",
+    "http://evil.example.com/x",
+]
+
 
 def _task_payload(name: str, owner: str) -> dict[str, Any]:
     """Build the upstream JSON for a task named ``name`` owned by ``owner``."""
@@ -563,6 +576,41 @@ class TestSepPeriodicTasksSchedulingGuard:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_awaited()
+        mock_task_api_dep.put.assert_not_awaited()
+
+    @pytest.mark.parametrize("task", PATH_UNSAFE_TASKS)
+    def test_update_refuses_a_task_name_that_is_not_one_path_segment(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock, task: str
+    ) -> None:
+        """Refuse a body ``task`` that would restructure the upstream request URL.
+
+        The guard reads the task through ``GET /{task_name}``, whose path is
+        resolved with ``urljoin``, so a leading ``/`` turns the upstream call into
+        an absolute URL aimed at another host and carries the caller's bearer
+        token there. Such a name is refused, never escaped.
+        """
+        response = test_client.put(
+            "/api/sep/periodic-tasks/42", json={"task": task, "period": 10}
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_awaited()
+        mock_task_api_dep.put.assert_not_awaited()
+
+    def test_update_refuses_a_stored_task_name_that_is_not_one_path_segment(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock
+    ) -> None:
+        """Refuse the same shape when it arrives from the stored schedule.
+
+        A schedule written straight through the Tasks service can carry any
+        ``kwargs.task_name``, so the fallback value is checked too.
+        """
+        mock_task_api_dep.get.return_value = _schedule_payload("/evil.example.com:80/x")
+
+        response = test_client.put("/api/sep/periodic-tasks/42", json={"task": ""})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_awaited_once_with("/periodic/42")
         mock_task_api_dep.put.assert_not_awaited()
 
     def test_update_schedule_without_task_is_a_bad_gateway(
