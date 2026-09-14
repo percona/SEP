@@ -37,7 +37,6 @@ stored ones off once per SEP startup. It reads a third database — the Tasks on
 which owns the ``Task.owner`` those schedules resolve against.
 """
 
-import json
 import logging
 from collections.abc import Collection
 
@@ -60,7 +59,7 @@ from app.tasks.crud import TaskManager
 from app.tasks.db import get_async_session_maker as get_tasks_session_maker
 from app.tasks.models import Task
 from app.tasks.periodic.crud import PeriodicTaskManager
-from app.tasks.periodic.models import resolve_task_name
+from app.tasks.periodic.utils import resolve_schedule_task_name
 
 logger = logging.getLogger(__name__)
 
@@ -202,25 +201,6 @@ async def sync_app_periodic_task_gating(
         await apply_effective_enabled(sep_session, celery_beat_session)
 
 
-def _scheduled_task_name(schedule: PeriodicTask) -> str | None:
-    """Return the task name a Tasks-service schedule runs, or ``None``.
-
-    :param schedule: The celery-beat row to inspect.
-    :return: The name :func:`~app.tasks.periodic.models.resolve_task_name` derives,
-        or ``None`` when ``args``/``kwargs`` is not JSON of the expected shape or
-        names no task.
-    """
-    try:
-        args = json.loads(schedule.args) if schedule.args else None
-        kwargs = json.loads(schedule.kwargs) if schedule.kwargs else None
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(args, list | None) or not isinstance(kwargs, dict | None):
-        return None
-    name = resolve_task_name(args, kwargs)
-    return name if isinstance(name, str) and name else None
-
-
 async def disable_schedules_for_owners(
     tasks_session: AsyncSession,
     celery_beat_session: AsyncSession,
@@ -254,7 +234,7 @@ async def disable_schedules_for_owners(
         return []
     schedules: list[PeriodicTask] = []
     for candidate in await PeriodicTaskManager.list(celery_beat_session, enabled=True):
-        task_name = _scheduled_task_name(candidate)
+        task_name = resolve_schedule_task_name(candidate)
         if task_name is None:
             logger.warning(
                 "Skipped periodic task %r: its args/kwargs do not name a task.",
