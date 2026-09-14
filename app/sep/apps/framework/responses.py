@@ -171,7 +171,7 @@ class BaseTaskResponse(BaseModel):
     owner: str = Field(exclude=True)
     service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     status: TaskHistoryStatusEnum | None = None
-    last_executed_at: datetime | None = None
+    last_executed_at: UTCDatetime | None = None
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
