@@ -120,20 +120,20 @@ def encryption_format_for_passes(*, aes256: bool, gpg: bool) -> EncryptionFormat
     stored task ran — the stored config and a stored form spell those fields
     differently, but they agree on the format the pair implies.
 
-    :param aes256: Whether the task runs XtraBackup's built-in AES-256 pass.
+    :param aes256: Whether the task runs an AES-256 / xbcrypt pass.
     :param gpg: Whether the task runs a GPG pass.
     :return: The matching format.
     """
     return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
 
 
-# AES-256 is XtraBackup's own ``--encrypt`` / xbcrypt path, so only that engine
-# can reach the AES-bearing formats; GPG is applied to the finished directory and
-# works for every engine.
+# Every engine reaches every format: GPG encrypts the finished directory, and
+# AES-256 is either XtraBackup's inline/xbcrypt path or the same post-run
+# xbcrypt pass on Mydumper and Binlog.
 ALLOWED_ENCRYPTION_FORMATS = {
-    BackupType.MYDUMPER: [EncryptionFormat.NONE, EncryptionFormat.GPG],
+    BackupType.MYDUMPER: list(EncryptionFormat),
     BackupType.XTRABACKUP: list(EncryptionFormat),
-    BackupType.BINLOG: [EncryptionFormat.NONE, EncryptionFormat.GPG],
+    BackupType.BINLOG: list(EncryptionFormat),
 }
 
 
@@ -909,8 +909,8 @@ class BackupCreate(TaskFormModel):
             (
                 (EncryptionFormat.NONE, "No encryption"),
                 (EncryptionFormat.GPG, "GPG"),
-                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
-                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+                (EncryptionFormat.AES256, "AES-256"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG"),
             )
         ),
         Ui(
@@ -922,15 +922,13 @@ class BackupCreate(TaskFormModel):
                 "no upload target nothing is encrypted, while 'Encrypt after backup "
                 "completes' encrypts on the host for a Mydumper or XtraBackup backup "
                 "and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' "
-                "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
-                "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
-                "backend cannot apply on top of it."
+                "need a key file. 'AES-256 + GPG' selects AES-256 and skips the GPG "
+                "pass, which the backend cannot apply on top of it."
             ),
         ),
     ] = EncryptionFormat.NONE
     xtrabackup_aes256_keyfile: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        _XTRABACKUP_ONLY,
         Requires(
             when=_FMT_HAS_AES,
             message=(
@@ -950,7 +948,7 @@ class BackupCreate(TaskFormModel):
             section="Encryption",
             description=(
                 "Path on the database host to the AES-256 key file. Required by the "
-                "AES-256 formats, which are XtraBackup-only."
+                "AES-256 formats."
             ),
         ),
     ] = None
@@ -1212,8 +1210,7 @@ class BackupCreate(TaskFormModel):
         """Validate the encryption format against the selected backup type.
 
         Expressed as a validator rather than a conditional ``Choices`` set because
-        the DSL's option list is static: the AES-bearing formats stay published and
-        are rejected here for the engines that have no AES-256 path.
+        the DSL's option list is static and shared across backup types.
 
         :return: The validated instance.
         :raises ValueError: If the format is not valid for the backup type.

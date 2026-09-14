@@ -398,17 +398,28 @@ class TestEncryptionFormatGate:
         )
 
     @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
-    @pytest.mark.parametrize(
-        "encryption_format", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
-    )
-    def test_aes_formats_rejected_outside_xtrabackup(
-        self, backup_type, encryption_format
-    ):
-        """Reject the AES-bearing formats for backup types with no AES-256 path."""
-        with pytest.raises(ValidationError, match="encryption_format"):
-            BackupCreate(
-                **_base_payload(backup_type, encryption_format=encryption_format)
+    def test_aes256_accepted_for_mydumper_and_binlog(self, backup_type):
+        """Accept ``aes256`` with a key file for Mydumper and Binlog."""
+        BackupCreate(
+            **_base_payload(
+                backup_type,
+                encryption_format=EncryptionFormat.AES256,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
             )
+        )
+
+    @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
+    def test_dual_accepted_for_mydumper_and_binlog(self, backup_type):
+        """Accept ``dual`` with a key file and GPG timing for Mydumper and Binlog."""
+        BackupCreate(
+            **_base_payload(
+                backup_type,
+                encryption_format=EncryptionFormat.DUAL,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
 
     @pytest.mark.parametrize(
         "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
