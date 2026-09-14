@@ -101,6 +101,11 @@ _REDACTED_VALUE = "****"
 # Stands in for a response body a caller withheld from the log, so the line
 # keeps naming the request that produced it.
 _WITHHELD_BODY = "<withheld>"
+# Bounds the non-JSON body reaching the exception log: the upstream answering
+# HTML rather than JSON decides that body's size, so a large error page would
+# otherwise flood the log with a single record.
+_NON_JSON_LOG_MAX_CHARS = 2000
+_TRUNCATION_MARKER = "... (truncated)"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -131,6 +136,18 @@ _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
     status.HTTP_502_BAD_GATEWAY: HTTPBadGatewayException,
     status.HTTP_503_SERVICE_UNAVAILABLE: HTTPServiceUnavailableException,
 }
+
+
+def _bounded_body_text(text: str) -> str:
+    """Return a response body bounded to ``_NON_JSON_LOG_MAX_CHARS``.
+
+    :param text: The decoded response body.
+    :return: The body, cut to ``_NON_JSON_LOG_MAX_CHARS`` and marked as
+        truncated when it exceeded that, and unchanged otherwise.
+    """
+    if len(text) <= _NON_JSON_LOG_MAX_CHARS:
+        return text
+    return f"{text[:_NON_JSON_LOG_MAX_CHARS]}{_TRUNCATION_MARKER}"
 
 
 def _is_redirect(status_code: int) -> bool:
@@ -602,9 +619,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         Guards the two response-logging sites in :meth:`request` and nothing
         else: :meth:`stream` logs no response body of its own, so a caller
         wrapping it gains no guarantee here. The second of the two sites reports
-        a non-JSON response, and today renders a stream handle rather than the
-        content itself, so the substitution there is a placeholder against the
-        argument changing rather than a leak being closed.
+        a non-JSON response and logs the body's decoded text, so suppression
+        there withholds the upstream's own error page from the exception line.
 
         Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
         accumulate onto the set an enclosing block registered, this flag has
@@ -1071,7 +1087,9 @@ class RemoteAPI(BaseRemoteAPI):
                     method,
                     path,
                     response.status,
-                    _WITHHELD_BODY if withhold_body else response.content,
+                    _WITHHELD_BODY
+                    if withhold_body
+                    else _bounded_body_text(await response.text(errors="replace")),
                 )
                 raise exception_for_status(
                     err.status,

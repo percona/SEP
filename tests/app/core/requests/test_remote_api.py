@@ -16,6 +16,7 @@
 """Define tests for RemoteAPI request-logging helpers and the upload primitive."""
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from unittest.mock import patch
 
@@ -31,8 +32,10 @@ from app.core.exceptions import (
 from app.core.requests import RemoteAPI
 from app.core.requests.remote_api import (
     _iter_lines_from_chunks,
+    _NON_JSON_LOG_MAX_CHARS,
     _REDACTED_VALUE,
     _sanitize_request_kwargs,
+    _TRUNCATION_MARKER,
     _WITHHELD_BODY,
     as_json_array,
     as_json_object,
@@ -54,6 +57,22 @@ _LATER_BODY_SENTINEL = "later-response-value"
 def remote_api() -> RemoteAPI:
     """Provide a real RemoteAPI client pointed at a local base URL."""
     return RemoteAPI(endpoint="http://localhost:8000/")
+
+
+def _logged_non_json_body(records: list[logging.LogRecord]) -> str:
+    """Return the body argument of the non-JSON response log record.
+
+    Reads the record's own argument rather than the rendered line, so the
+    assertion does not restate the format string under test.
+
+    :param records: Records captured while the request was issued.
+    :return: The body the record carries as its last argument.
+    :raises AssertionError: If no non-JSON response record was emitted.
+    """
+    for record in records:
+        if "response content" in record.msg and isinstance(record.args, tuple):
+            return str(record.args[-1])
+    raise AssertionError("no non-JSON response log record was emitted")
 
 
 def _one_file() -> dict:
@@ -230,13 +249,7 @@ class TestSuppressResponseLog:
 
     @pytest.mark.asyncio
     async def test_non_json_response_content_is_withheld(self, remote_api, caplog):
-        """Render the placeholder on the non-JSON exception line as well.
-
-        That line logs a stream handle rather than the content, so this pins the
-        substitution reaching both sites, not a leak being closed: the sentinel
-        assertion below holds on unguarded code too, and only the placeholder
-        assertion discriminates.
-        """
+        """Render the placeholder on the non-JSON exception line as well."""
         with aioresponses() as mock:
             mock.get(
                 _RESPONSE_URL,
@@ -280,6 +293,109 @@ class TestSuppressResponseLog:
 
         assert nested is True
         assert after is False
+
+
+class TestNonJsonResponseLogging:
+    """Cover the body a non-JSON response contributes to the exception log."""
+
+    pytestmark = pytest.mark.asyncio
+
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            pytest.param(_BODY_SENTINEL, _BODY_SENTINEL, id="short"),
+            pytest.param(
+                "y" * _NON_JSON_LOG_MAX_CHARS,
+                "y" * _NON_JSON_LOG_MAX_CHARS,
+                id="at-the-cap",
+            ),
+            pytest.param(
+                f"{'x' * _NON_JSON_LOG_MAX_CHARS}{_BODY_SENTINEL}",
+                f"{'x' * _NON_JSON_LOG_MAX_CHARS}{_TRUNCATION_MARKER}",
+                id="over-the-cap",
+            ),
+            pytest.param("", "", id="empty"),
+        ],
+    )
+    async def test_the_response_text_is_logged(
+        self, remote_api, caplog, body, expected
+    ):
+        """Log the decoded body, bounded, when no suppression is in effect."""
+        with aioresponses() as mock:
+            mock.get(
+                _RESPONSE_URL,
+                status=status.HTTP_502_BAD_GATEWAY,
+                body=body,
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with pytest.raises(HTTPBadGatewayException) as exc_info:
+                        await remote_api.get("body")
+
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
+        assert _logged_non_json_body(caplog.records) == expected
+        messages = [record.getMessage() for record in caplog.records]
+        assert all("StreamReader" not in message for message in messages)
+
+    async def test_a_non_json_success_text_is_logged(self, remote_api, caplog):
+        """Log the body of a 2xx answer that was not JSON."""
+        with aioresponses() as mock:
+            mock.get(
+                _RESPONSE_URL,
+                status=status.HTTP_200_OK,
+                body=_BODY_SENTINEL,
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with pytest.raises(HTTPException) as exc_info:
+                        await remote_api.get("body")
+
+        assert is_non_json_success(exc_info.value)
+        assert _logged_non_json_body(caplog.records) == _BODY_SENTINEL
+
+    async def test_a_long_response_text_is_withheld_whole(self, remote_api, caplog):
+        """Withhold an oversized body outright rather than truncating it."""
+        body = f"{'x' * _NON_JSON_LOG_MAX_CHARS}{_BODY_SENTINEL}"
+        with aioresponses() as mock:
+            mock.get(
+                _RESPONSE_URL,
+                status=status.HTTP_502_BAD_GATEWAY,
+                body=body,
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with remote_api.suppress_response_log():
+                        with pytest.raises(HTTPBadGatewayException):
+                            await remote_api.get("body")
+
+        assert _logged_non_json_body(caplog.records) == _WITHHELD_BODY
+
+    async def test_an_undecodable_response_text_is_still_logged(
+        self, remote_api, caplog
+    ):
+        """Log an undecodable body instead of raising out of the handler.
+
+        aiohttp falls back to UTF-8 for a body that declares no charset, so a
+        strict decode here would replace the upstream failure with a
+        ``UnicodeDecodeError`` raised from the logging call itself.
+        """
+        with aioresponses() as mock:
+            mock.get(
+                _RESPONSE_URL,
+                status=status.HTTP_502_BAD_GATEWAY,
+                body=b"\xff\xfe\x00broken",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+                async with remote_api:
+                    with pytest.raises(HTTPBadGatewayException) as exc_info:
+                        await remote_api.get("body")
+
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
+        assert "broken" in _logged_non_json_body(caplog.records)
 
 
 class TestUpload:
