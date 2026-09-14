@@ -23,6 +23,7 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
+from app.sep.apps.framework import form_backfill
 from app.sep.apps.framework.form_backfill import (
     _backfill_app,
     _backfill_single_task,
@@ -501,6 +502,29 @@ def test_main_accepts_and_normalizes_in_scope_owner(value, monkeypatch):
 
     assert main(["--owner", value, "--dry-run"]) == 0
     run.assert_awaited_once_with(owners=[value.upper()], dry_run=True)
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [(["--dry-run"], logging.INFO), (["--dry-run", "--verbose"], logging.DEBUG)],
+)
+def test_verbose_moves_the_level_the_progress_lines_are_emitted_at(
+    argv, expected, monkeypatch
+):
+    """Raise the emitting logger, not just the root's unreachable default.
+
+    The app's logging configuration installs a handler before this module is
+    imported, which is enough for ``basicConfig`` to return early and leave the
+    root at ``WARNING`` — so a flag that only reached it would silence every
+    per-task line an operator runs the backfill to watch.
+    """
+    monkeypatch.setattr(
+        "app.sep.apps.framework.form_backfill.run_backfill", AsyncMock()
+    )
+    monkeypatch.setattr(form_backfill.logger, "level", logging.NOTSET)
+
+    assert main(argv) == 0
+    assert form_backfill.logger.level == expected
 
 
 @pytest.mark.parametrize("value", ["ANY", "BACKUP_MONGO", "RESTORE_MONGO", "bogus"])

@@ -583,10 +583,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(message)s",
-    )
+    level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(message)s")
+    # ``basicConfig`` returns early once a handler exists, and importing this
+    # module installs the app's logging configuration, so the progress lines need
+    # the level set on the emitting logger to clear the root's WARNING.
+    logger.setLevel(level)
     asyncio.run(
         run_backfill(
             owners=args.owners,
