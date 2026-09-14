@@ -93,21 +93,6 @@ async def ensure_task_schedulable(tasks_api: TaskAPI, task_name: str) -> None:
         )
 
 
-async def require_schedulable_task(task_name: str, tasks_api: TaskAPI) -> None:
-    """Guard a schedule create on the scheduling capability of its task.
-
-    :param task_name: The path's task name, which the new schedule runs.
-    :param tasks_api: The Tasks API client used to read the task.
-    :raises HTTPBadRequestException: If no installed app offers scheduling for the
-        task.
-    :raises HTTPException: Re-raised unchanged for an upstream client error
-        (status < 500), including the ``404`` for an unknown task.
-    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-        or a connection-level ``OSError``.
-    """
-    await ensure_task_schedulable(tasks_api, task_name)
-
-
 async def require_schedulable_update(
     periodic_task_id: int,
     tasks_api: TaskAPI,
@@ -152,5 +137,5 @@ async def require_schedulable_update(
     await ensure_task_schedulable(tasks_api, task_name)
 
 
-RequireSchedulableTask = Depends(require_schedulable_task)
+RequireSchedulableTask = Depends(ensure_task_schedulable)
 RequireSchedulableUpdate = Depends(require_schedulable_update)
