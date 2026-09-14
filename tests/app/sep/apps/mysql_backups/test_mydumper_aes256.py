@@ -505,3 +505,46 @@ class TestUploadInitResolvesEncryption:
         assert inst.encrypt is True
         assert inst.post_run_encrypt is True
         assert inst.report_options["encryption"] == "gpg"
+
+    @pytest.mark.parametrize(
+        ("settings", "expected"),
+        [
+            ({"ENCRYPTION_FORMAT": "gpg", "ENCRYPT": True}, False),
+            (
+                {
+                    "ENCRYPTION_FORMAT": "gpg",
+                    "ENCRYPT": True,
+                    "ENCRYPT_USING_TMPDIR": True,
+                },
+                True,
+            ),
+            (
+                {
+                    "ENCRYPTION_FORMAT": "gpg",
+                    "ENCRYPT": True,
+                    "POST_RUN_ENCRYPT": True,
+                    "ENCRYPT_USING_TMPDIR": True,
+                },
+                False,
+            ),
+            (
+                {
+                    "ENCRYPTION_FORMAT": "aes256",
+                    "ENCRYPT": True,
+                    "ENCRYPT_USING_TMPDIR": True,
+                    "XTRABACKUP_AES256_KEYFILE": _KEYFILE,
+                },
+                False,
+            ),
+        ],
+    )
+    def test_tmpdir_follows_config_for_in_place_gpg(
+        self, tmp_path: Path, settings: dict[str, object], *, expected: bool
+    ) -> None:
+        """Assert ENCRYPT_USING_TMPDIR is honoured only for in-place GPG.
+
+        Unlike XtraBackup, Mydumper defaults to encrypting the on-host backup
+        directory; a missing or false ENCRYPT_USING_TMPDIR must not force a
+        tmpdir copy that leaves the real backup plaintext.
+        """
+        assert _upload_init(tmp_path, **settings).encrypt_using_tmpdir is expected

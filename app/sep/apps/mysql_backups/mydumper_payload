@@ -1465,10 +1465,13 @@ class Upload(Backup):
         self.post_run_encrypt = gpg and self.post_run_encrypt
         if not aes256:
             self.aes_keyfile = False
-        # Fully derived, not configured: in-place GPG is the only claim on a tmpdir,
-        # and post-run GPG and AES-256 each encrypt the backup where it already is.
-        self.encrypt_using_tmpdir = self.encrypt and not (
-            self.post_run_encrypt or aes256
+        # Honour the configured tmpdir preference for in-place GPG (default off:
+        # encrypt the on-host backup directory). Post-run GPG and AES-256 each
+        # encrypt where the backup already is, so neither claims a tmpdir.
+        self.encrypt_using_tmpdir = (
+            self.encrypt
+            and bool(settings.get("ENCRYPT_USING_TMPDIR", False))
+            and not (self.post_run_encrypt or aes256)
         )
 
         self.report_options["options"] = {
