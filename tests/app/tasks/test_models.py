@@ -773,6 +773,53 @@ class TestTaskHistory:
         )
         assert history.anonymized_entities == {PIIEntity.CREDIT_CARD, PIIEntity.PERSON}
 
+    def test_anonymized_entities_none_mask_falls_back_to_task(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert a None history mask returns the associated task's entities."""
+        task_mask = PIIEntity.EMAIL_ADDRESS | PIIEntity.IP_ADDRESS
+        task = TaskFactory.build(
+            id=1, name="test-task", data={"key": "val"}, anonymize_mask=task_mask
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        assert history.anonymized_entities == {
+            PIIEntity.EMAIL_ADDRESS,
+            PIIEntity.IP_ADDRESS,
+        }
+        assert history.anonymized_entities == task.anonymized_entities
+
+    def test_anonymized_entities_none_mask_follows_task_owner_defaults(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert None on both history and task falls through to owner defaults."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
+        mock_defaults = defaultdict(lambda: default_entities)
+        task = TaskFactory.build(
+            id=1,
+            name="test-task",
+            data={"key": "val"},
+            anonymize_mask=None,
+            owner="BACKUPS",
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        with patch("app.tasks.models.anonymizer_settings") as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            result = history.anonymized_entities
+            assert result == default_entities
+            assert result == task.anonymized_entities
+
     @pytest.mark.asyncio
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
