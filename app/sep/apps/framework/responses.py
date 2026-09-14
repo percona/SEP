@@ -178,8 +178,8 @@ class BaseTaskResponse(BaseModel):
     protected: bool
     alert_on_fail: bool
     anonymize_mask: int | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UTCDatetime | None = None
+    updated_at: UTCDatetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None

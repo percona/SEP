@@ -428,10 +428,15 @@ class TestTasksSettingsNestedOverrides:
         session: AsyncSession,
     ) -> None:
         """Assert deleting a nested override removes its row and returns 204."""
-        admin_test_client.patch(
+        patched = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__TIMEOUT": 30},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        assert await SettingsOverrideManager.list(
+            session, setting_class=TASKS_SETTINGS_TOKEN
+        )
+
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/NOMAD__TIMEOUT"
         )
@@ -576,10 +581,21 @@ class TestTasksSettingsNestedOverrides:
         session: AsyncSession,
     ) -> None:
         """Assert mixed-case spellings of the same nested key map to a single override row."""
-        admin_test_client.patch(
+        patched = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"security_headers__x_frame_options_deny": False},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        # The collapse is the claim, so the count before the delete is the test
+        assert (
+            len(
+                await SettingsOverrideManager.list(
+                    session, setting_class=TASKS_SETTINGS_TOKEN
+                )
+            )
+            == 1
+        )
+
         # An uppercase DELETE removes the row created by the lowercase PATCH.
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/SECURITY_HEADERS__X_FRAME_OPTIONS_DENY"

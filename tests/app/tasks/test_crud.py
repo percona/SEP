@@ -35,7 +35,7 @@ from app.core.pagination import (
     DEFAULT_PAGINATION_OFFSET,
     Pagination,
 )
-from app.core.utils.date_time import utc_now
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
 from app.tasks.crud import (
     DispatchLockManager,
@@ -1114,7 +1114,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.RUNNING
-        assert latest.finished_at == failed.finished_at
+        assert latest.finished_at == make_datetime_utc(failed.finished_at)
 
     @pytest.mark.asyncio
     async def test_only_running_never_finished_has_no_finish(
@@ -1151,7 +1151,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.FAILED
-        assert latest.finished_at == row.finished_at
+        assert latest.finished_at == make_datetime_utc(row.finished_at)
 
     @pytest.mark.asyncio
     async def test_no_executor_filter_returns_newest_regardless(
