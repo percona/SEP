@@ -406,120 +406,6 @@ class BackupCreate(TaskFormModel):
     ] = None
     backup_dir: Annotated[StrippedNonEmptyStr, BACKUP_DIR_UI]
 
-    hardlink: Annotated[
-        bool,
-        Ui(
-            label="Hardlink full backups",
-            section="General",
-            description=(
-                "Reuse unchanged files from the previous backup as hard links, so a "
-                "full backup costs less disk space. Mydumper skips it when the "
-                "previous backup is encrypted; XtraBackup skips it when post-run "
-                "encryption is on, when 'Number of backup copies' is 1, and under the "
-                "'less_space' incremental method. Binlog backups ignore it."
-            ),
-        ),
-    ] = False
-    compress: Annotated[
-        bool,
-        Ui(
-            label="Compress backup data",
-            section="General",
-            description=(
-                "Compress backup data as it is written, using the algorithm selected "
-                "below. XtraBackup drops compression when 'Prepare backup' or the "
-                "'Fast restore' incremental method is on, and a Binlog backup "
-                "compresses every completed file whatever this is set to."
-            ),
-        ),
-    ] = False
-    check_disk_space: Annotated[
-        bool,
-        Ui(
-            label="Check disk space first",
-            section="General",
-            description=(
-                "Fail before a Mydumper or XtraBackup backup starts when the target "
-                "filesystem has too little free space. A Binlog backup instead watches "
-                "free space while it streams and stops the stream when it runs out."
-            ),
-        ),
-    ] = False
-    only_if_running_replica: Annotated[
-        bool,
-        Ui(
-            label="Only if running replica",
-            section="General",
-            description=(
-                "Skip the host unless replication is running there, so the backup only "
-                "runs on an active replica. Mydumper and XtraBackup backups only."
-            ),
-        ),
-    ] = False
-    only_if_read_only: Annotated[
-        bool,
-        Ui(
-            label="Only if read-only",
-            section="General",
-            description=(
-                "Skip the host unless MySQL is read-only. Mydumper and XtraBackup "
-                "backups only."
-            ),
-        ),
-    ] = False
-    use_ftwrl_guardian: Annotated[
-        bool,
-        Ui(
-            label="FTWRL guardian",
-            section="General",
-            description=(
-                "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK "
-                "during a Mydumper backup. The watchdog is never reached, so this "
-                "setting changes nothing."
-            ),
-        ),
-    ] = False
-    logging_dir: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="Logging directory",
-            section="General",
-            description="Directory on the database host for this task's log files",
-        ),
-    ] = None
-    defaults_file: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="MySQL defaults file",
-            section="General",
-            description=(
-                "MySQL defaults file used for the connections SEP makes to the server, "
-                "and for the mydumper or binlog command. The XtraBackup binary reads "
-                "'XtraBackup defaults file' instead."
-            ),
-        ),
-    ] = None
-    compression_algorithm: Annotated[
-        CompressionAlgorithm | EmptyStrToNone,
-        Choices(
-            (
-                (CompressionAlgorithm.ZSTD, "ZSTD"),
-                (CompressionAlgorithm.LZ4, "LZ4"),
-                (CompressionAlgorithm.GZIP, "gzip"),
-                (CompressionAlgorithm.QUICKLZ, "QuickLZ"),
-            )
-        ),
-        Ui(
-            label="Compression algorithm",
-            section="General",
-            description=(
-                "Algorithm used when compression is enabled; the available choices "
-                "depend on the backup type. A Binlog backup always uses gzip unless "
-                "'Binlog compress command' replaces it."
-            ),
-        ),
-    ] = None
-
     mydumper_daily_purge: Annotated[
         int | EmptyStrToNone,
         _MYDUMPER_ONLY,
@@ -618,6 +504,7 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Kill-queries timeout (s)",
             section="XtraBackup",
+            parent="xtrabackup_kill_queries",
             description=(
                 "How long a blocking query may run before it is killed (seconds)"
             ),
@@ -630,6 +517,7 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Kill query type",
             section="XtraBackup",
+            parent="xtrabackup_kill_queries",
             description=(
                 "Which blocking queries may be killed: SELECTs only, or any statement"
             ),
@@ -667,6 +555,7 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Prepare memory",
             section="XtraBackup",
+            parent="xtrabackup_prepare",
             description="Memory the prepare step may use, as a size such as 2G",
         ),
     ] = None
@@ -903,6 +792,120 @@ class BackupCreate(TaskFormModel):
         ),
     ] = None
 
+    hardlink: Annotated[
+        bool,
+        Ui(
+            label="Hardlink full backups",
+            section="General",
+            description=(
+                "Reuse unchanged files from the previous backup as hard links, so a "
+                "full backup costs less disk space. Mydumper skips it when the "
+                "previous backup is encrypted; XtraBackup skips it when post-run "
+                "encryption is on, when 'Number of backup copies' is 1, and under the "
+                "'less_space' incremental method. Binlog backups ignore it."
+            ),
+        ),
+    ] = False
+    compress: Annotated[
+        bool,
+        Ui(
+            label="Compress backup data",
+            section="General",
+            description=(
+                "Compress backup data as it is written, using the algorithm selected "
+                "below. XtraBackup drops compression when 'Prepare backup' or the "
+                "'Fast restore' incremental method is on, and a Binlog backup "
+                "compresses every completed file whatever this is set to."
+            ),
+        ),
+    ] = False
+    check_disk_space: Annotated[
+        bool,
+        Ui(
+            label="Check disk space first",
+            section="General",
+            description=(
+                "Fail before a Mydumper or XtraBackup backup starts when the target "
+                "filesystem has too little free space. A Binlog backup instead watches "
+                "free space while it streams and stops the stream when it runs out."
+            ),
+        ),
+    ] = False
+    only_if_running_replica: Annotated[
+        bool,
+        Ui(
+            label="Only if running replica",
+            section="General",
+            description=(
+                "Skip the host unless replication is running there, so the backup only "
+                "runs on an active replica. Mydumper and XtraBackup backups only."
+            ),
+        ),
+    ] = False
+    only_if_read_only: Annotated[
+        bool,
+        Ui(
+            label="Only if read-only",
+            section="General",
+            description=(
+                "Skip the host unless MySQL is read-only. Mydumper and XtraBackup "
+                "backups only."
+            ),
+        ),
+    ] = False
+    use_ftwrl_guardian: Annotated[
+        bool,
+        Ui(
+            label="FTWRL guardian",
+            section="General",
+            description=(
+                "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK "
+                "during a Mydumper backup. The watchdog is never reached, so this "
+                "setting changes nothing."
+            ),
+        ),
+    ] = False
+    logging_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="Logging directory",
+            section="General",
+            description="Directory on the database host for this task's log files",
+        ),
+    ] = None
+    defaults_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(
+            label="MySQL defaults file",
+            section="General",
+            description=(
+                "MySQL defaults file used for the connections SEP makes to the server, "
+                "and for the mydumper or binlog command. The XtraBackup binary reads "
+                "'XtraBackup defaults file' instead."
+            ),
+        ),
+    ] = None
+    compression_algorithm: Annotated[
+        CompressionAlgorithm | EmptyStrToNone,
+        Choices(
+            (
+                (CompressionAlgorithm.ZSTD, "ZSTD"),
+                (CompressionAlgorithm.LZ4, "LZ4"),
+                (CompressionAlgorithm.GZIP, "gzip"),
+                (CompressionAlgorithm.QUICKLZ, "QuickLZ"),
+            )
+        ),
+        Ui(
+            label="Compression algorithm",
+            section="General",
+            description=(
+                "Algorithm used when compression is enabled; the available choices "
+                "depend on the backup type. A Binlog backup always uses gzip unless "
+                "'Binlog compress command' replaces it."
+            ),
+        ),
+    ] = None
+
     encryption_format: Annotated[
         EncryptionFormat,
         Choices(
@@ -984,6 +987,7 @@ class BackupCreate(TaskFormModel):
         Ui(
             label="Encrypt using tmpdir",
             section="Encryption",
+            parent="encrypt",
             description=(
                 "Encrypt in a temporary directory during the backup. Requires 'Encrypt "
                 "backup'; mutually exclusive with 'Encrypt after backup completes'."
