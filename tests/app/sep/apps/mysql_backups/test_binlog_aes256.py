@@ -137,6 +137,12 @@ class _RecordingThreadPool:
     def __init__(self, processes: int) -> None:
         self.processes = processes
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
     def map(self, func, iterable):
         """Apply ``func`` to each item synchronously."""
         return [func(item) for item in iterable]

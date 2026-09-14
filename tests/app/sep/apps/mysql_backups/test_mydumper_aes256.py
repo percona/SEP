@@ -144,6 +144,12 @@ class _RecordingThreadPool:
     def __init__(self, processes: int) -> None:
         self.processes = processes
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
     def map(self, func, iterable):
         """Apply ``func`` to each item synchronously."""
         return [func(item) for item in iterable]
@@ -394,6 +400,7 @@ def _upload_instance(*, encrypt: bool, post_run_encrypt: bool, aes256: bool):
     inst.encrypt = encrypt
     inst.post_run_encrypt = post_run_encrypt
     inst.aes_keyfile = _KEYFILE if aes256 else False
+    inst.xtrabackup_aes256 = _KEYFILE if aes256 else False
     inst.encrypt_using_tmpdir = False
     inst.dir_encrypt_config = {}
     inst.paths = [{"source": "/backups/host1", "tmpdir": "/tmp/enc/host1"}]
@@ -488,7 +495,7 @@ class TestUploadInitResolvesEncryption:
             POST_RUN_ENCRYPT=True,
             XTRABACKUP_AES256_KEYFILE=_KEYFILE,
         )
-        assert inst.aes_keyfile == _KEYFILE
+        assert inst.xtrabackup_aes256 == _KEYFILE
         assert inst.encrypt is False
         assert inst.post_run_encrypt is False
         assert inst.report_options["encryption"] == "aes256"
@@ -502,7 +509,7 @@ class TestUploadInitResolvesEncryption:
             POST_RUN_ENCRYPT=True,
             XTRABACKUP_AES256_KEYFILE=_KEYFILE,
         )
-        assert inst.aes_keyfile is False
+        assert inst.xtrabackup_aes256 is False
         assert inst.encrypt is True
         assert inst.post_run_encrypt is True
         assert inst.report_options["encryption"] == "gpg"

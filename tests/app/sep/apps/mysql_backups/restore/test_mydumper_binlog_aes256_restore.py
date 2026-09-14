@@ -118,6 +118,8 @@ def _restore_instance(
 
     namespace: dict[str, object] = {
         "os": os,
+        "Path": pathlib.Path,
+        "thread_pool": __import__("multiprocessing.pool", fromlist=["pool"]),
         "subprocess": subprocess if real_subprocess else _FakeSubprocess,
     }
     exec("class BackupError(Exception):\n    pass", namespace)
@@ -201,7 +203,7 @@ class TestAes256RoundTrip:
 
         restore_inst, _, _ = _restore_instance(
             restore_path,
-            ("is_encrypted", "decrypt_aes"),
+            ("is_encrypted", "decrypt_aes", "_run_decrypt_file_aes256"),
             real_subprocess=True,
             extra_namespace={"XBCRYPT_BIN": fake_bin},
         )
@@ -232,7 +234,7 @@ class TestAes256RoundTrip:
 
         restore_inst, backup_error, _ = _restore_instance(
             restore_path,
-            ("decrypt_aes",),
+            ("decrypt_aes", "_run_decrypt_file_aes256"),
             real_subprocess=True,
             extra_namespace={"XBCRYPT_BIN": fake_bin},
         )
@@ -251,9 +253,11 @@ class TestDecryptAesMissingKeyfile:
     def test_empty_keyfile_raises_not_configured(
         self, restore_path: pathlib.Path
     ) -> None:
-        """Assert an empty key path fails before shelling out to xbcrypt."""
+        """Assert an empty key path fails before invoking xbcrypt."""
         restore_inst, backup_error, calls = _restore_instance(
-            restore_path, ("decrypt_aes",), real_subprocess=False
+            restore_path,
+            ("decrypt_aes", "_run_decrypt_file_aes256"),
+            real_subprocess=False,
         )
         restore_inst.xtrabackup_aes256_keyfile = ""
         with pytest.raises(backup_error, match="not configured"):
@@ -269,35 +273,70 @@ class TestDecryptAesMissingKeyfile:
     ) -> None:
         """Assert a missing key file path fails with a clear named error."""
         restore_inst, backup_error, calls = _restore_instance(
-            restore_path, ("decrypt_aes",), real_subprocess=False
+            restore_path,
+            ("decrypt_aes", "_run_decrypt_file_aes256"),
+            real_subprocess=False,
         )
         restore_inst.xtrabackup_aes256_keyfile = str(tmp_path / "missing.key")
         with pytest.raises(backup_error, match="not found"):
             restore_inst.decrypt_aes("/backups/host1")
         assert calls == []
 
+    @pytest.mark.parametrize(
+        "restore_path",
+        [RESTORE_MYDUMPER_PAYLOAD_PATH, RESTORE_BINLOG_PAYLOAD_PATH],
+    )
+    def test_no_xbcrypt_files_raises(
+        self, tmp_path: pathlib.Path, restore_path: pathlib.Path
+    ) -> None:
+        """Assert an empty directory fails instead of succeeding with nothing done."""
+        keyfile = tmp_path / "aes.key"
+        keyfile.write_text("k")
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        restore_inst, backup_error, calls = _restore_instance(
+            restore_path,
+            ("decrypt_aes", "_run_decrypt_file_aes256"),
+            real_subprocess=False,
+        )
+        restore_inst.xtrabackup_aes256_keyfile = str(keyfile)
+        with pytest.raises(backup_error, match="No .xbcrypt files"):
+            restore_inst.decrypt_aes(str(empty))
+        assert calls == []
+
 
 class TestDecryptAesParallelism:
-    """Assert restore's xbcrypt parallelism is bounded (default 4)."""
+    """Assert restore decrypts via argv lists, never a shell pipeline."""
 
     @pytest.mark.parametrize(
         "restore_path",
         [RESTORE_MYDUMPER_PAYLOAD_PATH, RESTORE_BINLOG_PAYLOAD_PATH],
     )
-    def test_default_parallelism_is_bounded(
+    def test_decrypts_each_file_without_shell(
         self, tmp_path: pathlib.Path, restore_path: pathlib.Path
     ) -> None:
-        """Assert decrypt uses ``xargs -P 4``, never unlimited ``-P 0``."""
+        """Assert each ``.xbcrypt`` becomes an argv list with ``-d``, not ``shell=True``."""
         keyfile = tmp_path / "aes.key"
         keyfile.write_text("k")
+        backup_dir = tmp_path / "backup"
+        backup_dir.mkdir()
+        targets = [backup_dir / "a.sql.xbcrypt", backup_dir / "b.sql.xbcrypt"]
+        for path in targets:
+            path.write_text("enc")
         inst, _, calls = _restore_instance(
-            restore_path, ("decrypt_aes",), real_subprocess=False
+            restore_path,
+            ("decrypt_aes", "_run_decrypt_file_aes256"),
+            real_subprocess=False,
         )
         inst.xtrabackup_aes256_keyfile = str(keyfile)
-        inst.decrypt_aes("/backups/host1")
-        assert len(calls) == 1
-        assert "-P 0 " not in calls[0]
-        assert "-P 4 " in calls[0]
+        inst.decrypt_aes(str(backup_dir))
+        assert len(calls) == len(targets)
+        for cmd in calls:
+            assert isinstance(cmd, list)
+            assert cmd[1] == "-d"
+            assert "--encrypt-algo=AES256" in cmd
+        inputs = {a for cmd in calls for a in cmd if a.startswith("--input=")}
+        assert inputs == {f"--input={path}" for path in targets}
 
 
 class TestRunAesBranch:

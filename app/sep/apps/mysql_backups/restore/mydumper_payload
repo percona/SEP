@@ -2,6 +2,7 @@
 import argparse
 import json
 import logging
+import multiprocessing.pool as thread_pool
 import os
 import pwd
 import re
@@ -1840,9 +1841,13 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
     def decrypt_aes(self, path):
         """Decrypt ``.xbcrypt`` files under ``path`` with xbcrypt/AES-256.
 
+        Runs each decrypt as an argv list (no shell), so path/keyfile characters
+        cannot inject. Fails fast when nothing encrypted is present — the old
+        ``find | xargs`` pipeline exited 0 on an empty find.
+
         :param path: Directory containing ``.xbcrypt`` files to decrypt.
-        :raises BackupError: If the AES-256 key file is missing/unusable, or if
-            xbcrypt exits non-zero.
+        :raises BackupError: If the AES-256 key file is missing/unusable, no
+            ``.xbcrypt`` files are found, or any xbcrypt run exits non-zero.
         """
         keyfile = self.xtrabackup_aes256_keyfile
         if not keyfile:
@@ -1853,21 +1858,42 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         if not os.path.exists(keyfile):
             raise BackupError("AES-256 key file not found: %s" % (keyfile,))
 
+        encrypted = [
+            p
+            for p in Path(path).rglob("*")
+            if p.is_file() and p.suffix == ".xbcrypt"
+        ]
+        if not encrypted:
+            raise BackupError("No .xbcrypt files found to decrypt under %s" % (path,))
+
         # Bound parallelism the same way XtraBackup restore does (default 4).
-        parallel = 4
-        cmd = (
-            "find %s -name '*.xbcrypt' | rev | cut -f 2- -d '.' | rev | "
-            "xargs -P %s -I {} sh -c '%s -d --encrypt-key-file=%s "
-            "--encrypt-algo=AES256 --input={}.xbcrypt --output={} && rm {}.xbcrypt'"
-        ) % (path, parallel, XBCRYPT_BIN, keyfile)
-        self.logger.info('Running: %s', cmd)
+        with thread_pool.ThreadPool(min(4, os.cpu_count() or 4)) as pool:
+            pool.map(self._run_decrypt_file_aes256, encrypted)
+        self.logger.info("Decryption completed")
+
+    def _run_decrypt_file_aes256(self, file_path):
+        """Decrypt one ``.xbcrypt`` file in place and remove the ciphertext.
+
+        :param file_path: Path to a ``.xbcrypt`` file.
+        :raises BackupError: If xbcrypt exits non-zero.
+        """
+        output = file_path.with_suffix("")
+        cmd = [
+            XBCRYPT_BIN,
+            "-d",
+            "--encrypt-key-file=%s" % (self.xtrabackup_aes256_keyfile,),
+            "--encrypt-algo=AES256",
+            "--input=%s" % (file_path,),
+            "--output=%s" % (output,),
+        ]
+        self.logger.info("Running: %s", " ".join(cmd))
         proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        proc.communicate()
+        _, err = proc.communicate()
         if proc.returncode != 0:
-            raise BackupError("Decryption failed")
-        self.logger.info('Decryption completed')
+            raise BackupError("xbcrypt failed on %s: %s" % (file_path, err))
+        os.remove(file_path)
 
     @staticmethod
     def is_binlog_compressed(path):

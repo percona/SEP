@@ -50,7 +50,6 @@ _CONST_NAMES = frozenset(
         "MYDUMPER_METADATA",
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
-        "EXCLUDE_FILES",
         "PLAINTEXT_METADATA_FILES",
         "ENCRYPTION_FORMATS",
         "BACKUP_TYPES",
@@ -335,7 +334,7 @@ def payload_instance(
     )
     inst._clean_after_error = lambda: None  # noqa: SLF001
     inst.aes_keyfile = "/keys/aes.key"
-    # Binlog upload keeps the historical attribute name for the same key path.
+    # Upload classes (XtraBackup/Mydumper/Binlog) share this attribute name.
     inst.xtrabackup_aes256 = "/keys/aes.key"
     inst.enc_aes = True
     inst.enc_gpg = False

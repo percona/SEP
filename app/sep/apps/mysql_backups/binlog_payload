@@ -1793,6 +1793,8 @@ class Upload(Backup):
         Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
         suffix and the backup metadata SEP keeps in plaintext. Files are
         encrypted a handful at a time, mirroring :meth:`DirectoryEncryptor.encrypt_dir`.
+        Standalone Nomad payloads cannot share a Python module, so this mirrors
+        the XtraBackup/Mydumper helper.
 
         :param dir_path: Directory whose plaintext files are encrypted.
         :raises BackupError: If any file fails to encrypt.
@@ -1803,16 +1805,17 @@ class Upload(Backup):
         # file is touched, so the walk can't re-yield the .xbcrypt files the pool
         # is creating underneath it. Bounded by CPU count so xbcrypt can't starve
         # the host on small hosts.
-        thread_pool.ThreadPool(min(5, os.cpu_count() or 5)).map(
-            self._run_encrypt_file_aes256,
-            [
-                p
-                for p in Path(dir_path).rglob("*")
-                if p.is_file()
-                and p.suffix != ".xbcrypt"
-                and p.name not in PLAINTEXT_METADATA_FILES
-            ],
-        )
+        with thread_pool.ThreadPool(min(5, os.cpu_count() or 5)) as pool:
+            pool.map(
+                self._run_encrypt_file_aes256,
+                [
+                    p
+                    for p in Path(dir_path).rglob("*")
+                    if p.is_file()
+                    and p.suffix != ".xbcrypt"
+                    and p.name not in PLAINTEXT_METADATA_FILES
+                ],
+            )
 
     def _run_xbcrypt(self, cmd: list[str], remove_path: str | Path) -> None:
         """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
