@@ -624,7 +624,7 @@ class TestDisableSchedulesForOwners:
             celery_beat_session,
             "impostor",
             enabled=True,
-            task="app.sep.snippets.celery.sync_snippets",
+            task=SYSTEM_BEAT_TASK,
             kwargs=json.dumps({"task_name": "r1"}),
         )
         await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)

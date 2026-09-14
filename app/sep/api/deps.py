@@ -117,8 +117,9 @@ async def require_schedulable_update(
 
     The Tasks service stores the body's ``task`` and keeps the existing schedule's
     task when that is empty, so the guard resolves the same name. A present
-    ``task`` that is not a string is refused here, because the Tasks service
-    accepts one and writes it into the schedule's ``kwargs.task_name``.
+    ``task`` that is not a string is refused here: the Tasks service writes a
+    non-string one into the schedule's ``kwargs.task_name``, and an explicit
+    ``null`` is not the omission the fallback below reads it as.
 
     :param periodic_task_id: The id of the schedule being replaced.
     :param tasks_api: The Tasks API client used to read the schedule and its task.
@@ -133,12 +134,11 @@ async def require_schedulable_update(
         or is not a JSON object, and for an upstream server error (status >= 500)
         or a connection-level ``OSError``.
     """
-    requested = body.get("task")
-    if requested is not None and not isinstance(requested, str):
+    if "task" in body and not isinstance(body["task"], str):
         raise HTTPUnprocessableEntityException(
             "The schedule's task must be a task name string."
         )
-    task_name = requested
+    task_name = body.get("task")
     if not task_name:
         with reraise_upstream_tasks_errors():
             schedule = as_json_object(

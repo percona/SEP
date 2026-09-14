@@ -21355,7 +21355,7 @@
         ]
       },
       "put": {
-        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task the schedule would run.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If the body's ``task`` is present\n    and not a string, or if the resolved name is not a single plain URL path\n    segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task the schedule would run.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: If the stored schedule carries no task name,\n    and for an upstream server error (status >= 500) or a connection-level\n    ``OSError``.",
         "operationId": "tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
         "parameters": [
           {
@@ -21448,7 +21448,7 @@
     },
     "/api/sep/periodic-tasks/{task_name}/": {
       "post": {
-        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If ``task_name`` is not a single\n    plain URL path segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post",
         "parameters": [
           {

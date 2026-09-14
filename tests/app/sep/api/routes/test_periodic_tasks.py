@@ -357,7 +357,7 @@ GUARD_READ_CASES = [
     pytest.param("put", "/api/sep/periodic-tasks/42", "put", {"task": ""}, id="update"),
 ]
 
-NON_STRING_TASKS = [5, 0, False, [], {}, ["r1"]]
+NON_STRING_TASKS = [None, 5, 0, False, [], {}, ["r1"]]
 
 PATH_UNSAFE_TASKS = [
     "/evil.example.com:80/x",
@@ -567,8 +567,9 @@ class TestSepPeriodicTasksSchedulingGuard:
     ) -> None:
         """Refuse a non-string ``task`` with ``422`` before any upstream call.
 
-        The Tasks service accepts one and writes it into the schedule's
-        ``kwargs.task_name``, so a falsy non-string would slip past the fallback.
+        The Tasks service writes a non-string one into the schedule's
+        ``kwargs.task_name``, and an explicit ``null`` would otherwise reach the
+        fallback as though the key were absent.
         """
         response = test_client.put(
             "/api/sep/periodic-tasks/42", json={"task": task, "period": 10}

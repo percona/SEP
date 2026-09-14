@@ -3080,12 +3080,16 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to update the periodic task.
      *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
      *     :return: The updated periodic task as returned by the Tasks API.
+     *     :raises HTTPUnprocessableEntityException: If the body's ``task`` is present
+     *         and not a string, or if the resolved name is not a single plain URL path
+     *         segment.
      *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
      *         task the schedule would run.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
-     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-     *         or a connection-level ``OSError``.
+     *     :raises HTTPBadGatewayException: If the stored schedule carries no task name,
+     *         and for an upstream server error (status >= 500) or a connection-level
+     *         ``OSError``.
      */
     put: operations['tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
     post?: never;
@@ -3123,6 +3127,8 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to create the periodic task.
      *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
      *     :return: The created periodic task as returned by the Tasks API.
+     *     :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+     *         plain URL path segment.
      *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
      *         task.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
