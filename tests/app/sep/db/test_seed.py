@@ -732,6 +732,7 @@ class TestInitSepDbPeriodicTaskGating:
 
         async with beat_maker() as session:
             task = await BasePeriodicTaskManager.first(session, name="nightly-restore")
+        assert task is not None, "no schedule named 'nightly-restore'"
         assert task.enabled is False
 
     @pytest.mark.parametrize("app_enabled", [True, False])

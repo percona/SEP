@@ -18,6 +18,7 @@
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock
+from urllib.parse import quote
 
 import pytest
 from fastapi import HTTPException, status
@@ -372,6 +373,23 @@ PATH_UNSAFE_TASKS = [
     "http://evil.example.com/x",
 ]
 
+CREATE_PATH_UNSAFE_TASKS = [
+    task
+    for task in PATH_UNSAFE_TASKS
+    if "/" not in task and "%" not in task and task != ".."
+]
+"""The unsafe names that can reach the create route's path parameter.
+
+Derived from the list above so a name added there is covered on both routes. Three
+shapes are excluded because they never reach the guard rather than because it
+would admit them: Starlette's default ``str`` convertor is ``[^/]+``, so a name
+carrying a slash cannot match; a bare dot-segment is normalised away before the
+request is sent; and the test transport unquotes the path twice, so a
+``%``-bearing name arrives split across two segments (``a%2Fb`` sent as
+``a%252Fb`` reaches the app as ``/api/sep/periodic-tasks/a/b/``) and matches no
+route. The update route covers all three through the request body.
+"""
+
 
 def _task_payload(name: str, owner: str) -> dict[str, Any]:
     """Build the upstream JSON for a task named ``name`` owned by ``owner``."""
@@ -467,6 +485,25 @@ class TestSepPeriodicTasksSchedulingGuard:
         response = test_client.post("/api/sep/periodic-tasks/inventory-sync/", json={})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        mock_task_api_dep.post.assert_not_awaited()
+
+    @pytest.mark.parametrize("task", CREATE_PATH_UNSAFE_TASKS)
+    def test_create_refuses_a_task_name_that_is_not_one_path_segment(
+        self, test_client: TestClient, mock_task_api_dep: AsyncMock, task: str
+    ) -> None:
+        """Refuse a path task name that would restructure the upstream request URL.
+
+        The create route reads the task through the same ``GET /{task_name}`` the
+        update route does, so it refuses the same names. Each is sent
+        percent-encoded, which is the only way such a name survives as one path
+        segment; Starlette decodes it back before the guard sees it.
+        """
+        segment = quote(task, safe="")
+
+        response = test_client.post(f"/api/sep/periodic-tasks/{segment}/", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_awaited()
         mock_task_api_dep.post.assert_not_awaited()
 
     def test_create_unknown_task_returns_upstream_404(

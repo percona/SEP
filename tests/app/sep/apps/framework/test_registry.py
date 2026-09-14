@@ -62,7 +62,7 @@ from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
 from app.tasks.models import ANY_OWNER
 from tests.app.db_schema import apply_schema
-from tests.app.sep.apps.framework.kit import synth_app_kwargs
+from tests.app.sep.apps.framework.kit import synth_app, synth_app_kwargs
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
@@ -1395,16 +1395,13 @@ def _task_app_offering(owner: str, key: str, *, scheduling: bool) -> TaskExecuti
     :param scheduling: Whether the app's served schema declares ``scheduling``.
     :return: The synthetic definition.
     """
-    kwargs = synth_app_kwargs()
-    return TaskExecutionApp(
-        **{
-            **kwargs,
-            "key": key,
-            "owner": owner,
-            "views": replace(
-                kwargs["views"], capabilities=Capabilities(scheduling=scheduling)
-            ),
-        }
+    return synth_app(
+        key=key,
+        owner=owner,
+        views=replace(
+            synth_app_kwargs()["views"],
+            capabilities=Capabilities(scheduling=scheduling),
+        ),
     )
 
 

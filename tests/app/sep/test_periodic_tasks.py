@@ -527,6 +527,7 @@ async def _read_enabled(session: AsyncSession, name: str) -> bool:
     """Return the current ``enabled`` bit of the schedule named ``name``."""
     session.expire_all()
     row = await BasePeriodicTaskManager.first(session, name=name)
+    assert row is not None, f"no schedule named {name!r}"
     return row.enabled
 
 
