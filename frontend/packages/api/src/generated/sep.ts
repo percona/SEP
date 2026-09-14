@@ -2209,6 +2209,51 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/om_inventory/hosts/{node_id}/bootstrap': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Bootstrap Host
+     * @description Install PSMDB on one host and initialize it as a single-member replica set.
+     *
+     *     **PoC, not the PMM-15347 feature.** One host, one member, keyFile auth, TLS
+     *     off, no project/cluster -- see ``bootstrap.py``'s and
+     *     ``payload/bootstrap.py``'s module docstrings for exactly what is and is not
+     *     built, and ``PMM-15347/questions.md`` for what is still undecided about the real
+     *     feature this exists to de-risk.
+     *
+     *     Admin-gated rather than editor like ``trigger_probe``: unlike a read-only probe,
+     *     this installs software and manages a systemd unit as whatever user Nomad's
+     *     ``raw_exec`` runs as on the target -- a materially bigger blast radius, and
+     *     ``PMM-15347/questions.md`` Q6 has not settled on a permission model yet. Admin is
+     *     the conservative default until it does.
+     *
+     *     Returns as soon as the Nomad job is queued, not once it finishes -- see
+     *     ``bootstrap.py``'s module docstring for why that does not violate this router's
+     *     "never wait for a Nomad job" rule, and poll
+     *     ``GET /api/tasks/history/{task_history_id}`` for progress.
+     *
+     *     :param node_id: PMM's node id for the host to bootstrap.
+     *     :param request: The requested replica set configuration.
+     *     :param session: The database session.
+     *     :raises HTTPNotFoundException: When OM holds no such host.
+     *     :raises HTTPUnprocessableEntityException: When the host has no usable executor --
+     *         the same check ``GET /hosts?executor=true`` filters on.
+     *     :return: The queued run's task history id and the generated admin credentials.
+     */
+    post: operations['om_inventory_bootstrap_host_api_apps_om_inventory_hosts__node_id__bootstrap_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/om_inventory/runs': {
     parameters: {
       query?: never;
@@ -9745,6 +9790,97 @@ export interface components {
       | 'bar-chart'
       | 'account-tree';
     /**
+     * BootstrapAccepted
+     * @description Acknowledge a queued single-host bootstrap.
+     *
+     *     Returned with ``202``, the same shape as :class:`ProbeRunAccepted`: dispatch is
+     *     fast (one Nomad job, see ``bootstrap.py``'s module docstring), the *run* is what
+     *     takes minutes.
+     *
+     *     :param node_id: The host being bootstrapped.
+     *     :param task_history_id: The Tasks API's id for this run -- poll
+     *         ``GET /api/tasks/history/{task_history_id}`` and
+     *         ``GET /api/tasks/history/{task_history_id}/logs/`` for progress. Not
+     *         wrapped in any OM-specific run id: see ``bootstrap.py``'s module docstring
+     *         for why this PoC does not mint one.
+     *     :param admin_username: The admin user this run will create.
+     *     :param admin_password: The generated password, in the clear, **returned exactly
+     *         once**. Nothing stores it after this response -- PMM-15347/questions.md Q7
+     *         (secrets storage) is unresolved, and this is a PoC placeholder, not the
+     *         answer to it.
+     */
+    om_inventory__BootstrapAccepted: {
+      /** Admin Password */
+      admin_password: string;
+      /** Admin Username */
+      admin_username: string;
+      /** Node Id */
+      node_id: string;
+      /** Task History Id */
+      task_history_id: number;
+    };
+    /**
+     * BootstrapRequest
+     * @description Configure a single-host, single-member replica set to bootstrap -- PoC only.
+     *
+     *     Every field bar ``replica_set_name`` and ``mongodb_version`` has a default,
+     *     matching the PoC's scope: one host, keyFile auth, TLS off, no project/cluster
+     *     (PMM-15347/questions.md Q10, unresolved). Not proto-shaped -- this app has no
+     *     proto surface of its own; PMM's future eligibility/bootstrap endpoint
+     *     (questions.md Q1, Q4) would translate its own request into this shape, or a
+     *     superset of it once sharded clusters and multi-host support land.
+     *
+     *     :param replica_set_name: The replica set's name. No uniqueness check here --
+     *         PMM-15347/questions.md Q3's "same name in the same project" rule needs a
+     *         project to check against, which this PoC does not have.
+     *     :param mongodb_version: The MongoDB version to install, e.g. ``"7.0.8"``. Only
+     *         the major version selects the percona-release series -- see
+     *         ``payload/bootstrap.py``'s ``percona_series_for_version``.
+     *     :param data_path: Where mongod stores its data.
+     *     :param log_path: Where mongod writes its log.
+     *     :param port: The port mongod listens on.
+     *     :param bind_ip: The address mongod binds to.
+     *     :param key_file_path: Where the generated keyFile is written on the host.
+     *     :param admin_username: The admin user created via the localhost exception once
+     *         the replica set has a primary.
+     */
+    om_inventory__BootstrapRequest: {
+      /**
+       * Admin Username
+       * @default admin
+       */
+      admin_username: string;
+      /**
+       * Bind Ip
+       * @default 0.0.0.0
+       */
+      bind_ip: string;
+      /**
+       * Data Path
+       * @default /var/lib/mongodb
+       */
+      data_path: string;
+      /**
+       * Key File Path
+       * @default /etc/mongodb/keyfile
+       */
+      key_file_path: string;
+      /**
+       * Log Path
+       * @default /var/log/mongodb/mongod.log
+       */
+      log_path: string;
+      /** Mongodb Version */
+      mongodb_version: string;
+      /**
+       * Port
+       * @default 27017
+       */
+      port: number;
+      /** Replica Set Name */
+      replica_set_name: string;
+    };
+    /**
      * HostResponse
      * @description Report one host, with the services OM knows are on it.
      *
@@ -14495,6 +14631,41 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_inventory_bootstrap_host_api_apps_om_inventory_hosts__node_id__bootstrap_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['om_inventory__BootstrapRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_inventory__BootstrapAccepted'];
+        };
       };
       /** @description Validation Error */
       422: {

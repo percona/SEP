@@ -12038,6 +12038,90 @@
         "title": "NavIcon",
         "type": "string"
       },
+      "om_inventory__BootstrapAccepted": {
+        "description": "Acknowledge a queued single-host bootstrap.\n\nReturned with ``202``, the same shape as :class:`ProbeRunAccepted`: dispatch is\nfast (one Nomad job, see ``bootstrap.py``'s module docstring), the *run* is what\ntakes minutes.\n\n:param node_id: The host being bootstrapped.\n:param task_history_id: The Tasks API's id for this run -- poll\n    ``GET /api/tasks/history/{task_history_id}`` and\n    ``GET /api/tasks/history/{task_history_id}/logs/`` for progress. Not\n    wrapped in any OM-specific run id: see ``bootstrap.py``'s module docstring\n    for why this PoC does not mint one.\n:param admin_username: The admin user this run will create.\n:param admin_password: The generated password, in the clear, **returned exactly\n    once**. Nothing stores it after this response -- PMM-15347/questions.md Q7\n    (secrets storage) is unresolved, and this is a PoC placeholder, not the\n    answer to it.",
+        "properties": {
+          "admin_password": {
+            "title": "Admin Password",
+            "type": "string"
+          },
+          "admin_username": {
+            "title": "Admin Username",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "task_history_id": {
+            "title": "Task History Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_id",
+          "task_history_id",
+          "admin_username",
+          "admin_password"
+        ],
+        "title": "BootstrapAccepted",
+        "type": "object"
+      },
+      "om_inventory__BootstrapRequest": {
+        "description": "Configure a single-host, single-member replica set to bootstrap -- PoC only.\n\nEvery field bar ``replica_set_name`` and ``mongodb_version`` has a default,\nmatching the PoC's scope: one host, keyFile auth, TLS off, no project/cluster\n(PMM-15347/questions.md Q10, unresolved). Not proto-shaped -- this app has no\nproto surface of its own; PMM's future eligibility/bootstrap endpoint\n(questions.md Q1, Q4) would translate its own request into this shape, or a\nsuperset of it once sharded clusters and multi-host support land.\n\n:param replica_set_name: The replica set's name. No uniqueness check here --\n    PMM-15347/questions.md Q3's \"same name in the same project\" rule needs a\n    project to check against, which this PoC does not have.\n:param mongodb_version: The MongoDB version to install, e.g. ``\"7.0.8\"``. Only\n    the major version selects the percona-release series -- see\n    ``payload/bootstrap.py``'s ``percona_series_for_version``.\n:param data_path: Where mongod stores its data.\n:param log_path: Where mongod writes its log.\n:param port: The port mongod listens on.\n:param bind_ip: The address mongod binds to.\n:param key_file_path: Where the generated keyFile is written on the host.\n:param admin_username: The admin user created via the localhost exception once\n    the replica set has a primary.",
+        "properties": {
+          "admin_username": {
+            "default": "admin",
+            "minLength": 1,
+            "title": "Admin Username",
+            "type": "string"
+          },
+          "bind_ip": {
+            "default": "0.0.0.0",
+            "title": "Bind Ip",
+            "type": "string"
+          },
+          "data_path": {
+            "default": "/var/lib/mongodb",
+            "title": "Data Path",
+            "type": "string"
+          },
+          "key_file_path": {
+            "default": "/etc/mongodb/keyfile",
+            "title": "Key File Path",
+            "type": "string"
+          },
+          "log_path": {
+            "default": "/var/log/mongodb/mongod.log",
+            "title": "Log Path",
+            "type": "string"
+          },
+          "mongodb_version": {
+            "minLength": 1,
+            "title": "Mongodb Version",
+            "type": "string"
+          },
+          "port": {
+            "default": 27017,
+            "exclusiveMinimum": 0.0,
+            "maximum": 65535.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "replica_set_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Replica Set Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "replica_set_name",
+          "mongodb_version"
+        ],
+        "title": "BootstrapRequest",
+        "type": "object"
+      },
       "om_inventory__HostResponse": {
         "description": "Report one host, with the services OM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param observed: Everything collected about the host, including\n    ``unregistered_mongods`` where the probe found a database PMM has no service\n    for. Empty when the host has never been successfully probed.\n:param first_seen_at: When OM first wrote a row for it.\n:param last_attempt_at: When a run last probed it.\n:param last_success_at: When it last answered.\n:param failing_since: The first failure after the last success.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
         "properties": {
@@ -19615,6 +19699,59 @@
           }
         },
         "summary": "Get Estate Host",
+        "tags": [
+          "om_inventory"
+        ]
+      }
+    },
+    "/api/apps/om_inventory/hosts/{node_id}/bootstrap": {
+      "post": {
+        "description": "Install PSMDB on one host and initialize it as a single-member replica set.\n\n**PoC, not the PMM-15347 feature.** One host, one member, keyFile auth, TLS\noff, no project/cluster -- see ``bootstrap.py``'s and\n``payload/bootstrap.py``'s module docstrings for exactly what is and is not\nbuilt, and ``PMM-15347/questions.md`` for what is still undecided about the real\nfeature this exists to de-risk.\n\nAdmin-gated rather than editor like ``trigger_probe``: unlike a read-only probe,\nthis installs software and manages a systemd unit as whatever user Nomad's\n``raw_exec`` runs as on the target -- a materially bigger blast radius, and\n``PMM-15347/questions.md`` Q6 has not settled on a permission model yet. Admin is\nthe conservative default until it does.\n\nReturns as soon as the Nomad job is queued, not once it finishes -- see\n``bootstrap.py``'s module docstring for why that does not violate this router's\n\"never wait for a Nomad job\" rule, and poll\n``GET /api/tasks/history/{task_history_id}`` for progress.\n\n:param node_id: PMM's node id for the host to bootstrap.\n:param request: The requested replica set configuration.\n:param session: The database session.\n:raises HTTPNotFoundException: When OM holds no such host.\n:raises HTTPUnprocessableEntityException: When the host has no usable executor --\n    the same check ``GET /hosts?executor=true`` filters on.\n:return: The queued run's task history id and the generated admin credentials.",
+        "operationId": "om_inventory_bootstrap_host_api_apps_om_inventory_hosts__node_id__bootstrap_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/om_inventory__BootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_inventory__BootstrapAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Bootstrap Host",
         "tags": [
           "om_inventory"
         ]
