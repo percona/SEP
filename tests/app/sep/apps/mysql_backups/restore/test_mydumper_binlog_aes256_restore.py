@@ -120,7 +120,7 @@ def _restore_instance(
         "os": os,
         "subprocess": subprocess if real_subprocess else _FakeSubprocess,
     }
-    exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
+    exec("class BackupError(Exception):\n    pass", namespace)
     namespace["XBCRYPT_BIN"] = "/usr/bin/xbcrypt"
     namespace.update(extra_namespace or {})
 
@@ -132,7 +132,7 @@ def _restore_instance(
         decorator_list=[],
     )
     module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
-    exec(compile(module, str(payload_path), "exec"), namespace)  # noqa: S102
+    exec(compile(module, str(payload_path), "exec"), namespace)
 
     inst = namespace["_RestorePayload"]()
     inst.logger = types.SimpleNamespace(
@@ -329,13 +329,11 @@ class TestRunAesBranch:
             "os": os,
             "time": __import__("time"),
         }
-        exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
-        module = ast.fix_missing_locations(
-            ast.Module(body=run_nodes, type_ignores=[])
-        )
-        exec(compile(module, str(restore_path), "exec"), namespace)  # noqa: S102
+        exec("class BackupError(Exception):\n    pass", namespace)
+        module = ast.fix_missing_locations(ast.Module(body=run_nodes, type_ignores=[]))
+        exec(compile(module, str(restore_path), "exec"), namespace)
 
-        class _Stop(Exception):
+        class _StopError(Exception):
             """Abort ``run`` after the decrypt branch under test."""
 
         decrypted: list[str] = []
@@ -355,12 +353,12 @@ class TestRunAesBranch:
             dest_port=3306,
         )
         if class_name == "Myloader":
-            inst._run_myloader = lambda: (_ for _ in ()).throw(_Stop())
+            inst._run_myloader = lambda: (_ for _ in ()).throw(_StopError())
             inst._run_script = lambda *_a, **_k: None
         else:
-            inst.is_binlog_compressed = lambda _p: (_ for _ in ()).throw(_Stop())
+            inst.is_binlog_compressed = lambda _p: (_ for _ in ()).throw(_StopError())
 
-        with pytest.raises(_Stop):
+        with pytest.raises(_StopError):
             namespace["run"](inst)
 
         assert decrypted == ["/tmp/restore"]

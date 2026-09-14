@@ -2259,9 +2259,13 @@ class MyDumper(Backup):
                     ).strftime("%Y%m%d")
                     self.prev_backup_dir = self.backup_server_dir / twodaysago
 
-        # Check if previous backup is encrypted
+        # Check if previous backup is encrypted. Probe both formats: the default
+        # GPG check rejects ``.xbcrypt`` files as plaintext, so an AES-256 prior
+        # run would otherwise be hardlinked as if it were unencrypted.
         if self.prev_backup_dir.is_dir():
-            self.prev_encrypted = is_encrypted_dir(self.prev_backup_dir, self.logger)
+            self.prev_encrypted = is_encrypted_dir(
+                self.prev_backup_dir, self.logger, method="aes256"
+            ) or is_encrypted_dir(self.prev_backup_dir, self.logger)
             if self.prev_encrypted:
                 self.logger.info(
                     "Disabling today's hardlinking: previous backup is encrypted"

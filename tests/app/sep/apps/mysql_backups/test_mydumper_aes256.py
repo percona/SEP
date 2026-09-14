@@ -34,17 +34,19 @@ from app.sep.apps.mysql_backups.forms import (
 )
 from tests.app.sep.apps.mysql_backups.conftest import MYDUMPER_PAYLOAD_PATH
 from tests.app.sep.apps.mysql_backups.payload_harness import (
-    XBCRYPT_BIN as _XBCRYPT_BIN,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_constant,
     load_function,
     payload_instance,
     payload_method,
 )
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    XBCRYPT_BIN as _XBCRYPT_BIN,
+)
 
 _PATH = MYDUMPER_PAYLOAD_PATH
-_FORMATS = cast(tuple[str, ...], load_constant("ENCRYPTION_FORMATS", payload_path=_PATH))
+_FORMATS = cast(
+    tuple[str, ...], load_constant("ENCRYPTION_FORMATS", payload_path=_PATH)
+)
 _resolve_encryption = load_function("_resolve_encryption", payload_path=_PATH)
 _KEYFILE = "/keys/aes.key"
 _ENCRYPT_METHODS = ("encrypt_files_aes256", "_run_encrypt_file_aes256", "_run_xbcrypt")
@@ -64,17 +66,13 @@ class TestIsEncryptedDirAes256:
         (tmp_path / "table.sql.xbcrypt").write_text("x")
         (tmp_path / "db").mkdir()
         (tmp_path / "db" / "rows.sql.xbcrypt").write_text("x")
-        assert (
-            _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is True
-        )
+        assert _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is True
 
     def test_plaintext_straggler_returns_false(self, tmp_path: Path) -> None:
         """Assert a single plaintext non-excluded file fails verification."""
         (tmp_path / "table.sql.xbcrypt").write_text("x")
         (tmp_path / "metadata").write_text("plaintext")
-        assert (
-            _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is False
-        )
+        assert _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is False
 
     def test_unknown_method_raises(self, tmp_path: Path) -> None:
         """Assert an unrecognized method fails fast instead of silently using gpg."""
@@ -86,9 +84,7 @@ class TestIsEncryptedDirAes256:
         (tmp_path / "table.sql.xbcrypt").write_text("x")
         for name in ("md5sum", ".uploadme"):
             (tmp_path / name).write_text("meta")
-        assert (
-            _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is True
-        )
+        assert _is_encrypted_dir()(tmp_path, _null_logger, method="aes256") is True
 
 
 class TestEncryptFilesAes256:
@@ -220,7 +216,9 @@ class _RunProbe:
         self.saved_disk_space = 0
 
 
-def _run_backup(tmp_path: Path, *, enc_aes: bool, enc_gpg: bool, post_run_encrypt: bool):
+def _run_backup(
+    tmp_path: Path, *, enc_aes: bool, enc_gpg: bool, post_run_encrypt: bool
+):
     """Run the real ``run`` past its post-backup encryption block."""
     probe = _RunProbe()
     backup_dir = tmp_path / "backup"
@@ -272,6 +270,70 @@ def _run_backup(tmp_path: Path, *, enc_aes: bool, enc_gpg: bool, post_run_encryp
 
     inst.run()
     return probe
+
+
+class TestSaveDiskSpacePrevEncrypted:
+    """Assert hardlink gating detects AES-256 prior backups, not only GPG."""
+
+    def _instance(self, tmp_path: Path, *, is_encrypted_dir):
+        """Build a ``_save_disk_space`` instance with the encrypt probe stubbed."""
+        prev = tmp_path / "20260101"
+        prev.mkdir()
+        today = tmp_path / "20260102"
+        today.mkdir()
+        inst, _, _ = payload_instance(
+            ("_save_disk_space",),
+            payload_path=_PATH,
+            extra_namespace={
+                "is_encrypted_dir": is_encrypted_dir,
+                "datetime": __import__("datetime"),
+                "get_dir_dict": lambda *_a, **_k: None,
+                "hardlink_dirs": lambda *_a, **_k: {},
+            },
+        )
+        inst.s3_bucket = None
+        inst.s3_encrypt = False
+        inst.hardlink = True
+        inst.encrypt_using_tmpdir = False
+        inst.prev_backup_dir = prev
+        inst.backup_dir = today
+        inst.backup_server_dir = tmp_path
+        inst.updated_since = 0
+        inst.valid_prev_backup_dir = None
+        inst.cache_md5 = False
+        inst.prev_encrypted = False
+        inst.report_options = {}
+        return inst, prev
+
+    def test_aes256_previous_backup_disables_hardlinking(self, tmp_path: Path) -> None:
+        """Assert a prior ``.xbcrypt`` backup is treated as encrypted."""
+        methods: list[str] = []
+        real = load_function("is_encrypted_dir", payload_path=_PATH)
+
+        def _recording_is_encrypted_dir(path, logger, method="gpg"):
+            methods.append(method)
+            return real(path, logger, method=method)
+
+        inst, prev = self._instance(
+            tmp_path, is_encrypted_dir=_recording_is_encrypted_dir
+        )
+        (prev / "table.sql.xbcrypt").write_text("enc")
+        inst._save_disk_space()
+        assert "aes256" in methods
+        assert inst.prev_encrypted is True
+
+    def test_gpg_previous_backup_still_disables_hardlinking(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a prior GPG backup still trips the gate after the AES probe."""
+
+        def _fake_is_encrypted_dir(_path, _logger, method="gpg"):
+            return method == "gpg"
+
+        inst, prev = self._instance(tmp_path, is_encrypted_dir=_fake_is_encrypted_dir)
+        (prev / "table.sql.gpg").write_text("enc")
+        inst._save_disk_space()
+        assert inst.prev_encrypted is True
 
 
 class TestRunPostBackupPasses:

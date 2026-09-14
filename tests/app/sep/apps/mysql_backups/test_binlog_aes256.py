@@ -34,17 +34,19 @@ from app.sep.apps.mysql_backups.forms import (
 )
 from tests.app.sep.apps.mysql_backups.conftest import BINLOG_PAYLOAD_PATH
 from tests.app.sep.apps.mysql_backups.payload_harness import (
-    XBCRYPT_BIN as _XBCRYPT_BIN,
-)
-from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_constant,
     load_function,
     payload_instance,
     payload_method,
 )
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    XBCRYPT_BIN as _XBCRYPT_BIN,
+)
 
 _PATH = BINLOG_PAYLOAD_PATH
-_FORMATS = cast(tuple[str, ...], load_constant("ENCRYPTION_FORMATS", payload_path=_PATH))
+_FORMATS = cast(
+    tuple[str, ...], load_constant("ENCRYPTION_FORMATS", payload_path=_PATH)
+)
 _resolve_encryption = load_function("_resolve_encryption", payload_path=_PATH)
 _KEYFILE = "/keys/aes.key"
 _ENCRYPT_METHODS = ("encrypt_files_aes256", "_run_encrypt_file_aes256", "_run_xbcrypt")
