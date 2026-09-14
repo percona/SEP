@@ -703,8 +703,11 @@ async def atw_case_search(
         async with asyncio.timeout(CASE_SEARCH_TIMEOUT_SECONDS):
             async with get_delivery_executor(plan) as executor:
                 matches = await executor.search_cases(term)
-    except Exception:  # noqa: BLE001 -- degraded, never surfaced to the dialog
-        logger.warning("Diagnostics case search failed.", exc_info=True)
+    except Exception as error:  # noqa: BLE001 -- degraded, never surfaced to the dialog
+        # ``RemoteAPI.request`` maps an upstream error body's ``detail`` onto
+        # the exception it raises, so rendering the exception would log a value
+        # the receiver supplied.
+        logger.warning("Diagnostics case search failed (%s).", type(error).__name__)
         return AtwCaseSearchResponse(available=False, matches=[])
     return AtwCaseSearchResponse(
         available=True,
