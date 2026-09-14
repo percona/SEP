@@ -1042,7 +1042,7 @@ def _create_dev_version_bump_pr(version: str, stable_tag: str) -> None:
                 "--base",
                 "main",
                 "--title",
-                f"Bump dev version to v{dev_version}",
+                f"chore(release): bump dev version to v{dev_version}",
                 "--body",
                 f"Automated dev version bump after scope-locking {stable_tag} into release/{stable_tag}.",
                 "--label",
