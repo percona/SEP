@@ -51,6 +51,9 @@ PASSWORDS = (
     "SEP_MYSQL_ROOT_PASSWORD=a\nSEP_MYSQL_BACKUP_PASSWORD=b\nSEP_MYSQL_PMM_PASSWORD=c\n"
 )
 
+SEEDED_ROOT_ONLY = "SEP_MYSQL_ROOT_PASSWORD=a\n"
+"""An environment file missing the two passwords the seeder has to append."""
+
 REFUSED_NO_CLONE3 = 3
 """Exit status the script uses when the emulator cannot spawn a task."""
 REFUSED_BAD_INPUT = 2
@@ -67,11 +70,13 @@ class Harness:
     :ivar env_file: The environment file the script writes beside itself.
     :ivar write_env: Seed that file with the passwords plus any executor slots.
     :ivar run: Invoke the script against a stubbed engine architecture.
+    :ivar bin_dir: The stub directory that precedes the real one on ``PATH``.
     """
 
     env_file: Path
     write_env: WriteEnv
     run: RunBootstrap
+    bin_dir: Path
 
     def slots(self) -> dict[str, str]:
         """Read back the two executor slots the script owns.
@@ -93,7 +98,8 @@ def harness(tmp_path: Path) -> Harness:
     stub on ``PATH``: the decision under test reads the engine's architecture,
     so that is the only input worth faking.
 
-    :return: The environment file, a writer for its slots, and a script runner.
+    :return: The environment file, a writer for its slots, a script runner, and
+        the stub directory a test can drop further executables into.
     """
     fb_dir = tmp_path / "pmm-fb"
     fb_dir.mkdir()
@@ -131,7 +137,7 @@ def harness(tmp_path: Path) -> Harness:
             env={**inherited, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
         )
 
-    return Harness(env_file=env_file, write_env=write_env, run=run)
+    return Harness(env_file=env_file, write_env=write_env, run=run, bin_dir=bin_dir)
 
 
 def test_arm64_engine_selects_the_native_pair(harness: Harness) -> None:
@@ -265,3 +271,26 @@ def test_the_probe_forks_nothing() -> None:
     )
 
     assert result.stderr.split() == ["same-pid", "no-child"]
+
+
+def test_a_failed_password_append_stops_the_bootstrap(harness: Harness) -> None:
+    """Exit rather than announce a generated password the append never stored.
+
+    The datadir keeps whatever password MySQL first booted with, so a seeded
+    slot that never reached the file leaves a deployment no one holds the
+    credentials for. ``chmod`` is stubbed because the script restores write
+    permission itself before seeding, which is the whole reason the file mode
+    alone cannot reproduce a read-only mount.
+    """
+    harness.env_file.write_text(SEEDED_ROOT_ONLY, encoding="utf-8")
+    harness.env_file.chmod(0o400)
+    stub = harness.bin_dir / "chmod"
+    stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    stub.chmod(0o755)
+
+    result = harness.run("x86_64")
+
+    assert result.returncode == REFUSED_BAD_INPUT
+    assert "Could not write SEP_MYSQL_BACKUP_PASSWORD" in result.stderr
+    assert "Added the SEP_MYSQL_BACKUP_PASSWORD" not in result.stderr
+    assert harness.env_file.read_text(encoding="utf-8") == SEEDED_ROOT_ONLY

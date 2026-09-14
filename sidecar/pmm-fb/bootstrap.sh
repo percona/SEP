@@ -81,9 +81,14 @@ cd "${script_dir}" || exit 1
 ensure_slot() {
     local name="$1" value="$2"
     grep -q "^${name}=" .env && return 0
-    # A hand-edited .env may lack the trailing newline the append needs
-    [[ -z $(tail -c1 .env) ]] || printf '\n' >> .env
-    printf '%s=%s\n' "${name}" "${value}" >> .env
+    {
+        # A hand-edited .env may lack the trailing newline the append needs
+        [[ -z $(tail -c1 .env) ]] || printf '\n' >> .env
+        printf '%s=%s\n' "${name}" "${value}" >> .env
+    } || {
+        error "Could not write ${name} to .env: MySQL would start without the password this run generated"
+        exit 2
+    }
     success "Added the ${name} slot to the existing .env"
 }
 
