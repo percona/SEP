@@ -21,6 +21,7 @@ along with utility functions to process queue items.
 
 import json
 import logging
+import typing
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from hashlib import sha256
@@ -36,7 +37,7 @@ from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import undefer
+from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlalchemy.sql import ColumnElement
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -879,7 +880,11 @@ async def _raise_if_identical_task_conflict(
         *meta_where_clauses,
         col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
         col(TaskHistory.id) != queue_item.id,
-        query_options=[undefer(TaskHistory.execution_request)],
+        query_options=[
+            undefer(
+                typing.cast("QueryableAttribute[Any]", TaskHistory.execution_request)
+            )
+        ],
         task_id=queue_item.task_id,
     )
     for identical_task in candidates:
