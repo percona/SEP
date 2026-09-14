@@ -1036,6 +1036,14 @@
           "task": {
             "$ref": "#/components/schemas/SepTaskResponse"
           },
+          "unreadable_request_leaves": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Request Leaves",
+            "type": "array"
+          },
           "updated_at": {
             "anyOf": [
               {
