@@ -266,7 +266,9 @@ _BACKUP_BOOL_FAIL_RULES = (
 # either — the upload path returns early once a key file is resolved.
 _FMT_IS_GPG_ONLY = _FMT == EncryptionFormat.GPG
 
-_UPLOAD_REACHABILITY_FAIL_RULES = (
+#: The pair of rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it
+#: so a test can assert the two tuples partition the strict model's rules.
+UPLOAD_REACHABILITY_FAIL_RULES = (
     FailRule(
         fail_when=all_(truthy("encrypt"), _FMT_IS_GPG_ONLY, falsy("upload")),
         error_fields=["encrypt", "upload"],
@@ -409,11 +411,12 @@ class BackupCreate(TaskFormModel):
     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
         validation with a per-field message, as does a GPG format with no timing
-        and a GPG timing no backup script would reach without an upload target.
+        and, for the pure ``gpg`` format only, a GPG timing no backup script
+        would reach without an upload target.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=(*_BACKUP_BOOL_FAIL_RULES, *_UPLOAD_REACHABILITY_FAIL_RULES)
+        fail_when=(*_BACKUP_BOOL_FAIL_RULES, *UPLOAD_REACHABILITY_FAIL_RULES)
     )
 
     service_id: Annotated[

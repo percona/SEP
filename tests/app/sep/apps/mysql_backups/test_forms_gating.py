@@ -20,11 +20,11 @@ from pydantic import ValidationError
 
 from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
 from app.sep.apps.mysql_backups.forms import (
-    _UPLOAD_REACHABILITY_FAIL_RULES,
     BackupConfigAll,
     BackupCreate,
     EncryptionFormat,
     LENIENT_BACKUP_FORM_RULES,
+    UPLOAD_REACHABILITY_FAIL_RULES,
     UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
@@ -722,7 +722,7 @@ class TestEncryptionNeedsAReachableRuntime:
         """
         assert BackupCreate.__form_rules__.fail_when == (
             *LENIENT_BACKUP_FORM_RULES.fail_when,
-            *_UPLOAD_REACHABILITY_FAIL_RULES,
+            *UPLOAD_REACHABILITY_FAIL_RULES,
         )
 
     @staticmethod
