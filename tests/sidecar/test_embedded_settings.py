@@ -84,7 +84,7 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 12
+ALLOWLIST_SIZE = 13
 
 #: The inventory-sync cadence the baked profile provisions.
 EMBEDDED_INVENTORY_SYNC_MINUTES = 15
@@ -349,6 +349,24 @@ def test_all_services_resolve_the_same_database_connection():
         5432,
         "sep",
     )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_every_service_resolves_the_bounded_pool_defaults():
+    """Assert the profile leaves the bounded pool sizing in force for all three services."""
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        database = settings_cls().DATABASE
+        assert (database.POOL_SIZE, database.MAX_OVERFLOW, database.POOL_TIMEOUT) == (
+            3,
+            2,
+            10.0,
+        )
+        assert database.pool_engine_kwargs == {
+            "pool_pre_ping": True,
+            "pool_size": 3,
+            "max_overflow": 2,
+            "pool_timeout": 10.0,
+        }
 
 
 def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):

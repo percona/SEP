@@ -12,6 +12,7 @@
   ],
   "forms": [
     {
+      "advanced": false,
       "cardinality_rules": [
         {
           "fields": [
@@ -195,6 +196,7 @@
       "title": "Main"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [

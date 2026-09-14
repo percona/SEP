@@ -4113,6 +4113,11 @@ export interface components {
       /** @default pending */
       status: components['schemas']['TaskHistoryStatusEnum'];
       task: components['schemas']['SepTaskResponse'];
+      /**
+       * Unreadable Request Leaves
+       * @default []
+       */
+      unreadable_request_leaves: string[];
       /** Updated At */
       updated_at?: string | null;
     };
@@ -7176,10 +7181,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7375,10 +7383,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7501,10 +7512,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7717,10 +7731,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7762,12 +7779,15 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7788,29 +7808,27 @@ export interface components {
      * @description Represent a labelled group of related fields rendered as one fieldset.
      *
      *     :param title: The section heading displayed above the grouped fields.
-     *     :type title: NonEmptyStr
      *     :param description: Optional helper text rendered beneath the section
      *         heading. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param fields: The list of fields belonging to this section. May include
      *         :class:`OneOfGroup` containers alongside leaf fields.
-     *     :type fields: list[AnyField]
      *     :param cardinality_rules: Optional cross-field cardinality constraints
      *         scoped to the fields in this section. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional predicate-only invariants scoped to this
      *         section. Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
+     *     :param advanced: Whether the section holds expert options rather than the
+     *         common case. The renderer withholds advanced sections behind a single
+     *         "Show advanced options" control placed after the ordinary ones and
+     *         reveals them as ordinary top-level sections, so several expert sections
+     *         cost one row at rest instead of one each. Membership needs no
+     *         adjacency. Defaults to ``False``.
      *     :param collapsible: Whether the renderer may collapse this section behind
      *         a toggle. Defaults to ``False``.
-     *     :type collapsible: bool
      *     :param collapsed_by_default: Whether a collapsible section should start
      *         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
      *         ``False``.
-     *     :type collapsed_by_default: bool
      *     :param render_after_submit: Whether this section should render after the
      *         submit button instead of before it. Defaults to ``False``.
-     *     :type render_after_submit: bool
      *     :param forbidden: Optional gates that hide the entire section when any
      *         of them fires. The schema-driven React renderer skips the section
      *         and unregisters every child field from the form so stale values
@@ -7823,9 +7841,13 @@ export interface components {
      *         ``truthy``/``present`` predicates silently pass while
      *         ``falsy``/``absent`` predicates see the children as missing.
      *         Author ``fail_when`` rules accordingly.
-     *     :type forbidden: list[FieldGate] | None
      */
     framework__FormSection: {
+      /**
+       * Advanced
+       * @default false
+       */
+      advanced: boolean;
       /** Cardinality Rules */
       cardinality_rules?: components['schemas']['framework__CardinalityRule'][] | null;
       /**
@@ -7877,6 +7899,18 @@ export interface components {
       title: string;
     };
     /**
+     * HelpPlacement
+     * @description Say where a field's ``description`` is shown, overriding the default.
+     *
+     *     The renderer otherwise places help by length — a description that fits
+     *     roughly one line sits under the input, a longer one goes behind a help icon
+     *     beside the label. Setting this is for the cases where that reads wrong: a
+     *     terse note that is still secondary, or a long one someone needs in front of
+     *     them while they type.
+     * @enum {string}
+     */
+    framework__HelpPlacement: 'tooltip' | 'inline';
+    /**
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
      *
@@ -7913,10 +7947,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7960,12 +7997,15 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8038,10 +8078,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8095,10 +8138,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8143,10 +8189,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8187,10 +8236,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8235,10 +8287,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8448,10 +8503,13 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8503,10 +8561,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8607,12 +8668,15 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Language */
       language?: string | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8677,10 +8741,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8725,6 +8792,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Max Length */
@@ -8733,6 +8801,8 @@ export interface components {
       min_length?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Pattern */
       pattern?: string | null;
       /** Placeholder */
@@ -8788,10 +8858,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8883,10 +8956,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**
@@ -8926,10 +9002,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**
@@ -9637,7 +9716,7 @@ export interface components {
     };
     /**
      * S3Tool
-     * @description Allowed tools to interact with S3-compatible services.
+     * @description Enumerate the clients that can download a backup from S3-compatible storage.
      * @enum {string}
      */
     mysql_backups__S3Tool: 's3cmd' | 'awscli';
