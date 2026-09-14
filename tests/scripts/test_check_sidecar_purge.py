@@ -24,6 +24,23 @@ check_sidecar_purge = load_script("check_sidecar_purge")
 
 PURGED_PACKAGES = ["perl-base", "gzip", "libncursesw6", "ncurses-base", "ncurses-bin"]
 
+SHIPPED_PURGED_PACKAGES = [
+    "perl-base",
+    "gzip",
+    "libncursesw6",
+    "ncurses-base",
+    "ncurses-bin",
+    "mount",
+    "util-linux",
+    "login",
+    "bsdutils",
+    "libuuid1",
+    "libblkid1",
+    "libmount1",
+    "libsmartcols1",
+    "liblastlog2-2",
+]
+
 PURGE_LAYER = """\
 RUN dpkg --purge --force-remove-essential \\
         perl-base \\
@@ -66,11 +83,11 @@ def _instructions(tmp_path, body):
 
 
 def test_parses_the_real_containerfile():
-    """Report exactly the five purged packages for the shipped side-car recipe."""
+    """Report exactly the packages the shipped side-car recipe purges, in order."""
     instructions = check_sidecar_purge.parse_instructions(
         check_sidecar_purge.CONTAINERFILE
     )
-    assert check_sidecar_purge.purged_packages(instructions) == PURGED_PACKAGES
+    assert check_sidecar_purge.purged_packages(instructions) == SHIPPED_PURGED_PACKAGES
 
 
 def test_ordering_passes_on_the_real_containerfile():
