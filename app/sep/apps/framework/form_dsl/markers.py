@@ -565,7 +565,12 @@ class SectionLayout:
         reveals them on its own, and expands the section concerned, whenever
         one holds a value other than its default or a field an error points
         into. Membership needs no adjacency: the renderer collects them
-        wherever they appear, preserving order. Defaults to ``False``.
+        wherever they appear, preserving order. A single reveal bucket is
+        deliberate: a titled group shell would nest one disclosure inside
+        another, and a second reveal control on the same form is the
+        progressive-disclosure pattern it exists to avoid. A custom control
+        label, if a form ever needs one, is an additive ``FormLayout``-level
+        addition rather than a change to this flag. Defaults to ``False``.
     :param collapsible: Whether the renderer may collapse the section. Defaults
         to ``False``.
     :param collapsed_by_default: Whether a collapsible section starts collapsed.

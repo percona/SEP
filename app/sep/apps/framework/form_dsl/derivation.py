@@ -982,11 +982,7 @@ def _validate_parent_pointers(sections: list[FormSection]) -> None:
         field that is not a bool, or a field that is itself parented.
     """
     for section in sections:
-        bools = {
-            item.name
-            for item in section.fields
-            if isinstance(item, BaseField) and item.field_type == "bool"
-        }
+        bools = {item.name for item in section.fields if isinstance(item, BoolField)}
         parented = {
             item.name
             for item in section.fields
