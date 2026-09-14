@@ -2,6 +2,7 @@
   "display_name": "One Of Fixture",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [

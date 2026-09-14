@@ -6,6 +6,7 @@
   "display_name": "Support diagnostics",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fail_when": [

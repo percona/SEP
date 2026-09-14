@@ -128,6 +128,10 @@ class TasksSettings(BaseYamlAppSettings):
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
+    :param PENDING_ALLOCATION_TIMEOUT_SECONDS: The maximum seconds a RUNNING
+        TaskHistory row may wait behind a Nomad allocation that has never
+        produced TaskStates before sync escalates it to LOST. Measured from
+        ``started_at``. Must be positive. Defaults to 3600.
     :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
         logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
         positive integer no greater than 365. Defaults to 90.
@@ -187,6 +191,9 @@ class TasksSettings(BaseYamlAppSettings):
         hot_field(PreExecutionCheckMode.DISABLED)
     )
     STALENESS_THRESHOLD_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(3600, advanced=True)
+    )
+    PENDING_ALLOCATION_TIMEOUT_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
         hot_field(3600, advanced=True)
     )
     LOG_RETENTION_DAYS: Annotated[

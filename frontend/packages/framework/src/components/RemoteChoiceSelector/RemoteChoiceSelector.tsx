@@ -49,6 +49,8 @@ export interface RemoteChoiceSelectorProps {
   disabled?: boolean;
   /** Fully-resolved fetch path (relative to the `/api` base) the options load from. */
   endpointUrl: string;
+  /** Field help shown under the control when no cascade hint takes the slot. */
+  description?: string;
   /** Optional parent field name; when set, the field cascades and — unless `allowCustom` is set — stays disabled until the parent has a value. */
   dependsOn?: string;
   /** Offer free-text (free-solo) entry alongside the fetched options. */
@@ -240,6 +242,7 @@ export function RemoteChoiceSelector({
   disabled,
   endpointUrl,
   dependsOn,
+  description,
   allowCustom,
 }: RemoteChoiceSelectorProps) {
   const { control, setValue } = useFormContext();
@@ -287,7 +290,7 @@ export function RemoteChoiceSelector({
       ? (error?.message ?? 'Failed to load options')
       : empty
         ? 'No options available'
-        : undefined;
+        : description;
   const noOptionsText = parentMissing
     ? parentMissingText
     : isLoading

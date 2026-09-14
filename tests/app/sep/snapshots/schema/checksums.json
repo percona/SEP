@@ -31,6 +31,7 @@
   "display_name": "Checksums",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -62,6 +63,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -88,6 +90,7 @@
       "title": "Data"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -133,6 +136,7 @@
       "title": "Recursion"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -173,6 +177,7 @@
       "title": "Flags"
     },
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
