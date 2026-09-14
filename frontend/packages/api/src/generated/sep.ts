@@ -7816,13 +7816,12 @@ export interface components {
      *         scoped to the fields in this section. Defaults to ``None``.
      *     :param fail_when: Optional predicate-only invariants scoped to this
      *         section. Defaults to ``None``.
-     *     :param group: Optional heading of the collapsible group this section
-     *         belongs to. A run of *adjacent* sections carrying the same value
-     *         renders inside one collapsed shell titled by it, so a form with many
-     *         secondary sections costs one row at rest instead of one per section.
-     *         Each member keeps its own ``collapsible`` / ``collapsed_by_default``
-     *         behaviour inside the group. Defaults to ``None`` — the section renders
-     *         on its own.
+     *     :param advanced: Whether the section holds expert options rather than the
+     *         common case. The renderer withholds advanced sections behind a single
+     *         "Show advanced options" control placed after the ordinary ones and
+     *         reveals them as ordinary top-level sections, so several expert sections
+     *         cost one row at rest instead of one each. Membership needs no
+     *         adjacency. Defaults to ``False``.
      *     :param collapsible: Whether the renderer may collapse this section behind
      *         a toggle. Defaults to ``False``.
      *     :param collapsed_by_default: Whether a collapsible section should start
