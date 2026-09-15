@@ -311,7 +311,8 @@ class TestNonJsonResponseLogging:
             ),
             pytest.param(
                 f"{'x' * _NON_JSON_LOG_MAX_CHARS}{_BODY_SENTINEL}",
-                f"{'x' * _NON_JSON_LOG_MAX_CHARS}{_TRUNCATION_MARKER}",
+                f"{'x' * (_NON_JSON_LOG_MAX_CHARS - len(_TRUNCATION_MARKER))}"
+                f"{_TRUNCATION_MARKER}",
                 id="over-the-cap",
             ),
             pytest.param("", "", id="empty"),

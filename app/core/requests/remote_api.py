@@ -82,6 +82,7 @@ from app.core.utils.fields import (
     redact_credential_url,
     RelativeFilePathField,
 )
+from app.core.utils.strings import shorten_text
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
@@ -101,7 +102,7 @@ _REDACTED_VALUE = "****"
 # Stands in for a response body a caller withheld from the log, so the line
 # keeps naming the request that produced it.
 _WITHHELD_BODY = "<withheld>"
-# Bounds the non-JSON body reaching the exception log: the upstream answering
+# Bounds the decoded body reaching the exception log: the upstream answering
 # HTML rather than JSON decides that body's size, so a large error page would
 # otherwise flood the log with a single record.
 _NON_JSON_LOG_MAX_CHARS = 2000
@@ -136,18 +137,6 @@ _HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
     status.HTTP_502_BAD_GATEWAY: HTTPBadGatewayException,
     status.HTTP_503_SERVICE_UNAVAILABLE: HTTPServiceUnavailableException,
 }
-
-
-def _bounded_body_text(text: str) -> str:
-    """Return a response body bounded to ``_NON_JSON_LOG_MAX_CHARS``.
-
-    :param text: The decoded response body.
-    :return: The body, cut to ``_NON_JSON_LOG_MAX_CHARS`` and marked as
-        truncated when it exceeded that, and unchanged otherwise.
-    """
-    if len(text) <= _NON_JSON_LOG_MAX_CHARS:
-        return text
-    return f"{text[:_NON_JSON_LOG_MAX_CHARS]}{_TRUNCATION_MARKER}"
 
 
 def _is_redirect(status_code: int) -> bool:
@@ -609,7 +598,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
     @contextmanager
     def suppress_response_log(self) -> Generator[Self]:
-        """Withhold the response body from the debug log for the call.
+        """Withhold the response body from the transport's own log records for the call.
 
         Register that the parsed response body must not reach the log for the
         duration of the call. Use this where the caller keeps only the values it
@@ -1092,7 +1081,11 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     _WITHHELD_BODY
                     if withhold_body
-                    else _bounded_body_text(await response.text(errors="replace")),
+                    else shorten_text(
+                        await response.text(errors="replace"),
+                        max_length=_NON_JSON_LOG_MAX_CHARS,
+                        ellipsis=_TRUNCATION_MARKER,
+                    ),
                 )
                 raise exception_for_status(
                     err.status,
