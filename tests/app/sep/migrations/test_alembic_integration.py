@@ -36,10 +36,17 @@ from rich.logging import RichHandler
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
 
-from app.core.config import LOGGING_CONFIG
+from app.core.celery.bootstrap import bootstrap_beat_schema
+from app.core.celery.migrations import BEAT_TABLE_NAMES
+from app.core.config import LOGGING_CONFIG, settings
 from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
 from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.beat_autogenerate import (
+    autogenerate_diffs,
+    create_beat_tables,
+    tables_mentioned,
+)
 
 from .conftest import ALERTS_HEAD, UNKNOWN_REVISION
 
@@ -64,6 +71,10 @@ _SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
 _SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
+
+#: A table owned by neither SQLModel.metadata nor the beat library, so the
+#: narrowness case has something autogenerate is still expected to report.
+_ORPHAN_PROBE_TABLE = "sep_orphan_probe"
 
 # Tokens only — these fixtures check rendering/grepability, not production prose.
 _SKIP_NOTICE = (
@@ -866,3 +877,58 @@ def test_sync_run_state_downgrade_drops_the_added_state(sep_alembic_config):
     assert "snapshot_complete" not in columns
     assert "syncentityabsence" not in tables
     assert "syncitem" in tables
+
+
+def test_autogenerate_ignores_the_beat_tables(sep_alembic_config):
+    """Keep the schedule tables out of the SEP track's proposed operations."""
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+    create_beat_tables(sync_url)
+
+    diffs = autogenerate_diffs(cfg)
+
+    assert tables_mentioned(diffs, BEAT_TABLE_NAMES) == []
+
+
+def test_autogenerate_still_reports_a_table_no_track_owns(sep_alembic_config):
+    """Report an orphaned SEP table while the beat tables stay excluded.
+
+    The rejected blanket recipe — drop every reflected object with no metadata
+    counterpart — would silence the probe too, so both halves are asserted. The
+    probe is in no metadata at all, so ``remove_table`` is the only operation
+    that can name it.
+    """
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, "heads")
+    create_beat_tables(sync_url)
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(f"CREATE TABLE {_ORPHAN_PROBE_TABLE} (id INTEGER)")
+    finally:
+        engine.dispose()
+
+    diffs = autogenerate_diffs(cfg)
+
+    assert tables_mentioned(diffs, [_ORPHAN_PROBE_TABLE]) == [_ORPHAN_PROBE_TABLE]
+    assert tables_mentioned(diffs, BEAT_TABLE_NAMES) == []
+
+
+def test_bootstrap_after_upgrade_leaves_the_beat_tables_unproposed(
+    sep_alembic_config, monkeypatch
+):
+    """Run the ``migrate`` order — upgrade, then bootstrap — against one store.
+
+    This is the sequence ``make migrate`` now performs when the beat store
+    resolves to a track's own database, so the tables reach the sweep from the
+    real bootstrap rather than from the test.
+    """
+    cfg, sync_url = sep_alembic_config
+    monkeypatch.setattr(settings.CELERY, "beat_dburi", sync_url)
+    monkeypatch.setattr(settings.CELERY, "beat_schema", None)
+    command.upgrade(cfg, "heads")
+
+    bootstrap_beat_schema()
+
+    assert _get_table_names(sync_url) >= BEAT_TABLE_NAMES
+    assert tables_mentioned(autogenerate_diffs(cfg), BEAT_TABLE_NAMES) == []

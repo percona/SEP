@@ -27,9 +27,13 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from app import BASE_DIR
 from app.core.celery import bootstrap
 from app.core.celery.config import PoolEngineOptions
 from app.core.config import settings
+
+MAKEFILE = BASE_DIR / "Makefile"
+"""The developer entry point this module asserts drives the bootstrap."""
 
 BEAT_TABLES = frozenset(
     {
@@ -431,3 +435,47 @@ def test_the_store_password_never_reaches_the_log(
         bootstrap.bootstrap_beat_schema()
 
     assert password not in caplog.text
+
+
+def makefile_recipe(target: str) -> list[str]:
+    """Return the recipe lines ``make`` runs for ``target``.
+
+    A recipe is the run of tab-indented lines below the rule, so a step read
+    this way is read from where ``make`` reads it rather than from anywhere in
+    the file.
+
+    :param target: The target whose recipe to collect.
+    :return: The recipe's lines, leading tabs stripped.
+    """
+    recipe: list[str] = []
+    in_target = False
+    for line in MAKEFILE.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{target}:"):
+            in_target = True
+        elif in_target:
+            if line.startswith("\t"):
+                recipe.append(line.lstrip("\t"))
+            elif line.strip():
+                break
+    return recipe
+
+
+def test_the_migrate_target_bootstraps_the_beat_tables():
+    """Drive the library's bootstrap from ``make migrate``.
+
+    Nothing outside a container creates the schedule tables, so a developer's
+    first ``--start-celery`` against a freshly migrated store otherwise waits out
+    the API readiness timeout on tables only beat itself would create.
+
+    This asserts the recipe's text; no test runs the target, so a shell-level
+    fault in the line would still reach CI. See the plan's known coverage limit.
+    """
+    recipe = makefile_recipe("migrate")
+    upgrades = [index for index, line in enumerate(recipe) if "alembic --name" in line]
+    bootstraps = [
+        index for index, line in enumerate(recipe) if f"-m {bootstrap.__name__}" in line
+    ]
+
+    assert upgrades, recipe
+    assert len(bootstraps) == 1
+    assert bootstraps[0] > max(upgrades)
