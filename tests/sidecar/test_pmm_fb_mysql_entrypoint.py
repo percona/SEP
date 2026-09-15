@@ -76,15 +76,17 @@ class Harness:
     """Carry the throwaway entrypoint copy and the callable that drives it.
 
     :param run: Invoke the copy against a chosen probe verdict and cgroup layout.
+    :param cgroup_root: Where the copy's ``CGROUP_ROOT`` was retargeted.
     :param mysqld_marker: Written by the ``mysqld`` stub, so a test separates a
         run that reached the server from one the gate stopped.
-    :param stat_marker: Written by the ``stat`` stub, so a test asserts the
-        cgroup layout was never consulted.
+    :param stat_marker: Carries the ``stat`` stub's arguments, so a test asserts
+        both that the layout was never consulted and how it was asked for.
     :param probe_marker: Written by the ``python3`` stub, so a test asserts the
         clone3 probe never ran.
     """
 
     run: RunEntrypoint
+    cgroup_root: Path
     mysqld_marker: Path
     stat_marker: Path
     probe_marker: Path
@@ -149,7 +151,7 @@ def harness(tmp_path: Path) -> Harness:
     ) -> subprocess.CompletedProcess[str]:
         write_stub("python3", f"touch {probe_marker}\necho {verdict}")
         reply = f"echo {fs_type}" if fs_type else "exit 1"
-        write_stub("stat", f"touch {stat_marker}\n{reply}")
+        write_stub("stat", f'printf %s "$*" > {stat_marker}\n{reply}')
         controllers_file = cgroup_root / "cgroup.controllers"
         if controllers is None:
             controllers_file.unlink(missing_ok=True)
@@ -180,6 +182,7 @@ def harness(tmp_path: Path) -> Harness:
 
     return Harness(
         run=run,
+        cgroup_root=cgroup_root,
         mysqld_marker=mysqld_marker,
         stat_marker=stat_marker,
         probe_marker=probe_marker,
@@ -205,6 +208,14 @@ def test_unified_hierarchy_still_refuses(harness: Harness) -> None:
 
     assert result.returncode == REFUSED_NO_CLONE3, result.stderr
     assert not harness.mysqld_marker.exists()
+    # -f is what asks about the mount rather than the directory entry, and
+    # dropping it yields an empty type that reads as "not cgroup2fs" -- a silent
+    # permit on the one layout where clone3 really is load-bearing
+    assert harness.stat_marker.read_text(encoding="utf-8").split() == [
+        "-fc",
+        "%T",
+        str(harness.cgroup_root),
+    ]
     refusals = tuple(
         line for line in result.stderr.splitlines() if line.startswith("✗ ")
     )
