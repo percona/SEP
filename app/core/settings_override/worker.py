@@ -64,7 +64,9 @@ class WorkerRefresher:
     time, never a value captured at construction: the instance is a
     module-level singleton built at import, while the event loop is recreated
     per prefork child and the session maker is rebound in tests. The
-    last-refresh timestamp is likewise per-child after the fork.
+    last-refresh timestamp is likewise per-child after the fork. ``now`` is
+    the same shape so tests can advance the due-check without writing
+    ``_last_refresh``.
 
     ``interval``, ``enabled`` and ``proc_alive_timeout`` are :meth:`start`
     parameters rather than reads of ``app.core.config.settings`` because the
@@ -77,6 +79,8 @@ class WorkerRefresher:
         ``async_sessionmaker`` the refresh cycle reads override rows through.
     :param proxies_factory: Composes the proxy registry to refresh, invoked
         once per effective :meth:`start`.
+    :param now: Returns the monotonic clock used for the due-check and
+        last-refresh stamp. Defaults to :func:`time.monotonic`.
     """
 
     def __init__(
@@ -84,10 +88,12 @@ class WorkerRefresher:
         loop_getter: Callable[[], asyncio.AbstractEventLoop],
         session_maker_factory: SessionMakerFactory,
         proxies_factory: Callable[[], ProxyRegistry],
+        now: Callable[[], float] = time.monotonic,
     ) -> None:
         self._loop_getter = loop_getter
         self._session_maker_factory = session_maker_factory
         self._proxies_factory = proxies_factory
+        self._now = now
         self._interval_seconds: float = 0.0
         self._armed: bool = False
         self._last_refresh: float = 0.0
@@ -156,7 +162,7 @@ class WorkerRefresher:
         seeded, pending = self._loop_getter().run_until_complete(
             bounded_seed(self._session_maker_factory, proxies, seed_timeout)
         )
-        now = time.monotonic()
+        now = self._now()
         self._last_refresh = now if seeded else now - interval.total_seconds()
         self._pending_refresh = (
             pending if pending is not None and not pending.done() else None
@@ -199,7 +205,7 @@ class WorkerRefresher:
             if not self._pending_refresh.done():
                 return
             self._pending_refresh = None
-        now = time.monotonic()
+        now = self._now()
         if now - self._last_refresh < self._interval_seconds:
             return
         try:
@@ -226,7 +232,7 @@ class WorkerRefresher:
                 "leaving a possibly incomplete refresh in place"
             )
         finally:
-            self._last_refresh = time.monotonic()
+            self._last_refresh = self._now()
 
     def stop(self) -> None:
         """Disarm this child's refresher; a no-op when never started.

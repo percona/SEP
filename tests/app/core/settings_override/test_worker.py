@@ -52,6 +52,24 @@ INTERVAL = timedelta(seconds=30)
 SHORT_INTERVAL = timedelta(milliseconds=50)
 
 
+class _FakeClock:
+    """Monotonic clock stand-in so tests can advance the due-check."""
+
+    def __init__(self, start: float = 1_000.0) -> None:
+        self._now = start
+
+    def __call__(self) -> float:
+        return self._now
+
+    def advance(self, seconds: float) -> None:
+        """Move the clock forward by ``seconds``."""
+        self._now += seconds
+
+    def advance_past(self, interval: timedelta) -> None:
+        """Advance far enough that a due-check against ``interval`` succeeds."""
+        self.advance(interval.total_seconds() + 1.0)
+
+
 async def _noop_callback(_: SnapshotChange) -> None:
     """Accept a snapshot change and do nothing; a stand-in registry entry."""
 
@@ -386,15 +404,18 @@ class TestWorkerRefresherMaybeRefresh:
     ) -> None:
         """Drive a refresh to completion inside one ``run_until_complete`` window."""
         calls: list[object] = []
+        clock = _FakeClock()
 
         async def _counting_refresh(*_args: object, **_kwargs: object) -> None:
             calls.append(True)
 
         monkeypatch.setattr(WORKER_REFRESH_ALL, _counting_refresh)
-        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
+        refresher = WorkerRefresher(
+            lambda: loop, lambda: session_maker, _make_registry, now=clock
+        )
         refresher.start(INTERVAL, enabled=True)
         calls.clear()
-        refresher._last_refresh = 0.0
+        clock.advance_past(INTERVAL)
 
         refresher.maybe_refresh()
 
@@ -434,13 +455,14 @@ class TestWorkerRefresherMaybeRefresh:
     ) -> None:
         """Bound a hanging boundary refresh; leave state as-is and keep the task."""
         maker_holder: list[object] = [session_maker]
+        clock = _FakeClock()
         refresher = WorkerRefresher(
-            lambda: loop, lambda: maker_holder[0], _make_registry
+            lambda: loop, lambda: maker_holder[0], _make_registry, now=clock
         )
         refresher.start(SHORT_INTERVAL, enabled=True)
         maker_holder[0] = HangingSession
-        refresher._last_refresh = 0.0
         stamp_before = refresher._last_refresh
+        clock.advance_past(SHORT_INTERVAL)
 
         with caplog.at_level("WARNING", logger="app.core.settings_override.worker"):
             refresher.maybe_refresh()
@@ -470,7 +492,10 @@ class TestWorkerRefresherMaybeRefresh:
         separately releasable gate so cleanup stays stuck after cancel — the
         hang-safe path, not ordinary cancellation of an idle wait.
         """
-        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
+        clock = _FakeClock()
+        refresher = WorkerRefresher(
+            lambda: loop, lambda: session_maker, _make_registry, now=clock
+        )
         refresher.start(SHORT_INTERVAL, enabled=True)
         unwind_gate = asyncio.Event()
         calls: list[object] = []
@@ -484,7 +509,7 @@ class TestWorkerRefresherMaybeRefresh:
 
         # Patch after the inline seed so only the boundary refresh hangs on unwind.
         monkeypatch.setattr(WORKER_REFRESH_ALL, _hang_on_unwind)
-        refresher._last_refresh = 0.0
+        clock.advance_past(SHORT_INTERVAL)
 
         with caplog.at_level("WARNING", logger="app.core.settings_override.worker"):
             # A wait_for-based bound would hang here indefinitely on unwind.
@@ -501,7 +526,7 @@ class TestWorkerRefresherMaybeRefresh:
             assert calls == [True]
 
             # Still unwinding: a later due boundary must not open another refresh.
-            refresher._last_refresh = 0.0
+            clock.advance_past(SHORT_INTERVAL)
             refresher.maybe_refresh()
             assert calls == [True]
             assert refresher._pending_refresh is pending
@@ -520,14 +545,17 @@ class TestWorkerRefresherMaybeRefresh:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Swallow a boundary failure so the triggering task keeps running."""
-        refresher = WorkerRefresher(lambda: loop, lambda: session_maker, _make_registry)
+        clock = _FakeClock()
+        refresher = WorkerRefresher(
+            lambda: loop, lambda: session_maker, _make_registry, now=clock
+        )
         refresher.start(INTERVAL, enabled=True)
 
         async def _boom(*_args: object, **_kwargs: object) -> None:
             raise RuntimeError("db unreachable")
 
         monkeypatch.setattr(WORKER_REFRESH_ALL, _boom)
-        refresher._last_refresh = 0.0
+        clock.advance_past(INTERVAL)
 
         with caplog.at_level("ERROR", logger="app.core.settings_override.worker"):
             refresher.maybe_refresh()
@@ -552,12 +580,13 @@ class TestWorkerRefresherMaybeRefresh:
             SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
         }
         fired: list[bool] = []
+        clock = _FakeClock()
 
         async def _callback(_: SnapshotChange) -> None:
             fired.append(True)
 
         refresher = WorkerRefresher(
-            lambda: loop, lambda: session_maker, lambda: registry
+            lambda: loop, lambda: session_maker, lambda: registry, now=clock
         )
         refresher.start(INTERVAL, enabled=True, callbacks={_CALLBACK_KEY: _callback})
         override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
@@ -574,7 +603,7 @@ class TestWorkerRefresherMaybeRefresh:
                 )
 
         loop.run_until_complete(_seed())
-        refresher._last_refresh = 0.0
+        clock.advance_past(INTERVAL)
 
         refresher.maybe_refresh()
 
