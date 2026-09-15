@@ -4,14 +4,13 @@ name: CI
 
 on:
   pull_request:
-    branches:
-    - main
     types:
     - labeled
+    - opened
     - ready_for_review
+    - reopened
     - synchronize
     - unlabeled
-  workflow_call:
   workflow_dispatch:
 
 permissions:
@@ -26,19 +25,50 @@ jobs:
   label-gate:
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve whether the base branch is protected
+        id: base_protection
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ -z "$BASE_REF" ]; then
+            echo "No pull-request context; nothing to gate."
+            echo "protected=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! branches="$(gh api --paginate \
+              "repos/$REPO/branches?protected=true&per_page=100" \
+              --jq '.[].name')"; then
+            echo "::error::Could not determine whether '$BASE_REF' is protected."
+            exit 1
+          fi
+          if printf '%s\n' "$branches" | grep -Fxq -- "$BASE_REF"; then
+            echo "protected=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "protected=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Block merge on disqualifying labels
         if: >-
-          contains(github.event.pull_request.labels.*.name, 'do not merge') ||
-          contains(github.event.pull_request.labels.*.name, 'qa in progress') ||
-          contains(github.event.pull_request.labels.*.name, 'qa failed')
+          steps.base_protection.outputs.protected == 'true' &&
+          (
+            contains(github.event.pull_request.labels.*.name, 'do not merge') ||
+            contains(github.event.pull_request.labels.*.name, 'qa in progress') ||
+            contains(github.event.pull_request.labels.*.name, 'qa failed')
+          )
         run: |
           echo "::error::PR is blocked by label. Remove 'do not merge', 'qa in progress', or 'qa failed' to proceed."
           exit 1
 
       - name: Require QA approval label
         if: >-
-          !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
-          !contains(github.event.pull_request.labels.*.name, 'qa not required')
+          steps.base_protection.outputs.protected == 'true' &&
+          (
+            !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
+            !contains(github.event.pull_request.labels.*.name, 'qa not required')
+          )
         run: |
           echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
           exit 1
