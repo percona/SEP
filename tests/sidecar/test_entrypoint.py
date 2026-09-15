@@ -24,17 +24,18 @@ from uuid import uuid4
 import pytest
 from cryptography.fernet import Fernet
 
-from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
+from tests.sidecar.conftest import (
+    ENTRYPOINT,
+    schema_steps,
+    SENTINEL_PREFIX,
+    SIDECAR_DIR,
+)
 
-ENTRYPOINT = SIDECAR_DIR / "entrypoint.sh"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 MINT_HELPER_NAME = "grafana_service_account.py"
 ENCRYPTION_HELPER_NAME = "encryption_key.py"
 
 SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
-
-SENTINEL_PREFIX = "/tmp/migrate-"
-"""The prefix every sentinel path in the shipped entrypoint is built from."""
 
 CANONICAL_NAMES = (
     "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",

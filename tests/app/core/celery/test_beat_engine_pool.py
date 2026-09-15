@@ -15,11 +15,13 @@
 
 """Define tests for celery-beat scheduler engine pool sizing (engine 5).
 
-The 5th engine lives inside ``sqlalchemy_celery_beat``. SEP's beat runs on the
-*forked* path (the after-fork hook flips ``session_manager.forked`` True in the
-beat child), so the tests exercise that path — a test against a fresh
-non-forked ``SessionManager`` would silently pass against a ``NullPool`` engine
-that ignores pool sizing.
+The 5th engine lives inside ``sqlalchemy_celery_beat``, and which path it takes
+depends on how beat was launched. Beat started by ``python -m app.main
+--start-celery`` runs in a ``multiprocessing`` child, so the after-fork hook
+flips ``session_manager.forked`` True and the engine honours pool sizing. The
+PMM side-car instead runs ``celery beat`` as its own program, which never forks
+and pins a ``NullPool`` that ignores sizing. Both paths are exercised here, so a
+test cannot silently pass against the wrong one.
 """
 
 import pytest
@@ -34,7 +36,7 @@ _BEAT_DBURI = "postgresql+psycopg2://u:p@h/celery"
 
 
 def test_forked_path_honors_pool_options():
-    """Honor the pool dict on the forked path SEP runs."""
+    """Honor the pool dict on the forked path ``--start-celery`` runs."""
     session_manager = SessionManager()
     session_manager.forked = True
     pool = {"pool_size": 20, "max_overflow": 5, "pool_timeout": 30}
@@ -52,8 +54,9 @@ def test_non_forked_path_rejects_max_overflow():
     """Reject max_overflow on the non-forked NullPool path — the landmine.
 
     ``NullPool`` rejects ``max_overflow`` (the key does not start with ``pool``,
-    so the library's non-forked strip does not remove it). Standalone must
-    therefore leave ``beat_engine_options`` empty.
+    so the library's non-forked strip does not remove it). The side-car, whose
+    beat is not forked, must therefore leave ``max_overflow`` out of
+    ``beat_engine_options``.
     """
     session_manager = SessionManager()
 
