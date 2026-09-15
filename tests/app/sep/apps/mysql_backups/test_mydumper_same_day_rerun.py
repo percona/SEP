@@ -30,16 +30,20 @@ import sys
 import time as real_time
 import types
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, TYPE_CHECKING
 
 import pytest
 
 from tests.app.sep.apps.mysql_backups.conftest import MYDUMPER_PAYLOAD_PATH
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_constant,
+    load_function,
     payload_instance,
     Recorder,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def _payload_constant(name: str) -> object:
@@ -62,11 +66,16 @@ REPLACED_SUFFIX = cast("str", _payload_constant("REPLACED_SUFFIX"))
 PARTIAL_MAX_AGE_SECONDS = cast("int", _payload_constant("PARTIAL_MAX_AGE_SECONDS"))
 OLDER_THAN_ANY_GRACE_PERIOD = PARTIAL_MAX_AGE_SECONDS * 2
 UPDATED_SINCE_DAYS = 3
+_IS_BACKUP_DAY_NAME = cast(
+    "Callable[[str], bool]",
+    load_function("_is_backup_day_name", payload_path=MYDUMPER_PAYLOAD_PATH),
+)
 _RECLAIM_METHODS = (
     "_reclaim_interrupted_publish",
     "_reclaim_scratch_dir",
     "_scratch_name_parts",
     "_staging_owner_is_alive",
+    "_process_started_at",
 )
 _FIRST_DUMP = {
     "metadata": "Finished dump at: first\n",
@@ -96,7 +105,7 @@ def _scratch_name(suffix: str, *parts: object) -> str:
     """Build the name a run gives one of its scratch directories.
 
     :param suffix: The scratch suffix, read off the payload.
-    :param parts: The dot-separated segments between the day and the suffix --
+    :param parts: The dot-separated segments between the day and the suffix,
         a run's start time and the pid owning it, where the case under test has
         them.
     :return: The directory name, dot-prefixed so retention ignores it.
@@ -169,6 +178,7 @@ def _mydumper_instance(
             time=real_time.time,
             sleep=lambda _seconds: None,
         ),
+        "_is_backup_day_name": _IS_BACKUP_DAY_NAME,
     }
     if popen is not None:
         namespace["subprocess"] = types.SimpleNamespace(
@@ -705,8 +715,8 @@ class TestReclaimInterruptedPublish:
         would restore by run start time, which is not the order they published in,
         and the copies left over are then deleted against the restored day.
         """
-        stale = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", 11)
-        newest = tmp_path / _scratch_name(REPLACED_SUFFIX, "020000", 22)
+        stale = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", _exited_pid())
+        newest = tmp_path / _scratch_name(REPLACED_SUFFIX, "020000", _exited_pid())
         for aside, marker in ((stale, "first"), (newest, "second")):
             aside.mkdir()
             _write_dump(aside, marker)
@@ -726,6 +736,9 @@ class TestReclaimInterruptedPublish:
 
         A directory's mtime does not advance while mydumper appends to a chunk file
         it already created, so age alone cannot tell a slow dump from a dead one.
+        ``_process_started_at`` is pinned to the backdated mtime so the fake pid's
+        actual start time (this test process, started long after ``aged``) does not
+        make a genuine owner look recycled.
         """
         live = tmp_path / _scratch_name(PARTIAL_SUFFIX, "010000", os.getpid())
         live.mkdir()
@@ -733,10 +746,50 @@ class TestReclaimInterruptedPublish:
         aged = real_time.time() - OLDER_THAN_ANY_GRACE_PERIOD
         os.utime(live, (aged, aged))
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = lambda _pid: aged
 
         instance._reclaim_interrupted_publish()
 
         assert (live / "sakila.film.sql").read_text() == "dump in flight\n"
+
+    def test_discards_a_staging_directory_whose_pid_was_reused(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a live pid that started after the directory is a different process.
+
+        Pids get recycled; once one is, the next process to get it did not create
+        the staging directory carrying it, however alive that pid looks.
+        """
+        stale = tmp_path / _scratch_name(PARTIAL_SUFFIX, "010000", os.getpid())
+        stale.mkdir()
+        (stale / "sakila.film.sql").write_text("half a dump\n")
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = (
+            lambda _pid: real_time.time() + OLDER_THAN_ANY_GRACE_PERIOD
+        )
+
+        instance._reclaim_interrupted_publish()
+
+        assert not stale.exists()
+
+    def test_leaves_a_moved_aside_dump_alone_while_its_owner_is_still_publishing(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a live owner's moved-aside dump is untouched, not restored early.
+
+        A second run's reclaim pass can start inside the window ``_publish_backup``
+        leaves open between its two renames. Restoring or dropping the first run's
+        moved-aside copy while that run is still live races its own recovery path.
+        """
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", os.getpid())
+        aside.mkdir()
+        (aside / "metadata").write_text("Finished dump at: live\n")
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+
+        instance._reclaim_interrupted_publish()
+
+        assert aside.is_dir()
+        assert not instance.backup_dir.exists()
 
     def test_never_restores_a_moved_aside_name_that_is_not_a_day(
         self, tmp_path: Path

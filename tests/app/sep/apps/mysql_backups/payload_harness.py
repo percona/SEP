@@ -25,6 +25,7 @@ xtrabackup, which most of the callers here exercise.
 
 import ast
 import contextlib
+import datetime
 import logging
 import multiprocessing.pool
 import os
@@ -85,6 +86,7 @@ def base_namespace() -> dict:
         "subprocess": subprocess,
         "logging": logging,
         "re": re,
+        "datetime": datetime,
         "Path": pathlib.Path,
         "Any": object,
         "suppress": contextlib.suppress,
@@ -118,12 +120,16 @@ def load_constant(
 XBCRYPT_BIN = load_constant("XBCRYPT_BIN")
 
 
-def load_function(name: str) -> Callable[..., Any]:
+def load_function(
+    name: str, *, payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH
+) -> Callable[..., Any]:
     """Extract a single module-level payload function with its constants seeded.
 
+    :param name: The function to extract; it has to be defined at module level.
+    :param payload_path: The payload script to extract the function out of.
     :raises TypeError: If the extracted name is not callable.
     """
-    tree = xtrabackup_payload_tree()
+    tree = payload_tree(payload_path)
     namespace = base_namespace()
     body = const_nodes(tree)
     fn_nodes = [
@@ -132,19 +138,15 @@ def load_function(name: str) -> Callable[..., Any]:
         if isinstance(node, ast.FunctionDef) and node.name == name
     ]
     if not fn_nodes:
-        raise RuntimeError(
-            f"{name} not found in {XTRABACKUP_PAYLOAD_PATH}. Renamed or removed?"
-        )
+        raise RuntimeError(f"{name} not found in {payload_path}. Renamed or removed?")
     body = body + fn_nodes
     exec(  # noqa: S102
-        compile(
-            ast.Module(body=body, type_ignores=[]), str(XTRABACKUP_PAYLOAD_PATH), "exec"
-        ),
+        compile(ast.Module(body=body, type_ignores=[]), str(payload_path), "exec"),
         namespace,
     )
     extracted = namespace[name]
     if not callable(extracted):
-        raise TypeError(f"{name} in {XTRABACKUP_PAYLOAD_PATH} is not callable.")
+        raise TypeError(f"{name} in {payload_path} is not callable.")
     return extracted
 
 
@@ -293,7 +295,7 @@ class FakeProc:
         self.returncode = returncode
 
     def communicate(self) -> tuple[bytes, bytes]:
-        """Return ``(stdout, stderr)`` -- stderr is non-empty so error paths format it."""
+        """Return ``(stdout, stderr)``, stderr is non-empty so error paths format it."""
         return b"", b"boom"
 
 
@@ -319,7 +321,7 @@ def payload_instance(
         namespace after the payload's own constants are loaded (so this wins),
         before the class is compiled.
     :param real_subprocess: When True, keep the real ``subprocess`` module instead
-        of faking ``Popen`` -- for integration tests that need a real process (e.g.
+        of faking ``Popen``, for integration tests that need a real process (e.g.
         a stand-in ``xbcrypt`` executable) to actually run. ``calls`` is unused
         (always ``[]``) in this mode.
     :param payload_path: The payload script to lift the methods out of.

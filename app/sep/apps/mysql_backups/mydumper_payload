@@ -111,6 +111,27 @@ GPG_NOT_ENCRYPTED_PATTERNS = (
 )
 
 
+def _is_backup_day_name(name: str) -> bool:
+    """Return whether a directory name is a real calendar day, not just digit-shaped.
+
+    ``BACKUP_DIR_REGEX`` and ``_list_backups``'s own pattern both used to accept a
+    malformed date such as ``20261345`` or ``20260230``. Letting one through only
+    cost the post-publish purge, but ``_retained_days`` is now also reached from
+    inside ``run()``'s try block, where the resulting ``ValueError`` would discard a
+    completed dump instead of publishing it.
+
+    :param name: The directory name to check.
+    :return: True when ``name`` is a valid ``YYYYMMDD`` calendar date.
+    """
+    if not re.search(BACKUP_DIR_REGEX, name):
+        return False
+    try:
+        datetime.datetime.strptime(name, "%Y%m%d")
+    except ValueError:
+        return False
+    return True
+
+
 class BackupNotifyStatus(IntEnum):
     OK = 0
     WARNING = 1
@@ -1430,7 +1451,7 @@ class Upload(Backup):
         for datedir in self.full_backup_path.iterdir():
             if datedir.is_dir():
                 conditions_to_upload = [
-                    re.search(BACKUP_DIR_REGEX, datedir.name),
+                    _is_backup_day_name(datedir.name),
                     (datedir / UPLOADME_FILE).is_file(),
                 ]
                 if all(conditions_to_upload):
@@ -2247,17 +2268,23 @@ class MyDumper(Backup):
             shutil.rmtree(replaced_dir, ignore_errors=True)
         self.logger.info("OK Backup published to %s.", self.backup_dir)
 
-    def _staging_owner_is_alive(self, name: str) -> bool | None:
+    def _staging_owner_is_alive(self, name: str, mtime: float) -> bool | None:
         """Return whether the run that owns a staging directory is still going.
 
         The owning pid is part of the directory name and every staging directory
         belongs to a process on this host. The directory's own mtime cannot answer
-        this: it does not advance while mydumper appends to a chunk file it already
-        created, so a slow dump looks abandoned long before it is.
+        this on its own: it does not advance while mydumper appends to a chunk file
+        it already created, so a slow dump looks abandoned long before it is. But a
+        live pid alone is not enough either, since pids get recycled: a process that
+        started *after* this directory was created is a different process holding a
+        pid a killed run left behind, not that run still going. Comparing the pid's
+        own start time against the directory's mtime tells the two apart, since the
+        original owner cannot postdate a directory it went on to create or rename.
 
         :param name: The staging directory's name.
-        :return: Whether the pid in the name is running, or None when it carries no
-            readable pid.
+        :param mtime: The directory's own mtime, from the caller's stat.
+        :return: Whether the pid in the name is running and owns this directory, or
+            None when the name carries no readable pid.
         """
         pid = self._scratch_name_parts(name)[-1]
         if not pid.isdigit():
@@ -2269,7 +2296,21 @@ class MyDumper(Backup):
         except OSError:
             # The pid exists but is not ours to signal.
             return True
-        return True
+        started = self._process_started_at(int(pid))
+        return started is None or started <= mtime
+
+    @staticmethod
+    def _process_started_at(pid: int) -> float | None:
+        """Return when the process holding a pid started, or None if unreadable.
+
+        :param pid: The pid to look up.
+        :return: The process's start time as a Unix timestamp, or None on a host
+            that does not expose ``/proc`` or when the pid is not ours to inspect.
+        """
+        try:
+            return Path(f"/proc/{pid}").stat().st_ctime
+        except OSError:
+            return None
 
     @staticmethod
     def _scratch_name_parts(name: str) -> list[str]:
@@ -2289,20 +2330,22 @@ class MyDumper(Backup):
         :param scratch_dir: A moved-aside or staging directory from an earlier run.
         :raises OSError: If the restore or the removal fails.
         """
+        mtime = scratch_dir.stat().st_mtime
         if scratch_dir.name.endswith(REPLACED_SUFFIX):
+            if self._staging_owner_is_alive(scratch_dir.name, mtime):
+                return
             day_name = self._scratch_name_parts(scratch_dir.name)[0]
             day_dir = self.backup_server_dir / day_name
-            if re.search(BACKUP_DIR_REGEX, day_name) and not day_dir.exists():
+            if _is_backup_day_name(day_name) and not day_dir.exists():
                 scratch_dir.rename(day_dir)
                 self.logger.info(
                     "Restored %s from an interrupted publication.", day_dir.name
                 )
                 return
         else:
-            alive = self._staging_owner_is_alive(scratch_dir.name)
+            alive = self._staging_owner_is_alive(scratch_dir.name, mtime)
             if alive or (
-                alive is None
-                and time.time() - scratch_dir.stat().st_mtime < PARTIAL_MAX_AGE_SECONDS
+                alive is None and time.time() - mtime < PARTIAL_MAX_AGE_SECONDS
             ):
                 return
 
@@ -2348,7 +2391,11 @@ class MyDumper(Backup):
                 self.logger.warning("Leaving %s in place: %s", scratch_dir.name, exc)
 
     def _validate_updated_since(self) -> None:
-        """Validate previous backups that can be used with mydumper's --updated-since option."""
+        """Validate previous backups that can be used with mydumper's --updated-since option.
+
+        A day this run's purge removes is passed over: hardlinking out of it would
+        leave the removal freeing nothing.
+        """
         for i in range(1, self.updated_since):
             dayago = (datetime.datetime.now() - datetime.timedelta(days=i)).strftime(
                 "%Y%m%d"
@@ -2469,12 +2516,11 @@ class MyDumper(Backup):
         :param path: Path to the server backup directory.
         :return: Sorted list of backup directory names.
         """
-        dname_re = re.compile("^[0-9]{8}$")
         return sorted(
             [
                 dname
                 for dname in os.listdir(path)
-                if (path / dname).is_dir() and dname_re.search(dname)
+                if (path / dname).is_dir() and _is_backup_day_name(dname)
             ]
         )
 
