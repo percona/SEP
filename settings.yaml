@@ -107,6 +107,8 @@ default:
       - MODULE_NAME: report
       - MODULE_NAME: om_inventory
         ENABLED: true
+      - MODULE_NAME: om_bootstrap
+        ENABLED: false
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
