@@ -14,6 +14,14 @@ security fix, or a config change), run:
 make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
 ```
 
+Ticket keys may use either the `SEP` or `PMM` project prefix. For example:
+
+```bash
+make changelog-add TICKET=PMM-15326 SECTION=added MSG="Brief description"
+```
+
+This creates `changelog.d/PMM-15326.added.md`.
+
 Pass `FORCE=1` to overwrite an existing fragment for the same
 `(ticket, section)` pair; without it the helper refuses to clobber.
 
@@ -44,7 +52,7 @@ is what users read. `make changelog-add` appends a terminal period when the `MSG
 lacks sentence punctuation (recognising `.`, `!` and `?`, and looking past a trailing `)`, `]`,
 `}`, quote or backtick), and tells you when it did — so a fragment edited by hand
 is the only way to end up without one. Capitalise the first word; do not add a
-`- SEP-XXX:` prefix, which assembly supplies.
+`- <TICKET>:` prefix, which assembly supplies.
 
 **Skip this step when any of these applies:**
 
@@ -112,8 +120,10 @@ once that answer is "a modification to behaviour that already shipped".
 
 ## File format
 
-- **Filename:** `<TICKET>.<section>.md`, e.g. `SEP-503.added.md`.
-- **Content:** one line of markdown per entry, with no `- SEP-XXX:` prefix
+- **Filename:** `SEP-<n>.<section>.md` or `PMM-<n>.<section>.md`, where `<n>`
+  is numeric, e.g. `SEP-503.added.md` or `PMM-15326.added.md`. Other project
+  prefixes are rejected.
+- **Content:** one line of markdown per entry, with no `- <TICKET>:` prefix
   (that is added automatically at assembly time).
 - **Multiple sections per ticket:** create one file per section, e.g. a ticket
   that is both a Change and a Breaking Change has `SEP-937.changed.md` plus
@@ -137,6 +147,9 @@ whenever a file under `changelog.d/` is staged.
 bullets — it deliberately omits the `## [Unreleased]` header and the blank
 lines that frame the section in `CHANGELOG.md`, so the output is a content
 preview rather than a byte-for-byte slice of the old file.
+
+Within each section, entries sort alphabetically by project prefix, then
+numerically by ticket ID.
 
 ## What happens at release time
 
