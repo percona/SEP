@@ -281,7 +281,7 @@ def test_profile_seeds_a_pmm_pinned_inventory_sync_schedule():
 
 
 def test_profile_writes_pool_sizing_into_the_shared_database(
-    embedded_profile_data: dict,
+    embedded_profile_data: dict[str, Any],
 ):
     """Set pool sizing in the profile, not by inheriting class defaults.
 
