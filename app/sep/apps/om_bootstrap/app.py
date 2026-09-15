@@ -28,10 +28,18 @@ The wizard lives in PMM's own UI (PMM-15347/plan.md §4 item 4 / questions.md
 Q4) -- the consumer is PMM's ``om`` managed service driving this app's API to
 trigger and poll bootstraps, the same "consumer drives/polls, no SEP-native
 page" shape `om_inventory` established.
+
+``artifact_base_dirs`` points Nomad's artifact download at
+:func:`~app.sep.apps.om_bootstrap.dispatch.step_scripts_dir` -- this app is the
+first to serve a *generated* artifact rather than a fixed, developer-authored
+file (``dispatch.py``'s module docstring), but the serving mechanism itself
+needs nothing app-specific to support that: it only needs a directory thunk,
+the same as ``dipper``'s static one.
 """
 
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.om_bootstrap.api_routes import router as api_router
+from app.sep.apps.om_bootstrap.dispatch import ARTIFACT_TYPE, step_scripts_dir
 from app.sep.apps.om_bootstrap.schema import om_bootstrap_schema
 
 app = BaseApp(
@@ -43,4 +51,5 @@ app = BaseApp(
     api_router=api_router,
     schema=om_bootstrap_schema,
     custom_ui=False,
+    artifact_base_dirs={ARTIFACT_TYPE: step_scripts_dir},
 )
