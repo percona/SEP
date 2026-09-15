@@ -21,9 +21,10 @@ from datetime import datetime
 
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask, PeriodicTaskChanged
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.crud import BasePeriodicTaskManager
@@ -567,10 +568,8 @@ class TestDisableSchedulesForOwners:
         assert switched_off == ["nightly-restore"]
         assert await _read_enabled(celery_beat_session, "nightly-restore") is False
         assert [m for m in _sweep_warnings(caplog) if "nightly-restore" in m]
-        result = await celery_beat_session.execute(  # ty: ignore[deprecated]
-            select(PeriodicTaskChanged.last_update)
-        )
-        assert result.scalar_one_or_none() is not None
+        result = await celery_beat_session.exec(select(PeriodicTaskChanged.last_update))
+        assert result.one_or_none() is not None
 
     async def test_other_owners_and_system_rows_are_untouched(
         self, session: AsyncSession, celery_beat_session: AsyncSession
