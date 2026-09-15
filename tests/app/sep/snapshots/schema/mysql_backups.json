@@ -331,10 +331,60 @@
         ]
       },
       "message": "A GPG 'encryption_format' requires 'encrypt' or 'post_run_encrypt' to select when the backup is encrypted."
+    },
+    {
+      "error_fields": [
+        "encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "encrypt"
+          },
+          {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "'encrypt' encrypts the backup in place as part of an upload, so it requires at least one upload provider. Use 'post_run_encrypt' (Mydumper and XtraBackup only) to encrypt on the host instead."
+    },
+    {
+      "error_fields": [
+        "post_run_encrypt",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "post_run_encrypt"
+          },
+          {
+            "equals": {
+              "encryption_format": "gpg"
+            }
+          },
+          {
+            "equals": {
+              "backup_type": "B"
+            }
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "A Binlog backup encrypts only as part of an upload, so 'post_run_encrypt' requires at least one upload provider."
     }
   ],
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -404,103 +454,7 @@
       "title": "Task"
     },
     {
-      "collapsed_by_default": true,
-      "collapsible": true,
-      "fields": [
-        {
-          "default": false,
-          "description": "Reuse unchanged files from the previous backup as hard links, so a full backup costs less disk space. Mydumper skips it when the previous backup is encrypted; XtraBackup skips it when post-run encryption is on, when 'Number of backup copies' is 1, and under the 'less_space' incremental method. Binlog backups ignore it.",
-          "label": "Hardlink full backups",
-          "name": "hardlink",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
-          "description": "Compress backup data as it is written, using the algorithm selected below. XtraBackup drops compression when 'Prepare backup' or the 'Fast restore' incremental method is on, and a Binlog backup compresses every completed file whatever this is set to.",
-          "label": "Compress backup data",
-          "name": "compress",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
-          "description": "Fail before a Mydumper or XtraBackup backup starts when the target filesystem has too little free space. A Binlog backup instead watches free space while it streams and stops the stream when it runs out.",
-          "label": "Check disk space first",
-          "name": "check_disk_space",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
-          "description": "Skip the host unless replication is running there, so the backup only runs on an active replica. Mydumper and XtraBackup backups only.",
-          "label": "Only if running replica",
-          "name": "only_if_running_replica",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
-          "description": "Skip the host unless MySQL is read-only. Mydumper and XtraBackup backups only.",
-          "label": "Only if read-only",
-          "name": "only_if_read_only",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
-          "description": "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK during a Mydumper backup. The watchdog is never reached, so this setting changes nothing.",
-          "label": "FTWRL guardian",
-          "name": "use_ftwrl_guardian",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "description": "Directory on the database host for this task's log files",
-          "label": "Logging directory",
-          "min_length": 1,
-          "name": "logging_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "description": "MySQL defaults file used for the connections SEP makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
-          "label": "MySQL defaults file",
-          "min_length": 1,
-          "name": "defaults_file",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "choices": [
-            {
-              "label": "ZSTD",
-              "value": "zstd"
-            },
-            {
-              "label": "LZ4",
-              "value": "lz4"
-            },
-            {
-              "label": "gzip",
-              "value": "gzip"
-            },
-            {
-              "label": "QuickLZ",
-              "value": "quicklz"
-            }
-          ],
-          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
-          "label": "Compression algorithm",
-          "name": "compression_algorithm",
-          "required": false,
-          "type": "choice"
-        }
-      ],
-      "render_after_submit": false,
-      "title": "General"
-    },
-    {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -608,6 +562,7 @@
       "title": "Mydumper"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -648,6 +603,7 @@
           ],
           "label": "Kill-queries timeout (s)",
           "name": "xtrabackup_kill_queries_timeout",
+          "parent": "xtrabackup_kill_queries",
           "required": false,
           "type": "integer"
         },
@@ -674,6 +630,7 @@
           ],
           "label": "Kill query type",
           "name": "xtrabackup_kill_query_type",
+          "parent": "xtrabackup_kill_queries",
           "required": false,
           "type": "choice"
         },
@@ -707,6 +664,7 @@
           "label": "Prepare memory",
           "min_length": 1,
           "name": "xtrabackup_prepare_memory",
+          "parent": "xtrabackup_prepare",
           "required": false,
           "type": "string"
         },
@@ -933,6 +891,7 @@
       "title": "XtraBackup"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -1059,6 +1018,105 @@
       "title": "Binlog"
     },
     {
+      "advanced": true,
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "default": false,
+          "description": "Reuse unchanged files from the previous backup as hard links, so a full backup costs less disk space. Mydumper skips it when the previous backup is encrypted; XtraBackup skips it when post-run encryption is on, when 'Number of backup copies' is 1, and under the 'less_space' incremental method. Binlog backups ignore it.",
+          "label": "Hardlink full backups",
+          "name": "hardlink",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Compress backup data as it is written, using the algorithm selected below. XtraBackup drops compression when 'Prepare backup' or the 'Fast restore' incremental method is on, and a Binlog backup compresses every completed file whatever this is set to.",
+          "label": "Compress backup data",
+          "name": "compress",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Fail before a Mydumper or XtraBackup backup starts when the target filesystem has too little free space. A Binlog backup instead watches free space while it streams and stops the stream when it runs out.",
+          "label": "Check disk space first",
+          "name": "check_disk_space",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Skip the host unless replication is running there, so the backup only runs on an active replica. Mydumper and XtraBackup backups only.",
+          "label": "Only if running replica",
+          "name": "only_if_running_replica",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Skip the host unless MySQL is read-only. Mydumper and XtraBackup backups only.",
+          "label": "Only if read-only",
+          "name": "only_if_read_only",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "description": "Meant to kill the queries blocking a FLUSH TABLES WITH READ LOCK during a Mydumper backup. The watchdog is never reached, so this setting changes nothing.",
+          "label": "FTWRL guardian",
+          "name": "use_ftwrl_guardian",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "description": "Directory on the database host for this task's log files",
+          "label": "Logging directory",
+          "min_length": 1,
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "MySQL defaults file used for the connections SEP makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
+          "label": "MySQL defaults file",
+          "min_length": 1,
+          "name": "defaults_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "ZSTD",
+              "value": "zstd"
+            },
+            {
+              "label": "LZ4",
+              "value": "lz4"
+            },
+            {
+              "label": "gzip",
+              "value": "gzip"
+            },
+            {
+              "label": "QuickLZ",
+              "value": "quicklz"
+            }
+          ],
+          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
+          "label": "Compression algorithm",
+          "name": "compression_algorithm",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "General"
+    },
+    {
+      "advanced": true,
       "collapsed_by_default": true,
       "collapsible": true,
       "description": "Pick an 'Encryption format' first; the fields below are that format's parameters.",
@@ -1083,7 +1141,7 @@
             }
           ],
           "default": "none",
-          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so with no upload target nothing is encrypted, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so it needs an upload provider, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload — needing a provider too — for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file and are XtraBackup-only. 'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
           "label": "Encryption format",
           "name": "encryption_format",
           "required": false,
@@ -1146,7 +1204,7 @@
         },
         {
           "default": false,
-          "description": "GPG-encrypt the backup as part of an upload. With no upload target nothing is encrypted and the task still succeeds. Mydumper and Binlog encrypt the backup where it is written, optionally by way of 'Encrypt using tmpdir'; XtraBackup encrypts a copy and leaves the backup on the host in plain text unless 'Encrypt after backup completes' is set too. Needs a GPG 'Encryption format' and a recipient.",
+          "description": "GPG-encrypt the backup as part of an upload, so it requires at least one upload provider. Mydumper and Binlog encrypt the backup where it is written, optionally by way of 'Encrypt using tmpdir'; XtraBackup encrypts a copy and leaves the backup on the host in plain text unless 'Encrypt after backup completes' is set too. Needs a GPG 'Encryption format' and a recipient.",
           "label": "Encrypt backup",
           "name": "encrypt",
           "required": false,
@@ -1171,12 +1229,13 @@
           ],
           "label": "Encrypt using tmpdir",
           "name": "encrypt_using_tmpdir",
+          "parent": "encrypt",
           "required": false,
           "type": "bool"
         },
         {
           "default": false,
-          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host; a Binlog backup encrypts only during an upload, so with no upload target nothing is encrypted.",
+          "description": "GPG-encrypt the finished backup once it completes. Independent of 'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. Needs a GPG 'Encryption format' and a recipient. Mydumper and XtraBackup encrypt on the host and need no upload target; a Binlog backup encrypts only during an upload, so it requires at least one upload provider.",
           "label": "Encrypt after backup completes",
           "name": "post_run_encrypt",
           "required": false,
@@ -1217,6 +1276,7 @@
       "title": "Encryption"
     },
     {
+      "advanced": true,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [

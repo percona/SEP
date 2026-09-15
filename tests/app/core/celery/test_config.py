@@ -16,6 +16,7 @@
 """Define tests for the app.core.celery.config module."""
 
 import pytest
+from celery import Celery
 from pydantic import ValidationError
 
 from app.core.celery.config import CeleryOptions, PoolEngineOptions
@@ -24,6 +25,8 @@ from app.core.config import Settings, YamlPrefixConfigSettingsSource
 _BROKER_URL = "redis://localhost:6379/0"
 _MASKED_BROKER_URL = "amqp://celery-user:****@rabbit:5672/vhost"
 _MASKED_RESULT_BACKEND = "redis://celery-user:****@redis:6379/0"
+_WORKER_CONCURRENCY = 4
+_ENV_WORKER_CONCURRENCY = 8
 
 
 def _beat_engine_options_for_shipped_profile(profile: str) -> PoolEngineOptions:
@@ -145,3 +148,48 @@ def test_credential_url_mask_rejected_on_env_path(
     monkeypatch.setenv(env_name, value)
     with pytest.raises(ValidationError, match=match):
         Settings(_env_file=None)
+
+
+def test_worker_concurrency_is_unset_by_default():
+    """Leave worker_concurrency unset so Celery keeps its per-CPU default."""
+    options = CeleryOptions(broker_url=_BROKER_URL)
+
+    assert options.worker_concurrency is None
+    assert Celery("test", **options.model_dump()).conf.worker_concurrency is None
+
+
+def test_worker_concurrency_reaches_celery_conf():
+    """Carry a declared worker_concurrency into the Celery config.
+
+    The declared-field assertion is what ties this to the typed field: an
+    undeclared extra of the same name also reaches ``conf``, so the value check
+    alone would pass without it.
+    """
+    assert "worker_concurrency" in CeleryOptions.model_fields
+    options = CeleryOptions(
+        broker_url=_BROKER_URL, worker_concurrency=_WORKER_CONCURRENCY
+    )
+
+    conf = Celery("test", **options.model_dump()).conf
+
+    assert conf.worker_concurrency == _WORKER_CONCURRENCY
+
+
+def test_worker_concurrency_coerces_env_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Coerce CELERY__WORKER_CONCURRENCY to the integer the prefork pool needs.
+
+    :param monkeypatch: Sets the environment variable for this test.
+    """
+    monkeypatch.setenv("CELERY__WORKER_CONCURRENCY", str(_ENV_WORKER_CONCURRENCY))
+
+    assert Settings(_env_file=None).CELERY.worker_concurrency == _ENV_WORKER_CONCURRENCY
+
+
+@pytest.mark.parametrize("value", [0, -1, "x", 2.5])
+def test_worker_concurrency_rejects_invalid_values(value: int | str | float) -> None:
+    """Reject non-positive, non-numeric and fractional concurrency values.
+
+    :param value: A concurrency value the field must refuse.
+    """
+    with pytest.raises(ValidationError):
+        CeleryOptions(broker_url=_BROKER_URL, worker_concurrency=value)
