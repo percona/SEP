@@ -65,7 +65,7 @@ async def resolve_restore_entities(
         lookup fails with a status other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
-        if form.service_id is None or not form.service_id.isdigit():
+        if form.service_id is None or not form.service_id.isdecimal():
             raise HTTPUnprocessableEntityException(
                 detail=(
                     "Destination Database Service must be an existing MySQL service "
