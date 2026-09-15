@@ -20,7 +20,6 @@ Imports ``app.inventory`` and the app framework's form DSL, so — unlike
 Alembic migration time; see that module's docstring for the split rationale.
 """
 
-from collections.abc import Sequence
 from enum import auto, IntEnum, StrEnum
 from typing import Annotated, Any, ClassVar, Literal, Self
 
@@ -39,6 +38,7 @@ from app.core.utils.fields import (
     NonEmptyStr,
     StrippedNonEmptyStr,
 )
+from app.core.utils.strings import join_or
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     Choices,
@@ -242,11 +242,7 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
-#: The mode-owned and encryption-format bool invariants: a truthy mode-owned bool
-#: outside its mode, or a GPG timing outside a GPG format, fails validation, as does
-#: a GPG format with no timing. Named rather than inlined so the backfill's lenient
-#: model can inherit these without the binary/compression rules below.
-MODE_AND_ENCRYPTION_FAIL_RULES: tuple[FailRule, ...] = (
+_BACKUP_BOOL_FAIL_RULES = (
     *(
         FailRule(
             fail_when=truthy(name) & (F("backup_type") != owner_mode),
@@ -279,22 +275,56 @@ MODE_AND_ENCRYPTION_FAIL_RULES: tuple[FailRule, ...] = (
     ),
 )
 
+# In-place GPG runs inside the upload provider loop, and a Binlog backup encrypts
+# nowhere else, so without a target those timings never run and the task reports a
+# GPG format over a plaintext backup. Mydumper and XtraBackup encrypt the finished
+# directory on the host, so their post-run timing needs no target.
+#
+# Scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``: under ``dual``
+# XtraBackup's own AES-256 pass runs whatever the timing says, so no plaintext
+# backup ships, and neither remedy the messages offer would make the GPG pass run
+# either — the upload path returns early once a key file is resolved.
+_FMT_IS_GPG_ONLY = _FMT == EncryptionFormat.GPG
 
-def _join_or(values: Sequence[str]) -> str:
-    """Return ``values`` as an English alternatives list.
+#: The pair of rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it
+#: so a test can assert the two tuples partition the strict model's rules.
+UPLOAD_REACHABILITY_FAIL_RULES = (
+    FailRule(
+        fail_when=all_(truthy("encrypt"), _FMT_IS_GPG_ONLY, falsy("upload")),
+        error_fields=["encrypt", "upload"],
+        message=(
+            "'encrypt' encrypts the backup in place as part of an upload, so it "
+            "requires at least one upload provider. Use 'post_run_encrypt' "
+            "(Mydumper and XtraBackup only) to encrypt on the host instead."
+        ),
+    ),
+    FailRule(
+        fail_when=all_(
+            truthy("post_run_encrypt"),
+            _FMT_IS_GPG_ONLY,
+            F("backup_type") == BackupType.BINLOG,
+            falsy("upload"),
+        ),
+        error_fields=["post_run_encrypt", "upload"],
+        message=(
+            "A Binlog backup encrypts only as part of an upload, so "
+            "'post_run_encrypt' requires at least one upload provider."
+        ),
+    ),
+)
 
-    :param values: The non-empty alternatives, in the order they should read.
-    :return: The alternatives joined with commas and a trailing ``or``.
-    """
-    if len(values) == 1:
-        return values[0]
-    return f"{', '.join(values[:-1])} or {values[-1]}"
+#: Every app-scoped rule except the upload-reachability pair, and no section rules
+#: at all, for the backfill's lenient subclass: a task saved in a shape the create
+#: form now rejects has to keep reconstructing, or it loses the stamp its Edit
+#: affordance needs to correct it. Shared the way :data:`BACKUP_DIR_UI` is, so the
+#: two cannot drift.
+LENIENT_BACKUP_FORM_RULES = FormRules(fail_when=_BACKUP_BOOL_FAIL_RULES)
 
 
 #: The per-binary algorithm lists as operator-facing help text, built off the matrix
 #: so the field's description cannot contradict the rule that rejects the pairing.
 _XTRABACKUP_BIN_COMPRESSION_HELP = "; ".join(
-    f"{binary} takes {_join_or([algorithm.value for algorithm in allowed])}"
+    f"{binary} takes {join_or([algorithm.value for algorithm in allowed])}"
     for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
 )
 
@@ -316,8 +346,6 @@ def _binary_compression_fail_rule(
     ]
     if not rejected:
         return None
-    # A blank field never reaches the payload, so the payload's default decides which
-    # binary runs — the default's rule has to match the blank spelling too.
     selected = F("xtrabackup_bin_cmd") == binary
     blank_note = ""
     if binary == XTRABACKUP_BIN_DEFAULT:
@@ -336,7 +364,7 @@ def _binary_compression_fail_rule(
         error_fields=["compression_algorithm"],
         message=(
             f"'compression_algorithm' must be "
-            f"{_join_or([algorithm.value for algorithm in allowed])} when the backup "
+            f"{join_or([algorithm.value for algorithm in allowed])} when the backup "
             f"binary is {binary.value!r}{blank_note}."
         ),
     )
@@ -457,15 +485,17 @@ class BackupCreate(TaskFormModel):
 
     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-        validation, as does a GPG format with no timing. Those are app-scoped, so
-        they surface only on submit. The binary/compression rules, which reject an
+        validation with a per-field message, as does a GPG format with no timing
+        and, for the pure ``gpg`` format only, a GPG timing no backup script
+        would reach without an upload target. Those are app-scoped, so they
+        surface only on submit. The binary/compression rules, which reject an
         XtraBackup compression algorithm the selected (or defaulted)
         ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning
         ``compression_algorithm``, so they also evaluate as the operator types.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=MODE_AND_ENCRYPTION_FAIL_RULES,
+        fail_when=(*_BACKUP_BOOL_FAIL_RULES, *UPLOAD_REACHABILITY_FAIL_RULES),
         # Section-scoped rather than app-scoped because ``useFailRules`` evaluates
         # section rules only. It renders the message as an alert at the head of the
         # section, not against the field: ``SectionRenderer`` takes the violation as
@@ -1006,8 +1036,10 @@ class BackupCreate(TaskFormModel):
             section="General",
             description=(
                 "Algorithm used when compression is enabled; the available choices "
-                "depend on the backup type. A Binlog backup always uses gzip unless "
-                "'Binlog compress command' replaces it."
+                "depend on the backup type and, for XtraBackup, on the selected "
+                f"backup binary — {_XTRABACKUP_BIN_COMPRESSION_HELP}. A Binlog "
+                "backup always uses gzip unless 'Binlog compress command' "
+                "replaces it."
             ),
         ),
     ] = None
@@ -1027,13 +1059,13 @@ class BackupCreate(TaskFormModel):
             section="Encryption",
             description=(
                 "Which encryption this task applies. 'GPG' needs a recipient and a "
-                "timing below: 'Encrypt backup' encrypts as part of an upload, so with "
-                "no upload target nothing is encrypted, while 'Encrypt after backup "
-                "completes' encrypts on the host for a Mydumper or XtraBackup backup "
-                "and during the upload for a Binlog one. 'AES-256' and 'AES-256 + GPG' "
-                "need a key file and are XtraBackup-only. 'AES-256 + GPG' selects "
-                "XtraBackup's built-in AES-256 and skips the GPG pass, which the "
-                "backend cannot apply on top of it."
+                "timing below: 'Encrypt backup' encrypts as part of an upload, so it "
+                "needs an upload provider, while 'Encrypt after backup completes' "
+                "encrypts on the host for a Mydumper or XtraBackup backup and during "
+                "the upload — needing a provider too — for a Binlog one. 'AES-256' "
+                "and 'AES-256 + GPG' need a key file and are XtraBackup-only. "
+                "'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the "
+                "GPG pass, which the backend cannot apply on top of it."
             ),
         ),
     ] = EncryptionFormat.NONE
@@ -1069,9 +1101,9 @@ class BackupCreate(TaskFormModel):
             label="Encrypt backup",
             section="Encryption",
             description=(
-                "GPG-encrypt the backup as part of an upload. With no upload target "
-                "nothing is encrypted and the task still succeeds. Mydumper and Binlog "
-                "encrypt the backup where it is written, optionally by way of 'Encrypt "
+                "GPG-encrypt the backup as part of an upload, so it requires at "
+                "least one upload provider. Mydumper and Binlog encrypt the backup "
+                "where it is written, optionally by way of 'Encrypt "
                 "using tmpdir'; XtraBackup encrypts a copy and leaves the backup on "
                 "the host in plain text unless 'Encrypt after backup completes' is set "
                 "too. Needs a GPG 'Encryption format' and a recipient."
@@ -1109,8 +1141,9 @@ class BackupCreate(TaskFormModel):
                 "GPG-encrypt the finished backup once it completes. Independent of "
                 "'Encrypt backup'; mutually exclusive with 'Encrypt using tmpdir'. "
                 "Needs a GPG 'Encryption format' and a recipient. Mydumper and "
-                "XtraBackup encrypt on the host; a Binlog backup encrypts only during "
-                "an upload, so with no upload target nothing is encrypted."
+                "XtraBackup encrypt on the host and need no upload target; a Binlog "
+                "backup encrypts only during an upload, so it requires at least one "
+                "upload provider."
             ),
         ),
     ] = False

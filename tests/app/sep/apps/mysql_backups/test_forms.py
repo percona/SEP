@@ -22,7 +22,6 @@ from pydantic import ValidationError
 
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import Choices, Ui
-from app.sep.apps.mysql_backups.form_backfill import LegacyBackupCreate
 from app.sep.apps.mysql_backups.forms import (
     _BINARY_COMPRESSION_FAIL_RULES,
     ALLOWED_COMPRESSIONS,
@@ -416,18 +415,3 @@ class TestXtrabackupBinaryCompressionMatrix:
                 rule.message and f"is {binary.value!r}" in rule.message
                 for rule in _BINARY_COMPRESSION_FAIL_RULES
             )
-
-    def test_lenient_backfill_model_drops_only_the_binary_rules(self):
-        """Pin the split the backfill model's leniency is carved out of.
-
-        Derived from both rule sets rather than restated: a rule appended straight
-        to :attr:`BackupCreate.__form_rules__` would otherwise never reach the
-        lenient model, silently, which is the failure the split exists to avoid.
-        """
-        strict = BackupCreate.__form_rules__
-        lenient = LegacyBackupCreate.__form_rules__
-
-        assert lenient.fail_when == strict.fail_when
-        assert set(strict.sections) == {"General"}
-        assert strict.sections["General"].fail_when == _BINARY_COMPRESSION_FAIL_RULES
-        assert not lenient.sections

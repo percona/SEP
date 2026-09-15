@@ -32,7 +32,7 @@ from app.sep.apps.mysql_backups.forms import (
     BACKUP_DIR_UI,
     BackupCreate,
     encryption_format_for_passes,
-    MODE_AND_ENCRYPTION_FAIL_RULES,
+    LENIENT_BACKUP_FORM_RULES,
     OWNER,
     UploadProvider,
 )
@@ -89,21 +89,27 @@ class LegacyBackupCreate(BackupCreate):
     and those tasks ran and reported success, so they are part of the population
     that has to reconstruct rather than be skipped.
 
-    The binary/compression rules are dropped for the same reason: a task saved
-    before the form gated compression on the backup binary can hold a pairing the
-    create model now rejects, and the operator needs the edit form to load in order
-    to correct it. The rejection stays on the create and update routes, so saving
-    the reopened form still fails until the algorithm matches the binary.
+    The upload-reachability rules are dropped for the same reason: a GPG timing no
+    backup script reaches without an upload target is exactly the shape the
+    create form rejects, and it is also the commonest shape among the tasks that
+    still need a stamp. Dropping the rules is not a downgrade risk — a stamp
+    re-saved at the schema default is still rejected by the timing-versus-format
+    rule and by ``xtrabackup_aes256_keyfile``'s own ``Forbidden``.
+
+    The binary/compression rules go with them, since the lenient bundle declares no
+    sections: a task saved before the form gated compression on the backup binary
+    can hold a pairing the create model now rejects, and the operator needs the edit
+    form to load in order to correct it. The rejection stays on the create and
+    update routes, so saving the reopened form still fails until the algorithm
+    matches the binary.
 
     :param backup_dir: The backup root directory; optional here and un-stripped,
         unlike on the create model.
-    :cvar __form_rules__: The create model's app-scoped rules, declared without the
-        section the binary/compression rules live in.
+    :cvar __form_rules__: The create model's rules minus the upload-reachability
+        pair and the binary/compression section.
     """
 
-    __form_rules__: ClassVar[FormRules] = FormRules(
-        fail_when=MODE_AND_ENCRYPTION_FAIL_RULES
-    )
+    __form_rules__: ClassVar[FormRules] = LENIENT_BACKUP_FORM_RULES
 
     backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 

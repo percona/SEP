@@ -23,6 +23,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
@@ -379,6 +380,28 @@ class TestCreateEndpoint:
                 },
                 id="tmpdir-and-post-run-together",
             ),
+            pytest.param(
+                {
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="in-place-gpg-without-an-upload-target",
+            ),
+            pytest.param(
+                {
+                    "backup_type": BackupType.BINLOG,
+                    "binlog_prefix": "bp",
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "post_run_encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="binlog-post-run-gpg-without-an-upload-target",
+            ),
         ],
     )
     def test_create_rejects_invalid_encryption_combo(
@@ -398,6 +421,39 @@ class TestCreateEndpoint:
             "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_names_the_upload_requirement_in_the_error_body(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Return a 422 whose detail says what to change.
+
+        The rule is app-scoped, and the SPA's rule engine evaluates section-scoped
+        rules only, so the message in this body is the whole of what reaches the
+        operator.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            encryption_format=EncryptionFormat.GPG.value,
+            encrypt=True,
+            encryption_recipient="ops@example.com",
+            upload=[],
+            s3_bucket=None,
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        messages = [error["msg"] for error in response.json()["detail"]]
+        assert any("requires at least one upload provider" in msg for msg in messages)
         mock_task_api_dep.post.assert_not_called()
 
     def test_create_rejects_missing_required_fields(

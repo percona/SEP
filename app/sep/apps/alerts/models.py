@@ -15,7 +15,6 @@
 
 """Define the alerts plugin's DB model, Pydantic helpers, and API request/response models."""
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -29,6 +28,7 @@ from app.core.utils.fields import (
     ARBITRARY_ARGS_SCHEMA,
     NonEmptyStr,
     StrippedNonEmptyStr,
+    UTCDatetime,
 )
 from app.sep.models import AlertServiceType as ServiceType
 
@@ -194,7 +194,7 @@ class BackupSummary(BaseModel):
     """
 
     id: int
-    created_at: datetime
+    created_at: UTCDatetime
     metadata: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
 
 
@@ -252,7 +252,7 @@ class BackupDetail(BaseModel):
     """
 
     id: int
-    created_at: datetime
+    created_at: UTCDatetime
     templates: list[BackupDetailTemplate]
     rules: list[BackupDetailRule]
     contact_points: list[BackupDetailContactPoint]
@@ -337,7 +337,7 @@ class IndexBackupSummary(BaseModel):
     """
 
     id: int
-    created_at: datetime
+    created_at: UTCDatetime
 
 
 class IndexResponse(BaseModel):

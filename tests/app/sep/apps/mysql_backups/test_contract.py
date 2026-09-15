@@ -400,7 +400,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         Exercises the gate over the wire rather than through ``model_validate``,
         which is the only way to see what the operator's client receives: the
         rules are app-model-level, so the 422 carries a whole-body ``loc`` and the
-        field binding comes from the schema's ``error_fields``, asserted above.
+        rejection is identified by its message rather than by a field path.
         """
         base = app_base_url(self.app_def)
         body = _valid_body(backup_type=BackupType.XTRABACKUP)
@@ -410,8 +410,11 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         response = contract_client.post(base, json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "compression_algorithm" in response.text
-        assert "innobackupex" in response.text
+        messages = [error["msg"] for error in response.json()["detail"]]
+        assert any(
+            "must be quicklz when the backup binary is 'innobackupex'" in message
+            for message in messages
+        ), messages
 
     def test_update_rejects_a_body_without_a_backup_directory(
         self, contract_client: Any

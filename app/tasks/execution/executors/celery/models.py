@@ -51,6 +51,19 @@ CELERY_CALLABLE_ALLOWED_PREFIX = "app."
 _RESERVED_META_KEYS = frozenset({"target"})
 
 
+def _check_allowed_callable(callable_path: str) -> None:
+    """Raise when a callable path is outside the allowed namespace.
+
+    :param callable_path: The dotted path to validate.
+    :raises ValueError: If the path is outside the allowed namespace.
+    """
+    if not callable_path.startswith(CELERY_CALLABLE_ALLOWED_PREFIX):
+        raise ValueError(
+            f"Callable '{callable_path}' is not in the allowed namespace "
+            f"'{CELERY_CALLABLE_ALLOWED_PREFIX}'"
+        )
+
+
 def _callable_failure_reason(task: Task, exc: Exception) -> str:
     """Compose the stored failure reason for a callable that raised.
 
@@ -197,8 +210,10 @@ class CeleryExecutor(BaseExecutor):
         :type kwargs: dict[str, Any] | None
         :return: The return value of the callable.
         :rtype: Any
+        :raises ValueError: If the callable is outside the allowed namespace.
         """
         callable_path = task.data["callable"]
+        _check_allowed_callable(callable_path)
         module_path, func_name = callable_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         func = getattr(module, func_name)
@@ -258,11 +273,7 @@ class CeleryExecutor(BaseExecutor):
         callable_path = job.get("callable")
         if not callable_path:
             raise ValueError("Job must contain a 'callable' key")
-        if not callable_path.startswith(CELERY_CALLABLE_ALLOWED_PREFIX):
-            raise ValueError(
-                f"Callable '{callable_path}' is not in the allowed namespace "
-                f"'{CELERY_CALLABLE_ALLOWED_PREFIX}'"
-            )
+        _check_allowed_callable(callable_path)
         try:
             module_path, func_name = callable_path.rsplit(".", 1)
             module = importlib.import_module(module_path)
