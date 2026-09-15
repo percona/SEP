@@ -164,7 +164,7 @@
 | app/sep/apps/alerts/restore.py                                                                                               |       95 |        0 |       26 |        0 |    100% |           |
 | app/sep/apps/alters/api\_routes.py                                                                                           |       38 |        3 |        0 |        0 |     92% |82, 140-145 |
 | app/sep/apps/alters/app.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       11 |     92% |98, 128-\>140, 134-\>133, 138-\>133, 141, 344, 411-412, 468, 551, 574-575, 695, 706, 708, 747-\>751 |
+| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       12 |     91% |98, 128-\>140, 134-\>133, 138-\>133, 141, 217-\>219, 344, 411-412, 468, 551, 574-575, 695, 706, 708, 747-\>751 |
 | app/sep/apps/alters/form\_backfill.py                                                                                        |       32 |        1 |       10 |        1 |     95% |       100 |
 | app/sep/apps/alters/models.py                                                                                                |       49 |        1 |        6 |        1 |     96% |       121 |
 | app/sep/apps/alters/schema.py                                                                                                |        7 |        0 |        0 |        0 |    100% |           |
@@ -281,7 +281,7 @@
 | app/sep/apps/mysql\_backups/restore/app.py                                                                                   |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/restore/deps.py                                                                                  |       93 |       10 |       24 |        4 |     88% |122, 130-131, 171-172, 176, 181, 184-185, 212 |
 | app/sep/apps/mysql\_backups/restore/form\_backfill.py                                                                        |       59 |        3 |       20 |        1 |     95% |135-136, 149 |
-| app/sep/apps/mysql\_backups/restore/models.py                                                                                |      197 |        2 |       42 |        3 |     98% |315-\>319, 961, 989 |
+| app/sep/apps/mysql\_backups/restore/models.py                                                                                |      197 |        2 |       42 |        3 |     98% |316-\>320, 975, 1003 |
 | app/sep/apps/mysql\_backups/restore/spec.py                                                                                  |       35 |        1 |        8 |        1 |     95% |       121 |
 | app/sep/apps/mysql\_backups/restore/views.py                                                                                 |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/spec.py                                                                                          |       32 |        1 |       10 |        1 |     95% |       135 |
@@ -480,7 +480,7 @@
 | app/tasks/routes.py                                                                                                          |      244 |       14 |       48 |        4 |     94% |154-158, 243-\>247, 280, 330-339, 346, 459, 502, 517, 677, 691, 696, 723, 726-\>728 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30103** | **1710** | **7390** |  **659** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30103** | **1710** | **7390** |  **660** | **93%** |           |
 
 
 ## Setup coverage badge
