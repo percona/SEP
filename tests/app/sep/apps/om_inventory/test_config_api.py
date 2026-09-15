@@ -30,6 +30,8 @@ asserts it is refused, because the difference between "not hot" and "not yet hot
 invisible in the field list.
 """
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import FastAPI, status
 from httpx import AsyncClient
@@ -55,7 +57,7 @@ DEFAULTS = OmInventorySettings()
 
 
 @pytest.fixture(autouse=True)
-def _reset_proxy_snapshot() -> None:
+def _reset_proxy_snapshot() -> Iterator[None]:
     """Drop any snapshot a test published, so the next test starts from YAML.
 
     The proxy is a module singleton shared across the whole session; a test that

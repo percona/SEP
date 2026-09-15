@@ -211,6 +211,8 @@ async def _wait_for_terminal(tasks_api: RemoteAPI, task_history_id: int) -> str:
         await asyncio.sleep(om_inventory_settings.POLL_INTERVAL)
         waited += om_inventory_settings.POLL_INTERVAL
         history = await tasks_api.get(f"/history/{task_history_id}")
+        if not isinstance(history, dict):
+            continue
         status = history["status"]
         if status not in (
             TaskHistoryStatusEnum.PENDING.value,
@@ -254,7 +256,7 @@ async def _release(tasks_api: RemoteAPI, task_history_id: int) -> str | None:
         # the log stream of a run that already finished is a failure of collection,
         # not of the run. Stopping a terminal item answers 400, and reporting that as
         # "could not be released" would raise an alarm about a queue that is clean.
-        if history["status"] not in (
+        if isinstance(history, dict) and history["status"] not in (
             TaskHistoryStatusEnum.PENDING.value,
             TaskHistoryStatusEnum.RUNNING.value,
         ):

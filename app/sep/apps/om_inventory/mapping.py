@@ -111,6 +111,10 @@ async def get_executor_states(tasks_api: RemoteAPI) -> dict[str, ExecutorState]:
     :return: The executor hosts keyed by name.
     """
     entries = await tasks_api.get("/hosts/states/")
+    if not isinstance(entries, list):
+        raise TypeError(
+            f"/hosts/states/ answered {type(entries).__name__}, not a list of hosts"
+        )
     states: dict[str, ExecutorState] = {}
     for entry in entries:
         state = ExecutorState(
