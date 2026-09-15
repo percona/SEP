@@ -530,12 +530,16 @@ async def test_request_debug_log_redacts_authorization_header(
 
 @pytest.mark.asyncio
 async def test_request_debug_log_redacts_url_credentials(caplog):
-    """The request debug log masks a password embedded in the endpoint URL."""
+    """The request debug log masks a password embedded in the endpoint URL.
+
+    The mock carries no userinfo because the session is built from the
+    credential-free URL, which is what the request is matched against.
+    """
     password = "hunter2"
     api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
     with aioresponses() as m:
         m.get(
-            "http://user:hunter2@localhost:8000/ping",
+            "http://localhost:8000/ping",
             status=status.HTTP_200_OK,
             payload={},
         )
@@ -549,12 +553,16 @@ async def test_request_debug_log_redacts_url_credentials(caplog):
 
 @pytest.mark.asyncio
 async def test_response_debug_log_redacts_url_credentials(caplog):
-    """The response debug log masks a password embedded in the endpoint URL."""
+    """The response debug log masks a password embedded in the endpoint URL.
+
+    The mock carries no userinfo because the session is built from the
+    credential-free URL, which is what the request is matched against.
+    """
     password = "hunter2"
     api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
     with aioresponses() as m:
         m.get(
-            "http://user:hunter2@localhost:8000/ping",
+            "http://localhost:8000/ping",
             status=status.HTTP_200_OK,
             payload={"ok": True},
         )
