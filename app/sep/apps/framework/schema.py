@@ -1646,25 +1646,36 @@ class AppEntitySchema(SchemaBaseModel):
 
 
 class TaskStatusDescriptor(SchemaBaseModel):
-    """Declare one task-status value and whether it ends a run.
+    """Declare one task-status value and its run terminality/output predicates.
 
     :param value: The status as it appears on a task-history payload.
     :param terminal: Whether a run in this status will not transition again, so
         a client polling for completion can stop re-reading on it.
+    :param output_available: Whether the run reached an observed outcome, so its
+        output may be requested and may legitimately be empty, as for ``stale``
+        and ``unlaunchable``. ``lost`` is excluded because its outcome was never
+        observed.
     """
 
     value: TaskHistoryStatusEnum
     terminal: bool
+    output_available: bool
 
 
 def _task_status_descriptors() -> list[TaskStatusDescriptor]:
     """Return the task-status vocabulary in enum declaration order.
 
     :return: One descriptor per :class:`TaskHistoryStatusEnum` member, each
-        classified by :meth:`TaskHistoryStatusEnum.is_terminal`.
+        classified by :meth:`TaskHistoryStatusEnum.is_terminal` and
+        :meth:`TaskHistoryStatusEnum.is_finished` (the observed-outcome
+        predicate backing ``output_available``).
     """
     return [
-        TaskStatusDescriptor(value=status, terminal=status.is_terminal())
+        TaskStatusDescriptor(
+            value=status,
+            terminal=status.is_terminal(),
+            output_available=status.is_finished(),
+        )
         for status in TaskHistoryStatusEnum
     ]
 
@@ -1728,9 +1739,10 @@ class AppSchema(SchemaBaseModel):
         surfaces as sibling tabs (for example a restore app nested under a
         backups parent). Defaults to ``None``.
     :param task_statuses: The task-status vocabulary a client polls against,
-        declaring per status value whether it ends a run. Server-authored, so a
-        supplied value is replaced rather than honoured. Withheld (``None``) for
-        a plugin declaring ``entities``, whose records are not task runs.
+        declaring per status value both run terminality and whether output
+        retrieval is meaningful. Server-authored, so a supplied value is
+        replaced rather than honoured. Withheld (``None``) for a plugin
+        declaring ``entities``, whose records are not task runs.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
