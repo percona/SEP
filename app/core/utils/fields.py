@@ -635,9 +635,13 @@ def _netloc_host(netloc: str) -> str:
 def credential_url_password(url: str) -> str | None:
     """Return the embedded userinfo password, or ``None`` when there is none.
 
-    The single reader of a URL's credential segment: the at-rest walker, the
-    side-car's mint preflight and :func:`redact_credential_url` all resolve
-    "which characters are the password" here rather than each parsing their own.
+    The shared resolver for callers that inspect or transform the password in
+    isolation: the at-rest walker, the side-car's mint preflight,
+    :func:`redact_credential_url` and the mask-rejecting validator all settle
+    "which characters are the password" here rather than each parsing their
+    own. :func:`preserve_credential_url_password` is the deliberate exception —
+    it compares every other URL component in the same pass, so it keeps the
+    whole parse rather than only the password.
 
     An empty password (``https://user:@host/``) collapses to ``None``: it is
     absence, not a credential, so a caller transforming the segment cannot
@@ -653,8 +657,10 @@ def credential_url_password(url: str) -> str | None:
     :param url: The URL string to inspect.
     :return: The raw (still percent-encoded) password segment, or ``None`` when
         the URL carries none.
-    :raises ValueError: If ``url`` cannot be parsed, which a malformed
-        bracketed IPv6 literal is the only shape to cause.
+    :raises ValueError: If ``url`` cannot be parsed. A malformed bracketed
+        IPv6 literal is one such shape, and a netloc whose characters decompose
+        into a URL delimiter under NFKC normalisation is another — the contract
+        is the parse failure itself, not either shape.
     """
     return urlparse(url).password or None
 
@@ -822,7 +828,7 @@ def _reject_credential_url_mask(value: Any, info: ValidationInfo) -> Any:
     :raises ValueError: When the parsed userinfo password equals
         :data:`CREDENTIAL_URL_MASK`.
     """
-    if urlparse(str(value)).password == CREDENTIAL_URL_MASK:
+    if credential_url_password(str(value)) == CREDENTIAL_URL_MASK:
         field = info.field_name or "value"
         raise ValueError(
             f"{field} carries the redacted display value in its password "

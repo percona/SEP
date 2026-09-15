@@ -61,7 +61,7 @@ __all__ = [
 import logging
 import typing
 from collections.abc import Callable, Collection, Mapping
-from enum import auto, Enum
+from enum import Enum
 from types import UnionType
 from typing import Any, TYPE_CHECKING, Union
 
@@ -318,16 +318,10 @@ class _LeafKind(Enum):
     transformed. A ``CREDENTIAL_URL`` leaf merely embeds one in its userinfo
     segment, so only that password is, leaving the endpoint readable in a raw
     database dump.
-
-    Members are :func:`~enum.auto` rather than strings because this is an
-    in-memory discriminator that nothing persists or logs; giving it values
-    would publish a contract no reader has.
     """
 
-    # enum-kwargs-exempt: private, never serialized — not a column type.
-    PYDANTIC_SECRET = auto()
-    # enum-kwargs-exempt: private, never serialized — not a column type.
-    CREDENTIAL_URL = auto()
+    PYDANTIC_SECRET = "pydantic_secret"  # noqa: S105 # nosec B105
+    CREDENTIAL_URL = "credential_url"
 
 
 #: Every leaf kind, which the read and write paths must both cover.

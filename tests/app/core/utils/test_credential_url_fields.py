@@ -316,10 +316,21 @@ class TestCredentialUrlPassword:
         ``None`` and the exception mean opposite things to a caller that masks:
         ``None`` licenses returning the input untouched, which for an
         unparseable credential URL would emit the password in the clear. A
-        malformed bracketed IPv6 literal is the only shape that raises.
+        malformed bracketed IPv6 literal is one shape that raises; a netloc
+        NFKC-normalising into a URL delimiter is another.
         """
         with pytest.raises(ValueError, match="Invalid IPv6 URL"):
             credential_url_password("https://user:pw@[bad:ipv6/")
+
+    def test_a_netloc_rejected_under_nfkc_raises_too(self) -> None:
+        """Cover the second parse failure the contract names.
+
+        A full-width colon decomposes into the port delimiter under NFKC
+        normalisation, so the parse refuses the netloc rather than guessing
+        where the password ends.
+        """
+        with pytest.raises(ValueError, match="NFKC"):
+            credential_url_password("https://user:pw@ho\uff1ast/")
 
     def test_a_plain_url_never_raises(self) -> None:
         """Confirm the raise above is specific, not a blanket parse failure."""
