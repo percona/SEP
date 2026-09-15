@@ -37,6 +37,7 @@ from app.api.deps import (
 )
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import is_encrypted
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
@@ -55,12 +56,17 @@ from app.tasks.execution.executors.nomad.steps import (
     RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution_request_secrets import (
+    ENCRYPTED_META_KEYS,
+    PAYLOAD_LEAF,
+)
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
     LogCaptureStatusEnum,
+    MAX_FAILURE_REASON_LENGTH,
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
@@ -71,9 +77,23 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import build_task_history, TaskFactory
-from tests.app.tasks.conftest import HOOK_PATH_FIELDS, REJECTED_HOOK_PATHS
+from tests.app.tasks.conftest import (
+    HOOK_PATH_FIELDS,
+    overwrite_execution_request,
+    REJECTED_HOOK_PATHS,
+    stored_execution_request,
+    undecryptable_document,
+)
 
 MOCK_FILE_SIZE = 1024
+# Derived rather than spelled out: ``_chain_on_failure`` chains on any terminal
+# status but SUCCESS, so a literal list silently stops covering the policy the
+# moment a terminal status is added.
+NON_SUCCESS_TERMINAL_STATUSES = sorted(
+    status
+    for status in TaskHistoryStatusEnum
+    if status.is_terminal() and status is not TaskHistoryStatusEnum.SUCCESS
+)
 PAGINATION_TASK_COUNT = 3
 PARENT_FILTER_TASK_COUNT = 3
 SEARCH_MATCH_TOTAL = 2
@@ -398,6 +418,132 @@ async def test_list_task_history(test_client, created_task_with_history):
     assert data["limit"] == DEFAULT_PAGINATION_LIMIT
     assert len(data["items"]) == 1
     assert data["items"][0]["id"] == created_task_with_history.id
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_reports_null_failure_reason(
+    test_client, created_task_with_history
+):
+    """Assert a row with no recorded reason serializes the key as null, not absent.
+
+    A consumer has to distinguish "no reason recorded" from a missing field, so
+    the key is always present.
+    """
+    response = test_client.get("/history/")
+    assert response.status_code == status.HTTP_200_OK
+    item = response.json()["items"][0]
+    assert "failure_reason" in item
+    assert item["failure_reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_task_history_serializes_a_recorded_failure_reason(
+    test_client, session, created_task_with_history
+):
+    """Assert a recorded reason reaches both the list and retrieve payloads."""
+    created_task_with_history.set_failure_reason("Step 'run-script' failed.")
+    await TaskHistoryManager.save(session, created_task_with_history)
+
+    listed = test_client.get("/history/")
+    retrieved = test_client.get(f"/history/{created_task_with_history.id}")
+
+    assert listed.status_code == status.HTTP_200_OK
+    assert retrieved.status_code == status.HTTP_200_OK
+    assert listed.json()["items"][0]["failure_reason"] == "Step 'run-script' failed."
+    assert retrieved.json()["failure_reason"] == "Step 'run-script' failed."
+
+
+@pytest.mark.asyncio
+async def test_create_task_history_normalizes_failure_reason(
+    test_client, created_task_with_history
+):
+    """Assert a caller-supplied reason is collapsed to one line and bounded.
+
+    The create route takes the ``TaskHistory`` table model as its body, so the
+    field is settable over HTTP; the bound is a property of the column, not just
+    of the reasons SEP composes. Driven as a real request because only an actual
+    POST delivers the body to the handler the way FastAPI does.
+
+    The posted row carries ``failed`` so the fixture models a pair SEP's own
+    writers can produce.
+    """
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+            "status": "failed",
+            "failure_reason": "line one\n  line   two " + ("x" * 900),
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    reason = response.json()["failure_reason"]
+    assert "\n" not in reason
+    assert reason.startswith("line one line two ")
+    assert len(reason) == MAX_FAILURE_REASON_LENGTH
+
+
+@pytest.mark.parametrize(
+    "task_status",
+    [
+        task_status
+        for task_status in TaskHistoryStatusEnum
+        if task_status.operator_summary() is None
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_task_history_rejects_failure_reason_without_summary(
+    test_client, created_task_with_history, task_status
+):
+    """Assert a reason conflicts with a status carrying no operator summary."""
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+            "status": task_status.value,
+            "failure_reason": "Task execution failed.",
+        },
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    error = response.json()["detail"][0]
+    assert "failure_reason" in error["loc"]
+    assert "status" in error["msg"]
+
+
+@pytest.mark.asyncio
+async def test_create_task_history_returns_a_serializable_row(
+    test_client, created_task_with_history
+):
+    """Assert the create response carries the joined task and execution request.
+
+    ``save`` re-defers ``execution_request``, so returning its result directly
+    made the response model attempt lazy IO from the async context.
+    """
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+        },
+    )
+
+    assert response.status_code == status.HTTP_201_CREATED
+    body = response.json()
+    assert body["task"]["name"] == created_task_with_history.task.name
+    assert body["execution_request"]["target"] == "node-1"
+    assert body["failure_reason"] is None
 
 
 @pytest.mark.asyncio
@@ -1353,15 +1499,7 @@ class TestSyncTaskHistoryChainDispatch:
         assert args[0] == chain_target.name
         assert args[2] == []
 
-    @pytest.mark.parametrize(
-        "terminal_status",
-        [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.LOST,
-            TaskHistoryStatusEnum.STALE,
-        ],
-    )
+    @pytest.mark.parametrize("terminal_status", NON_SUCCESS_TERMINAL_STATUSES)
     async def test_dispatches_chain_on_failure_with_flag(
         self,
         test_client,
@@ -3365,3 +3503,237 @@ async def test_sync_route_reports_log_capture(
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["log_capture"] == LogCaptureStatusEnum.COMPLETE
+
+
+class TestExecutionRequestEncryptionOverHTTP:
+    """Cover every route carrying ``TaskHistoryResponse`` end to end.
+
+    The route signatures are unchanged, so no unit test reaches what these do:
+    each read route serialises the changed response model, and each write route
+    drives the column type's encryption through a real body, database round trip
+    and reload rather than through a direct call.
+    """
+
+    _ARGS = "restore --password hunter2"
+    _CONFIG = "master_password: hunter2\n"
+    _PAYLOAD = "secret document"
+
+    @classmethod
+    async def _seed(cls, session, *, name: str) -> TaskHistory:
+        """Persist a task and one history row carrying every protected leaf.
+
+        :param session: The session to persist through.
+        :param name: The parent task's name.
+        :return: The saved history row.
+        """
+        task = await TaskManager.create(
+            session, TaskWrite.model_validate(TaskFactory.build(name=name))
+        )
+        return await TaskHistoryManager.save(
+            session,
+            TaskHistory(
+                task_id=task.id,
+                status=TaskHistoryStatusEnum.SUCCESS,
+                execution_request=TaskExecutionRequest(
+                    task=task.name,
+                    target="node-1",
+                    meta={
+                        "target": "node-1",
+                        "args": cls._ARGS,
+                        "config": cls._CONFIG,
+                    },
+                    payload=cls._PAYLOAD,
+                ),
+                executed_by="test-user",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_list_route_reports_and_redacts_an_unreadable_row(
+        self, test_client, session
+    ):
+        """Assert ``GET /history/`` names the leaf and serialises it as ``null``."""
+        history = await self._seed(session, name="crypto-list")
+        await overwrite_execution_request(
+            session, history.id, undecryptable_document("crypto-list")
+        )
+
+        response = test_client.get("/history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["unreadable_request_leaves"] == [PAYLOAD_LEAF]
+        assert item["execution_request"]["payload"] is None
+
+    @pytest.mark.asyncio
+    async def test_by_task_name_route_reports_and_redacts_an_unreadable_row(
+        self, test_client, session
+    ):
+        """Assert ``GET /{task}/history/`` reports the same indicator."""
+        history = await self._seed(session, name="crypto-by-name")
+        await overwrite_execution_request(
+            session, history.id, undecryptable_document("crypto-by-name")
+        )
+
+        response = test_client.get("/crypto-by-name/history/")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["unreadable_request_leaves"] == [PAYLOAD_LEAF]
+        assert item["execution_request"]["payload"] is None
+
+    @pytest.mark.asyncio
+    async def test_retrieve_route_reports_and_redacts_an_unreadable_row(
+        self, test_client, session
+    ):
+        """Assert ``GET /history/{id}`` reports the same indicator."""
+        history = await self._seed(session, name="crypto-retrieve")
+        await overwrite_execution_request(
+            session, history.id, undecryptable_document("crypto-retrieve")
+        )
+
+        response = test_client.get(f"/history/{history.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["unreadable_request_leaves"] == [PAYLOAD_LEAF]
+        assert body["execution_request"]["payload"] is None
+
+    @pytest.mark.asyncio
+    async def test_read_route_reports_no_leaves_for_a_readable_row(
+        self, test_client, session
+    ):
+        """Assert an ordinary row still serialises its request in full."""
+        history = await self._seed(session, name="crypto-readable")
+
+        response = test_client.get(f"/history/{history.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["unreadable_request_leaves"] == []
+        assert body["execution_request"]["payload"] == self._PAYLOAD
+        assert body["execution_request"]["meta"]["args"] == self._ARGS
+        assert body["execution_request"]["meta"]["config"] == self._CONFIG
+
+    @pytest.mark.asyncio
+    async def test_create_route_stores_the_submitted_leaves_encrypted(
+        self, test_client, session, created_task_with_history
+    ):
+        """Assert ``POST /history/`` encrypts at rest and answers in plaintext."""
+        response = test_client.post(
+            "/history/",
+            json={
+                "task_id": created_task_with_history.task.id,
+                "execution_request": {
+                    "task": created_task_with_history.task.name,
+                    "target": "node-1",
+                    "meta": {"args": self._ARGS, "config": self._CONFIG},
+                    "payload": self._PAYLOAD,
+                },
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["execution_request"]["meta"]["args"] == self._ARGS
+        assert body["execution_request"]["meta"]["config"] == self._CONFIG
+        assert body["execution_request"]["payload"] == self._PAYLOAD
+        stored = await stored_execution_request(session, body["id"])
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+        serialised = json_lib.dumps(stored)
+        assert "hunter2" not in serialised
+        assert created_task_with_history.task.name in serialised
+
+    @pytest.mark.asyncio
+    async def test_execute_route_stores_the_submitted_leaves_encrypted(
+        self, test_client, session, mocker
+    ):
+        """Assert ``POST /execute/{task_name}`` encrypts what the caller submitted.
+
+        :param mocker: The patching fixture standing in for the executor edge.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="crypto-execute", anonymize_mask=0)
+            ),
+        )
+
+        async def fake_dispatch_queue_item(queue_item, passed_session):
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            return await TaskHistoryManager.save(
+                passed_session,
+                queue_item,
+                flag_modified_fields=["execution_request"],
+            )
+
+        fake_executor = MagicMock(spec=BaseExecutor)
+        fake_executor.get_hosts.return_value = {"node-1": "10.0.0.1"}
+        mocker.patch(
+            "app.tasks.routes.get_executor_for_task", return_value=fake_executor
+        )
+        mocker.patch(
+            "app.tasks.routes.dispatch_queue_item",
+            side_effect=fake_dispatch_queue_item,
+        )
+
+        response = test_client.post(
+            f"/execute/{task.name}",
+            json={"meta_target": "node-1", "meta_args": self._ARGS},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["execution_request"]["meta"]["args"] == self._ARGS
+        stored = await stored_execution_request(session, body["id"])
+        assert is_encrypted(stored["meta"]["args"])
+
+    @pytest.mark.asyncio
+    async def test_stop_route_keeps_the_response_shape(
+        self, test_client, session, mock_executor
+    ):
+        """Assert ``POST /history/{id}/stop/`` still answers with a full row."""
+        history = await self._seed(session, name="crypto-stop")
+        history.status = TaskHistoryStatusEnum.RUNNING
+        await TaskHistoryManager.save(session, history)
+        mock_executor.stop_task.return_value = history
+
+        response = test_client.post(f"/history/{history.id}/stop/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["unreadable_request_leaves"] == []
+        assert body["execution_request"]["payload"] == self._PAYLOAD
+
+    @pytest.mark.asyncio
+    async def test_sync_route_preserves_an_unreadable_leaf_on_save_back(
+        self, test_client, session, mock_executor
+    ):
+        """Assert the save-back writes a marked leaf byte-identically.
+
+        The sync path re-saves a row it loaded, so without the write-path guard
+        this is where the only copy of an unreadable token would be destroyed.
+        """
+        history = await self._seed(session, name="crypto-sync")
+        document = undecryptable_document("crypto-sync", args=self._ARGS)
+        await overwrite_execution_request(session, history.id, document)
+        await TaskHistoryManager.update_where(
+            session, {"status": TaskHistoryStatusEnum.RUNNING}, id=history.id
+        )
+
+        async def fake_sync(item, writer_session=None):
+            item.status = TaskHistoryStatusEnum.SUCCESS
+            item.finished_at = utc_now()
+            return item
+
+        mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+
+        response = test_client.post(f"/history/{history.id}/sync/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["unreadable_request_leaves"] == [PAYLOAD_LEAF]
+        stored = await stored_execution_request(session, history.id)
+        assert stored["payload"] == document["payload"]
+        assert is_encrypted(stored["meta"]["args"])

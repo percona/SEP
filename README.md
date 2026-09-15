@@ -144,6 +144,8 @@ These are some, but not all, the possible settings you can have, per app:
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
+| TASKS__NOMAD__API_KEY      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__NOMAD__AUTH_SCHEME  | tasks     | no       | Bearer                                              | Bearer                                           |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                              |
 | TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
@@ -174,6 +176,13 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
 | SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
+
+`TASKS__NOMAD__API_KEY` is sent on every Nomad request as
+`Authorization: <TASKS__NOMAD__AUTH_SCHEME> <TASKS__NOMAD__API_KEY>`, and takes
+precedence over a `user:password` embedded in `TASKS__NOMAD__ENDPOINT`: while a
+key is set the endpoint's userinfo is stripped, since both HTTP clients would
+otherwise derive basic auth from it and override the header. Leave the key unset
+to keep authenticating with the endpoint's own userinfo, if it carries any.
 
 The active authentication provider is configured under `AUTH__PROVIDER__<NAME>__*`,
 and **exactly one** provider may be configured. Casdoor is the built-in default,
@@ -334,19 +343,71 @@ You can create a basic .env file template by running the following command in th
 echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVIDER__CASDOOR__CLIENT_SECRET=YOUR_CASDOOR_CLIENT_SECRET\n" > .env
 ```
 
+#### `ENCRYPTION_KEY`
+
+`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Secret-typed
+settings-override values are encrypted with it at rest, and **every
+environment needs its own, local development included**: SEP refuses to start
+without one, and so do the Celery workers, the Alembic migrations, and the
+OpenAPI dump. It has no default, is never derived from
+`SECRET_KEY`, and no value ships in the repository: the values it protects are
+real third-party credentials, so a shared key would protect nothing from anyone
+who can read the source.
+
+Mint one and add it as `ENCRYPTION_KEY=<key>` to **the file `ENV_FILE` names**:
+
+```shell
+make -s encryption-key
+```
+
+That is `.env` by default, but not always: `ENV_FILE` is read from the process
+environment — exported in your shell, set by `direnv`, or passed by your
+container runtime — and it redirects the loader to a different file, whose keys
+replace `.env`'s rather than adding to them. Setting `ENV_FILE` *inside* `.env`
+does nothing: it is resolved before the dotenv source is configured. So on a
+checkout that exports `ENV_FILE=.env.local`, appending to `.env` succeeds and
+changes nothing the application sees. If you are unsure which file is in play,
+start the app and read the error: it names the exact path it looked in.
+
+`openssl rand -base64 32` works too. Note that `openssl rand -hex 32` — the
+generator `SECRET_KEY` uses — does **not** produce a valid key.
+
+A deployment supplies the same value as an environment variable or as a file
+named `ENCRYPTION_KEY` under `SECRETS_DIR`.
+
+**Keep the value stable.** Ciphertext outlives the process that wrote it, so
+rotating or losing the key makes every already-encrypted row permanently
+unreadable. There is no recovery path and no rotation tooling. An override SEP
+cannot decrypt is logged and skipped, and the setting falls back to its
+YAML/env value — the deployment keeps starting, but the stored credential is
+gone.
+
+The test suite needs no action — it mints its own key per run.
+
 #### Supplying a setting as a mounted file
 
 Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
 which keeps the value out of the process environment. Name the file after the canonical
 `__`-nested variable the setting already uses — `SECRET_KEY`,
-`SEP__DATABASE__PASSWORD`, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put
-the value in its contents. `/run/secrets` is the conventional mount point:
+`DATABASE__PASSWORD`, `SEP__DATABASE__PASSWORD`,
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put the value in its contents.
+`/run/secrets` is the conventional mount point:
 
 ```shell
 mkdir -p /run/secrets
 openssl rand -hex 32 > /run/secrets/SECRET_KEY
 SECRETS_DIR=/run/secrets uvicorn app.main:app
 ```
+
+An unprefixed global name such as `DATABASE__PASSWORD` resolves for every prefixed
+settings class that reads the same destination — one mounted file reaches SEP,
+Inventory, and Tasks when all three share one database. A per-service spelling such
+as `SEP__DATABASE__PASSWORD` overrides the global one for that service only; when
+both are present in the same source, the more specific name wins regardless of
+ordering. Across sources the usual priority still applies, so an environment
+variable outranks a file whichever spelling each uses. A name spelled
+with another class's prefix — `INVENTORY__DATABASE__PASSWORD` read by
+`SEPSettings`, say — stays invisible to that class.
 
 Surrounding whitespace is stripped, so a trailing newline is fine. A file only applies
 when nothing higher in the priority list supplies the same setting: an environment
@@ -392,7 +453,7 @@ SEP supports multiple database engines for different components. Each component 
 ```yaml
 SEP:
   DATABASE:
-    ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
+    ENGINE: sqlite  # Database engine: sqlite, postgresql
     USER: null
     PASSWORD: null
     HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
@@ -418,18 +479,6 @@ TASKS:
     NAME: tasks.db
 ```
 
-#### MySQL/MariaDB Configuration
-```yaml
-SEP:
-  DATABASE:
-    ENGINE: mysql
-    USER: sep_user
-    PASSWORD: your_secure_password
-    HOST: localhost
-    PORT: 3306
-    NAME: sep_database
-```
-
 #### PostgreSQL Configuration
 ```yaml
 SEP:
@@ -444,7 +493,6 @@ SEP:
 
 Supported database engines:
 - `sqlite`: SQLite database (default for development)
-- `mysql`: MySQL/MariaDB database
 - `postgresql`: PostgreSQL database
 
 > [!NOTE]

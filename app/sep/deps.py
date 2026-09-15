@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, overload
 
 import aiohttp
 from fastapi import Depends, HTTPException, Request
@@ -31,7 +31,11 @@ from app.api.deps import oauth2_scheme
 from app.core.auth import config as auth_config
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
-from app.core.auth.models import OAuthToken, SessionExchangeTokenResponse
+from app.core.auth.models import (
+    BaseUser,
+    OAuthToken,
+    SessionExchangeTokenResponse,
+)
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -40,7 +44,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import fetch_all_dict_items
-from app.core.requests import RemoteAPI
+from app.core.requests import as_json_object, RemoteAPI
 from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
@@ -86,13 +90,17 @@ def get_base_url(request: Request) -> URL:
 
 async def get_current_user(
     request: Request,
-) -> User:
+) -> BaseUser:
     """Return the authenticated user from the ``Authorization: Bearer`` header.
 
     The header is checked explicitly before delegating to ``oauth2_scheme``:
     that scheme carries ``auto_error=True`` and would raise a bare Starlette
     ``HTTPException`` for a header-less request, bypassing SEP's project
     exceptions.
+
+    The request travels on with the token, so a credential something else on the
+    same request already authenticated is served from that resolution rather than
+    authenticated again.
 
     :param request: The incoming HTTP request.
     :return: The authenticated user.
@@ -103,11 +111,11 @@ async def get_current_user(
     if not is_bearer_authenticated(request):
         raise HTTPUnauthorizedException
     bearer_token = await oauth2_scheme(request)
-    return await get_current_user_api(bearer_token)
+    return await get_current_user_api(request, bearer_token)
 
 
 IsApiAuthenticated = Depends(get_current_user)
-ApiCurrentUser = Annotated[User, IsApiAuthenticated]
+ApiCurrentUser = Annotated[BaseUser, IsApiAuthenticated]
 
 
 BEARER_REQUIRED_DETAIL = "Bearer authentication required for state-changing requests."
@@ -142,7 +150,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
 RequireBearerForUnsafeMethods = Depends(require_bearer_for_unsafe_methods)
 
 
-async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
+async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> BaseUser:
     """Return the authenticated API admin user.
 
     :param api_user: The current API-authenticated user.
@@ -157,7 +165,23 @@ async def get_api_authenticated_admin(api_user: ApiCurrentUser) -> User:
 
 
 IsApiAdmin = Depends(get_api_authenticated_admin)
-ApiAdminUser = Annotated[User, IsApiAdmin]
+ApiAdminUser = Annotated[BaseUser, IsApiAdmin]
+
+
+async def get_api_admin_username(admin: ApiAdminUser) -> str:
+    """Get the authenticated API admin's username.
+
+    The settings router records it as the actor on each override row it writes.
+    It takes the username rather than the id because the id is a UUID a consumer
+    would have to resolve back through the auth provider to render.
+
+    :param admin: The current authenticated API admin.
+    :return: The admin's username.
+    """
+    return admin.username
+
+
+ApiAdminUsername = Annotated[str, Depends(get_api_admin_username)]
 
 
 def _ambient_session_provider() -> BaseAuthProvider | None:
@@ -379,14 +403,18 @@ def render_footer_text() -> str:
     )
 
 
-async def get_inventory_client(request: Request) -> RemoteAPI:
+async def get_inventory_client(request: Request) -> AsyncGenerator[RemoteAPI]:
     """Construct a ``RemoteAPI`` instance for interacting with the Inventory API.
+
+    The client is held for the whole request, so a hot endpoint override that
+    retires it mid-response leaves this request's client open until the response
+    has been sent.
 
     :param request: The HTTP request object.
     :return: An instance of ``RemoteAPI`` configured for the Inventory service,
         including the endpoint, API key, and SSL settings.
     """
-    return getattr(
+    client = getattr(
         request.app.state, "inventory_api", None
     ) or await settings.get_remote_api(
         endpoint=sep_settings.INVENTORY_ENDPOINT,
@@ -395,6 +423,8 @@ async def get_inventory_client(request: Request) -> RemoteAPI:
         ssl_certfile=inventory_settings.SSL_CERTFILE,
         logger_name="inventory_api",
     )
+    async with client.hold():
+        yield client
 
 
 InventoryClient = Annotated[RemoteAPI, Depends(get_inventory_client)]
@@ -420,16 +450,19 @@ async def get_inventory_api(
 InventoryAPI = Annotated[RemoteAPI, Depends(get_inventory_api)]
 
 
-async def get_tasks_client(request: Request) -> RemoteAPI:
-    """Construct a `RemoteAPI` instance for interacting with the Tasks API.
+async def get_tasks_client(request: Request) -> AsyncGenerator[RemoteAPI]:
+    """Construct a ``RemoteAPI`` instance for interacting with the Tasks API.
+
+    The client is held for the whole request, so a hot endpoint override that
+    retires it mid-response leaves this request's client open until the response
+    has been sent: long enough for a live log stream or a file download to run
+    to completion on it.
 
     :param request: The HTTP request object.
-    :type request: Request
-    :return: An instance of `RemoteAPI` configured for the Tasks service, including
-        the endpoint, API key, and SSL settings.
-    :rtype: RemoteAPI
+    :return: An instance of ``RemoteAPI`` configured for the Tasks service,
+        including the endpoint, API key, and SSL settings.
     """
-    return getattr(
+    client = getattr(
         request.app.state, "tasks_api", None
     ) or await settings.get_remote_api(
         endpoint=sep_settings.TASKS_ENDPOINT,
@@ -438,6 +471,8 @@ async def get_tasks_client(request: Request) -> RemoteAPI:
         ssl_certfile=tasks_settings.SSL_CERTFILE,
         logger_name="tasks_api",
     )
+    async with client.hold():
+        yield client
 
 
 TasksClient = Annotated[RemoteAPI, Depends(get_tasks_client)]
@@ -461,15 +496,16 @@ async def get_tasks_api(
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
 
 
-async def get_pmm_api() -> PMMRemoteAPI | None:
+async def resolve_pmm_api() -> PMMRemoteAPI | None:
     """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
 
     Construct the SEP-wide PMM client from settings, sitting alongside the
     sibling Inventory / Tasks client deps so core SEP code never reaches into a
-    plugin for it.
+    plugin for it. A caller with a request scope takes :func:`get_pmm_api`,
+    which wraps this in a request-scoped hold; a caller with no request to scope
+    a hold to takes the client directly and relies on the per-call hold.
 
     :return: The PMM API client, or ``None`` if endpoint or API key is missing.
-    :rtype: PMMRemoteAPI | None
     """
     if not settings.PMM.endpoint or not settings.PMM.api_key:
         return None
@@ -480,6 +516,22 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
         verify_ssl=settings.PMM.verify_ssl,
         ssl_cafile=settings.SSL_CAFILE,
     )
+
+
+async def get_pmm_api() -> AsyncGenerator[PMMRemoteAPI | None]:
+    """Hold the shared PMM client for the duration of the request.
+
+    A hot ``PMM`` override retires the cached client; holding it here keeps this
+    request's client open until the response has been sent.
+
+    :return: The PMM API client, or ``None`` if PMM is not configured.
+    """
+    client = await resolve_pmm_api()
+    if client is None:
+        yield None
+        return
+    async with client.hold():
+        yield client
 
 
 PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
@@ -501,6 +553,51 @@ async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
 RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.NODE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedNode: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.SERVICE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedService: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.SCHEMA],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedSchema: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: Literal[SyncInventoryEntityTypeEnum.TABLE],
+    entity_id: int,
+    **filters: Any,
+) -> CreatedTable: ...
+
+
+@overload
+async def get_created_entity(
+    inventory_api: InventoryAPI,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int,
+    **filters: Any,
+) -> CreatedEntity: ...
+
+
 async def get_created_entity(
     inventory_api: InventoryAPI,
     entity_type: SyncInventoryEntityTypeEnum,
@@ -509,23 +606,21 @@ async def get_created_entity(
 ) -> CreatedEntity:
     """Retrieve a created entity instance based on the given entity type and ID.
 
+    The overloads restate ``ENTITY_MAPPING``'s entity-type to model pairing, so a
+    caller naming one type gets that model rather than the whole union.
+
     Fetches the entity data from the Inventory API and validates it into a
     `CreatedEntityBase` model. Additional filters might be passed for extra validation.
 
     :param inventory_api: The API client used to interact with the inventory service.
-    :type inventory_api: InventoryAPI
     :param entity_type: The type of the entity to retrieve.
-    :type entity_type: SyncInventoryEntityTypeEnum
     :param entity_id: The ID of the entity to retrieve.
-    :type entity_id: int
     :param filters: Fields filters to check for the retrieved entity.
-    :type filters: Any
     :return: The validated `CreatedEntity` instance.
-    :rtype: CreatedEntity
     :raises ValueError: If one of the optional filters fail.
     """
     entity_path, entity_model = ENTITY_MAPPING[entity_type]
-    entity_data = await inventory_api.get(f"{entity_path}/{entity_id}")
+    entity_data = as_json_object(await inventory_api.get(f"{entity_path}/{entity_id}"))
     entity = entity_model.model_validate(entity_data)
     for field, expected_value in filters.items():
         if (value := entity_data.get(field)) != expected_value:
@@ -742,7 +837,7 @@ async def get_executor_hosts(tasks_api: TaskAPI) -> dict[str, str]:
     :return: A dictionary of executor hosts.
     """
     try:
-        return await tasks_api.get("/hosts/")
+        return as_json_object(await tasks_api.get("/hosts/"))
     except HTTPException:
         logger.warning(
             "Could not read executor hosts from the Tasks API.", exc_info=True
@@ -784,21 +879,20 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
+    tasks_api: TaskAPI, task_history_id: int
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
-    This function retrieves a task history by its ID from the Tasks API and optionally
-    validates that it is owned by a specific owner. If the task history does not exist
-    or the validation fails, it raises a 404 HTTP exception.
+    Retrieve a task history by its ID from the Tasks API. A task history is
+    readable by any authenticated user; ``Task.owner`` is an app namespace, not
+    a user identity, and is not used as an access filter. Per-execution
+    attribution lives on ``executed_by``. If the task history does not exist,
+    raise a 404 HTTP exception.
 
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
     :param task_history_id: The ID of the task history to retrieve.
-    :param owner: The owner filter for the task history's task. Defaults to ``None``,
-        meaning no filter.
     :return: The retrieved task history.
-    :raises HTTPNotFoundException: If the task history is not found or the validation
-        fails.
+    :raises HTTPNotFoundException: If the task history is not found.
     """
     try:
         task_history = TaskHistoryResponse.model_validate(
@@ -808,8 +902,6 @@ async def get_task_history(
         logger.debug("ValidationError retrieving task history.", exc_info=True)
         raise HTTPNotFoundException from None
     logger.debug("TASK IS %s", task_history)
-    if owner is not None and owner != task_history.task.owner:
-        raise HTTPNotFoundException
     return task_history
 
 
@@ -829,12 +921,16 @@ async def check_for_conflicted_running_tasks(
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
-    response = await tasks_api.get(
-        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+    response = as_json_object(
+        await tasks_api.get(
+            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+        )
     )
     running_tasks = response["items"]
-    response = await tasks_api.get(
-        f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+    response = as_json_object(
+        await tasks_api.get(
+            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+        )
     )
     pending_tasks = response["items"]
     if running_tasks or pending_tasks:

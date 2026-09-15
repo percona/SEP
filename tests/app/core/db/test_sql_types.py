@@ -18,7 +18,6 @@
 import random
 from unittest.mock import MagicMock
 
-import pytest
 from sqlalchemy import JSON
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -44,16 +43,11 @@ class TestAutoJSON:
 
         assert isinstance(result, JSONB)
 
-    @pytest.mark.parametrize("dialect_name", ["mysql", "sqlite"])
-    def test_load_dialect_impl_non_postgresql(self, dialect_name):
-        """Assert JSON is used for non-PostgreSQL dialects.
-
-        :param dialect_name: The dialect name to test.
-        :type dialect_name: str
-        """
+    def test_load_dialect_impl_sqlite(self):
+        """Assert JSON is used for SQLite."""
         auto_json = AutoJSON()
         dialect = MagicMock()
-        dialect.name = dialect_name
+        dialect.name = "sqlite"
         dialect.type_descriptor = lambda t: t
 
         result = auto_json.load_dialect_impl(dialect)

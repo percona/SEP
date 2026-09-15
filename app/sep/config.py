@@ -32,11 +32,12 @@ from pydantic import (
     field_validator,
     HttpUrl,
     model_validator,
+    PositiveFloat,
     PositiveInt,
     SecretStr,
+    ValidationError,
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
-from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from app import BASE_DIR
 from app.core.celery.models import IntervalSchedule, Period
@@ -44,6 +45,12 @@ from app.core.config import (
     BaseYamlAppSettings,
 )
 from app.core.db.config import DatabaseOptions
+from app.core.health import (
+    API_READINESS_POLL_INTERVAL as DEFAULT_API_READINESS_POLL_INTERVAL,
+)
+from app.core.health import (
+    API_READINESS_TIMEOUT as DEFAULT_API_READINESS_TIMEOUT,
+)
 from app.core.models import BaseCaseInsensitiveModel, BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
@@ -73,6 +80,7 @@ from app.core.utils.fields import (
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.bundle_upload.plan import DeliveryPlan
+from app.sep.sync.fields import CONSTRAINED_SYNCER_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -360,6 +368,39 @@ def _reject_removed_syncer_pmm(data: Any) -> Any:
     return data
 
 
+def _validate_constrained_syncer_extras(
+    merged: dict[str, Any], extra_kwargs: dict[str, Any]
+) -> None:
+    """Reject a configured syncer threshold its field would refuse at construction.
+
+    :param merged: One syncer's settings, with ``SYNCER_EXTRA_KWARGS`` merged in.
+    :param extra_kwargs: The global extras merged in. ``SEP.SYNCER_EXTRA_KWARGS`` is
+        a YAML surface as well as an env one, so a string reaching a syncer through it
+        gets the env leaf's quoting offered as a possibility, never as the diagnosis.
+    :raises ValueError: When a constrained field carries an unusable value.
+    """
+    for key, constrained in CONSTRAINED_SYNCER_FIELDS.items():
+        raw = merged.get(key)
+        if raw is None:
+            continue
+        try:
+            constrained.adapter.validate_python(raw)
+        except ValidationError as exc:
+            quoting_note = (
+                f" If this came from a SEP__SYNCER_EXTRA_KWARGS__{key.upper()} env "
+                f"override, note that such a leaf always reaches settings as a "
+                f"string; spell the value under SEP.SYNCERS in the YAML profile, or "
+                f"as JSON in SEP__SYNCERS, to have it read as a number."
+                if isinstance(raw, str) and key in extra_kwargs
+                else ""
+            )
+            raise ValueError(
+                f"{key.upper()} is set to {raw!r} for syncer "
+                f"{merged.get('syncer')!r}, which is not a usable value: give "
+                f"{constrained.accepted}.{quoting_note}"
+            ) from exc
+
+
 class SyncerExtraKwargs(BaseLowercaseModel):
     """Global keyword arguments merged into every configured synchronizer."""
 
@@ -464,8 +505,12 @@ class DeliveryPlanInputs(BaseModel):
     :param secrets: Values for the secret names the baked plan declares.
     """
 
-    endpoint: CredentialHttpUrl | None = not_overridable_field(None)
-    secrets: dict[str, SecretStr] = not_overridable_field({})
+    endpoint: CredentialHttpUrl | None = (  # ty: ignore[invalid-assignment]
+        not_overridable_field(None)
+    )
+    secrets: dict[str, SecretStr] = (  # ty: ignore[invalid-assignment]
+        not_overridable_field({})
+    )
 
     @field_validator("secrets")
     @classmethod
@@ -609,6 +654,13 @@ class SEPSettings(BaseYamlAppSettings):
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
+    :param API_READINESS_TIMEOUT: Total seconds Celery beat waits for the HTTP API
+        to answer its health probe before starting ungated. Defaults to 60. A
+        deployment whose application startup runs long needs to raise this;
+        exhausting the budget means beat dispatches overdue periodic tasks against
+        an API that is not yet accepting connections.
+    :param API_READINESS_POLL_INTERVAL: Seconds between readiness probe attempts.
+        Defaults to 0.5.
     :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
         in automatically from an existing PMM/Grafana session cookie (ambient
         SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
@@ -619,16 +671,22 @@ class SEPSettings(BaseYamlAppSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
     ROOT_PATH: URIPathPrefix = ""
-    SESSION_REFRESH: CookieOptions = nested_overridable_field(
-        CookieOptions(
-            COOKIE_NAME="refreshToken",
-            PATH="/api/oauth",
-        ),
-        advanced=True,
+    SESSION_REFRESH: CookieOptions = (  # ty: ignore[invalid-assignment]
+        nested_overridable_field(
+            CookieOptions(
+                COOKIE_NAME="refreshToken",
+                PATH="/api/oauth",
+            ),
+            advanced=True,
+        )
     )
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
-    INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
+    INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(  # ty: ignore[invalid-assignment]
+        ..., advanced=True
+    )
+    TASKS_ENDPOINT: CredentialHttpUrl = hot_field(  # ty: ignore[invalid-assignment]
+        ..., advanced=True
+    )
     APPS: UniqueList[App] = Field(
         default_factory=UniqueList,
         validation_alias=AliasChoices("APPS", "PLUGINS"),
@@ -637,17 +695,29 @@ class SEPSettings(BaseYamlAppSettings):
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
-    SYNC_REFRESH_TIME: int = hot_field(5)
-    DIAGNOSTICS_DELIVERY: DeliveryPlan | None = not_overridable_field(
-        None, advanced=True
+    SYNC_REFRESH_TIME: int = hot_field(5)  # ty: ignore[invalid-assignment]
+    DIAGNOSTICS_DELIVERY: DeliveryPlan | None = (  # ty: ignore[invalid-assignment]
+        not_overridable_field(None, advanced=True)
     )
-    DIAGNOSTICS_DELIVERY_INPUTS: DeliveryPlanInputs | None = hot_field(
-        None, materializer=materialize_delivery_plan_inputs, advanced=True
+    DIAGNOSTICS_DELIVERY_INPUTS: (
+        DeliveryPlanInputs | None
+    ) = (  # ty: ignore[invalid-assignment]
+        hot_field(None, materializer=materialize_delivery_plan_inputs, advanced=True)
     )
-    APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
-    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
-    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=False)
-    AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
+    APP_DRAIN: AppDrainSettings = (  # ty: ignore[invalid-assignment]
+        nested_overridable_field(AppDrainSettings())
+    )
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        600, advanced=True
+    )
+    # Plain fields rather than ``hot_field``: the readiness gate runs in a
+    # pre-fork beat child, before the DB override refresher exists to serve one.
+    API_READINESS_TIMEOUT: PositiveFloat = DEFAULT_API_READINESS_TIMEOUT
+    API_READINESS_POLL_INTERVAL: PositiveFloat = DEFAULT_API_READINESS_POLL_INTERVAL
+    CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=False
+    )
+    AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(  # ty: ignore[invalid-assignment]
         default=False,
         description=(
             "Enable ambient Grafana-session SSO: sign an unauthenticated caller "
@@ -657,7 +727,7 @@ class SEPSettings(BaseYamlAppSettings):
             "the browser sends the session cookie to SEP."
         ),
     )
-    FOOTER_TEMPLATE: Template = hot_field(
+    FOOTER_TEMPLATE: Template = hot_field(  # ty: ignore[invalid-assignment]
         Template("$summary $version"),
         materializer=materialize_template,
         advanced=True,
@@ -697,8 +767,8 @@ class SEPSettings(BaseYamlAppSettings):
         cls,
         settings_cls: type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
-        env_settings: EnvSettingsSource,
-        dotenv_settings: DotEnvSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.
@@ -779,16 +849,19 @@ class SEPSettings(BaseYamlAppSettings):
         """Integrate extra keyword arguments into synchronizers.
 
         Merge additional keyword arguments from ``SYNCER_EXTRA_KWARGS`` into each
-        synchronizer in ``SYNCERS`` and update the list accordingly.
+        synchronizer in ``SYNCERS`` and update the list accordingly. Every override
+        surface lands in this merge, so it is also where a constrained threshold is
+        checked against the type its syncer field declares.
 
         :return: The updated ``SEPSettings`` instance with modified ``SYNCERS``.
-        :rtype: Self
+        :raises ValueError: When a merged threshold carries an unusable value.
         """
         syncers = UniqueList()
         extra_kwargs = self.SYNCER_EXTRA_KWARGS.model_dump(exclude_none=True)
         for syncer in self.SYNCERS:
             syncer_data = syncer.model_dump()
             deep_dict_update(syncer_data, extra_kwargs)
+            _validate_constrained_syncer_extras(syncer_data, extra_kwargs)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
         return self

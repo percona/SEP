@@ -25,7 +25,16 @@ const meta: Meta<typeof StatusBadge> = {
   argTypes: {
     status: {
       control: 'select',
-      options: ['success', 'failed', 'stopped', 'lost', 'stream-error', 'executor-gone'],
+      options: [
+        'success',
+        'failed',
+        'stopped',
+        'lost',
+        'stale',
+        'unlaunchable',
+        'stream-error',
+        'executor-gone',
+      ],
     },
   },
 };
@@ -37,5 +46,7 @@ export const Success: Story = { args: { status: 'success' } };
 export const Failed: Story = { args: { status: 'failed' } };
 export const Stopped: Story = { args: { status: 'stopped' } };
 export const Lost: Story = { args: { status: 'lost' } };
+export const Stale: Story = { args: { status: 'stale' } };
+export const Unlaunchable: Story = { args: { status: 'unlaunchable' } };
 export const StreamError: Story = { args: { status: 'stream-error' } };
 export const ExecutorGone: Story = { args: { status: 'executor-gone' } };

@@ -13,37 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the Tasks-track setting_class enum-extension migration."""
-
-from pathlib import Path
+"""Tests for the Tasks-track ``setting_class`` CHECK-drop migration."""
 
 import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 
-from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from app.core.db.utils import check_constraint_name
 
 # The add_setting_override_table revision on the Tasks track, before SETTINGS /
 # ALERT_SETTINGS were added to the setting_class CHECK constraint.
 _TASKS_PRE_ENUM_REVISION = "fafdb0445092"
 
-
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
+# The revision immediately below drop_setting_class_check_constraint, so
+# downgrading to it runs exactly that revision's ``downgrade()``.
+_CHECK_DROP_PARENT_REVISION = "c8e4a2b91f70"
 
 
 def _insert_override(conn, setting_class: str) -> None:
@@ -56,27 +41,27 @@ def _insert_override(conn, setting_class: str) -> None:
     )
 
 
-def test_setting_class_enum_accepts_new_members_after_upgrade(tasks_alembic_config):
-    """After ``upgrade heads``, SETTINGS and ALERT_SETTINGS rows are accepted."""
+def test_setting_class_accepts_unregistered_token_after_upgrade(tasks_alembic_config):
+    """Accept a token never listed in the CHECK once ``upgrade heads`` has run."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
 
-    new_members = ("SETTINGS", "ALERT_SETTINGS")
+    unregistered = ("CUSTOM_PLUGIN_SETTINGS", "APP_OWNED_SETTINGS")
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:
-            for member in new_members:
+            for member in unregistered:
                 _insert_override(conn, member)
             count = conn.exec_driver_sql(
                 "SELECT COUNT(*) FROM settingoverride"
             ).scalar()
-        assert count == len(new_members)
+        assert count == len(unregistered)
     finally:
         engine.dispose()
 
 
-def test_setting_class_enum_rejects_new_members_before_upgrade(tasks_alembic_config):
-    """At the pre-enum revision, a SETTINGS row violates the CHECK constraint."""
+def test_setting_class_check_rejects_unlisted_token_before_drop(tasks_alembic_config):
+    """Reject a SETTINGS row at the pre-enum revision, whose CHECK excludes it."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _TASKS_PRE_ENUM_REVISION)
 
@@ -84,5 +69,67 @@ def test_setting_class_enum_rejects_new_members_before_upgrade(tasks_alembic_con
     try:
         with engine.begin() as conn, pytest.raises(IntegrityError):
             _insert_override(conn, "SETTINGS")
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_is_dropped_after_upgrade(tasks_alembic_config):
+    """Leave ``setting_class`` an unconstrained string after ``upgrade heads``."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            unconstrained = ("UNREGISTERED_SETTINGS", "X" * 50)
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class") is None
+            )
+            for token in unconstrained:
+                _insert_override(conn, token)
+            count = conn.exec_driver_sql(
+                "SELECT COUNT(*) FROM settingoverride"
+            ).scalar()
+        assert count == len(unconstrained)
+    finally:
+        engine.dispose()
+
+
+def test_setting_class_check_downgrade_deletes_unknown_rows(
+    tasks_alembic_config, capsys
+):
+    """Delete out-of-list rows on downgrade, log the count, and restore the CHECK."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, "heads")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "UNREGISTERED_SETTINGS")
+            _insert_override(conn, "SEP_SETTINGS")
+    finally:
+        engine.dispose()
+
+    # alembic fileConfig routes ``app.*`` to its console handler with
+    # ``propagate = 0``, so the delete notice is on stderr, not in caplog.
+    capsys.readouterr()
+    # Named rather than relative: ``-1`` means "one step back from head", so a
+    # revision landing after the CHECK drop silently retargets it.
+    command.downgrade(cfg, _CHECK_DROP_PARENT_REVISION)
+    assert "Deleted 1 settingoverride row(s)" in capsys.readouterr().err
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert (
+                check_constraint_name(conn, "settingoverride", "setting_class")
+                == "settingclassenum"
+            )
+            remaining = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+            assert remaining == [("SEP_SETTINGS",)]
+            with pytest.raises(IntegrityError):
+                _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()

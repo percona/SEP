@@ -19,8 +19,16 @@ The orchestrator enumerates the entries activated apps declare through
 :func:`~app.sep.apps.framework.form_backfill_registry.collect_form_backfill_entries`,
 finds tasks owned by each that lack the reserved form key, reconstructs a
 create-model-shaped body, validates it, and stamps ``data['_form']`` on success. Each
-per-task step is isolated so one failure never aborts the batch; re-runs skip tasks that
-already carry the stamp.
+per-task step is isolated so one failure never aborts the batch.
+
+A task that already carries the stamp is left alone unless its app declares a
+:data:`~app.sep.apps.framework.form_backfill_registry.StampRepairer`. A stamp is a
+snapshot of the create body as the form looked when the task was saved, so a field
+the form gained afterwards is missing from every older stamp and the edit form fills
+it from the schema default — which for a field that decides what the task *does* is
+not what the task actually runs. A repairer supplies the value the stored config
+implies; re-runs are idempotent because a repairer returns ``None`` once there is
+nothing left to add.
 """
 
 from __future__ import annotations
@@ -30,7 +38,6 @@ import asyncio
 import logging
 from copy import deepcopy
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Any, TYPE_CHECKING
 
 from pydantic import ValidationError
@@ -47,6 +54,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
     load_service_id_lookup,
 )
 from app.sep.apps.framework.form_backfill_registry import (
+    add_owner_and_verbose_arguments,
     collect_form_backfill_entries,
     FormBackfillContext,
     FormBackfillEntry,
@@ -66,7 +74,10 @@ class AppBackfillStats:
     :param app_key: The declaring app's registry key.
     :param owner: The task owner filter used when listing tasks.
     :param stamped: Tasks that received a new ``data['_form']`` stamp.
-    :param skipped_existing: Tasks that already had ``data['_form']``.
+    :param repaired: Tasks whose existing ``data['_form']`` was brought up to the
+        current ``create_model`` by the app's stamp repairer.
+    :param skipped_existing: Tasks that already had a ``data['_form']`` needing no
+        repair.
     :param skipped_unreconstructable: Tasks whose reconstructor returned ``None``.
     :param skipped_invalid: Tasks whose reconstructed body failed ``create_model`` validation.
     :param skipped_error: Tasks whose reconstructor, stamp step, or persistence raised.
@@ -75,6 +86,7 @@ class AppBackfillStats:
     app_key: str
     owner: str
     stamped: int = 0
+    repaired: int = 0
     skipped_existing: int = 0
     skipped_unreconstructable: int = 0
     skipped_invalid: int = 0
@@ -85,6 +97,7 @@ class AppBackfillStats:
         """Return the total number of tasks considered for this app."""
         return (
             self.stamped
+            + self.repaired
             + self.skipped_existing
             + self.skipped_unreconstructable
             + self.skipped_invalid
@@ -107,6 +120,11 @@ class BackfillSummary:
     def stamped(self) -> int:
         """Return the total number of tasks stamped across all apps."""
         return sum(app.stamped for app in self.apps)
+
+    @property
+    def repaired(self) -> int:
+        """Return the total number of existing stamps repaired across all apps."""
+        return sum(app.repaired for app in self.apps)
 
     @property
     def skipped_existing(self) -> int:
@@ -207,21 +225,21 @@ def _backfill_single_task(
     entry: FormBackfillEntry,
     ctx: FormBackfillContext,
 ) -> _TaskBackfillOutcome:
-    """Skip ineligible tasks, then run the reconstruct → validate → stamp pipeline.
+    """Route a task to the pipeline its ``data`` calls for, or skip it.
 
-    :param task: The legacy task row to backfill.
+    An already-stamped task goes to the repair pipeline, which hands the stored
+    stamp to the app's repairer and re-validates whatever comes back. Anything
+    else goes through reconstruct → validate → stamp, which needs an inventory
+    lookup and the app's own reconstruction to reach a form at all.
+
+    :param task: The task row to backfill.
     :param entry: The declaring app's backfill entry.
     :param ctx: Shared backfill context.
-    :return: The outcome label and optional stamped ``data`` dict to persist.
+    :return: The outcome label and, for a stamped or repaired form, the ``data``
+        dict to persist.
     """
     if RESERVED_FORM_KEY in task.data:
-        ctx.log.debug(
-            "[%s] %s: already has %r; skipping",
-            entry.app_key,
-            task.name,
-            RESERVED_FORM_KEY,
-        )
-        return _TaskBackfillOutcome("skipped_existing")
+        return _repair_existing_stamp(task, entry, ctx)
 
     if ctx.service_lookup is None:
         ctx.log.info(
@@ -232,6 +250,92 @@ def _backfill_single_task(
         return _TaskBackfillOutcome("skipped_unreconstructable")
 
     return _reconstruct_validate_stamp(task, entry, ctx)
+
+
+def _repair_existing_stamp(
+    task: Task,
+    entry: FormBackfillEntry,
+    ctx: FormBackfillContext,
+) -> _TaskBackfillOutcome:
+    """Bring an already-stamped task's ``data['_form']`` up to its create model.
+
+    Runs only the app's declared repairer, never the reconstructor: the stored
+    stamp is the authoritative record of what the operator submitted, so a repair
+    fills the gaps the form has since grown rather than re-deriving the whole body
+    from the task's config.
+
+    :param task: The stamped task row.
+    :param entry: The declaring app's backfill entry.
+    :param ctx: Shared backfill context.
+    :return: The outcome label and optional repaired ``data`` dict to persist.
+    """
+    stored_form = task.data[RESERVED_FORM_KEY]
+    if entry.stamp_repairer is None or not isinstance(stored_form, dict):
+        ctx.log.debug(
+            "[%s] %s: already has %r; skipping",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+        )
+        return _TaskBackfillOutcome("skipped_existing")
+
+    try:
+        repaired_form = entry.stamp_repairer(deepcopy(stored_form), task, ctx)
+    except Exception:
+        ctx.log.exception(
+            "[%s] %s: stamp repairer raised; skipping",
+            entry.app_key,
+            task.name,
+        )
+        return _TaskBackfillOutcome("skipped_error")
+
+    if repaired_form is None:
+        ctx.log.debug(
+            "[%s] %s: %r needs no repair; skipping",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+        )
+        return _TaskBackfillOutcome("skipped_existing")
+
+    try:
+        validated_form = entry.create_model.model_validate(repaired_form)
+    except ValidationError as exc:
+        # Without ``include_input``: an error carries the value that failed, and a
+        # form body can hold a GPG recipient or a key-file path.
+        ctx.log.info(
+            "[%s] %s: repaired form failed validation; leaving %r as it is: %s",
+            entry.app_key,
+            task.name,
+            RESERVED_FORM_KEY,
+            exc.errors(include_input=False),
+        )
+        return _TaskBackfillOutcome("skipped_invalid")
+
+    repaired_data = deepcopy(task.data)
+    # ``stamp_form_input`` refuses to overwrite an existing stamp, which is what
+    # guards the create path against a spec builder populating it.
+    repaired_data.pop(RESERVED_FORM_KEY)
+    write = _task_write_from_task(task, repaired_data)
+
+    try:
+        stamp_form_input(write, validated_form)
+    except Exception:
+        ctx.log.exception(
+            "[%s] %s: stamp_form_input raised while repairing; skipping",
+            entry.app_key,
+            task.name,
+        )
+        return _TaskBackfillOutcome("skipped_error")
+
+    ctx.log.info(
+        "[%s] %s: %s %r",
+        entry.app_key,
+        task.name,
+        "dry-run would repair" if ctx.dry_run else "repaired",
+        RESERVED_FORM_KEY,
+    )
+    return _TaskBackfillOutcome("repaired", write.data)
 
 
 def _reconstruct_validate_stamp(
@@ -267,11 +371,13 @@ def _reconstruct_validate_stamp(
     try:
         validated_form = entry.create_model.model_validate(raw_form)
     except ValidationError as exc:
+        # Without ``include_input``: an error carries the value that failed, and a
+        # form body can hold a GPG recipient or a key-file path.
         ctx.log.info(
             "[%s] %s: reconstructed form failed validation; skipping: %s",
             entry.app_key,
             task.name,
-            exc.errors(),
+            exc.errors(include_input=False),
         )
         return _TaskBackfillOutcome("skipped_invalid")
 
@@ -381,10 +487,9 @@ async def _backfill_app(
                         task_name=task.name,
                     )
                 stats.skipped_error += 1
-            else:
-                stats.stamped += 1
-        else:
-            setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
+                continue
+
+        setattr(stats, outcome.label, getattr(stats, outcome.label) + 1)
 
     return stats
 
@@ -404,12 +509,7 @@ async def run_backfill(
     :return: Aggregate counters for the run.
     """
     active_log = log or logger
-    owner_filter = set(owners) if owners is not None else None
-    entries = [
-        entry
-        for entry in collect_form_backfill_entries()
-        if owner_filter is None or entry.owner in owner_filter
-    ]
+    entries = collect_form_backfill_entries(owners=owners)
     summary = BackfillSummary(dry_run=dry_run)
 
     if not entries:
@@ -433,37 +533,18 @@ async def run_backfill(
                 summary.apps.append(stats)
 
     active_log.info(
-        "Backfill complete (dry_run=%s): stamped=%s skipped_existing=%s "
-        "skipped_unreconstructable=%s skipped_invalid=%s skipped_error=%s",
+        "Backfill complete (dry_run=%s): stamped=%s repaired=%s "
+        "skipped_existing=%s skipped_unreconstructable=%s skipped_invalid=%s "
+        "skipped_error=%s",
         dry_run,
         summary.stamped,
+        summary.repaired,
         summary.skipped_existing,
         summary.skipped_unreconstructable,
         summary.skipped_invalid,
         summary.skipped_error,
     )
     return summary
-
-
-def _owner_from_cli(value: str, valid_owners: frozenset[str]) -> str:
-    """Parse a CLI ``--owner`` value into an in-scope owner string.
-
-    :param value: The owner string (for example ``CHECKSUMS``), case-insensitive.
-    :param valid_owners: The owners declared by the collected backfill entries.
-    :return: The normalized (upper-cased) owner string.
-    :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
-    """
-    normalized = value.strip().upper()
-    if normalized in valid_owners:
-        return normalized
-    if not valid_owners:
-        raise argparse.ArgumentTypeError(
-            f"unknown owner {value!r}; no activated app declares a form backfill"
-        )
-    valid = ", ".join(sorted(valid_owners))
-    raise argparse.ArgumentTypeError(
-        f"unknown owner {value!r}; expected one of: {valid}"
-    )
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -490,22 +571,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Log actions without writing stamped forms to the database.",
     )
-    parser.add_argument(
-        "--owner",
-        action="append",
-        type=partial(_owner_from_cli, valid_owners=valid_owners),
-        dest="owners",
-        metavar="OWNER",
-        help=(
-            "Limit the run to one or more task owners (repeatable). "
-            "Defaults to all in-scope owners."
-        ),
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable debug logging.",
-    )
+    add_owner_and_verbose_arguments(parser, valid_owners=valid_owners, subject="run")
     return parser
 
 
@@ -517,10 +583,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(message)s",
-    )
+    level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(message)s")
+    # ``basicConfig`` returns early once a handler exists, and importing this
+    # module installs the app's logging configuration, so the progress lines need
+    # the level set on the emitting logger to clear the root's WARNING.
+    logger.setLevel(level)
     asyncio.run(
         run_backfill(
             owners=args.owners,

@@ -37,6 +37,8 @@ import json
 import logging
 import time
 import zipfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, cast
@@ -81,6 +83,10 @@ _NOTHING_TO_SEND_ERROR = (
 #: ``NOMAD_EXEC_ARTIFACT`` and ``NOMAD_EXEC_PYTHON_ARTIFACT`` in
 #: ``app/tasks/db/seed.py``.
 _MAIN_LOG_STEP = "run-script"
+#: The step carrying an unlaunchable execution's whole diagnostic. That
+#: execution never starts :data:`_MAIN_LOG_STEP` and writes no output files, so
+#: the general "prestart is setup machinery" rule would leave its bundle empty.
+_LAUNCH_CHECK_LOG_STEP = "check-launchable"
 _WORKER_LOST_ERROR = (
     "The worker running this send did not report back in time; it was most "
     "likely lost. Re-send to try again."
@@ -194,6 +200,15 @@ def _execution_prefix(execution: dict[str, Any]) -> str:
     return f"{execution['task_history_id']}-{execution['snippet_filename']}"
 
 
+def _execution_label(execution: dict[str, Any]) -> str:
+    """Name one execution the way every upstream-failure message names it.
+
+    :param execution: The selected execution descriptor.
+    :return: The execution's id and snippet filename, as the messages render them.
+    """
+    return f"execution {execution['task_history_id']} ({execution['snippet_filename']})"
+
+
 def _entry_arcname(prefix: str, path: str, *, is_dir: bool) -> str:
     """Return the archive entry name one upstream file is written under.
 
@@ -246,13 +261,10 @@ async def _execution_status(
     :raises AtwSendError: When the execution's status cannot be read.
     """
     task_history_id = execution["task_history_id"]
-    try:
+    with _reraise_upstream_errors(
+        f"Could not read the status of {_execution_label(execution)}"
+    ):
         payload = await tasks_api.get(f"/history/{task_history_id}") or {}
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not read the status of execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_error_message(exc)}"
-        ) from exc
     status = payload.get("status")
     try:
         return TaskHistoryStatusEnum(status)
@@ -284,28 +296,22 @@ async def _add_execution_files(
         this execution's files push the bundle past the plan's cap.
     """
     task_history_id = execution["task_history_id"]
-    try:
+    with _reraise_upstream_errors(
+        f"Could not list output files for {_execution_label(execution)}"
+    ):
         listing = await tasks_api.get(f"/history/{task_history_id}/files/") or {}
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not list output files for execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_error_message(exc)}"
-        ) from exc
 
     prefix = _execution_prefix(execution)
     written: list[dict[str, Any]] = []
     for path, metadata in listing.items():
         is_dir = bool(metadata.get("is_dir"))
         arcname = _entry_arcname(prefix, path, is_dir=is_dir)
-        try:
+        with _reraise_upstream_errors(
+            f"Could not read {path!r} from {_execution_label(execution)}"
+        ):
             size = await _write_entry(
                 archive, tasks_api, task_history_id, path, arcname
             )
-        except (HTTPException, OSError, ClientError) as exc:
-            raise AtwSendError(
-                f"Could not read {path!r} from execution {task_history_id} "
-                f"({execution['snippet_filename']}): {_error_message(exc)}"
-            ) from exc
         written.append(
             {"path": path, "arcname": arcname, "size": size, "is_dir": is_dir}
         )
@@ -423,13 +429,30 @@ class _LogMember:
         }
 
 
-async def _add_execution_logs(
-    archive: zipfile.ZipFile, tasks_api: RemoteAPI, execution: dict[str, Any]
-) -> tuple[list[dict[str, Any]], int]:
-    """Stream one execution's captured main-step logs into the archive.
+def _log_step_for(status: TaskHistoryStatusEnum | None) -> str:
+    """Return the step whose logs carry this execution's diagnostic.
 
-    Only :data:`_MAIN_LOG_STEP` is fetched: the prestart and poststop steps
-    surrounding it log setup machinery, which is noise on a support case.
+    :param status: The execution's terminal status.
+    :return: :data:`_LAUNCH_CHECK_LOG_STEP` for an execution the node could not
+        launch, :data:`_MAIN_LOG_STEP` otherwise.
+    """
+    if status == TaskHistoryStatusEnum.UNLAUNCHABLE:
+        return _LAUNCH_CHECK_LOG_STEP
+    return _MAIN_LOG_STEP
+
+
+async def _add_execution_logs(
+    archive: zipfile.ZipFile,
+    tasks_api: RemoteAPI,
+    execution: dict[str, Any],
+    step: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Stream one execution's captured logs for ``step`` into the archive.
+
+    A single step is fetched: for a run that happened, the prestart and poststop
+    steps surrounding :data:`_MAIN_LOG_STEP` log setup machinery, which is noise
+    on a support case. The one exception is a run that never started, whose only
+    diagnostic lives in a prestart step — see :func:`_log_step_for`.
 
     Members are keyed by a record's ``(step, stream)`` group and replaced when it
     changes -- the two upstream read paths both deliver contiguous runs per group
@@ -440,6 +463,7 @@ async def _add_execution_logs(
     :param archive: The open archive to write into.
     :param tasks_api: The authenticated Tasks API client.
     :param execution: The selected execution descriptor.
+    :param step: The Nomad step whose logs to stream.
     :return: One manifest entry per log group written, and the total number of
         uncompressed bytes they carry.
     :raises AtwSendError: When the execution's logs cannot be streamed.
@@ -454,27 +478,25 @@ async def _add_execution_logs(
     total = 0
     member: _LogMember | None = None
     try:
-        async for line in tasks_api.stream(
-            f"/history/{task_history_id}/logs/", params={"step": _MAIN_LOG_STEP}
+        with _reraise_upstream_errors(
+            f"Could not read logs for {_execution_label(execution)}"
         ):
-            record = _decode_log_line(line, task_history_id)
-            if record is None:
-                continue
-            if not isinstance(msg := record.get("msg"), str) or not msg:
-                continue
-            group = (str(record.get("step", "")), str(record.get("type", "")))
-            if member is None or member.group != group:
-                if member is not None:
-                    entries.append(member.close())
-                member = _LogMember(archive, prefix, group)
-            total += member.write(msg)
-        if member is not None:
-            entries.append(member.close())
-    except (HTTPException, OSError, ClientError) as exc:
-        raise AtwSendError(
-            f"Could not read logs for execution {task_history_id} "
-            f"({execution['snippet_filename']}): {_error_message(exc)}"
-        ) from exc
+            async for line in tasks_api.stream(
+                f"/history/{task_history_id}/logs/", params={"step": step}
+            ):
+                record = _decode_log_line(line, task_history_id)
+                if record is None:
+                    continue
+                if not isinstance(msg := record.get("msg"), str) or not msg:
+                    continue
+                group = (str(record.get("step", "")), str(record.get("type", "")))
+                if member is None or member.group != group:
+                    if member is not None:
+                        entries.append(member.close())
+                    member = _LogMember(archive, prefix, group)
+                total += member.write(msg)
+            if member is not None:
+                entries.append(member.close())
     finally:
         if member is not None:
             member.close()
@@ -539,7 +561,9 @@ async def _stage_bundle(
             file_count += len(files)
             logs: list[dict[str, Any]] = []
             if status is not None and status.is_finished():
-                logs, written = await _add_execution_logs(archive, tasks_api, execution)
+                logs, written = await _add_execution_logs(
+                    archive, tasks_api, execution, _log_step_for(status)
+                )
                 log_bytes += written
             manifest_executions.append({**execution, "files": files, "logs": logs})
         if not file_count and not log_bytes:
@@ -610,7 +634,8 @@ async def _resolve_plan_after_refresh(
 
     Every send resolves against a snapshot no older than itself, so a rotated
     secret, a repointed endpoint, or a first-time enabling write takes effect
-    even when this worker child's refresher has not yet advanced.
+    even when this worker child's task-boundary refresher has not yet run
+    (boundary refresh does not advance mid-task or while a child is idle).
 
     A failed republish must not escape and must not invent a fixed reason: this
     runs ahead of the broad terminal guard, so an escaping error would leave the
@@ -694,7 +719,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         session, row, detail, status=AtwSendStatusEnum.RUNNING, started_at=utc_now()
     )
 
-    steps: list[dict[str, Any]] = []
+    records: list[StepRecord] = []
     path = bundle_dir() / f"{row.id}-{uuid4().hex}{_BUNDLE_SUFFIX}"
     try:
         client = await get_tasks_api()
@@ -704,8 +729,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
             )
         size = path.stat().st_size
         async with get_delivery_executor(
-            plan,
-            step_observer=lambda record: steps.append(_step_detail(record)),
+            plan, step_observer=records.append
         ) as executor:
             with path.open("rb") as handle:
                 result = await executor.upload_bundle(
@@ -723,7 +747,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         )
     except Exception as exc:  # noqa: BLE001 -- every family must land terminally
         logger.warning("Diagnostics send %s failed.", row.id, exc_info=True)
-        await _fail(session, row, detail, steps, _error_message(exc))
+        await _fail(session, row, detail, records, _error_message(exc, records))
         return
     finally:
         path.unlink(missing_ok=True)
@@ -733,7 +757,7 @@ async def _run_send_for_row(session: AsyncSession, row: AtwSendLog) -> None:
         row,
         {
             **detail,
-            "steps": steps,
+            "steps": [_step_detail(record) for record in records],
             "upload_response": None if result.detail is None else dict(result.detail),
             "upload_reference": result.reference,
             "bundle_size": size,
@@ -748,7 +772,7 @@ async def _fail(
     session: AsyncSession,
     row: AtwSendLog,
     detail: dict[str, Any],
-    steps: list[dict[str, Any]],
+    records: Sequence[StepRecord],
     error: str,
 ) -> None:
     """Write the terminal failed row carrying the reason the send ended.
@@ -756,39 +780,94 @@ async def _fail(
     :param session: The database session.
     :param row: The send log to finalize.
     :param detail: The evidence gathered before the failure.
-    :param steps: The resolution steps observed so far.
+    :param records: The step transitions observed so far.
     :param error: The reason to record.
     """
     await _persist(
         session,
         row,
-        {**detail, "steps": steps, "error": error},
+        {
+            **detail,
+            "steps": [_step_detail(record) for record in records],
+            "error": error,
+        },
         status=AtwSendStatusEnum.FAILED,
         finished_at=utc_now(),
     )
 
 
 def _step_detail(record: StepRecord) -> dict[str, Any]:
-    """Render one observed resolution step for the send log.
+    """Render one observed plan step for the send log.
 
     :param record: The step transition the executor reported.
     :return: The JSON-serializable step entry.
     """
     return {
         "name": record.name,
+        "kind": record.kind,
         "status": record.status,
         "outputs": None if record.outputs is None else dict(record.outputs),
     }
 
 
-def _error_message(exc: Exception) -> str:
-    """Return the reason to record against a failed send.
+def _upstream_detail(exc: Exception) -> str:
+    """Return the message ``exc`` carries, preferring a project exception's detail.
 
-    :param exc: The exception that ended the attempt.
-    :return: A message a support engineer can act on.
+    :param exc: The exception to describe.
+    :return: The exception's ``detail`` when it carries a non-empty one, else
+        its string form.
     """
     detail = getattr(exc, "detail", None)
     return str(detail) if detail else str(exc)
+
+
+@contextmanager
+def _reraise_upstream_errors(message: str) -> Iterator[None]:
+    """Report an upstream Tasks-API failure raised in the block as a send failure.
+
+    A size-cap or decoding failure raised inside the block propagates untouched,
+    so a local fault is not relabelled as an upstream one. ``OSError`` is the one
+    blurred edge: a disk failure during a zip write inside the block is caught
+    here too and reported against the Tasks API.
+
+    :param message: What the block was trying to do, named for a support engineer.
+    :return: Control to the wrapped block.
+    :raises AtwSendError: When the block raises an upstream failure, carrying
+        ``message`` and the upstream's own detail.
+    """
+    try:
+        yield
+    except (HTTPException, OSError, ClientError) as exc:
+        raise AtwSendError(f"{message}: {_upstream_detail(exc)}") from exc
+
+
+def _error_message(exc: Exception, records: Sequence[StepRecord]) -> str:
+    """Return the reason to record against a failed send.
+
+    A failure inside the delivery plan is attributed to the step that ended it
+    and to the send inputs that step reads, ahead of the receiver's own message.
+    A failure before any step reported one, such as bundle staging or the size
+    cap, has no step to name and keeps the upstream detail alone.
+
+    :param exc: The exception that ended the attempt.
+    :param records: The step transitions the executor observed.
+    :return: A message a support engineer can act on.
+    """
+    upstream = _upstream_detail(exc)
+    failed = next(
+        (record for record in reversed(records) if record.status == "failed"), None
+    )
+    if failed is None:
+        return upstream
+    where = (
+        "the bundle upload"
+        if failed.kind == "upload"
+        else f"delivery step {failed.name!r}"
+    )
+    reads = (
+        f", which reads {', '.join(failed.cited_inputs)}" if failed.cited_inputs else ""
+    )
+    return f"The send failed in {where}{reads}: {upstream}"
 
 
 def purge_expired_bundles(ttl_seconds: int) -> int:

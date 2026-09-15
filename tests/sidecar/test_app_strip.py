@@ -326,10 +326,11 @@ def test_stripped_apps_owning_migrations_stay_in_version_locations():
             f"but [sep] version_locations in alembic.ini configures no entry "
             f"ending in {_versions_path(name)!r}. skip_unresolvable_heads in "
             f"app/sep/migrations/_orphan_heads.py tells a stripped app apart "
-            f"from version skew by finding a configured location that is not a "
-            f"directory on disk, so an image missing this entry hard-fails its "
-            f"upgrade against a database a full image migrated. Restore the "
-            f"entry rather than relaxing this test."
+            f"from version skew by finding a configured location that contributes "
+            f"no revisions (absent from disk or present and empty), so an image "
+            f"missing this entry hard-fails its upgrade against a database a "
+            f"full image migrated. Restore the entry rather than relaxing this "
+            f"test."
         )
 
 
@@ -337,7 +338,7 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
     """Assert a stripped app that roots no branch is neither required nor listed.
 
     Such an app is exempt from the sibling assertion, and carries no entry of its
-    own: an entry whose directory never exists on any image would report a
+    own: an entry that contributes no revisions on any image would report a
     stripped app to the orphan-head filter even on an unstripped tree.
     """
     entries = _sep_version_locations()
@@ -350,8 +351,8 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
     assert not listed, (
         f"[sep] version_locations in alembic.ini configures entries for {listed!r}, "
         f"which the app-restricted image strips and which own no "
-        f"migrations/versions directory. Those locations resolve nowhere on any "
-        f"image, so skip_unresolvable_heads in "
+        f"migrations/versions directory. Those locations contribute no revisions "
+        f"on any image, so skip_unresolvable_heads in "
         f"app/sep/migrations/_orphan_heads.py would read them as a stripped app "
         f"and stop treating an unresolvable revision as version skew. Drop the "
         f"entries, or restore the migrations they point at."

@@ -13,13 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Share the AST-extraction harness for exercising the xtrabackup payload's xbcrypt/AES-256 methods.
+"""Share the AST-extraction harness for exercising the xtrabackup payload's methods.
 
 The payload cannot be imported directly (it pulls boto3 and other heavy
 runtime deps), so callers locate the relevant symbols in the source via AST
 and exec them in an isolated namespace. This module holds the shared pieces
-so both the backup-side and restore-side test modules build on one harness
-instead of one re-exporting private helpers from the other.
+so every test module that reaches into the payload — encryption, restore, the
+incremental base guards — builds on one harness instead of re-exporting private
+helpers from each other.
 """
 
 import ast
@@ -27,8 +28,11 @@ import logging
 import multiprocessing.pool
 import os
 import pathlib
+import re
 import subprocess
 import types
+from collections.abc import Callable
+from typing import Any
 
 from tests.app.sep.apps.mysql_backups.conftest import (
     XTRABACKUP_PAYLOAD_PATH,
@@ -43,6 +47,8 @@ _CONST_NAMES = frozenset(
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
         "PLAINTEXT_METADATA_FILES",
+        "ENCRYPTION_FORMATS",
+        "BACKUP_TYPES",
         "XBCRYPT_BIN",
         "GPG_BIN",
         "XTRABACKUP_BIN",
@@ -70,6 +76,7 @@ def base_namespace() -> dict:
         "os": os,
         "subprocess": subprocess,
         "logging": logging,
+        "re": re,
         "Path": pathlib.Path,
         "Any": object,
         "thread_pool": multiprocessing.pool,
@@ -95,8 +102,11 @@ def load_constant(name: str) -> object:
 XBCRYPT_BIN = load_constant("XBCRYPT_BIN")
 
 
-def load_function(name: str) -> object:
-    """Exec a single module-level payload function with its constants seeded."""
+def load_function(name: str) -> Callable[..., Any]:
+    """Extract a single module-level payload function with its constants seeded.
+
+    :raises TypeError: If the extracted name is not callable.
+    """
     tree = xtrabackup_payload_tree()
     namespace = base_namespace()
     body = const_nodes(tree)
@@ -116,7 +126,94 @@ def load_function(name: str) -> object:
         ),
         namespace,
     )
-    return namespace[name]
+    extracted = namespace[name]
+    if not callable(extracted):
+        raise TypeError(f"{name} in {XTRABACKUP_PAYLOAD_PATH} is not callable.")
+    return extracted
+
+
+def payload_method(
+    class_name: str,
+    method_name: str,
+    *,
+    extra_namespace: dict[str, object] | None = None,
+) -> Callable[..., object]:
+    """Return one payload method lifted out of its class as a plain function.
+
+    ``payload_instance`` cannot run an ``__init__``: it builds a bases-less class,
+    so ``super().__init__(...)`` has nothing to reach. Lifting the method to module
+    level drops the ``__class__`` cell the compiler adds inside a class body, which
+    leaves zero-arg ``super()`` an ordinary global lookup — so a caller can stub it
+    and drive the rest of the method for real, passing its own object as ``self``.
+
+    :param class_name: The payload class owning the method.
+    :param method_name: The method to lift.
+    :param extra_namespace: Globals the method body reads that are not whitelisted
+        constants — module-level payload functions, or stand-ins for them.
+    :return: The lifted method, called as ``fn(self, ...)``.
+    """
+    tree = xtrabackup_payload_tree()
+    class_nodes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == class_name
+    ]
+    if not class_nodes:
+        raise RuntimeError(
+            f"{class_name} not found in {XTRABACKUP_PAYLOAD_PATH}. Renamed or removed?"
+        )
+    method_nodes = [
+        node
+        for node in class_nodes[0].body
+        if isinstance(node, ast.FunctionDef) and node.name == method_name
+    ]
+    if not method_nodes:
+        raise RuntimeError(
+            f"{class_name}.{method_name} not found in {XTRABACKUP_PAYLOAD_PATH}. "
+            "Renamed or removed?"
+        )
+    namespace = base_namespace()
+    module = ast.fix_missing_locations(
+        ast.Module(body=const_nodes(tree) + method_nodes, type_ignores=[])
+    )
+    exec(compile(module, str(XTRABACKUP_PAYLOAD_PATH), "exec"), namespace)  # noqa: S102
+    namespace.update(extra_namespace or {})
+    return namespace[method_name]
+
+
+def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[str]]]:
+    """Return the payload's ``is_encrypted_dir`` wired to a faked ``gpg`` binary.
+
+    :param returncode: Exit status every faked ``gpg`` run reports.
+    :return: The lifted function and the list its ``Popen`` calls append to.
+    """
+    tree = xtrabackup_payload_tree()
+    namespace = base_namespace()
+    calls: list[list[str]] = []
+
+    class _Popen:
+        def __init__(self, cmd: list[str], **_kwargs: object) -> None:
+            calls.append(list(cmd))
+            self.returncode = returncode
+
+        def communicate(self) -> tuple[bytes, bytes]:
+            return b"", b"err"
+
+    namespace["subprocess"] = types.SimpleNamespace(Popen=_Popen, PIPE=-1)
+    fn_nodes = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "is_encrypted_dir"
+    ]
+    exec(  # noqa: S102
+        compile(
+            ast.Module(body=const_nodes(tree) + fn_nodes, type_ignores=[]),
+            str(XTRABACKUP_PAYLOAD_PATH),
+            "exec",
+        ),
+        namespace,
+    )
+    return namespace["is_encrypted_dir"], calls
 
 
 class FakeProc:
@@ -207,7 +304,9 @@ def payload_instance(
         error=lambda *_a, **_k: None,
     )
     inst._clean_after_error = lambda: None  # noqa: SLF001
-    inst.xtrabackup_aes256_keyfile = "/keys/aes.key"
+    inst.aes_keyfile = "/keys/aes.key"
+    inst.enc_aes = True
+    inst.enc_gpg = False
     inst.compress = False
     inst.get_compression_ext = lambda: ""
     return inst, namespace["BackupError"], calls

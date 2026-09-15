@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
+from app.core.celery.schedules import INTERVAL_TIMEZONE, NEXT_RUNS_PREVIEW_COUNT
 from app.tasks.periodic.models import (
     BasePeriodicTask,
     PeriodicTaskCreate,
@@ -32,6 +33,9 @@ from app.tasks.periodic.models import (
     PeriodicTaskWrite,
 )
 from tests.app.factories import PeriodicTaskFactory
+
+#: ``datetime.isoweekday()`` for Friday, the day cron's ``day_of_week=5`` names.
+FRIDAY = 5
 
 
 def _periodic_response_data(**overrides):
@@ -89,6 +93,16 @@ class TestPeriodicTaskExecuteRequest:
         """Assert empty string eta is forced to None."""
         req = PeriodicTaskExecuteRequest(eta="", meta={})
         assert req.eta is None
+
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value):
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            PeriodicTaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
 
 
 class TestBasePeriodicTask:
@@ -332,8 +346,8 @@ class TestPeriodicTaskCreate:
         assert task.description == ""
 
 
-class TestPeriodicTaskResponseNextRunAt:
-    """Test the next_run_at computed field on PeriodicTaskResponse."""
+class TestPeriodicTaskResponseScheduleFields:
+    """Cover the schedule computed fields on PeriodicTaskResponse."""
 
     @pytest.fixture
     def response_fields(self):
@@ -371,25 +385,47 @@ class TestPeriodicTaskResponseNextRunAt:
         assert response.next_run_at is not None
         assert response.next_run_at.tzinfo == UTC
 
-    def test_interval_next_run_with_last_run_at(self, response_fields):
-        """Assert next_run_at equals last_run_at plus the interval."""
-        last_run = datetime(2026, 3, 3, 10, 0, 0, tzinfo=UTC)
-        response_fields["last_run_at"] = last_run
+    def test_interval_next_run_with_long_past_last_run_at(self, response_fields):
+        """Assert a schedule that has missed runs previews its next one now.
+
+        Beat fires such a schedule immediately rather than at
+        ``last_run_at + interval``, which is already in the past.
+        """
+        response_fields["last_run_at"] = datetime.now(UTC) - timedelta(days=180)
         response_fields["model_intervalschedule"] = IntervalSchedule(
             every=5, period=Period.HOURS
         )
+        before = datetime.now(UTC)
         response = PeriodicTaskResponse.model_validate(response_fields)
-        assert response.next_run_at == last_run + timedelta(hours=5)
+        assert response.next_run_at is not None
+        assert abs((response.next_run_at - before).total_seconds()) < 1
 
-    def test_interval_next_run_falls_back_to_start_time(self, response_fields):
-        """Assert next_run_at uses start_time when last_run_at is None."""
-        start = datetime(2026, 3, 3, 8, 0, 0, tzinfo=UTC)
+    def test_interval_next_run_is_start_time_when_start_time_is_future(
+        self, response_fields
+    ):
+        """Assert a future start_time is itself the first run, not start + interval.
+
+        ``ModelEntry.__init__`` back-dates an unset ``last_run_at`` so the first
+        run lands at ``start_time``.
+        """
+        start = datetime.now(UTC) + timedelta(days=7)
         response_fields["start_time"] = start
         response_fields["model_intervalschedule"] = IntervalSchedule(
             every=30, period=Period.MINUTES
         )
         response = PeriodicTaskResponse.model_validate(response_fields)
-        assert response.next_run_at == start + timedelta(minutes=30)
+        assert response.next_run_at == start
+
+    def test_crontab_next_run_is_start_time_when_start_time_is_future(
+        self, response_fields
+    ):
+        """Assert a cron schedule previews no run before a future start_time."""
+        start = datetime.now(UTC) + timedelta(days=7)
+        response_fields["start_time"] = start
+        response_fields["model_crontabschedule"] = CrontabSchedule(minute="0", hour="2")
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at == start
+        assert all(run >= start for run in response.next_runs)
 
     def test_interval_next_run_falls_back_to_now(self, response_fields):
         """Assert next_run_at is close to now + interval when no base time exists."""
@@ -399,13 +435,70 @@ class TestPeriodicTaskResponseNextRunAt:
         before = datetime.now(UTC)
         response = PeriodicTaskResponse.model_validate(response_fields)
         expected = before + timedelta(days=2)
+        assert response.next_run_at is not None
         assert abs((response.next_run_at - expected).total_seconds()) < 1
 
     def test_disabled_task_returns_none(self, response_fields):
-        """Assert next_run_at is None for disabled tasks."""
+        """Assert next_run_at is None and next_runs is empty for disabled tasks."""
         response_fields["enabled"] = False
         response_fields["model_intervalschedule"] = IntervalSchedule(
             every=1, period=Period.HOURS
         )
         response = PeriodicTaskResponse.model_validate(response_fields)
         assert response.next_run_at is None
+        assert response.next_runs == []
+
+    def test_crontab_next_run_matches_the_scheduler_not_croniter(self, response_fields):
+        """Assert a dom-and-dow expression takes the scheduler's intersection.
+
+        ``0 2 1 * 5`` is how "the first Friday of the month" is spelled. croniter
+        unions the two restricted fields and would report 2026-09-01; beat
+        intersects them and fires on 2027-01-01, four months later.
+        """
+        response_fields["model_crontabschedule"] = CrontabSchedule(
+            minute="0", hour="2", day_of_month="1", day_of_week="5"
+        )
+        response_fields["last_run_at"] = datetime(2026, 9, 1, tzinfo=UTC)
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.next_run_at is not None
+        assert response.next_run_at.day == 1
+        assert response.next_run_at.isoweekday() == FRIDAY
+
+    def test_next_runs_is_ordered_and_leads_with_next_run_at(self, response_fields):
+        """Assert next_runs is a strictly increasing UTC list headed by next_run_at."""
+        response_fields["model_crontabschedule"] = CrontabSchedule(
+            minute="0", hour="*/1"
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert len(response.next_runs) == NEXT_RUNS_PREVIEW_COUNT
+        assert response.next_runs == sorted(response.next_runs)
+        assert len(set(response.next_runs)) == NEXT_RUNS_PREVIEW_COUNT
+        assert all(run.tzinfo == UTC for run in response.next_runs)
+        assert response.next_run_at == response.next_runs[0]
+
+    def test_interval_timezone_is_utc_without_start_time(self, response_fields):
+        """Assert an interval schedule reports UTC even with no start_time."""
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=2, period=Period.DAYS
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.start_time is None
+        assert response.timezone == INTERVAL_TIMEZONE
+
+    def test_crontab_timezone_is_the_crontab_zone(self, response_fields):
+        """Assert a crontab schedule reports the zone it is defined in."""
+        response_fields["model_crontabschedule"] = CrontabSchedule(
+            minute="0", hour="2", timezone="Europe/Lisbon"
+        )
+        response = PeriodicTaskResponse.model_validate(response_fields)
+        assert response.timezone == "Europe/Lisbon"
+
+    def test_schedule_fields_are_serialised(self, response_fields):
+        """Assert the new fields reach the dumped payload, not just the instance."""
+        response_fields["model_intervalschedule"] = IntervalSchedule(
+            every=2, period=Period.DAYS
+        )
+        dumped = PeriodicTaskResponse.model_validate(response_fields).model_dump()
+        assert dumped["timezone"] == INTERVAL_TIMEZONE
+        assert len(dumped["next_runs"]) == NEXT_RUNS_PREVIEW_COUNT
+        assert dumped["next_run_at"] == dumped["next_runs"][0]

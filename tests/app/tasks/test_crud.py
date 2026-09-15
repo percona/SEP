@@ -28,6 +28,7 @@ from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db import ListQuery
 from app.core.db.list_query import build_search_predicate
 from app.core.db.utils import get_async_session_maker_from_engine, NullsLastOrdering
+from app.core.encryption import is_encrypted
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
@@ -35,6 +36,7 @@ from app.core.pagination import (
     Pagination,
 )
 from app.core.utils.date_time import utc_now
+from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
@@ -43,6 +45,7 @@ from app.tasks.crud import (
     TaskManager,
 )
 from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -50,6 +53,7 @@ from app.tasks.models import (
     SYSTEM_USER,
     Task,
     TaskBackendEnum,
+    TaskExecutionRequest,
     TaskHistory,
     TaskHistoryLog,
     TaskHistoryStatusEnum,
@@ -57,6 +61,7 @@ from app.tasks.models import (
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
+from tests.app.tasks.conftest import stored_execution_request
 
 HISTORY_FIXTURE_COUNT = 3
 PAGINATED_TASK_COUNT = 2
@@ -249,6 +254,98 @@ class TestTaskManagerListActive:
 
         assert len(result) == 1
         assert result[0].name == "host1-task"
+
+
+# ---------------------------------------------------------------------------
+# TaskManager.iter_active_batches
+# ---------------------------------------------------------------------------
+
+
+class TestTaskManagerIterActiveBatches:
+    """Test TaskManager.iter_active_batches."""
+
+    @staticmethod
+    async def _collect(
+        session: AsyncSession, *, owner: str | None = None, batch_size: int
+    ) -> list[list[str]]:
+        """Return the yielded batches as lists of task names.
+
+        :param session: The async database session.
+        :param owner: The owner filter to pass through, or ``None`` for all.
+        :param batch_size: Rows per batch.
+        :return: One list of task names per yielded batch, in yield order.
+        """
+        return [
+            [task.name for task in batch]
+            async for batch in TaskManager.iter_active_batches(
+                session, owner=owner, batch_size=batch_size
+            )
+        ]
+
+    @pytest.mark.asyncio
+    async def test_yields_every_active_task_in_id_order(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the batches partition the active population by ascending id."""
+        for index in range(5):
+            await _create_task(session, name=f"task-{index}")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [
+            ["task-0", "task-1"],
+            ["task-2", "task-3"],
+            ["task-4"],
+        ]
+
+    @pytest.mark.asyncio
+    async def test_skips_deleted_and_other_owners(self, session: AsyncSession) -> None:
+        """Assert the same active-and-owner scope as ``list_active``."""
+        await _create_task(session, name="kept", owner="BACKUPS")
+        await _create_task(session, name="other-owner", owner="ALTERS")
+        await _create_task(session, name="deleted", owner="BACKUPS")
+        await TaskManager.delete_by_name(session, "deleted")
+
+        batches = await self._collect(session, owner="BACKUPS", batch_size=10)
+
+        assert batches == [["kept"]]
+
+    @pytest.mark.asyncio
+    async def test_empty_db_yields_nothing(self, session: AsyncSession) -> None:
+        """Assert an empty population yields no batch at all."""
+        assert await self._collect(session, batch_size=10) == []
+
+    @pytest.mark.asyncio
+    async def test_a_full_final_batch_ends_the_pass(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a population that divides evenly does not repeat its last batch.
+
+        The keyset cursor advances past the highest id seen, so a re-queried
+        final page would surface as a duplicate batch rather than as an error.
+        """
+        for index in range(4):
+            await _create_task(session, name=f"task-{index}")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [["task-0", "task-1"], ["task-2", "task-3"]]
+
+    @pytest.mark.asyncio
+    async def test_a_gap_in_the_ids_skips_no_row(self, session: AsyncSession) -> None:
+        """Assert the cursor tracks the last id seen, not the count of rows seen.
+
+        Ids are only contiguous until something is hard-deleted, and the pass an
+        exhaustive count rests on must not step over the rows either side of the
+        hole.
+        """
+        for index in range(5):
+            await _create_task(session, name=f"task-{index}")
+        await TaskManager.delete_where(session, col(Task.name) == "task-1")
+
+        batches = await self._collect(session, batch_size=2)
+
+        assert batches == [["task-0", "task-2"], ["task-3", "task-4"]]
 
 
 # ---------------------------------------------------------------------------
@@ -644,6 +741,9 @@ class TestTaskHistoryManagerListByTaskNameOrdering:
         )
 
         assert [row.id for row in result] == [first.id, second.id, third.id]
+        assert first.id is not None
+        assert second.id is not None
+        assert third.id is not None
         assert first.id < second.id < third.id
 
 
@@ -1092,7 +1192,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.SUCCESS, finished_at=early
         )
-        failed = await _create_task_history(
+        await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=later
         )
         await _create_task_history(
@@ -1106,7 +1206,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.RUNNING
-        assert latest.finished_at == failed.finished_at
+        assert latest.finished_at == later
 
     @pytest.mark.asyncio
     async def test_only_running_never_finished_has_no_finish(
@@ -1132,7 +1232,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         """Assert a FAILED run still reports its finish time (it did run)."""
         task = await _create_task(session, name="latest-failed")
         finished = utc_now() - timedelta(minutes=30)
-        row = await _create_task_history(
+        await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=finished
         )
 
@@ -1143,7 +1243,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.FAILED
-        assert latest.finished_at == row.finished_at
+        assert latest.finished_at == finished
 
     @pytest.mark.asyncio
     async def test_no_executor_filter_returns_newest_regardless(
@@ -2586,3 +2686,104 @@ class TestTaskHistoryLogManagerDeleteChunksBelowOffset:
             300,
             400,
         ]
+
+
+class TestTaskHistoryManagerInFlightMetaValues:
+    """Cover the SQL-level ``meta`` reader over rows whose protected leaves are encrypted.
+
+    This is the one production reader that extracts a ``meta`` key straight out
+    of the stored JSON, so it is where "every other key stays plaintext and
+    queryable" either holds or does not.
+    """
+
+    @staticmethod
+    async def _seed(
+        session: AsyncSession,
+        *,
+        service_id: str,
+        status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.RUNNING,
+    ) -> TaskHistory:
+        """Persist one in-flight history row carrying every leaf kind.
+
+        :param session: The session to persist through.
+        :param service_id: The plaintext ``_service_id`` the row records.
+        :param status: The status the row is seeded in.
+        :return: The persisted history row.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name=f"meta-{service_id}")),
+        )
+        return await TaskHistoryManager.save(
+            session,
+            TaskHistory(
+                task_id=task.id,
+                status=status,
+                execution_request=TaskExecutionRequest(
+                    task=task.name,
+                    target="node-1",
+                    meta={
+                        SERVICE_ID_META_KEY: service_id,
+                        "args": "restore --password hunter2",
+                        "config": "master_password: hunter2\n",
+                    },
+                    payload="secret document",
+                ),
+                executed_by="test-user",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_reads_a_plaintext_meta_key_off_an_encrypted_row(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the extraction still resolves once the protected leaves are ciphertext.
+
+        :param session: The async session the manager queries.
+        """
+        history = await self._seed(session, service_id="svc-1")
+        await self._seed(session, service_id="svc-2")
+        stored = await stored_execution_request(session, history.id)
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+
+        values = await TaskHistoryManager.in_flight_meta_values(
+            session, SERVICE_ID_META_KEY
+        )
+
+        assert sorted(values) == ["svc-1", "svc-2"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("meta_key", ENCRYPTED_META_KEYS)
+    async def test_refuses_an_encrypted_meta_key(
+        self, session: AsyncSession, meta_key: str
+    ) -> None:
+        """Assert asking for an encrypted key raises rather than yielding ciphertext.
+
+        The extraction reads the stored JSON, so an encrypted key would come back
+        as a list of tokens. A caller reads this to learn what it must not act
+        on, so a plausible-looking wrong answer is worse than none.
+
+        :param session: The async session the manager queries.
+        :param meta_key: The encrypted key the caller asks for.
+        """
+        await self._seed(session, service_id="svc-1")
+
+        with pytest.raises(ValueError, match=meta_key):
+            await TaskHistoryManager.in_flight_meta_values(session, meta_key)
+
+    @pytest.mark.asyncio
+    async def test_ignores_a_terminal_row(self, session: AsyncSession) -> None:
+        """Assert the active-status scoping is unaffected by the encryption.
+
+        :param session: The async session the manager queries.
+        """
+        await self._seed(
+            session, service_id="finished", status=TaskHistoryStatusEnum.SUCCESS
+        )
+
+        assert (
+            await TaskHistoryManager.in_flight_meta_values(session, SERVICE_ID_META_KEY)
+            == []
+        )

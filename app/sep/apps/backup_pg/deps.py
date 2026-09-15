@@ -23,6 +23,7 @@ import yaml
 from fastapi import Depends, Request
 
 from app.core.exceptions import HTTPConflictException
+from app.core.requests import as_json_object
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.models import BackupTaskDetailResponse, BackupTaskResponse
@@ -67,9 +68,11 @@ async def check_create_has_no_conflicted_running_tasks(
         TaskHistoryStatusEnum.RUNNING,
         TaskHistoryStatusEnum.PENDING,
     ):
-        response = await tasks_api.get(
-            f"/{task_name}/history/",
-            params={"status": history_status},
+        response = as_json_object(
+            await tasks_api.get(
+                f"/{task_name}/history/",
+                params={"status": history_status},
+            )
         )
         if response["items"]:
             raise HTTPConflictException("Task is already running or pending.")

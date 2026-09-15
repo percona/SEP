@@ -44,6 +44,7 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.STOPPED: "STOPPED",
     TaskHistoryStatusEnum.LOST: "LOST",
     TaskHistoryStatusEnum.STALE: "STALE",
+    TaskHistoryStatusEnum.UNLAUNCHABLE: "UNLAUNCHABLE",
 }
 
 
@@ -123,30 +124,39 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
     async def stop_task(
         self, session: AsyncSession, queue_item: TaskHistory
     ) -> TaskHistory:
-        """Stop a task execution.
+        """Stop a task execution and record its outcome.
+
+        Persist the outcome the sync resolved: a terminal status and the finish
+        time that came with it stand as they are, and only a run the sync left
+        non-terminal is stamped STOPPED. Whether a stop request beats the run's
+        own result is the executor's decision, already applied by the time the
+        sync returns.
+
+        Send PMM exactly one terminal annotation per stop, naming the status
+        that was persisted.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param queue_item: The task history record for tracking this execution.
-        :type queue_item: TaskHistory
         :return: The updated task history with execution details.
-        :rtype: TaskHistory
         """
         await self._stop_task(queue_item)
         was_running = queue_item.status == TaskHistoryStatusEnum.RUNNING
         # TODO(yan): Remove sync_task_history from here as it can keep the db session open for too long
         # SEP-554
         queue_item = await self.sync_task_history(queue_item)
-        sync_emitted_stopped = (
-            was_running and queue_item.status == TaskHistoryStatusEnum.STOPPED
-        )
-        queue_item.status = TaskHistoryStatusEnum.STOPPED
-        queue_item.finished_at = utc_now()
+        sync_resolved_it = queue_item.status.is_terminal()
+        if not sync_resolved_it:
+            queue_item.status = TaskHistoryStatusEnum.STOPPED
+            queue_item.set_failure_reason(None)
+        if queue_item.finished_at is None:
+            queue_item.finished_at = utc_now()
+        event = _TERMINAL_STATUS_EVENT_MAP[queue_item.status]
         saved = await TaskHistoryManager.save(session, queue_item)
-        if not sync_emitted_stopped:
+        # A run the sync found running and resolved is already annotated by it.
+        if not (was_running and sync_resolved_it):
             await session.refresh(saved, attribute_names=["execution_request"])
-            schedule_annotation(saved, "STOPPED")
+            schedule_annotation(saved, event)
         return saved
 
     @abstractmethod
@@ -182,21 +192,25 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         self,
         queue_item: TaskHistory,
         start_offsets: dict[str, dict[str, int]] | None = None,
-    ) -> AsyncGenerator[TaskLog, None]:
+    ) -> AsyncGenerator[TaskLog | None, None]:
         """Stream logs from a task history record.
 
         Retrieves the allocation details and concurrently streams stdout and stderr logs
         for each task step. Yields ``TaskLog`` instances as log lines are received.
 
+        A ``None`` marks a stream that carries no lines, which the route renders as
+        an empty frame to keep the response open.
+
         :param queue_item: The task history record for tracking the logs.
-        :type queue_item: TaskHistory
         :param start_offsets: A dictionary containing the starting offsets for each
             step and log type. If None, defaults to starting from the beginning.
-        :type start_offsets: dict[str, dict[str, int]] | None
         :return: An async generator yielding ``TaskLog`` instances containing
             log messages.
-        :rtype: AsyncGenerator[TaskLog, None]
         """
+        raise NotImplementedError
+        # An `async def` with no `yield` in its body is a coroutine function, not
+        # an async generator, so overrides would not match this signature.
+        yield  # pragma: no cover
 
     def preflight_stream_logs(self, queue_item: TaskHistory) -> None:
         """Validate executor state before :meth:`stream_logs` sends response headers.
@@ -208,7 +222,6 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         can be handled as HTTP error responses.
 
         :param queue_item: The task history record that will be streamed.
-        :type queue_item: TaskHistory
         """
 
     def get_events(
@@ -249,6 +262,10 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
         """
+        raise NotImplementedError
+        # An `async def` with no `yield` in its body is a coroutine function, not
+        # an async generator, so overrides would not match this signature.
+        yield  # pragma: no cover
 
     @abstractmethod
     async def list_files(

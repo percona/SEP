@@ -17,8 +17,6 @@
 
 from typing import Any
 
-from croniter import croniter
-
 STANDARD_CRON_FIELD_COUNT = 5
 
 
@@ -41,17 +39,17 @@ def parse_interval_form_fields(data: dict[str, Any]) -> dict[str, Any]:
 def parse_crontab_form_fields(data: dict[str, Any]) -> dict[str, Any]:
     """Build the structured ``crontab`` dict from flat ``cron_*`` form fields.
 
-    Validates the ``cron_expression`` before splitting it into named components.
-    Raises :exc:`ValueError` for empty, malformed, or incorrect field-count expressions
-    so callers receive a clear error rather than a server fault.
+    Checks that the ``cron_expression`` splits into the expected number of
+    fields before naming them, so callers receive a clear error rather than a
+    server fault. Whether the expression itself is one the scheduler can run is
+    decided by :class:`~app.core.celery.models.CrontabSchedule`, the single
+    parser both this form path and the JSON API path feed into.
 
     :param data: The raw form input. Must contain ``cron_expression`` (5 space-
         separated fields) and ``cron_timezone``.
-    :type data: dict[str, Any]
     :return: A dict ready to feed :class:`CrontabSchedule`.
-    :rtype: dict[str, Any]
-    :raises ValueError: If ``cron_expression`` is empty, has the wrong number of
-        fields, or is not a valid cron schedule.
+    :raises ValueError: If ``cron_expression`` is empty or has the wrong number
+        of fields.
     """
     raw_expr = data["cron_expression"]
     cron_expression = str(raw_expr or "").strip()
@@ -66,9 +64,6 @@ def parse_crontab_form_fields(data: dict[str, Any]) -> dict[str, Any]:
             "(minute hour day-of-month month day-of-week), got "
             f"{len(parts)}."
         )
-        raise ValueError(msg)
-    if not croniter.is_valid(cron_expression):
-        msg = f"Invalid cron expression: {raw_expr!r} is not a valid cron schedule."
         raise ValueError(msg)
     minute, hour, day_of_month, month_of_year, day_of_week = parts
     return {

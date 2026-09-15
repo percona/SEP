@@ -15,6 +15,7 @@
 
 """Test the connectivity check route endpoint."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -83,7 +84,7 @@ def mock_executor() -> MagicMock:
 
 
 @pytest.fixture
-def test_client(regular_user, mock_executor) -> TestClient:
+def test_client(regular_user, mock_executor) -> Iterator[TestClient]:
     """Create an authenticated test client for the Tasks API."""
     session = AsyncMock()
     tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (

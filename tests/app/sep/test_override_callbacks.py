@@ -55,7 +55,9 @@ async def test_endpoint_rebinder_swaps_app_state_client(
     app = FastAPI()
     old = await RemoteAPI(endpoint="https://old-inv.example.org").open()
     app.state.inventory_api = old
-    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": "https://new-inv.example.org"})
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": "https://new-inv.example.org"}
+    )
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     new = None
@@ -73,7 +75,7 @@ async def test_endpoint_rebinder_swaps_app_state_client(
     finally:
         if new is not None:
             await new.close()
-        sep_settings._set_snapshot({})
+        sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -83,7 +85,9 @@ async def test_endpoint_rebinder_invalidates_when_no_app_state_client(
     """Assert the rebinder evicts the registry client when no ``app.state`` client exists."""
     app = FastAPI()
     endpoint = "https://new-inv.example.org"
-    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": endpoint})
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": endpoint}
+    )
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     rebind = _make_remote_api_rebinder(
@@ -99,7 +103,7 @@ async def test_endpoint_rebinder_invalidates_when_no_app_state_client(
         )
         invalidate.assert_awaited_once_with(endpoint)
     finally:
-        sep_settings._set_snapshot({})
+        sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -110,8 +114,14 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
     app = FastAPI()
     new_endpoint = "https://new-inv.example.org"
     base_endpoint = "https://base-inv.example.org"
-    mocker.patch.object(sep_settings._resolve(), "INVENTORY_ENDPOINT", base_endpoint)
-    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
+    mocker.patch.object(
+        sep_settings._resolve(),  # ty: ignore[unresolved-attribute]
+        "INVENTORY_ENDPOINT",
+        base_endpoint,
+    )
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": new_endpoint}
+    )
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     rebind = _make_remote_api_rebinder(
@@ -121,7 +131,7 @@ async def test_endpoint_rebinder_created_evicts_base_and_new(
         await rebind(SnapshotChange({}, {"INVENTORY_ENDPOINT": new_endpoint}))
         assert _awaited_endpoints(invalidate) == [base_endpoint, new_endpoint]
     finally:
-        sep_settings._set_snapshot({})
+        sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -132,7 +142,9 @@ async def test_endpoint_rebinder_changed_evicts_previous_and_new(
     app = FastAPI()
     previous_endpoint = "https://old-inv.example.org"
     new_endpoint = "https://new-inv.example.org"
-    sep_settings._set_snapshot({"INVENTORY_ENDPOINT": new_endpoint})
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": new_endpoint}
+    )
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     rebind = _make_remote_api_rebinder(
@@ -147,7 +159,7 @@ async def test_endpoint_rebinder_changed_evicts_previous_and_new(
         )
         assert _awaited_endpoints(invalidate) == [previous_endpoint, new_endpoint]
     finally:
-        sep_settings._set_snapshot({})
+        sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -158,8 +170,12 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
     app = FastAPI()
     previous_endpoint = "https://old-inv.example.org"
     base_endpoint = "https://base-inv.example.org"
-    mocker.patch.object(sep_settings._resolve(), "INVENTORY_ENDPOINT", base_endpoint)
-    sep_settings._set_snapshot({})
+    mocker.patch.object(
+        sep_settings._resolve(),  # ty: ignore[unresolved-attribute]
+        "INVENTORY_ENDPOINT",
+        base_endpoint,
+    )
+    sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     rebind = _make_remote_api_rebinder(
@@ -170,12 +186,95 @@ async def test_endpoint_rebinder_deleted_evicts_previous_and_base(
 
 
 @pytest.mark.asyncio
+async def test_endpoint_rebinder_defers_app_state_close_while_a_consumer_holds(
+    mocker: MockerFixture,
+) -> None:
+    """Keep a held ``app.state`` client alive through the rebind, closing on release."""
+    app = FastAPI()
+    old = await RemoteAPI(endpoint="https://old-inv.example.org").open()
+    app.state.inventory_api = old
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": "https://new-inv.example.org"}
+    )
+    mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
+
+    new = None
+    rebind = _make_remote_api_rebinder(
+        app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
+    )
+    try:
+        async with old.hold():
+            await rebind(SnapshotChange({}, {}))
+
+            new = app.state.inventory_api
+            assert new is not old
+            assert old._session is not None
+
+        assert old._session is None
+    finally:
+        if new is not None:
+            await new.close()
+        sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+async def test_endpoint_rebinder_defers_registry_close_while_a_consumer_holds() -> None:
+    """Keep a held registry client alive through the eviction, closing on release."""
+    app = FastAPI()
+    endpoint = "https://held-inv.example.org"
+    sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"INVENTORY_ENDPOINT": endpoint}
+    )
+    rebind = _make_remote_api_rebinder(
+        app, "inventory_api", sep_settings, "INVENTORY_ENDPOINT"
+    )
+    try:
+        client = await settings.get_remote_api(endpoint=endpoint)
+
+        async with client.hold():
+            await rebind(
+                SnapshotChange(
+                    {"INVENTORY_ENDPOINT": endpoint},
+                    {"INVENTORY_ENDPOINT": endpoint},
+                )
+            )
+
+            assert client._session is not None
+            assert await settings.get_remote_api(endpoint=endpoint) is not client
+
+        assert client._session is None
+    finally:
+        await settings.invalidate_client(endpoint)
+        sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+async def test_invalidate_pmm_clients_defers_close_while_a_consumer_holds() -> None:
+    """Keep a held PMM client alive through the eviction, closing on release."""
+    endpoint = "https://held-pmm.example.org"
+    pmm = PMMSettings(endpoint=endpoint)
+    settings._set_snapshot({"PMM": pmm})  # ty: ignore[unresolved-attribute]
+    try:
+        client = await settings.get_remote_api(endpoint=endpoint)
+
+        async with client.hold():
+            await invalidate_pmm_clients(SnapshotChange({"PMM": pmm}, {"PMM": pmm}))
+
+            assert client._session is not None
+
+        assert client._session is None
+    finally:
+        await settings.invalidate_client(endpoint)
+        settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
 async def test_invalidate_pmm_clients_evicts_current_pmm_endpoint(
     mocker: MockerFixture,
 ) -> None:
     """Assert the PMM callback evicts cached clients on the overridden PMM endpoint."""
     pmm = PMMSettings(endpoint="https://new-pmm.example.org")
-    settings._set_snapshot({"PMM": pmm})
+    settings._set_snapshot({"PMM": pmm})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
@@ -183,7 +282,7 @@ async def test_invalidate_pmm_clients_evicts_current_pmm_endpoint(
         await invalidate_pmm_clients(SnapshotChange({"PMM": pmm}, {"PMM": pmm}))
         invalidate.assert_awaited_once_with("https://new-pmm.example.org")
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -192,14 +291,14 @@ async def test_invalidate_pmm_clients_noop_without_endpoint(
 ) -> None:
     """Assert the PMM callback is a no-op when no PMM endpoint is configured."""
     pmm = PMMSettings(endpoint=None)
-    settings._set_snapshot({"PMM": pmm})
+    settings._set_snapshot({"PMM": pmm})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
         await invalidate_pmm_clients(SnapshotChange({"PMM": pmm}, {"PMM": pmm}))
         invalidate.assert_not_awaited()
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -209,11 +308,11 @@ async def test_invalidate_pmm_clients_created_evicts_base_and_new(
     """Evict the YAML/env base endpoint and the new one when a PMM override is created."""
     new_pmm = PMMSettings(endpoint="https://new-pmm.example.org")
     mocker.patch.object(
-        settings._resolve(),
+        settings._resolve(),  # ty: ignore[unresolved-attribute]
         "PMM",
         PMMSettings(endpoint="https://base-pmm.example.org"),
     )
-    settings._set_snapshot({"PMM": new_pmm})
+    settings._set_snapshot({"PMM": new_pmm})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
@@ -223,7 +322,7 @@ async def test_invalidate_pmm_clients_created_evicts_base_and_new(
             "https://new-pmm.example.org",
         ]
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -233,7 +332,7 @@ async def test_invalidate_pmm_clients_changed_evicts_previous_and_new(
     """Evict both the previous and the new endpoint when a PMM endpoint override changes."""
     previous_pmm = PMMSettings(endpoint="https://old-pmm.example.org")
     new_pmm = PMMSettings(endpoint="https://new-pmm.example.org")
-    settings._set_snapshot({"PMM": new_pmm})
+    settings._set_snapshot({"PMM": new_pmm})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
@@ -245,7 +344,7 @@ async def test_invalidate_pmm_clients_changed_evicts_previous_and_new(
             "https://new-pmm.example.org",
         ]
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -255,11 +354,11 @@ async def test_invalidate_pmm_clients_deleted_evicts_previous_and_base(
     """Evict the previous override and the YAML/env base when a PMM override is deleted."""
     previous_pmm = PMMSettings(endpoint="https://old-pmm.example.org")
     mocker.patch.object(
-        settings._resolve(),
+        settings._resolve(),  # ty: ignore[unresolved-attribute]
         "PMM",
         PMMSettings(endpoint="https://base-pmm.example.org"),
     )
-    settings._set_snapshot({})
+    settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     await invalidate_pmm_clients(SnapshotChange({"PMM": previous_pmm}, {}))
@@ -280,7 +379,7 @@ async def test_invalidate_pmm_clients_same_endpoint_credential_change_evicts_onc
     new_pmm = PMMSettings(
         endpoint="https://same-pmm.example.org", api_key=SecretStr("new-key")
     )
-    settings._set_snapshot({"PMM": new_pmm})
+    settings._set_snapshot({"PMM": new_pmm})  # ty: ignore[unresolved-attribute]
     invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
 
     try:
@@ -289,7 +388,7 @@ async def test_invalidate_pmm_clients_same_endpoint_credential_change_evicts_onc
         )
         invalidate.assert_awaited_once_with("https://same-pmm.example.org")
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio
@@ -304,13 +403,13 @@ async def test_reseed_callback_reseeds_beat_with_live_interval(
     beat's next tick.
     """
     reseed = mocker.patch("app.sep.main.init_periodic_tasks_db", new_callable=AsyncMock)
-    snippets_settings._set_snapshot(
+    snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": IntervalSchedule(every=15, period=Period.MINUTES)}
     )
     try:
         await _reseed_system_periodic_tasks(SnapshotChange({}, {}))
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     reseed.assert_awaited_once()
     tasks, prefix = reseed.await_args.args
@@ -354,11 +453,11 @@ async def test_apply_logging_dictconfig_reapplies_new_level(
     stale level baked in at construction time would be re-applied.
     """
     dict_config = mocker.patch("app.sep.settings_override.logging.config.dictConfig")
-    settings._set_snapshot({"LOGGING": "DEBUG"})
+    settings._set_snapshot({"LOGGING": "DEBUG"})  # ty: ignore[unresolved-attribute]
     try:
         await apply_logging_dictconfig({})
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     dict_config.assert_called_once()
     applied = dict_config.call_args.args[0]
@@ -375,12 +474,12 @@ async def test_apply_logging_dictconfig_swallows_failure(
         "app.sep.settings_override.logging.config.dictConfig",
         side_effect=ValueError("bad config"),
     )
-    settings._set_snapshot({"LOGGING": "DEBUG"})
+    settings._set_snapshot({"LOGGING": "DEBUG"})  # ty: ignore[unresolved-attribute]
     try:
         # Must not raise.
         await apply_logging_dictconfig({})
     finally:
-        settings._set_snapshot({})
+        settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 @pytest.mark.asyncio

@@ -254,12 +254,18 @@ class CasdoorUser(BaseUser):
         return [cls(**user_data) for user_data in users_data]
 
     @classmethod
-    async def from_token_payload(cls, token_payload: CasdoorTokenPayload) -> Self:
+    async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:
         """Create an instance of ``CasdoorUser`` from a ``CasdoorTokenPayload``.
 
         :param token_payload: The Casdoor token payload containing user information.
         :return: An instance of ``CasdoorUser``.
+        :raises TypeError: If the payload is not a ``CasdoorTokenPayload``.
         """
+        if not isinstance(token_payload, CasdoorTokenPayload):
+            raise TypeError(
+                f"CasdoorUser requires a CasdoorTokenPayload, got "
+                f"{type(token_payload).__name__}"
+            )
         return await cls.get_user(token_payload.username)
 
     @classmethod

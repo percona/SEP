@@ -18,7 +18,6 @@
 __all__ = ["BaseSnippetArgs", "Snippet", "SnippetExecutionMeta"]
 
 
-import hashlib
 import json
 import logging
 import shlex
@@ -65,6 +64,7 @@ from app.core.utils.fields import (
 )
 from app.core.utils.pydantic import CustomFieldMetadata
 from app.sep.apps.field_names import EXTRA_ARGS_FIELD_NAME, SUDO_FIELD_NAME
+from app.sep.snippets.checksums import digest_file
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -94,6 +94,35 @@ SUDO_INPUT_NAME = "-sudo-"
 logger = logging.getLogger(__name__)
 
 ExtraArgsField = Annotated[list[str], BeforeValidator(shlex.split)]
+
+
+def _meta_or_default(meta: dict[str, Any], key: str, default: str) -> str:
+    """Read ``key`` from snippet metadata, treating a blank declared value as absent.
+
+    Frontmatter reaches ``meta`` through ``yaml.safe_load``, which maps a valueless
+    ``key:`` to ``None`` and ``key: ""`` to ``""``. Both are present keys, so a
+    ``dict.get`` default never fires for them and the declared blank is handed to
+    consumers whose fields reject it. A padded but non-blank value is returned
+    unchanged, keeping this read consistent with ``SnippetManager.list_query_spec``'s
+    ``_meta_text(META_KEY_TITLE)``, which sorts and searches on the value as declared
+    — unlike ``_service_type_exprs`` alongside it, which trims before comparing.
+
+    ``meta`` is untyped, so a non-string value such as ``title: 5`` is rendered as
+    text rather than passed through: the ``str`` fields downstream reject an ``int``
+    for the whole response, which is the same page-wide failure a blank value caused.
+    A sequence or mapping takes the same path and renders as its ``repr``.
+
+    :param meta: The snippet's parsed frontmatter mapping.
+    :param key: The metadata key to read.
+    :param default: The value to return when the key is absent or declared blank.
+    :return: The declared value as text, or ``default`` when it is missing, ``None``,
+        or whitespace-only.
+    """
+    value = meta.get(key)
+    if value is None:
+        return default
+    text = value if isinstance(value, str) else str(value)
+    return text if text.strip() else default
 
 
 class FilePreview(NamedTuple):
@@ -389,21 +418,19 @@ class BaseSnippet(BaseModel):
     def title(self) -> str:
         """Get the title of the snippet.
 
-        :return: The title of the snippet, or the filename if no title is specified in
-            the metadata.
-        :rtype: str
+        :return: The title of the snippet, or the filename when the metadata declares
+            no title or declares a blank one.
         """
-        return self.meta.get(META_KEY_TITLE, self.filename)
+        return _meta_or_default(self.meta, META_KEY_TITLE, self.filename)
 
     @cached_property
     def description(self) -> str:
         """Get the description of the snippet.
 
-        :return: The description of the snippet, or an empty string if no description is
-            specified in the metadata.
-        :rtype: str
+        :return: The description of the snippet, or an empty string when the metadata
+            declares no description or declares a blank one.
         """
-        return self.meta.get(META_KEY_DESCRIPTION, "")
+        return _meta_or_default(self.meta, META_KEY_DESCRIPTION, "")
 
     @cached_property
     def service_type(self) -> str | None:
@@ -819,14 +846,9 @@ class BaseSnippet(BaseModel):
         :rtype: Snippet
         """
         path = cls.BASE_DIR / Path(path)
-        file_hash = hashlib.md5(usedforsecurity=False)
-        chunk_size = 8192
-        async with aiofiles.open(path, "rb") as f:
-            while chunk := await f.read(chunk_size):
-                file_hash.update(chunk)
         snippet = cls(
             filename=str(path.relative_to(cls.BASE_DIR)),
-            md5_digest=file_hash.hexdigest(),
+            md5_digest=await digest_file(path, "md5", usedforsecurity=False),
             size=await getsize(path),
         )
         if update_meta:
@@ -856,7 +878,7 @@ class Snippet(BaseSnippet, BaseSQLModel, table=True):
 
     __table_args__ = (Index("ix_snippet_filename", "filename", unique=True),)
     approved_at: UTCDatetime | None = SQLField(
-        sa_type=DateTimeWithTimezone,
+        sa_type=DateTimeWithTimezone,  # ty: ignore[invalid-argument-type]
         default=None,
         index=True,
     )

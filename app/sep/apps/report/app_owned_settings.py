@@ -16,12 +16,11 @@
 """Declare the report app's own settings class."""
 
 from app.core.settings_override.api.routes import AppOwnedClassEntry
-from app.core.settings_override.models import SettingClassEnum
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 
 APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
     AppOwnedClassEntry(
-        setting_class=SettingClassEnum.HEALTH_REPORT_SETTINGS,
+        setting_class=HealthReportSettings.__name__,
         settings_cls=HealthReportSettings,
         proxy=health_report_settings,
         app_key="report",

@@ -25,6 +25,7 @@ already does for ``factory``.
 
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 
 from pydantic import ValidationError
 
@@ -36,6 +37,7 @@ __all__ = [
     "DRIFTED_INPUTS_REASON",
     "UNCONFIGURED_REASON",
     "DeliveryPlanResolution",
+    "DeliveryUnavailableCode",
     "resolve_delivery_plan",
 ]
 
@@ -57,6 +59,18 @@ DRIFTED_INPUTS_REASON = (
 )
 
 
+class DeliveryUnavailableCode(StrEnum):
+    """Name why delivery is unavailable, for a consumer that must branch on it.
+
+    The reason constants above are operator-facing prose and may be reworded;
+    a caller choosing what to render or which action to offer branches on this
+    instead, so no consumer has to match on the wording.
+    """
+
+    UNCONFIGURED = "unconfigured"
+    DRIFTED_INPUTS = "drifted_inputs"
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryPlanResolution:
     """Report the effective delivery plan, or why there is not one.
@@ -73,24 +87,35 @@ class DeliveryPlanResolution:
     :param plan: The plan to deliver with, or ``None`` when there is none.
     :param unavailable_reason: The operator-facing reason there is no plan, or
         ``None`` when there is one. Never names a secret the plan declares.
+    :param code: The machine-readable form of ``unavailable_reason``, set
+        whenever that is; ``None`` when there is a plan.
     """
 
     plan: DeliveryPlan | None
     unavailable_reason: str | None
+    code: DeliveryUnavailableCode | None = None
 
     def __post_init__(self) -> None:
         """Refuse a resolution that carries both outcomes, or neither.
 
         Callers read one member off the other's emptiness, so an instance
         holding neither would report a deployment as able to deliver with no
-        plan to deliver by.
+        plan to deliver by. The code moves with the reason for the same reason:
+        a consumer branching on it would otherwise have to fall back to the
+        prose exactly when the prose is all there is.
 
-        :raises ValueError: When both members are set, or neither is.
+        :raises ValueError: When both outcomes are set, neither is, or the code
+            and the reason do not accompany each other.
         """
         if (self.plan is None) == (self.unavailable_reason is None):
             raise ValueError(
                 "A delivery plan resolution carries either a plan or a reason "
                 "for there being none, not both and not neither."
+            )
+        if (self.unavailable_reason is None) != (self.code is None):
+            raise ValueError(
+                "A delivery plan resolution's unavailability code and reason "
+                "are set together or not at all."
             )
 
     @classmethod
@@ -103,13 +128,30 @@ class DeliveryPlanResolution:
         return cls(plan=plan, unavailable_reason=None)
 
     @classmethod
-    def unavailable(cls, reason: str) -> "DeliveryPlanResolution":
+    def unavailable(
+        cls, reason: str, code: DeliveryUnavailableCode
+    ) -> "DeliveryPlanResolution":
         """Return the resolution for a deployment that cannot deliver.
 
         :param reason: The operator-facing reason, from this module's constants.
-        :return: The resolution carrying it.
+        :param code: The machine-readable form of that reason.
+        :return: The resolution carrying both.
         """
-        return cls(plan=None, unavailable_reason=reason)
+        return cls(plan=None, unavailable_reason=reason, code=code)
+
+    @classmethod
+    def unconfigured(cls) -> "DeliveryPlanResolution":
+        """Return the resolution for a deployment with no usable receiver.
+
+        Names the outcome the three unconfigured paths below share, so each
+        states which case it reached rather than restating the pairing of
+        reason and code.
+
+        :return: The unconfigured resolution.
+        """
+        return cls.unavailable(
+            UNCONFIGURED_REASON, DeliveryUnavailableCode.UNCONFIGURED
+        )
 
 
 def resolve_delivery_plan() -> DeliveryPlanResolution:
@@ -142,7 +184,7 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
     """
     skeleton = sep_settings.DIAGNOSTICS_DELIVERY
     if skeleton is None:
-        return DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON)
+        return DeliveryPlanResolution.unconfigured()
 
     inputs = sep_settings.DIAGNOSTICS_DELIVERY_INPUTS
     secrets = dict(skeleton.secrets)
@@ -154,7 +196,9 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
                 "as drifted.",
                 ", ".join(sorted(undeclared)),
             )
-            return DeliveryPlanResolution.unavailable(DRIFTED_INPUTS_REASON)
+            return DeliveryPlanResolution.unavailable(
+                DRIFTED_INPUTS_REASON, DeliveryUnavailableCode.DRIFTED_INPUTS
+            )
         secrets.update(inputs.secrets)
     if empty := sorted(
         name for name, secret in secrets.items() if not secret.get_secret_value()
@@ -164,7 +208,7 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
             "unconfigured.",
             ", ".join(empty),
         )
-        return DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON)
+        return DeliveryPlanResolution.unconfigured()
     if inputs is None:
         return DeliveryPlanResolution.resolved(skeleton)
 
@@ -179,5 +223,5 @@ def resolve_delivery_plan() -> DeliveryPlanResolution:
         plan = DeliveryPlan.model_validate(data)
     except ValidationError as exc:
         logger.warning("Diagnostics delivery inputs produce an invalid plan: %s", exc)
-        return DeliveryPlanResolution.unavailable(UNCONFIGURED_REASON)
+        return DeliveryPlanResolution.unconfigured()
     return DeliveryPlanResolution.resolved(plan)

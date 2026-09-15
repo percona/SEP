@@ -36,6 +36,7 @@ from app.core.config import (
     detect_removed_settings_override_keys,
     settings,
 )
+from app.core.health import wait_for_api_ready
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
@@ -201,7 +202,45 @@ def start_celery_worker() -> None:
 
 
 def start_celery_beat() -> None:
-    """Start the Celery beat process."""
+    """Start the Celery beat process once the HTTP API answers its health probe.
+
+    Beat's schedule is persisted by the ``sqlalchemy`` scheduler, so a restart does
+    not wait out the interval: anything already overdue is dispatched about a
+    second in. Under ``--start-celery`` that lands inside the window before
+    ``uvicorn.run`` has opened its listening socket, and a periodic task whose
+    first act is to call SEP's own API fails on connect through no fault of its
+    own. Gating beat, not the worker, which idles harmlessly, closes that window
+    without a fixed sleep.
+
+    The gate is best-effort. If the probe never answers ``200`` beat is started
+    anyway, because scheduling nothing at all until an operator notices is a worse
+    outcome than the connect error this guards against; the timeout is logged at
+    ``ERROR`` so the degradation is visible.
+
+    Logging is configured here rather than inherited: a ``spawn`` start method
+    re-imports this module without running its ``__main__`` block, so the parent's
+    ``dictConfig`` call does not reach this process and the gate's own log lines —
+    the only account of why beat has not started yet — would be dropped.
+    """
+    logging.config.dictConfig(settings.LOGGING_CONFIG)
+    try:
+        api_ready = wait_for_api_ready(
+            sep_settings.UVICORN_HOST,
+            sep_settings.UVICORN_PORT,
+            allowed_hosts=sep_settings.ALLOWED_HOSTS,
+            timeout=sep_settings.API_READINESS_TIMEOUT,
+            interval=sep_settings.API_READINESS_POLL_INTERVAL,
+        )
+    except KeyboardInterrupt:
+        logging.info("Celery beat start cancelled before the HTTP API became ready.")
+        return
+
+    if not api_ready:
+        logging.error(
+            "Starting Celery beat without a ready HTTP API. An overdue periodic task "
+            "that calls SEP's own API may fail to connect on its first run."
+        )
+
     beat = celery_app.Beat(
         scheduler="sqlalchemy",
         loglevel=settings.LOGGING_CONFIG["loggers"]["celery.beat"]["level"],

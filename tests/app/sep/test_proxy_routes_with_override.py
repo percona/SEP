@@ -29,7 +29,7 @@ exercised. The Tasks-side equivalent lives next to the Tasks app at
 ``tests/app/tasks/test_settings_override_integration.py``.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from unittest.mock import AsyncMock
 
 import pytest
@@ -42,10 +42,15 @@ from sqlmodel.pool import StaticPool
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.config import BaseYamlSettings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.utils import json_serializer
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import (
@@ -54,11 +59,15 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture
-async def override_session_maker() -> async_sessionmaker:
+async def override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker for the override store."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -66,7 +75,7 @@ async def override_session_maker() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -85,15 +94,23 @@ def _sep_proxies() -> dict:
 
 async def _insert_override(
     session_maker: async_sessionmaker,
-    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
     key: str,
     value: object,
 ) -> None:
-    """Insert one active override row into the override store."""
+    """Insert one active override row into the override store.
+
+    :param session_maker: Async session maker bound to the override store.
+    :param settings_cls: Settings class whose :func:`~app.core.settings_override.models.setting_class_token`
+        is persisted as ``setting_class`` on the row.
+    :param key: Canonical override key (``SCREAMING_SNAKE`` or nested path).
+    :param value: JSON-serializable override payload.
+    """
+    token = setting_class_token(settings_cls)
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
-            SettingOverride(setting_class=setting_class, key=key, value=value),
+            SettingOverride(setting_class=token, key=key, value=value),
         )
 
 
@@ -140,7 +157,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
 
         await _insert_override(
             override_session_maker,
-            SettingClassEnum.SNIPPETS_SETTINGS,
+            SnippetsSettings,
             "ENABLE_MANUAL_SYNC",
             value=False,
         )
@@ -171,7 +188,7 @@ async def test_sep_proxy_visible_after_refresh(
     override_value = not yaml_default
     await _insert_override(
         override_session_maker,
-        SettingClassEnum.SEP_SETTINGS,
+        SEPSettings,
         "CONNECTIVITY_CHECK_DEFAULT",
         value=override_value,
     )

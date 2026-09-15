@@ -15,25 +15,57 @@
 
 """Test inventory model validators and enums."""
 
+from datetime import timedelta
+
 import pytest
 from pydantic import ValidationError
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
+from app.inventory.constants import ACTIVE_RETIREMENT_KEY, SYNC_ATTEMPT_MAX_CLOCK_SKEW
+from app.inventory.crud import RetiredInclusiveServiceManager, ServiceManager
 from app.inventory.models import (
+    ExternalIdentityAlias,
     HostSystemObservationWrite,
+    IdentityLinkDecision,
     NodeWrite,
+    Service,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
+    ServiceWrite,
     SourceEnum,
+    SyncHealthWrite,
+    SyncOutcomeEnum,
 )
+from tests.app.factories import ServiceWriteFactory
 
 
-class TestNodeBaseValidator:
-    """Test the NodeBase.validate_external_id_source model validator."""
+class TestNodeWriteMandatoryOrigin:
+    """Test that NodeWrite requires a PMM origin."""
 
-    def test_external_id_without_source_raises(self) -> None:
-        """Raise ValidationError when external_id is set without source."""
+    def test_missing_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is absent."""
         with pytest.raises(ValidationError, match="external_id"):
+            NodeWrite(address="10.0.0.1", name="node1", source=SourceEnum.PMM)
+
+    def test_missing_source_raises(self) -> None:
+        """Raise ValidationError when source is absent."""
+        with pytest.raises(ValidationError, match="source"):
+            NodeWrite(address="10.0.0.1", name="node1", external_id="abc")
+
+    def test_null_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is explicitly None."""
+        with pytest.raises(ValidationError, match="external_id"):
+            NodeWrite(
+                address="10.0.0.1",
+                name="node1",
+                external_id=None,
+                source=SourceEnum.PMM,
+            )
+
+    def test_null_source_raises(self) -> None:
+        """Raise ValidationError when source is explicitly None."""
+        with pytest.raises(ValidationError, match="source"):
             NodeWrite(
                 address="10.0.0.1",
                 name="node1",
@@ -41,8 +73,8 @@ class TestNodeBaseValidator:
                 source=None,
             )
 
-    def test_external_id_with_source_succeeds(self) -> None:
-        """Accept external_id when source is also provided."""
+    def test_full_origin_succeeds(self) -> None:
+        """Accept a node carrying both external_id and source."""
         node = NodeWrite(
             address="10.0.0.1",
             name="node1",
@@ -52,14 +84,34 @@ class TestNodeBaseValidator:
         assert node.external_id == "abc"
         assert node.source == SourceEnum.PMM
 
-    def test_no_external_id_no_source_succeeds(self) -> None:
-        """Accept when neither external_id nor source is set."""
-        node = NodeWrite(
-            address="10.0.0.1",
-            name="node1",
+
+class TestServiceWriteMandatoryOrigin:
+    """Test that ServiceWrite requires an external_id."""
+
+    def test_missing_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is absent."""
+        with pytest.raises(ValidationError, match="external_id"):
+            ServiceWrite(name="svc", type=ServiceTypeEnum.MYSQL, node_id=1)
+
+    def test_null_external_id_raises(self) -> None:
+        """Raise ValidationError when external_id is explicitly None."""
+        with pytest.raises(ValidationError, match="external_id"):
+            ServiceWrite(
+                external_id=None,
+                name="svc",
+                type=ServiceTypeEnum.MYSQL,
+                node_id=1,
+            )
+
+    def test_full_origin_succeeds(self) -> None:
+        """Accept a service carrying an external_id."""
+        service = ServiceWrite(
+            external_id="svc-1",
+            name="svc",
+            type=ServiceTypeEnum.MYSQL,
+            node_id=1,
         )
-        assert node.external_id is None
-        assert node.source is None
+        assert service.external_id == "svc-1"
 
 
 class TestHostSystemObservationBaseValidator:
@@ -130,3 +182,132 @@ class TestServiceTypeEnum:
             "external",
             "valkey",
         }
+
+
+class TestRetirementKeyUniqueness:
+    """Test how ``retirement_key`` scopes the composite unique indexes.
+
+    Uniqueness is enforced twice: by the database index, and by the Python
+    duplicate check ``BaseSQLModelManager.save`` rebuilds from the model's unique
+    indexes. The Python half is guarded by ``all(equal_filters.values())``, so it
+    only keeps running while the discriminator stays truthy — which is why these
+    tests distinguish ``HTTPConflictException`` (Python check) from the
+    ``HTTPBadRequestException`` a bare index violation would produce.
+    """
+
+    @pytest.mark.asyncio
+    async def test_active_service_carries_the_active_sentinel(
+        self, service: Service
+    ) -> None:
+        """Keep the discriminator truthy on an active row."""
+        assert service.retirement_key == ACTIVE_RETIREMENT_KEY
+        assert ACTIVE_RETIREMENT_KEY
+
+    @pytest.mark.asyncio
+    async def test_two_active_services_on_one_port_are_both_admitted(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Admit a second active service sharing a node and port.
+
+        Several databases behind one PostgreSQL or MySQL server legally share
+        that server's port, and every service now carries its own external
+        identity, so nothing about the pair collides.
+        """
+        second = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert second.id != service.id
+        assert second.port == service.port
+        assert second.external_id != service.external_id
+
+    @pytest.mark.asyncio
+    async def test_replacement_over_a_tombstone_is_admitted(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Admit a replacement on the node and port a tombstone still holds."""
+        await ServiceManager.retire(session, service)
+
+        replacement = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        assert replacement.id != service.id
+        assert replacement.retirement_key == ACTIVE_RETIREMENT_KEY
+
+    @pytest.mark.asyncio
+    async def test_successive_tombstones_share_one_key(
+        self, session: AsyncSession, service: Service
+    ) -> None:
+        """Let any number of tombstones sit on the same node and port."""
+        await ServiceManager.retire(session, service)
+        replacement = await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(port=service.port),
+            node_id=service.node_id,
+        )
+        await ServiceManager.retire(session, replacement)
+
+        retired = await RetiredInclusiveServiceManager.list(
+            session, node_id=service.node_id
+        )
+        assert {row.id for row in retired} == {service.id, replacement.id}
+        assert {row.retirement_key for row in retired} == {service.id, replacement.id}
+
+
+class TestIdentityTablesCarryNoUniqueIndex:
+    """Test that the append-only identity tables declare no unique index.
+
+    ``BaseSQLModelManager.save`` rebuilds equality filters from every unique
+    index and refuses a row matching one, so a unique index here would reject
+    the superseding record that closes a binding — which is how this design
+    expresses closure.
+    """
+
+    def test_alias_table_has_no_unique_index(self) -> None:
+        """Leave every external-identity alias index non-unique."""
+        indexes = ExternalIdentityAlias.__table__.indexes
+        assert indexes
+        assert not any(index.unique for index in indexes)
+
+    def test_decision_table_has_no_unique_index(self) -> None:
+        """Leave every identity-link decision index non-unique."""
+        indexes = IdentityLinkDecision.__table__.indexes
+        assert indexes
+        assert not any(index.unique for index in indexes)
+
+
+class TestSyncHealthWriteAttemptClock:
+    """Test the bound a reported attempt time is held to."""
+
+    @pytest.mark.parametrize(
+        "offset",
+        [SYNC_ATTEMPT_MAX_CLOCK_SKEW - timedelta(minutes=1), -timedelta(days=30)],
+        ids=["ahead_within_tolerance", "in_the_past"],
+    )
+    def test_an_attempt_not_beyond_the_tolerance_is_accepted(
+        self, offset: timedelta
+    ) -> None:
+        """Admit both the ordinary late report and the drift two containers carry."""
+        attempted_at = utc_now() + offset
+
+        body = SyncHealthWrite(
+            outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at
+        )
+
+        assert body.attempted_at == attempted_at
+
+    def test_an_attempt_beyond_the_tolerance_is_refused(self) -> None:
+        """Refuse a freshness no later report could supersede.
+
+        The ordering guards admit any attempt not older than the stored one, so
+        a clock running fast would stamp a ``last_synced_at`` that locks the row
+        until wall-clock time catches up — and locks out the same reporter once
+        its clock is corrected.
+        """
+        attempted_at = utc_now() + SYNC_ATTEMPT_MAX_CLOCK_SKEW + timedelta(minutes=1)
+
+        with pytest.raises(ValidationError, match="clock skew"):
+            SyncHealthWrite(outcome=SyncOutcomeEnum.SUCCESS, attempted_at=attempted_at)

@@ -23,7 +23,6 @@ from pydantic import PositiveInt
 
 from app.core.celery.models import IntervalSchedule, Period
 from app.core.config import BaseYamlSettings
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
 
@@ -42,13 +41,13 @@ class AlertsSettings(BaseYamlSettings):
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "ALERTS"]
-    BACKUP_INTERVAL: IntervalSchedule = hot_field(
+    BACKUP_INTERVAL: IntervalSchedule = hot_field(  # ty: ignore[invalid-assignment]
         IntervalSchedule(every=24, period=Period.HOURS)
     )
-    BACKUP_RETENTION: PositiveInt = hot_field(10)
-    ALERT_FOLDER_NAME: str = hot_field("SEP Alerts")
+    BACKUP_RETENTION: PositiveInt = hot_field(10)  # ty: ignore[invalid-assignment]
+    ALERT_FOLDER_NAME: str = hot_field("SEP Alerts")  # ty: ignore[invalid-assignment]
 
 
 alerts_settings: AlertsSettings = OverridableSettingsProxy(
-    AlertsSettings, setting_class=SettingClassEnum.ALERTS_SETTINGS
+    AlertsSettings, setting_class=AlertsSettings.__name__
 )

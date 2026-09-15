@@ -26,8 +26,8 @@ without writing when the committed value has drifted.
 
 A regeneration that would drop an entry already listed in the ini is
 refused unless ``--allow-removals`` is passed — see
-``app/sep/migrations/_orphan_heads.py`` for why a configured-but-absent
-location has to survive.
+``app/sep/migrations/_orphan_heads.py`` for why a configured location
+that contributes no revisions has to survive.
 """
 
 from __future__ import annotations
@@ -53,8 +53,9 @@ GENERATED_COMMENT = """\
 # reads this before ``env.py``, so the list must stay here; regenerate
 # via the sync script, pre-commit, or Make migration targets.
 # Regenerating never drops an entry listed here — that needs an explicit
-# ``--allow-removals`` run — because a configured location missing from
-# disk is how the orphan-head filter recognises a stripped app.
+# ``--allow-removals`` run — because a configured location that is absent
+# from disk or contributes no migration scripts is how the orphan-head
+# filter recognises a stripped app.
 """
 
 _SECTION_HEADER = re.compile(r"^\[(?P<name>[^]]+)]\s*$")
@@ -365,11 +366,12 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"{args.ini}: {action} {len(exc.removed)} "
             f"[sep] version_locations entry(ies): {', '.join(exc.removed)}. "
-            "A configured location missing from disk is how the orphan-head "
-            "filter recognises a stripped app, so removing it silently would "
-            "disarm that check. Restore the migration directory; or, on a "
-            "tree with an app deliberately stripped, skip this script and "
-            "run `alembic --name sep upgrade heads` directly — leaving the "
+            "A configured location that is absent from disk or contributes "
+            "no migration scripts is how the orphan-head filter recognises a "
+            "stripped app, so removing it silently would disarm that check. "
+            "Restore the migration directory; or, on a tree with an app "
+            "deliberately stripped, skip this script and run "
+            "`alembic --name sep upgrade heads` directly — leaving the "
             f"entry in place is what arms the filter. {opt_in}",
             file=sys.stderr,
         )

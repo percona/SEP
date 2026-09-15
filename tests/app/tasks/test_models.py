@@ -15,6 +15,7 @@
 
 """Define test cases for the tasks data models and validation."""
 
+import json
 from collections import defaultdict
 from datetime import datetime, UTC
 from typing import Any
@@ -22,10 +23,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+from cryptography.fernet import Fernet
 from polyfactory.factories.pydantic_factory import ModelFactory
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.encryption import decrypt, is_encrypted
 from app.core.utils.path import PayloadReferenceError
 from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
@@ -34,16 +37,23 @@ from app.sep.apps.archives.alerts import (
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
+from app.tasks.execution_request_secrets import (
+    ARGS_LEAF,
+    ENCRYPTED_META_KEYS,
+    PAYLOAD_LEAF,
+)
 from app.tasks.models import (
     _encode_anonymize_mask,
     DispatchLock,
     FileMetadata,
     LogCaptureStatusEnum,
+    MAX_FAILURE_REASON_LENGTH,
     Task,
     TaskBackendEnum,
     TaskBase,
     TaskExecuteRequest,
     TaskExecutionRequest,
+    TaskExecutionRequestJSON,
     TaskHistory,
     TaskHistoryBase,
     TaskHistoryLogState,
@@ -88,10 +98,10 @@ class TestTaskBackendEnum:
 
 
 class TestTaskHistoryStatusEnum:
-    """Test TaskHistoryStatusEnum values and is_finished method."""
+    """Test TaskHistoryStatusEnum values and output-availability predicates."""
 
     def test_all_values_exist(self) -> None:
-        """Assert all seven status values exist."""
+        """Assert all eight status values exist."""
         expected = {
             "FAILED",
             "PENDING",
@@ -100,6 +110,7 @@ class TestTaskHistoryStatusEnum:
             "STOPPED",
             "LOST",
             "STALE",
+            "UNLAUNCHABLE",
         }
         assert {s.name for s in TaskHistoryStatusEnum} == expected
 
@@ -110,10 +121,11 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.SUCCESS,
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns True for terminal statuses."""
+        """Assert is_finished returns True for statuses with observed outcomes."""
         assert status.is_finished() is True
 
     @pytest.mark.parametrize(
@@ -125,7 +137,7 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns False for unfinished statuses."""
+        """Assert is_finished returns False when output retrieval is not meaningful."""
         assert status.is_finished() is False
 
     @pytest.mark.parametrize(
@@ -136,6 +148,7 @@ class TestTaskHistoryStatusEnum:
             TaskHistoryStatusEnum.STOPPED,
             TaskHistoryStatusEnum.LOST,
             TaskHistoryStatusEnum.STALE,
+            TaskHistoryStatusEnum.UNLAUNCHABLE,
         ],
     )
     def test_is_terminal_true(self, status: TaskHistoryStatusEnum) -> None:
@@ -152,6 +165,55 @@ class TestTaskHistoryStatusEnum:
     def test_is_terminal_false(self, status: TaskHistoryStatusEnum) -> None:
         """Assert is_terminal returns False for active statuses."""
         assert status.is_terminal() is False
+
+    @pytest.mark.parametrize("status", list(TaskHistoryStatusEnum))
+    def test_every_member_is_classified(self, status: TaskHistoryStatusEnum) -> None:
+        """Refuse a member that is neither terminal nor active.
+
+        The two parametrized lists above are hand-enumerated, so a member added
+        to the enum joins neither and is silently uncovered by them. Driving
+        this off the enum itself names the offender instead, which is what
+        keeps the published ``task_statuses`` vocabulary exhaustive.
+        """
+        assert status.is_terminal() != status.is_active(), (
+            f"{status.value}: is_terminal={status.is_terminal()} "
+            f"is_active={status.is_active()} -- expected exactly one"
+        )
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            (TaskHistoryStatusEnum.FAILED, "failed"),
+            (TaskHistoryStatusEnum.LOST, "execution tracking lost"),
+            (
+                TaskHistoryStatusEnum.STALE,
+                "skipped as stale (executor placement delayed past threshold)",
+            ),
+            (
+                TaskHistoryStatusEnum.UNLAUNCHABLE,
+                "could not be launched (the executor node cannot run the "
+                "requested command)",
+            ),
+        ],
+    )
+    def test_operator_summary_prose(
+        self, status: TaskHistoryStatusEnum, expected: str
+    ) -> None:
+        """Assert operator_summary returns the operator-facing prose per status."""
+        assert status.operator_summary() == expected
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.PENDING,
+            TaskHistoryStatusEnum.RUNNING,
+            TaskHistoryStatusEnum.STOPPED,
+        ],
+    )
+    def test_operator_summary_none(self, status: TaskHistoryStatusEnum) -> None:
+        """Assert operator_summary returns None for statuses carrying no prose."""
+        assert status.operator_summary() is None
 
 
 class TestTaskLogType:
@@ -512,6 +574,24 @@ class TestTaskExecuteRequest:
         )
         assert req.meta == {"existing": "val", "new": "val2"}
 
+    @pytest.mark.parametrize(
+        "meta_value",
+        ["oops", ["a"], None],
+        ids=["string", "list", "null"],
+    )
+    def test_populate_meta_rejects_non_mapping(self, meta_value: Any) -> None:
+        """Assert non-mapping meta alongside a meta_ key raises ValidationError."""
+        with pytest.raises(ValidationError):
+            TaskExecuteRequest.model_validate({"meta": meta_value, "meta_x": 1})
+
+    def test_populate_meta_rejects_non_mapping_without_meta_key(self) -> None:
+        """Assert bare non-mapping meta keeps Pydantic's field-scoped error."""
+        with pytest.raises(ValidationError) as exc_info:
+            TaskExecuteRequest.model_validate({"meta": "oops"})
+        errors = exc_info.value.errors()
+        assert errors[0]["loc"] == ("meta",)
+        assert errors[0]["type"] == "dict_type"
+
     def test_empty_str_to_none_for_eta(self) -> None:
         """Assert empty string for eta is converted to None."""
         req = TaskExecuteRequest.model_validate({"eta": ""})
@@ -597,6 +677,52 @@ class TestTaskHistoryBase:
             started_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
         assert history.duration is None
+
+    def test_failure_reason_defaults_to_none(self) -> None:
+        """Assert failure_reason defaults to None on a fresh history."""
+        req = TaskExecutionRequest(task="t", target="n")
+        assert TaskHistoryBase(execution_request=req).failure_reason is None
+
+
+class TestSetFailureReason:
+    """Test TaskHistory.set_failure_reason normalization and bounding."""
+
+    @staticmethod
+    def _history() -> TaskHistory:
+        """Return a TaskHistory with no failure reason set."""
+        return TaskHistory(
+            id=1,
+            task_id=1,
+            execution_request=TaskExecutionRequest(task="t", target="n"),
+        )
+
+    def test_collapses_whitespace_to_one_line(self) -> None:
+        """Assert a multi-line reason is collapsed to a single space-joined line."""
+        history = self._history()
+        history.set_failure_reason("Step failed\n  with   detail\nand more")
+        assert history.failure_reason == "Step failed with detail and more"
+
+    def test_truncates_past_the_bound(self) -> None:
+        """Assert an over-long reason is truncated to the stored maximum."""
+        history = self._history()
+        history.set_failure_reason("x" * (MAX_FAILURE_REASON_LENGTH * 2))
+        reason = history.failure_reason
+        assert reason is not None
+        assert len(reason) == MAX_FAILURE_REASON_LENGTH
+
+    @pytest.mark.parametrize("reason", [None, "", "   ", "\n\t "])
+    def test_blank_stores_none(self, reason: str | None) -> None:
+        """Assert a None or blank reason is stored as None, never as an empty string."""
+        history = self._history()
+        history.set_failure_reason(reason)
+        assert history.failure_reason is None
+
+    def test_clears_a_previously_set_reason(self) -> None:
+        """Assert passing None clears a reason recorded earlier."""
+        history = self._history()
+        history.set_failure_reason("The run failed.")
+        history.set_failure_reason(None)
+        assert history.failure_reason is None
 
 
 class TestTaskHistory:
@@ -723,7 +849,39 @@ class TestTaskHistory:
             assert resolved_keys == [
                 "task:test-task:node-1",
                 "task:test-task:node-1:stale",
+                "task:test-task:node-1:unlaunchable",
             ]
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_unlaunchable(
+        self, task_instance: Task, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert UNLAUNCHABLE triggers its own WARNING alert under a suffixed key.
+
+        A suffixed key keeps the incident distinct from a plain task failure
+        while still scoping it to the same task/target pair — and the paired
+        ``SUCCESS`` resolve above is what lets it ever clear.
+        """
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            mock_trigger.assert_called_once()
+            alert_data = mock_trigger.call_args[0][0]
+            assert alert_data["severity"] == AlertSeverity.WARNING
+            assert alert_data["class"] == "task_unlaunchable"
+            assert alert_data["dedup_key"] == "task:test-task:node-1:unlaunchable"
+            assert (
+                "could not be launched (the executor node cannot run the "
+                "requested command)" in alert_data["summary"]
+            )
+            assert "node-1" in alert_data["summary"]
 
     @pytest.mark.asyncio
     async def test_alert_for_status_stale(
@@ -1387,3 +1545,292 @@ class TestDispatchLock:
         """Assert DispatchLock can be constructed with a name."""
         lock = DispatchLock(name="my-lock")
         assert lock.name == "my-lock"
+
+
+class TestTaskExecutionRequestJSON:
+    """Cover the column type's encrypt-on-write and decrypt-on-read hooks."""
+
+    @staticmethod
+    def _column() -> TaskExecutionRequestJSON:
+        """Return the column type under test."""
+        return TaskExecutionRequestJSON()
+
+    @staticmethod
+    def _request(**overrides: Any) -> TaskExecutionRequest:
+        """Return an execution request carrying every protected leaf.
+
+        :param overrides: Field values replacing the defaults.
+        :return: The execution request.
+        """
+        fields = {
+            "task": "run-python",
+            "target": "node-1",
+            "meta": {
+                "args": "restore --password hunter2",
+                "config": "master_password: hunter2\n",
+                "_service_name": "mysql-1",
+            },
+            "payload": "secret document",
+        }
+        fields.update(overrides)
+        return TaskExecutionRequest(**fields)
+
+    def test_bind_encrypts_the_protected_leaves(self) -> None:
+        """Assert the dumped document reaches storage with each leaf as ciphertext."""
+        secret = "hunter2"
+        assert secret in json.dumps(self._request().model_dump(mode="json")), (
+            "the request must carry the secret before binding, or its absence "
+            "below proves nothing"
+        )
+
+        stored = self._column().process_bind_param(self._request(), None)
+
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+        assert stored["meta"]["_service_name"] == "mysql-1"
+        assert secret not in json.dumps(stored)
+
+    def test_bind_does_not_mutate_the_request(self) -> None:
+        """Assert the live request the dedup comparison reads stays in plaintext."""
+        request = self._request()
+
+        self._column().process_bind_param(request, None)
+
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+        assert request.payload == "secret document"
+
+    def test_bind_does_not_mutate_a_plain_dict(self) -> None:
+        """Assert the non-request branch copies before encrypting."""
+        document = {
+            "task": "run-python",
+            "target": "node-1",
+            "meta": {"args": "restore --password hunter2"},
+            "payload": "secret document",
+        }
+
+        stored = self._column().process_bind_param(document, None)
+
+        assert is_encrypted(stored["payload"])
+        assert document["meta"]["args"] == "restore --password hunter2"
+        assert document["payload"] == "secret document"
+
+    def test_bind_leaves_an_already_encrypted_dict_byte_identical(self) -> None:
+        """Assert re-saving the raw fallback document does not encrypt it twice.
+
+        ``process_result_value`` hands back the stored document unchanged when it
+        will not validate, so the dict branch can receive ciphertext. A second
+        encryption there would leave a leaf no key can read, and the read path
+        would report it as plaintext rather than as unreadable, so nothing
+        downstream could tell.
+        """
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        assert is_encrypted(stored["payload"]), (
+            "the fixture must already be ciphertext, or the identity asserted "
+            "below proves nothing"
+        )
+
+        resaved = column.process_bind_param(stored, None)
+
+        assert resaved == stored
+        assert json.loads(decrypt(resaved["payload"])) == "secret document"
+
+    def test_bind_passes_none_through(self) -> None:
+        """Assert a ``None`` column value is stored unchanged."""
+        assert self._column().process_bind_param(None, None) is None
+
+    def test_result_returns_plaintext_leaves(self) -> None:
+        """Assert a stored row deserialises into a request carrying its plaintext."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+
+        request = column.process_result_value(stored, None)
+
+        assert isinstance(request, TaskExecutionRequest)
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+        assert request.payload == "secret document"
+        assert request.unreadable_leaves == ()
+
+    def test_result_passes_a_legacy_plaintext_row_through(self) -> None:
+        """Assert a row written before the migration ran still resolves."""
+        request = self._column().process_result_value(
+            {
+                "task": "run-python",
+                "target": "node-1",
+                "meta": {"args": "restore --password hunter2"},
+                "payload": "secret document",
+            },
+            None,
+        )
+
+        assert request.payload == "secret document"
+        assert request.unreadable_leaves == ()
+
+    def test_result_marks_the_leaf_it_cannot_decrypt(self) -> None:
+        """Assert a foreign token is reported on the object rather than raised."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        token = Fernet(Fernet.generate_key()).encrypt(b"elsewhere").decode("ascii")
+        stored["payload"] = token
+
+        request = column.process_result_value(stored, None)
+
+        assert request.unreadable_leaves == (PAYLOAD_LEAF,)
+        assert request.payload == token
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+
+    def test_result_returns_a_non_document_value_unchanged(self) -> None:
+        """Assert a stored value that is not an execution request is handed back raw."""
+        column = self._column()
+
+        assert column.process_result_value("not-a-document", None) == "not-a-document"
+        assert column.process_result_value(None, None) is None
+
+    def test_bind_preserves_a_marked_leaf_byte_identically(self) -> None:
+        """Assert re-saving an unreadable row keeps the only copy of its plaintext."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        token = Fernet(Fernet.generate_key()).encrypt(b"elsewhere").decode("ascii")
+        stored["payload"] = token
+        request = column.process_result_value(stored, None)
+
+        resaved = column.process_bind_param(request, None)
+
+        assert resaved["payload"] == token
+        assert is_encrypted(resaved["meta"]["args"])
+        assert decrypt(resaved["meta"]["args"]) == '"restore --password hunter2"'
+
+    def test_payload_content_resolves_a_round_tripped_file_reference(
+        self, tmp_path
+    ) -> None:
+        """Assert a ``file://`` payload still resolves after a storage round trip.
+
+        :param tmp_path: The directory holding the referenced payload file.
+        """
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"key": "value"}')
+        column = self._column()
+        stored = column.process_bind_param(
+            self._request(payload=f"file://{payload_file}"), None
+        )
+
+        request = column.process_result_value(stored, None)
+
+        assert request.payload_content == '{"key": "value"}'
+
+
+class TestTaskHistoryResponseUnreadableLeaves:
+    """Cover how the response reports an execution request it could not decrypt."""
+
+    @staticmethod
+    def _response(
+        request: TaskExecutionRequest, *, task_name: str = "backup-task"
+    ) -> TaskHistoryResponse:
+        """Return the response built from a history row carrying ``request``.
+
+        :param request: The execution request the row carries.
+        :param task_name: The parent task's name.
+        :return: The validated response.
+        """
+        task = TaskFactory.build(id=1, name=task_name, data={"key": "val"})
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return TaskHistoryResponse.model_validate(history)
+
+    def test_readable_row_reports_no_leaves(self) -> None:
+        """Assert an ordinary row serialises its execution request unchanged."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "--fast"}
+        )
+
+        dumped = self._response(request).model_dump(mode="json")
+
+        assert dumped["unreadable_request_leaves"] == []
+        assert dumped["execution_request"]["meta"]["args"] == "--fast"
+
+    def test_unreadable_leaf_serialises_as_null_and_is_listed(self) -> None:
+        """Assert the token is replaced by ``None`` and the leaf is named."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "gAAAAAtoken"}
+        )
+        request.mark_unreadable_leaves((ARGS_LEAF,))
+
+        dumped = self._response(request).model_dump(mode="json")
+
+        assert dumped["unreadable_request_leaves"] == [ARGS_LEAF]
+        assert dumped["execution_request"]["meta"]["args"] is None
+
+    def test_a_readable_response_shares_the_row_s_request_object(self) -> None:
+        """Pin why redaction must replace the field rather than blank it in place.
+
+        Validating from an ORM row hands the response the row's own request
+        object, so an in-place edit would destroy the ciphertext the write path
+        has to preserve.
+        """
+        request = TaskExecutionRequest(task="backup-task", target="node-1")
+
+        assert self._response(request).execution_request is request
+
+    def test_redaction_leaves_the_source_request_untouched(self) -> None:
+        """Assert redaction cannot corrupt the object a later write would persist."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", payload="gAAAAAtoken"
+        )
+        request.mark_unreadable_leaves((PAYLOAD_LEAF,))
+
+        response = self._response(request)
+
+        assert request.payload == "gAAAAAtoken"
+        assert response.execution_request is not request
+        assert response.execution_request.payload is None
+
+    def test_execution_request_keeps_its_declared_schema(self) -> None:
+        """Assert redaction does not collapse the field's published type.
+
+        Deriving the schema from a serializer's return type would publish a bare
+        object here, and every generated client would lose the field's type.
+        """
+        schema = TaskHistoryResponse.model_json_schema()
+
+        assert schema["properties"]["execution_request"] == {
+            "$ref": "#/$defs/TaskExecutionRequest"
+        }
+
+    def test_inbound_indicator_survives_revalidation(self) -> None:
+        """Assert a gateway re-validating a redacted body keeps the indicator.
+
+        The leaf is already ``null`` by then, so nothing downstream can re-derive
+        the indicator from the execution request.
+        """
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "gAAAAAtoken"}
+        )
+        request.mark_unreadable_leaves((ARGS_LEAF,))
+        upstream = self._response(request).model_dump(mode="json")
+
+        revalidated = TaskHistoryResponse.model_validate(upstream)
+
+        assert revalidated.unreadable_request_leaves == [ARGS_LEAF]
+
+    def test_display_name_degrades_without_leaking_the_token(self) -> None:
+        """Assert an unreadable ``file://`` payload falls back to the task label.
+
+        A Fernet token matches no ``file://`` prefix, so the label loses the
+        filename it used to carry rather than publishing the token.
+        """
+        token = Fernet(Fernet.generate_key()).encrypt(b"file://x.py").decode("ascii")
+        request = TaskExecutionRequest(
+            task="run-python", target="node-1", payload=token
+        )
+        request.mark_unreadable_leaves((PAYLOAD_LEAF,))
+
+        display_name = self._response(request, task_name="run-python").display_name
+
+        assert display_name == "run-python on node-1"
+        assert token not in display_name

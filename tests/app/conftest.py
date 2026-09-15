@@ -17,7 +17,10 @@
 
 import inspect
 import os
-from collections.abc import AsyncGenerator, Callable, Iterator
+import socket
+import threading
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock
@@ -28,12 +31,16 @@ import pytest
 import pytest_asyncio
 from aiohttp import ClientResponse
 from faker import Faker
-from fastapi import Request
+from fastapi import Request, status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    async_sessionmaker,
+    AsyncEngine,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
@@ -49,6 +56,7 @@ from app.core.auth.providers.grafana.models import ASSERTION_SALT
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.health import HEALTH_PATH
 from app.core.requests import RemoteAPI
 from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
@@ -65,6 +73,7 @@ from app.sep.main import sep_app
 from app.sep.snippets.config import snippets_settings
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
+from tests.app.db_schema import apply_schema
 from tests.app.factories import (
     CasdoorUserFactory,
     CreatedNodeFactory,
@@ -89,6 +98,97 @@ if "stream_writer" in inspect.signature(ClientResponse.__init__).parameters:
             super().__init__(*args, **kwargs)
 
     aioresponses.core.ClientResponse = _CompatClientResponse
+
+
+class HealthProbeServer:
+    """Drive a real HTTP listener on loopback answering the shared health path.
+
+    The readiness gate in :mod:`app.core.health` polls over a real socket, so the
+    failures worth covering — connection refused, a listener that accepts and
+    never answers, a host-header rejection — only reproduce against a real
+    listener. The port is reserved and released in ``__init__`` so a test can
+    probe a closed port before calling :meth:`start`.
+    """
+
+    def __init__(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.port: int = probe.getsockname()[1]
+        self.statuses: list[int] = []
+        self.default_status: int = status.HTTP_200_OK
+        self.headers_to_send: dict[str, str] = {}
+        self.required_host: str | None = None
+        self.requests: list[tuple[str, dict[str, str]]] = []
+        self.listening = threading.Event()
+        self._server: HTTPServer | None = None
+        self._thread: threading.Thread | None = None
+
+    def _build_handler(self) -> type[BaseHTTPRequestHandler]:
+        server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            """Answer the health path from the controller's script."""
+
+            def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's API
+                """Answer with the next scripted status, honouring the host rule."""
+                server.requests.append((self.path, dict(self.headers.items())))
+                if self.path != HEALTH_PATH:
+                    self.send_error(status.HTTP_404_NOT_FOUND)
+                    return
+                if (
+                    server.required_host is not None
+                    and self.headers.get("Host", "").split(":")[0]
+                    != server.required_host
+                ):
+                    self.send_error(status.HTTP_400_BAD_REQUEST)
+                    return
+                status_code = (
+                    server.statuses.pop(0) if server.statuses else server.default_status
+                )
+                self.send_response(status_code)
+                for name, value in server.headers_to_send.items():
+                    self.send_header(name, value)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, *args: Any, **kwargs: Any) -> None:
+                """Suppress the handler's stderr access log."""
+
+        return Handler
+
+    def start(self) -> None:
+        """Start serving on the reserved port."""
+        for _ in range(5):
+            try:
+                self._server = HTTPServer(
+                    ("127.0.0.1", self.port), self._build_handler()
+                )
+            except OSError:
+                continue
+            break
+        else:
+            pytest.skip(f"could not bind 127.0.0.1:{self.port} for a probe test")
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        self.listening.set()
+
+    def stop(self) -> None:
+        """Stop serving and join the serving thread."""
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+            self._server = None
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+
+
+@pytest.fixture(name="health_probe_server")
+def health_probe_server_fixture() -> Iterator[HealthProbeServer]:
+    """Yield a controller for a real loopback listener on the health path."""
+    server = HealthProbeServer()
+    yield server
+    server.stop()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -408,7 +508,7 @@ def postgres_worker_schema() -> str:
 
 
 @pytest_asyncio.fixture
-async def postgres_engine() -> AsyncEngine:
+async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     """Provide a real-PostgreSQL ``AsyncEngine`` for dialect-specific SQL tests.
 
     Connect through the already-present ``asyncpg`` driver to the DSN in
@@ -446,96 +546,41 @@ async def postgres_engine() -> AsyncEngine:
 
 
 @pytest_asyncio.fixture
-async def postgres_session(postgres_engine: AsyncEngine) -> AsyncSession:
-    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
+async def postgres_session_maker(
+    postgres_engine: AsyncEngine,
+) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Create every ``SQLModel`` table on real PostgreSQL and yield a session maker.
 
-    Create every ``SQLModel`` table (including ``TaskHistory`` with its ``jsonb``
-    ``execution_request``) in the worker schema, yield a session, then drop the
-    tables on teardown. This is the seam reused by the ``func_json_extract``
-    AutoJSON cell and by any test whose subject dispatches on the session bind.
+    The tables (including ``TaskHistory`` with its ``jsonb`` ``execution_request``)
+    go into the worker schema and are dropped on teardown. A maker rather than a
+    session, so a test racing two callers can put each on its own connection.
+
+    :param postgres_engine: The real-PostgreSQL engine to create the tables on.
+    :return: A session maker bound to that engine.
     """
     async with postgres_engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
     try:
-        async with async_session_maker() as session:
-            yield session
+        yield get_async_session_maker_from_engine(postgres_engine)
     finally:
         async with postgres_engine.begin() as conn:
             await conn.run_sync(SQLModel.metadata.drop_all)
 
 
-MYSQL_DSN_ENV = "SEP_TEST_MYSQL_DSN"
-
-#: Tables whose DDL MySQL 8 rejects, excluded so the MySQL lane can still create the
-#: rest. ``taskhistory_log_state.staging`` is a ``LargeBinary`` carrying a
-#: non-expression ``server_default``, which MySQL refuses on a BLOB column (error
-#: 1101) -- only the parenthesised ``DEFAULT ('')`` form is legal there. A table
-#: added to this set must have a tracked follow-up; a *new* incompatible table is
-#: meant to fail the lane loudly rather than be added here silently.
-MYSQL_INCOMPATIBLE_TABLES = frozenset({"taskhistory_log_state"})
-
-
-def mysql_worker_database() -> str:
-    """Return the per-xdist-worker database name for real-MySQL tests.
-
-    A MySQL "schema" is a database, so the per-worker schema of
-    ``postgres_worker_schema`` becomes a per-worker database here;
-    ``schema_translate_map`` maps onto it identically.
-    """
-    return f"sep_test_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
-
-
 @pytest_asyncio.fixture
-async def mysql_engine() -> AsyncEngine:
-    """Provide a real-MySQL ``AsyncEngine`` for dialect-specific SQL tests.
+async def postgres_session(
+    postgres_session_maker: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
 
-    Mirror :func:`postgres_engine`, including its skip contract: an unset env var
-    skips (local runs without MySQL), while a set-but-unreachable DSN is left to
-    raise so a misconfigured CI service fails loudly.
+    The seam for any test whose subject dispatches on the session bind. Take
+    ``postgres_session_maker`` instead where the test needs two sessions at once.
 
-    The per-worker database is created through the base engine rather than the
-    translate-mapped one, which would try to qualify ``CREATE DATABASE`` itself.
+    :param postgres_session_maker: The table-bootstrapped session maker.
+    :return: One session on that maker, closed on teardown.
     """
-    dsn = os.environ.get(MYSQL_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{MYSQL_DSN_ENV} not set; skipping real-MySQL tests")
-    database = mysql_worker_database()
-    base = create_async_engine(dsn, json_serializer=json_serializer)
-    try:
-        async with base.begin() as conn:
-            await conn.exec_driver_sql(f"CREATE DATABASE IF NOT EXISTS `{database}`")
-        yield base.execution_options(schema_translate_map={None: database})
-    finally:
-        try:
-            async with base.begin() as conn:
-                await conn.exec_driver_sql(f"DROP DATABASE IF EXISTS `{database}`")
-        finally:
-            await base.dispose()
-
-
-@pytest_asyncio.fixture
-async def mysql_session(mysql_engine: AsyncEngine) -> AsyncSession:
-    """Provide a real-MySQL ``AsyncSession`` over the MySQL-creatable ``SQLModel`` tables.
-
-    Mirror :func:`postgres_session`: create the tables in the worker database, yield
-    a session, then drop them on teardown. Unlike the PostgreSQL fixture this skips
-    ``MYSQL_INCOMPATIBLE_TABLES``, whose DDL MySQL rejects.
-    """
-    tables = [
-        table
-        for table in SQLModel.metadata.sorted_tables
-        if table.name not in MYSQL_INCOMPATIBLE_TABLES
-    ]
-    async with mysql_engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all, tables=tables)
-    async_session_maker = get_async_session_maker_from_engine(mysql_engine)
-    try:
-        async with async_session_maker() as session:
-            yield session
-    finally:
-        async with mysql_engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.drop_all, tables=tables)
+    async with postgres_session_maker() as session:
+        yield session
 
 
 # The client/session fixtures below live here — the always-loaded ancestor conftest —
@@ -553,7 +598,7 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -565,9 +610,16 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
         await engine.dispose()
 
 
-@pytest_asyncio.fixture(name="celery_beat_session")
-async def celery_beat_session_fixture() -> AsyncSession:
-    """Create an async db session backed by the celery-beat tables."""
+@pytest_asyncio.fixture(name="beat_maker")
+async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Provide a session maker bound to an in-memory celery-beat DB.
+
+    The celery-beat tables are owned by ``sqlalchemy-celery-beat`` and live in
+    their own schema, so they are created from that metadata rather than
+    ``SQLModel``'s, and the schema is translated away for SQLite.
+
+    :return: A session maker bound to a fresh beat store.
+    """
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -575,19 +627,27 @@ async def celery_beat_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    metadata = PeriodicTask.__table__.metadata
     async with engine.begin() as conn:
-        await conn.run_sync(metadata.create_all)
-    async_session_maker = get_async_session_maker_from_engine(engine)
+        await apply_schema(conn, PeriodicTask.__table__.metadata)
     try:
-        async with async_session_maker() as session:
-            yield session
+        yield get_async_session_maker_from_engine(engine)
     finally:
         await engine.dispose()
 
 
+@pytest_asyncio.fixture(name="celery_beat_session")
+async def celery_beat_session_fixture(
+    beat_maker: async_sessionmaker[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
+    """Create an async db session backed by the celery-beat tables."""
+    async with beat_maker() as session:
+        yield session
+
+
 @pytest.fixture
-def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
+def test_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> Iterator[TestClient]:
     """Yield an authenticated cookie-auth TestClient for the SEP app.
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
@@ -613,7 +673,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
 
 @pytest.fixture
-def api_admin_client_no_bearer(admin_user: CasdoorUser) -> TestClient:
+def api_admin_client_no_bearer(admin_user: CasdoorUser) -> Iterator[TestClient]:
     """Yield a cookie-auth admin TestClient with the Bearer gate intact.
 
     Mirrors :func:`test_client` but deliberately leaves
@@ -638,7 +698,9 @@ def unauthenticated_client() -> Iterator[TestClient]:
 
 
 @pytest_asyncio.fixture
-async def async_test_client(regular_user: CasdoorUser) -> AsyncClient:
+async def async_test_client(
+    regular_user: CasdoorUser,
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an authenticated async cookie-auth client for the SEP app.
 
     See :func:`test_client` for the gate-override rationale.
@@ -719,7 +781,7 @@ def dummy_request() -> Request:
 
 
 @pytest.fixture
-def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+def mock_task_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     """Mock the TaskAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
@@ -728,7 +790,7 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 
 
 @pytest.fixture
-def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
+def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     """Mock the InventoryAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
     mock.get.return_value = {

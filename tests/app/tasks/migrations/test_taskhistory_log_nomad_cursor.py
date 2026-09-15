@@ -15,17 +15,8 @@
 
 """Tests for the Tasks-track taskhistory_log_state nomad-cursor migration."""
 
-from pathlib import Path
-
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine
-
-from app.tasks.config import tasks_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 # The merged head immediately before nomad_offset / allocation_epoch are added
 # (later renamed to producer_fetch_offset / producer_epoch).
@@ -44,19 +35,6 @@ _INSERT_STATE_ROW = (
 )
 
 
-@pytest.fixture
-def tasks_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file."""
-    db_path = tmp_path / "test_tasks.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(tasks_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(tasks_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
-    return cfg, sync_url
-
-
 def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
     tasks_alembic_config,
 ):
@@ -71,7 +49,7 @@ def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
     finally:
         engine.dispose()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
@@ -88,7 +66,7 @@ def test_backfill_seeds_producer_fetch_offset_from_producer_offset(
 def test_new_columns_default_zero_on_fresh_insert(tasks_alembic_config):
     """Assert a row inserted after the upgrade defaults both new columns to 0."""
     cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
     try:

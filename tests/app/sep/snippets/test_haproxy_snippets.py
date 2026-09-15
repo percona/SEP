@@ -71,7 +71,9 @@ async def test_haproxy_logs_snippet_parameters():
     assert not params["log-file"].required
 
     assert params["output"].default == "stdout"
-    assert {choice["value"] for choice in params["output"].choices} == {
+    output_choices = params["output"].choices
+    assert output_choices is not None
+    assert {choice["value"] for choice in output_choices} == {
         "stdout",
         "file",
     }

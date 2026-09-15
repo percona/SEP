@@ -15,5 +15,8 @@
 
 from app.sep.apps.mysql_backups.app import app
 from app.sep.apps.mysql_backups.form_backfill import FORM_BACKFILL_ENTRIES
+from app.sep.apps.mysql_backups.inventory_references import (
+    INVENTORY_REFERENCE_PROVIDERS,
+)
 
-__all__ = ["FORM_BACKFILL_ENTRIES", "app"]
+__all__ = ["FORM_BACKFILL_ENTRIES", "INVENTORY_REFERENCE_PROVIDERS", "app"]

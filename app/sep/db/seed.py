@@ -15,6 +15,9 @@
 
 """Define the database initial data for the SEP app."""
 
+import logging
+
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import col
 
 from app.core.celery.utils import (
@@ -28,8 +31,13 @@ from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
-from app.sep.periodic_tasks import sync_app_periodic_task_gating
+from app.sep.periodic_tasks import (
+    disable_unschedulable_task_schedules,
+    sync_app_periodic_task_gating,
+)
 from app.sep.snippets.config import snippets_settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
@@ -55,7 +63,15 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     (``app.sep.snippets.celery``) and is named in ``STATIC_CELERY_INCLUDE``, so it
     registers whether or not the snippets app ships. Its schedule is therefore
     emitted unconditionally against the static path and carries no
-    ``owner_app_key`` -- disabling the snippets app must not gate it.
+    ``owner_app_key``, because disabling the snippets app must not gate it.
+
+    A ``qualified`` spec names a complete task path and is emitted without that
+    prefixing, so an app may own a schedule for a job the tasks service
+    dispatches through ``execute_task_by_name``. Such an app owns no registered
+    Celery task of its own, which is why the module lookup is scoped to the
+    unqualified specs rather than gating the whole app. A spec whose thunk
+    returns ``None`` contributes nothing this rebuild, which is how a nullable
+    interval setting spells "do not run".
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
@@ -87,27 +103,28 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
         if app.periodic_task_schedules is None:
             continue
         celery_module = app_celery_module_for(app.key)
-        if not celery_module:
-            continue
-        specs = (
-            app.periodic_task_schedules()
-            if callable(app.periodic_task_schedules)
-            else app.periodic_task_schedules
-        )
-        system_tasks.extend(
-            SystemPeriodicTaskSchedule(
-                schedule=spec.schedule(),
-                tasks=[
-                    SystemPeriodicTaskData(
-                        name=spec.name,
-                        task_name=f"{celery_module}.{spec.task}",
-                        extra_kwargs=spec.extra_kwargs,
-                        owner_app_key=app.key,
-                    ),
-                ],
+        schedules = app.periodic_task_schedules
+        specs = schedules if isinstance(schedules, list) else schedules()
+        for spec in specs:
+            if not spec.qualified and not celery_module:
+                continue
+            schedule = spec.schedule()
+            if schedule is None:
+                continue
+            task_name = spec.task if spec.qualified else f"{celery_module}.{spec.task}"
+            system_tasks.append(
+                SystemPeriodicTaskSchedule(
+                    schedule=schedule,
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name=spec.name,
+                            task_name=task_name,
+                            extra_kwargs=spec.extra_kwargs,
+                            owner_app_key=app.key,
+                        ),
+                    ],
+                )
             )
-            for spec in specs
-        )
 
     return system_tasks
 
@@ -123,7 +140,16 @@ async def init_sep_db() -> None:
     that has since become a child is removed by the orphan cleanup below. Removes
     rows for apps no longer configured, then seeds the SEP
     periodic tasks and gates each plugin-owned schedule by its app state via
-    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`, and finally
+    switches off every stored schedule whose task belongs to an app that does not
+    offer scheduling via
+    :func:`app.sep.periodic_tasks.disable_unschedulable_task_schedules`.
+
+    That last sweep is the only step here that reads the tasks database, and its
+    failure is not fatal: the reconciliation is idempotent and only ever switches
+    schedules off, so a skipped run self-heals at the next startup. A deployment
+    whose ``sep`` track has migrated ahead of its ``tasks`` track therefore boots
+    and logs, rather than refusing to start.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -151,3 +177,10 @@ async def init_sep_db() -> None:
     system_tasks = get_system_periodic_tasks()
     await init_periodic_tasks_db(system_tasks, "sep__")
     await sync_app_periodic_task_gating(system_tasks)
+    try:
+        await disable_unschedulable_task_schedules()
+    except SQLAlchemyError:
+        logger.exception(
+            "Could not switch off unschedulable task schedules; starting anyway "
+            "and leaving the sweep to the next startup."
+        )

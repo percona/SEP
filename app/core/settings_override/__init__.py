@@ -49,6 +49,7 @@ __all__ = [
     "publish_snapshot",
     "refresh_all",
     "resolve_nested_field",
+    "setting_class_token",
     "settings_override_refresher",
     "start_refresh_task",
 ]
@@ -65,7 +66,11 @@ from app.core.settings_override.lifecycle import (
     start_refresh_task,
 )
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     coerce_field_value,

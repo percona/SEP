@@ -44,19 +44,10 @@ def test_database_options_url_with_empty_host():
     assert expected_url == db_options.URL
 
 
-def test_database_options_url_with_host():
-    """Test DatabaseOptions URL construction with actual HOST."""
-    db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
-        HOST="localhost",
-        PORT=3306,
-        USER="user",
-        PASSWORD="pass",
-        NAME="testdb",
-    )
-
-    expected_url = "mysql+aiomysql://user:pass@localhost:3306/testdb"
-    assert expected_url == db_options.URL
+def test_database_options_rejects_mysql_engine():
+    """Reject a removed MySQL backing-store engine at config load."""
+    with pytest.raises(ValidationError):
+        DatabaseOptions(ENGINE="mysql", NAME="testdb", HOST="localhost")
 
 
 def test_database_options_url_with_postgresql():
@@ -107,7 +98,7 @@ def test_database_options_url_round_trips_a_user_with_reserved_characters():
 def test_database_options_password_masked_in_repr():
     """Test that PASSWORD is masked in repr output."""
     db_options = DatabaseOptions(
-        ENGINE=AsyncDatabaseEngine.MYSQL,
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
         HOST="localhost",
         USER="user",
         PASSWORD="supersecret",
@@ -116,38 +107,136 @@ def test_database_options_password_masked_in_repr():
     assert "supersecret" not in repr(db_options)
 
 
-def test_pool_engine_kwargs_empty_when_unset():
-    """Return no kwargs when pool fields are unset, so the engine keeps defaults."""
-    db_options = DatabaseOptions(NAME="test.db")
+def _postgresql_options(**overrides) -> DatabaseOptions:
+    """Return PostgreSQL options, the dialect the sizing kwargs are emitted for."""
+    return DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.POSTGRESQL,
+        HOST="localhost",
+        NAME="testdb",
+        **overrides,
+    )
 
-    assert db_options.pool_engine_kwargs == {}
+
+@pytest.mark.parametrize(
+    ("engine", "expected"),
+    [
+        pytest.param(
+            AsyncDatabaseEngine.POSTGRESQL,
+            {
+                "pool_pre_ping": True,
+                "pool_size": 3,
+                "max_overflow": 2,
+                "pool_timeout": 10.0,
+            },
+            id="postgresql-sized",
+        ),
+        pytest.param(
+            AsyncDatabaseEngine.SQLITE,
+            {"pool_pre_ping": True},
+            id="sqlite-omitted",
+        ),
+    ],
+)
+def test_pool_engine_kwargs_sizes_only_the_dialects_that_accept_it(engine, expected):
+    """Emit the sizing defaults for PostgreSQL and omit them for SQLite."""
+    db_options = DatabaseOptions(ENGINE=engine, HOST="localhost", NAME="testdb")
+
+    assert db_options.pool_engine_kwargs == expected
+
+
+@pytest.mark.parametrize("name", ["test.db", ""], ids=["file-backed", "in-memory"])
+def test_pool_engine_kwargs_omits_sizing_for_sqlite_even_when_configured(name):
+    """Discard a sizing value configured against SQLite, on either backing.
+
+    Only the in-memory backing's ``StaticPool`` would reject the kwargs; a
+    file-backed engine's pool would accept them. The carve-out is deliberately
+    blanket anyway, so that one setting cannot work on one SQLite database and
+    crash another — which makes this a discarded override, not a passthrough.
+    """
+    db_options = DatabaseOptions(
+        ENGINE=AsyncDatabaseEngine.SQLITE,
+        NAME=name,
+        POOL_SIZE=7,
+        MAX_OVERFLOW=3,
+        POOL_TIMEOUT=25.0,
+    )
+
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": True}
 
 
 def test_pool_engine_kwargs_includes_all_set_fields():
-    """Map all three set pool fields to lowercase create_engine kwargs."""
-    db_options = DatabaseOptions(
-        NAME="test.db", POOL_SIZE=7, MAX_OVERFLOW=3, POOL_TIMEOUT=25.0
-    )
+    """Map all set pool fields to lowercase create_engine kwargs."""
+    db_options = _postgresql_options(POOL_SIZE=7, MAX_OVERFLOW=3, POOL_TIMEOUT=25.0)
 
     assert db_options.pool_engine_kwargs == {
+        "pool_pre_ping": True,
         "pool_size": 7,
         "max_overflow": 3,
         "pool_timeout": 25.0,
     }
 
 
-def test_pool_engine_kwargs_omits_unset_fields():
-    """Omit unset pool fields from the kwargs."""
-    db_options = DatabaseOptions(NAME="test.db", POOL_SIZE=7)
+@pytest.mark.parametrize(
+    ("field_kwargs", "expected_sizing"),
+    [
+        pytest.param(
+            {"POOL_SIZE": 7},
+            {"pool_size": 7, "max_overflow": 2, "pool_timeout": 10.0},
+            id="pool-size-only",
+        ),
+        pytest.param(
+            {"MAX_OVERFLOW": 7},
+            {"pool_size": 3, "max_overflow": 7, "pool_timeout": 10.0},
+            id="max-overflow-only",
+        ),
+        pytest.param(
+            {"POOL_TIMEOUT": 7.0},
+            {"pool_size": 3, "max_overflow": 2, "pool_timeout": 7.0},
+            id="pool-timeout-only",
+        ),
+    ],
+)
+def test_pool_engine_kwargs_partial_override_takes_the_companion_defaults(
+    field_kwargs, expected_sizing
+):
+    """Let one set field win while its unset companions take this class's defaults.
 
-    assert db_options.pool_engine_kwargs == {"pool_size": 7}
+    A deployment that configured a single field used to inherit SQLAlchemy's
+    ``10``/``30`` for the other two, so these cases pin the documented change.
+    """
+    db_options = _postgresql_options(**field_kwargs)
+
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": True, **expected_sizing}
+
+
+def test_pool_engine_kwargs_omits_a_field_set_to_none():
+    """Fall back to SQLAlchemy's own default for a field explicitly set to None."""
+    db_options = _postgresql_options(POOL_SIZE=None)
+
+    assert db_options.pool_engine_kwargs == {
+        "pool_pre_ping": True,
+        "max_overflow": 2,
+        "pool_timeout": 10.0,
+    }
 
 
 def test_pool_engine_kwargs_includes_zero_max_overflow():
     """Keep MAX_OVERFLOW=0 because 0 is set, not None."""
-    db_options = DatabaseOptions(NAME="test.db", MAX_OVERFLOW=0)
+    db_options = _postgresql_options(MAX_OVERFLOW=0)
 
-    assert db_options.pool_engine_kwargs == {"max_overflow": 0}
+    assert db_options.pool_engine_kwargs == {
+        "pool_pre_ping": True,
+        "pool_size": 3,
+        "max_overflow": 0,
+        "pool_timeout": 10.0,
+    }
+
+
+def test_pool_engine_kwargs_respects_pre_ping_opt_out():
+    """Allow disabling pool_pre_ping per engine."""
+    db_options = DatabaseOptions(NAME="test.db", POOL_PRE_PING=False)
+
+    assert db_options.pool_engine_kwargs == {"pool_pre_ping": False}
 
 
 @pytest.mark.parametrize(
@@ -157,11 +246,6 @@ def test_pool_engine_kwargs_includes_zero_max_overflow():
             AsyncDatabaseEngine.POSTGRESQL,
             {"connect_args": {"timeout": 2.5}},
             id="asyncpg-timeout",
-        ),
-        pytest.param(
-            AsyncDatabaseEngine.MYSQL,
-            {"connect_args": {"connect_timeout": 2.5}},
-            id="aiomysql-connect-timeout",
         ),
         pytest.param(AsyncDatabaseEngine.SQLITE, {}, id="sqlite-omitted"),
     ],

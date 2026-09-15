@@ -16,25 +16,32 @@
 """Cover the override-snapshot lifecycle helpers and the background refresher."""
 
 import asyncio
+from collections.abc import AsyncGenerator
+from contextlib import suppress
 from datetime import timedelta
 
 import pytest
 import pytest_asyncio
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import encrypt
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    bounded_refresh,
+    bounded_seed,
     fire_change_callbacks,
     previous_or_base,
     ProxyEntry,
     refresh_all,
     resolve_refresher_options,
+    settings_override_refresher,
     SnapshotChange,
     start_refresh_task,
 )
@@ -47,12 +54,21 @@ from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
-from tests.app.core.settings_override.conftest import hanging_session_maker_factory
+from tests.app.core.settings_override.conftest import (
+    hanging_session_maker_factory,
+    SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
+)
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session_maker")
-async def session_maker_fixture() -> async_sessionmaker:
+async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
     """Provide an in-memory SQLite session maker bound to a fresh schema."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
@@ -60,7 +76,7 @@ async def session_maker_fixture() -> async_sessionmaker:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     try:
         yield get_async_session_maker_from_engine(engine)
     finally:
@@ -70,7 +86,7 @@ async def session_maker_fixture() -> async_sessionmaker:
 def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
     """Construct an SEP proxy and a registry mapping for refresh tests."""
     proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
@@ -122,7 +138,7 @@ async def test_refresh_all_swaps_snapshot(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -130,6 +146,92 @@ async def test_refresh_all_swaps_snapshot(
 
     await refresh_all(lambda: session_maker, registry)
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_falls_back_when_a_row_becomes_undecryptable(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Serve the YAML/env value once a published override stops decrypting.
+
+    ``publish_snapshot`` replaces the snapshot wholesale, so a row that can no
+    longer be read is *absent* rather than stale, and the proxy defers to the
+    wrapped instance. Falling back to configuration beats serving a credential
+    the deployment can no longer verify.
+    """
+    proxy: OverridableSettingsProxy = OverridableSettingsProxy(
+        Settings, setting_class=Settings.__name__
+    )
+    registry = {SettingClassEnum.SETTINGS: ProxyEntry(proxy, Settings)}
+    api_key = "pmm-api-key-published"
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SETTINGS_TOKEN,
+                key="PMM__api_key",
+                value=encrypt(api_key),
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    published = proxy.PMM.api_key
+    assert published.get_secret_value() == api_key
+
+    foreign = Fernet(Fernet.generate_key()).encrypt(api_key.encode()).decode("ascii")
+    async with session_maker() as session:
+        stored = await SettingsOverrideManager.first(session, key="PMM__api_key")
+        stored.value = foreign
+        await SettingsOverrideManager.save(session, stored)
+
+    await refresh_all(lambda: session_maker, registry)
+
+    assert proxy.PMM.api_key != published
+    assert proxy.PMM.api_key == proxy._resolve().PMM.api_key
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_skips_unregistered_class_row(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave an override row for an unwired class in the table.
+
+    Startup still publishes the wired class's snapshot; the unregistered row
+    is neither applied nor deleted.
+    """
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class="UNREGISTERED_SETTINGS",
+                key="WHATEVER",
+                value=True,
+            ),
+        )
+
+    await refresh_all(lambda: session_maker, registry)
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+    async with session_maker() as session:
+        leftover = await SettingsOverrideManager.list(
+            session, setting_class="UNREGISTERED_SETTINGS"
+        )
+        wired = await SettingsOverrideManager.list(
+            session, setting_class=SEP_SETTINGS_TOKEN
+        )
+    assert len(leftover) == 1
+    assert leftover[0].key == "WHATEVER"
+    assert len(wired) == 1
 
 
 @pytest.mark.asyncio
@@ -167,10 +269,10 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     its row from the DB.
     """
     sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+        SEPSettings, setting_class=SEPSettings.__name__
     )
     tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        TasksSettings, setting_class=SettingClassEnum.TASKS_SETTINGS
+        TasksSettings, setting_class=TasksSettings.__name__
     )
     registry = {
         SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_proxy, SEPSettings),
@@ -181,7 +283,7 @@ async def test_refresh_all_rolls_back_session_between_proxies(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="STALENESS_THRESHOLD_SECONDS",
                 value=tasks_override,
             ),
@@ -232,67 +334,7 @@ async def test_start_refresh_task_runs_initial_load(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
-                key="CONNECTIVITY_CHECK_DEFAULT",
-                value=override_value,
-            ),
-        )
-
-    task = await start_refresh_task(
-        lambda: session_maker, registry, interval=timedelta(seconds=3600)
-    )
-    try:
-        assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-
-@pytest.mark.asyncio
-async def test_start_refresh_task_seed_timeout_returns_within_budget(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Bound a hanging seed, keep the periodic task, and log expiry at ERROR."""
-    _proxy, registry = _make_proxies()
-    seed_timeout = 0.05
-
-    with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
-        task = await asyncio.wait_for(
-            start_refresh_task(
-                hanging_session_maker_factory,
-                registry,
-                interval=timedelta(seconds=3600),
-                seed_timeout=seed_timeout,
-            ),
-            timeout=1.0,
-        )
-    try:
-        assert not task.done()
-        assert any(
-            record.levelname == "ERROR"
-            and f"{seed_timeout:.2f}s" in record.message
-            and "unseeded" in record.message
-            for record in caplog.records
-        )
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-
-@pytest.mark.asyncio
-async def test_start_refresh_task_without_seed_timeout_awaits_the_seed(
-    session_maker: async_sessionmaker,
-) -> None:
-    """Keep today's unbounded seed when no budget is supplied."""
-    proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
-    async with session_maker() as session:
-        await SettingsOverrideManager.create(
-            session,
-            SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -324,12 +366,160 @@ async def test_start_refresh_task_cancellable(
     assert task.cancelled()
 
 
+@pytest.mark.asyncio
+async def test_start_refresh_task_creates_a_named_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Keep the web-path periodic ``_loop`` task after the worker pull rewrite."""
+    _proxy, registry = _make_proxies()
+    task = await start_refresh_task(
+        lambda: session_maker, registry, interval=timedelta(seconds=3600)
+    )
+    try:
+        assert task.get_name() == "settings-override-refresher"
+        assert not task.done()
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+@pytest.mark.asyncio
+async def test_settings_override_refresher_keeps_the_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Assert the web lifespan still drives a timer-based background refresher."""
+    _proxy, registry = _make_proxies()
+    async with settings_override_refresher(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(seconds=3600),
+        enabled=True,
+    ):
+        named = [
+            task
+            for task in asyncio.all_tasks()
+            if task.get_name() == "settings-override-refresher"
+        ]
+        assert len(named) == 1
+        assert not named[0].done()
+
+
+@pytest.mark.asyncio
+async def test_settings_override_refresher_disabled_creates_no_periodic_task(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Leave the web lifespan a no-op when the refresher is disabled."""
+    _proxy, registry = _make_proxies()
+    async with settings_override_refresher(
+        lambda: session_maker,
+        registry,
+        interval=timedelta(seconds=3600),
+        enabled=False,
+    ):
+        named = [
+            task
+            for task in asyncio.all_tasks()
+            if task.get_name() == "settings-override-refresher"
+        ]
+        assert named == []
+
+
+@pytest.mark.asyncio
+async def test_bounded_seed_completes_and_returns_true(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Seed overrides through the shared helper and report success."""
+    proxy, registry = _make_proxies()
+    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SEP_SETTINGS_TOKEN,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=override_value,
+            ),
+        )
+
+    seeded, pending = await bounded_seed(
+        lambda: session_maker, registry, seed_timeout=5.0
+    )
+
+    assert seeded is True
+    assert pending is None
+    assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+
+@pytest.mark.asyncio
+async def test_bounded_seed_expiry_returns_false_and_logs_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cancel a hanging seed without awaiting unwind; log ERROR naming the budget."""
+    _proxy, registry = _make_proxies()
+    seed_timeout = 0.05
+
+    with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
+        seeded, pending = await asyncio.wait_for(
+            bounded_seed(hanging_session_maker_factory, registry, seed_timeout),
+            timeout=1.0,
+        )
+
+    assert seeded is False
+    # HangingSession blocks on enter; cancel completes promptly once delivered.
+    if pending is not None and not pending.done():
+        pending.cancel()
+        with suppress(asyncio.CancelledError):
+            await pending
+    assert any(
+        record.levelname == "ERROR"
+        and f"{seed_timeout:.2f}s" in record.message
+        and "incomplete" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_bounded_refresh_logs_exception_raised_while_unwinding(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log a real failure that surfaces after cancel, not only CancelledError."""
+    _proxy, registry = _make_proxies()
+
+    async def _fail_after_cancel(*_args: object, **_kwargs: object) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise RuntimeError("session cleanup failed") from None
+
+    monkeypatch.setattr(
+        "app.core.settings_override.lifecycle.refresh_all", _fail_after_cancel
+    )
+
+    with caplog.at_level("WARNING", logger="app.core.settings_override.lifecycle"):
+        completed, pending = await bounded_refresh(lambda: None, registry, budget=0.05)
+        assert completed is False
+        assert pending is not None
+        with suppress(RuntimeError):
+            await pending
+
+    assert any(
+        record.levelname == "WARNING"
+        and "unwinding after cancellation" in record.message
+        and "session cleanup failed" in record.message
+        for record in caplog.records
+    )
+
+
 _CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
 
-def _make_tasks_proxy_registry() -> tuple[OverridableSettingsProxy, dict]:
+def _make_tasks_proxy_registry() -> tuple[
+    TasksSettings, dict[SettingClassEnum, ProxyEntry]
+]:
     """Construct the global Tasks proxy and a single-entry registry."""
     registry = {
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
@@ -345,7 +535,7 @@ async def _seed_nomad_timeout_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                setting_class=TASKS_SETTINGS_TOKEN,
                 key="NOMAD__TIMEOUT",
                 value=value,
             ),
@@ -360,7 +550,7 @@ async def _seed_connectivity_override(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SettingClassEnum.SEP_SETTINGS,
+                setting_class=SEP_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=value,
             ),
@@ -629,7 +819,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
             await SettingsOverrideManager.create(
                 session,
                 SettingOverride(
-                    setting_class=SettingClassEnum.SEP_SETTINGS,
+                    setting_class=SEP_SETTINGS_TOKEN,
                     key="CONNECTIVITY_CHECK_DEFAULT",
                     value=override_value,
                 ),

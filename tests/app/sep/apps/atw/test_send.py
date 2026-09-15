@@ -19,7 +19,7 @@ import io
 import json
 import os
 import zipfile
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
@@ -29,6 +29,7 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from aiohttp import ClientError
 from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
@@ -37,10 +38,10 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests import RemoteAPI
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingOverride
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
@@ -59,6 +60,8 @@ from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
 from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
+from tests.app.core.settings_override.conftest import SEP_SETTINGS_TOKEN
+from tests.app.db_schema import apply_schema
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
 _EXPECTED_FILE_COUNT = 4
@@ -66,6 +69,7 @@ _EXPECTED_ENTRY_COUNT = 9
 _EXPECTED_LOG_GROUP_COUNT = 3
 _STALE_ROW_COUNT = 2
 _MAIN_STEP = "run-script"
+_LAUNCH_CHECK_STEP = "check-launchable"
 _STORED_SECRET = "stored-api-key"
 _DEFAULT_FILES: dict[str, Any] = {
     "stdout.log": {"is_dir": False, "size": 5},
@@ -168,6 +172,21 @@ async def _ndjson(records: list[dict[str, Any] | bytes]) -> AsyncIterator[bytes]
             yield json.dumps(record).encode() + b"\n"
 
 
+async def _ndjson_then_raise(
+    records: list[dict[str, Any] | bytes], error: Exception
+) -> AsyncIterator[bytes]:
+    """Yield each record as one line, then raise as a mid-group stream cut does.
+
+    :param records: Log records to serialize before the failure.
+    :param error: The exception to raise once the records are exhausted.
+    :return: One line of the NDJSON log stream.
+    :raises Exception: ``error``, once every record has been yielded.
+    """
+    async for line in _ndjson(records):
+        yield line
+    raise error
+
+
 def _patch_tasks_api(mocker: MockerFixture, api: AsyncMock) -> AsyncMock:
     """Point the orchestrator at ``api``, yielding it from the auth context.
 
@@ -184,8 +203,10 @@ def _fake_tasks_api(
     mocker: MockerFixture,
     *,
     files: dict[str, Any] | None = None,
-    files_error: Exception | None = None,
+    files_listing_error: Exception | None = None,
+    file_stream_error: Exception | None = None,
     logs: list[dict[str, Any] | bytes] | None = None,
+    log_stream_error: Exception | None = None,
     status: str = TaskHistoryStatusEnum.SUCCESS.value,
 ) -> AsyncMock:
     """Provide a Tasks API client answering the status, files, and logs routes.
@@ -196,9 +217,11 @@ def _fake_tasks_api(
 
     :param mocker: The patching fixture.
     :param files: The output-files listing; two files by default.
-    :param files_error: Raised instead of answering the files listing.
+    :param files_listing_error: Raised instead of answering the files listing.
+    :param file_stream_error: Raised instead of streaming an output file's bytes.
     :param logs: The records the log stream yields; one stdout and one stderr
         group by default.
+    :param log_stream_error: Raised instead of opening the log stream.
     :param status: The status reported for every execution.
     :return: The faked client, for the caller to assert against.
     """
@@ -216,21 +239,29 @@ def _fake_tasks_api(
     def _get(path: str, **_kwargs: Any) -> dict[str, Any]:
         if not path.endswith("/files/"):
             return {"status": status}
-        if files_error is not None:
-            raise files_error
+        if files_listing_error is not None:
+            raise files_listing_error
         return listing
 
     api = AsyncMock(spec=RemoteAPI)
     api.get.side_effect = _get
-    api.stream_chunks.side_effect = lambda *_a, **_k: _chunks(b"data!")
-    api.stream.side_effect = lambda *_a, **_k: _ndjson(records)
+    api.stream_chunks.side_effect = (
+        (lambda *_a, **_k: _chunks(b"data!"))
+        if file_stream_error is None
+        else file_stream_error
+    )
+    api.stream.side_effect = (
+        (lambda *_a, **_k: _ndjson(records))
+        if log_stream_error is None
+        else log_stream_error
+    )
     return _patch_tasks_api(mocker, api)
 
 
 @pytest_asyncio.fixture(name="send_session")
 async def send_session_fixture(
     mocker: MockerFixture, tmp_path: Path, delivery_plan: DeliveryPlan
-) -> AsyncSession:
+) -> AsyncGenerator[AsyncSession, None]:
     """Yield a session whose maker and bundle directory the orchestrator uses.
 
     ``run_send`` opens its own session, so the maker it reaches for is pointed at
@@ -244,7 +275,7 @@ async def send_session_fixture(
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     session_maker = get_async_session_maker_from_engine(engine)
     mocker.patch(
         "app.sep.apps.atw.send.get_async_session_maker", return_value=session_maker
@@ -354,7 +385,7 @@ async def _seed_delivery_inputs(
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SEP_SETTINGS_TOKEN,
             key="DIAGNOSTICS_DELIVERY_INPUTS",
             value=value,
         ),
@@ -459,8 +490,18 @@ class TestRunSendHappyPath:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.detail["steps"] == [
-            {"name": "lookup", "status": "running", "outputs": None},
-            {"name": "lookup", "status": "success", "outputs": {"sys_id": "c-1"}},
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "running",
+                "outputs": None,
+            },
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "success",
+                "outputs": {"sys_id": "c-1"},
+            },
         ]
 
     async def test_a_non_json_upload_response_still_succeeds(
@@ -578,6 +619,54 @@ class TestRunSendExecutionLogs:
         api.stream.assert_called_once_with(
             "/history/11/logs/", params={"step": _MAIN_STEP}
         )
+
+    @pytest.mark.usefixtures("uploader")
+    async def test_a_failed_execution_still_requests_only_the_main_step(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Keep the prestart-is-noise rule intact for every other status."""
+        api = _fake_tasks_api(mocker, status=TaskHistoryStatusEnum.FAILED.value)
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _MAIN_STEP}
+        )
+
+    async def test_an_unlaunchable_execution_bundles_the_launch_check_log(
+        self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
+    ) -> None:
+        """Send the one step that says what could not be launched, and where.
+
+        An unlaunchable allocation never starts ``run-script`` and produces no
+        output files, so streaming only the main step would leave the bundle
+        empty and fail the send outright — with the diagnostic the support case
+        exists for sitting in a step the default rule filters out.
+        """
+        api = _fake_tasks_api(
+            mocker,
+            files={},
+            logs=[
+                _log_record(
+                    "SEP_UNLAUNCHABLE: command=sudo node=node-1\n",
+                    step=_LAUNCH_CHECK_STEP,
+                )
+            ],
+            status=TaskHistoryStatusEnum.UNLAUNCHABLE.value,
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        api.stream.assert_called_once_with(
+            "/history/11/logs/", params={"step": _LAUNCH_CHECK_STEP}
+        )
+        assert uploader.bundle_bytes is not None
+        with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
+            logged = zf.read(f"11-cpu.sh/logs/{_LAUNCH_CHECK_STEP}.stdout.log")
+
+        assert logged == b"SEP_UNLAUNCHABLE: command=sudo node=node-1\n"
 
     async def test_a_step_that_logged_nothing_leaves_no_member(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
@@ -817,7 +906,9 @@ class TestRunSendLogStatusGate:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "status of execution 11 (cpu.sh)" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == (
+            "Could not read the status of execution 11 (cpu.sh): tasks api unreachable"
+        )
 
 
 @pytest.mark.asyncio
@@ -909,7 +1000,7 @@ class TestRunSendStaleSnapshot:
         """
         rotated_secret = "rotated-api-key"
         new_endpoint = "https://intake-rotated.example.com"
-        sep_settings._set_snapshot(
+        sep_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {
                 "DIAGNOSTICS_DELIVERY_INPUTS": DeliveryPlanInputs(
                     endpoint="https://intake-stale.example.com",
@@ -1094,7 +1185,8 @@ class TestRunSendFailures:
     ) -> None:
         """Fail naming the execution whose output files are not ready."""
         _fake_tasks_api(
-            mocker, files_error=HTTPConflictException(detail="Task is still running")
+            mocker,
+            files_listing_error=HTTPConflictException(detail="Task is still running"),
         )
         row = await _seed_send_log(send_session)
 
@@ -1102,7 +1194,10 @@ class TestRunSendFailures:
 
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
-        assert "11" in reloaded.detail["error"]
+        assert reloaded.detail["error"] == (
+            "Could not list output files for execution 11 (cpu.sh): "
+            "Task is still running"
+        )
 
     async def test_zero_files_and_zero_log_bytes_sends_nothing(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture
@@ -1134,15 +1229,16 @@ class TestRunSendFailures:
         assert reloaded.detail["error"] == "Bundle is 99 bytes, above the cap."
 
     @pytest.mark.usefixtures("tasks_api")
-    async def test_a_failed_resolution_step_keeps_its_running_record(
+    async def test_a_failed_resolution_step_is_persisted_with_its_terminal_record(
         self, send_session: AsyncSession, uploader: _FakeUploader
     ) -> None:
-        """Leave the failing step as the last recorded one so the log names it."""
+        """Persist the failing step's terminal record so the trail names its end."""
         row = await _seed_send_log(send_session)
 
         async def _upload(**kwargs: Any) -> UploadResult:
             assert uploader.step_observer is not None
             uploader.step_observer(StepRecord(name="lookup", status="running"))
+            uploader.step_observer(StepRecord(name="lookup", status="failed"))
             raise HTTPConflictException(detail="ticket locked")
 
         uploader.upload_bundle = _upload
@@ -1152,8 +1248,163 @@ class TestRunSendFailures:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert reloaded.detail["steps"] == [
-            {"name": "lookup", "status": "running", "outputs": None}
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "running",
+                "outputs": None,
+            },
+            {
+                "name": "lookup",
+                "kind": "resolution",
+                "status": "failed",
+                "outputs": None,
+            },
         ]
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failed_send_names_the_step_and_the_input_it_reads(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name the failed step and its input ahead of the receiver's message."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="failed", cited_inputs=("case_ref",))
+            )
+            raise HTTPBadRequestException(
+                detail="An unexpected error occurred on the server."
+            )
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup', which reads case_ref: "
+            "An unexpected error occurred on the server."
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failed_upload_is_attributed_to_the_upload_not_the_last_step(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name the bundle upload when the send died there, not the step before it."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="success", outputs={"sys_id": "c-1"})
+            )
+            uploader.step_observer(
+                StepRecord(name="upload", status="failed", kind="upload")
+            )
+            raise HTTPConflictException(detail="attachment rejected")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in the bundle upload: attachment rejected"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_step_reading_no_input_is_named_without_an_input_clause(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Name a step that reads nothing the send supplied without an input clause."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(StepRecord(name="lookup", status="failed"))
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup': ticket locked"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_step_reading_two_inputs_names_both(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Join every input a failed step reads into the one recorded reason."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(
+                    name="lookup",
+                    status="failed",
+                    cited_inputs=("case_ref", "manifest.incident_id"),
+                )
+            )
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == (
+            "The send failed in delivery step 'lookup', which reads case_ref, "
+            "manifest.incident_id: ticket locked"
+        )
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_a_failure_before_any_step_keeps_the_upstream_message_alone(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Record the receiver's own message when no step ever reported a failure."""
+        uploader.error = HTTPConflictException(detail="ticket locked")
+        row = await _seed_send_log(send_session)
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.detail["error"] == "ticket locked"
+
+    @pytest.mark.usefixtures("tasks_api")
+    async def test_no_secret_reaches_the_recorded_error_or_the_step_trail(
+        self, send_session: AsyncSession, uploader: _FakeUploader
+    ) -> None:
+        """Keep the plan's secret values out of everything a failed send persists."""
+        row = await _seed_send_log(send_session)
+
+        async def _upload(**kwargs: Any) -> UploadResult:
+            assert uploader.step_observer is not None
+            uploader.step_observer(
+                StepRecord(name="lookup", status="failed", cited_inputs=("case_ref",))
+            )
+            raise HTTPConflictException(detail="ticket locked")
+
+        uploader.upload_bundle = _upload
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert uploader.plan is not None
+        secrets = [
+            secret.get_secret_value() for secret in uploader.plan.secrets.values()
+        ]
+        assert secrets
+        trail = json.dumps(reloaded.detail["steps"])
+        assert all(
+            secret not in reloaded.detail["error"] and secret not in trail
+            for secret in secrets
+        )
 
     @pytest.mark.usefixtures("tasks_api")
     async def test_an_unexpected_error_still_writes_a_terminal_row(
@@ -1194,6 +1445,100 @@ class TestRunSendFailures:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("uploader")
+class TestRunSendUpstreamFailures:
+    """Cover how an upstream Tasks-API failure is reported per collection step.
+
+    The rendered text is asserted in full rather than by containment: these
+    messages are a support engineer's only account of why a send failed, and a
+    substring check would not notice a step naming the wrong thing.
+    """
+
+    async def test_an_entry_stream_failure_names_the_file(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Name the file that could not be streamed, not merely its execution."""
+        _fake_tasks_api(
+            mocker,
+            files={"diag/report.txt": {"is_dir": False, "size": 7}},
+            file_stream_error=ClientError("connection reset"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read 'diag/report.txt' from execution 11 (cpu.sh): "
+            "connection reset"
+        )
+
+    async def test_a_log_stream_failure_names_the_execution(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Fail naming the execution whose logs the upstream refused."""
+        _fake_tasks_api(
+            mocker, log_stream_error=HTTPBadRequestException(detail="Logs unavailable")
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read logs for execution 11 (cpu.sh): Logs unavailable"
+        )
+
+    async def test_a_log_stream_failing_mid_group_still_fails_cleanly(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Report the upstream cut, not the open archive member it interrupted.
+
+        The stream is cut only after a member is already open, which is the one
+        arrangement where abandoning the member could surface a :mod:`zipfile`
+        error ahead of the real cause.
+        """
+        api = _fake_tasks_api(mocker, files={})
+        api.stream.side_effect = lambda *_a, **_k: _ndjson_then_raise(
+            [_log_record("out-1\n"), _log_record("out-2\n")],
+            ClientError("connection reset"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == (
+            "Could not read logs for execution 11 (cpu.sh): connection reset"
+        )
+
+    async def test_an_overlong_log_line_is_not_reported_as_an_upstream_failure(
+        self, send_session: AsyncSession, mocker: MockerFixture
+    ) -> None:
+        """Let the line-cap error stand on its own instead of blaming the upstream.
+
+        ``RemoteAPI.stream`` raises ``ValueError`` part-way through for a log line
+        outgrowing its cap. That is a local limit, not an upstream fault, so it
+        must not be dressed up as one.
+        """
+        api = _fake_tasks_api(mocker, files={})
+        api.stream.side_effect = lambda *_a, **_k: _ndjson_then_raise(
+            [_log_record("out-1\n")],
+            ValueError("log line exceeds the line cap"),
+        )
+        row = await _seed_send_log(send_session, executions=[_ONE_EXECUTION])
+
+        await run_send(row.id)
+
+        reloaded = await _reload(send_session, row.id)
+        assert reloaded.status is AtwSendStatusEnum.FAILED
+        assert reloaded.detail["error"] == "log line exceeds the line cap"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("uploader")
 class TestRunSendSizeCap:
     """Cover the configured bundle-size cap enforced while the zip is built."""
 
@@ -1224,6 +1569,7 @@ class TestRunSendSizeCap:
         reloaded = await _reload(send_session, row.id)
         assert reloaded.status is AtwSendStatusEnum.FAILED
         assert "1 MiB" in reloaded.detail["error"]
+        assert not reloaded.detail["error"].startswith("Could not read")
         assert uploader.called is False
         assert list(tmp_path.glob("*.zip")) == []
 

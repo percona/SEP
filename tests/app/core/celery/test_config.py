@@ -16,21 +16,41 @@
 """Define tests for the app.core.celery.config module."""
 
 import pytest
+from celery import Celery
 from pydantic import ValidationError
 
-from app.core.celery.config import CeleryOptions
-from app.core.config import Settings
+from app.core.celery.config import CeleryOptions, PoolEngineOptions
+from app.core.config import Settings, YamlPrefixConfigSettingsSource
 
 _BROKER_URL = "redis://localhost:6379/0"
 _MASKED_BROKER_URL = "amqp://celery-user:****@rabbit:5672/vhost"
 _MASKED_RESULT_BACKEND = "redis://celery-user:****@redis:6379/0"
+_WORKER_CONCURRENCY = 4
+_ENV_WORKER_CONCURRENCY = 8
 
 
-def test_beat_engine_options_defaults_to_empty_dict():
-    """Confirm beat_engine_options is empty for a standalone deployment."""
+def _beat_engine_options_for_shipped_profile(profile: str) -> PoolEngineOptions:
+    """Resolve ``CELERY.beat_engine_options`` for a settings.yaml profile."""
+    source = YamlPrefixConfigSettingsSource(Settings, prefixes=(profile,))
+    return CeleryOptions.model_validate(source.yaml_data["CELERY"]).beat_engine_options
+
+
+def test_beat_engine_options_pre_pings_by_default():
+    """Emit pool_pre_ping by default; sizing keys stay unset."""
     options = CeleryOptions(broker_url=_BROKER_URL)
 
-    assert options.beat_engine_options.model_dump(exclude_none=True) == {}
+    assert options.beat_engine_options.model_dump(exclude_none=True) == {
+        "pool_pre_ping": True
+    }
+
+
+@pytest.mark.parametrize(
+    "profile",
+    ["development", "production_docker"],
+)
+def test_shipped_settings_yaml_enables_beat_pool_pre_ping(profile: str) -> None:
+    """Resolve CELERY.beat_engine_options.pool_pre_ping from each CELERY profile."""
+    assert _beat_engine_options_for_shipped_profile(profile).pool_pre_ping is True
 
 
 def test_beat_engine_options_round_trip_through_model_dump():
@@ -38,7 +58,10 @@ def test_beat_engine_options_round_trip_through_model_dump():
     pool = {"pool_size": 20, "max_overflow": 5, "pool_timeout": 30}
     options = CeleryOptions(broker_url=_BROKER_URL, beat_engine_options=pool)
 
-    assert options.model_dump()["beat_engine_options"] == pool
+    assert options.model_dump()["beat_engine_options"] == {
+        "pool_pre_ping": True,
+        **pool,
+    }
 
 
 def test_beat_engine_options_accepts_zero_max_overflow():
@@ -48,7 +71,8 @@ def test_beat_engine_options_accepts_zero_max_overflow():
     )
 
     assert options.beat_engine_options.model_dump(exclude_none=True) == {
-        "max_overflow": 0
+        "pool_pre_ping": True,
+        "max_overflow": 0,
     }
 
 
@@ -76,8 +100,20 @@ def test_beat_engine_options_allows_fractional_pool_timeout():
     )
 
     assert options.beat_engine_options.model_dump(exclude_none=True) == {
-        "pool_timeout": 25.5
+        "pool_pre_ping": True,
+        "pool_timeout": 25.5,
     }
+
+
+def test_beat_engine_options_pre_ping_opt_out_on_env_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allow disabling pool_pre_ping via CELERY__BEAT_ENGINE_OPTIONS__POOL_PRE_PING."""
+    monkeypatch.setenv("CELERY__BEAT_ENGINE_OPTIONS__POOL_PRE_PING", "false")
+
+    assert Settings(_env_file=None).CELERY.beat_engine_options.model_dump(
+        exclude_none=True
+    ) == {"pool_pre_ping": False}
 
 
 @pytest.mark.parametrize(
@@ -112,3 +148,48 @@ def test_credential_url_mask_rejected_on_env_path(
     monkeypatch.setenv(env_name, value)
     with pytest.raises(ValidationError, match=match):
         Settings(_env_file=None)
+
+
+def test_worker_concurrency_is_unset_by_default():
+    """Leave worker_concurrency unset so Celery keeps its per-CPU default."""
+    options = CeleryOptions(broker_url=_BROKER_URL)
+
+    assert options.worker_concurrency is None
+    assert Celery("test", **options.model_dump()).conf.worker_concurrency is None
+
+
+def test_worker_concurrency_reaches_celery_conf():
+    """Carry a declared worker_concurrency into the Celery config.
+
+    The declared-field assertion is what ties this to the typed field: an
+    undeclared extra of the same name also reaches ``conf``, so the value check
+    alone would pass without it.
+    """
+    assert "worker_concurrency" in CeleryOptions.model_fields
+    options = CeleryOptions(
+        broker_url=_BROKER_URL, worker_concurrency=_WORKER_CONCURRENCY
+    )
+
+    conf = Celery("test", **options.model_dump()).conf
+
+    assert conf.worker_concurrency == _WORKER_CONCURRENCY
+
+
+def test_worker_concurrency_coerces_env_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Coerce CELERY__WORKER_CONCURRENCY to the integer the prefork pool needs.
+
+    :param monkeypatch: Sets the environment variable for this test.
+    """
+    monkeypatch.setenv("CELERY__WORKER_CONCURRENCY", str(_ENV_WORKER_CONCURRENCY))
+
+    assert Settings(_env_file=None).CELERY.worker_concurrency == _ENV_WORKER_CONCURRENCY
+
+
+@pytest.mark.parametrize("value", [0, -1, "x", 2.5])
+def test_worker_concurrency_rejects_invalid_values(value: int | str | float) -> None:
+    """Reject non-positive, non-numeric and fractional concurrency values.
+
+    :param value: A concurrency value the field must refuse.
+    """
+    with pytest.raises(ValidationError):
+        CeleryOptions(broker_url=_BROKER_URL, worker_concurrency=value)

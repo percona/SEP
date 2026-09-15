@@ -91,6 +91,8 @@ backup_mongo_schema = derive_app_schema(
     _BACKUP_MONGO_LAYOUT,
     name="backup_mongo",
     display_name="MongoDB Backups",
+    item_display_name="backup",
+    item_display_name_plural="backups",
     description=(
         "Configure Percona Backup for MongoDB (PBM) and manage logical, "
         "physical, status, and incremental backup tasks."

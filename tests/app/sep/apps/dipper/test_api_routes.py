@@ -46,12 +46,14 @@ def build_fake_service(
     """Build a fake inventory service dict for use in dipper API tests."""
     return {
         "id": service_id,
+        "service_id": f"/service_id/{service_id}",
         "name": "test-service",
         "type": service_type,
         "port": 3306,
         "node_id": 1,
         "node": {
             "id": 1,
+            "node_id": "/node_id/1",
             "name": "test-node",
             "address": "127.0.0.1",
             "type": "generic",
@@ -201,6 +203,26 @@ class TestDipperListEndpoint:
 class TestDipperFormSchemaEndpoint:
     """Tests for ``GET /api/apps/dipper/form-schema``."""
 
+    def test_record_names_are_inherited_from_the_app_schema(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Inherit the app-level record nouns rather than naming the record after the script."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["item_display_name"] == "data collection"
+        assert body["item_display_name_plural"] == "data collections"
+        assert body["display_name"] != body["item_display_name"]
+
     def test_mysql_environment_schema_contains_payload_fields(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
     ):
@@ -230,6 +252,35 @@ class TestDipperFormSchemaEndpoint:
             "executor_host",
             "script_preview",
         } <= field_names
+
+    def test_unmarked_fields_carry_a_null_destructive_key(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Emit ``destructive: null`` on every field of this route.
+
+        This route sets no ``response_model_exclude_none``, so an optional
+        ``BaseField`` attribute reaches the wire as an explicit null instead of
+        being dropped. That is the accepted shape here — consistent with the
+        ``description`` / ``requires`` / ``forbidden`` nulls the endpoint
+        already publishes — and this pins it rather than letting it drift
+        unobserved.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        assert fields
+        assert all(field["destructive"] is None for field in fields)
 
     def test_pmm_schema_contains_defaults(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep

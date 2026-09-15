@@ -15,6 +15,9 @@
 
 """Define shared fixtures for the ATW incident model, CRUD, and route tests."""
 
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
+
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
@@ -34,6 +37,7 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
+from tests.app.db_schema import apply_schema
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
@@ -70,15 +74,18 @@ def delivery_plan() -> DeliveryPlan:
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an in-memory async DB session with every SQLModel table created."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -111,23 +118,28 @@ def cookie_only_client(test_client: TestClient) -> TestClient:
     return test_client
 
 
-@pytest_asyncio.fixture
-async def async_api_client(
-    regular_user: CasdoorUser, session: AsyncSession
-) -> AsyncClient:
-    """Yield an authenticated async client sharing the in-memory test session.
+@asynccontextmanager
+async def _authenticated_api_client(
+    user: CasdoorUser, session: AsyncSession
+) -> AsyncIterator[AsyncClient]:
+    """Yield an authenticated async client acting as ``user``.
 
-    Used by route tests that must ``await`` a DB read after the request (e.g.
-    asserting cascade deletes): the request and the DB check then run on the same
-    event loop and session, which a sync ``TestClient`` cannot offer.
+    Both method gates are overridden alongside the user, so a fixture built on
+    this cannot answer a mutation with the 401 a half-overridden client raises.
+    Keeping the overrides here is what stops the two client fixtures drifting
+    apart the next time the gate set changes.
+
+    :param user: The user every request authenticates as.
+    :param session: The in-memory session the request and any following DB read
+        share, so both run on one event loop.
+    :return: The configured client, torn down with the overrides on exit.
     """
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    sep_app.dependency_overrides[get_current_user] = lambda: user
     sep_app.dependency_overrides[get_session] = lambda: session
-    transport = ASGITransport(app=sep_app)
     client = AsyncClient(
-        transport=transport,
+        transport=ASGITransport(app=sep_app),
         base_url="http://test",
         headers={"Authorization": "Bearer test"},
     )
@@ -136,3 +148,31 @@ async def async_api_client(
     finally:
         await client.aclose()
         sep_app.dependency_overrides = {}
+
+
+@pytest_asyncio.fixture
+async def admin_api_client(
+    admin_user: CasdoorUser, session: AsyncSession
+) -> AsyncGenerator[AsyncClient, None]:
+    """Yield the authenticated async client as an administrator.
+
+    Mirrors :func:`async_api_client`, whose user is a viewer. Routes declaring
+    their own admin dependency answer that client with 403, so a test covering
+    one needs this fixture and a test covering the refusal needs the other.
+    """
+    async with _authenticated_api_client(admin_user, session) as client:
+        yield client
+
+
+@pytest_asyncio.fixture
+async def async_api_client(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> AsyncGenerator[AsyncClient, None]:
+    """Yield an authenticated async client sharing the in-memory test session.
+
+    Used by route tests that must ``await`` a DB read after the request (e.g.
+    asserting cascade deletes): the request and the DB check then run on the same
+    event loop and session, which a sync ``TestClient`` cannot offer.
+    """
+    async with _authenticated_api_client(regular_user, session) as client:
+        yield client

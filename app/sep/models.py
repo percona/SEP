@@ -22,7 +22,7 @@ from pydantic import (
     model_validator,
     UUID4,
 )
-from sqlalchemy import Column, Index
+from sqlalchemy import Column, Index, UniqueConstraint
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -116,10 +116,21 @@ class SyncInstanceBase(SQLModel):
 
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: NonEmptyStr
+    :param status: The run-level status of the synchronization. Defaults to PENDING.
+    :param snapshot_complete: Whether the run observed a complete generation of the
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
     syncer: NonEmptyStr = SQLField(index=True)
+    status: SyncStatusEnum = SQLField(
+        default=SyncStatusEnum.PENDING,
+        sa_column=Column(
+            EnumField(SyncStatusEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+            index=True,
+        ),
+    )
+    snapshot_complete: bool | None = SQLField(default=None, index=True)
 
 
 class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
@@ -129,19 +140,17 @@ class SyncInstance(BaseUUIDSQLModel, SyncInstanceBase, table=True):
     inventory item, type, associated task history, synchronizer, and current status.
 
     :param id: The primary key for the table. Automatically generated using UUID4.
-    :type id: UUID4
     :param created_at: The timestamp when the record is created. Defaults to the current
         time in UTC.
-    :type created_at: UTCDatetime
     :param updated_at: The timestamp when the record is last updated. Automatically
         updated on changes.
-    :type updated_at: UTCDatetime | None
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: NonEmptyStr
+    :param status: The run-level status of the synchronization.
+    :param snapshot_complete: Whether the run observed a complete generation of the
+        remote inventory, or ``None`` when the syncer does not produce one.
     :param items: A list of synchronization items associated with this synchronization
         instance.
-    :type items: list[SyncItem]
     """
 
     items: list["SyncItem"] = Relationship(
@@ -158,7 +167,9 @@ class SyncInstanceWrite(SyncInstanceBase):
 
     :param syncer: The name of the synchronizer responsible for this synchronization.
         Indexed for quick lookup.
-    :type syncer: NonEmptyStr
+    :param status: The run-level status of the synchronization. Defaults to PENDING.
+    :param snapshot_complete: Whether the run observed a complete generation of the
+        remote inventory, or ``None`` when the syncer does not produce one.
     """
 
 
@@ -170,15 +181,11 @@ class SyncItemBase(SQLModel):
     status.
 
     :param entity_id: The identifier of the inventory item being synchronized.
-    :type entity_id: int | None
     :param entity_type: The type of the inventory item being synchronized.
-    :type entity_type: SyncInventoryEntityTypeEnum
     :param status: The current status of the synchronization process. Defaults to
         PENDING.
-    :type status: SyncStatusEnum
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
-    :type sync_instance_id: UUID4
     """
 
     entity_id: int | None = SQLField(index=True)
@@ -266,6 +273,71 @@ class SyncItemWrite(SyncItemBase):
     :param sync_instance_id: The foreign key referencing the associated synchronization
         instance.
     :type sync_instance_id: UUID4
+    """
+
+
+class SyncEntityAbsenceBase(SQLModel):
+    """Define the base structure for a missing-grace ledger row.
+
+    :param syncer: The name of the synchronizer that observed the absence.
+    :param entity_id: The local identifier of the absent inventory entity.
+    :param entity_type: The type of the absent inventory entity.
+    """
+
+    syncer: NonEmptyStr
+    entity_id: int = SQLField(index=True)
+    entity_type: SyncInventoryEntityTypeEnum = SQLField(
+        sa_column=Column(
+            EnumField(
+                SyncInventoryEntityTypeEnum,
+                native_enum=False,
+                create_constraint=True,
+            ),
+            nullable=False,
+            index=True,
+        ),
+    )
+
+
+class SyncEntityAbsence(BaseSQLModel, SyncEntityAbsenceBase, table=True):
+    """Count consecutive complete generations that reported an entity absent.
+
+    A row outlives the individual runs that wrote it, so it carries an integer
+    primary key and neither a foreign key nor a relationship to ``SyncInstance``.
+    ``created_at`` is the first observed absence and ``updated_at`` the most recent.
+
+    :param id: The primary key for the table. Auto-incremented and not nullable.
+    :param created_at: The timestamp when the record is created. Defaults to the current
+        time in UTC.
+    :param updated_at: The timestamp when the record is last updated. Automatically
+        updated on changes.
+    :param syncer: The name of the synchronizer that observed the absence.
+    :param entity_id: The local identifier of the absent inventory entity.
+    :param entity_type: The type of the absent inventory entity.
+    :param missing_generations: The number of consecutive complete generations that
+        did not include the entity.
+    """
+
+    __table_args__ = (
+        UniqueConstraint(
+            "syncer",
+            "entity_type",
+            "entity_id",
+            name="uq_syncentityabsence_entity",
+        ),
+    )
+    missing_generations: int = SQLField(default=0)
+
+
+class SyncEntityAbsenceWrite(SyncEntityAbsenceBase):
+    """Define the write model for creating a missing-grace ledger row.
+
+    Its three fields are exactly the unique key, so an unfiltered ``get_or_create``
+    on this model matches at most one row.
+
+    :param syncer: The name of the synchronizer that observed the absence.
+    :param entity_id: The local identifier of the absent inventory entity.
+    :param entity_type: The type of the absent inventory entity.
     """
 
 

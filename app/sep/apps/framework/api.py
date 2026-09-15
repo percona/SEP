@@ -45,16 +45,17 @@ from typing import Annotated, Any, cast, TypeVar
 from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
+from app.core.db.deps import make_in_memory_list_query_dep
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec, make_list_query_dep
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
-from app.core.requests.remote_api import RemoteAPI
+from app.core.requests.remote_api import as_json_object, RemoteAPI
 from app.core.utils.fields import ArbitraryMapping
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
     maybe_record_connectivity_warning,
 )
-from app.sep.apps.framework.list_query import make_in_memory_list_query_dep
 from app.sep.apps.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
@@ -90,6 +91,7 @@ __all__ = [
     "derive_execute_route",
     "derive_script_routes",
     "make_list_filter_dep",
+    "resolve_response_model",
     "schema_endpoint",
 ]
 
@@ -160,7 +162,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: AppSchema) -> None:
         return plugin_schema
 
 
-def _resolve_response_model(
+def resolve_response_model(
     provider: Callable[..., BaseModel],
     *,
     helper: str,
@@ -364,7 +366,7 @@ def capabilities_endpoint(
             "Calling an async function from the sync handler would return a "
             "coroutine object that response_model serialisation cannot handle."
         )
-    response_model = _resolve_response_model(
+    response_model = resolve_response_model(
         capabilities_provider,
         helper="capabilities_endpoint",
         param="capabilities_provider",
@@ -505,7 +507,7 @@ def _resolve_create_response_model(
         ``create_response_builder``'s model omits a ``connectivity_warning`` field.
     """
     if create_response_builder is not None:
-        model = _resolve_response_model(
+        model = resolve_response_model(
             create_response_builder,
             helper="derive_crud_routes",
             param="create_response_builder",
@@ -947,7 +949,7 @@ def _resolve_detail_target(
     if detail_response_model is not None:
         model = detail_response_model
     elif detail_response_builder is not None:
-        model = _resolve_response_model(
+        model = resolve_response_model(
             detail_response_builder,
             helper="derive_crud_routes",
             param="detail_response_builder",
@@ -1029,7 +1031,7 @@ def _register_list_route(
             _list,
             methods=["GET"],
             summary="List",
-            response_model=list[list_detail_model],
+            response_model=list[list_detail_model],  # ty: ignore[invalid-type-form]
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
         )
@@ -1057,7 +1059,9 @@ def _register_list_route(
             _list_paginated,
             methods=["GET"],
             summary="List",
-            response_model=PaginatedResponse[list_detail_model],
+            response_model=PaginatedResponse[
+                list_detail_model  # ty: ignore[invalid-type-form]
+            ],
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
         )
@@ -1241,7 +1245,7 @@ def derive_crud_routes(
         create_response_builder=create_response_builder,
     )
 
-    list_detail_model = _resolve_response_model(
+    list_detail_model = resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
     )
     detail_builder, detail_model = _resolve_detail_target(
@@ -1370,8 +1374,8 @@ def derive_execute_route(
     resolve the task, POST ``/execute/{task.name}`` to the Tasks API with the
     request body's non-``None`` fields, validate the upstream reply as a
     :class:`~app.tasks.models.TaskHistoryResponse`, and return
-    ``response_model(task_name=..., task_id=...)``. The route pins
-    ``status_code=201`` and the standard guard set
+    ``response_model(task_name=..., task_id=..., status=..., created_at=...)``.
+    The route pins ``status_code=201`` and the standard guard set
     ``[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps]``.
 
     The generated handler annotates its ``task`` parameter with ``task_dep``
@@ -1406,7 +1410,10 @@ def derive_execute_route(
         the requestBody schema and the body-validation ``422``. Defaults to
         :class:`~app.sep.apps.framework.responses.TaskExecuteWrite`.
     :param response_model: The execute response model, constructed with
-        ``task_name`` and ``task_id`` keyword arguments. Defaults to
+        ``task_name``, ``task_id``, ``status`` and ``created_at`` keyword
+        arguments. A model that declares fewer of them drops the rest silently,
+        while one configured ``extra="forbid"`` would raise at dispatch.
+        Defaults to
         :class:`~app.sep.apps.framework.responses.TaskExecutionResponse`.
     :param name: The route name; drives the OpenAPI ``operationId`` and
         ``summary``. ``None`` falls back to the inner handler's ``__name__``.
@@ -1445,7 +1452,7 @@ def derive_execute_route(
 
     async def execute(
         task: task_dep,
-        body: write_model,
+        body: write_model,  # ty: ignore[invalid-type-form]
         tasks_api: TaskAPI,
     ) -> BaseModel:
         """Resolve, dispatch, and wrap a standard task execution."""
@@ -1454,7 +1461,12 @@ def derive_execute_route(
             json=body.model_dump(exclude_none=True),
         )
         task_history = TaskHistoryResponse.model_validate(created)
-        return response_model(task_name=task.name, task_id=task_history.id)
+        return response_model(
+            task_name=task.name,
+            task_id=task_history.id,
+            status=task_history.status,
+            created_at=task_history.created_at,
+        )
 
     router.add_api_route(
         "/{task_name}/execute",
@@ -1774,7 +1786,7 @@ def derive_script_routes(
     script_param = Annotated[Any, Depends(make_script_dep(source))]
 
     list_model = (
-        list[source.list_response_model]
+        list[source.list_response_model]  # ty: ignore[invalid-type-form]
         if source.list_response_model is not None
         else None
     )
@@ -1798,7 +1810,9 @@ def derive_script_routes(
     else:
         paginated_param = Annotated[Pagination, Depends(pagination_dep)]
         paginated_list_model = (
-            PaginatedResponse[source.list_response_model]
+            PaginatedResponse[
+                source.list_response_model  # ty: ignore[invalid-type-form]
+            ]
             if source.list_response_model is not None
             else PaginatedResponse
         )
@@ -1811,7 +1825,7 @@ def derive_script_routes(
             # A source that adds filter params supplies a dependency composing the
             # Core one, so the spec stays the sole sort/search authority either way.
             query_dep = source.list_query_dep or (
-                make_in_memory_list_query_dep(list_query_spec)
+                make_in_memory_list_query_dep(InMemoryListQueryApplier(list_query_spec))
                 if source.in_memory_list_query
                 else make_list_query_dep(list_query_spec)
             )
@@ -1867,9 +1881,13 @@ def derive_script_routes(
         script: script_param, tasks_api: TaskAPI
     ) -> ArbitraryMapping:
         """Proxy the per-script execution history from the Tasks API by filename."""
-        return await tasks_api.get(
-            f"/{script.execution_task_name}/history/",
-            params={"snippet_filename": script.filename},
+        return ArbitraryMapping(
+            as_json_object(
+                await tasks_api.get(
+                    f"/{script.execution_task_name}/history/",
+                    params={"snippet_filename": script.filename},
+                )
+            )
         )
 
     @router.post(

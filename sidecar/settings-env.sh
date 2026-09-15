@@ -78,6 +78,17 @@ if [[ -z ${SECRET_KEY:-} ]]; then
     unset SECRET_KEY
 fi
 
+# No gate and no export_canonical fan-out: the key sits on the shared core
+# Settings class, so it has no SEP__/INVENTORY__/TASKS__ spellings, and two
+# further sources sit below this file -- a key an earlier start persisted, and
+# one entrypoint.sh mints. Only the blank clear is owed here, and it is
+# load-bearing rather than cosmetic: an inherited empty string counts as
+# supplied, and was measured shadowing a valid mounted file into a refusal to
+# start.
+if [[ -z ${ENCRYPTION_KEY:-} ]] && secret_file_supplies ENCRYPTION_KEY; then
+    unset ENCRYPTION_KEY
+fi
+
 # The migrate wait loops read SEP_DB_HOST/SEP_DB_PORT below, so a mounted host or
 # port has to seed them before their defaults apply -- and seeding all three
 # services off it is why a mounted host is not confined to SEP the way a mounted
@@ -108,10 +119,11 @@ export_canonical TASKS__DATABASE__PORT "$SEP_DB_PORT"
 # and for the URL-typed ones an inherited blank fails settings validation
 # outright, so all of them are cleared unconditionally before any guard decides.
 blank_cleared_names=(
+    DATABASE__PASSWORD
     SEP__DATABASE__PASSWORD INVENTORY__DATABASE__PASSWORD TASKS__DATABASE__PASSWORD
     AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN PMM__API_KEY
     PMM__ENDPOINT AUTH__PROVIDER__GRAFANA__ENDPOINT
-    TASKS__NOMAD__ENDPOINT
+    TASKS__NOMAD__ENDPOINT TASKS__NOMAD__API_KEY
     SEP_INTERNAL_TOKEN BASE_URL
     CELERY__BEAT_DBURI
 )
@@ -130,9 +142,17 @@ if [[ -n ${SEP_DB_PASSWORD:-} ]]; then
     export_canonical TASKS__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
 fi
 
+# A function rather than inline exports in the guard below because entrypoint.sh
+# calls it a second time, with a token minted after this file has finished, and
+# every destination name has to keep resolving from one place.
+export_grafana_token() {
+    export_canonical AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN "$1"
+    export_canonical PMM__API_KEY "$1"
+    export_canonical TASKS__NOMAD__API_KEY "$1"
+}
+
 if [[ -n ${SEP_GRAFANA_TOKEN:-} ]]; then
-    export_canonical AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN "$SEP_GRAFANA_TOKEN"
-    export_canonical PMM__API_KEY "$SEP_GRAFANA_TOKEN"
+    export_grafana_token "$SEP_GRAFANA_TOKEN"
 fi
 
 if [[ -n ${SEP_PMM_ENDPOINT:-} ]]; then

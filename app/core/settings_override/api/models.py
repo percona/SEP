@@ -28,8 +28,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, RootModel
 
-from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
+from app.core.utils.fields import UTCDatetime
 
 
 class SettingOption(BaseModel):
@@ -47,7 +47,7 @@ class SettingOption(BaseModel):
 class SettingResponse(BaseModel):
     """Represent a single setting's metadata and current value.
 
-    :param setting_class: The settings class the field belongs to.
+    :param setting_class: The Pydantic class ``__name__`` the field belongs to.
     :param key: The field name on the settings class.
     :param key_path: Carry the canonical key segments for ``key`` such that
         ``"__".join(key_path) == key``.
@@ -65,8 +65,13 @@ class SettingResponse(BaseModel):
         (``SecretStr`` / ``SecretBytes``) at any depth.
     :param is_complex: Whether the field's annotation is or contains a Pydantic
         ``BaseModel`` subclass (true for nested submodels).
-    :param has_override: Whether a row exists in the ``settingoverride`` table
-        for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+    :param has_override: Whether an **active** row in the ``settingoverride``
+        table applies to this ``(setting_class, key)`` pair. An inactive row is
+        skipped by the cache loader, so the served value falls back to the
+        declared default and reporting it as overridden would tell the UI a
+        field is overridden while showing it that default. A nested row also
+        marks every canonical prefix of its chain, so a parent reports ``True``
+        when only a deeper leaf carries a row.
     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
         present it separately from everyday settings. Display-only:
         it does not affect PATCH/DELETE eligibility.
@@ -76,11 +81,23 @@ class SettingResponse(BaseModel):
         PATCH/DELETE server-side; the runtime gate is the real enforcement.
     :param options: Selectable enum members for dropdown UIs, or ``None`` when
         the field is not an ``Enum`` annotation. Aliased members are excluded.
+    :param updated_at: When the override applying to this key was last saved,
+        falling back to the row's creation time for a row written before the
+        stamp was recorded. ``None`` when ``has_override`` is ``False``.
+        Timestamps carry second granularity.
+    :param updated_by: The username that last saved that override, or ``None``
+        both when no override applies and when the row predates the actor
+        column. A key can draw on several rows (a nested parent reporting on its
+        leaves), in which case the pair comes from the row carrying the latest
+        timestamp. Two writes landing within the same second are
+        indistinguishable by timestamp, and the pair reported is then whichever
+        contributing row was created later, which need not be the one written
+        later.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    setting_class: SettingClassEnum
+    setting_class: str
     key: str
     key_path: list[str] = Field(default_factory=list)
     value: Any
@@ -94,6 +111,8 @@ class SettingResponse(BaseModel):
     is_advanced: bool = False
     is_applicable: bool = True
     options: list[SettingOption] | None = None
+    updated_at: UTCDatetime | None = None
+    updated_by: str | None = None
 
 
 class SettingsPatch(RootModel[dict[str, JsonValue]]):
@@ -128,30 +147,24 @@ class SettingClassAppMetadata(BaseModel):
 
 
 class SettingClassGroup(BaseModel):
-    """One settings-class group in the LIST response.
+    """Group one settings class's fields for the LIST response.
 
-    :param setting_class: The settings class this group represents.
-    :type setting_class: SettingClassEnum
+    :param setting_class: The Pydantic class ``__name__`` this group represents.
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
-    :type settings: list[SettingResponse]
     :param is_app_owned: Whether this group belongs to a SEP app under
         ``app/sep/apps/`` rather than core SEP wiring.
-    :type is_app_owned: bool
     :param app_id: The owning app's registry key when ``is_app_owned`` is
         ``True``; ``None`` for core groups.
-    :type app_id: str | None
     :param app_display_name: The owning app's human-facing label when
         ``is_app_owned`` is ``True``; ``None`` for core groups.
-    :type app_display_name: str | None
     :param app_enabled: Whether the owning app is currently enabled when
         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
         apps remain listed so the frontend can hide them without a second
         lookup.
-    :type app_enabled: bool | None
     """
 
-    setting_class: SettingClassEnum
+    setting_class: str
     settings: list[SettingResponse]
     is_app_owned: bool = False
     app_id: str | None = None

@@ -23,6 +23,7 @@ gateway so the React frontend (``useTaskStats``) does not bypass the SEP
 from fastapi import APIRouter, HTTPException
 
 from app.core.exceptions import HTTPBadGatewayException
+from app.core.requests import as_json_object
 from app.core.utils.fields import ArbitraryMapping
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.deps import TaskAPI
@@ -59,7 +60,9 @@ async def get_task_stats(
         ``OSError`` (e.g. a connection failure).
     """
     try:
-        return await tasks_api.get(f"/stats/{task_name}")
+        return ArbitraryMapping(
+            as_json_object(await tasks_api.get(f"/stats/{task_name}"))
+        )
     except (HTTPException, OSError) as exc:
         detail = getattr(exc, "detail", str(exc))
         raise HTTPBadGatewayException(detail=str(detail)) from exc

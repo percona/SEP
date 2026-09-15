@@ -109,7 +109,9 @@ jobs:
         env:
           CASDOOR__CLIENT_SECRET: notatoken
           CASDOOR__CLIENT_ID: notatoken
-        run: make checkmigrations
+        # Minted per job like the migration check in python.yaml: migrations
+        # encrypt nothing, so the value only has to be a well-formed key.
+        run: ENCRYPTION_KEY="$(make -s encryption-key)" make checkmigrations
 
       - name: Run release
         env:

@@ -24,6 +24,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 
 from app.api.deps import IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
+from app.core.celery.schedules import next_run_times, schedule_timezone
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.iterators import unique_everseen
@@ -39,6 +40,8 @@ from app.tasks.periodic.models import (
     PeriodicTaskExecuteRequest,
     PeriodicTaskResponse,
     PeriodicTaskUpdate,
+    SchedulePreviewResponse,
+    SchedulePreviewWrite,
 )
 from app.tasks.periodic.utils import attach_last_run_status
 
@@ -89,6 +92,33 @@ async def list_periodic_tasks(
         )
     await attach_last_run_status(tasks_session, page.items)
     return page
+
+
+@router.post("/schedule/preview/", dependencies=[IsAuthenticatedDep])
+async def preview_schedule(preview: SchedulePreviewWrite) -> SchedulePreviewResponse:
+    """Report the upcoming runs of a schedule without saving it.
+
+    Answers for an unsaved request body what
+    :class:`~app.tasks.periodic.models.PeriodicTaskResponse` answers for a stored
+    schedule, through the same code path, so a client can preview a cron
+    expression while it is still being typed.
+
+    Two path segments so no single-segment ``/{param}`` sibling can match it,
+    which is what keeps the SEP-side twin from reserving a task name.
+
+    :param preview: The schedule to preview. Persisted nowhere.
+    :return: The schedule's zone and its upcoming runs.
+    """
+    runs = next_run_times(
+        interval=preview.interval,
+        crontab=preview.crontab,
+        start_time=preview.start_time,
+    )
+    return SchedulePreviewResponse(
+        timezone=schedule_timezone(preview.interval, preview.crontab),
+        next_run_at=runs[0] if runs else None,
+        next_runs=runs,
+    )
 
 
 @router.get(

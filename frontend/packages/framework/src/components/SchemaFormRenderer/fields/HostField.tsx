@@ -31,8 +31,10 @@ export function HostField({ field }: HostFieldProps) {
     <HostSelector
       name={field.name}
       label={field.label}
+      helperText={field.description}
       required={field.required}
       dependsOn={field.depends_on}
+      targetService={field.target_service}
       serviceTypes={serviceTypes}
       allowCustom={field.allow_custom}
     />

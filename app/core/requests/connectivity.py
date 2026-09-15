@@ -31,6 +31,13 @@ from pydantic import BaseModel
 #: timeouts.
 PROBE_TIMEOUT_SECONDS = 5
 
+#: Upper bound for a probe that leaves the cluster. Named for the property that
+#: justifies the wider bound -- a round trip over the public internet -- rather
+#: than for any one caller, so this module stays free of feature knowledge.
+#: Probes run concurrently, so this caps the whole fan-out rather than adding to
+#: it.
+EXTERNAL_PROBE_TIMEOUT_SECONDS = 15
+
 #: HTTP statuses that mean "the server answered, but rejected our credentials".
 _AUTH_FAILURE_STATUSES = frozenset(
     {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}
@@ -46,11 +53,15 @@ class ConnectivityStatusEnum(StrEnum):
     UNREACHABLE = "unreachable"
     SSL_ERROR = "ssl_error"
     TIMEOUT = "timeout"
+    NOT_CONFIGURED = "not_configured"
+    INPUTS_DRIFTED = "inputs_drifted"
+    PROBE_UNDECLARED = "probe_undeclared"
 
 
 #: Human-readable default ``detail`` per outcome. Deliberately fixed strings so
 #: the probe never echoes the configured API key or any credential embedded in
-#: an endpoint URL.
+#: an endpoint URL. Every member needs an entry: ``build_connectivity_result``
+#: indexes this unguarded whenever a caller passes no explicit ``detail``.
 _DEFAULT_DETAILS: dict[ConnectivityStatusEnum, str] = {
     ConnectivityStatusEnum.REACHABLE: "Reachable.",
     ConnectivityStatusEnum.AUTH_FAILED: "Authentication failed.",
@@ -58,6 +69,11 @@ _DEFAULT_DETAILS: dict[ConnectivityStatusEnum, str] = {
     ConnectivityStatusEnum.UNREACHABLE: "Connection failed.",
     ConnectivityStatusEnum.SSL_ERROR: "SSL verification failed.",
     ConnectivityStatusEnum.TIMEOUT: "Connection timed out.",
+    ConnectivityStatusEnum.NOT_CONFIGURED: "Not configured.",
+    ConnectivityStatusEnum.INPUTS_DRIFTED: (
+        "Stored inputs no longer match the configured plan."
+    ),
+    ConnectivityStatusEnum.PROBE_UNDECLARED: "No connectivity probe is declared.",
 }
 
 

@@ -15,6 +15,8 @@
 
 """Define shared fixtures for the alerts plugin tests."""
 
+from collections.abc import AsyncGenerator
+
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -22,18 +24,22 @@ from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 
 @pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncSession:
+async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an async db session for testing."""
+    # scaffolding-dup-ok: this duplication predates the change that
+    # re-annotated the fixture's return type; promoting it against
+    # its sibling bootstrap is a cross-tree refactor of its own.
     engine = create_async_engine(
         "sqlite+aiosqlite://",
         json_serializer=json_serializer,
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:

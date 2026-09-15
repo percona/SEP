@@ -55,6 +55,7 @@
   "display_name": "MongoDB Backups",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "description": "Creating this backup produces sibling tasks: logical, physical, status, incremental.",
@@ -81,6 +82,7 @@
           "label": "Execution Host",
           "name": "hostname",
           "required": true,
+          "target_service": "service_id",
           "type": "host"
         },
         {
@@ -95,6 +97,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -215,6 +218,7 @@
       "title": "Storage"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -269,6 +273,7 @@
       "title": "Point-in-Time Recovery"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -366,6 +371,8 @@
       "title": "Backup Options"
     }
   ],
+  "item_display_name": "backup",
+  "item_display_name_plural": "backups",
   "list_view": {
     "columns": [
       {
@@ -388,7 +395,15 @@
         "format": "chip",
         "key": "backup_type",
         "label": "Type",
-        "sortable": false
+        "sortable": false,
+        "value_labels": {
+          "pbm_config": "PBM Config",
+          "pbm_incremental": "PBM Incremental",
+          "pbm_logical": "PBM Logical",
+          "pbm_physical": "PBM Physical",
+          "pbm_snapshot": "PBM Snapshot",
+          "pbm_status": "PBM Status"
+        }
       },
       {
         "format": "relative",
@@ -417,6 +432,48 @@
       "app_key": "backup_mongo/restore",
       "label": "Restore",
       "route_segment": "restores"
+    }
+  ],
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
     }
   ]
 }

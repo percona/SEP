@@ -28,12 +28,14 @@ const ME_URL = 'http://localhost/api/users/me';
 
 /** Surface the auth state under test as text nodes. */
 function AuthProbe() {
-  const { isAuthenticated, ready, user } = useAuth();
+  const { isAuthenticated, ready, user, isAdmin, canMutate } = useAuth();
   return (
     <div>
       <span data-testid="ready">{ready ? 'ready' : 'loading'}</span>
       <span data-testid="authed">{isAuthenticated ? 'yes' : 'no'}</span>
       <span data-testid="user">{user?.username ?? 'none'}</span>
+      <span data-testid="admin">{isAdmin ? 'yes' : 'no'}</span>
+      <span data-testid="can-mutate">{canMutate ? 'yes' : 'no'}</span>
     </div>
   );
 }
@@ -91,5 +93,43 @@ describe('AuthProvider bootstrap — ambient Grafana SSO', () => {
     await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('ready'));
     expect(screen.getByTestId('authed')).toHaveTextContent('yes');
     expect(sessionCalled).not.toHaveBeenCalled();
+  });
+});
+
+describe('useAuth — capability derivation', () => {
+  it('resolves to a signed-out, non-admin state outside a provider instead of throwing', () => {
+    render(<AuthProbe />);
+
+    expect(screen.getByTestId('ready')).toHaveTextContent('loading');
+    expect(screen.getByTestId('authed')).toHaveTextContent('no');
+    expect(screen.getByTestId('admin')).toHaveTextContent('no');
+    expect(screen.getByTestId('can-mutate')).toHaveTextContent('no');
+  });
+
+  it('derives canMutate from the administrator flag for an admin session', async () => {
+    server.use(
+      http.post(REFRESH_URL, () => HttpResponse.json({ access_token: 'sep', expires_in: 300 })),
+      http.get(ME_URL, () => HttpResponse.json({ username: 'root', isAdmin: true })),
+    );
+
+    renderAuth();
+
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('ready'));
+    expect(screen.getByTestId('admin')).toHaveTextContent('yes');
+    expect(screen.getByTestId('can-mutate')).toHaveTextContent('yes');
+  });
+
+  it('withholds canMutate for an authenticated non-admin session', async () => {
+    server.use(
+      http.post(REFRESH_URL, () => HttpResponse.json({ access_token: 'sep', expires_in: 300 })),
+      http.get(ME_URL, () => HttpResponse.json({ username: 'operator', isAdmin: false })),
+    );
+
+    renderAuth();
+
+    await waitFor(() => expect(screen.getByTestId('ready')).toHaveTextContent('ready'));
+    expect(screen.getByTestId('authed')).toHaveTextContent('yes');
+    expect(screen.getByTestId('admin')).toHaveTextContent('no');
+    expect(screen.getByTestId('can-mutate')).toHaveTextContent('no');
   });
 });

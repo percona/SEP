@@ -37,6 +37,7 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
+from tests.app.db_schema import apply_schema
 
 
 def _synthetic_app(key: str, *, requires_apps: tuple[str, ...] = ()) -> BaseApp:
@@ -69,7 +70,7 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -149,6 +150,18 @@ class TestListAppsForNavigation:
             definition = registry.get(app_key)
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
+
+    async def test_sidebar_carries_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry each app's ``sidebar`` flag, inventory's opt-out included."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            assert entry["sidebar"] == registry.get(app_key).sidebar
+        assert entries["inventory"]["sidebar"] is False
 
     async def test_react_route_and_nav_icon_carry_registry_values(
         self, api_user_client: TestClient

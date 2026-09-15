@@ -55,6 +55,7 @@ from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
+from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import TaskHistoryStatusEnum
 
 SCHEMA_URL = "/api/apps/atw/execution-schema/"
@@ -216,6 +217,30 @@ class TestAtwExecutionSchema:
         payload = response.json()
         assert all("type" in field for field in payload["shared"])
         assert not any("field_type" in field for field in payload["shared"])
+
+    @pytest.mark.asyncio
+    async def test_unmarked_fields_carry_a_null_destructive_key(
+        self, api_client: TestClient, create_snippet: Callable[..., Awaitable[Snippet]]
+    ) -> None:
+        """Emit ``destructive: null`` on every unmarked field of this route.
+
+        This route sets no ``response_model_exclude_none``, so an optional
+        ``BaseField`` attribute reaches the wire as an explicit null. That is
+        the accepted shape here — consistent with the ``description`` /
+        ``requires`` / ``forbidden`` nulls the endpoint already publishes — and
+        this pins it rather than letting it drift unobserved.
+        """
+        await create_snippet("a.sh", parameters=[_DEFAULTS_FILE_PARAM])
+        await create_snippet("b.sh", parameters=[_DEFAULTS_FILE_PARAM])
+
+        response = api_client.get(
+            SCHEMA_URL, params={"snippet_filename": ["a.sh", "b.sh"]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["shared"]
+        assert all(field["destructive"] is None for field in payload["shared"])
 
     @pytest.mark.asyncio
     async def test_execution_host_is_always_shared(
@@ -1202,6 +1227,34 @@ class TestAtwIncidentExecutionMaskedArgs:
         assert item["masked_args"] is None
         assert item["args_withheld"] is True
         assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_args_withheld_when_upstream_could_not_read_them(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Report an undecryptable argument leaf as withheld, not as no arguments.
+
+        The tasks service serialises such a leaf as ``null`` and names it in
+        ``unreadable_request_leaves``; without reading that field the row is
+        indistinguishable from one that recorded no arguments at all.
+        """
+        await create_snippet("mongo-check.sh", parameters=[])
+        await seed_execution("mongo-check.sh")
+        history = self._history(None)
+        history["unreadable_request_leaves"] = [ARGS_LEAF]
+        tasks_api.get.return_value = history
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
 
     @pytest.mark.asyncio
     async def test_execution_without_arguments_reports_the_empty_state(

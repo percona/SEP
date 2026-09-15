@@ -24,18 +24,22 @@ the client wholesale -- those parts are rebased onto the plan's own steps here.
 
 __all__ = ["get_delivery_executor", "split_endpoint"]
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
+from typing import Any, TypeVar
 from urllib.parse import parse_qsl, urlparse
 
 from app.core.requests import RemoteAPI
 from app.sep.bundle_upload.plan import (
+    AnyStepValue,
     DeliveryPlan,
     DeliveryPlanExecutor,
     LiteralValue,
-    PlanValue,
+    RequestStep,
     StepObserver,
 )
+
+StepT = TypeVar("StepT", bound=RequestStep)
 
 
 def split_endpoint(endpoint: str) -> tuple[str, str, dict[str, str]]:
@@ -69,20 +73,40 @@ def _rebase_path(prefix: str, path: str) -> str:
 
 
 def _rebase_query(
-    query: dict[str, PlanValue], endpoint_query: dict[str, str]
-) -> dict[str, PlanValue]:
+    query: Mapping[str, AnyStepValue], endpoint_query: dict[str, str]
+) -> dict[str, AnyStepValue]:
     """Merge the endpoint's query pairs into a step's own, without displacing them.
+
+    Accepts any value map any step kind admits, so one helper rebases them all:
+    the probe's, drawn from a set narrower than the send steps', and the case
+    search's, carrying a source the send steps have no value for.
 
     :param query: The step's configured query map.
     :param endpoint_query: The query pairs carried by the configured endpoint.
     :return: The merged query map.
     """
-    merged = {
+    merged: dict[str, AnyStepValue] = {
         key: LiteralValue(source="literal", value=value)
         for key, value in endpoint_query.items()
     }
     merged.update(query)
     return merged
+
+
+def _rebase_step(step: StepT, *, path: str, query: dict[str, str]) -> StepT:
+    """Return a copy of ``step`` resolved under the endpoint's path and query.
+
+    :param step: The configured step to rebase.
+    :param path: The endpoint's path.
+    :param query: The endpoint's query pairs.
+    :return: A rebased copy, leaving ``step`` untouched.
+    """
+    return step.model_copy(
+        update={
+            "path": _rebase_path(path, step.path),
+            "query": _rebase_query(step.query, query),
+        }
+    )
 
 
 def _rebased_plan(
@@ -94,27 +118,28 @@ def _rebased_plan(
     than shared: the plan handed in is the process-global configured one, and
     mutating its steps would corrupt every later send.
 
+    Every step is found by its declared type rather than by name, whether the
+    field carries one step or a list of them, so a step kind added to
+    :class:`~app.sep.bundle_upload.plan.DeliveryPlan` is rebased without this
+    function naming it.
+
     :param plan: The configured plan to rebase.
     :param path: The endpoint's path.
     :param query: The endpoint's query pairs.
     :return: A rebased copy leaving ``plan`` and its steps untouched.
     """
-    steps = [
-        step.model_copy(
-            update={
-                "path": _rebase_path(path, step.path),
-                "query": _rebase_query(step.query, query),
-            }
-        )
-        for step in plan.resolution_steps
-    ]
-    upload = plan.upload.model_copy(
-        update={
-            "path": _rebase_path(path, plan.upload.path),
-            "query": _rebase_query(plan.upload.query, query),
-        }
-    )
-    return plan.model_copy(update={"resolution_steps": steps, "upload": upload})
+    update: dict[str, Any] = {}
+    for name in DeliveryPlan.model_fields:
+        value = getattr(plan, name)
+        if isinstance(value, RequestStep):
+            update[name] = _rebase_step(value, path=path, query=query)
+        elif isinstance(value, list) and all(
+            isinstance(step, RequestStep) for step in value
+        ):
+            update[name] = [
+                _rebase_step(step, path=path, query=query) for step in value
+            ]
+    return plan.model_copy(update=update)
 
 
 @asynccontextmanager
@@ -130,7 +155,8 @@ async def get_delivery_executor(
 
     :param plan: The configured delivery plan to run.
     :param step_observer: A synchronous callback notified as each resolution step
-        starts and completes, for a caller that records send progress.
+        starts and ends, and when the terminal upload fails, for a caller that
+        records send progress.
     :return: The executor bound to the plan and its transport.
     """
     origin, path, query = split_endpoint(str(plan.endpoint))

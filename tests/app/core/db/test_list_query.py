@@ -16,14 +16,14 @@
 """Define tests for the core list-query framework (spec, dependency, predicate)."""
 
 import inspect
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Annotated
 
 import pytest
 import pytest_asyncio
 from fastapi import Depends, FastAPI, params, status
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.dialects import mysql
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -46,6 +46,7 @@ from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import pagination_dep
 from app.core.utils import json_serializer
+from tests.app.db_schema import apply_schema
 
 RESOLVED_ORDER_BY_LENGTH = 2
 SEED_NAMES = ("alpha", "bravo", "charlie")
@@ -186,16 +187,19 @@ class TestResolveSort:
             _spec().resolve_sort("-evil")
 
     @pytest.mark.parametrize("raw_sort", [None, "-name"], ids=["asc", "desc"])
-    def test_resolved_ordering_renders_mysql_isnull_idiom(self, raw_sort) -> None:
-        """Emit MySQL's ``ISNULL`` idiom instead of the unparsable ``NULLS LAST``."""
+    def test_resolved_ordering_renders_nulls_last_with_tie_breaker_last(
+        self, raw_sort
+    ) -> None:
+        """Render ``NULLS LAST`` on the sort column and keep the tie-breaker final."""
         order_by = _spec().resolve_sort(raw_sort)
 
         rendered = str(
-            select(col(LQItem.id)).order_by(*order_by).compile(dialect=mysql.dialect())
+            select(col(LQItem.id))
+            .order_by(*order_by)
+            .compile(dialect=postgresql.dialect())
         )
 
-        assert "NULLS LAST" not in rendered
-        assert "ISNULL(" in rendered
+        assert "NULLS LAST" in rendered
         assert rendered.rstrip().endswith("id ASC")
 
 
@@ -409,7 +413,7 @@ async def _lq_nosearch_route(
 
 
 @pytest_asyncio.fixture(name="lq_session")
-async def lq_session_fixture() -> AsyncSession:
+async def lq_session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated SQLite session seeded with ordered, searchable rows."""
     engine = create_async_engine(
         "sqlite+aiosqlite://",
@@ -418,7 +422,7 @@ async def lq_session_fixture() -> AsyncSession:
         poolclass=StaticPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+        await apply_schema(conn, SQLModel.metadata)
     async_session_maker = get_async_session_maker_from_engine(engine)
     try:
         async with async_session_maker() as session:
@@ -430,10 +434,12 @@ async def lq_session_fixture() -> AsyncSession:
 
 
 @pytest_asyncio.fixture(name="lq_client")
-async def lq_client_fixture(lq_session: AsyncSession) -> AsyncClient:
+async def lq_client_fixture(
+    lq_session: AsyncSession,
+) -> AsyncGenerator[AsyncClient, None]:
     """Yield an async client bound to the throwaway list-query app."""
 
-    async def _override_session() -> AsyncSession:
+    async def _override_session() -> AsyncGenerator[AsyncSession, None]:
         yield lq_session
 
     _SESSION_SENTINEL_APP.dependency_overrides[_get_lq_session] = _override_session

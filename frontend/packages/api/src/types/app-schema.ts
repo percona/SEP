@@ -79,11 +79,50 @@ interface BaseField {
   label: string;
   required?: boolean;
   description?: string;
+  /**
+   * Consequence text for a field whose enabled or set state irreversibly
+   * destroys something the operator cannot get back — user data, or
+   * operator-managed state such as a hand-tuned configuration file. Presence
+   * is the mark — there is no separate boolean,
+   * so `if (field.destructive)` is the check, and the string is what a
+   * confirmation displays. Unmarked fields either omit the key or send it as
+   * null, depending on whether the serving route excludes nulls, so test
+   * truthiness rather than presence.
+   */
+  destructive?: string | null;
   default?: unknown;
   /** Self-cardinality gates: when matched, the field is required. */
   requires?: FieldGate[];
   /** Self-cardinality gates: when matched, the field is forbidden. */
   forbidden?: FieldGate[];
+  /**
+   * Name of a sibling `bool` field in the same section that this field
+   * parameterises. The renderer draws the field indented beneath that parent
+   * and keeps it non-interactive until the parent is on, instead of hiding it
+   * — a reader can see what enabling the parent will offer.
+   *
+   * Presentation only, and taken on trust: the disable state comes from the
+   * named field's truthiness alone, and nesting a field says nothing about
+   * whether the backend accepts a value for it. A parented field may also
+   * carry its own `forbidden` gate on the parent being falsy — where it does,
+   * the renderer recognises that shape structurally and consumes it as the
+   * disable condition rather than applying it as a hide. Every other gate
+   * keeps hiding the field.
+   */
+  parent?: string;
+  /**
+   * Where the field's `description` is shown. `inline` puts it under the
+   * input, where a format hint belongs; `tooltip` puts it behind a help icon
+   * beside the label, keeping prose from dominating a form that has a lot of
+   * it. Unset (the default) decides by length: roughly one line renders
+   * inline, longer prose goes behind the icon.
+   *
+   * Reference and selector fields (`service`, `host`, `schema`, `table`,
+   * `remote_choice`) ignore it and are always inline: their label is a plain
+   * string the renderer also uses in validation messages, so there is no node
+   * to hang a help icon from.
+   */
+  help_placement?: 'tooltip' | 'inline';
 }
 
 // ── Choice option ─────────────────────────────────────────────────────────
@@ -215,6 +254,11 @@ export interface HostField extends BaseField {
    * not cascaded.
    */
   depends_on?: string;
+  /**
+   * Service field for a non-blocking co-location warning. Independent of
+   * ``depends_on``. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
@@ -227,6 +271,11 @@ export interface MultiHostField extends BaseField {
    * today. Omitted when unset.
    */
   depends_on?: string;
+  /**
+   * Optional service field name mirrored for wire uniformity. The
+   * multi-host renderer ignores it. Omitted when unset.
+   */
+  target_service?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allow_custom?: boolean;
 }
@@ -327,6 +376,18 @@ export interface FormSection {
   title: string;
   description?: string;
   fields: SectionField[];
+  /**
+   * Whether this section holds expert options rather than the common case.
+   *
+   * Advanced sections are withheld behind a single "Show advanced options"
+   * control rendered after the ordinary ones, and revealed as ordinary
+   * top-level sections. The renderer reveals them on its own, and expands the
+   * section concerned, whenever one holds a value other than its schema
+   * default or a field a backend error points into. Membership needs no
+   * adjacency — advanced sections are collected wherever they appear and
+   * rendered after the rest, in order.
+   */
+  advanced?: boolean;
   /** Whether the section is wrapped in an expandable/collapsible shell. */
   collapsible?: boolean;
   /** Initial expansion state when collapsible is enabled. */
@@ -353,6 +414,8 @@ export interface ListColumn {
   label: string;
   sortable?: boolean;
   format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions' | 'schedule';
+  /** Optional map from a raw cell value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 export interface ListView {
@@ -389,6 +452,8 @@ export interface DetailField {
   label: string;
   /** Optional syntax-highlighter hint; mirrors the backend ``DetailHighlightLanguage`` enum. */
   highlight?: 'sql' | 'json' | 'bash' | 'yaml';
+  /** Optional map from a raw resolved value to the text to display in its place. Absent when the app declares no labels; a value missing from the map renders as-is. */
+  value_labels?: Record<string, string>;
 }
 
 /** One titled section rendered on the task detail page. */
@@ -408,6 +473,11 @@ export interface DetailView {
 export interface AppEntitySchema {
   name: string;
   display_name: string;
+  /** What one record of this entity is called, in mid-sentence form — capitalise
+   * the first character when it opens a label. */
+  item_display_name: string;
+  /** What several records of this entity are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   forms: FormSection[];
   list_view: ListView;
@@ -431,11 +501,36 @@ export interface RelatedApp {
   route_segment: string;
 }
 
+// ── Task status vocabulary ──────────────────────────────────────────────
+
+/**
+ * One task-status value and its run-completion predicates. A client polling a
+ * task to completion re-reads until the row reaches a status whose `terminal`
+ * is true.
+ */
+export interface TaskStatusDescriptor {
+  /** A `TaskHistoryStatusEnum` member, deliberately widened to `string` here
+   * rather than typed as a literal union like `ColumnFormat`: the point of
+   * publishing this list is that a client discovers the vocabulary at runtime
+   * instead of hardcoding it. The generated client in `generated/sep.ts`
+   * narrows the same field to a union of the current members, so a consumer
+   * that wants runtime discovery should read this type rather than that one. */
+  value: string;
+  terminal: boolean;
+  /** Whether the run reached an observed outcome, so output may be requested. */
+  output_available: boolean;
+}
+
 // ── Top-level schema ────────────────────────────────────────────────────
 
 export interface AppSchema {
   name: string;
   display_name: string;
+  /** What one record this app's create form produces is called, in mid-sentence
+   * form — capitalise the first character when it opens a label. */
+  item_display_name: string;
+  /** What several such records are called, same convention. */
+  item_display_name_plural: string;
   description?: string;
   task_type?: string;
   /** Task-style single entity: forms + list_view (omit or leave entities unset). */
@@ -452,4 +547,6 @@ export interface AppSchema {
   fail_when?: FailRule[];
   /** Separately registered apps rendered as sibling tabs in the React shell. */
   related_apps?: RelatedApp[];
+  /** Status vocabulary for task-style apps; omitted when `entities` is set. */
+  task_statuses?: TaskStatusDescriptor[];
 }
