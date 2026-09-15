@@ -79,7 +79,9 @@ def _initialized(**server_data: object) -> object:
     return instance
 
 
-def _preflight_for(tmp_path: pathlib.Path, **attributes: object) -> tuple:
+def _preflight_for(
+    tmp_path: pathlib.Path, **attributes: object
+) -> tuple[object, type[Exception]]:
     """Return a preflight-carrying instance whose option file is readable.
 
     The pairing check shares its call site with the defaults-file guard, so the

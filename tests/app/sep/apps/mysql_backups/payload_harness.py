@@ -64,7 +64,6 @@ _CONST_NAMES = frozenset(
         "CURRENT_USER",
         "CURRENT_USER_HOME_DIR",
         "BACKUP_TEXTFILE_COLLECTOR_DIR",
-        "GZIP_BIN",
         "LZ4_BIN",
         "QPRESS_BIN",
         "ZSTD_BIN",
