@@ -393,21 +393,26 @@ def test_all_services_resolve_the_same_database_connection():
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
-def test_every_service_resolves_the_profile_pool_sizing():
-    """Assert the shared block's pool sizing reaches all three services."""
+def test_every_service_resolves_the_same_pool_sizing():
+    """Assert all three services resolve one pool sizing, whatever supplies it.
+
+    Resolved settings cannot tell a profile value from a class default, so the
+    sibling test reading the raw profile is what pins where the values come
+    from. This one asserts only that the three services agree and that the
+    sizing reaches the engine kwargs.
+    """
+    expected = {key.lower(): value for key, value in EMBEDDED_POOL_SIZING.items()}
+
     for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
         database = settings_cls().DATABASE
-        assert (database.POOL_SIZE, database.MAX_OVERFLOW, database.POOL_TIMEOUT) == (
-            3,
-            2,
-            10.0,
-        )
-        assert database.pool_engine_kwargs == {
-            "pool_pre_ping": True,
-            "pool_size": 3,
-            "max_overflow": 2,
-            "pool_timeout": 10.0,
+        resolved = {
+            "POOL_SIZE": database.POOL_SIZE,
+            "MAX_OVERFLOW": database.MAX_OVERFLOW,
+            "POOL_TIMEOUT": database.POOL_TIMEOUT,
         }
+
+        assert resolved == EMBEDDED_POOL_SIZING
+        assert database.pool_engine_kwargs == {"pool_pre_ping": True, **expected}
 
 
 def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):

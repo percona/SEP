@@ -94,10 +94,12 @@ default:
   # The alias is one object, so a second profile block must not override a single
   # service's DATABASE keys: the profile merge is in-place and would move all three.
   # test_profile_carries_a_single_default_block keeps this file to one block.
+
   # Connection budget. PMM gives the `sep` role no connection limit; the cap is
-  # PostgreSQL's server-wide max_connections of 2000, shared with pmm-managed (50)
-  # and Grafana (100). SEP holds itself to 10% of it. Worst case with every pool
-  # full, where an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
+  # PostgreSQL's server-wide max_connections of 2000, which every PMM new enough
+  # to provision the `sep` role sets, shared with pmm-managed (50) and Grafana
+  # (100). SEP holds itself to 10% of it. Worst case with every pool full, where
+  # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
   #   sep          1 x 5 + celery-DB 15                    20
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25
@@ -107,7 +109,8 @@ default:
   #                                                total  163 of 200
   # Not in the total: the four schema one-shots add 4 at boot, and every sync
   # claim that arrives while another holds the lock briefly opens one more.
-  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25.
+  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25, so 5 children
+  # (188) is the most the 10% policy allows.
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server

@@ -159,7 +159,13 @@ def test_worker_concurrency_is_unset_by_default():
 
 
 def test_worker_concurrency_reaches_celery_conf():
-    """Carry a configured worker_concurrency into the Celery config."""
+    """Carry a declared worker_concurrency into the Celery config.
+
+    The declared-field assertion is what ties this to the typed field: an
+    undeclared extra of the same name also reaches ``conf``, so the value check
+    alone would pass without it.
+    """
+    assert "worker_concurrency" in CeleryOptions.model_fields
     options = CeleryOptions(
         broker_url=_BROKER_URL, worker_concurrency=_WORKER_CONCURRENCY
     )
@@ -180,7 +186,7 @@ def test_worker_concurrency_coerces_env_path(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.parametrize("value", [0, -1, "x", 2.5])
-def test_worker_concurrency_rejects_invalid_values(value):
+def test_worker_concurrency_rejects_invalid_values(value: int | str | float) -> None:
     """Reject non-positive, non-numeric and fractional concurrency values.
 
     :param value: A concurrency value the field must refuse.

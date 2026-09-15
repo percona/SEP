@@ -36,7 +36,7 @@ _BEAT_DBURI = "postgresql+psycopg2://u:p@h/celery"
 
 
 def test_forked_path_honors_pool_options():
-    """Honor the pool dict on the forked path SEP runs."""
+    """Honor the pool dict on the forked path ``--start-celery`` runs."""
     session_manager = SessionManager()
     session_manager.forked = True
     pool = {"pool_size": 20, "max_overflow": 5, "pool_timeout": 30}
