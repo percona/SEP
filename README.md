@@ -32,7 +32,7 @@
 | app/core/celery/models.py                                                                                                    |       68 |        1 |        8 |        1 |     97% |       107 |
 | app/core/celery/schedules.py                                                                                                 |       44 |        1 |       16 |        1 |     97% |       178 |
 | app/core/celery/utils.py                                                                                                     |       35 |        0 |       12 |        0 |    100% |           |
-| app/core/config.py                                                                                                           |      277 |        7 |       54 |        6 |     96% |259-\>exit, 336, 613, 791, 871, 947, 960, 998-\>1000, 1003 |
+| app/core/config.py                                                                                                           |      277 |        7 |       54 |        6 |     96% |259-\>exit, 336, 621, 799, 879, 955, 968, 1006-\>1008, 1011 |
 | app/core/db/config.py                                                                                                        |       39 |        0 |        8 |        0 |    100% |           |
 | app/core/db/crud.py                                                                                                          |      291 |        8 |       80 |        8 |     96% |250, 343-\>345, 345-\>347, 347-\>349, 356-\>372, 442, 589-592, 1001, 1005, 1192-\>1186, 1302-1303 |
 | app/core/db/deps.py                                                                                                          |        8 |        0 |        0 |        0 |    100% |           |
@@ -62,14 +62,14 @@
 | app/core/settings\_override/api/routes.py                                                                                    |      313 |       39 |      100 |        8 |     86% |325, 464, 488, 618-625, 752, 781-791, 825-831, 839, 973, 1004, 1068, 1070-1071, 1150, 1152, 1154, 1177, 1409-\>1446, 1419-1430, 1434-1445, 1447 |
 | app/core/settings\_override/cache.py                                                                                         |      126 |       13 |       46 |        6 |     87% |200-205, 218-223, 309, 372, 413, 417-424 |
 | app/core/settings\_override/constants.py                                                                                     |        4 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/lifecycle.py                                                                                     |       94 |        2 |       24 |        1 |     97% |   63, 356 |
+| app/core/settings\_override/lifecycle.py                                                                                     |      106 |        1 |       28 |        1 |     99% |67-\>exit, 435 |
 | app/core/settings\_override/manager.py                                                                                       |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                                        |       48 |        2 |        8 |        2 |     93% |  117, 119 |
 | app/core/settings\_override/policy.py                                                                                        |       29 |        0 |        6 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                                         |       21 |        0 |        2 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                                      |      651 |       48 |      328 |       29 |     91% |840, 983, 1036, 1070, 1085, 1152, 1425, 1485, 1550-1551, 1555, 1556-\>1542, 1557-\>1556, 1587, 1592, 1629, 1658, 1677, 1776, 1781, 1807, 1835-\>1830, 1858-1864, 1895, 1898, 1925-1926, 1940-1950, 1977-1980, 1989-1992, 1996-1999, 2125 |
 | app/core/settings\_override/secret\_storage.py                                                                               |      101 |        4 |       38 |        5 |     94% |292, 294-\>296, 320, 383, 406 |
-| app/core/settings\_override/worker.py                                                                                        |       28 |        0 |        6 |        0 |    100% |           |
+| app/core/settings\_override/worker.py                                                                                        |       59 |        1 |       14 |        1 |     97% |       207 |
 | app/core/utils/async\_run.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/cache.py                                                                                                      |       93 |        5 |       16 |        4 |     90% |60-62, 147-\>153, 151, 187-\>192, 224 |
 | app/core/utils/cli\_args.py                                                                                                  |       12 |        0 |        0 |        0 |    100% |           |
@@ -188,7 +188,7 @@
 | app/sep/apps/atw/migrations/versions/2026\_07\_30\_1200-447ee0172734\_add\_atw\_incident\_closed\_at.py                      |       25 |        2 |        8 |        4 |     82% |41, 43-\>exit, 55, 57-\>exit |
 | app/sep/apps/atw/models.py                                                                                                   |       62 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/atw/schema.py                                                                                                   |       13 |        0 |        2 |        0 |    100% |           |
-| app/sep/apps/atw/send.py                                                                                                     |      280 |        5 |       52 |        0 |     98% |113, 169, 181, 888-889 |
+| app/sep/apps/atw/send.py                                                                                                     |      280 |        5 |       52 |        0 |     98% |113, 169, 181, 889-890 |
 | app/sep/apps/backup\_mongo/api\_routes.py                                                                                    |       30 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/backup\_mongo/app.py                                                                                            |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_mongo/deps.py                                                                                           |      116 |       14 |       18 |        0 |     84% |   241-260 |
@@ -354,7 +354,7 @@
 | app/sep/routes/download\_files.py                                                                                            |       44 |        0 |        8 |        1 |     98% |   88-\>94 |
 | app/sep/routes/execution\_events.py                                                                                          |       12 |        0 |        2 |        0 |    100% |           |
 | app/sep/routes/stream\_logs.py                                                                                               |       78 |       26 |       12 |        4 |     64% |88-100, 109, 113-129, 131-136, 188-\>183, 196-201, 203-207, 212-217 |
-| app/sep/settings\_override.py                                                                                                |       43 |        0 |        2 |        0 |    100% |           |
+| app/sep/settings\_override.py                                                                                                |       46 |        0 |        2 |        0 |    100% |           |
 | app/sep/snippets/builtin\_manifest.py                                                                                        |       26 |        0 |        6 |        0 |    100% |           |
 | app/sep/snippets/celery.py                                                                                                   |       99 |        5 |       40 |        5 |     93% |85, 93-94, 203-\>210, 239, 265 |
 | app/sep/snippets/checksums.py                                                                                                |       16 |        0 |        2 |        0 |    100% |           |
@@ -389,7 +389,7 @@
 | app/tasks/anonymizer/anonymize.py                                                                                            |       56 |        0 |       18 |        3 |     96% |75-\>82, 97-\>104, 118-\>122 |
 | app/tasks/anonymizer/config.py                                                                                               |       30 |        1 |        6 |        1 |     94% |        81 |
 | app/tasks/anonymizer/entities.py                                                                                             |       28 |        0 |        2 |        0 |    100% |           |
-| app/tasks/celery.py                                                                                                          |      381 |       10 |       88 |        8 |     96% |264-\>278, 273-\>275, 490, 563-567, 752, 759-\>763, 818, 1021, 1090, 1113-1114, 1217-\>1232 |
+| app/tasks/celery.py                                                                                                          |      384 |       10 |       88 |        8 |     96% |283-\>297, 292-\>294, 509, 582-586, 771, 778-\>782, 837, 1040, 1109, 1132-1133, 1236-\>1251 |
 | app/tasks/config.py                                                                                                          |       49 |        0 |        4 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                                          |        5 |        0 |        0 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                                             |       11 |        0 |        0 |        0 |    100% |           |
@@ -476,7 +476,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29897** | **1715** | **7346** |  **659** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29946** | **1715** | **7358** |  **660** | **93%** |           |
 
 
 ## Setup coverage badge
