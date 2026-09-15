@@ -91,8 +91,8 @@ def base_namespace() -> dict:
 
     ``pwd`` and ``getpass`` are stubbed rather than real: the home-derived constants
     would otherwise resolve against whoever runs the suite, and ``pwd.getpwnam``
-    raises for a user the passwd database does not carry -- which a container can
-    produce -- taking every harness test with it.
+    raises for a user the passwd database does not carry — which a container can
+    produce — taking every harness test with it.
     """
     namespace: dict = {
         "os": os,
@@ -330,7 +330,7 @@ def payload_instance(
         error=lambda *_a, **_k: None,
     )
     # Stand-ins for the collaborators a lifted method calls, skipped for any method
-    # the caller lifted itself -- an instance attribute would shadow the real one.
+    # the caller lifted itself: an instance attribute would shadow the real one.
     stubs = {
         "_clean_after_error": lambda: None,
         "_preflight": lambda: None,
@@ -346,14 +346,36 @@ def payload_instance(
     return inst, namespace["BackupError"], calls
 
 
+def _config_reader_state() -> dict[str, object]:
+    """Return the state every config-reading payload method expects.
+
+    No ``server_data``, no option files, and compression on, since the checks that
+    read a config are only reachable with it on. One layer over what
+    ``payload_instance`` seeds for the encryption callers, so a caller reads one
+    table rather than two. Rebuilt per call so a test that mutates ``server_data``
+    cannot reach the next one.
+
+    :return: The attribute names and values to seed.
+    """
+    return {
+        "server_data": {},
+        "defaults_cnf_file": None,
+        "defaults_file": None,
+        "compress": True,
+        "xtrabackup_bin_cmd": "xtrabackup",
+        "compression_algorithm": "zstd",
+    }
+
+
 def seeded_instance(
     method_names: tuple[str, ...], **attributes: object
 ) -> tuple[object, type[Exception]]:
     """Build a payload instance carrying the named methods and the given state.
 
-    Seeds the attributes every config-reading method expects -- an empty
-    ``server_data`` and no option files -- so a caller names only what its own
-    assertion turns on.
+    Seeds ``_config_reader_state`` so a caller names only what its own assertion
+    turns on. Typed ``object`` rather than a narrower union because the seeded values
+    are genuinely heterogeneous (a dict, paths, a bool, algorithm names) and the
+    instance they land on is a synthetic class with no annotations to match.
 
     :param method_names: The payload method names to lift into the instance.
     :param attributes: Instance attributes overriding the seeded defaults.
@@ -365,12 +387,6 @@ def seeded_instance(
             "supported_compression": load_function("supported_compression")
         },
     )
-    inst.server_data = {}
-    inst.defaults_cnf_file = None
-    inst.defaults_file = None
-    inst.compress = True
-    inst.xtrabackup_bin_cmd = "xtrabackup"
-    inst.compression_algorithm = "zstd"
-    for name, value in attributes.items():
+    for name, value in (_config_reader_state() | attributes).items():
         setattr(inst, name, value)
     return inst, backup_error

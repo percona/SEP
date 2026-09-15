@@ -72,14 +72,12 @@ class TestDefaultMycnfResolution:
 class TestDefaultsFileGuard:
     """Assert an unusable defaults file fails the run on the file, before connecting."""
 
-    def test_readable_file_passes(self, tmp_path: pathlib.Path) -> None:
+    def test_readable_file_passes(self, readable_cnf: pathlib.Path) -> None:
         """Assert a readable option file is accepted."""
-        cnf = tmp_path / "my.cnf"
-        cnf.write_text("[client]\n")
         inst, _ = seeded_instance(
             _PREFLIGHT,
-            server_data={"DEFAULTS_FILE": str(cnf)},
-            defaults_cnf_file=str(cnf),
+            server_data={"DEFAULTS_FILE": str(readable_cnf)},
+            defaults_cnf_file=str(readable_cnf),
         )
         assert inst._preflight() is None
 
@@ -156,12 +154,14 @@ class TestDefaultsFileGuard:
     @pytest.mark.skipif(
         os.geteuid() == 0, reason="root bypasses the permission bits being asserted"
     )
-    def test_unreadable_permissions_are_rejected(self, tmp_path: pathlib.Path) -> None:
+    def test_unreadable_permissions_are_rejected(
+        self, readable_cnf: pathlib.Path
+    ) -> None:
         """Assert a file the account cannot read fails, not only a missing one."""
-        cnf = tmp_path / "my.cnf"
-        cnf.write_text("[client]\n")
-        cnf.chmod(0o000)
-        inst, backup_error = seeded_instance(_PREFLIGHT, defaults_cnf_file=str(cnf))
+        readable_cnf.chmod(0o000)
+        inst, backup_error = seeded_instance(
+            _PREFLIGHT, defaults_cnf_file=str(readable_cnf)
+        )
         with pytest.raises(backup_error):
             inst._preflight()
 
@@ -174,16 +174,14 @@ class TestBinaryDefaultsFileGuard:
     """
 
     def test_unreadable_binary_file_names_its_own_field(
-        self, tmp_path: pathlib.Path
+        self, tmp_path: pathlib.Path, readable_cnf: pathlib.Path
     ) -> None:
         """Assert the binary's unreadable option file fails naming its own key."""
-        cnf = tmp_path / "my.cnf"
-        cnf.write_text("[client]\n")
         missing = str(tmp_path / "absent.cnf")
         inst, backup_error = seeded_instance(
             _PREFLIGHT,
             server_data={"XTRABACKUP_DEFAULTS_FILE": missing},
-            defaults_cnf_file=str(cnf),
+            defaults_cnf_file=str(readable_cnf),
             defaults_file=missing,
         )
         with pytest.raises(backup_error) as excinfo:
@@ -192,16 +190,14 @@ class TestBinaryDefaultsFileGuard:
             f"cannot read defaults file {missing} from XTRABACKUP_DEFAULTS_FILE"
         )
 
-    def test_unset_binary_file_is_not_checked(self, tmp_path: pathlib.Path) -> None:
+    def test_unset_binary_file_is_not_checked(self, readable_cnf: pathlib.Path) -> None:
         """Assert an unset key leaves the binary's own option-file discovery alone.
 
         The field has no default, so there is no path to check and nothing to
         second-guess.
         """
-        cnf = tmp_path / "my.cnf"
-        cnf.write_text("[client]\n")
         inst, _ = seeded_instance(
-            _PREFLIGHT, defaults_cnf_file=str(cnf), defaults_file=None
+            _PREFLIGHT, defaults_cnf_file=str(readable_cnf), defaults_file=None
         )
         assert inst._preflight() is None
 
@@ -226,19 +222,17 @@ class TestBinaryDefaultsFileGuard:
 class TestCompressionCheckedInTheSamePreflight:
     """Assert the pairing check shares the guard's call site, so neither can be skipped.
 
-    Both answer one question -- is this config runnable on this host -- and both
+    Both answer one question — is this config runnable on this host — and both
     used to be reachable only from places that lost the message.
     """
 
     def test_unsupported_pairing_fails_the_preflight(
-        self, tmp_path: pathlib.Path
+        self, readable_cnf: pathlib.Path
     ) -> None:
         """Assert a pairing the binary cannot run fails before the host is touched."""
-        cnf = tmp_path / "my.cnf"
-        cnf.write_text("[client]\n")
         inst, backup_error = seeded_instance(
             _PREFLIGHT,
-            defaults_cnf_file=str(cnf),
+            defaults_cnf_file=str(readable_cnf),
             xtrabackup_bin_cmd="innobackupex",
             compression_algorithm="zstd",
         )
@@ -251,7 +245,7 @@ class TestSiblingPayloadsResolveTheSameWay:
     """Assert every payload with a default option file derives it from the account.
 
     The generated variants come from the canonical payload, but the restore payloads
-    are maintained by hand -- so a restore could read a different option file than
+    are maintained by hand — so a restore could read a different option file than
     the backup that wrote it, which is the divergence the shared binary default
     already had to fix once.
     """
@@ -324,13 +318,23 @@ class TestGuardWiredIntoRun:
         assert called[:1] == ["_preflight"]
 
     def test_the_guard_is_not_raised_from_construction(self) -> None:
-        """Assert no ``__init__`` calls the guard, where its message would be lost."""
+        """Assert no ``__init__`` calls the guard, where its message would be lost.
+
+        The initializers are collected first and asserted non-empty: a walk that
+        matched nothing would satisfy the claim below without checking anything.
+        """
+        initializers = [
+            (owner.name, node)
+            for owner in ast.walk(xtrabackup_payload_tree())
+            if isinstance(owner, ast.ClassDef)
+            for node in owner.body
+            if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+        ]
+        assert initializers, "no payload class defines an initializer"
         offenders = [
-            node.name
-            for node in ast.walk(xtrabackup_payload_tree())
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "__init__"
-            and any(
+            owner
+            for owner, node in initializers
+            if any(
                 isinstance(call, ast.Call)
                 and isinstance(call.func, ast.Attribute)
                 and call.func.attr == "_preflight"

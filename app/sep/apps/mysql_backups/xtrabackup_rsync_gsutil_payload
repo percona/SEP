@@ -2034,6 +2034,10 @@ class Xtrabackup(Backup):
         the loop that reports a ``BackupError`` -- raising there loses the message,
         the notification and the collector status.
 
+        Both checks share this one method deliberately: each answers the same
+        question -- can this config run on this host -- and one call site is one
+        thing for ``run`` to not forget.
+
         :raises BackupError: If either option file cannot be read, or the selected
             binary cannot run the compression algorithm.
         """

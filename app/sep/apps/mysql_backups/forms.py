@@ -104,11 +104,14 @@ XTRABACKUP_BIN_DEFAULT = XtraBackupTool.XTRABACKUP
 #: The ``--compress`` algorithms each backup binary accepts, measured off ``--help``
 #: on the shipped versions. No algorithm is common to all three, so
 #: ``ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP]`` cannot be repaired by editing its
-#: contents — it stays the outer filter and the binary narrows it.
+#: contents — it stays the outer filter and the binary narrows it. Each row leads with
+#: the algorithm a blank field resolves to, matching the ordering the payload's own
+#: per-binary rows carry, so the preference is the ordering rather than a second rule
+#: beside it.
 ALLOWED_XTRABACKUP_BIN_COMPRESSIONS: dict[
     XtraBackupTool, tuple[CompressionAlgorithm, ...]
 ] = {
-    XTRABACKUP_BIN_DEFAULT: (CompressionAlgorithm.LZ4, CompressionAlgorithm.ZSTD),
+    XTRABACKUP_BIN_DEFAULT: (CompressionAlgorithm.ZSTD, CompressionAlgorithm.LZ4),
     XtraBackupTool.INNOBACKUPEX: (CompressionAlgorithm.QUICKLZ,),
     XtraBackupTool.MARIADB_BACKUP: (CompressionAlgorithm.QUICKLZ,),
 }
@@ -119,13 +122,13 @@ def resolve_xtrabackup_compression(
 ) -> CompressionAlgorithm:
     """Return the algorithm a blank ``compression_algorithm`` resolves to for ``binary``.
 
+    Every matrix row leads with its own preferred algorithm, so the resolution is the
+    row's ordering and nothing has to restate which one that is.
+
     :param binary: The selected binary, or ``None`` when the field is blank.
     :return: An algorithm the resolved binary can run.
     """
-    allowed = ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[binary or XTRABACKUP_BIN_DEFAULT]
-    if CompressionAlgorithm.ZSTD in allowed:
-        return CompressionAlgorithm.ZSTD
-    return allowed[0]
+    return ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[binary or XTRABACKUP_BIN_DEFAULT][0]
 
 
 class EncryptionFormat(EnumFieldMixin, StrEnum):

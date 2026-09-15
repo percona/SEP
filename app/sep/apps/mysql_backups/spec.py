@@ -58,11 +58,11 @@ def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
     return variant_name(tuple(p.value for p in UploadProvider if p in selected))
 
 
-def _resolved_compression(form: BackupCreate) -> dict[str, CompressionAlgorithm]:
+def _compression_override(form: BackupCreate) -> dict[str, CompressionAlgorithm]:
     """Return the compression key a blank XtraBackup algorithm needs, else nothing.
 
     ``exclude_none`` drops a blank algorithm from the dispatched config, leaving the
-    payload to default it alone -- off the backup type, which cannot know which
+    payload to default it alone — off the backup type, which cannot know which
     binary runs. Resolving it here keeps the dispatched config and the gated form
     telling one story.
 
@@ -107,7 +107,7 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
             "encryption_recipient",
             "alias",
         },
-    ) | _resolved_compression(form)
+    ) | _compression_override(form)
 
     server_config = {
         "alias": form.alias or service.node.address,

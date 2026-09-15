@@ -18,7 +18,7 @@
 Which ``--compress`` algorithms exist is a property of the backup binary: only
 ``xtrabackup`` runs zstd and lz4, while ``innobackupex`` and ``mariadb-backup`` run
 quicklz. A blank algorithm therefore cannot be resolved from the backup type alone,
-and the form deliberately leaves a blank algorithm alone -- so the payload is the
+and the form deliberately leaves a blank algorithm alone — so the payload is the
 only place a stored blank can be resolved against the binary that will run.
 
 The expectations derive from ``resolve_xtrabackup_compression``, the dispatch-side
@@ -40,6 +40,7 @@ from app.sep.apps.mysql_backups.forms import (
     resolve_xtrabackup_compression,
     XTRABACKUP_BIN_DEFAULT,
 )
+from app.sep.apps.mysql_backups.models import XtraBackupTool
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     load_function,
     payload_instance,
@@ -48,6 +49,10 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
 )
 
 _BINARIES = tuple(binary.value for binary in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS)
+
+#: The payload's own per-binary rows, lifted once: every extraction re-parses the
+#: payload, and nothing here mutates what it returns.
+_SUPPORTED_COMPRESSION = load_function("supported_compression")
 
 #: A binary the payload has never heard of, to pin the unrecognized-name branch.
 _UNKNOWN_BINARY = "xb-next"
@@ -64,15 +69,14 @@ _ALL_ALGORITHMS = {
 def _initialized(**server_data: object) -> object:
     """Return an object carrying what the payload's initializer resolves from a config.
 
-    :param server_data: The dispatched config keys the initializer reads.
+    :param server_data: The dispatched config keys the initializer reads, typed
+        ``object`` because a dispatched config mixes booleans, paths and names.
     :return: The populated stand-in for a backup instance.
     """
     init = payload_method(
         "BaseBackup",
         "__init__",
-        extra_namespace={
-            "supported_compression": load_function("supported_compression")
-        },
+        extra_namespace={"supported_compression": _SUPPORTED_COMPRESSION},
     )
     instance = type("_Instance", (), {})()
     init(instance, dict(server_data), "X", logging.getLogger("payload-test"))
@@ -80,19 +84,18 @@ def _initialized(**server_data: object) -> object:
 
 
 def _preflight_for(
-    tmp_path: pathlib.Path, **attributes: object
+    cnf: pathlib.Path, **attributes: object
 ) -> tuple[object, type[Exception]]:
-    """Return a preflight-carrying instance whose option file is readable.
+    """Return a preflight-carrying instance pointed at a readable option file.
 
     The pairing check shares its call site with the defaults-file guard, so the
-    file has to exist for a compression failure to be the one raised.
+    file has to be readable for a compression failure to be the one raised.
 
-    :param tmp_path: The test's temporary directory, holding the option file.
-    :param attributes: Instance attributes the check reads.
+    :param cnf: The readable option file, from the ``readable_cnf`` fixture.
+    :param attributes: Instance attributes the check reads, typed ``object``
+        because the seeded state mixes booleans and names.
     :return: The instance and the payload's own ``BackupError``.
     """
-    cnf = tmp_path / "my.cnf"
-    cnf.write_text("[client]\n")
     return seeded_instance(("_preflight",), defaults_cnf_file=str(cnf), **attributes)
 
 
@@ -105,7 +108,9 @@ class TestBlankAlgorithmResolvesPerBinary:
     """
 
     @pytest.mark.parametrize("binary", ALLOWED_XTRABACKUP_BIN_COMPRESSIONS)
-    def test_resolved_default_matches_the_dispatch_resolver(self, binary) -> None:
+    def test_resolved_default_matches_the_dispatch_resolver(
+        self, binary: XtraBackupTool
+    ) -> None:
         """Assert the payload resolves a blank exactly as dispatch resolves it."""
         instance = _initialized(XTRABACKUP_BIN_CMD=binary.value)
         assert instance.compression_algorithm == resolve_xtrabackup_compression(binary)
@@ -144,7 +149,7 @@ class TestBlankAlgorithmResolvesPerBinary:
             XTRABACKUP_BIN_CMD="innobackupex", COMPRESSION_ALGORITHM=""
         )
         assert instance.compression_algorithm == resolve_xtrabackup_compression(
-            type(XTRABACKUP_BIN_DEFAULT)("innobackupex")
+            XtraBackupTool.INNOBACKUPEX
         )
 
     @pytest.mark.parametrize("binary", [*_BINARIES, _UNKNOWN_BINARY])
@@ -170,11 +175,11 @@ class TestUnsupportedAlgorithmRejected:
         ],
     )
     def test_supported_pairing_passes(
-        self, tmp_path: pathlib.Path, binary: str, algorithm: str
+        self, readable_cnf: pathlib.Path, binary: str, algorithm: str
     ) -> None:
         """Assert every pairing the matrix allows is accepted."""
         inst, _ = _preflight_for(
-            tmp_path, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
+            readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
         )
         assert inst._preflight() is None
 
@@ -187,11 +192,11 @@ class TestUnsupportedAlgorithmRejected:
         ],
     )
     def test_unsupported_pairing_names_the_binary(
-        self, tmp_path: pathlib.Path, binary: str, algorithm: str
+        self, readable_cnf: pathlib.Path, binary: str, algorithm: str
     ) -> None:
         """Assert the failure names the binary, not the backup type it was keyed on."""
         inst, backup_error = _preflight_for(
-            tmp_path, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
+            readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
         )
         with pytest.raises(backup_error) as excinfo:
             inst._preflight()
@@ -199,7 +204,7 @@ class TestUnsupportedAlgorithmRejected:
 
     @pytest.mark.parametrize("binary", _BINARIES)
     def test_gzip_is_rejected_by_every_binary(
-        self, tmp_path: pathlib.Path, binary: str
+        self, readable_cnf: pathlib.Path, binary: str
     ) -> None:
         """Assert gzip is refused, the algorithm the type-keyed list used to offer.
 
@@ -207,15 +212,15 @@ class TestUnsupportedAlgorithmRejected:
         tool tables no longer carry a row for it.
         """
         inst, backup_error = _preflight_for(
-            tmp_path, xtrabackup_bin_cmd=binary, compression_algorithm="gzip"
+            readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm="gzip"
         )
         with pytest.raises(backup_error):
             inst._preflight()
 
-    def test_compression_off_skips_the_check(self, tmp_path: pathlib.Path) -> None:
+    def test_compression_off_skips_the_check(self, readable_cnf: pathlib.Path) -> None:
         """Assert the check stays inert when nothing will be compressed."""
         inst, _ = _preflight_for(
-            tmp_path,
+            readable_cnf,
             compress=False,
             xtrabackup_bin_cmd="innobackupex",
             compression_algorithm="zstd",
@@ -226,22 +231,24 @@ class TestUnsupportedAlgorithmRejected:
 class TestPayloadMatrixMatchesForm:
     """Pin the payload's per-binary lists to the matrix the create form gates on.
 
-    Order differs on purpose -- the payload leads its ``xtrabackup`` row with zstd so
-    a stored blank algorithm resolves to what it resolved before -- so the rows are
-    compared as sets.
+    Content and preference are asserted apart: the rows hold the same algorithms,
+    and each row leads with the one a blank algorithm resolves to. A single ordered
+    comparison would fail on both counts at once and say neither.
     """
 
     @pytest.mark.parametrize("binary", ALLOWED_XTRABACKUP_BIN_COMPRESSIONS)
-    def test_rows_match_the_form(self, binary) -> None:
+    def test_rows_match_the_form(self, binary: XtraBackupTool) -> None:
         """Assert each binary allows exactly the algorithms the form allows it."""
-        supported = load_function("supported_compression")
         expected = {
             algorithm.value for algorithm in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[binary]
         }
-        assert set(supported(binary.value)) == expected
+        assert set(_SUPPORTED_COMPRESSION(binary.value)) == expected
 
     @pytest.mark.parametrize("binary", ALLOWED_XTRABACKUP_BIN_COMPRESSIONS)
-    def test_the_preferred_algorithm_leads_its_row(self, binary) -> None:
+    def test_the_preferred_algorithm_leads_its_row(
+        self, binary: XtraBackupTool
+    ) -> None:
         """Assert the first entry is the one a blank algorithm resolves to."""
-        supported = load_function("supported_compression")
-        assert supported(binary.value)[0] == resolve_xtrabackup_compression(binary)
+        assert _SUPPORTED_COMPRESSION(binary.value)[0] == (
+            resolve_xtrabackup_compression(binary)
+        )

@@ -260,6 +260,7 @@ def _all_servers_config(
 
     :param backup_type: The ``BackupType`` code (``M``/``X``/``B``).
     :param form_fields: Extra create-form fields to set, if any.
+    :return: The parsed ``ALL_SERVERS`` mapping the dispatched config carries.
     """
     service = _service()
     resolved = ResolvedEntities(
@@ -321,10 +322,8 @@ def test_build_backup_spec_always_emits_encrypt_key(backup_type: str, encryption
 class TestDispatchedCompressionDefault:
     """Assert a blank algorithm reaches the host resolved against its own binary.
 
-    ``exclude_none`` drops a blank field from the config, so the payload used to
-    pick the default alone -- off the backup type, which cannot know what the binary
-    runs. Resolving it here keeps the dispatched config and the gated form telling
-    one story.
+    Why dispatch resolves it at all is stated where the behaviour lives, in
+    ``spec._compression_override``.
     """
 
     @pytest.mark.parametrize("binary", [None, *ALLOWED_XTRABACKUP_BIN_COMPRESSIONS])
