@@ -114,6 +114,20 @@ ALLOWED_XTRABACKUP_BIN_COMPRESSIONS: dict[
 }
 
 
+def resolve_xtrabackup_compression(
+    binary: XtraBackupTool | None,
+) -> CompressionAlgorithm:
+    """Return the algorithm a blank ``compression_algorithm`` resolves to for ``binary``.
+
+    :param binary: The selected binary, or ``None`` when the field is blank.
+    :return: An algorithm the resolved binary can run.
+    """
+    allowed = ALLOWED_XTRABACKUP_BIN_COMPRESSIONS[binary or XTRABACKUP_BIN_DEFAULT]
+    if CompressionAlgorithm.ZSTD in allowed:
+        return CompressionAlgorithm.ZSTD
+    return allowed[0]
+
+
 class EncryptionFormat(EnumFieldMixin, StrEnum):
     """Represent the backup-time encryption formats an operator can select."""
 

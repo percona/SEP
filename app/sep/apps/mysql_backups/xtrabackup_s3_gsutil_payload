@@ -154,9 +154,6 @@ if not BACKUP_TEXTFILE_COLLECTOR_DIR.endswith("/"):
 BACKUP_TYPES = {
     "X": "Xtrabackup",
 }
-COMPRESSION_ALGORITHMS = {
-    "X": ["zstd", "quicklz", "lz4"]
-}
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_CFG_DIR = Path(
     os.getenv(
@@ -171,7 +168,7 @@ DEFAULT_LOGGING_DIR = os.getenv(
     str(Path(CURRENT_USER_HOME_DIR) / ".local" / "percona" / "logs" / "backup"),
 )
 DEFAULT_LOGGING_STDOUT = True
-DEFAULT_MYCNF = "{}/.my.cnf".format(os.environ.get("HOME"))
+DEFAULT_MYCNF = f"{os.environ.get('HOME') or CURRENT_USER_HOME_DIR}/.my.cnf"
 LOGGING_FORMAT = "%(asctime)s PID<%(process)d> %(levelname)s::%(alias)s%(message)s"
 LOGGING_FORMAT_DEBUG = (
     "%(asctime)s PID<%(process)d> %(levelname)s:%(lineno)d:%(alias)s%(message)s"
@@ -195,7 +192,6 @@ PLAINTEXT_METADATA_FILES = (
 # Backup binary dependency constants
 DU_BIN = os.getenv("PERCONA_BACKUP_DU_BIN", "/usr/bin/du")
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
-GZIP_BIN = os.getenv("PERCONA_BACKUP_GZIP_BIN", "/usr/bin/gzip")
 INNOCHECKSUM_BIN = "innochecksum"
 LZ4_BIN = os.getenv("PERCONA_BACKUP_LZ4_BIN", "/usr/bin/lz4")
 QPRESS_BIN = os.getenv("PERCONA_BACKUP_QPRESS_BIN", "/usr/bin/qpress")
@@ -875,6 +871,22 @@ class DirectoryEncryptor:
         return all_ok and ok
 
 
+def supported_compression(bin_cmd: str) -> list[str]:
+    """Return the algorithms the named backup binary can run.
+
+    Mirrors the matrix the create form gates on, spelled as an expression rather
+    than a table because only one binary's row differs and this file sits within
+    bytes of the Nomad payload limit. An unrecognized name resolves the way
+    ``_run_backup_cmd`` resolves it, to innobackupex, so validation cannot accept
+    a pairing execution then rejects. Module level rather than a method because
+    the minifier renames globals but not attributes.
+
+    :param bin_cmd: The selected ``XTRABACKUP_BIN_CMD`` value.
+    :return: The algorithms the binary accepts, the preferred one first.
+    """
+    return ["zstd", "lz4"] if bin_cmd == "xtrabackup" else ["quicklz"]
+
+
 class BaseBackup:
     """Base class for shared functionality across backup and restore operations."""
 
@@ -912,31 +924,20 @@ class BaseBackup:
                 self.logging_dir, BACKUP_TYPES[self.backup_code].lower() + ".log"
             )
 
-        # Compression
-        self.compress = self.server_data.get("COMPRESS", True)
-        self.compression_algorithm = self.server_data.get(
-            "COMPRESSION_ALGORITHM", COMPRESSION_ALGORITHMS[self.backup_code][0]
+        # Compression. The binary is read here rather than in the subclass, which
+        # runs later: the algorithms belong to the binary, so a blank one cannot be
+        # resolved before it is known. The pairing is checked in ``run``, where a
+        # failure is reported instead of escaping construction as a traceback.
+        self.xtrabackup_bin_cmd = server_data.get("XTRABACKUP_BIN_CMD", "xtrabackup")
+        self.compress = server_data.get("COMPRESS", True)
+        self.compression_algorithm = (
+            server_data.get("COMPRESSION_ALGORITHM")
+            or supported_compression(self.xtrabackup_bin_cmd)[0]
         )
-        if self.compress:
-            self.check_compression_algorithm(self.compression_algorithm)
 
         # Dynamically set
         self.is_replica = False
         self.last_backup_dir = ""
-
-    def check_compression_algorithm(self, algorithm: str) -> None:
-        """Check if the given compression algorithm is compatible with the backup type.
-
-        :param algorithm: Compression algorithm name.
-        :raises BackupError: If the algorithm is not compatible.
-        """
-        if not self.compress:
-            return
-        if algorithm in COMPRESSION_ALGORITHMS[self.backup_code]:
-            return
-        raise BackupError(
-            f"algorithm {algorithm} is not one of {COMPRESSION_ALGORITHMS[self.backup_code]}"
-        )
 
     def get_compression_ext(self) -> str | None:
         """Get the expected file extension for the current compression algorithm.
@@ -944,7 +945,6 @@ class BaseBackup:
         :return: The file extension or None if no compression is used.
         """
         return {
-            "gzip": ".gz",
             "lz4": ".lz4",
             "quicklz": ".qp",
             "zstd": ".zst",
@@ -956,7 +956,6 @@ class BaseBackup:
         :return: The path to the compression tool binary or None.
         """
         return {
-            "gzip": GZIP_BIN,
             "lz4": LZ4_BIN,
             "quicklz": QPRESS_BIN,
             "zstd": ZSTD_BIN,
@@ -2058,7 +2057,6 @@ class Xtrabackup(Backup):
         self.xtrabackup_lock_ddl = server_data.get('XTRABACKUP_LOCK_DDL', False)
         self.xtrabackup_lock_ddl_timeout = server_data.get('XTRABACKUP_LOCK_DDL_TIMEOUT', 60)
         self.xtrabackup_quiet = server_data.get('XTRABACKUP_QUIET', False)
-        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
 
         # Upload options to keep backward-compatibility
         self.server_setting = server_data
@@ -2100,9 +2098,45 @@ class Xtrabackup(Backup):
         if self.xtrabackup_desync_pxc:
             self._pxc_desync(new_status=0)
 
+    def _preflight(self) -> None:
+        """Reject config that cannot work here, before the host is touched.
+
+        PyMySQL ignores an option file it cannot read and connects with no
+        credentials, so an unusable option file otherwise costs a failed backup
+        reported as an authentication error naming no file.
+
+        Only ``DEFAULTS_FILE`` has a default, so it is the only key that can name
+        a path nobody chose -- hence the suffix distinguishing the two.
+
+        Runs here rather than in the initializer, which the caller builds outside
+        the loop that reports a ``BackupError`` -- raising there loses the message,
+        the notification and the collector status.
+
+        :raises BackupError: If either option file cannot be read, or the selected
+            binary cannot run the compression algorithm.
+        """
+        bin_cmd = self.xtrabackup_bin_cmd
+        algorithm = self.compression_algorithm
+        allowed = supported_compression(bin_cmd)
+        if self.compress and algorithm not in allowed:
+            raise BackupError(
+                f'algorithm {algorithm} is not one of {allowed} for {bin_cmd}'
+            )
+        for path, key in (
+            (self.defaults_cnf_file, 'DEFAULTS_FILE'),
+            (self.defaults_file, 'XTRABACKUP_DEFAULTS_FILE'),
+        ):
+            if path is not None and not (
+                os.path.isfile(path) and os.access(path, os.R_OK)
+            ):
+                if key not in self.server_data:
+                    key += ' default'
+                raise BackupError(f'cannot read defaults file {path} from {key}')
+
     def run(self):
         """Start backup for individual server."""
         start_time = time.time()
+        self._preflight()
 
         # Check running conditions
         if self.only_if_running_replica:

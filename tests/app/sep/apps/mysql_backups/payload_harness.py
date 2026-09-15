@@ -39,6 +39,13 @@ from tests.app.sep.apps.mysql_backups.conftest import (
     xtrabackup_payload_tree,
 )
 
+#: Home directory the stubbed ``pwd`` reports, so the constants that derive a path
+#: from it resolve to the same value on every machine.
+STUB_HOME = "/home/backupuser"
+
+#: User the stubbed ``getpass`` reports when the environment names none.
+STUB_USER = "backupuser"
+
 # Module-level constants the extracted symbols read (default args / bodies).
 _CONST_NAMES = frozenset(
     {
@@ -54,6 +61,16 @@ _CONST_NAMES = frozenset(
         "XTRABACKUP_BIN",
         "XTRABACKUP_BIN_REAL",
         "XTRABACKUP_BIN_MARIADB",
+        "CURRENT_USER",
+        "CURRENT_USER_HOME_DIR",
+        "BACKUP_TEXTFILE_COLLECTOR_DIR",
+        "GZIP_BIN",
+        "LZ4_BIN",
+        "QPRESS_BIN",
+        "ZSTD_BIN",
+        "DEFAULT_LOGGING_DIR",
+        "DEFAULT_LOGGING_STDOUT",
+        "DEFAULT_MYCNF",
     }
 )
 
@@ -71,7 +88,13 @@ def const_nodes(tree: ast.Module) -> list[ast.stmt]:
 
 
 def base_namespace() -> dict:
-    """Return an exec namespace seeded with real modules and a stub ``BackupError``."""
+    """Return an exec namespace seeded with real modules and a stub ``BackupError``.
+
+    ``pwd`` and ``getpass`` are stubbed rather than real: the home-derived constants
+    would otherwise resolve against whoever runs the suite, and ``pwd.getpwnam``
+    raises for a user the passwd database does not carry -- which a container can
+    produce -- taking every harness test with it.
+    """
     namespace: dict = {
         "os": os,
         "subprocess": subprocess,
@@ -80,6 +103,10 @@ def base_namespace() -> dict:
         "Path": pathlib.Path,
         "Any": object,
         "thread_pool": multiprocessing.pool,
+        "pwd": types.SimpleNamespace(
+            getpwnam=lambda _name: types.SimpleNamespace(pw_dir=STUB_HOME)
+        ),
+        "getpass": types.SimpleNamespace(getuser=lambda: STUB_USER),
     }
     exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
     return namespace
@@ -303,10 +330,48 @@ def payload_instance(
         debug=lambda *_a, **_k: None,
         error=lambda *_a, **_k: None,
     )
-    inst._clean_after_error = lambda: None  # noqa: SLF001
+    # Stand-ins for the collaborators a lifted method calls, skipped for any method
+    # the caller lifted itself -- an instance attribute would shadow the real one.
+    stubs = {
+        "_clean_after_error": lambda: None,
+        "_preflight": lambda: None,
+        "get_compression_ext": lambda: "",
+    }
+    for name, stub in stubs.items():
+        if name not in method_names:
+            setattr(inst, name, stub)
     inst.aes_keyfile = "/keys/aes.key"
     inst.enc_aes = True
     inst.enc_gpg = False
     inst.compress = False
-    inst.get_compression_ext = lambda: ""
     return inst, namespace["BackupError"], calls
+
+
+def seeded_instance(
+    method_names: tuple[str, ...], **attributes: object
+) -> tuple[object, type[Exception]]:
+    """Build a payload instance carrying the named methods and the given state.
+
+    Seeds the attributes every config-reading method expects -- an empty
+    ``server_data`` and no option files -- so a caller names only what its own
+    assertion turns on.
+
+    :param method_names: The payload method names to lift into the instance.
+    :param attributes: Instance attributes overriding the seeded defaults.
+    :return: The instance and the payload's own ``BackupError``.
+    """
+    inst, backup_error, _ = payload_instance(
+        method_names,
+        extra_namespace={
+            "supported_compression": load_function("supported_compression")
+        },
+    )
+    inst.server_data = {}
+    inst.defaults_cnf_file = None
+    inst.defaults_file = None
+    inst.compress = True
+    inst.xtrabackup_bin_cmd = "xtrabackup"
+    inst.compression_algorithm = "zstd"
+    for name, value in attributes.items():
+        setattr(inst, name, value)
+    return inst, backup_error
