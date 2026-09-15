@@ -44,7 +44,7 @@ jobs:
             echo "::error::Could not determine whether '$BASE_REF' is protected."
             exit 1
           fi
-          if printf '%s\n' "$branches" | grep -Fxq -- "$BASE_REF"; then
+          if grep -Fxq -- "$BASE_REF" <<<"$branches"; then
             echo "protected=true" >> "$GITHUB_OUTPUT"
           else
             echo "protected=false" >> "$GITHUB_OUTPUT"
