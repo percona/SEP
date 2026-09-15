@@ -360,7 +360,7 @@ and override the header.
 
 The helper skips minting when either the Grafana service-account token or
 `PMM__API_KEY` already resolves, from an explicit variable or from a file under
-`SECRETS_DIR`, and when the active auth provider is not Grafana. A blank value
+`SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
 counts as absent at every rank the helper reads.
 
 **Those two names are the mint gate only.** Supplying either of them suppresses

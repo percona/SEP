@@ -1179,17 +1179,32 @@ async def test_a_mounted_token_is_never_minted_on_top_of(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("channel", ["environment", "secrets_dir"])
 async def test_service_account_token_wins_over_a_differing_pmm_api_key(
-    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path, channel: str
 ):
     """Prefer AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN when both differ."""
-    run = await run_helper(
-        profile_cwd(tmp_path),
-        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
-        AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="glsa_service_account",
-        PMM__API_KEY="glsa_pmm_api_key",
-    )
+    environment = {
+        "AUTH__PROVIDER__GRAFANA__ENDPOINT": grafana_stub.endpoint,
+        "SEP_STATE_DIR": str(state_dir),
+    }
+    if channel == "environment":
+        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] = (
+            "glsa_service_account"
+        )
+        environment["PMM__API_KEY"] = "glsa_pmm_api_key"
+    else:
+        secrets_dir = tmp_path / "secrets"
+        secrets_dir.mkdir()
+        (secrets_dir / "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN").write_text(
+            "glsa_service_account\n", encoding="utf-8"
+        )
+        (secrets_dir / "PMM__API_KEY").write_text(
+            "glsa_pmm_api_key\n", encoding="utf-8"
+        )
+        environment["SECRETS_DIR"] = str(secrets_dir)
+
+    run = await run_helper(profile_cwd(tmp_path), **environment)
 
     assert run.returncode == 0, run.stderr
     assert run.token == "glsa_service_account"
