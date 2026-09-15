@@ -30,6 +30,7 @@ from app.sep.apps.framework.form_dsl import (
     Choices,
     Forbidden,
     RemoteChoices,
+    Requires,
     SchemaRef,
     ServiceRef,
     TaskFormModel,
@@ -411,7 +412,33 @@ class RestoreCreate(TaskFormModel):
     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
     markers drive only the ``GET /schema`` widgets, while the conditional,
     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
+
+    ``service_id`` is declared first because ``backup_source`` and ``schema_id``
+    cascade from it. Its ``Requires`` gate checks only *presence*, so a Mydumper
+    body naming no service is rejected at body validation; deciding the value is
+    a resolvable service rather than a typed name or the placeholder stays in
+    ``deps.resolve_restore_entities``.
     """
+
+    service_id: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
+        Requires(
+            when=F("backup_type") == BackupType.MYDUMPER,
+            message=(
+                "Destination Database Service is required for a Mydumper restore."
+            ),
+        ),
+        Ui(
+            label="Destination Database Service",
+            section="Task",
+            description=(
+                "Populates Backup Source and the Mydumper target database, and is "
+                "where a Mydumper restore loads. XtraBackup and Binlog only record "
+                "the name, so a typed one works."
+            ),
+        ),
+    ] = None
 
     backup_type: Annotated[
         BackupType,
@@ -424,19 +451,6 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ]
-
-    service_id: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
-        Ui(
-            label="Destination Database Service",
-            section="Task",
-            description=(
-                "Mydumper loads into this service's address and port. XtraBackup and "
-                "Binlog only record the name, so a typed one works."
-            ),
-        ),
-    ] = None
     backup_source: Annotated[
         NonEmptyStr,
         RemoteChoices(
