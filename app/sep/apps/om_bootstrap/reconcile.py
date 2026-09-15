@@ -92,6 +92,8 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
     if step.status != StepStatus.RUNNING or step.task_history_id is None:
         return step
     history = await tasks_api.get(f"/history/{step.task_history_id}")
+    if not isinstance(history, dict):
+        return step
     task_status = history["status"]
     if task_status in _IN_FLIGHT_STATUSES:
         return step
