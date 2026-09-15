@@ -128,8 +128,11 @@ behind and the arm64 build is refused, naming both tags. CI then re-reads the re
 feature-build client on an amd64 runner
 (`.github/workflows/pmm-fb-nomad-pin.yaml`) and holds `NOMAD_VERSION` to it, so
 a repin that bumped the witness without re-verifying the version is caught
-before it merges — unless that feature build has since been collected from
-`perconalab`, the one case the job reports as a warning instead of a failure.
+before it merges. A repin is never the case that job waves through: it warns
+and skips only when the PR left both `PMM_FB_TAG` and `NOMAD_VERSION` exactly
+as the base branch carried them and that inherited build has since been
+collected from `perconalab`. Move either value and an image CI cannot pull
+fails the job instead.
 
 Rebuild with `docker compose --profile mysql up -d --build`. Without `--build`
 you keep the old client against the new server, and the mismatch is silent:

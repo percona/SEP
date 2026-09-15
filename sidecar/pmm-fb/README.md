@@ -338,8 +338,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   build `NOMAD_VERSION` was read from: a build pinning a different `PMM_FB_TAG`
   is turned away. What establishes that the version is right in the first place
   is CI, which reads the real feature-build client on an amd64 runner
-  (`.github/workflows/pmm-fb-nomad-pin.yaml`) for as long as that build is still
-  published — once it is collected the job warns and skips. Its `pmm-agent` is
+  (`.github/workflows/pmm-fb-nomad-pin.yaml`). It warns and skips in one case
+  only: the PR left both `PMM_FB_TAG` and `NOMAD_VERSION` exactly as the base
+  branch carried them and that inherited build has since been collected. A tag
+  or version the PR itself moved must be verifiable, or the job fails. Its
+  `pmm-agent` is
   the released one, not the feature build's, so a change on the client side of
   the feature build — `pmm-agent`, the Nomad client configuration — is **not**
   exercised on an arm64 engine. Validate those on amd64.

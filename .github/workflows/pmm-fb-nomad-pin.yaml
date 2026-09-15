@@ -17,6 +17,7 @@ on:
       # one of those matches no other filter and would merge unverified.
       - 'scripts/check_pmm_fb_pins.py'
       - '.github/workflows/pmm-fb-nomad-pin.yaml'
+      - 'tests/sidecar/test_pmm_fb_nomad_pin.py'
 
 permissions:
   contents: read
@@ -44,12 +45,22 @@ jobs:
 
       # The runner's system interpreter carries PyYAML only incidentally, and a
       # reader that cannot parse compose.yaml would fail this job for a reason
-      # unrelated to the pins.
-      - name: Install the pin reader's dependency
-        run: pip install pyyaml==6.0.2
+      # unrelated to the pins. The guard tests reach nothing beyond those three:
+      # pytest, the reader's YAML, and the Fernet import tests/conftest.py makes
+      # at collection — which is what keeps them a step here rather than the
+      # project install running the whole suite would need.
+      - name: Install the pin reader's and guard tests' dependencies
+        run: pip install pyyaml==6.0.2 pytest==9.1.0 cryptography==50.0.0
 
       - name: Check the committed pins name one feature build
         run: python3 scripts/check_pmm_fb_pins.py
+
+      # ci.yml is scoped to main, where sidecar/pmm-fb/ does not exist, so
+      # without this step nothing before merge exercises the witness guard's
+      # truth table or the ARG re-declarations that keep it from reading every
+      # input as empty.
+      - name: Run the witness guard and pin-reader tests
+        run: python3 -m pytest tests/sidecar/test_pmm_fb_nomad_pin.py -q
 
       - name: Resolve the committed pins
         id: pins

@@ -82,7 +82,7 @@ def committed_default(value: object, where: str, name: str, template: str) -> st
     return match.group(1)
 
 
-def load_slots(compose_path: Path) -> tuple[object, dict]:
+def load_slots(compose_path: Path) -> tuple[object, dict[str, object]]:
     """Return the ``pmm-server`` image and the ``sep-mysql`` build args.
 
     Separated from resolving any particular pin so ``--print`` can read one slot
@@ -91,19 +91,32 @@ def load_slots(compose_path: Path) -> tuple[object, dict]:
 
     :param compose_path: The compose file to read.
     :return: The raw image value and the raw build-arg mapping.
-    :raises SystemExit: When the file is not this harness's compose file.
+    :raises SystemExit: When the file is not this harness's compose file. An
+        ``args`` key carrying no mapping is one such file rather than a
+        programming error: it is valid YAML, it resolves to ``None``, and
+        without the check below it would reach :func:`read_arg` and raise there,
+        outside the normalized refusal every other malformed slot takes.
+    :raises OSError: When the compose file cannot be read.
+    :raises yaml.YAMLError: When it is not parseable as YAML.
     """
     data = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
     try:
         services = data["services"]
-        return services["pmm-server"]["image"], services["sep-mysql"]["build"]["args"]
+        image = services["pmm-server"]["image"]
+        args = services["sep-mysql"]["build"]["args"]
     except (KeyError, TypeError) as exc:
         raise SystemExit(
             f"ERROR: {compose_path} is not the sep-mysql harness: {exc}"
         ) from None
+    if not isinstance(args, dict):
+        raise SystemExit(
+            f"ERROR: {compose_path} is not the sep-mysql harness: sep-mysql build"
+            f" args is {type(args).__name__}, not a mapping"
+        )
+    return image, args
 
 
-def read_arg(args: dict, name: str) -> str:
+def read_arg(args: dict[str, object], name: str) -> str:
     """Resolve one build arg's committed default.
 
     :param args: The raw build-arg mapping.
@@ -127,7 +140,13 @@ def main(argv: list[str] | None = None) -> int:
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: 0 when the tags agree, 1 when they do not.
-    :raises SystemExit: When the compose file cannot be read as this harness.
+    :raises SystemExit: When the arguments do not parse, when the compose file
+        is not this harness's, or when a pin is absent or is not exactly the
+        expansion it is keyed by.
+    :raises OSError: Propagated from :func:`load_slots` when the compose file
+        cannot be read.
+    :raises yaml.YAMLError: Propagated from :func:`load_slots` when the compose
+        file is not parseable as YAML.
     """
     parser = argparse.ArgumentParser(
         description="Check that the sep-mysql feature-build pins name one build.",
