@@ -1253,9 +1253,8 @@ class DeliveryPlanExecutor:
         The bundle's content is handed to the transport as it arrived, so a
         handle or an async iterator streams rather than being buffered. Only the
         headers need masking here: the multipart body is an opaque payload the
-        request log never expands. The receiver's own response is withheld from
-        the transport's log: only the reference the plan names is kept out of
-        it, so the rest must not outlive the request in a log line either.
+        request log never expands. The receiver's response is also withheld from
+        the transport's log so it cannot be retained in a transport log line.
 
         Redirects are not followed. A receiver that answers a credential-bearing
         request with a redirect would have the body replayed to the new
