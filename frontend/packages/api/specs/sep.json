@@ -22080,7 +22080,7 @@
     },
     "/files/{task_history_id}/download": {
       "get": {
-        "description": "Stream a task history's archived file as a binary download.",
+        "description": "Stream a task history's archived file as a binary download.\n\nUpstream errors raised while priming the stream surface as the real status\nbefore any response is committed, rather than as a misleading 200 with an\nempty body.\n\n:param request: Incoming download request; ``path`` selects the archived\n    file.\n:param user: Authenticated viewer whose access token authorizes the stream.\n:param task_history: Task history whose archived file is downloaded.\n:param tasks_client: Tasks API client used to list metadata and stream\n    bytes.\n:return: Streaming response of the archived file as\n    ``application/octet-stream``.",
         "operationId": "tasks_download_task_history_file_files__task_history_id__download_get",
         "parameters": [
           {

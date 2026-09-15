@@ -3404,6 +3404,19 @@ export interface paths {
     /**
      * Download Task History File
      * @description Stream a task history's archived file as a binary download.
+     *
+     *     Upstream errors raised while priming the stream surface as the real status
+     *     before any response is committed, rather than as a misleading 200 with an
+     *     empty body.
+     *
+     *     :param request: Incoming download request; ``path`` selects the archived
+     *         file.
+     *     :param user: Authenticated viewer whose access token authorizes the stream.
+     *     :param task_history: Task history whose archived file is downloaded.
+     *     :param tasks_client: Tasks API client used to list metadata and stream
+     *         bytes.
+     *     :return: Streaming response of the archived file as
+     *         ``application/octet-stream``.
      */
     get: operations['tasks_download_task_history_file_files__task_history_id__download_get'];
     put?: never;
