@@ -30,13 +30,10 @@ jobs:
   nomad-pin:
     runs-on: ubuntu-latest
     steps:
+      # No fetch-depth: the base revision this job compares against is fetched
+      # explicitly below, and nothing here computes a merge-base.
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          # The base revision is needed to tell a pin this PR introduced from
-          # one it inherited; the skip below is only ever legitimate for the
-          # second.
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@28f2168f4d98ee0445e3c6321f6e6616c83dd5ec # v6.2.0
