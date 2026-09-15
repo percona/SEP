@@ -57,12 +57,20 @@ async def resolve_restore_entities(
     so it annotates XtraBackup and Binlog restores as-is and is rejected for
     MyDumper, which needs the service address to derive its destination.
 
+    A resolved service whose address carries no port yields ``dest_host`` alone,
+    and the payload applies its own ``3306`` default. One resolving to no address
+    at all is rejected rather than tolerated: an unset ``dest_host`` drops
+    ``DEST_HOST`` from the emitted config, which the payload reads as
+    ``localhost`` and loads into whatever MySQL runs on the executor instead of
+    the destination the operator chose.
+
     :param form: The validated restore create form.
     :param inventory_api: The Inventory API used to resolve the references.
     :return: The resolved facts fed into :func:`build_restore_spec`.
     :raises HTTPException: When a MyDumper service reference is a typed name or the
-        unknown-service placeholder, or its lookup fails; or when a non-MyDumper
-        lookup fails with a status other than 404.
+        unknown-service placeholder, its lookup fails, or it resolves to a service
+        carrying no address; or when a non-MyDumper lookup fails with a status
+        other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
         if form.service_id is None or not form.service_id.isdecimal():
@@ -78,11 +86,17 @@ async def resolve_restore_entities(
             int(form.service_id),
             type=ServiceTypeEnum.MYSQL,
         )
-        dest_host = dest_port = None
-        if isinstance(service.address, str) and ":" in service.address:
-            host, port_str = service.address.split(":", 1)
-            dest_host = host.strip()
-            dest_port = int(port_str.strip())
+        host, _, port = (service.address or "").partition(":")
+        dest_host = host.strip()
+        if not dest_host:
+            raise HTTPUnprocessableEntityException(
+                detail=(
+                    "Destination Database Service must resolve to a network address "
+                    "for a MyDumper restore"
+                )
+            )
+        port = port.strip()
+        dest_port = int(port) if port else None
         database = None
         if (
             form.schema_id is not None

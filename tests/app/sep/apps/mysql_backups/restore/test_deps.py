@@ -116,6 +116,94 @@ async def test_resolve_restore_entities_mydumper_rejects_missing_service(
 
 
 @pytest.mark.asyncio
+async def test_resolve_restore_entities_mydumper_keeps_host_of_port_less_service(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Resolve a port-less MyDumper service to its host, leaving the port unset.
+
+    The payload defaults an absent ``DEST_PORT`` to 3306, so dropping the host
+    alongside the missing port would retarget the restore at the executor.
+    """
+    node = created_service.node.model_copy(update={"address": "10.0.0.5"})
+    service = created_service.model_copy(update={"node": node, "port": None})
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+        return_value=service,
+    )
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=str(service.id),
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    resolved = await resolve_restore_entities(form, mock_remote_api)
+
+    assert resolved.dest_host == node.address
+    assert resolved.dest_port is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_restore_entities_mydumper_rejects_service_without_address(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Reject a MyDumper service that resolves to no address at all."""
+    service = created_service.model_copy(update={"node": None})
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+        return_value=service,
+    )
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=str(service.id),
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    with pytest.raises(HTTPUnprocessableEntityException):
+        await resolve_restore_entities(form, mock_remote_api)
+
+
+@pytest.mark.asyncio
+async def test_resolve_restore_entities_non_mydumper_tolerates_missing_address(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Annotate a non-MyDumper restore from a service carrying no address.
+
+    XtraBackup and Binlog record the service name only, so the address guard the
+    MyDumper branch applies must not reach them.
+    """
+    service = created_service.model_copy(update={"node": None})
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+        return_value=service,
+    )
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=str(service.id),
+        backup_type=BackupType.XTRABACKUP,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    resolved = await resolve_restore_entities(form, mock_remote_api)
+
+    assert resolved.service_name == service.name
+    assert resolved.dest_host is None
+
+
+@pytest.mark.asyncio
 async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
     mock_remote_api,
 ):
