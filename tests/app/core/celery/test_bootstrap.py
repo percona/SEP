@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 
@@ -31,21 +31,10 @@ from app import BASE_DIR
 from app.core.celery import bootstrap
 from app.core.celery.config import PoolEngineOptions
 from app.core.config import settings
+from tests.app.beat_autogenerate import BEAT_TABLES, table_names
 
 MAKEFILE = BASE_DIR / "Makefile"
 """The developer entry point this module asserts drives the bootstrap."""
-
-BEAT_TABLES = frozenset(
-    {
-        "celery_periodictask",
-        "celery_periodictaskchanged",
-        "celery_intervalschedule",
-        "celery_crontabschedule",
-        "celery_solarschedule",
-        "celery_clockedschedule",
-    }
-)
-"""Every table ``sqlalchemy_celery_beat`` reads, including the one the bug names."""
 
 OVERRIDDEN_STORE = "postgresql+psycopg2://beat:{password}@beat-store.example:6543/beat"
 """A beat store deliberately unlike the SEP database, for the override cases."""
@@ -187,19 +176,6 @@ def refuse_then_really_connect(
 
     monkeypatch.setattr(Engine, "connect", connect)
     return lambda: attempts["count"]
-
-
-def table_names(url: str) -> set[str]:
-    """Return the tables present in the store at ``url``.
-
-    :param url: A synchronous store URL.
-    :return: Every table name the store carries.
-    """
-    engine = create_engine(url)
-    try:
-        return set(inspect(engine).get_table_names())
-    finally:
-        engine.dispose()
 
 
 def test_the_bootstrap_creates_the_schedule_tables(sqlite_beat_store: str):

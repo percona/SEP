@@ -21,6 +21,7 @@ from app.core.celery.migrations import BEAT_TABLE_NAMES
 from tests.app.beat_autogenerate import (
     autogenerate_diffs,
     create_beat_tables,
+    table_names,
     tables_mentioned,
 )
 
@@ -30,6 +31,7 @@ def test_autogenerate_ignores_the_beat_tables(tasks_alembic_config):
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, "heads")
     create_beat_tables(sync_url)
+    assert table_names(sync_url) >= BEAT_TABLE_NAMES
 
     diffs = autogenerate_diffs(cfg)
 

@@ -20,7 +20,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core.celery.migrations import BEAT_TABLE_NAMES, include_object
-from tests.app.core.celery.test_bootstrap import BEAT_TABLES
+from tests.app.beat_autogenerate import BEAT_TABLES
 
 
 def consider(name: str, type_: str, *, reflected: bool) -> bool:

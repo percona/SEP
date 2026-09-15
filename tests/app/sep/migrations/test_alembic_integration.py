@@ -884,6 +884,7 @@ def test_autogenerate_ignores_the_beat_tables(sep_alembic_config):
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, "heads")
     create_beat_tables(sync_url)
+    assert _get_table_names(sync_url) >= BEAT_TABLE_NAMES
 
     diffs = autogenerate_diffs(cfg)
 
