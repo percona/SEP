@@ -182,7 +182,9 @@ class TestBatchGetLatestStatuses:
         result = await batch_get_latest_statuses(tasks_api, ["a"])
 
         assert result["a"].status == TaskHistoryStatusEnum.RUNNING
-        assert result["a"].finished_at == datetime.fromisoformat("2026-07-06T12:00:00")
+        assert result["a"].finished_at == datetime.fromisoformat(
+            "2026-07-06T12:00:00+00:00"
+        )
 
     @pytest.mark.asyncio
     async def test_exactly_max_names_is_one_batch(self) -> None:
@@ -276,7 +278,7 @@ class TestExtractLatestHistory:
         )
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
-        assert result.finished_at == datetime.fromisoformat("2026-07-07T10:00:00")
+        assert result.finished_at == datetime.fromisoformat("2026-07-07T10:00:00+00:00")
 
     def test_all_unfinished_yields_none_finish(self) -> None:
         """Return ``finished_at=None`` when no row has ever finished."""
@@ -299,7 +301,7 @@ class TestExtractLatestHistory:
         )
 
         assert result.status == TaskHistoryStatusEnum.SUCCESS
-        assert result.finished_at == datetime.fromisoformat("2026-07-07T09:00:00")
+        assert result.finished_at == datetime.fromisoformat("2026-07-07T09:00:00+00:00")
 
 
 class TestGetTaskLatestHistory:
@@ -321,7 +323,7 @@ class TestGetTaskLatestHistory:
         result = await get_task_latest_history(tasks_api, "task-1")
 
         assert result.status == TaskHistoryStatusEnum.RUNNING
-        assert result.finished_at == datetime.fromisoformat("2026-07-07T09:00:00")
+        assert result.finished_at == datetime.fromisoformat("2026-07-07T09:00:00+00:00")
         tasks_api.get.assert_awaited_once_with("/task-1/history/", params=None)
 
     @pytest.mark.asyncio
