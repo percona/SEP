@@ -176,10 +176,11 @@ class TaskHistoryStatusEnum(StrEnum):
     UNLAUNCHABLE = "unlaunchable"
 
     def is_finished(self) -> bool:
-        """Check if the task status indicates that it is finished.
+        """Check whether this status has an observed run outcome.
 
-        :return: True if the task status is one of FAILED, SUCCESS, STOPPED,
-            STALE, or UNLAUNCHABLE; False otherwise.
+        :return: True when output retrieval is meaningful for this status
+            (FAILED, SUCCESS, STOPPED, STALE, or UNLAUNCHABLE); False
+            otherwise.
         """
         return self in [
             TaskHistoryStatusEnum.FAILED,
@@ -1449,7 +1450,7 @@ class TaskHistoryLatestStatus(BaseModel):
     """
 
     status: TaskHistoryStatusEnum | None = None
-    finished_at: datetime | None = None
+    finished_at: UTCDatetime | None = None
 
 
 class TaskHistoryStatusPoint(BaseModel):
@@ -1459,7 +1460,7 @@ class TaskHistoryStatusPoint(BaseModel):
     :param status: The recorded execution status.
     """
 
-    created_at: datetime
+    created_at: UTCDatetime
     status: TaskHistoryStatusEnum
 
 

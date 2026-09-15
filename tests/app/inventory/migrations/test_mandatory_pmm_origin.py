@@ -23,13 +23,8 @@ there. The real-PostgreSQL half lives in
 classification, backfill and cascade logic, which is dialect-neutral.
 """
 
-import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import create_engine, inspect
-
-from app.inventory.config import inventory_settings
-from tests.app.alembic_paths import ALEMBIC_INI
 
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
@@ -68,24 +63,6 @@ _MANDATORY_COLUMNS = (
     ("node", "source"),
     ("service", "external_id"),
 )
-
-
-@pytest.fixture
-def inventory_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL pointing at a temp SQLite file.
-
-    ``PRAGMA foreign_keys`` is deliberately left off: batch mode recreates
-    ``node``, which ``service.node_id`` references, and FK enforcement during
-    that rebuild is what makes batch migrations fail on SQLite.
-    """
-    db_path = tmp_path / "test_inventory.sqlite"
-    sync_url = f"sqlite:///{db_path}"
-
-    monkeypatch.setattr(inventory_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(inventory_settings.DATABASE, "NAME", str(db_path))
-
-    cfg = Config(str(ALEMBIC_INI), ini_section="inventory")
-    return cfg, sync_url
 
 
 def _seed_node(

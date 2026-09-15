@@ -28,8 +28,6 @@ so the golden is machine-independent (both the old builder and the new spec
 compute the same ``Path(__file__).parent`` within the package).
 """
 
-import ast
-
 import pytest
 import yaml
 
@@ -39,7 +37,10 @@ from app.sep.apps.mysql_backups.forms import BackupCreate
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
-from tests.app.sep.apps.mysql_backups.conftest import xtrabackup_payload_tree
+from tests.app.sep.apps.mysql_backups.conftest import (
+    xtrabackup_binary_default,
+    xtrabackup_payload_tree,
+)
 from tests.app.sep.apps.mysql_backups.restore.conftest import restore_payload_tree
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
@@ -49,21 +50,6 @@ _TASK_NAME = "backups-golden"
 _HOSTNAME = "executor-host"
 _BACKUP_DIR = "/backups"
 _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
-
-
-def _xtrabackup_binary_default(tree: ast.Module) -> str:
-    """Return the fallback for ``XTRABACKUP_BIN_CMD`` in a payload."""
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "get"
-            and len(node.args) > 1
-            and isinstance(node.args[0], ast.Constant)
-            and node.args[0].value == "XTRABACKUP_BIN_CMD"
-        ):
-            return ast.literal_eval(node.args[1])
-    raise AssertionError("XTRABACKUP_BIN_CMD fallback not found")
 
 
 # Each case names a slug and the backups field values; the cases cover the three
@@ -240,9 +226,9 @@ def test_spec_path_payload_matrix_matches_golden():
 
 def test_backup_and_restore_payloads_share_xtrabackup_binary_default():
     """Pin the backup and restore payload binary fallbacks to each other."""
-    assert _xtrabackup_binary_default(
+    assert xtrabackup_binary_default(
         xtrabackup_payload_tree()
-    ) == _xtrabackup_binary_default(restore_payload_tree())
+    ) == xtrabackup_binary_default(restore_payload_tree())
 
 
 def test_build_backup_spec_preserves_explicit_xtrabackup_binary():
@@ -296,6 +282,10 @@ def _all_servers_config(
                 "encryption_format": "gpg",
                 "encrypt": True,
                 "encryption_recipient": "ops@example.com",
+                # In-place GPG runs inside the upload loop, so the form requires a
+                # provider for it; the builder's ENCRYPT key is what is under test.
+                "upload": ["S3"],
+                "s3_bucket": "backups-bucket",
             },
             id="encrypt_true",
         ),

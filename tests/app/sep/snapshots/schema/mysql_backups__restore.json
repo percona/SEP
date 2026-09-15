@@ -3,7 +3,7 @@
     "alert_on_fail": true,
     "chaining": true,
     "pii_anonymization": false,
-    "scheduling": true,
+    "scheduling": false,
     "stats": false
   },
   "description": "Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
@@ -301,6 +301,7 @@
         {
           "default": false,
           "description": "Restore the MySQL configuration files saved in the backup before preparing it, rewriting server id to a fresh value. Choosing one that is not already taken queries the replication source below.",
+          "destructive": "Each configuration file saved in the backup is written over the live file at its original path, outside the data directory. No copy of what those files held is kept, so hand-tuned settings are lost.",
           "label": "Restore my.cnf",
           "name": "restore_mycnf",
           "required": false,
@@ -658,34 +659,42 @@
   "name": "mysql_backups_restores",
   "task_statuses": [
     {
+      "output_available": true,
       "terminal": true,
       "value": "failed"
     },
     {
+      "output_available": false,
       "terminal": false,
       "value": "pending"
     },
     {
+      "output_available": false,
       "terminal": false,
       "value": "running"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "success"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "stopped"
     },
     {
+      "output_available": false,
       "terminal": true,
       "value": "lost"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "stale"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "unlaunchable"
     }

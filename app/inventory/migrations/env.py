@@ -23,6 +23,7 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
+from app.core.celery.migrations import include_object
 from app.core.db.utils import compare_type
 from app.inventory.config import inventory_settings
 from app.inventory.models import *
@@ -69,6 +70,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         version_table="alembic_version_inventory",
         compare_type=compare_type,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -81,6 +83,7 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         version_table="alembic_version_inventory",
         compare_type=compare_type,
+        include_object=include_object,
     )
 
     with context.begin_transaction():

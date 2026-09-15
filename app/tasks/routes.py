@@ -39,6 +39,7 @@ from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPBadRequestException,
     HTTPConflictException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
@@ -753,8 +754,26 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
     :param session: The SQLAlchemy asynchronous session.
     :param task: The task history to persist.
     :return: The saved task history record.
+    :raises HTTPUnprocessableEntityException: If ``failure_reason`` conflicts
+        with a status that carries no operator-facing summary.
     """
     logger.debug("Creating task history for task %s", task.task_id)
+    if (
+        task.failure_reason is not None
+        and TaskHistoryStatusEnum(task.status).operator_summary() is None
+    ):
+        raise HTTPUnprocessableEntityException(
+            detail=[
+                {
+                    "loc": ["body", "failure_reason"],
+                    "msg": (
+                        "failure_reason must be null when status carries no "
+                        "operator-facing summary."
+                    ),
+                    "type": "value_error",
+                }
+            ]
+        )
     task.set_failure_reason(task.failure_reason)
     saved = await TaskHistoryManager.save(session, task)
     return await _get_history_for_response(session, cast(int, saved.id))

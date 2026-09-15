@@ -37,7 +37,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, computed_field, Field
 
-from app.core.utils.fields import NonEmptyStr, UniqueList
+from app.core.utils.fields import NonEmptyStr, UniqueList, UTCDatetime
 from app.sep.apps.framework.schema import AppDeploymentCapabilities
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import Snippet
@@ -48,51 +48,35 @@ class SnippetResponse(BaseModel):
 
     :param filename: The snippet's filename on disk; doubles as its
         identifier in the API.
-    :type filename: NonEmptyStr
     :param title: The display title for the snippet (snippet metadata's
         ``title`` field, falling back to ``filename`` when unset).
-    :type title: NonEmptyStr
     :param description: The snippet's free-text description, or an empty
         string when no description is set in metadata.
-    :type description: str
     :param service_type: The snippet's free-form service type
         (``service_type`` metadata field, for example ``"mysql"`` or
         ``"mongodb"``), or ``None`` when the snippet declares no service
         type. Distinct from the inventory ``ServiceTypeEnum``.
-    :type service_type: str | None
     :param size: Snippet file size in bytes.
-    :type size: int
     :param md5_digest: 32-character MD5 hex digest of the snippet file.
-    :type md5_digest: str
     :param is_approved: Whether the snippet has been approved for execution.
-    :type is_approved: bool
     :param approved_at: When the snippet was last approved, or ``None`` if
         unapproved.
-    :type approved_at: datetime | None
     :param updated_by: User id that last toggled the approval state, or
         ``None`` if no toggle has occurred.
-    :type updated_by: str | None
     :param reason: Free-form reason recorded the last time the snippet's
         approval state changed.
-    :type reason: str
     :param requires_sudo: Whether the snippet requires sudo for execution
         (either always-sudo or sudo is user-toggleable).
-    :type requires_sudo: bool
     :param sudo_optional: Whether the user can toggle sudo at execution
         time.
-    :type sudo_optional: bool
     :param sudo_default: Default value for the sudo toggle when
         ``sudo_optional`` is ``True``.
-    :type sudo_default: bool
     :param interpreter: The shell/interpreter command used to execute the
         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
         no interpreter mapping resolves.
-    :type interpreter: str | None
     :param created_at: When the snippet row was first inserted.
-    :type created_at: datetime
     :param updated_at: When the snippet row was last updated, or ``None``
         if never updated since insert.
-    :type updated_at: datetime | None
     """
 
     filename: NonEmptyStr
@@ -102,15 +86,15 @@ class SnippetResponse(BaseModel):
     size: int
     md5_digest: str
     is_approved: bool
-    approved_at: datetime | None = None
+    approved_at: UTCDatetime | None = None
     updated_by: str | None = None
     reason: str
     requires_sudo: bool
     sudo_optional: bool
     sudo_default: bool
     interpreter: str | None = None
-    created_at: datetime
-    updated_at: datetime | None = None
+    created_at: UTCDatetime
+    updated_at: UTCDatetime | None = None
 
 
 def build_snippet_response(snippet: Snippet) -> SnippetResponse:

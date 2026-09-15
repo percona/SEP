@@ -1169,6 +1169,8 @@ def build_runtime_schema(model: type["AppFormModel"]) -> AppSchema:
     return AppSchema(
         name="app_form_model_runtime",
         display_name="app_form_model_runtime",
+        item_display_name="app_form_model_runtime",
+        item_display_name_plural="app_form_model_runtime",
         forms=[FormSection(title="rules", fields=fields)],
         list_view=ListView(columns=[Column(key="name", label="Name")]),
         fail_when=fail_when or None,

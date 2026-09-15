@@ -17,6 +17,7 @@
 
 import importlib
 from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -35,6 +36,7 @@ from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.utils import json_serializer
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.atw.schema import atw_schema
+from app.sep.apps.backup_mongo.restore.models import OWNER as RESTORE_MONGO_OWNER
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import (
@@ -48,14 +50,19 @@ from app.sep.apps.framework.registry import (
     get_app_registry,
     resolve_app_settings_metadata,
 )
+from app.sep.apps.framework.schema import Capabilities
+from app.sep.apps.mysql_backups.forms import OWNER as BACKUPS_OWNER
 from app.sep.apps.mysql_backups.inventory_references import (
     referenced_inventory_entities,
 )
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
+from app.tasks.models import ANY_OWNER
 from tests.app.db_schema import apply_schema
+from tests.app.sep.apps.framework.kit import synth_app, synth_app_kwargs
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
@@ -1378,3 +1385,68 @@ class TestCollectInventoryReferenceProviders:
 
         with pytest.raises(TypeError, match="must be callable"):
             collect_inventory_reference_providers([App(module_name="mysql_backups")])
+
+
+def _task_app_offering(owner: str, key: str, *, scheduling: bool) -> TaskExecutionApp:
+    """Build a synthetic task app under ``owner`` with the given scheduling flag.
+
+    :param owner: The ``Task.owner`` the app claims.
+    :param key: The registry key, unique within the registry under test.
+    :param scheduling: Whether the app's served schema declares ``scheduling``.
+    :return: The synthetic definition.
+    """
+    return synth_app(
+        key=key,
+        owner=owner,
+        views=replace(
+            synth_app_kwargs()["views"],
+            capabilities=Capabilities(scheduling=scheduling),
+        ),
+    )
+
+
+class TestSchedulingOwners:
+    """Cover the owner-level scheduling predicate and the sweep's owner set."""
+
+    def test_an_owner_whose_app_offers_scheduling(self) -> None:
+        """Allow an owner every registered task app carrying it offers scheduling for."""
+        assert get_app_registry().owner_offers_scheduling(BACKUPS_OWNER) is True
+
+    @pytest.mark.parametrize(
+        "owner",
+        [RESTORES_OWNER, RESTORE_MONGO_OWNER, ANY_OWNER, "NOT_A_REGISTERED_OWNER"],
+    )
+    def test_refused_owners(self, owner: str) -> None:
+        """Refuse a restore owner, ``ANY_OWNER``, and an owner no app carries."""
+        assert get_app_registry().owner_offers_scheduling(owner) is False
+
+    def test_unschedulable_task_owners(self) -> None:
+        """Report exactly the restore owners as the set the startup sweep covers."""
+        assert get_app_registry().unschedulable_task_owners() == frozenset(
+            {RESTORES_OWNER, RESTORE_MONGO_OWNER}
+        )
+
+    def test_a_shared_owner_needs_every_app_to_offer_scheduling(self) -> None:
+        """Refuse an owner two apps share when one of them withholds scheduling."""
+        registry = AppRegistry(
+            [
+                _task_app_offering("SHARED", "shared-yes", scheduling=True),
+                _task_app_offering("SHARED", "shared-no", scheduling=False),
+            ]
+        )
+
+        assert registry.owner_offers_scheduling("SHARED") is False
+        assert "SHARED" in registry.unschedulable_task_owners()
+
+    def test_any_owner_is_refused_and_never_swept(self) -> None:
+        """Refuse ``ANY_OWNER`` even when its app advertises scheduling, and skip it.
+
+        An app declaring ``ANY_OWNER`` does not speak for the unclaimed tasks that
+        default to it, so its schedules are neither permitted nor switched off.
+        """
+        registry = AppRegistry(
+            [_task_app_offering(ANY_OWNER, "any-owner-app", scheduling=True)]
+        )
+
+        assert registry.owner_offers_scheduling(ANY_OWNER) is False
+        assert registry.unschedulable_task_owners() == frozenset()
