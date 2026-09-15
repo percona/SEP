@@ -50,12 +50,8 @@ RUN [ -z "${NOMAD_VERSION}" ] \
     || /usr/local/percona/pmm/tools/nomad version | head -1 | grep -qx "Nomad v${NOMAD_VERSION}" \
     || { echo "tools/nomad is '$(/usr/local/percona/pmm/tools/nomad version | head -1)', not v${NOMAD_VERSION}: this client cannot pair with the feature-build server" >&2; exit 1; }
 
-# The assertion above only means something when the client came from the feature
-# build: a released client's Nomad cannot move with PMM_FB_TAG, so comparing it
-# to NOMAD_VERSION re-confirms a pairing nobody repinned. On that path the pin
-# has to vouch for itself instead — NOMAD_VERSION_FB_TAG names the feature build
-# it was read from, and a build pinning any other one is refused. CI checks the
-# value itself against the real client, on a host where that costs nothing.
+# On a released client the assertion above is vacuous, so NOMAD_VERSION_FB_TAG
+# must name this build's PMM_FB_TAG instead. See README.md "Caveats".
 ARG PMM_FB_TAG
 ARG PMM_CLIENT_IMAGE
 ARG NOMAD_VERSION_FB_TAG

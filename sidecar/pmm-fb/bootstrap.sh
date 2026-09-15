@@ -17,11 +17,8 @@ if [[ ${DEBUG:-0} == "1" ]]; then
     set -o xtrace
 fi
 
-# The released multi-arch client whose aarch64 tools/nomad is meant to be the
-# feature build's Nomad version. The build's own comparison cannot establish
-# that here — this client's Nomad does not move with PMM_FB_TAG — so
-# NOMAD_VERSION_FB_TAG records which feature build the version came from and
-# refuses a build pinning another, while CI reads the real client on amd64.
+# The released multi-arch client used on arm64; NOMAD_VERSION_FB_TAG, not its
+# tools/nomad, ties NOMAD_VERSION to the feature build (README.md "Caveats").
 ARM64_CLIENT_IMAGE=docker.io/percona/pmm-client:3.9.1
 
 error() { printf '✗ %s\n' "$*" >&2; }

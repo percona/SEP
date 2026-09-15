@@ -1,9 +1,5 @@
-# Reads the feature-build client's own tools/nomad and holds the committed
-# NOMAD_VERSION to it. The arm64 build cannot: reaching that client there means
-# pulling an amd64 image onto the host the native-arm64 path exists to keep
-# clear of emulation (sidecar/pmm-fb/README.md § Caveats). On a native amd64
-# runner the same read costs one pull, so the pin is verified here instead of
-# merely attested by the build-time witness.
+# Holds NOMAD_VERSION to the feature-build client's tools/nomad, which only an
+# amd64 host can read without emulation (sidecar/pmm-fb/README.md "Caveats").
 
 name: PMM FB Nomad pin
 
@@ -13,8 +9,6 @@ on:
       - pmm
     paths:
       - 'sidecar/pmm-fb/**'
-      # The reader the gate depends on, and the gate itself: a PR editing only
-      # one of those matches no other filter and would merge unverified.
       - 'scripts/check_pmm_fb_pins.py'
       - '.github/workflows/pmm-fb-nomad-pin.yaml'
       - 'tests/sidecar/test_pmm_fb_nomad_pin.py'
@@ -30,8 +24,6 @@ jobs:
   nomad-pin:
     runs-on: ubuntu-latest
     steps:
-      # No fetch-depth: the base revision this job compares against is fetched
-      # explicitly below, and nothing here computes a merge-base.
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -40,22 +32,15 @@ jobs:
         with:
           python-version: "3.11"
 
-      # The runner's system interpreter carries PyYAML only incidentally, and a
-      # reader that cannot parse compose.yaml would fail this job for a reason
-      # unrelated to the pins. The guard tests reach nothing beyond those three:
-      # pytest, the reader's YAML, and the Fernet import tests/conftest.py makes
-      # at collection — which is what keeps them a step here rather than the
-      # project install running the whole suite would need.
+      # Only what the pin reader and guard tests import; tests/conftest.py
+      # needs cryptography at collection.
       - name: Install the pin reader's and guard tests' dependencies
         run: pip install pyyaml==6.0.2 pytest==9.1.0 cryptography==50.0.0
 
       - name: Check the committed pins name one feature build
         run: python3 scripts/check_pmm_fb_pins.py
 
-      # ci.yml is scoped to main, where sidecar/pmm-fb/ does not exist, so
-      # without this step nothing before merge exercises the witness guard's
-      # truth table or the ARG re-declarations that keep it from reading every
-      # input as empty.
+      # ci.yml runs only for main, where sidecar/pmm-fb/ does not exist.
       - name: Run the witness guard and pin-reader tests
         run: python3 -m pytest tests/sidecar/test_pmm_fb_nomad_pin.py -q
 
@@ -64,18 +49,11 @@ jobs:
         run: |
           tag=$(python3 scripts/check_pmm_fb_pins.py --print PMM_FB_TAG)
           nomad=$(python3 scripts/check_pmm_fb_pins.py --print NOMAD_VERSION)
-          # An empty value builds a tagless image reference, whose pull fails
-          # the way a collected tag does and would take the warn-and-skip path
-          # below — the job would report success having verified nothing, which
-          # is the failure mode this gate exists to remove.
           if [ -z "${tag}" ] || [ -z "${nomad}" ]; then
               echo "::error::could not resolve the committed pins (PMM_FB_TAG='${tag}', NOMAD_VERSION='${nomad}')"
               exit 1
           fi
-          # What the base branch already carried, or empty when this PR creates
-          # the file. Both halves matter: the skip below is legitimate only for
-          # a pin this PR left entirely alone, and a PR can hold PMM_FB_TAG
-          # still while moving NOMAD_VERSION, which nothing else verifies.
+          # Base-branch pins, empty when the base carries no compose.yaml.
           base_tag=""
           base_nomad=""
           if git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" \
@@ -96,25 +74,12 @@ jobs:
           BASE_NOMAD: ${{ steps.pins.outputs.base_nomad }}
         run: |
           IMG="docker.io/perconalab/pmm-client-fb:${TAG}"
-          # One pull, not a manifest probe plus a pull: both spend an anonymous
-          # Docker Hub request, and running out of those is itself a way this
-          # job stops verifying.
+          # A manifest probe first would spend a second Docker Hub request.
           if ! pull=$(docker pull --quiet "${IMG}" 2>&1); then
-              # Only a tag that is genuinely gone may skip. The harness pins
-              # throwaway artifacts deliberately, so failing red on a collected
-              # tag would block every later PR touching these paths behind an
-              # unrelated repin. Every other failure — rate limiting, a registry
-              # outage, an auth change — must go red: a green check that
-              # verified nothing is the exact defect this job exists to catch.
+              # Only a collected tag may skip; every other pull failure goes red.
               case "${pull}" in
                   *"manifest unknown"*|*MANIFEST_UNKNOWN*|*"manifest for "*"not found"*)
-                      # Only for a pin this PR inherited whole. A tag the PR
-                      # introduces and cannot pull is a typo or an unpublished
-                      # build, and the agreement check cannot catch it: setting
-                      # all three slots to the same nonexistent value satisfies
-                      # it. A NOMAD_VERSION the PR moved is equally unverified
-                      # even under an untouched tag, so both must be unchanged
-                      # before an unreachable image is allowed to pass.
+                      # Skip only pins inherited unchanged (sidecar/pmm-fb/README.md "Caveats").
                       if [ -n "${BASE_TAG}" ] && [ "${TAG}" = "${BASE_TAG}" ] \
                           && [ "${NOMAD}" = "${BASE_NOMAD}" ]; then
                           echo "::warning::${IMG} is no longer published, so NOMAD_VERSION=${NOMAD} is unverified here: ${pull}"
