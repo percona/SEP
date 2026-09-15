@@ -1692,7 +1692,7 @@
         "type": "object"
       },
       "SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:param size: Snippet file size in bytes.\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:param is_approved: Whether the snippet has been approved for execution.\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:param created_at: When the snippet row was first inserted.\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.",
         "properties": {
           "approved_at": {
             "anyOf": [
@@ -6639,7 +6639,7 @@
       },
       "framework__AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value whether it ends a run. Server-authored, so a\n    supplied value is replaced rather than honoured. Withheld (``None``) for\n    a plugin declaring ``entities``, whose records are not task runs.",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value both run terminality and whether output\n    retrieval is meaningful. Server-authored, so a supplied value is\n    replaced rather than honoured. Withheld (``None``) for a plugin\n    declaring ``entities``, whose records are not task runs.",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -11007,8 +11007,12 @@
       },
       "framework__TaskStatusDescriptor": {
         "additionalProperties": false,
-        "description": "Declare one task-status value and whether it ends a run.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.",
+        "description": "Declare one task-status value and its run terminality/output predicates.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.\n:param output_available: Whether the run reached an observed outcome, so its\n    output may be requested and may legitimately be empty, as for ``stale``\n    and ``unlaunchable``. ``lost`` is excluded because its outcome was never\n    observed.",
         "properties": {
+          "output_available": {
+            "title": "Output Available",
+            "type": "boolean"
+          },
           "terminal": {
             "title": "Terminal",
             "type": "boolean"
@@ -11019,7 +11023,8 @@
         },
         "required": [
           "value",
-          "terminal"
+          "terminal",
+          "output_available"
         ],
         "title": "TaskStatusDescriptor",
         "type": "object"
@@ -11444,7 +11449,7 @@
         "type": "object"
       },
       "mysql_backups__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encryption_format`` selects which encryption runs and the\nrest of the section parameterises it: the key file is required by the\nAES-bearing formats and forbidden outside them, a GPG-bearing format needs one\nof the two independent timings (``encrypt`` in place, ``post_run_encrypt``\nafter), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden\nalongside ``post_run_encrypt`` so post-run takes precedence (matching the\nbackend at ``mydumper_payload``), and ``encryption_recipient`` is required iff\neither timing is on — and the per-mode and encryption-format bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside\n    its mode, or a GPG timing outside a GPG ``encryption_format``, fails\n    validation with a per-field message, as does a GPG format with no timing.",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the derived section and field order matches the\nhand-written schema. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption gates — ``encryption_format`` selects which encryption runs and the\nrest of the section parameterises it: the key file is required by the\nAES-bearing formats and forbidden outside them, a GPG-bearing format needs one\nof the two independent timings (``encrypt`` in place, ``post_run_encrypt``\nafter), ``encrypt_using_tmpdir`` requires ``encrypt`` and is forbidden\nalongside ``post_run_encrypt`` so post-run takes precedence (matching the\nbackend at ``mydumper_payload``), and ``encryption_recipient`` is required iff\neither timing is on — and the per-mode and encryption-format bool\n``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside\n    its mode, or a GPG timing outside a GPG ``encryption_format``, fails\n    validation with a per-field message, as does a GPG format with no timing\n    and, for the pure ``gpg`` format only, a GPG timing no backup script\n    would reach without an upload target. Those are app-scoped, so they\n    surface only on submit. The binary/compression rules, which reject an\n    XtraBackup compression algorithm the selected (or defaulted)\n    ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning\n    ``compression_algorithm``, so they also evaluate as the operator types.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -11810,12 +11815,7 @@
           "xtrabackup_bin_cmd": {
             "anyOf": [
               {
-                "enum": [
-                  "xtrabackup",
-                  "mariadb-backup",
-                  "innobackupex"
-                ],
-                "type": "string"
+                "$ref": "#/components/schemas/mysql_backups__XtraBackupTool"
               },
               {
                 "type": "null"
@@ -13127,7 +13127,7 @@
         "type": "string"
       },
       "mysql_backups__XtraBackupTool": {
-        "description": "Allowed commands for XtraBackup-style restores.",
+        "description": "Represent the XtraBackup-family binaries a backup or restore can run.",
         "enum": [
           "innobackupex",
           "xtrabackup",
@@ -21355,7 +21355,7 @@
         ]
       },
       "put": {
-        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If the body's ``task`` is present\n    and not a string, or if the resolved name is not a single plain URL path\n    segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task the schedule would run.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: If the stored schedule carries no task name,\n    and for an upstream server error (status >= 500) or a connection-level\n    ``OSError``.",
         "operationId": "tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
         "parameters": [
           {
@@ -21392,6 +21392,24 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The schedule would run a task no installed app offers scheduling for."
           },
           "422": {
             "content": {
@@ -21430,7 +21448,7 @@
     },
     "/api/sep/periodic-tasks/{task_name}/": {
       "post": {
-        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If ``task_name`` is not a single\n    plain URL path segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post",
         "parameters": [
           {
@@ -21467,6 +21485,24 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The schedule would run a task no installed app offers scheduling for."
           },
           "422": {
             "content": {
