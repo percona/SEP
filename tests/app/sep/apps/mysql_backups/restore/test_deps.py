@@ -40,7 +40,7 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
     node = created_service.node.model_copy(update={"address": "10.0.0.5"})
     service = created_service.model_copy(update={"node": node, "port": 3307})
     schema = service.model_copy(update={"name": "shop"})
-    mocker.patch(
+    lookup = mocker.patch(
         "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
         side_effect=[service, schema],
     )
@@ -60,6 +60,39 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
     assert resolved.dest_host == node.address
     assert resolved.dest_port == service.port
     assert resolved.database == schema.name
+    service_call, schema_call = lookup.await_args_list
+    assert service_call.args[2] == service.id
+    assert isinstance(service_call.args[2], int)
+    assert schema_call.args[2] == 42
+    assert isinstance(schema_call.args[2], int)
+    assert schema_call.kwargs["service_id"] == service.id
+
+
+@pytest.mark.asyncio
+async def test_resolve_restore_entities_non_mydumper_passes_numeric_service_id_as_int(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Resolve a non-MyDumper numeric service id through the integer lookup path."""
+    lookup = mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
+        return_value=created_service,
+    )
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=str(created_service.id),
+        backup_type=BackupType.XTRABACKUP,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    resolved = await resolve_restore_entities(form, mock_remote_api)
+
+    assert resolved.service_name == created_service.name
+    assert lookup.await_args.args[2] == created_service.id
+    assert isinstance(lookup.await_args.args[2], int)
 
 
 @pytest.mark.asyncio
