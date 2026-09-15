@@ -16,6 +16,7 @@
 """Define tests for the app.sep.routes.download_files module."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -55,14 +56,23 @@ async def _mock_failing_file_stream():
     raise RuntimeError("upstream stream broke")
 
 
-async def _mock_rejected_file_stream(status_code: int):
-    """Raise HTTPException immediately, simulating upstream rejection before any bytes."""
+async def _mock_rejected_file_stream(
+    status_code: int,
+) -> AsyncGenerator[bytes, None]:
+    """Raise ``HTTPException`` immediately before yielding any bytes.
+
+    :param status_code: Upstream status carried by the raised ``HTTPException``.
+    :return: Never yields; exists only to satisfy the async-generator protocol.
+    """
     raise HTTPException(status_code=status_code)
     yield  # pragma: no cover — makes this an async generator
 
 
-async def _mock_empty_file_stream():
-    """Yield nothing, simulating a genuinely empty upstream file."""
+async def _mock_empty_file_stream() -> AsyncGenerator[bytes, None]:
+    """Yield nothing, simulating a genuinely empty upstream file.
+
+    :return: An empty async byte stream.
+    """
     return
     yield  # pragma: no cover — makes this an async generator
 
@@ -282,9 +292,9 @@ class TestDownloadTaskHistoryFile:
     ):
         """Assert upstream rejection before any bytes returns the real status, not 200.
 
-        When the upstream rejects the request (401/403/410/500) before yielding any
-        bytes, the caller must receive that status — not a misleading 200 with an
-        empty body. This is the fix for SEP-1878.
+        When the upstream rejects the request before yielding any bytes, the
+        caller must receive that status — not a misleading 200 with an empty
+        body.
         """
         mock_tasks_client_dep.get.return_value = {
             "backup.sql": {"size": 2048, "is_dir": False}
@@ -473,9 +483,9 @@ class TestDownloadThroughTheRealClientDependency:
     ):
         """Deliver a full download whose client was retired while the body was in flight.
 
-        With error-priming (SEP-1878), the HTTP status is sent after the first
-        chunk arrives, so we release the upstream before checking the status,
-        then retire the client while draining.
+        With error priming, the HTTP status is sent after the first chunk
+        arrives, so the upstream is released before checking the status, then
+        the client is retired while draining.
         """
         release = asyncio.Event()
 
@@ -520,8 +530,8 @@ class TestDownloadThroughTheRealClientDependency:
         a bare await leaves the session open here, while the unit-level
         cancellation test passes either way.
 
-        With error-priming (SEP-1878), the HTTP status is sent after the first
-        chunk arrives. The test verifies cleanup happens when exiting the context
+        With error priming, the HTTP status is sent after the first chunk
+        arrives. The test verifies cleanup happens when exiting the context
         after the status is received but before explicitly draining the body.
         """
         url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"

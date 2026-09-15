@@ -45,17 +45,17 @@ _ERROR_RESPONSE_HEADERS = frozenset({"x-accel-buffering", "content-disposition"}
 
 
 class ErrorPrimingStreamingResponse(StreamingResponse):
-    """StreamingResponse that checks for upstream errors before sending status.
+    """Prime the body iterator before committing the response status.
 
     Standard StreamingResponse sends HTTP 200 before iterating the body. This
-    subclass primes the generator first so upstream rejections raise before any
-    ``http.response.start``. That lets ExceptionMiddleware turn the error into a
-    real status response instead of a misleading 200 with an empty body.
+    subclass pulls the first chunk first so any upstream ``HTTPException`` raises
+    before ``http.response.start``. That lets ExceptionMiddleware turn the error
+    into a real status response instead of a misleading 200 with an empty body.
 
     Tradeoff: time-to-first-byte waits on the first upstream chunk (or error)
     before headers are sent. That is intentional for this proxy-timing-sensitive
     download route — correct status on upstream rejection matters more than
-    speculative early headers. See SEP-1878.
+    speculative early headers.
 
     FastAPI installs ``@app.exception_handler(500)`` on ServerErrorMiddleware,
     which only sees non-``HTTPException`` failures. Upstream 5xx arrives as
@@ -66,7 +66,7 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
     """
 
     async def stream_response(self, send: Send) -> None:
-        """Override to prime the body iterator before sending the start message.
+        """Prime the body iterator before sending the ASGI start message.
 
         ``HTTPException`` is re-raised before any response bytes are sent so
         ExceptionMiddleware can build the status response. 5xx errors are logged
@@ -77,6 +77,9 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
         arrives — accepted TTFB cost for correct status on rejection. After
         priming, delegates the start/body/end sends to
         ``StreamingResponse.stream_response``.
+
+        :param send: ASGI send callable used to emit response start, body, and
+            end messages.
         """
         body_iter: AsyncIterator[Any] = aiter(self.body_iterator)
 
@@ -154,9 +157,18 @@ async def download_task_history_file(
 ) -> StreamingResponse:
     """Stream a task history's archived file as a binary download.
 
-    Uses ErrorPrimingStreamingResponse so upstream errors raise before status is
-    committed (and 5xx are logged) rather than appearing as a misleading 200 with
-    an empty body. See SEP-1878.
+    Upstream errors raised while priming the stream surface as the real status
+    before any response is committed, rather than as a misleading 200 with an
+    empty body.
+
+    :param request: Incoming download request; ``path`` selects the archived
+        file.
+    :param user: Authenticated viewer whose access token authorizes the stream.
+    :param task_history: Task history whose archived file is downloaded.
+    :param tasks_client: Tasks API client used to list metadata and stream
+        bytes.
+    :return: Streaming response of the archived file as
+        ``application/octet-stream``.
     """
     headers = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
