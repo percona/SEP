@@ -468,7 +468,7 @@ def test_the_migrate_target_bootstraps_the_beat_tables():
     the API readiness timeout on tables only beat itself would create.
 
     This asserts the recipe's text; no test runs the target, so a shell-level
-    fault in the line would still reach CI. See the plan's known coverage limit.
+    fault in the line would still reach CI.
     """
     recipe = makefile_recipe("migrate")
     upgrades = [index for index, line in enumerate(recipe) if "alembic --name" in line]
