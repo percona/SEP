@@ -53,22 +53,26 @@ name, so those keys would match nothing: read ``Table.name``.
 
 
 def include_object(
-    _object: SchemaItem,
+    object_: SchemaItem,  # noqa: ARG001
     name: str | None,
     type_: str,
     reflected: bool,  # noqa: FBT001
-    _compare_to: SchemaItem | None,
+    compare_to: SchemaItem | None,  # noqa: ARG001
 ) -> bool:
     """Report whether Alembic's autogenerate sweep should consider an object.
 
-    :param _object: The schema item being considered. Unused: the decision needs
+    The parameter names are Alembic's own, and every argument arrives
+    positionally, so the two the decision does not read are kept rather than
+    renamed.
+
+    :param object_: The schema item being considered. Unused: the decision needs
         only the name and provenance.
     :param name: The object's name, bare rather than schema-qualified.
     :param type_: The kind of object, such as ``"table"`` or ``"column"``.
     :param reflected: Whether the object came from database reflection rather
         than from the target metadata. Only a reflected table can be excluded,
         so a SEP model declaring one of these names is left alone.
-    :param _compare_to: The object being compared against. Unused.
+    :param compare_to: The object being compared against. Unused.
     :return: ``False`` for a reflected beat table, ``True`` for everything else.
     """
     return not (type_ == "table" and reflected and name in BEAT_TABLE_NAMES)
