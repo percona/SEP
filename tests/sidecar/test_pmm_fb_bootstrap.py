@@ -67,10 +67,10 @@ RunBootstrap = Callable[..., subprocess.CompletedProcess[str]]
 class Harness:
     """Carry the throwaway checkout and the two callables that drive it.
 
-    :ivar env_file: The environment file the script writes beside itself.
-    :ivar write_env: Seed that file with the passwords plus any executor slots.
-    :ivar run: Invoke the script against a stubbed engine architecture.
-    :ivar bin_dir: The stub directory that precedes the real one on ``PATH``.
+    :param env_file: The environment file the script writes beside itself.
+    :param write_env: Seed that file with the passwords plus any executor slots.
+    :param run: Invoke the script against a stubbed engine architecture.
+    :param bin_dir: The stub directory that precedes the real one on ``PATH``.
     """
 
     env_file: Path
