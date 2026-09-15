@@ -1449,7 +1449,7 @@ class TaskHistoryLatestStatus(BaseModel):
     """
 
     status: TaskHistoryStatusEnum | None = None
-    finished_at: datetime | None = None
+    finished_at: UTCDatetime | None = None
 
 
 class TaskHistoryStatusPoint(BaseModel):
@@ -1459,7 +1459,7 @@ class TaskHistoryStatusPoint(BaseModel):
     :param status: The recorded execution status.
     """
 
-    created_at: datetime
+    created_at: UTCDatetime
     status: TaskHistoryStatusEnum
 
 

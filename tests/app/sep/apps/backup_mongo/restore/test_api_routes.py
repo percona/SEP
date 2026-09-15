@@ -291,7 +291,7 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
-        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00"
+        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00Z"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
         assert body["items"][1]["status"] is None
         assert body["items"][1]["last_executed_at"] is None
