@@ -18,6 +18,7 @@
 import asyncio
 import logging
 import logging.config
+import time
 from collections.abc import Iterator
 from typing import ClassVar
 
@@ -339,7 +340,7 @@ class TestSepWorkerHandlers:
         worker_loop_env: WorkerLoopEnv,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Keep the child armed after a hanging seed hits its budget."""
+        """Keep the child armed and due for a boundary refresh after seed expiry."""
         monkeypatch.setattr(
             sep_worker, "get_async_session_maker", lambda: HangingSession
         )
@@ -347,8 +348,9 @@ class TestSepWorkerHandlers:
 
         start_sep_settings_override_refresher()
 
-        assert sep_worker._refresher._armed
-        assert sep_worker._refresher._last_refresh == 0.0
+        refresher = sep_worker._refresher
+        assert refresher._armed
+        assert time.monotonic() - refresher._last_refresh >= refresher._interval_seconds
 
     @pytest.mark.usefixtures("worker_loop_env")
     def test_task_prerun_receiver_calls_maybe_refresh(

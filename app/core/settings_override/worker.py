@@ -156,10 +156,8 @@ class WorkerRefresher:
         seeded, pending = self._loop_getter().run_until_complete(
             bounded_seed(self._session_maker_factory, proxies, seed_timeout)
         )
-        # A completed seed starts the interval clock; an expired seed leaves
-        # the stamp at 0.0 so the next task boundary is immediately due once
-        # any cancelled seed has finished unwinding.
-        self._last_refresh = time.monotonic() if seeded else 0.0
+        now = time.monotonic()
+        self._last_refresh = now if seeded else now - interval.total_seconds()
         self._pending_refresh = (
             pending if pending is not None and not pending.done() else None
         )

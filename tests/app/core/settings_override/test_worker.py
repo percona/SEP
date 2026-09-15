@@ -314,20 +314,35 @@ class TestWorkerRefresherStart:
     def test_start_arms_after_a_hanging_seed_hits_its_budget(
         self,
         loop: asyncio.AbstractEventLoop,
+        session_maker: async_sessionmaker,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Keep the child armed with an immediately-due stamp on seed expiry."""
+        """Keep the child armed and refresh at the next boundary after seed expiry."""
+        maker_holder: list[object] = [HangingSession]
         refresher = WorkerRefresher(
-            lambda: loop, lambda: HangingSession, _make_registry
+            lambda: loop, lambda: maker_holder[0], _make_registry
         )
+        calls: list[object] = []
+
+        async def _counting_refresh(*_args: object, **_kwargs: object) -> None:
+            calls.append(True)
 
         with caplog.at_level("ERROR", logger="app.core.settings_override.lifecycle"):
             refresher.start(INTERVAL, enabled=True, proc_alive_timeout=0.1)
 
+        maker_holder[0] = session_maker
+        monkeypatch.setattr(WORKER_REFRESH_ALL, _counting_refresh)
+        # Let a cancelled seed finish unwinding so the pending guard clears.
+        if refresher._pending_refresh is not None:
+            with suppress(asyncio.CancelledError):
+                loop.run_until_complete(refresher._pending_refresh)
+
+        refresher.maybe_refresh()
+
         try:
             assert refresher._armed
-            assert refresher._last_refresh == 0.0
+            assert calls == [True]
             assert any(
                 record.levelname == "ERROR" and "incomplete" in record.message
                 for record in caplog.records

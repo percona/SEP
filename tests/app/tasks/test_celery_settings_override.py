@@ -16,6 +16,7 @@
 """Define tests for the Tasks worker's settings-override wiring."""
 
 import asyncio
+import time
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
@@ -366,7 +367,7 @@ class TestWorkerRefresherHandlers:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Keep the child armed after a hanging seed hits its budget."""
+        """Keep the child armed and due for a boundary refresh after seed expiry."""
         monkeypatch.setattr(
             celery_module, "get_async_session_maker", lambda: HangingSession
         )
@@ -374,8 +375,9 @@ class TestWorkerRefresherHandlers:
 
         start_settings_override_refresher()
 
-        assert celery_module._refresher._armed
-        assert celery_module._refresher._last_refresh == 0.0
+        refresher = celery_module._refresher
+        assert refresher._armed
+        assert time.monotonic() - refresher._last_refresh >= refresher._interval_seconds
 
     @pytest.mark.usefixtures("worker_loop_env")
     def test_task_prerun_receiver_calls_maybe_refresh(self, mocker) -> None:
