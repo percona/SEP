@@ -91,16 +91,24 @@ class CeleryOptions(BaseLowercaseModel):
         to ``0`` (no retries).
     :param global_expire_seconds: The number of seconds after which a periodic task
         will no longer run. Defaults to ``30``.
+    :param worker_concurrency: Prefork child processes the Celery worker starts.
+        Defaults to ``None``, which leaves Celery's own default of one child per
+        CPU the process can see. Declared rather than passed through as an extra
+        so an environment value is coerced to an integer; an undeclared extra
+        reaches Celery as a string, which the prefork pool rejects at worker
+        startup.
     :param beat_engine_options: SQLAlchemy pool options (``pool_size``,
         ``max_overflow``, ``pool_timeout``, ``pool_pre_ping``) for both
         celery-beat-database engines — the async worker engine and the sync beat
         scheduler engine. ``pool_pre_ping`` defaults to enabled; sizing keys are
-        unset by default. On SEP's non-forked beat path the scheduler pins
-        ``NullPool`` and strips every ``pool*`` kwarg (including
-        ``pool_pre_ping``) harmlessly; a forked-beat deployment inherits all
-        options from this dict, including pre-ping. Only sizing keys need care on
-        the non-forked path: ``NullPool`` rejects ``max_overflow`` outright and
-        silently drops ``pool_size`` and ``pool_timeout``.
+        unset by default. Which options the scheduler engine honours depends on
+        how beat was launched: under ``python -m app.main --start-celery`` it runs
+        in a ``multiprocessing`` child and inherits every option from this dict,
+        including pre-ping, while the PMM side-car runs ``celery beat`` as its own
+        program, which never forks and pins ``NullPool``, stripping every
+        ``pool*`` kwarg harmlessly. Only sizing keys need care on the non-forked
+        path: ``NullPool`` rejects ``max_overflow`` outright and silently drops
+        ``pool_size`` and ``pool_timeout``.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -114,6 +122,7 @@ class CeleryOptions(BaseLowercaseModel):
     beat_schema: str | None = None
     max_retries: Annotated[int, Ge(0)] = 0
     global_expire_seconds: Annotated[int, Ge(0)] = 30
+    worker_concurrency: PositiveInt | None = None
     beat_engine_options: PoolEngineOptions = Field(default_factory=PoolEngineOptions)
 
     @field_serializer("beat_engine_options")
