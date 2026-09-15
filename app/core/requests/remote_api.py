@@ -1041,6 +1041,8 @@ class RemoteAPI(BaseRemoteAPI):
             a per-request ``timeout=`` override.
         :raises json.JSONDecodeError: If :meth:`aiohttp.ClientResponse.json`'s
             default loader fails to parse a JSON-content-typed response body.
+        :raises UnicodeDecodeError: If a JSON-content-typed response body cannot
+            be decoded using its declared or inferred character encoding.
         """
         follows_redirects = kwargs.get("allow_redirects", True)
         async with self._request(method, path, **kwargs) as response:
