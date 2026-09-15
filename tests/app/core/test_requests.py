@@ -307,7 +307,7 @@ async def test_request_non_json_404_stays_bare_http_exception(remote_api):
         )
     )
     mock_response.status = status.HTTP_404_NOT_FOUND
-    mock_response.content = b"<html>404 Not Found</html>"
+    mock_response.text = AsyncMock(return_value="<html>404 Not Found</html>")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response
@@ -350,7 +350,7 @@ async def test_request_non_json_mapped_non_404_keeps_mapping_with_header(
         )
     )
     mock_response.status = error_status
-    mock_response.content = b"<html>bad gateway</html>"
+    mock_response.text = AsyncMock(return_value="<html>bad gateway</html>")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response
@@ -609,7 +609,7 @@ async def test_request_content_type_error(remote_api):
         )
     )
     mock_response.status = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-    mock_response.content = b"not-json"
+    mock_response.text = AsyncMock(return_value="not-json")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response

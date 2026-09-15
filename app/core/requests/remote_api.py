@@ -82,6 +82,7 @@ from app.core.utils.fields import (
     redact_credential_url,
     RelativeFilePathField,
 )
+from app.core.utils.strings import shorten_text
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
@@ -101,6 +102,11 @@ _REDACTED_VALUE = "****"
 # Stands in for a response body a caller withheld from the log, so the line
 # keeps naming the request that produced it.
 _WITHHELD_BODY = "<withheld>"
+# Bounds the decoded body reaching the exception log: the upstream answering
+# HTML rather than JSON decides that body's size, so a large error page would
+# otherwise flood the log with a single record.
+_NON_JSON_LOG_MAX_CHARS = 2000
+_TRUNCATION_MARKER = "... (truncated)"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -592,7 +598,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
     @contextmanager
     def suppress_response_log(self) -> Generator[Self]:
-        """Withhold the response body from the debug log for the call.
+        """Withhold the response body from the transport's own log records for the call.
 
         Register that the parsed response body must not reach the log for the
         duration of the call. Use this where the caller keeps only the values it
@@ -602,9 +608,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         Guards the two response-logging sites in :meth:`request` and nothing
         else: :meth:`stream` logs no response body of its own, so a caller
         wrapping it gains no guarantee here. The second of the two sites reports
-        a non-JSON response, and today renders a stream handle rather than the
-        content itself, so the substitution there is a placeholder against the
-        argument changing rather than a leak being closed.
+        a non-JSON response and logs the body's decoded text, so suppression
+        there withholds the upstream's own error page from the exception line.
 
         Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
         accumulate onto the set an enclosing block registered, this flag has
@@ -1075,13 +1080,22 @@ class RemoteAPI(BaseRemoteAPI):
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
+                # %r, not %s: the body is untrusted upstream text, so rendering it
+                # raw would let its own newlines and control characters forge
+                # further log lines out of one record.
                 self.logger.exception(
-                    "RemoteAPI (%s): %s request to %s response content (%s): %s",
+                    "RemoteAPI (%s): %s request to %s response content (%s): %r",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
-                    _WITHHELD_BODY if withhold_body else response.content,
+                    _WITHHELD_BODY
+                    if withhold_body
+                    else shorten_text(
+                        await response.text(errors="replace"),
+                        max_length=_NON_JSON_LOG_MAX_CHARS,
+                        ellipsis=_TRUNCATION_MARKER,
+                    ),
                 )
                 raise exception_for_status(
                     err.status,
