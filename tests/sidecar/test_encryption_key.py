@@ -70,8 +70,19 @@ UNREACHABLE_PORT = 1
 SHORT_PROBE_TIMEOUT = "1.5"
 """Short enough that an unreachable database is refused inside a test's patience."""
 
-BLOCKED_RUN_SECONDS = 6.0
-"""A subprocess bound comfortably past the lock wait, so a timeout means a hang."""
+BLOCKED_RUN_SECONDS = 60.0
+"""A subprocess bound generous enough that reaching it can only mean a hang.
+
+Sized against the helper's *startup*, not against the lock wait it brackets.
+Every run pays an interpreter start plus the application settings and database
+import the helper performs before it reaches any lock, and that cost dominates
+a short run and varies by host: measured at 7s warm and 12s cold on one
+developer machine, against a 3s lock bound. A budget picked as "comfortably
+past the lock wait" therefore times out on the importer rather than on a hang,
+which is what a 6s bound did here: deterministically, on every run. Whether the
+wait is bounded is asserted from the helper's own diagnostic below; this only
+has to sit above startup, and below the suite's per-test timeout.
+"""
 
 RETRIED_PROBE_TIMEOUT = 2.0
 """A bound long enough that reaching it can only mean the probe retried.
@@ -579,6 +590,10 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
     assert not result.stdout.strip()
     assert elapsed >= bound
     assert str(lock_path) in result.stderr
+    # What proves the wait was bounded rather than merely long: the refusal
+    # names the bound it derived, so defeating the derivation fails here even on
+    # a host whose startup dwarfs the wait
+    assert f"for over {bound:g}s" in result.stderr
     assert not persisted_key_path(fresh_deployment).exists()
 
 

@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Report whether this kernel or emulator serves clone3, the syscall Nomad spawns tasks with.
+"""Report whether this kernel or emulator serves clone3.
+
+Nomad's ``raw_exec`` issues it to spawn a task it places into a cgroup via the
+unified v2 hierarchy; on any other layout it spawns with plain ``clone`` and
+never asks for it.
 
 Prints exactly one token. ``CLONE3_OK`` means the kernel answered — ``EINVAL``
 for the deliberately undersized argument, which forks nothing. ``CLONE3_ENOSYS``
