@@ -74,7 +74,6 @@ from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     LONG_USERNAME_LENGTH,
     PMM_API_KEY,
-    PMM_ENDPOINT,
     ROUTING_KEY,
     SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
@@ -95,8 +94,18 @@ _SEP_PRE_ENCRYPTION_REVISION = "c9880f0ac1bd"
 _CREDENTIAL_URL = "https://inv-user:inv-secret@inventory.internal:8080/api"
 _CREDENTIAL_PASSWORD = "inv-secret"
 
+#: A ``PMM`` endpoint carrying a password, so the whole-object row holds both
+#: leaf kinds at once: the ``SecretStr`` ``api_key`` one revision encrypts and
+#: the credential URL the next one does. That row is what proves the second
+#: revision's downgrade is its own inverse rather than the broad helper's.
+_PMM_CREDENTIAL_ENDPOINT = "https://pmm-user:pmm-secret@pmm.example.com:8443/"
+
 _SEED_ROWS = [
-    (SETTINGS_TOKEN, "PMM", {"endpoint": PMM_ENDPOINT, "api_key": PMM_API_KEY}),
+    (
+        SETTINGS_TOKEN,
+        "PMM",
+        {"endpoint": _PMM_CREDENTIAL_ENDPOINT, "api_key": PMM_API_KEY},
+    ),
     (SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY),
     (SETTINGS_TOKEN, "LOGGING", "DEBUG"),
     (
@@ -551,7 +560,9 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
 
     stored = _stored_override_values(sync_url)
     assert decrypt(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
-    assert stored[(SETTINGS_TOKEN, "PMM")]["endpoint"] == PMM_ENDPOINT
+    pmm_endpoint = urlparse(stored[(SETTINGS_TOKEN, "PMM")]["endpoint"])
+    assert decrypt(pmm_endpoint.password) == "pmm-secret"
+    assert pmm_endpoint.hostname == "pmm.example.com"
     assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
     provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
     assert decrypt(provider["routing_key"]) == ROUTING_KEY
