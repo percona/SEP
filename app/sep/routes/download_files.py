@@ -16,7 +16,7 @@
 """Define routes for listing and downloading files from tasks."""
 
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -81,6 +81,7 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
         except StopAsyncIteration:
             self.body_iterator = body_iter
         else:
+
             async def primed() -> AsyncGenerator[Any, None]:
                 yield first_chunk
                 async for chunk in body_iter:
