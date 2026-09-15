@@ -5646,13 +5646,16 @@ export interface components {
     };
     /**
      * ATWIncidentExecutionResponse
-     * @description Represent one recorded incident execution, hydrated with live task status.
+     * @description Represent one recorded incident execution with live task status and snippet title.
      *
-     *     The hydrated fields are ``None`` when the Tasks API could not be reached for
-     *     that row; the locally-recorded fields are always present.
+     *     The task-status fields are ``None`` when the Tasks API could not be reached
+     *     for that row; the locally-recorded fields are always present.
      *
      *     :param id: The execution row's UUID primary key.
      *     :param snippet_filename: The executed snippet's filename.
+     *     :param snippet_title: The snippet's current display title, falling back to its
+     *         filename when its metadata title is missing or blank. ``None`` when the
+     *         snippet cannot be resolved. Defaults to ``None``.
      *     :param task_history_id: The tasks-service execution this row references.
      *     :param created_at: When the execution was recorded.
      *     :param task_status: The upstream execution status.
@@ -5691,6 +5694,8 @@ export interface components {
       masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
+      /** Snippet Title */
+      snippet_title?: string | null;
       /** Started At */
       started_at?: string | null;
       /** Task History Id */
