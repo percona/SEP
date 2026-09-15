@@ -277,7 +277,7 @@
 | app/sep/apps/mysql\_backups/payload\_variants.py                                                                             |       13 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/recorder.py                                                                                      |       43 |        0 |       10 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/restore/app.py                                                                                   |        7 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/restore/deps.py                                                                                  |       92 |       15 |       24 |        6 |     80% |69, 82-\>86, 103-114, 153-154, 158, 163, 166-167, 194 |
+| app/sep/apps/mysql\_backups/restore/deps.py                                                                                  |       93 |       10 |       24 |        4 |     88% |122, 130-131, 171-172, 176, 181, 184-185, 212 |
 | app/sep/apps/mysql\_backups/restore/form\_backfill.py                                                                        |       59 |        3 |       20 |        1 |     95% |135-136, 149 |
 | app/sep/apps/mysql\_backups/restore/models.py                                                                                |      201 |        2 |       42 |        3 |     98% |322-\>326, 968, 996 |
 | app/sep/apps/mysql\_backups/restore/spec.py                                                                                  |       35 |        1 |        8 |        1 |     95% |       121 |
@@ -476,7 +476,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29947** | **1715** | **7358** |  **660** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29948** | **1710** | **7358** |  **658** | **93%** |           |
 
 
 ## Setup coverage badge
