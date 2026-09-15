@@ -84,7 +84,17 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 12
+EMBEDDED_WORKER_CONCURRENCY = 4
+"""Prefork children the baked profile pins the side-car's Celery worker to.
+
+The profile's connection-budget arithmetic multiplies each child's engine
+ceilings by this, so an unpinned worker (one child per host CPU) would void it.
+"""
+
+EMBEDDED_POOL_SIZING = {"POOL_SIZE": 3, "MAX_OVERFLOW": 2, "POOL_TIMEOUT": 10.0}
+"""The pool keys the profile writes into its shared database block."""
+
+ALLOWLIST_SIZE = 13
 
 #: The inventory-sync cadence the baked profile provisions.
 EMBEDDED_INVENTORY_SYNC_MINUTES = 15
@@ -270,10 +280,41 @@ def test_profile_seeds_a_pmm_pinned_inventory_sync_schedule():
     assert PMMSyncer.get_name() == settings.INVENTORY_SYNC_SYNCER
 
 
+def test_profile_writes_pool_sizing_into_the_shared_database(
+    embedded_profile_data: dict[str, Any],
+):
+    """Set pool sizing in the profile, not by inheriting class defaults.
+
+    Resolved settings cannot tell the two apart, so the parsed file is read: a
+    later change to ``DatabaseOptions`` defaults must not move the side-car's
+    budget silently.
+
+    :param embedded_profile_data: The parsed baked profile.
+    """
+    shared = embedded_profile_data["default"]["DATABASE"]
+
+    assert {
+        key: shared.get(key) for key in EMBEDDED_POOL_SIZING
+    } == EMBEDDED_POOL_SIZING
+
+
 @pytest.mark.usefixtures("embedded_profile_cwd")
-def test_embedded_profile_enables_beat_pool_pre_ping():
-    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
-    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
+def test_profile_pins_worker_concurrency():
+    """Pin the prefork concurrency the connection budget assumes."""
+    assert Settings().CELERY.worker_concurrency == EMBEDDED_WORKER_CONCURRENCY
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_sets_only_beat_pool_pre_ping():
+    """Leave beat engine sizing unset, since the side-car's beat is not forked.
+
+    One options dict feeds beat's scheduler engine as well as the celery-DB
+    engines, and the scheduler is a ``NullPool`` here: ``max_overflow`` would
+    crash beat at startup.
+    """
+    assert Settings().CELERY.beat_engine_options.model_dump(exclude_none=True) == {
+        "pool_pre_ping": True
+    }
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -349,6 +390,29 @@ def test_all_services_resolve_the_same_database_connection():
         5432,
         "sep",
     )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_every_service_resolves_the_same_pool_sizing():
+    """Assert all three services resolve one pool sizing, whatever supplies it.
+
+    Resolved settings cannot tell a profile value from a class default, so the
+    sibling test reading the raw profile is what pins where the values come
+    from. This one asserts only that the three services agree and that the
+    sizing reaches the engine kwargs.
+    """
+    expected = {key.lower(): value for key, value in EMBEDDED_POOL_SIZING.items()}
+
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        database = settings_cls().DATABASE
+        resolved = {
+            "POOL_SIZE": database.POOL_SIZE,
+            "MAX_OVERFLOW": database.MAX_OVERFLOW,
+            "POOL_TIMEOUT": database.POOL_TIMEOUT,
+        }
+
+        assert resolved == EMBEDDED_POOL_SIZING
+        assert database.pool_engine_kwargs == {"pool_pre_ping": True, **expected}
 
 
 def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):

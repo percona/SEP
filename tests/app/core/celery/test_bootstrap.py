@@ -23,25 +23,18 @@ from typing import Any
 
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from app import BASE_DIR
 from app.core.celery import bootstrap
 from app.core.celery.config import PoolEngineOptions
 from app.core.config import settings
+from tests.app.beat_autogenerate import BEAT_TABLES, table_names
 
-BEAT_TABLES = frozenset(
-    {
-        "celery_periodictask",
-        "celery_periodictaskchanged",
-        "celery_intervalschedule",
-        "celery_crontabschedule",
-        "celery_solarschedule",
-        "celery_clockedschedule",
-    }
-)
-"""Every table ``sqlalchemy_celery_beat`` reads, including the one the bug names."""
+MAKEFILE = BASE_DIR / "Makefile"
+"""The developer entry point this module asserts drives the bootstrap."""
 
 OVERRIDDEN_STORE = "postgresql+psycopg2://beat:{password}@beat-store.example:6543/beat"
 """A beat store deliberately unlike the SEP database, for the override cases."""
@@ -183,19 +176,6 @@ def refuse_then_really_connect(
 
     monkeypatch.setattr(Engine, "connect", connect)
     return lambda: attempts["count"]
-
-
-def table_names(url: str) -> set[str]:
-    """Return the tables present in the store at ``url``.
-
-    :param url: A synchronous store URL.
-    :return: Every table name the store carries.
-    """
-    engine = create_engine(url)
-    try:
-        return set(inspect(engine).get_table_names())
-    finally:
-        engine.dispose()
 
 
 def test_the_bootstrap_creates_the_schedule_tables(sqlite_beat_store: str):
@@ -431,3 +411,47 @@ def test_the_store_password_never_reaches_the_log(
         bootstrap.bootstrap_beat_schema()
 
     assert password not in caplog.text
+
+
+def makefile_recipe(target: str) -> list[str]:
+    """Return the recipe lines ``make`` runs for ``target``.
+
+    A recipe is the run of tab-indented lines below the rule, so a step read
+    this way is read from where ``make`` reads it rather than from anywhere in
+    the file.
+
+    :param target: The target whose recipe to collect.
+    :return: The recipe's lines, leading tabs stripped.
+    """
+    recipe: list[str] = []
+    in_target = False
+    for line in MAKEFILE.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"{target}:"):
+            in_target = True
+        elif in_target:
+            if line.startswith("\t"):
+                recipe.append(line.lstrip("\t"))
+            elif line.strip():
+                break
+    return recipe
+
+
+def test_the_migrate_target_bootstraps_the_beat_tables():
+    """Drive the library's bootstrap from ``make migrate``.
+
+    Nothing outside a container creates the schedule tables, so a developer's
+    first ``--start-celery`` against a freshly migrated store otherwise waits out
+    the API readiness timeout on tables only beat itself would create.
+
+    This asserts the recipe's text; no test runs the target, so a shell-level
+    fault in the line would still reach CI.
+    """
+    recipe = makefile_recipe("migrate")
+    upgrades = [index for index, line in enumerate(recipe) if "alembic --name" in line]
+    bootstraps = [
+        index for index, line in enumerate(recipe) if f"-m {bootstrap.__name__}" in line
+    ]
+
+    assert upgrades, recipe
+    assert len(bootstraps) == 1
+    assert bootstraps[0] > max(upgrades)

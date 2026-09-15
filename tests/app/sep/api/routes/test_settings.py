@@ -1392,10 +1392,15 @@ class TestSepSettingsDelete:
         override_session: AsyncSession,
     ) -> None:
         """Delete an override row, returning 204 and clearing ``has_override``."""
-        api_admin_client.patch(
+        patched = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 11},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        assert await SettingsOverrideManager.list(
+            override_session, setting_class=SEP_SETTINGS_TOKEN
+        )
+
         response = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )
@@ -2675,10 +2680,13 @@ class TestSepSettingsProvenance:
         self, api_admin_client: TestClient
     ) -> None:
         """Clear both fields once the override row is hard-deleted."""
-        api_admin_client.patch(
+        patched = api_admin_client.patch(
             "/api/sep/admin/settings/SEPSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        assert patched.json()[0]["has_override"] is True
+
         deleted = api_admin_client.delete(
             "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
         )

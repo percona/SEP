@@ -264,6 +264,8 @@ export interface paths {
      *     :param session: The SQLAlchemy asynchronous session.
      *     :param task: The task history to persist.
      *     :return: The saved task history record.
+     *     :raises HTTPUnprocessableEntityException: If ``failure_reason`` conflicts
+     *         with a status that carries no operator-facing summary.
      */
     post: operations['tasks_create_task_history_history__post'];
     delete?: never;
@@ -1531,6 +1533,12 @@ export interface components {
      *         outcome, or None when the run did not fail or the reason is unknown. A
      *         historic row predating the column reports None, which means "unknown"
      *         rather than "did not fail".
+     *     :param unreadable_request_leaves: Dotted paths of the ``execution_request``
+     *         leaves stored encrypted that this deployment's key could not read, for
+     *         example ``["meta.args"]``. Each named leaf is serialised as ``null``
+     *         rather than as the stored ciphertext, so a client shows the value as
+     *         withheld instead of rendering an opaque token. Empty on every row that
+     *         read cleanly, which is every row on a healthy deployment.
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -1584,6 +1592,11 @@ export interface components {
       /** @default pending */
       status: components['schemas']['TaskHistoryStatusEnum'];
       task: components['schemas']['TaskResponse'];
+      /**
+       * Unreadable Request Leaves
+       * @default []
+       */
+      unreadable_request_leaves: string[];
       /** Updated At */
       updated_at?: string | null;
     };

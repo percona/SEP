@@ -25,9 +25,7 @@ from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from sidecar import wait_for_api as helper
-from tests.sidecar.conftest import SIDECAR_DIR
-
-CONTAINERFILE = SIDECAR_DIR / "Containerfile.sidecar"
+from tests.sidecar.conftest import CONTAINERFILE
 
 HELPER_INVOCATION = "python3 wait_for_api.py"
 BEAT_INVOCATION = "celery -A app.celery beat"

@@ -51,6 +51,7 @@ function makeEntry(
       meta: {},
       tracking: {},
     } as unknown as TaskHistoryEntry['execution_request'],
+    unreadable_request_leaves: [],
     ...overrides,
   };
 }
