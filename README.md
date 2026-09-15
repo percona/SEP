@@ -113,7 +113,7 @@
 | app/inventory/migrations/versions/2026\_08\_31\_2200-9f2c14d6b8a7\_add\_sync\_health\_columns\_to\_inventory\_.py            |       18 |        0 |        6 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_04\_1842-74b2ad210981\_encrypt\_secret\_setting\_overrides.py                    |       11 |        0 |        0 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_04\_1853-f7f329837258\_add\_settingoverride\_updated\_by.py                      |        9 |        0 |        0 |        0 |    100% |           |
-| app/inventory/models.py                                                                                                      |      150 |        0 |        8 |        0 |    100% |           |
+| app/inventory/models.py                                                                                                      |      152 |        0 |        8 |        0 |    100% |           |
 | app/inventory/routes/collection.py                                                                                           |       23 |        7 |        6 |        1 |     59% |73-74, 76-80 |
 | app/inventory/routes/nodes.py                                                                                                |       74 |        2 |        4 |        0 |     95% |  285, 287 |
 | app/inventory/routes/schemas.py                                                                                              |       42 |        0 |        0 |        0 |    100% |           |
@@ -310,7 +310,7 @@
 | app/sep/apps/topology/topology.py                                                                                            |      173 |        7 |       58 |        8 |     94% |118-119, 122-\>114, 153, 156-157, 226-\>228, 229-\>231, 407, 491-\>501, 505 |
 | app/sep/artifact\_constants.py                                                                                               |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/bundle\_upload/factory.py                                                                                            |       37 |        1 |       10 |        1 |     96% |        71 |
-| app/sep/bundle\_upload/plan.py                                                                                               |      302 |        2 |       90 |        2 |     99% |1058, 1202 |
+| app/sep/bundle\_upload/plan.py                                                                                               |      302 |        2 |       90 |        2 |     99% |1071, 1220 |
 | app/sep/bundle\_upload/resolver.py                                                                                           |       56 |        0 |       14 |        0 |    100% |           |
 | app/sep/bundle\_upload/seam.py                                                                                               |       12 |        0 |        0 |        0 |    100% |           |
 | app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        3 |     99% |565, 567, 980-\>982 |
@@ -474,7 +474,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29610** | **1714** | **7272** |  **658** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29612** | **1714** | **7272** |  **658** | **93%** |           |
 
 
 ## Setup coverage badge
