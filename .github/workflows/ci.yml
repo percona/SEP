@@ -30,7 +30,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+          REPO: percona/SEP-does-not-exist
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           if [ -z "$BASE_REF" ]; then
