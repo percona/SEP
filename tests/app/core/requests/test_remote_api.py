@@ -18,9 +18,11 @@
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
+from aiohttp import encode_basic_auth, web
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
 
@@ -1021,3 +1023,106 @@ class TestJSONShapeNarrowing:
         """Assert HTTP 204's ``None`` is reported rather than returned."""
         with pytest.raises(HTTPBadGatewayException):
             as_json_array(None)
+
+
+@asynccontextmanager
+async def _recording_server() -> AsyncGenerator[tuple[str, list[dict[str, str]]]]:
+    """Serve a catch-all JSON route locally and record each request's headers.
+
+    ``aioresponses`` patches ``ClientSession._request``, which is where aiohttp
+    reconciles URL-embedded credentials against an explicit ``Authorization``
+    header, so only a real socket exercises that reconciliation.
+
+    :yield: The ``host:port`` the server listens on, and the list its handler
+        appends one header mapping to per received request.
+    """
+    received: list[dict[str, str]] = []
+
+    async def handler(request: web.Request) -> web.Response:
+        received.append(dict(request.headers))
+        return web.json_response({"ok": True})
+
+    server = web.Application()
+    server.router.add_route("*", "/{tail:.*}", handler)
+    runner = web.AppRunner(server)
+    await runner.setup()
+    try:
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        _, port = runner.addresses[0][:2]
+        yield f"127.0.0.1:{port}", received
+    finally:
+        await runner.cleanup()
+
+
+class _KeyedRemoteAPI(RemoteAPI):
+    """Stand in for a client that carries a fixed credential in every request.
+
+    ``PMMRemoteAPI`` is the production shape: its ``headers`` property adds an
+    ``Authorization`` header unconditionally, so the header reaches the session
+    defaults rather than a per-call kwarg.
+    """
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the base headers plus a fixed API-key authorization."""
+        return {**super().headers, "Authorization": "Bearer configured-api-key"}
+
+
+class TestEndpointCredentialAndExplicitAuthHeader:
+    """Cover a credential-bearing endpoint alongside an explicit auth header."""
+
+    @pytest.mark.asyncio
+    async def test_a_forwarded_token_wins_over_the_endpoint_credential(self) -> None:
+        """Send the caller's token when the endpoint also embeds a credential."""
+        async with _recording_server() as (netloc, received):
+            api = RemoteAPI(endpoint=f"http://svcuser:svcpass@{netloc}/api/inventory")
+            async with api:
+                with api.auth("forwarded-user-token"):
+                    await api.get("/summary/")
+
+        assert received[0]["Authorization"] == "Bearer forwarded-user-token"
+
+    @pytest.mark.asyncio
+    async def test_a_client_api_key_wins_over_the_endpoint_credential(self) -> None:
+        """Send a subclass's own header when the endpoint also embeds a credential."""
+        async with _recording_server() as (netloc, received):
+            api = _KeyedRemoteAPI(endpoint=f"http://svcuser:svcpass@{netloc}/graph")
+            async with api:
+                await api.get("/api/folders/")
+
+        assert received[0]["Authorization"] == "Bearer configured-api-key"
+
+    @pytest.mark.asyncio
+    async def test_the_endpoint_credential_is_sent_when_no_header_competes(
+        self,
+    ) -> None:
+        """Keep basic auth from the endpoint for a client that sets no header."""
+        async with _recording_server() as (netloc, received):
+            api = RemoteAPI(endpoint=f"http://svcuser:svcpass@{netloc}/api/inventory")
+            async with api:
+                await api.get("/summary/")
+
+        assert received[0]["Authorization"] == encode_basic_auth("svcuser", "svcpass")
+
+    @pytest.mark.asyncio
+    async def test_no_authorization_is_sent_for_a_credential_free_endpoint(
+        self,
+    ) -> None:
+        """Leave the header off entirely when neither source supplies one."""
+        async with _recording_server() as (netloc, received):
+            api = RemoteAPI(endpoint=f"http://{netloc}/api/inventory")
+            async with api:
+                await api.get("/summary/")
+
+        assert "Authorization" not in received[0]
+
+    @pytest.mark.asyncio
+    async def test_a_percent_encoded_endpoint_credential_is_decoded(self) -> None:
+        """Send the decoded credential, as parsing the URL itself would have."""
+        async with _recording_server() as (netloc, received):
+            api = RemoteAPI(endpoint=f"http://svc%2Fuser:p%40ss@{netloc}/api/inventory")
+            async with api:
+                await api.get("/summary/")
+
+        assert received[0]["Authorization"] == encode_basic_auth("svc/user", "p@ss")

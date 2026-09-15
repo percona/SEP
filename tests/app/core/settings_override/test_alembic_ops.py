@@ -27,6 +27,7 @@ from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 from alembic.migration import MigrationContext
@@ -41,11 +42,14 @@ from app.core.alerts.config import AlertSettings
 from app.core.config import BaseYamlSettings, Settings
 from app.core.encryption import decrypt, encrypt, is_encrypted
 from app.core.settings_override.alembic_ops import (
+    downgrade_decrypt_credential_url_override_values,
     downgrade_decrypt_secret_override_values,
+    upgrade_encrypt_credential_url_override_values,
     upgrade_encrypt_secret_override_values,
 )
 from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.registry import (
+    is_credential_url_field,
     is_hot_reloadable,
     is_nested_overridable_parent,
     iter_class_fields,
@@ -64,6 +68,7 @@ from tests.app.core.settings_override.conftest import (
     ROUTING_KEY,
     SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
+    TASKS_SETTINGS_TOKEN,
 )
 
 _SEP_TRACK_CLASSES = (Settings, AlertSettings, SEPSettings)
@@ -89,6 +94,18 @@ _SECRET_ROWS: list[tuple[str, str, Any]] = [
 _NON_SECRET_ROWS: list[tuple[str, str, Any]] = [
     (SETTINGS_TOKEN, "LOGGING", "DEBUG"),
     (SEP_SETTINGS_TOKEN, "SYNC_REFRESH_TIME", 11),
+]
+
+_CREDENTIAL_URL = "https://inv-user:hunter2@inv.example.com:8443/api"
+_CREDENTIAL_PASSWORD = "hunter2"
+_CREDENTIAL_HOST = "inv.example.com"
+_CREDENTIAL_PORT = 8443
+_CREDENTIAL_PATH = "/api"
+
+_CREDENTIAL_URL_ROWS: list[tuple[str, str, Any]] = [
+    (SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
+    (SEP_SETTINGS_TOKEN, "TASKS_ENDPOINT", _CREDENTIAL_URL),
+    (SETTINGS_TOKEN, "PMM__endpoint", _CREDENTIAL_URL),
 ]
 
 
@@ -418,3 +435,245 @@ def test_secret_bearing_overridable_fields_are_pinned() -> None:
         (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
         (TasksSettings, "NOMAD"),
     }
+
+
+def _credential_url_bearing_overridable_fields() -> set[
+    tuple[type[BaseYamlSettings], str]
+]:
+    """Return every ``(settings class, key)`` an override row can hold a credential URL at.
+
+    Mirrors :func:`_secret_bearing_overridable_fields` against the credential-URL
+    predicate instead of ``is_secret``, so the two migration families are held to
+    the same completeness standard.
+
+    :return: The overridable credential-URL-bearing fields of every exposed class.
+    """
+    exposed = [
+        *(settings_cls for _token, settings_cls, _proxy in SEP_ADMIN_SETTINGS_CLASSES),
+        *(entry.settings_cls for entry in collect_app_owned_settings_classes()),
+        InventorySettings,
+        TasksSettings,
+        AnonymizerSettings,
+    ]
+    return {
+        (settings_cls, name)
+        for settings_cls in exposed
+        for name, field_info in settings_cls.model_fields.items()
+        if is_credential_url_field(field_info)
+        and (
+            is_hot_reloadable(settings_cls, name)
+            or is_nested_overridable_parent(settings_cls, name)
+        )
+    }
+
+
+def test_credential_url_migrations_cover_every_credential_url_bearing_class() -> None:
+    """Assert the three credential-URL revisions reach every class that can hold one.
+
+    The sibling of :func:`test_migration_settings_classes_cover_every_secret_bearing_class`,
+    and it exists for the same reason: the class lists are hand-written because a
+    migration cannot import an app package, so nothing on the migration side can
+    notice a class going missing.
+
+    The glob deliberately does not match the earlier family's
+    ``*encrypt_secret_setting_overrides.py`` suffix, which that sibling asserts
+    an exact count over.
+    """
+    revisions = sorted(
+        BASE_DIR.glob(
+            "app/*/migrations/versions/*encrypt_credential_url_setting_overrides.py"
+        )
+    )
+    assert len(revisions) == len(_TRACKS), "one credential-URL revision per track"
+    covered = {
+        settings_cls
+        for revision in revisions
+        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
+    }
+    needs_migrating = {
+        settings_cls
+        for settings_cls, _key in _credential_url_bearing_overridable_fields()
+    }
+
+    assert needs_migrating, "the check is vacuous if no class can hold a credential URL"
+    assert needs_migrating <= covered
+
+
+def test_credential_url_overridable_fields_are_pinned() -> None:
+    """Assert no overridable field turned credential-URL-typed without a data migration.
+
+    ``Settings.CELERY`` is absent by construction rather than by omission: it is
+    a plain field, so ``CeleryOptions.broker_url`` and ``result_backend`` can
+    never produce an override row. The predicate is marker-driven, so the day
+    ``CELERY`` becomes overridable this set changes and the failure here is what
+    forces the accompanying migration.
+    """
+    assert _credential_url_bearing_overridable_fields() == {
+        (Settings, "PMM"),
+        (SEPSettings, "INVENTORY_ENDPOINT"),
+        (SEPSettings, "TASKS_ENDPOINT"),
+        (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
+        (TasksSettings, "NOMAD"),
+    }
+
+
+class TestCredentialUrlOverrideValues:
+    """Cover the credential-URL-scoped pair the new revisions delegate to."""
+
+    def test_round_trips_a_stored_credential_url(self, engine: Engine) -> None:
+        """Encrypt the password, keep the endpoint readable, then restore it exactly."""
+        _seed(engine, _CREDENTIAL_URL_ROWS)
+        before = _stored(engine)
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+
+        stored = _stored(engine)[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
+        parsed = urlparse(stored)
+        assert is_encrypted(parsed.password)
+        assert parsed.hostname == _CREDENTIAL_HOST
+        assert parsed.port == _CREDENTIAL_PORT
+        assert parsed.path == _CREDENTIAL_PATH
+
+        _run(
+            engine,
+            downgrade_decrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+
+        assert _stored(engine) == before
+
+    def test_the_downgrade_leaves_an_earlier_revisions_ciphertext_untouched(
+        self, engine: Engine
+    ) -> None:
+        """Assert the downgrade is its own inverse and not the broad helper's.
+
+        This is the state the earlier secret-encryption revision leaves: a ``PMM``
+        row whose ``api_key`` is ciphertext beside a plaintext endpoint. The broad
+        ``downgrade_decrypt_secret_override_values`` would return that ``api_key``
+        as plaintext while its own revision stays marked applied, so nothing would
+        ever re-encrypt it.
+
+        The ``api_key`` is compared byte-for-byte rather than with
+        ``is_encrypted``: a re-encryption under a fresh Fernet IV satisfies the
+        weaker check while having rewritten exactly the data that must not move.
+        """
+        seeded_api_key = encrypt(PMM_API_KEY)
+        _seed(
+            engine,
+            [
+                (
+                    SETTINGS_TOKEN,
+                    "PMM",
+                    {"endpoint": _CREDENTIAL_URL, "api_key": seeded_api_key},
+                )
+            ],
+        )
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+        _run(
+            engine,
+            downgrade_decrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+
+        row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
+        assert row["endpoint"] == _CREDENTIAL_URL
+        assert row["api_key"] == seeded_api_key
+
+    def test_the_upgrade_leaves_a_plaintext_secret_in_the_clear(
+        self, engine: Engine
+    ) -> None:
+        """Leave a ``SecretStr`` leaf alone: it belongs to the earlier revision."""
+        _seed(
+            engine,
+            [
+                (
+                    SETTINGS_TOKEN,
+                    "PMM",
+                    {"endpoint": _CREDENTIAL_URL, "api_key": PMM_API_KEY},
+                )
+            ],
+        )
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+
+        row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
+        assert is_encrypted(urlparse(row["endpoint"]).password)
+        assert row["api_key"] == PMM_API_KEY
+
+    def test_a_second_upgrade_run_rewrites_nothing(self, engine: Engine) -> None:
+        """Keep one layer of ciphertext when two tracks reach the same shared rows."""
+        _seed(engine, _CREDENTIAL_URL_ROWS)
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+        after_first = _stored(engine)
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _SEP_TRACK_CLASSES,
+        )
+
+        assert _stored(engine) == after_first
+
+    def test_leaves_a_setting_class_this_track_cannot_resolve(
+        self, engine: Engine
+    ) -> None:
+        """Leave a row belonging to another service's chain on a shared database."""
+        _seed(engine, _CREDENTIAL_URL_ROWS)
+        before = _stored(engine)
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _TASKS_TRACK_CLASSES,
+        )
+
+        assert _stored(engine) == before
+
+    def test_the_tasks_track_rewrites_its_nomad_endpoint(self, engine: Engine) -> None:
+        """Rewrite ``NOMAD__endpoint``, which is why the tasks revision is not a no-op.
+
+        Its secret-encryption sibling rewrites nothing on a Tasks-only database;
+        copying that claim forward would be false.
+        """
+        _seed(engine, [(TASKS_SETTINGS_TOKEN, "NOMAD__endpoint", _CREDENTIAL_URL)])
+
+        _run(
+            engine,
+            upgrade_encrypt_credential_url_override_values,
+            _TASKS_TRACK_CLASSES,
+        )
+
+        stored = _stored(engine)[(TASKS_SETTINGS_TOKEN, "NOMAD__endpoint")]
+        assert is_encrypted(urlparse(stored).password)
+        assert decrypt(urlparse(stored).password) == "hunter2"
+
+    def test_missing_table_is_a_no_op(self) -> None:
+        """Return without touching anything when another track already dropped the table."""
+        engine = create_engine("sqlite://", json_serializer=json_serializer)
+        try:
+            _run(
+                engine,
+                upgrade_encrypt_credential_url_override_values,
+                _SEP_TRACK_CLASSES,
+            )
+
+            assert not inspect(engine).has_table("settingoverride")
+        finally:
+            engine.dispose()

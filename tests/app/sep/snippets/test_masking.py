@@ -465,6 +465,23 @@ class TestMaskCredentialUrls:
 
         assert mask_snippet_args(args, model) == "--mongodb-uri mongodb://host:27017"
 
+    def test_unparseable_uri_is_masked_whole_rather_than_recorded_in_the_clear(self):
+        """Replace a URI the parser rejects outright instead of passing it through.
+
+        A malformed bracketed IPv6 literal makes ``urlparse`` raise, so no
+        password segment can be located to mask. Recording the token as-is would
+        put the real credential in the stored arguments, so the whole value is
+        replaced instead — the one direction that is safe when the parse fails.
+        """
+        model = _model([{"name": "mongodb-uri", "type": "str", "required": True}])
+        args = _args(model, **{"mongodb-uri": "mongodb://u:p3cret@[bad:ipv6/db"})
+
+        masked = mask_snippet_args(args, model)
+
+        assert masked is not None
+        assert "p3cret" not in masked
+        assert SENSITIVE_ARG_MASK in masked
+
     def test_token_with_an_at_sign_but_no_scheme_is_left_unchanged(self):
         """Skip an ordinary ``user@host`` token -- the pre-filter needs ``://`` too."""
         model = _model([{"name": "login", "type": "str", "required": True}])

@@ -396,8 +396,11 @@ export interface paths {
      * @description Push selected alert templates to PMM as rules.
      *
      *     Mirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.
-     *     Preserve the conflict-retry path: on ``create_rule`` collision call
-     *     :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
+     *     When the template is already present in PMM, report ``success`` if
+     *     ``create_rule`` recreates a missing rule, ``skipped`` on a rule-title
+     *     collision, and ``error`` for any other failure. When the template is not
+     *     present, preserve the conflict-retry path: on ``create_rule`` collision
+     *     call :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
      *     retry once.
      *
      *     :param payload: Push request body listing template names to push.
