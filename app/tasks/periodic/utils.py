@@ -29,15 +29,27 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 
-def _resolve_task_name(periodic_task: PeriodicTask) -> str | None:
+def resolve_schedule_task_name(periodic_task: PeriodicTask) -> str | None:
     """Return the SEP task name a beat-store schedule runs, or ``None``.
+
+    Decode the row's ``args``/``kwargs`` and hand them to
+    :func:`~app.tasks.periodic.models.resolve_task_name`. A row whose arguments
+    are not JSON of the expected shape, or that names no task, resolves to
+    ``None`` rather than raising, so one unreadable row cannot fail a caller
+    iterating the whole beat store.
 
     :param periodic_task: The beat-store row to inspect.
     :return: The resolved SEP task name, or ``None`` when it cannot be derived.
     """
-    args = json.loads(periodic_task.args) if periodic_task.args else None
-    kwargs = json.loads(periodic_task.kwargs) if periodic_task.kwargs else None
-    return resolve_task_name(args, kwargs)
+    try:
+        args = json.loads(periodic_task.args) if periodic_task.args else None
+        kwargs = json.loads(periodic_task.kwargs) if periodic_task.kwargs else None
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(args, list | None) or not isinstance(kwargs, dict | None):
+        return None
+    name = resolve_task_name(args, kwargs)
+    return name if isinstance(name, str) and name else None
 
 
 async def attach_last_run_status(
@@ -72,7 +84,7 @@ async def attach_last_run_status(
     ran = [
         (task, name, make_datetime_utc(task.last_run_at).replace(microsecond=0))
         for task in periodic_tasks
-        if (name := _resolve_task_name(task)) and task.last_run_at is not None
+        if (name := resolve_schedule_task_name(task)) and task.last_run_at is not None
     ]
     thresholds: dict[str, datetime] = {}
     for _, name, run_at in ran:
