@@ -1644,25 +1644,35 @@ class AppEntitySchema(SchemaBaseModel):
 
 
 class TaskStatusDescriptor(SchemaBaseModel):
-    """Declare one task-status value and whether it ends a run.
+    """Declare one task-status value and its run-completion predicates.
 
     :param value: The status as it appears on a task-history payload.
     :param terminal: Whether a run in this status will not transition again, so
         a client polling for completion can stop re-reading on it.
+    :param output_available: Whether the run reached an observed outcome, so its
+        output may be requested and may legitimately be empty, as for ``stale``
+        and ``unlaunchable``. ``lost`` is excluded because its outcome was never
+        observed.
     """
 
     value: TaskHistoryStatusEnum
     terminal: bool
+    output_available: bool
 
 
 def _task_status_descriptors() -> list[TaskStatusDescriptor]:
     """Return the task-status vocabulary in enum declaration order.
 
     :return: One descriptor per :class:`TaskHistoryStatusEnum` member, each
-        classified by :meth:`TaskHistoryStatusEnum.is_terminal`.
+        classified by :meth:`TaskHistoryStatusEnum.is_terminal` and
+        :meth:`TaskHistoryStatusEnum.is_finished`.
     """
     return [
-        TaskStatusDescriptor(value=status, terminal=status.is_terminal())
+        TaskStatusDescriptor(
+            value=status,
+            terminal=status.is_terminal(),
+            output_available=status.is_finished(),
+        )
         for status in TaskHistoryStatusEnum
     ]
 

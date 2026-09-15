@@ -11007,8 +11007,12 @@
       },
       "framework__TaskStatusDescriptor": {
         "additionalProperties": false,
-        "description": "Declare one task-status value and whether it ends a run.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.",
+        "description": "Declare one task-status value and its run-completion predicates.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.\n:param output_available: Whether the run reached an observed outcome, so its\n    output may be requested and may legitimately be empty, as for ``stale``\n    and ``unlaunchable``. ``lost`` is excluded because its outcome was never\n    observed.",
         "properties": {
+          "output_available": {
+            "title": "Output Available",
+            "type": "boolean"
+          },
           "terminal": {
             "title": "Terminal",
             "type": "boolean"
@@ -11019,7 +11023,8 @@
         },
         "required": [
           "value",
-          "terminal"
+          "terminal",
+          "output_available"
         ],
         "title": "TaskStatusDescriptor",
         "type": "object"

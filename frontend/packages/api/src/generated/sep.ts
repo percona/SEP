@@ -8923,13 +8923,19 @@ export interface components {
     };
     /**
      * TaskStatusDescriptor
-     * @description Declare one task-status value and whether it ends a run.
+     * @description Declare one task-status value and its run-completion predicates.
      *
      *     :param value: The status as it appears on a task-history payload.
      *     :param terminal: Whether a run in this status will not transition again, so
      *         a client polling for completion can stop re-reading on it.
+     *     :param output_available: Whether the run reached an observed outcome, so its
+     *         output may be requested and may legitimately be empty, as for ``stale``
+     *         and ``unlaunchable``. ``lost`` is excluded because its outcome was never
+     *         observed.
      */
     framework__TaskStatusDescriptor: {
+      /** Output Available */
+      output_available: boolean;
       /** Terminal */
       terminal: boolean;
       value: components['schemas']['TaskHistoryStatusEnum'];

@@ -132,17 +132,29 @@ class TestSchemaEndpoint:
         """Declare every status value and whether it ends a run."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
         assert body["task_statuses"] == [
-            {"value": status_value.value, "terminal": status_value.is_terminal()}
+            {
+                "value": status_value.value,
+                "terminal": status_value.is_terminal(),
+                "output_available": status_value.is_finished(),
+            }
             for status_value in TaskHistoryStatusEnum
         ]
 
-    def test_schema_marks_lost_as_terminal(self, test_client):
-        """Mark a lost run terminal, so a client polling for completion stops on it."""
+    def test_schema_distinguishes_terminal_from_output_available(self, test_client):
+        """Publish both completion predicates for lost and successful runs."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
-        assert {
+        statuses = {entry["value"]: entry for entry in body["task_statuses"]}
+
+        assert statuses[TaskHistoryStatusEnum.LOST.value] == {
             "value": TaskHistoryStatusEnum.LOST.value,
             "terminal": True,
-        } in body["task_statuses"]
+            "output_available": False,
+        }
+        assert statuses[TaskHistoryStatusEnum.SUCCESS.value] == {
+            "value": TaskHistoryStatusEnum.SUCCESS.value,
+            "terminal": True,
+            "output_available": True,
+        }
 
     def test_schema_includes_backup_type_field(self, test_client):
         """The mode-discriminator field is present."""
