@@ -212,6 +212,22 @@ class TestRestoreMongoAppSchemaEndpoint:
 
         assert response.json()["name"] == "backup_mongo_restores"
 
+    def test_schema_capabilities(self, test_client):
+        """Serve ``scheduling: false`` so every schedule control stays hidden.
+
+        A scheduled restore would re-run a destructive restore of one fixed
+        ``backup_source`` on every tick with nobody present to confirm the target.
+        """
+        response = test_client.get(f"{API_BASE}/schema")
+
+        assert response.json()["capabilities"] == {
+            "chaining": True,
+            "alert_on_fail": False,
+            "scheduling": False,
+            "stats": False,
+            "pii_anonymization": False,
+        }
+
     def test_schema_collapses_restore_options_and_defaults_task_name(self, test_client):
         """Collapse Restore Options by default and pre-fill task_name."""
         response = test_client.get(f"{API_BASE}/schema")
