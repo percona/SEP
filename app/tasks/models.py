@@ -904,10 +904,18 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     def anonymized_entities(self) -> set[PIIEntity]:
         """Return the set of anonymized PII entities.
 
+        When :attr:`anonymize_mask` is ``None``, fall back to the associated
+        task's :attr:`Task.anonymized_entities` (which itself falls back to the
+        owner's configured defaults when the task has no mask).
+
         :return: A set of anonymized PIIEntity.
         :rtype: set[PIIEntity]
         """
-        return PIIEntity.decode_selection(self.anonymize_mask)
+        return (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else self.task.anonymized_entities
+        )
 
     def set_failure_reason(self, reason: str | None) -> None:
         """Normalize and store an operator-facing reason for this run's outcome.
