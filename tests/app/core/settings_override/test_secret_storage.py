@@ -627,32 +627,45 @@ class TestEncryptCredentialUrlLeaves:
         """Pass a leaf that is neither text nor a URL object through untouched."""
         assert encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, leaf) == leaf
 
-    @pytest.mark.parametrize(
-        ("url", "expected_reason"),
-        [
-            ("https://user:pw@[bad:ipv6/", "could not be parsed"),
-            ("https://inv.example.com:8443/api", "carries no userinfo password"),
-        ],
-        ids=["unparseable", "no-password"],
-    )
     def test_naming_the_key_it_skipped_and_never_the_value(
         self,
-        url: str,
-        expected_reason: str,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Log which override key was left alone and why, without echoing the URL.
+        """Log which override key was left unparsed, without echoing the URL.
 
         Asserted rather than left implicit: a test that only checks the leaf came
         back unchanged passes identically against a silent implementation, and a
-        silently skipped row is the shape an operator cannot diagnose.
+        silently skipped row is the shape an operator cannot diagnose. The URL
+        carries a password so that the no-echo assertion has something to catch.
         """
+        url = "https://user:pw@[bad:ipv6/"
+
         with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
             encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
 
-        assert expected_reason in caplog.text
+        assert "could not be parsed" in caplog.text
         assert f"SEPSettings.{INVENTORY_ENDPOINT_KEY}" in caplog.text
         assert url not in caplog.text
+
+    def test_a_credential_free_endpoint_is_skipped_silently(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Say nothing about an endpoint that simply carries no credential.
+
+        This runs per row on every snapshot refresh, so a line here would be
+        steady-state noise rather than a diagnosable event.
+        """
+        url = "https://inv.example.com:8443/api"
+
+        with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
+            assert (
+                encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url) == url
+            )
+
+        assert [
+            record for record in caplog.records if record.name == SECRET_STORAGE_LOGGER
+        ] == []
 
     def test_round_trips_a_percent_encoded_password(self) -> None:
         """Encrypt and restore a password carrying ``@`` and ``:`` byte-for-byte.

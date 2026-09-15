@@ -647,9 +647,8 @@ def credential_url_password(url: str) -> str | None:
     two mean opposite things to a caller that masks: ``None`` is "there is no
     credential here", while the exception is "there may be one and I cannot
     find it". Callers choose their own posture —
-    :func:`~app.core.settings_override.secret_storage._transform_credential_url`
-    leaves the leaf alone, while ``masking._redact_credential_url_token``
-    replaces the whole token.
+    ``secret_storage._transform_credential_url`` leaves the leaf alone, while
+    ``masking._redact_credential_url_token`` replaces the whole token.
 
     :param url: The URL string to inspect.
     :return: The raw (still percent-encoded) password segment, or ``None`` when

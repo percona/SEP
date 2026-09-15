@@ -550,6 +550,11 @@ def _transform_credential_url(
     opposite — which is why :func:`~app.core.utils.fields.credential_url_password`
     raises and each caller decides, rather than answering ``None`` for both.
 
+    Only that skip is logged. An endpoint carrying no credential is the ordinary
+    shape, and this runs per row on every snapshot refresh, so announcing it
+    would be steady-state output with nothing to act on, while a URL that cannot
+    be parsed is an anomaly worth reading.
+
     :param value: The stored value at a credential-URL position.
     :param transform: The password transformation to apply.
     :param context: The ``<class>.<key>`` this leaf belongs to, for the log line.
@@ -567,11 +572,6 @@ def _transform_credential_url(
         )
         return value
     if password is None:
-        logger.debug(
-            "Left the credential-URL leaf of %s unchanged: it carries no "
-            "userinfo password.",
-            context,
-        )
         return value
     return map_credential_url_password(text, transform)
 

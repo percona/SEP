@@ -485,7 +485,7 @@ def annotated_type(field_info: FieldInfo) -> Any:
     ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
     ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
     in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
-    would accept values the original settings model rejects -- e.g. a negative
+    would accept values the original settings model rejects — e.g. a negative
     integer override for a ``PositiveInt`` field would silently load.
 
     Public for a second reason, and it is the load-bearing one for the at-rest
@@ -1345,10 +1345,24 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
     annotation drops every marker one level down, which is invisible to a
     predicate keyed on a type and fatal to one keyed on metadata.
 
+    Queueing those aliases is also why ``keep_alive`` exists. The cycle guard
+    keys on :func:`id`, which only identifies an object for as long as that
+    object lives, and :func:`annotated_type` returns a value ``Annotated``
+    built on demand rather than an attribute of anything. ``typing`` memoises
+    that construction in a 128-entry LRU whose overflow is evicted, and skips
+    it altogether for metadata that does not hash, so a walk wide enough to
+    pass either limit frees an alias whose address a later one can reuse — and
+    a recycled address already in ``seen`` would silently prune a subtree the
+    walk never looked at. Holding every visited object for the duration keeps
+    the addresses distinct. The leaves this guards reach the at-rest
+    encryption predicates, where a pruned subtree means a credential stored in
+    the clear, so the walk must not depend on when a cache evicts.
+
     :param annotation: The type annotation to walk.
     :return: An iterator over the referenced type arguments.
     """
     seen = set()
+    keep_alive: list[Any] = []
     stack = [annotation]
     while stack:
         current = stack.pop()
@@ -1358,6 +1372,7 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         if ident in seen:
             continue
         seen.add(ident)
+        keep_alive.append(current)
         yield current
         origin = typing.get_origin(current)
         if origin is not None:
@@ -1452,7 +1467,11 @@ def unwrap_secrets_for_storage(value: Any) -> Any:
 
 
 def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:
-    """Return whether ``metadata`` carries the credential URL JSON serializer."""
+    """Return whether ``metadata`` carries the credential URL JSON serializer.
+
+    :param metadata: The ``__metadata__`` tuple of an ``Annotated`` type.
+    :return: ``True`` when the credential-URL serializer is among the markers.
+    """
     return any(
         isinstance(item, WrapSerializer) and item.func is _credential_url_serializer
         for item in metadata
@@ -1482,8 +1501,8 @@ def annotation_is_credential_url(annotation: Any) -> bool:
 
     Flattens unions and optionals but deliberately **not** ``Annotated``: the
     marker lives in ``__metadata__``, so stripping the wrapper first — which
-    :func:`~app.core.settings_override.secret_storage._positional_args` does —
-    discards the very thing being tested.
+    ``secret_storage._positional_args`` does — discards the very thing being
+    tested.
 
     :param annotation: The type annotation to inspect.
     :return: ``True`` when a value at this position is a credential-bearing URL.
@@ -1525,6 +1544,8 @@ def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
         return None
     if isinstance(current, Mapping):
         return current.get(name)
+    # call-shape-dup-ok: this function is the wrapper DUP-5 asks for; the other
+    # occurrences are pre-existing call sites this change does not touch.
     return getattr(current, name, None)
 
 
@@ -2308,15 +2329,13 @@ def _resolve_default(field_info: FieldInfo) -> Any:
     Pydantic sets ``field_info.default`` to :data:`PydanticUndefined` when a
     field is declared with ``Field(default_factory=...)``. Returning that
     sentinel through the metadata layer makes ``dump_field_value`` emit
-    ``None`` -- misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
+    ``None`` — misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
     real default is the factory's return value (e.g. ``[]``). Invoke the
     factory eagerly so the API surfaces the actual default.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :return: The resolved default value, or :data:`PydanticUndefined` when
         neither ``default`` nor ``default_factory`` is declared.
-    :rtype: Any
     """
     if field_info.default is not PydanticUndefined:
         return field_info.default
