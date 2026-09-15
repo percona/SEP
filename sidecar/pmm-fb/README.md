@@ -330,9 +330,16 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   `unlaunchable`; it is no substitute for `sep-mysql`.
 
   **What the released client does and does not stand in for.** Its aarch64
-  `tools/nomad` is the feature build's own Nomad version, and the build asserts
-  that (`NOMAD_VERSION` in `compose.yaml`, edited together with `PMM_FB_TAG` on
-  a repin; a client whose Nomad disagrees fails to build). Its `pmm-agent` is
+  `tools/nomad` is meant to be the feature build's own Nomad version, and three
+  distinct things bear on that. The build compares this client's Nomad to
+  `NOMAD_VERSION` — but a released client's Nomad cannot move with `PMM_FB_TAG`,
+  so here that comparison only re-confirms a pairing nobody repinned. What
+  refuses a stale pin locally is `NOMAD_VERSION_FB_TAG`, naming the feature
+  build `NOMAD_VERSION` was read from: a build pinning a different `PMM_FB_TAG`
+  is turned away. What establishes that the version is right in the first place
+  is CI, which reads the real feature-build client on an amd64 runner
+  (`.github/workflows/pmm-fb-nomad-pin.yaml`) for as long as that build is still
+  published — once it is collected the job warns and skips. Its `pmm-agent` is
   the released one, not the feature build's, so a change on the client side of
   the feature build — `pmm-agent`, the Nomad client configuration — is **not**
   exercised on an arm64 engine. Validate those on amd64.

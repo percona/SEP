@@ -17,9 +17,11 @@ if [[ ${DEBUG:-0} == "1" ]]; then
     set -o xtrace
 fi
 
-# The released multi-arch client whose aarch64 tools/nomad is the feature
-# build's Nomad version; compose passes NOMAD_VERSION to the build, which
-# refuses a client that disagrees.
+# The released multi-arch client whose aarch64 tools/nomad is meant to be the
+# feature build's Nomad version. The build's own comparison cannot establish
+# that here — this client's Nomad does not move with PMM_FB_TAG — so
+# NOMAD_VERSION_FB_TAG records which feature build the version came from and
+# refuses a build pinning another, while CI reads the real client on amd64.
 ARM64_CLIENT_IMAGE=docker.io/percona/pmm-client:3.9.1
 
 error() { printf '✗ %s\n' "$*" >&2; }
@@ -242,7 +244,7 @@ configure_executor_platform() {
         linux/arm64)
             set_slot SEP_MYSQL_PLATFORM linux/arm64
             [[ -n ${SEP_MYSQL_PMM_CLIENT_IMAGE:-} ]] || set_slot SEP_MYSQL_PMM_CLIENT_IMAGE "${ARM64_CLIENT_IMAGE}"
-            info "sep-mysql: native arm64 from ${SEP_MYSQL_PMM_CLIENT_IMAGE:-${ARM64_CLIENT_IMAGE}} (the build asserts its Nomad matches the feature build's)"
+            info "sep-mysql: native arm64 from ${SEP_MYSQL_PMM_CLIENT_IMAGE:-${ARM64_CLIENT_IMAGE}} (the build refuses a NOMAD_VERSION whose feature build is not this PMM_FB_TAG)"
             ;;
         *)
             error "SEP_MYSQL_PLATFORM=${platform}: expected linux/arm64 or linux/amd64"

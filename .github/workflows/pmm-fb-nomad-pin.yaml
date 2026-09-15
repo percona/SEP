@@ -1,0 +1,131 @@
+# Reads the feature-build client's own tools/nomad and holds the committed
+# NOMAD_VERSION to it. The arm64 build cannot: reaching that client there means
+# pulling an amd64 image onto the host the native-arm64 path exists to keep
+# clear of emulation (sidecar/pmm-fb/README.md § Caveats). On a native amd64
+# runner the same read costs one pull, so the pin is verified here instead of
+# merely attested by the build-time witness.
+
+name: PMM FB Nomad pin
+
+on:
+  pull_request:
+    branches:
+      - pmm
+    paths:
+      - 'sidecar/pmm-fb/**'
+      # The reader the gate depends on, and the gate itself: a PR editing only
+      # one of those matches no other filter and would merge unverified.
+      - 'scripts/check_pmm_fb_pins.py'
+      - '.github/workflows/pmm-fb-nomad-pin.yaml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pmm-fb-nomad-pin-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  nomad-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # The base revision is needed to tell a pin this PR introduced from
+          # one it inherited; the skip below is only ever legitimate for the
+          # second.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@28f2168f4d98ee0445e3c6321f6e6616c83dd5ec # v6.2.0
+        with:
+          python-version: "3.11"
+
+      # The runner's system interpreter carries PyYAML only incidentally, and a
+      # reader that cannot parse compose.yaml would fail this job for a reason
+      # unrelated to the pins.
+      - name: Install the pin reader's dependency
+        run: pip install pyyaml==6.0.2
+
+      - name: Check the committed pins name one feature build
+        run: python3 scripts/check_pmm_fb_pins.py
+
+      - name: Resolve the committed pins
+        id: pins
+        run: |
+          tag=$(python3 scripts/check_pmm_fb_pins.py --print PMM_FB_TAG)
+          nomad=$(python3 scripts/check_pmm_fb_pins.py --print NOMAD_VERSION)
+          # An empty value builds a tagless image reference, whose pull fails
+          # the way a collected tag does and would take the warn-and-skip path
+          # below — the job would report success having verified nothing, which
+          # is the failure mode this gate exists to remove.
+          if [ -z "${tag}" ] || [ -z "${nomad}" ]; then
+              echo "::error::could not resolve the committed pins (PMM_FB_TAG='${tag}', NOMAD_VERSION='${nomad}')"
+              exit 1
+          fi
+          # What the base branch already carried, or empty when this PR creates
+          # the file. Both halves matter: the skip below is legitimate only for
+          # a pin this PR left entirely alone, and a PR can hold PMM_FB_TAG
+          # still while moving NOMAD_VERSION, which nothing else verifies.
+          base_tag=""
+          base_nomad=""
+          if git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF}" \
+              && git show "FETCH_HEAD:sidecar/pmm-fb/compose.yaml" > "${RUNNER_TEMP}/base-compose.yaml" 2>/dev/null; then
+              base_tag=$(python3 scripts/check_pmm_fb_pins.py --print PMM_FB_TAG "${RUNNER_TEMP}/base-compose.yaml" || true)
+              base_nomad=$(python3 scripts/check_pmm_fb_pins.py --print NOMAD_VERSION "${RUNNER_TEMP}/base-compose.yaml" || true)
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "nomad=${nomad}" >> "$GITHUB_OUTPUT"
+          echo "base_tag=${base_tag}" >> "$GITHUB_OUTPUT"
+          echo "base_nomad=${base_nomad}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify NOMAD_VERSION against the feature-build client
+        env:
+          TAG: ${{ steps.pins.outputs.tag }}
+          NOMAD: ${{ steps.pins.outputs.nomad }}
+          BASE_TAG: ${{ steps.pins.outputs.base_tag }}
+          BASE_NOMAD: ${{ steps.pins.outputs.base_nomad }}
+        run: |
+          IMG="docker.io/perconalab/pmm-client-fb:${TAG}"
+          # One pull, not a manifest probe plus a pull: both spend an anonymous
+          # Docker Hub request, and running out of those is itself a way this
+          # job stops verifying.
+          if ! pull=$(docker pull --quiet "${IMG}" 2>&1); then
+              # Only a tag that is genuinely gone may skip. The harness pins
+              # throwaway artifacts deliberately, so failing red on a collected
+              # tag would block every later PR touching these paths behind an
+              # unrelated repin. Every other failure — rate limiting, a registry
+              # outage, an auth change — must go red: a green check that
+              # verified nothing is the exact defect this job exists to catch.
+              case "${pull}" in
+                  *"manifest unknown"*|*MANIFEST_UNKNOWN*|*"manifest for "*"not found"*)
+                      # Only for a pin this PR inherited whole. A tag the PR
+                      # introduces and cannot pull is a typo or an unpublished
+                      # build, and the agreement check cannot catch it: setting
+                      # all three slots to the same nonexistent value satisfies
+                      # it. A NOMAD_VERSION the PR moved is equally unverified
+                      # even under an untouched tag, so both must be unchanged
+                      # before an unreachable image is allowed to pass.
+                      if [ -n "${BASE_TAG}" ] && [ "${TAG}" = "${BASE_TAG}" ] \
+                          && [ "${NOMAD}" = "${BASE_NOMAD}" ]; then
+                          echo "::warning::${IMG} is no longer published, so NOMAD_VERSION=${NOMAD} is unverified here: ${pull}"
+                          exit 0
+                      fi
+                      echo "::error::${IMG} is not published, and this PR changed the pin it would have to verify (PMM_FB_TAG=${TAG}, NOMAD_VERSION=${NOMAD}): ${pull}"
+                      exit 1
+                      ;;
+              esac
+              echo "::error::could not reach ${IMG}, so NOMAD_VERSION=${NOMAD} was not verified: ${pull}"
+              exit 1
+          fi
+          if ! raw=$(docker run --rm --entrypoint /usr/local/percona/pmm/tools/nomad "${IMG}" version 2>&1); then
+              echo "::error::could not read tools/nomad from ${IMG}: ${raw}"
+              exit 1
+          fi
+          version=$(printf '%s\n' "${raw}" | head -1)
+          if [ "${version}" != "Nomad v${NOMAD}" ]; then
+              echo "::error::${IMG} ships '${version}', but compose.yaml pins NOMAD_VERSION=${NOMAD}; update NOMAD_VERSION and NOMAD_VERSION_FB_TAG together"
+              exit 1
+          fi
+          echo "${IMG} ships ${version}, matching the committed NOMAD_VERSION"
