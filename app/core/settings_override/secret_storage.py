@@ -320,8 +320,8 @@ class _LeafKind(Enum):
     database dump.
     """
 
-    PYDANTIC_SECRET = "pydantic_secret"  # noqa: S105 # nosec B105
-    CREDENTIAL_URL = "credential_url"
+    PYDANTIC_SECRET = 1
+    CREDENTIAL_URL = 2
 
 
 #: Every leaf kind, which the read and write paths must both cover.
@@ -521,9 +521,7 @@ def _credential_url_text(value: Any) -> str | None:
     :param value: The stored value at a credential-URL position.
     :return: The URL as text, or ``None`` when the leaf is neither.
     """
-    if isinstance(value, str):
-        return value
-    if isinstance(value, Url):
+    if isinstance(value, str | Url):
         return str(value)
     return None
 

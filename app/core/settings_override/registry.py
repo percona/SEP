@@ -1544,8 +1544,6 @@ def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
         return None
     if isinstance(current, Mapping):
         return current.get(name)
-    # call-shape-dup-ok: this function is the wrapper DUP-5 asks for; the other
-    # occurrences are pre-existing call sites this change does not touch.
     return getattr(current, name, None)
 
 
