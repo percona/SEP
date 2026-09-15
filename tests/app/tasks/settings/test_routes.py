@@ -812,7 +812,7 @@ class TestTasksSettingsCredentialUrlAtRest:
     The Tasks service has its own settings router, so SEP-side coverage proves
     nothing about this wiring. ``NomadExecutor.endpoint`` is also the inherited
     non-``Optional`` case whose ``Annotated`` Pydantic hoists onto ``FieldInfo``
-    and which the route coerces to a :class:`pydantic_core.Url` -- the two
+    and which the route coerces to a :class:`pydantic_core.Url` — the two
     properties that make a classifier reading ``.annotation``, or a leaf branch
     guarded on ``isinstance(value, str)``, silently skip it.
     """
@@ -851,7 +851,7 @@ class TestTasksSettingsCredentialUrlAtRest:
     async def test_the_effective_endpoint_still_resolves_to_the_real_credential(
         self, admin_test_client: TestClient
     ) -> None:
-        """Decrypt on the read path so the executor is handed a usable URL.
+        """Restore the password on the read path so the executor gets a usable URL.
 
         Encrypting at rest is only safe if the snapshot the executor reads is
         the plaintext one; a decrypt that failed here would leave the rebuilt

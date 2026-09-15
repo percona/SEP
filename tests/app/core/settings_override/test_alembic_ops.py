@@ -518,7 +518,7 @@ def test_credential_url_overridable_fields_are_pinned() -> None:
 
 
 class TestCredentialUrlOverrideValues:
-    """Cover the credential-URL-scoped pair the SEP-2014 revisions delegate to."""
+    """Cover the credential-URL-scoped pair the new revisions delegate to."""
 
     def test_round_trips_a_stored_credential_url(self, engine: Engine) -> None:
         """Encrypt the password, keep the endpoint readable, then restore it exactly."""

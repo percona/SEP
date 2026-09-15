@@ -646,7 +646,7 @@ def credential_url_password(url: str) -> str | None:
     A URL this cannot parse raises rather than answering ``None``, because the
     two mean opposite things to a caller that masks: ``None`` is "there is no
     credential here", while the exception is "there may be one and I cannot
-    find it". Callers choose their own posture --
+    find it". Callers choose their own posture —
     :func:`~app.core.settings_override.secret_storage._transform_credential_url`
     leaves the leaf alone, while ``masking._redact_credential_url_token``
     replaces the whole token.
@@ -665,7 +665,7 @@ def map_credential_url_password(url: str, transform: Callable[[str], str]) -> st
 
     Scheme, username, host, port, path, query and fragment are preserved
     byte-for-byte, and the password is handed over exactly as it appears in the
-    URL -- still percent-encoded -- so an encrypt/decrypt round trip reproduces
+    URL — still percent-encoded — so an encrypt/decrypt round trip reproduces
     the original string.
 
     :param url: The URL string to rewrite.

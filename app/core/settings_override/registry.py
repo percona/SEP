@@ -538,12 +538,9 @@ def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
     the ``annotated_type`` reassembly.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded value to validate and coerce.
-    :type raw: Any
     :return: The validated Python value matching the field's annotation plus
         its preserved constraint metadata.
-    :rtype: Any
     :raises ValidationError: If ``raw`` cannot be coerced or violates a
         preserved constraint. Callers in the API layer map this to HTTP 422.
     """
@@ -1484,8 +1481,8 @@ def annotation_is_credential_url(annotation: Any) -> bool:
     """Return whether the value at this JSON position is itself a credential URL.
 
     Flattens unions and optionals but deliberately **not** ``Annotated``: the
-    marker lives in ``__metadata__``, so stripping the wrapper first -- which
-    :func:`~app.core.settings_override.secret_storage._positional_args` does --
+    marker lives in ``__metadata__``, so stripping the wrapper first — which
+    :func:`~app.core.settings_override.secret_storage._positional_args` does —
     discards the very thing being tested.
 
     :param annotation: The type annotation to inspect.
@@ -1518,7 +1515,12 @@ def is_credential_url_field(field_info: FieldInfo) -> bool:
 
 
 def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
-    """Read ``name`` from a live model or a materializer fingerprint mapping."""
+    """Read ``name`` from a live model or a materializer fingerprint mapping.
+
+    :param current: The stored value, a model instance or a mapping.
+    :param name: The field name to read.
+    :return: The attribute or mapping entry, or ``None`` when either is absent.
+    """
     if current is None:
         return None
     if isinstance(current, Mapping):
@@ -1537,7 +1539,7 @@ def preserve_credential_urls_in_model_payload(
     subtree one :func:`is_credential_url_field` asks. A model-typed child whose
     own leaf is a credential URL answers the subtree question ``True``, would
     take the scalar branch below, fail its ``isinstance(result[name], str)``
-    guard and ``continue`` -- skipping the nested recursion that child needs.
+    guard and ``continue`` — skipping the nested recursion that child needs.
 
     :param model_cls: The model whose fields ``incoming`` is keyed by.
     :param current: The effective stored value to restore passwords from.
@@ -2347,13 +2349,10 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     and know it cannot be edited via the API.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param value: The Python value to serialise.
-    :type value: Any
     :return: A JSON-serialisable representation of ``value``, or ``None`` when
         ``value`` is :data:`pydantic_core.PydanticUndefined` (the field has no
         declared default).
-    :rtype: Any
     """
     if value is PydanticUndefined:
         return None

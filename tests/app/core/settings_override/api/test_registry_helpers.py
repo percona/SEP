@@ -56,7 +56,6 @@ from app.core.settings_override.registry import (
     resolve_nested_field_metadata,
     SettingProvenance,
 )
-from app.core.settings_override.secret_storage import _positional_args
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import CredentialHttpUrl, StrHttpUrl
 from app.sep.config import DeliveryPlanInputs, SEPSettings
@@ -284,20 +283,6 @@ class TestCredentialUrlPredicatePair:
         assert not annotation_contains_credential_url(StrHttpUrl)
         assert not annotation_is_credential_url(StrHttpUrl)
 
-    def test_the_position_predicate_reads_the_unstripped_annotation(self) -> None:
-        """Keep the marker visible where ``_positional_args`` would discard it.
-
-        The marker lives in ``__metadata__``, so a position predicate written
-        over the walker's own ``Annotated``-stripping flattener returns ``False``
-        for the one live leaf whose marker is annotation-visible.
-        """
-        annotation = annotated_type(PMMSettings.model_fields["endpoint"])
-
-        assert annotation_is_credential_url(annotation)
-        assert not any(
-            annotation_is_credential_url(arg) for arg in _positional_args(annotation)
-        )
-
 
 class TestCredentialUrlFieldsAreNotSecretBearing:
     """Pin that the at-rest change never leaks into the API's ``is_secret`` flag.
@@ -352,7 +337,7 @@ def test_dump_field_value_redacts_nested_secret() -> None:
 
 
 class _NoDefault(BaseYamlSettings):
-    """Synthetic settings class with a required HOT field (no default)."""
+    """Declare a required HOT field carrying no default."""
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["NODEF"]
     BARE: int = hot_field(...)

@@ -30,9 +30,14 @@ import pytest
 from pydantic import BaseModel, SecretStr
 
 from app.core.alerts.config import AlertSettings
-from app.core.config import BaseYamlSettings, Settings
+from app.core.config import BaseYamlSettings, PMMSettings, Settings
 from app.core.encryption import decrypt, DecryptionError, encrypt, is_encrypted
-from app.core.settings_override.registry import coerce_field_value, resolve_nested_field
+from app.core.settings_override.registry import (
+    annotated_type,
+    annotation_is_credential_url,
+    coerce_field_value,
+    resolve_nested_field,
+)
 from app.core.settings_override.secret_storage import (
     _ALL_LEAF_KINDS,
     _positional_args,
@@ -105,7 +110,7 @@ def pmm_payload_with_credential_endpoint(
     """Return a whole-object ``PMM`` override carrying both leaf kinds at once.
 
     The mixed row is what separates the broad entry points from the
-    credential-URL-scoped pair the SEP-2014 revisions call.
+    credential-URL-scoped pair the data migrations call.
 
     :param api_key: The value to place at the ``SecretStr`` leaf.
     :param endpoint: The value to place at the credential-URL leaf.
@@ -503,6 +508,23 @@ class TestAnnotationShapes:
         assert decrypt(url_password(stored["a"])) == CREDENTIAL_PASSWORD
         assert decrypt(url_password(stored["b"])) == CREDENTIAL_PASSWORD
 
+    def test_positional_flattening_discards_the_credential_url_marker(self) -> None:
+        """Pin why the position predicate runs before ``_positional_args``.
+
+        The credential-URL marker lives in ``__metadata__``, and this flattener
+        strips ``Annotated`` — so a predicate written over its output answers
+        ``False`` for the one live leaf whose marker is annotation-visible, and
+        every credential URL would be stored in the clear. Ordering the branch
+        ahead of the flattening is what the walker relies on, and nothing else
+        would fail if that ordering were swapped.
+        """
+        annotation = annotated_type(PMMSettings.model_fields["endpoint"])
+
+        assert annotation_is_credential_url(annotation)
+        assert not any(
+            annotation_is_credential_url(arg) for arg in _positional_args(annotation)
+        )
+
     def test_union_members_reach_the_tie_break_in_declaration_order(self) -> None:
         """Preserve a union's declared order through the positional flattening.
 
@@ -862,7 +884,7 @@ class TestBroadEntryPointsCoverBothLeafKinds:
     """Pin that the read and write paths stay broad while the revisions narrow.
 
     ``cache.py`` and ``routes.py`` must transform both leaf kinds; only the
-    SEP-2014 revisions are scoped to credential URLs. Narrowing the broad pair
+    credential-URL revisions are scoped to that kind. Narrowing the broad pair
     would leave a ``SecretStr`` in the clear on every write.
     """
 
@@ -876,7 +898,7 @@ class TestBroadEntryPointsCoverBothLeafKinds:
         assert is_encrypted(stored["api_key"])
 
     def test_the_read_path_restores_both_kinds(self) -> None:
-        """Decrypt the URL password and the ``SecretStr`` sibling in one call."""
+        """Restore the URL password and the ``SecretStr`` sibling in one call."""
         payload = pmm_payload_with_credential_endpoint()
         stored = encrypt_secret_leaves(Settings, PMM_KEY, payload)
 

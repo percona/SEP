@@ -2325,7 +2325,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         """Encrypt ``INVENTORY_ENDPOINT``'s password while the endpoint stays legible.
 
         Driven through a real PATCH with no override on the body model, so the
-        walker receives whatever the route's own coercion produces -- a
+        walker receives whatever the route's own coercion produces — a
         :class:`pydantic_core.Url` for this field, which is the runtime type a
         hand-written string payload cannot reproduce.
         """

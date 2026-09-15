@@ -443,8 +443,8 @@ def contains_ciphertext(value: Any) -> bool:
     A credential-bearing URL hides its token one level deeper still, inside the
     leaf's userinfo segment: ``is_encrypted`` answers ``False`` for the whole
     ``https://user:<token>@host/`` string, because the string is not a Fernet
-    token. A string leaf is therefore tested twice -- as itself, and as its
-    parsed password -- or a deployment whose only encrypted data is an endpoint
+    token. A string leaf is therefore tested twice — as itself, and as its
+    parsed password — or a deployment whose only encrypted data is an endpoint
     password reads as holding none and clears the mint path.
 
     Deciding structurally is safe in this direction, and only this one. The

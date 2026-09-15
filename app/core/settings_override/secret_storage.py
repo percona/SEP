@@ -24,9 +24,9 @@ the leaves that carry a credential.
 
 Two leaf kinds qualify, and they differ in how much of the leaf is rewritten. A
 **Pydantic secret** leaf is the credential, so the whole value is transformed. A
-**credential-bearing URL** leaf -- recognized from the ``WrapSerializer`` marker
+**credential-bearing URL** leaf — recognized from the ``WrapSerializer`` marker
 :data:`~app.core.utils.fields.CredentialHttpUrl` and its siblings carry, not
-from any secret type -- merely embeds one in its userinfo segment, so only that
+from any secret type — merely embeds one in its userinfo segment, so only that
 password is transformed and the endpoint stays readable in a raw database dump.
 
 Which leaves carry a credential is decided **only** from the annotation, never
@@ -143,7 +143,7 @@ def reencrypt_secret_leaves(
 
     Covers both leaf kinds. For a credential-bearing URL the idempotence check
     runs on the *password*, not the leaf: ``is_encrypted`` on a whole URL is
-    always ``False`` -- the URL is not a Fernet token -- so testing the leaf
+    always ``False`` — the URL is not a Fernet token — so testing the leaf
     would re-encrypt an already-encrypted password on every run and destroy the
     plaintext.
 
@@ -226,7 +226,7 @@ def decrypt_credential_url_leaves(
 
     Leaves :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes`
     ciphertext byte-identical, including a sibling leaf inside the same stored
-    object, so rolling this revision back does not undo the one before it --
+    object, so rolling this revision back does not undo the one before it —
     which Alembic would never re-run to put back.
 
     :param settings_cls: The settings class owning ``key``.
@@ -313,8 +313,8 @@ class _LeafKind(Enum):
     """Name the leaf kinds the walker knows how to transform.
 
     Both kinds carry a credential; they differ in how much of the leaf is one.
-    A ``PYDANTIC_SECRET`` leaf -- one reaching :class:`~pydantic.SecretStr` or
-    :class:`~pydantic.SecretBytes` -- *is* the credential, so the whole value is
+    A ``PYDANTIC_SECRET`` leaf — one reaching :class:`~pydantic.SecretStr` or
+    :class:`~pydantic.SecretBytes` — *is* the credential, so the whole value is
     transformed. A ``CREDENTIAL_URL`` leaf merely embeds one in its userinfo
     segment, so only that password is, leaving the endpoint readable in a raw
     database dump.
@@ -324,7 +324,9 @@ class _LeafKind(Enum):
     would publish a contract no reader has.
     """
 
+    # enum-kwargs-exempt: private, never serialized — not a column type.
     PYDANTIC_SECRET = auto()
+    # enum-kwargs-exempt: private, never serialized — not a column type.
     CREDENTIAL_URL = auto()
 
 
@@ -518,7 +520,7 @@ def _credential_url_text(value: Any) -> str | None:
     :data:`~app.core.utils.fields.CredentialHttpUrl` field is a
     :class:`pydantic_core.Url` rather than a string; the migration and read
     paths hand it the JSON column's text. Both reach this leaf, so the branch
-    normalizes rather than testing for ``str`` -- a ``str``-only guard would
+    normalizes rather than testing for ``str`` — a ``str``-only guard would
     silently skip every field typed ``CredentialHttpUrl`` on the one path that
     writes them.
 
@@ -545,7 +547,7 @@ def _transform_credential_url(
     generally. A stored value that cannot be parsed carries no password this
     could have encrypted, and refusing the whole row would abort a migration
     over one malformed endpoint. A caller whose job is to *mask* needs the
-    opposite -- which is why :func:`~app.core.utils.fields.credential_url_password`
+    opposite — which is why :func:`~app.core.utils.fields.credential_url_password`
     raises and each caller decides, rather than answering ``None`` for both.
 
     :param value: The stored value at a credential-URL position.
@@ -588,8 +590,8 @@ def _transform_leaves(
     annotation reaches no selected kind is returned by identity.
 
     The credential-URL branch is tested **before** :func:`_is_secret_position`
-    because the two are mutually exclusive by construction -- no annotation is
-    both a Pydantic secret and a credential-URL-serialized type -- and because
+    because the two are mutually exclusive by construction — no annotation is
+    both a Pydantic secret and a credential-URL-serialized type — and because
     the position predicate needs the un-stripped annotation, which
     :func:`_positional_args` consumes.
 
