@@ -343,7 +343,7 @@ alphabets are accepted.
 
 `SEP_GRAFANA_TOKEN` is the last value an operator supplies. Below it,
 `entrypoint.sh` runs `grafana_service_account.py` once, before supervisord, and
-fans its answer out to all three canonical names — the Grafana provider's
+exports its answer to all three canonical names — the Grafana provider's
 `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, the PMM client's
 `PMM__API_KEY`, and the Nomad executor's `TASKS__NOMAD__API_KEY` — through the
 same `export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses, so all five
@@ -358,22 +358,20 @@ embedded in `TASKS__NOMAD__ENDPOINT`: while a key is set the endpoint's userinfo
 is stripped, because both HTTP clients would otherwise derive basic auth from it
 and override the header.
 
-The helper does nothing at all when either the Grafana service-account token or
+The helper skips minting when either the Grafana service-account token or
 `PMM__API_KEY` already resolves, from an explicit variable or from a file under
 `SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
 counts as absent at every rank the helper reads.
 
-**Those two names are the mint gate, and the gate controls the whole fan-out.**
-Supplying either of them suppresses minting, and `entrypoint.sh` calls
-`export_grafana_token` only when a token was actually minted — so a deployment
-that mounts `PMM__API_KEY` (or the Grafana token) and leaves `SEP_GRAFANA_TOKEN`
-unset gets **no** `TASKS__NOMAD__API_KEY` at all, and the Nomad executor falls
-back to whatever `TASKS__NOMAD__ENDPOINT` carries. `TASKS__NOMAD__API_KEY` is a
-destination only: mounting *it* alone does not suppress minting, but it also
-cannot make the fan-out run. Supply all three explicitly whenever you supply any
-of the mint-gate two. The same applies to a non-Grafana deployment, which mints
-nothing and must set `TASKS__NOMAD__API_KEY` itself if its Nomad requires a
-credential.
+**Those two names are the mint gate only.** Supplying either of them suppresses
+minting, but `entrypoint.sh` still calls `export_grafana_token` with the
+already-resolved value, so `TASKS__NOMAD__API_KEY` is set to the same credential
+without a fresh Grafana request. When both mint-gate names resolve to different
+values, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` wins.
+`TASKS__NOMAD__API_KEY` is a destination only: mounting *it* alone does not
+suppress minting, and an explicit or mounted Nomad key is left alone by the
+export. A non-Grafana deployment mints nothing and must set
+`TASKS__NOMAD__API_KEY` itself if its Nomad requires a credential.
 
 One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
 on the file *existing*, not on it holding a value, because the settings source
