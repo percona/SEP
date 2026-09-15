@@ -7806,8 +7806,11 @@ export interface components {
      * @description Represent a labelled group of related fields rendered as one fieldset.
      *
      *     :param title: The section heading displayed above the grouped fields.
-     *     :param description: Optional helper text rendered beneath the section
-     *         heading. Defaults to ``None``.
+     *     :param description: Optional helper text for the section. Whether it is
+     *         shown is the renderer's choice — SEP's own renderer places it beneath
+     *         the section heading, PMM's omits it so section prose cannot restate a
+     *         field's own help — so do not put guidance here that a user must see.
+     *         Defaults to ``None``.
      *     :param fields: The list of fields belonging to this section. May include
      *         :class:`OneOfGroup` containers alongside leaf fields.
      *     :param cardinality_rules: Optional cross-field cardinality constraints
