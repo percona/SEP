@@ -103,5 +103,5 @@ restore_views = Views(
             ),
         ],
     ),
-    capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=True),
+    capabilities=Capabilities(chaining=True, alert_on_fail=True, scheduling=False),
 )

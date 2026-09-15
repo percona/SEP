@@ -114,6 +114,24 @@ class TestRestoreContract(DerivedRouterContractTests):
         }
         assert fields["schema_id"]["label"] == "Target database"
 
+    def test_schema_capabilities(self, contract_client: Any) -> None:
+        """Serve ``scheduling: false`` so every schedule control stays hidden.
+
+        A scheduled restore would re-run a destructive restore of one fixed
+        ``backup_source`` on every tick with nobody present to confirm the target.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.json()["capabilities"] == {
+            "chaining": True,
+            "alert_on_fail": True,
+            "scheduling": False,
+            "stats": False,
+            "pii_anonymization": False,
+        }
+
     def test_every_declared_field_is_described(self) -> None:
         """Require helper text on every field the restore form declares itself.
 
