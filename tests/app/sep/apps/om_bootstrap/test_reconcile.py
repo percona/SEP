@@ -132,6 +132,7 @@ class TestReconcileRun:
         *,
         rollback_steps: list[StepRecord] | None = None,
         run_steps: list[StepRecord] | None = None,
+        finalize_steps: list[StepRecord] | None = None,
     ) -> BootstrapRun:
         return BootstrapRun(
             install_method=InstallMethod.PACKAGES,
@@ -144,6 +145,7 @@ class TestReconcileRun:
                         host="node00",
                         steps=steps,
                         rollback_steps=rollback_steps or [],
+                        finalize_steps=finalize_steps or [],
                     )
                 ]
             ),
@@ -330,6 +332,74 @@ class TestReconcileRun:
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             rollback_steps=[StepRecord(name="stop_service")],
+        )
+
+        await reconcile.reconcile_run(AsyncMock(), run)
+
+        assert run.status == BootstrapRunStatus.SUCCEEDED
+
+    @pytest.mark.asyncio
+    async def test_reconciles_finalize_steps_too(self) -> None:
+        """A finalize dispatch's outcome lands in the host's finalize_steps."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="create_pmm_monitoring_user", status=StepStatus.SUCCEEDED
+                )
+            ],
+            finalize_steps=[
+                StepRecord(
+                    name="enable_auth",
+                    status=StepStatus.RUNNING,
+                    task_history_id=TASK_HISTORY_ID,
+                )
+            ],
+        )
+
+        changed = await reconcile.reconcile_run(_tasks_api("success"), run)
+
+        assert changed is True
+        assert parse_host_states(run)[0].finalize_steps[0].status == (
+            StepStatus.SUCCEEDED
+        )
+
+    @pytest.mark.asyncio
+    async def test_pending_finalize_steps_block_success(self) -> None:
+        """A run isn't done while a host still has an undispatched finalize step.
+
+        Distinct from rollback_steps, which stay pending forever on a run that
+        never needed rollback: every run needs its finalize steps to actually
+        run, so an all-PENDING finalize list must NOT read as vacuously done the
+        way an all-PENDING rollback list correctly does.
+        """
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="create_pmm_monitoring_user", status=StepStatus.SUCCEEDED
+                )
+            ],
+            finalize_steps=[StepRecord(name="enable_auth")],
+        )
+
+        await reconcile.reconcile_run(AsyncMock(), run)
+
+        assert run.status == BootstrapRunStatus.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_marks_succeeded_once_finalize_steps_succeed(self) -> None:
+        """The run only finishes once finalize steps succeed too, not before."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="create_pmm_monitoring_user", status=StepStatus.SUCCEEDED
+                )
+            ],
+            finalize_steps=[
+                StepRecord(name="enable_auth", status=StepStatus.SUCCEEDED)
+            ],
         )
 
         await reconcile.reconcile_run(AsyncMock(), run)

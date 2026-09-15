@@ -15,11 +15,14 @@
 
 """Assert PackagesInstallStrategy plans the same steps and builds OS-correct actions."""
 
+import json
+import re
+import subprocess
+
 import pytest
 
 from app.sep.apps.om_bootstrap.strategies.packages import (
-    DATA_PATH,
-    LOG_PATH,
+    KEY_FILE_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
 )
@@ -27,8 +30,19 @@ from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
     InstallMethod,
     InstallStrategy,
+    MemberConfig,
     OperatingSystem,
+    StepAction,
 )
+
+
+def _rs_initiate_config(action: StepAction) -> dict:
+    """Extract the ``rs.initiate({...})`` config object from a built shell command."""
+    raw = action.command[-1]
+    match = re.search(r"rs\.initiate\((\{.*\})\)", raw)
+    assert match is not None, raw
+    return json.loads(match.group(1))
+
 
 STEP_NAMES = [
     "pre_check",
@@ -41,6 +55,8 @@ STEP_NAMES = [
 ]
 
 RUN_STEP_NAMES = ["rs_initiate", "create_pmm_monitoring_user"]
+
+FINALIZE_STEP_NAMES = ["enable_auth"]
 
 ROLLBACK_STEP_NAMES = [
     "stop_service",
@@ -63,6 +79,10 @@ def _spec(os_: OperatingSystem) -> BootstrapSpec:
         os=os_,
         mongodb_version="8.0",
         replica_set_name="rs-test",
+        data_path="/var/lib/mongo",
+        log_path="/var/log/mongodb/mongod.log",
+        port=27017,
+        bind_ip="0.0.0.0",
     )
 
 
@@ -158,7 +178,23 @@ class TestBuildStep:
         )
 
         command = " ".join(action.command)
-        assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
+        assert "install -d -m 750 -o mongod -g mongod /var/lib/mongo" in command
+
+    def test_configure_mongod_creates_the_log_directory(self) -> None:
+        """Mongod's control process exits immediately on first start otherwise.
+
+        ``Can't initialize rotatable log file :: caused by :: Failed to open
+        <path>`` -- confirmed against a real run where the package's own
+        default log directory (/var/log/mongo) existed but the wizard's
+        default log path (/var/log/mongodb/mongod.log) named a different one
+        that nothing had created.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "install -d -m 750 -o mongod -g mongod /var/log/mongodb" in command
 
     def test_configure_mongod_forks(self) -> None:
         """mongod.service is Type=forking.
@@ -185,7 +221,24 @@ class TestBuildStep:
         )
 
         command = " ".join(action.command)
-        assert f"path: {LOG_PATH}" in command
+        assert "path: /var/log/mongodb/mongod.log" in command
+
+    def test_configure_mongod_leaves_authorization_off(self) -> None:
+        """Authorization has to stay off until the first user already exists.
+
+        MongoDB's localhost exception is unreliable once a replica set already
+        has more than one member -- confirmed against a real run where every
+        createUser attempt failed identically once the first one did.
+        enable_auth (a finalize step) turns authorization on afterward, once
+        create_pmm_monitoring_user has actually succeeded.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "authorization" not in command
+        assert "keyFile" not in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""
@@ -206,6 +259,79 @@ class TestBuildStep:
         command = " ".join(action.command)
         assert "super-secret-keyfile-bytes" in command
         assert "-m 400" in command
+
+
+class TestPreCheckDiskSpaceCommand:
+    """Actually runs the shell fragment, not just checks its shape.
+
+    A string-contains assertion (the style everywhere else in this file) would
+    not have caught this: the bug this guards against was a shell-quoting
+    issue -- df --output's header row leaking into a numeric comparison --
+    that only running the command exposes. Confirmed against a real retry (a
+    host bootstrapped, rolled back, and retried, so data_path already existed
+    the second time pre_check ran) that the pre-fix command failed with
+    ``integer expression expected`` in exactly that case.
+    """
+
+    def _disk_check_command(self, monkeypatch, threshold: int, data_path: str) -> str:
+        """Build the pre_check command and strip its `command -v <pkg_manager>` prefix.
+
+        Stripped because this test is only about the disk-space fragment, and
+        asserting on the package manager being installed would make it depend
+        on what happens to be on the machine running the suite.
+        """
+        monkeypatch.setattr(
+            "app.sep.apps.om_bootstrap.strategies.packages.MIN_DATA_DISK_BYTES",
+            threshold,
+        )
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(update={"data_path": data_path})
+        action = PackagesInstallStrategy().build_step("pre_check", "node00", spec)
+        prefix, _, rest = action.command[-1].partition(" && ")
+        assert prefix.startswith("command -v"), action.command[-1]
+        return rest
+
+    def test_passes_when_data_path_already_exists(self, monkeypatch, tmp_path) -> None:
+        """The exact case that broke: a retry, with data_path left over from before."""
+        script = self._disk_check_command(
+            monkeypatch, threshold=1, data_path=str(tmp_path)
+        )
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "integer expression expected" not in result.stderr
+
+    def test_falls_back_to_root_when_data_path_is_missing(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """The common case: a fresh host, nothing has created data_path yet."""
+        script = self._disk_check_command(
+            monkeypatch, threshold=1, data_path=str(tmp_path / "does-not-exist")
+        )
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert "integer expression expected" not in result.stderr
+
+    def test_fails_closed_when_the_threshold_is_unreasonably_high(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Not just "doesn't crash" -- a real too-little-space case still fails."""
+        # A petabyte: comfortably more than any real disk, but still inside
+        # `[`'s signed-integer range -- a threshold no test machine could ever
+        # satisfy without also overflowing the comparison itself.
+        script = self._disk_check_command(
+            monkeypatch, threshold=10**15, data_path=str(tmp_path)
+        )
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 1
+        assert "integer expression expected" not in result.stderr
 
 
 class TestPlanRunSteps:
@@ -239,6 +365,45 @@ class TestBuildRunStep:
         assert "node02:27017" in command
         assert "rs-test" in command
 
+    def test_rs_initiate_defaults_a_host_with_no_member_config(self) -> None:
+        """A host missing from spec.member_configs gets MongoDB's own defaults."""
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00"], _spec(OperatingSystem.UBUNTU)
+        )
+
+        config = _rs_initiate_config(action)
+        member = config["members"][0]
+        assert member["priority"] == 1
+        assert member["votes"] == 1
+        assert member["hidden"] is False
+        assert "secondaryDelaySecs" not in member
+
+    def test_rs_initiate_applies_a_host_s_member_config(self) -> None:
+        """A host named in spec.member_configs gets its own priority/votes/hidden/delay."""
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "member_configs": {
+                    "node01": MemberConfig(
+                        priority=0, votes=False, hidden=True, delay_secs=300
+                    )
+                }
+            }
+        )
+
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00", "node01"], spec
+        )
+
+        config = _rs_initiate_config(action)
+        seed, delayed = config["members"]
+        assert seed["priority"] == 1
+        assert seed["votes"] == 1
+        assert "secondaryDelaySecs" not in seed
+        assert delayed["priority"] == 0
+        assert delayed["votes"] == 0
+        assert delayed["hidden"] is True
+        assert delayed["secondaryDelaySecs"] == 300  # noqa: PLR2004
+
     def test_create_pmm_monitoring_user_requires_params(self) -> None:
         """Without a generated username/password, this is a programming error."""
         with pytest.raises(ValueError, match="username"):
@@ -260,22 +425,58 @@ class TestBuildRunStep:
         assert "generated-secret" in command
         assert "clusterMonitor" in command
 
-    def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
-        """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
 
-        Confirmed against a real run where every attempt to create the first
-        user failed "not authorized" even though create_pmm_monitoring_user's
-        own command was correct -- the probe, not our command, burned it.
-        """
-        action = PackagesInstallStrategy().build_run_step(
-            "create_pmm_monitoring_user",
-            ["node00"],
-            _spec(OperatingSystem.UBUNTU),
-            params={"username": "pmm_monitor", "password": "generated-secret"},
+class TestPlanFinalizeSteps:
+    """Assert the finalize step list is fixed and OS-independent."""
+
+    def test_returns_the_fixed_finalize_step_names(self) -> None:
+        """enable_auth, the only finalize step phase 1 needs."""
+        spec = _spec(OperatingSystem.UBUNTU)
+        assert (
+            PackagesInstallStrategy().plan_finalize_steps(spec) == FINALIZE_STEP_NAMES
+        )
+
+
+class TestBuildFinalizeStep:
+    """Assert build_finalize_step rejects unknown names and enables auth correctly."""
+
+    def test_unknown_finalize_step_name_raises(self) -> None:
+        """A per-host forward step name is not a finalize step."""
+        with pytest.raises(
+            ValueError, match="not a PackagesInstallStrategy finalize step"
+        ):
+            PackagesInstallStrategy().build_finalize_step(
+                "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+            )
+
+    def test_enable_auth_turns_authorization_on(self) -> None:
+        """The one thing configure_mongod deliberately left out."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
         )
 
         command = " ".join(action.command)
-        assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
+        assert "authorization: enabled" in command
+        assert f"keyFile: {KEY_FILE_PATH}" in command
+
+    def test_enable_auth_restarts_mongod(self) -> None:
+        """security.authorization only takes effect on a fresh start."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        assert "systemctl restart mongod" in " ".join(action.command)
+
+    def test_enable_auth_keeps_the_replica_set_name(self) -> None:
+        """Rewriting the config must not lose settings configure_mongod wrote."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "replSetName: rs-test" in command
+        assert "fork: true" in command
+        assert "path: /var/log/mongodb/mongod.log" in command
 
 
 class TestPlanRollbackSteps:
