@@ -15,6 +15,8 @@
 
 """Share the scaffolding every om_inventory API test module needs."""
 
+from collections.abc import AsyncIterator
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -33,7 +35,9 @@ BASE = "/api/apps/om_inventory"
 
 
 @pytest_asyncio.fixture
-async def api(regular_user: CasdoorUser, session: AsyncSession) -> AsyncClient:
+async def api(
+    regular_user: CasdoorUser, session: AsyncSession
+) -> AsyncIterator[AsyncClient]:
     """Yield an authenticated client sharing the test session.
 
     Async rather than a sync ``TestClient`` so a test can await a database read after
