@@ -525,6 +525,102 @@ class TestEncryptionFormatBackfill:
         assert outcome.label == "skipped_invalid"
 
 
+class TestUnreachableGpgTimingStillReconstructs:
+    """Keep reconstructing the shape the create form now rejects.
+
+    ``BackupCreate`` refuses a GPG timing no backup script reaches without an
+    upload target. Tasks saved before that gate are still part of the population
+    the backfill serves: counted invalid they get no stamp at all, and a task with
+    no stamp has no Edit affordance, so an operator could not correct the very
+    combination the gate exists to surface.
+    """
+
+    _RECIPIENT_BLOCK = {
+        "DIR_ENCRYPT_CONFIG": {"encryption recipient": "ops@example.com"}
+    }
+
+    @classmethod
+    def _stamped_form(
+        cls,
+        all_servers: dict[str, object],
+        *,
+        backup_type: BackupType = BackupType.XTRABACKUP,
+    ) -> dict[str, object]:
+        """Backfill a legacy task naming no upload provider and return its stamp.
+
+        :param all_servers: Values layered over the stored ``ALL_SERVERS`` block.
+        :param backup_type: The backup engine the legacy task ran.
+        :return: The reconstructed ``data['_form']`` stamp.
+        """
+        task = _legacy_mysql_backup_task(
+            name="mysql-encrypted-no-upload",
+            backup_type=backup_type,
+            all_servers={"BACKUP_DIR": "/backups", **all_servers},
+            server_extra=cls._RECIPIENT_BLOCK,
+        )
+        lookup = _lookup(
+            _service(9, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+
+        outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRIES[0], _ctx(lookup))
+
+        assert outcome.label == "stamped"
+        assert outcome.stamped_data is not None
+        return outcome.stamped_data[RESERVED_FORM_KEY]
+
+    def test_in_place_gpg_with_no_upload_target_is_stamped(self):
+        """Stamp an in-place GPG task that names no upload provider."""
+        stamped_form = self._stamped_form({"ENCRYPT": True})
+
+        assert stamped_form["encrypt"] is True
+        assert stamped_form["upload"] == []
+        assert stamped_form["encryption_format"] == EncryptionFormat.GPG
+
+    def test_binlog_post_run_gpg_with_no_upload_target_is_stamped(self):
+        """Stamp a Binlog post-run GPG task that names no upload provider."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "POST_RUN_ENCRYPT": True},
+            backup_type=BackupType.BINLOG,
+        )
+
+        assert stamped_form["post_run_encrypt"] is True
+        assert stamped_form["upload"] == []
+        assert stamped_form["encryption_format"] == EncryptionFormat.GPG
+
+    def test_the_create_form_refuses_the_stamp_the_backfill_accepts(self):
+        """Pin the divergence rather than leave it implied by the two models."""
+        stamped_form = self._stamped_form({"ENCRYPT": True})
+
+        with pytest.raises(ValidationError, match="requires at least one upload"):
+            BackupCreate(**stamped_form)
+
+        LegacyBackupCreate(**stamped_form)
+
+    def test_a_timing_outside_a_gpg_format_is_still_refused(self):
+        """Keep the timing-versus-format rule on the lenient model.
+
+        It is what stops a stamp re-saved at the schema default — a GPG timing
+        with ``encryption_format`` back at ``none`` — from validating, so the
+        relaxation costs only the upload-reachability pair.
+        """
+        stamped_form = self._stamped_form({"ENCRYPT": True})
+        stamped_form["encryption_format"] = EncryptionFormat.NONE
+
+        with pytest.raises(ValidationError, match="does not include GPG"):
+            LegacyBackupCreate(**stamped_form)
+
+    def test_a_key_file_outside_xtrabackup_is_still_refused(self):
+        """Keep ``xtrabackup_aes256_keyfile``'s own gate on the lenient model."""
+        stamped_form = self._stamped_form(
+            {"ENCRYPT": False, "POST_RUN_ENCRYPT": True},
+            backup_type=BackupType.MYDUMPER,
+        )
+        stamped_form["xtrabackup_aes256_keyfile"] = "/keys/aes.key"
+
+        with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+            LegacyBackupCreate(**stamped_form)
+
+
 class TestEncryptionFormatStampRepair:
     """Fill ``encryption_format`` into stamps written before the selector existed.
 
