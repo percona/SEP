@@ -55,7 +55,7 @@
 | app/core/pmm.py                                                                                                              |       51 |        1 |       10 |        1 |     97% |        53 |
 | app/core/requests/connectivity.py                                                                                            |       33 |        0 |        8 |        0 |    100% |           |
 | app/core/requests/registry.py                                                                                                |       64 |        5 |       22 |        5 |     88% |101, 112, 158, 169, 179 |
-| app/core/requests/remote\_api.py                                                                                             |      322 |        1 |       68 |        2 |     99% |340, 842-\>841 |
+| app/core/requests/remote\_api.py                                                                                             |      325 |        1 |       68 |        2 |     99% |346, 847-\>846 |
 | app/core/security.py                                                                                                         |       18 |        0 |        4 |        0 |    100% |           |
 | app/core/settings\_override/alembic\_ops.py                                                                                  |       97 |       10 |       30 |       11 |     83% |87, 90, 92, 94-\>96, 114, 116, 152, 154, 168, 170, 207 |
 | app/core/settings\_override/api/export.py                                                                                    |        9 |        0 |        0 |        0 |    100% |           |
@@ -477,7 +477,7 @@
 | app/tasks/routes.py                                                                                                          |      244 |       14 |       48 |        4 |     94% |154-158, 243-\>247, 280, 330-339, 346, 459, 502, 517, 677, 691, 696, 723, 726-\>728 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29979** | **1710** | **7366** |  **658** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29982** | **1710** | **7366** |  **658** | **93%** |           |
 
 
 ## Setup coverage badge
