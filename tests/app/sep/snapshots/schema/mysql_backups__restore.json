@@ -50,6 +50,27 @@
           "type": "host"
         },
         {
+          "allow_custom": true,
+          "description": "Populates Backup Source and the Mydumper target database, and is where a Mydumper restore loads. XtraBackup and Binlog only record the name, so a typed one works.",
+          "label": "Destination Database Service",
+          "name": "service_id",
+          "required": false,
+          "requires": [
+            {
+              "message": "Destination Database Service is required for a Mydumper restore.",
+              "when": {
+                "equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
           "choices": [
             {
               "label": "Mydumper",
@@ -69,17 +90,6 @@
           "name": "backup_type",
           "required": true,
           "type": "choice"
-        },
-        {
-          "allow_custom": true,
-          "description": "Mydumper loads into this service's address and port. XtraBackup and Binlog only record the name, so a typed one works.",
-          "label": "Destination Database Service",
-          "name": "service_id",
-          "required": false,
-          "service_types": [
-            "mysql"
-          ],
-          "type": "service"
         },
         {
           "allow_custom": true,

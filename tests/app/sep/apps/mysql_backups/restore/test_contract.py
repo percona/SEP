@@ -28,6 +28,7 @@ so the connectivity, detail-model, and injected-extras suite methods skip.
 from typing import Any
 
 from fastapi import status
+from pytest_mock import MockerFixture
 
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
@@ -66,8 +67,9 @@ def _valid_restore_body(
     """Return a valid restore create/update body resolving against the kit mocks.
 
     Pairs the seeded MySQL service / executor host with a shell-safe
-    ``backup_source`` so the field validator passes; restore declares no per-mode
-    field gates, so the same body is valid for every ``backup_type``.
+    ``backup_source`` so the field validator passes. ``service_id`` is only gated
+    on a Mydumper restore, and naming the seeded service satisfies that gate, so
+    the same body is valid for every ``backup_type``.
     """
     return {
         "task_name": task_name,
@@ -461,6 +463,117 @@ class TestRestoreContract(DerivedRouterContractTests):
         restamped = mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY]
         assert restamped["source_transport"] == SourceTransport.LOCAL.value
         assert restamped["ssh_user"] is None
+
+    def test_schema_leads_the_task_section_with_the_destination_service(
+        self, contract_client: Any
+    ) -> None:
+        """Serve ``service_id`` ahead of ``backup_type``, gated required for Mydumper.
+
+        The field lists Backup Source, fills the Mydumper target database and is
+        where a Mydumper restore loads, so it leads the backup-specific fields —
+        after the two identity fields every task form inherits.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert task_fields[:4] == [
+            "task_name",
+            "hostname",
+            "service_id",
+            "backup_type",
+        ]
+        fields = {field["name"]: field for form in sections for field in form["fields"]}
+        service_id = fields["service_id"]
+        assert service_id["required"] is False
+        assert service_id["requires"] == [
+            {
+                "when": {"equals": {"backup_type": BackupType.MYDUMPER.value}},
+                "message": (
+                    "Destination Database Service is required for a Mydumper restore."
+                ),
+            }
+        ]
+        assert fields["backup_source"]["depends_on"] == "service_id"
+        assert fields["schema_id"]["depends_on"] == "service_id"
+
+    def test_create_422_on_a_mydumper_restore_without_a_destination_service(
+        self,
+        contract_client: Any,
+        mock_task_api: Any,
+        mock_inventory_api: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Reject a service-less Mydumper restore at body validation, before any lookup.
+
+        The resolver refuses the same body with a 422 naming the field too, so the
+        assertions pin the gate's own message rather than the field name alone.
+        """
+        lookup = mocker.spy(mock_inventory_api, "get")
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        del body["service_id"]
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in response.text
+        )
+        assert mock_task_api.create_count == 0
+        assert lookup.await_count == 0
+
+    def test_create_201_for_a_non_mydumper_restore_without_a_destination_service(
+        self, contract_client: Any
+    ) -> None:
+        """Accept an XtraBackup restore that records no destination service."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+        del body["service_id"]
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_a_stored_mydumper_stamp_without_a_service_still_reads(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """List and serve a Mydumper restore stamped before the service was required.
+
+        Neither read path re-validates the stamp into a hard failure — the detail
+        builder's source-declaring override returns nothing on a validation error
+        — so such a restore keeps its row, its detail and the edit form seeded
+        from it. Saving it unchanged is what the gate rejects, by name.
+        """
+        task_name = "contract-serviceless-mydumper"
+        stored_form = {
+            **_valid_restore_body(task_name=task_name),
+            "service_id": None,
+        }
+        mock_task_api.seed_task(
+            task_name,
+            owner=self.app_def.owner,
+            data_extra={RESERVED_FORM_KEY: stored_form},
+        )
+        base = app_base_url(self.app_def)
+
+        listing = contract_client.get(f"{base}/")
+        detail = contract_client.get(f"{base}/{task_name}")
+        resubmit = contract_client.put(f"{base}/{task_name}", json=stored_form)
+
+        assert listing.status_code == status.HTTP_200_OK, listing.text
+        assert task_name in {row["name"] for row in listing.json()["items"]}
+        assert detail.status_code == status.HTTP_200_OK, detail.text
+        assert detail.json()["data"][RESERVED_FORM_KEY] == stored_form
+        assert resubmit.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in resubmit.text
+        )
 
     def test_schema_gates_transport_and_decryption_fields(
         self, contract_client: Any
