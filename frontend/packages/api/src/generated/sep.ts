@@ -9147,7 +9147,11 @@ export interface components {
      *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
      *         validation with a per-field message, as does a GPG format with no timing
      *         and, for the pure ``gpg`` format only, a GPG timing no backup script
-     *         would reach without an upload target.
+     *         would reach without an upload target. Those are app-scoped, so they
+     *         surface only on submit. The binary/compression rules, which reject an
+     *         XtraBackup compression algorithm the selected (or defaulted)
+     *         ``xtrabackup_bin_cmd`` cannot run, are scoped to the section owning
+     *         ``compression_algorithm``, so they also evaluate as the operator types.
      */
     mysql_backups__BackupCreate: {
       /**
@@ -9286,7 +9290,7 @@ export interface components {
       /** Xtrabackup Aes256 Keyfile */
       xtrabackup_aes256_keyfile?: string | null;
       /** Xtrabackup Bin Cmd */
-      xtrabackup_bin_cmd?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
+      xtrabackup_bin_cmd?: components['schemas']['mysql_backups__XtraBackupTool'] | null;
       /** Xtrabackup Copies */
       xtrabackup_copies?: number | null;
       /** Xtrabackup Defaults File */
@@ -9736,7 +9740,7 @@ export interface components {
     mysql_backups__UploadProvider: 'rsync' | 's3' | 'gsutil';
     /**
      * XtraBackupTool
-     * @description Allowed commands for XtraBackup-style restores.
+     * @description Represent the XtraBackup-family binaries a backup or restore can run.
      * @enum {string}
      */
     mysql_backups__XtraBackupTool: 'innobackupex' | 'xtrabackup' | 'mariadb-backup';

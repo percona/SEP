@@ -37,7 +37,12 @@ from pytest_mock import MockerFixture
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.forms import (
+    ALLOWED_COMPRESSIONS,
+    ALLOWED_XTRABACKUP_BIN_COMPRESSIONS,
+    BackupCreate,
+    CompressionAlgorithm,
+)
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
@@ -350,6 +355,77 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
             ("Task", "backup_type"),
             ("Task", "backup_dir"),
         }
+
+    def test_schema_publishes_the_binary_compression_gate(
+        self, contract_client: Any
+    ) -> None:
+        """Serve one compression rule per gated binary, on that field's section.
+
+        The renderer evaluates section-scoped rules only, so this is the scope that
+        gets the operator a message before submit rather than after. Asserted
+        against the section that actually declares the field, so moving the field
+        without moving the rules fails here instead of silently detaching the
+        message from the fields it is about.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        section = next(
+            section
+            for section in response.json()["forms"]
+            if any(
+                field.get("name") == "compression_algorithm"
+                for field in section["fields"]
+            )
+        )
+        rules = [
+            rule
+            for rule in section["fail_when"]
+            if rule["error_fields"] == ["compression_algorithm"]
+        ]
+        # Derived with the builder's own skip condition rather than counting the
+        # whole matrix: a binary that accepts every algorithm the type offers has
+        # nothing to reject and is served no rule, so a row widened to the full
+        # list would otherwise fail here for being correct.
+        gated = {
+            binary: allowed
+            for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+            if set(allowed) != set(ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP])
+        }
+
+        assert len(rules) == len(gated)
+        for binary, allowed in gated.items():
+            rule = next(
+                rule for rule in rules if f"is {binary.value!r}" in rule["message"]
+            )
+            for algorithm in allowed:
+                assert algorithm.value in rule["message"]
+
+    def test_create_rejects_an_unsupported_binary_pairing(
+        self, contract_client: Any
+    ) -> None:
+        """Refuse a POST whose algorithm the selected binary cannot run.
+
+        Exercises the gate over the wire rather than through ``model_validate``,
+        which is the only way to see what the operator's client receives: the
+        rules are app-model-level, so the 422 carries a whole-body ``loc`` and the
+        rejection is identified by its message rather than by a field path.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_body(backup_type=BackupType.XTRABACKUP)
+        body["xtrabackup_bin_cmd"] = "innobackupex"
+        body["compression_algorithm"] = CompressionAlgorithm.ZSTD.value
+
+        response = contract_client.post(base, json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        messages = [error["msg"] for error in response.json()["detail"]]
+        assert any(
+            "must be quicklz when the backup binary is 'innobackupex'" in message
+            for message in messages
+        ), messages
 
     def test_update_rejects_a_body_without_a_backup_directory(
         self, contract_client: Any

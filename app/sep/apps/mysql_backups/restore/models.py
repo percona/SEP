@@ -43,6 +43,7 @@ from app.sep.apps.mysql_backups.forms import (
 from app.sep.apps.mysql_backups.models import (
     BackupType,
     ensure_backup_source_shell_safe,
+    XtraBackupTool,
 )
 
 _log = logging.getLogger(__name__)
@@ -64,14 +65,6 @@ class SourceTransport(EnumFieldMixin, StrEnum):
     SSH = "ssh"
     S3 = "s3"
     GCS = "gcs"
-
-
-class XtraBackupTool(EnumFieldMixin, StrEnum):
-    """Allowed commands for XtraBackup-style restores."""
-
-    INNOBACKUPEX = "innobackupex"
-    XTRABACKUP = "xtrabackup"
-    MARIADB_BACKUP = "mariadb-backup"
 
 
 class RestoreConfigAll(BaseCaseInsensitiveModel):

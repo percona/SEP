@@ -70,6 +70,30 @@ def xtrabackup_payload_tree() -> ast.Module:
     return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
 
 
+def xtrabackup_binary_default(tree: ast.Module) -> str:
+    """Return the binary a payload falls back to when its config omits one.
+
+    Shared rather than extracted per module: two surfaces are pinned to this one
+    value — the backup and restore payloads to each other, and the form's
+    blank-field resolution to the payload's — so a second reader of the same call
+    could match differently and let one of those pins pass while the other drifted.
+
+    :param tree: The parsed payload whose ``XTRABACKUP_BIN_CMD`` fallback to read.
+    :return: The fallback binary spelling.
+    :raises AssertionError: If the payload no longer defaults the key.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        match node.func.attr, node.args:
+            case "get", [
+                ast.Constant(value="XTRABACKUP_BIN_CMD"),
+                ast.Constant(value=str() as default),
+            ]:
+                return default
+    raise AssertionError("the payload no longer defaults XTRABACKUP_BIN_CMD")
+
+
 def service_payload(
     name: str,
     service_id: int = 1,
