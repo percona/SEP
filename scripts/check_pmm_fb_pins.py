@@ -19,6 +19,7 @@
 import argparse
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import yaml
@@ -116,7 +117,7 @@ def load_slots(compose_path: Path) -> tuple[object, dict[str, object]]:
     return image, args
 
 
-def read_arg(args: dict[str, object], name: str) -> str:
+def read_arg(args: Mapping[str, object], name: str) -> str:
     """Resolve one build arg's committed default.
 
     :param args: The raw build-arg mapping.
@@ -139,7 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     would refuse every arm64 build from a fresh clone.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
-    :return: 0 when the tags agree, 1 when they do not.
+    :return: 0 when the three spellings name one build, 1 when a tag is
+        empty or they disagree.
     :raises SystemExit: When the arguments do not parse, when the compose file
         is not this harness's, or when a pin is absent or is not exactly the
         expansion it is keyed by.
@@ -177,6 +179,20 @@ def main(argv: list[str] | None = None) -> int:
         BUILD_TAG: read_arg(build_args, "PMM_FB_TAG"),
         WITNESS: read_arg(build_args, "NOMAD_VERSION_FB_TAG"),
     }
+    unset = [where for where, tag in tags.items() if not tag]
+    if unset:
+        print(
+            "ERROR: a feature-build tag defaults to nothing, so it names no build:",
+            file=sys.stderr,
+        )
+        for where in unset:
+            print(f"  {where}", file=sys.stderr)
+        print(
+            "Empty defaults agree with each other, which is not a pin; see"
+            " sidecar/pmm-fb/mysql-target.md.",
+            file=sys.stderr,
+        )
+        return 1
     if len(set(tags.values())) > 1:
         print(
             "ERROR: the feature-build tag disagrees across the compose file:",

@@ -44,7 +44,8 @@ stage both expand to the empty string, the guard's ``[ -z "$PMM_CLIENT_IMAGE" ]`
 opens every time, and it passes every build while looking installed.
 
 ``NOMAD_VERSION`` is in the list for the same reason and is the worse case: it
-is the first clause of *both* guards, so moving its declaration above the first
+is read by *both* guards before either can fail, so moving its declaration
+above the first
 ``FROM``, the natural direction once its three siblings live up there, would
 silently retire the original assertion as well as the new one.
 """
@@ -89,6 +90,21 @@ YAML resolves that to ``None``, which the reader has to reject by name rather
 than by letting the regex raise on a non-string.
 """
 
+VALUELESS_ARGS = """\
+services:
+  pmm-server:
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
+  sep-mysql:
+    build:
+      args:
+"""
+"""The build-args key itself carries no mapping.
+
+The sibling above withholds one arg's value; here the whole node is ``None``,
+which reaches the reader as a well-shaped file whose args cannot be searched by
+name at all.
+"""
+
 DECORATED_PIN = """\
 services:
   pmm-server:
@@ -124,6 +140,25 @@ services:
 Exporting ``PMM_FB_TAG`` would then move the server and the witness while this
 slot stayed behind: the mismatch the check exists to prevent, reached without
 changing a single literal.
+"""
+
+
+EMPTY_PIN = """\
+services:
+  pmm-server:
+    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-}
+  sep-mysql:
+    build:
+      args:
+        PMM_FB_TAG: ${PMM_FB_TAG:-}
+        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
+        NOMAD_VERSION_FB_TAG: ${NOMAD_VERSION_FB_TAG:-}
+"""
+"""Every tag slot is well-formed and defaults to nothing.
+
+Three empty strings agree with each other, so equality alone calls this file
+pinned while a fresh clone builds a tagless image reference. It is the same
+vacuous comparison the witness exists to remove, one layer up.
 """
 
 
@@ -355,6 +390,7 @@ def test_a_drifting_server_tag_is_caught(
         pytest.param("services: {}\n", id="no-sep-mysql-service"),
         pytest.param("just a string\n", id="not-a-mapping"),
         pytest.param(VALUELESS_PIN, id="a-pin-with-no-value"),
+        pytest.param(VALUELESS_ARGS, id="build-args-with-no-mapping"),
         pytest.param(REWIRED_PIN, id="a-pin-on-the-wrong-variable"),
         pytest.param(DECORATED_PIN, id="a-pin-with-a-literal-beside-it"),
     ],
@@ -367,6 +403,21 @@ def test_an_unreadable_compose_file_is_refused(tmp_path: Path, content: str) -> 
     """
     path = tmp_path / "compose.yaml"
     path.write_text(content, encoding="utf-8")
+
+    result = run_checker(str(path))
+
+    assert result.returncode != 0
+    assert "ERROR" in result.stdout + result.stderr
+
+
+def test_pins_that_name_no_build_are_refused(tmp_path: Path) -> None:
+    """Refuse tags that agree only because every one of them defaults to nothing.
+
+    Equality is satisfied by three empty strings, so the check has to ask what
+    the tags resolve to as well as whether they match.
+    """
+    path = tmp_path / "compose.yaml"
+    path.write_text(EMPTY_PIN, encoding="utf-8")
 
     result = run_checker(str(path))
 
