@@ -51,6 +51,7 @@ _PLAN_LOGGER = "app.sep.bundle_upload.plan"
 #: in the confidentiality tests: without it, asserting that a sentinel is absent
 #: would hold just as well on a run that logged nothing at all.
 _RESPONSE_LOG_MARKER = "request to"
+_WITHHELD_RESPONSE_LOG_MARKER = "<withheld>"
 
 #: A receiver record carrying every fact the connection-details plan declares,
 #: alongside the two credential fields the same row holds on Percona's instance.
@@ -2964,7 +2965,7 @@ class TestProbeResponseConfidentiality:
                 async with api:
                     await executor.probe()
 
-        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert _WITHHELD_RESPONSE_LOG_MARKER in caplog.text
         assert "probe-body-sentinel" not in caplog.text
 
     async def test_an_error_probe_body_reaches_no_log_record(
@@ -3035,7 +3036,7 @@ class TestCaseSearchResponseConfidentiality:
                     with pytest.raises(HTTPException):
                         await executor.search_cases("CS00")
 
-        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert _WITHHELD_RESPONSE_LOG_MARKER in caplog.text
         assert "search-body-sentinel" not in caplog.text
 
     async def test_an_error_search_body_reaches_no_log_record(
@@ -3118,7 +3119,7 @@ class TestResolutionStepResponseConfidentiality:
                             manifest=_MANIFEST,
                         )
 
-        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert _WITHHELD_RESPONSE_LOG_MARKER in caplog.text
         assert "resolution-body-sentinel" not in caplog.text
 
     async def test_an_error_step_body_reaches_no_log_record(
@@ -3201,7 +3202,7 @@ class TestUploadResponseConfidentiality:
                     )
 
         assert result.reference is None
-        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert _WITHHELD_RESPONSE_LOG_MARKER in caplog.text
         assert "upload-body-sentinel" not in caplog.text
 
     async def test_an_error_upload_body_reaches_no_log_record(
