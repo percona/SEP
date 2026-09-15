@@ -16,10 +16,12 @@
 """Cover SEP database seeding and system periodic-task contributions."""
 
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat import IntervalSchedule
@@ -699,6 +701,40 @@ class TestInitSepDbPeriodicTaskGating:
         mocker.patch.object(
             periodic_tasks_module, "get_tasks_session_maker", return_value=seed_maker
         )
+
+    async def test_startup_survives_an_unreadable_tasks_database(
+        self, mocker, seed_maker, beat_maker, caplog
+    ) -> None:
+        """Boot, and say so, when the sweep cannot reach the tasks database.
+
+        The sweep is the only step here that reads the tasks database, and a
+        deployment whose ``sep`` track has migrated ahead of its ``tasks`` track
+        reaches it before the table exists. Asserting the log line as well as the
+        survival is deliberate: a test that only checks ``init_sep_db`` returned
+        passes equally against a silent ``except``.
+        """
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings, "APPS", [_plugin("mysql_backups")]
+        )
+        mocker.patch.object(
+            seed_module,
+            "disable_unschedulable_task_schedules",
+            new_callable=mocker.AsyncMock,
+            side_effect=SQLAlchemyError("no such table: periodictask"),
+        )
+
+        with caplog.at_level(logging.ERROR, logger=seed_module.logger.name):
+            await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert "mysql_backups" in states
+        assert [
+            record
+            for record in caplog.records
+            if "unschedulable task schedules" in record.getMessage()
+        ]
 
     async def test_restore_schedules_are_switched_off(
         self, mocker, seed_maker, beat_maker

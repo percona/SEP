@@ -15,6 +15,9 @@
 
 """Define the database initial data for the SEP app."""
 
+import logging
+
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import col
 
 from app.core.celery.utils import (
@@ -33,6 +36,8 @@ from app.sep.periodic_tasks import (
     sync_app_periodic_task_gating,
 )
 from app.sep.snippets.config import snippets_settings
+
+logger = logging.getLogger(__name__)
 
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
@@ -139,6 +144,12 @@ async def init_sep_db() -> None:
     switches off every stored schedule whose task belongs to an app that does not
     offer scheduling via
     :func:`app.sep.periodic_tasks.disable_unschedulable_task_schedules`.
+
+    That last sweep is the only step here that reads the tasks database, and its
+    failure is not fatal: the reconciliation is idempotent and only ever switches
+    schedules off, so a skipped run self-heals at the next startup. A deployment
+    whose ``sep`` track has migrated ahead of its ``tasks`` track therefore boots
+    and logs, rather than refusing to start.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -166,4 +177,10 @@ async def init_sep_db() -> None:
     system_tasks = get_system_periodic_tasks()
     await init_periodic_tasks_db(system_tasks, "sep__")
     await sync_app_periodic_task_gating(system_tasks)
-    await disable_unschedulable_task_schedules()
+    try:
+        await disable_unschedulable_task_schedules()
+    except SQLAlchemyError:
+        logger.exception(
+            "Could not switch off unschedulable task schedules; starting anyway "
+            "and leaving the sweep to the next startup."
+        )
