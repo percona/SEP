@@ -16,20 +16,14 @@
 """Tests for the legacy form backfill orchestrator."""
 
 import logging
-from collections.abc import AsyncIterator
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.pool import StaticPool
 
-from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
 from app.sep.apps.checksums.models import ChecksumsForm, OWNER
+from app.sep.apps.framework import form_backfill
 from app.sep.apps.framework.form_backfill import (
     _backfill_app,
     _backfill_single_task,
@@ -49,7 +43,6 @@ from app.sep.apps.framework.form_backfill_registry import (
 )
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum
-from tests.app.db_schema import apply_schema
 
 
 def _minimal_task(*, data: dict) -> Task:
@@ -87,25 +80,6 @@ def _entry(
 _EMPTY_SERVICE_LOOKUP = ServiceIdLookup.from_services([])
 
 _ARGPARSE_USAGE_ERROR = 2
-
-
-@pytest_asyncio.fixture
-async def tasks_session() -> AsyncIterator[AsyncSession]:
-    """Provide an in-memory tasks DB session that runs real flushes."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await apply_schema(conn, SQLModel.metadata)
-    session_maker = get_async_session_maker_from_engine(engine)
-    try:
-        async with session_maker() as session:
-            yield session
-    finally:
-        await engine.dispose()
 
 
 async def _persisted_task(session: AsyncSession, *, data: dict) -> Task:
@@ -528,6 +502,29 @@ def test_main_accepts_and_normalizes_in_scope_owner(value, monkeypatch):
 
     assert main(["--owner", value, "--dry-run"]) == 0
     run.assert_awaited_once_with(owners=[value.upper()], dry_run=True)
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [(["--dry-run"], logging.INFO), (["--dry-run", "--verbose"], logging.DEBUG)],
+)
+def test_verbose_moves_the_level_the_progress_lines_are_emitted_at(
+    argv, expected, monkeypatch
+):
+    """Raise the emitting logger, not just the root's unreachable default.
+
+    The app's logging configuration installs a handler before this module is
+    imported, which is enough for ``basicConfig`` to return early and leave the
+    root at ``WARNING`` — so a flag that only reached it would silence every
+    per-task line an operator runs the backfill to watch.
+    """
+    monkeypatch.setattr(
+        "app.sep.apps.framework.form_backfill.run_backfill", AsyncMock()
+    )
+    monkeypatch.setattr(form_backfill.logger, "level", logging.NOTSET)
+
+    assert main(argv) == 0
+    assert form_backfill.logger.level == expected
 
 
 @pytest.mark.parametrize("value", ["ANY", "BACKUP_MONGO", "RESTORE_MONGO", "bogus"])

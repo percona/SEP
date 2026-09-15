@@ -55,6 +55,7 @@
   "display_name": "MongoDB Backups",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "description": "Creating this backup produces sibling tasks: logical, physical, status, incremental.",
@@ -96,6 +97,7 @@
       "title": "Task"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -216,6 +218,7 @@
       "title": "Storage"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -270,6 +273,7 @@
       "title": "Point-in-Time Recovery"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [

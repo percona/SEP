@@ -137,6 +137,10 @@ dev-frontend:
 backfill-legacy-forms: venv
 	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
 
+# Read-only counterpart: reports the saved stamps a create form now rejects.
+form-audit: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_audit $(AUDIT_ARGS)
+
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
 		$$($(PYTHON) -c "import tomllib,pathlib;c=tomllib.loads(pathlib.Path('pyproject.toml').read_text());print(' '.join(f'--ignore-vuln {v}' for v in c.get('tool',{}).get('pip-audit',{}).get('ignore-vulnerabilities',[])))" 2>/dev/null)
@@ -398,4 +402,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms form-audit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check

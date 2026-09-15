@@ -3080,10 +3080,16 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to update the periodic task.
      *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
      *     :return: The updated periodic task as returned by the Tasks API.
+     *     :raises HTTPUnprocessableEntityException: If the body's ``task`` is present
+     *         and not a string, or if the resolved name is not a single plain URL path
+     *         segment.
+     *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
+     *         task the schedule would run.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
-     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-     *         or a connection-level ``OSError``.
+     *     :raises HTTPBadGatewayException: If the stored schedule carries no task name,
+     *         and for an upstream server error (status >= 500) or a connection-level
+     *         ``OSError``.
      */
     put: operations['tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
     post?: never;
@@ -3121,6 +3127,10 @@ export interface paths {
      *     :param tasks_api: The Tasks API client used to create the periodic task.
      *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
      *     :return: The created periodic task as returned by the Tasks API.
+     *     :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+     *         plain URL path segment.
+     *     :raises HTTPBadRequestException: If no installed app offers scheduling for the
+     *         task.
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -4113,6 +4123,11 @@ export interface components {
       /** @default pending */
       status: components['schemas']['TaskHistoryStatusEnum'];
       task: components['schemas']['SepTaskResponse'];
+      /**
+       * Unreadable Request Leaves
+       * @default []
+       */
+      unreadable_request_leaves: string[];
       /** Updated At */
       updated_at?: string | null;
     };
@@ -4496,51 +4511,35 @@ export interface components {
      *
      *     :param filename: The snippet's filename on disk; doubles as its
      *         identifier in the API.
-     *     :type filename: NonEmptyStr
      *     :param title: The display title for the snippet (snippet metadata's
      *         ``title`` field, falling back to ``filename`` when unset).
-     *     :type title: NonEmptyStr
      *     :param description: The snippet's free-text description, or an empty
      *         string when no description is set in metadata.
-     *     :type description: str
      *     :param service_type: The snippet's free-form service type
      *         (``service_type`` metadata field, for example ``"mysql"`` or
      *         ``"mongodb"``), or ``None`` when the snippet declares no service
      *         type. Distinct from the inventory ``ServiceTypeEnum``.
-     *     :type service_type: str | None
      *     :param size: Snippet file size in bytes.
-     *     :type size: int
      *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
-     *     :type md5_digest: str
      *     :param is_approved: Whether the snippet has been approved for execution.
-     *     :type is_approved: bool
      *     :param approved_at: When the snippet was last approved, or ``None`` if
      *         unapproved.
-     *     :type approved_at: datetime | None
      *     :param updated_by: User id that last toggled the approval state, or
      *         ``None`` if no toggle has occurred.
-     *     :type updated_by: str | None
      *     :param reason: Free-form reason recorded the last time the snippet's
      *         approval state changed.
-     *     :type reason: str
      *     :param requires_sudo: Whether the snippet requires sudo for execution
      *         (either always-sudo or sudo is user-toggleable).
-     *     :type requires_sudo: bool
      *     :param sudo_optional: Whether the user can toggle sudo at execution
      *         time.
-     *     :type sudo_optional: bool
      *     :param sudo_default: Default value for the sudo toggle when
      *         ``sudo_optional`` is ``True``.
-     *     :type sudo_default: bool
      *     :param interpreter: The shell/interpreter command used to execute the
      *         snippet (for example, ``"bash"`` or ``"python3"``); ``None`` when
      *         no interpreter mapping resolves.
-     *     :type interpreter: str | None
      *     :param created_at: When the snippet row was first inserted.
-     *     :type created_at: datetime
      *     :param updated_at: When the snippet row was last updated, or ``None``
      *         if never updated since insert.
-     *     :type updated_at: datetime | None
      */
     SnippetResponse: {
       /** Approved At */
@@ -7176,10 +7175,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7375,10 +7377,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7501,10 +7506,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7717,10 +7725,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7762,12 +7773,15 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7788,29 +7802,27 @@ export interface components {
      * @description Represent a labelled group of related fields rendered as one fieldset.
      *
      *     :param title: The section heading displayed above the grouped fields.
-     *     :type title: NonEmptyStr
      *     :param description: Optional helper text rendered beneath the section
      *         heading. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
      *     :param fields: The list of fields belonging to this section. May include
      *         :class:`OneOfGroup` containers alongside leaf fields.
-     *     :type fields: list[AnyField]
      *     :param cardinality_rules: Optional cross-field cardinality constraints
      *         scoped to the fields in this section. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
      *     :param fail_when: Optional predicate-only invariants scoped to this
      *         section. Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
+     *     :param advanced: Whether the section holds expert options rather than the
+     *         common case. The renderer withholds advanced sections behind a single
+     *         "Show advanced options" control placed after the ordinary ones and
+     *         reveals them as ordinary top-level sections, so several expert sections
+     *         cost one row at rest instead of one each. Membership needs no
+     *         adjacency. Defaults to ``False``.
      *     :param collapsible: Whether the renderer may collapse this section behind
      *         a toggle. Defaults to ``False``.
-     *     :type collapsible: bool
      *     :param collapsed_by_default: Whether a collapsible section should start
      *         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
      *         ``False``.
-     *     :type collapsed_by_default: bool
      *     :param render_after_submit: Whether this section should render after the
      *         submit button instead of before it. Defaults to ``False``.
-     *     :type render_after_submit: bool
      *     :param forbidden: Optional gates that hide the entire section when any
      *         of them fires. The schema-driven React renderer skips the section
      *         and unregisters every child field from the form so stale values
@@ -7823,9 +7835,13 @@ export interface components {
      *         ``truthy``/``present`` predicates silently pass while
      *         ``falsy``/``absent`` predicates see the children as missing.
      *         Author ``fail_when`` rules accordingly.
-     *     :type forbidden: list[FieldGate] | None
      */
     framework__FormSection: {
+      /**
+       * Advanced
+       * @default false
+       */
+      advanced: boolean;
       /** Cardinality Rules */
       cardinality_rules?: components['schemas']['framework__CardinalityRule'][] | null;
       /**
@@ -7877,6 +7893,18 @@ export interface components {
       title: string;
     };
     /**
+     * HelpPlacement
+     * @description Say where a field's ``description`` is shown, overriding the default.
+     *
+     *     The renderer otherwise places help by length — a description that fits
+     *     roughly one line sits under the input, a longer one goes behind a help icon
+     *     beside the label. Setting this is for the cases where that reads wrong: a
+     *     terse note that is still secondary, or a long one someone needs in front of
+     *     them while they type.
+     * @enum {string}
+     */
+    framework__HelpPlacement: 'tooltip' | 'inline';
+    /**
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
      *
@@ -7913,10 +7941,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -7960,12 +7991,15 @@ export interface components {
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
       /** Ge */
       ge?: number | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Le */
       le?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8038,10 +8072,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8095,10 +8132,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8143,10 +8183,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8187,10 +8230,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8235,10 +8281,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8448,10 +8497,13 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8503,10 +8555,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8607,12 +8662,15 @@ export interface components {
       endpoint_url: string;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Language */
       language?: string | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8677,10 +8735,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8725,6 +8786,7 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Max Length */
@@ -8733,6 +8795,8 @@ export interface components {
       min_length?: number | null;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Pattern */
       pattern?: string | null;
       /** Placeholder */
@@ -8788,10 +8852,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /**
        * Required
        * @default false
@@ -8883,10 +8950,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**
@@ -8926,10 +8996,13 @@ export interface components {
       destructive?: string | null;
       /** Forbidden */
       forbidden?: components['schemas']['framework__FieldGate'][] | null;
+      help_placement?: components['schemas']['framework__HelpPlacement'] | null;
       /** Label */
       label: string;
       /** Name */
       name: string;
+      /** Parent */
+      parent?: string | null;
       /** Placeholder */
       placeholder?: string | null;
       /**
@@ -9065,7 +9138,9 @@ export interface components {
      *
      *     :cvar __form_rules__: The bool fail rules — a truthy mode-owned bool outside
      *         its mode, or a GPG timing outside a GPG ``encryption_format``, fails
-     *         validation with a per-field message, as does a GPG format with no timing.
+     *         validation with a per-field message, as does a GPG format with no timing
+     *         and, for the pure ``gpg`` format only, a GPG timing no backup script
+     *         would reach without an upload target.
      */
     mysql_backups__BackupCreate: {
       /**
@@ -9636,7 +9711,7 @@ export interface components {
     };
     /**
      * S3Tool
-     * @description Allowed tools to interact with S3-compatible services.
+     * @description Enumerate the clients that can download a backup from S3-compatible storage.
      * @enum {string}
      */
     mysql_backups__S3Tool: 's3cmd' | 'awscli';
@@ -14967,6 +15042,17 @@ export interface operations {
           };
         };
       };
+      /** @description The schedule would run a task no installed app offers scheduling for. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
       /** @description Validation Error */
       422: {
         headers: {
@@ -15054,6 +15140,17 @@ export interface operations {
         content: {
           'application/json': {
             [key: string]: unknown;
+          };
+        };
+      };
+      /** @description The schedule would run a task no installed app offers scheduling for. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
           };
         };
       };

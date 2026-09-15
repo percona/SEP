@@ -32,13 +32,27 @@ function renderWithProviders(ui: ReactNode) {
 }
 
 // One field per helperText-based component plus a choice field, to prove every
-// rendered field type surfaces its mapped error inline.
+// rendered field type surfaces its mapped error inline. The described fields
+// pin `help_placement` so the help icon is what is under test here — left to
+// the default, a description this short would render inline instead.
 const SECTIONS: FormSection[] = [
   {
     title: 'Task',
     fields: [
-      { type: 'string', name: 'title', label: 'Title', description: 'A title' },
-      { type: 'integer', name: 'limit', label: 'Row Limit', description: 'Max rows' },
+      {
+        type: 'string',
+        name: 'title',
+        label: 'Title',
+        description: 'A title',
+        help_placement: 'tooltip',
+      },
+      {
+        type: 'integer',
+        name: 'limit',
+        label: 'Row Limit',
+        description: 'Max rows',
+        help_placement: 'tooltip',
+      },
       {
         type: 'choice',
         name: 'mode',
@@ -119,8 +133,19 @@ describe('SchemaFormRenderer field errors', () => {
       {
         title: 'Task',
         fields: [
-          { type: 'string', name: 'title', label: 'Title', description: 'A title', required: true },
-          { type: 'integer', name: 'limit', label: 'Row Limit', description: 'Max rows' },
+          {
+            type: 'string',
+            name: 'title',
+            label: 'Title',
+            description: 'A title',
+            required: true,
+          },
+          {
+            type: 'integer',
+            name: 'limit',
+            label: 'Row Limit',
+            description: 'Max rows',
+          },
         ],
       },
     ];

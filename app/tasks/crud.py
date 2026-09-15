@@ -37,6 +37,7 @@ from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.execution.executors.nomad.steps import NON_PERSISTABLE_STEPS
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     CAPTURE_STATUS_PRECEDENCE,
@@ -59,6 +60,9 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_EXECUTOR_IDS = frozenset({SYSTEM_USER, str(SERVICE_PRINCIPAL_ID)})
+
+#: Rows per batch for whole-population passes over the active tasks.
+ACTIVE_TASK_BATCH_SIZE = 500
 
 
 class TaskManager(BaseSQLModelManager):
@@ -138,6 +142,53 @@ class TaskManager(BaseSQLModelManager):
             kwargs["owner"] = owner
         cls._append_list_active_data_filters(where, session, target=target)
         return await cls.list(session, *where, **kwargs)
+
+    @classmethod
+    async def iter_active_batches(
+        cls,
+        session: AsyncSession,
+        *,
+        owner: str | None = None,
+        batch_size: int = ACTIVE_TASK_BATCH_SIZE,
+    ) -> AsyncGenerator[list[Task], None]:
+        """Yield every active task in ascending-id batches.
+
+        For whole-population passes, where :meth:`list_active` would materialize
+        every matching row — each with its full JSON ``data`` — before the caller
+        sees the first one. Keyset paging on the primary key rather than
+        ``offset`` so the batches stay disjoint and exhaustive: a concurrent
+        insert or delete shifts no row across a page boundary.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param owner: The owner of the tasks. If provided, only tasks for this
+            owner are yielded.
+        :param batch_size: The maximum number of tasks per batch.
+        :yield: Batches of active tasks, ordered by ascending id.
+        """
+        kwargs: dict[str, Any] = {}
+        if owner is not None:
+            kwargs["owner"] = owner
+        last_id = 0
+        while True:
+            batch = await cls.list(
+                session,
+                col(Task.deleted_at).is_(None),
+                col(Task.id) > last_id,
+                order_by=[col(Task.id)],
+                limit=batch_size,
+                **kwargs,
+            )
+            if not batch:
+                return
+            yield batch
+            if len(batch) < batch_size:
+                return
+            # ``id`` is typed optional for unpersisted instances; a queried row
+            # always carries one, and the ordering puts the highest last.
+            last_id = batch[-1].id
+            if last_id is None:
+                return
 
     @classmethod
     async def list_active_paginated(
@@ -386,10 +437,21 @@ class TaskHistoryManager(BaseSQLModelManager):
         truncated answer is wrong rather than short. In-flight executions are
         bounded by concurrency, not by history.
 
+        An encrypted key is refused rather than served. The extraction reads the
+        stored JSON directly, so pointing it at one of those keys returns a list
+        of ciphertext, which is a plausible-looking answer to a question whose
+        caller asked it precisely to avoid acting wrongly.
+
         :param session: The SQLAlchemy asynchronous session to use.
         :param meta_key: The execution-request ``meta`` key to read.
+        :raises ValueError: If ``meta_key`` names a key stored encrypted.
         :return: The distinct values present under that key.
         """
+        if meta_key in ENCRYPTED_META_KEYS:
+            raise ValueError(
+                f"{meta_key!r} is stored encrypted and cannot be read out of the "
+                f"execution request in SQL; load the rows instead."
+            )
         extracted = func_json_extract(
             session.get_bind().name,
             col(TaskHistory.execution_request),

@@ -55,6 +55,7 @@ from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
+from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import TaskHistoryStatusEnum
 
 SCHEMA_URL = "/api/apps/atw/execution-schema/"
@@ -1226,6 +1227,34 @@ class TestAtwIncidentExecutionMaskedArgs:
         assert item["masked_args"] is None
         assert item["args_withheld"] is True
         assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_args_withheld_when_upstream_could_not_read_them(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Report an undecryptable argument leaf as withheld, not as no arguments.
+
+        The tasks service serialises such a leaf as ``null`` and names it in
+        ``unreadable_request_leaves``; without reading that field the row is
+        indistinguishable from one that recorded no arguments at all.
+        """
+        await create_snippet("mongo-check.sh", parameters=[])
+        await seed_execution("mongo-check.sh")
+        history = self._history(None)
+        history["unreadable_request_leaves"] = [ARGS_LEAF]
+        tasks_api.get.return_value = history
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
 
     @pytest.mark.asyncio
     async def test_execution_without_arguments_reports_the_empty_state(
