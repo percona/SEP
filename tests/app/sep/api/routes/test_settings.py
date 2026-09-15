@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from string import Template
 from typing import Annotated, Any
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
@@ -1100,8 +1101,9 @@ class TestSepSettingsPatch:
             setting_class=SEP_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
-        assert "sn-secret" in rows[0].value["endpoint"]
-        assert "****" not in rows[0].value["endpoint"]
+        stored_endpoint = rows[0].value["endpoint"]
+        assert decrypt(urlparse(stored_endpoint).password) == "sn-secret"
+        assert "****" not in stored_endpoint
 
     @pytest.mark.usefixtures("delivery_skeleton")
     async def test_delivery_inputs_row_that_stops_matching_the_plan_survives(
@@ -2296,11 +2298,18 @@ class TestGlobalSettingsClass:
 
 @pytest.mark.asyncio
 class TestSepSettingsSecretsEncryptedAtRest:
-    """Verify the write path encrypts every secret-typed leaf a PATCH persists.
+    """Verify the write path encrypts every credential-bearing leaf a PATCH persists.
+
+    Covers both leaf kinds: a Pydantic secret leaf, whose whole value is
+    encrypted, and a credential-bearing URL, where only the userinfo password is
+    and the endpoint stays readable.
 
     The stored ciphertext is asserted through :func:`decrypt` rather than pinned:
     Fernet derives a fresh IV per call, so two encryptions of one plaintext differ.
     """
+
+    _CREDENTIAL_URL = "https://inv-user:inv-secret@inventory.internal:8080/api"
+    _CREDENTIAL_PASSWORD = "inv-secret"
 
     @pytest.fixture(autouse=True)
     def _reset_snapshots(self) -> Iterator[None]:
@@ -2309,6 +2318,134 @@ class TestSepSettingsSecretsEncryptedAtRest:
         settings._set_snapshot({})
         alert_settings._set_snapshot({})
         sep_settings._set_snapshot({})
+
+    async def test_credential_url_patch_encrypts_only_the_password(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt ``INVENTORY_ENDPOINT``'s password while the endpoint stays legible.
+
+        Driven through a real PATCH with no override on the body model, so the
+        walker receives whatever the route's own coercion produces -- a
+        :class:`pydantic_core.Url` for this field, which is the runtime type a
+        hand-written string payload cannot reproduce.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="INVENTORY_ENDPOINT",
+        )
+        assert len(rows) == 1, "the PATCH must have persisted exactly one row"
+        parsed = urlparse(rows[0].value)
+        assert is_encrypted(parsed.password)
+        assert decrypt(parsed.password) == self._CREDENTIAL_PASSWORD
+        assert parsed.username == "inv-user"
+        assert parsed.hostname == "inventory.internal"
+        assert str(sep_settings.INVENTORY_ENDPOINT).rstrip("/") == (
+            self._CREDENTIAL_URL
+        )
+
+    async def test_nested_credential_url_patch_encrypts_the_password(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt the nested ``PMM__ENDPOINT`` leaf, which reaches the walker as text."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM__ENDPOINT": self._CREDENTIAL_URL},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        # The row is stored under the canonical field spelling, not the
+        # submitted one, so the lookup uses the lowercase leaf name.
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM__endpoint"
+        )
+        assert len(rows) == 1, "the PATCH must have persisted exactly one row"
+        assert decrypt(urlparse(rows[0].value).password) == self._CREDENTIAL_PASSWORD
+        assert str(settings.PMM.endpoint).rstrip("/") == self._CREDENTIAL_URL
+
+    async def test_whole_object_patch_encrypts_both_leaf_kinds(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Encrypt the URL password and the ``api_key`` sibling in one stored row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM": {"endpoint": self._CREDENTIAL_URL, "api_key": PMM_API_KEY}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM"
+        )
+        assert len(rows) == 1, "the PATCH must have persisted exactly one row"
+        stored = rows[0].value
+        assert decrypt(urlparse(stored["endpoint"]).password) == (
+            self._CREDENTIAL_PASSWORD
+        )
+        assert decrypt(stored["api_key"]) == PMM_API_KEY
+
+    async def test_masked_resubmit_over_encrypted_storage_round_trips(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Restore the mask against an at-rest-encrypted value and re-encrypt it.
+
+        Mask restoration compares the submitted URL against the *decrypted*
+        snapshot, so the round trip has to survive the stored value being
+        ciphertext between the two PATCHes.
+        """
+        first = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
+        )
+        assert first.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={
+                "INVENTORY_ENDPOINT": (
+                    "https://inv-user:****@inventory.internal:8080/api"
+                )
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="INVENTORY_ENDPOINT",
+        )
+        assert len(rows) == 1, "the resubmit must leave exactly one row"
+        assert decrypt(urlparse(rows[0].value).password) == self._CREDENTIAL_PASSWORD
+
+    async def test_credential_url_read_surface_is_unchanged_by_encryption(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep the API contract: still ``user:****@host``, still ``is_secret: false``.
+
+        The at-rest change must not leak into ``is_secret``, which the settings
+        DETAIL response publishes for every field, nor serve the ciphertext.
+        """
+        patched = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
+        )
+        assert patched.status_code == status.HTTP_200_OK
+
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert self._CREDENTIAL_PASSWORD not in payload["value"]
+        assert _FERNET_TOKEN_PREFIX not in payload["value"]
+        assert "****" in payload["value"]
+        assert "inv-user" in payload["value"]
+        assert payload["is_secret"] is False
 
     async def test_whole_object_patch_encrypts_the_secret_leaf(
         self, api_admin_client: TestClient, override_session: AsyncSession

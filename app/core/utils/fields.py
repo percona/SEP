@@ -632,22 +632,56 @@ def _netloc_host(netloc: str) -> str:
     return netloc
 
 
-def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
-    """Return ``url`` with any embedded userinfo password replaced by ``mask``.
+def credential_url_password(url: str) -> str | None:
+    """Return the embedded userinfo password, or ``None`` when there is none.
 
-    Scheme, username, host, port, path, query, and fragment are preserved.
-    URLs without an embedded password are returned unchanged.
+    The single reader of a URL's credential segment: the at-rest walker, the
+    side-car's mint preflight and :func:`redact_credential_url` all resolve
+    "which characters are the password" here rather than each parsing their own.
 
-    :param url: The URL string to redact.
-    :param mask: The replacement for the password segment.
-    :return: The URL with a redacted password, or ``url`` when none is present.
+    An empty password (``https://user:@host/``) collapses to ``None``: it is
+    absence, not a credential, so a caller transforming the segment cannot
+    invent one where the operator supplied none.
+
+    A URL this cannot parse raises rather than answering ``None``, because the
+    two mean opposite things to a caller that masks: ``None`` is "there is no
+    credential here", while the exception is "there may be one and I cannot
+    find it". Callers choose their own posture --
+    :func:`~app.core.settings_override.secret_storage._transform_credential_url`
+    leaves the leaf alone, while ``masking._redact_credential_url_token``
+    replaces the whole token.
+
+    :param url: The URL string to inspect.
+    :return: The raw (still percent-encoded) password segment, or ``None`` when
+        the URL carries none.
+    :raises ValueError: If ``url`` cannot be parsed, which a malformed
+        bracketed IPv6 literal is the only shape to cause.
     """
-    parsed = urlparse(url)
-    if not parsed.password:
+    return urlparse(url).password or None
+
+
+def map_credential_url_password(url: str, transform: Callable[[str], str]) -> str:
+    """Return ``url`` with ``transform`` applied to its embedded password.
+
+    Scheme, username, host, port, path, query and fragment are preserved
+    byte-for-byte, and the password is handed over exactly as it appears in the
+    URL -- still percent-encoded -- so an encrypt/decrypt round trip reproduces
+    the original string.
+
+    :param url: The URL string to rewrite.
+    :param transform: Applied to the password segment.
+    :return: The rewritten URL, or ``url`` when it carries no password.
+    :raises ValueError: If ``url`` cannot be parsed. Propagated deliberately:
+        a caller masking a credential must not receive the unredacted input
+        when the parse fails.
+    """
+    password = credential_url_password(url)
+    if password is None:
         return url
+    parsed = urlparse(url)
     host = _netloc_host(parsed.netloc)
     username = parsed.username or ""
-    netloc = f"{username}:{mask}@{host}"
+    netloc = f"{username}:{transform(password)}@{host}"
     return urlunparse(
         (
             parsed.scheme,
@@ -658,6 +692,19 @@ def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
             parsed.fragment,
         )
     )
+
+
+def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
+    """Return ``url`` with any embedded userinfo password replaced by ``mask``.
+
+    Scheme, username, host, port, path, query, and fragment are preserved.
+    URLs without an embedded password are returned unchanged.
+
+    :param url: The URL string to redact.
+    :param mask: The replacement for the password segment.
+    :return: The URL with a redacted password, or ``url`` when none is present.
+    """
+    return map_credential_url_password(url, lambda _password: mask)
 
 
 def strip_credential_url_userinfo(url: str) -> str:

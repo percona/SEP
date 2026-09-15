@@ -25,7 +25,9 @@ from app.core.settings_override.registry import (
 from app.core.utils.fields import (
     AuthCredentialSecretStr,
     CREDENTIAL_URL_MASK,
+    credential_url_password,
     CredentialHttpUrl,
+    map_credential_url_password,
     PreservableSecretStr,
     preserve_credential_url_password,
     PRESERVE_CREDENTIALS_CONTEXT,
@@ -274,6 +276,143 @@ class TestStripCredentialUrlUserinfo:
             "http://u:p@host:4646/v1/jobs?region=eu#frag"
         )
         assert stripped == "http://host:4646/v1/jobs?region=eu#frag"
+
+
+class TestCredentialUrlPassword:
+    """Cover :func:`credential_url_password` over every userinfo shape."""
+
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (_CREDENTIAL_URL, "nomad-secret"),
+            (_PLAIN_URL, None),
+            ("http://nomad-user@nomad.internal:4646", None),
+            ("http://nomad-user:@nomad.internal:4646", None),
+            ("http://:pw-only@nomad.internal:4646", "pw-only"),
+            ("https://u:p%40ss%3Aword@host/", "p%40ss%3Aword"),
+            ("https://u:pw@[2001:db8::1]:8443/", "pw"),
+            ("not a url at all", None),
+        ],
+        ids=[
+            "present",
+            "absent",
+            "username-only",
+            "empty-password",
+            "password-without-username",
+            "percent-encoded",
+            "ipv6-host",
+            "non-url",
+        ],
+    )
+    def test_returns_the_raw_password_segment(
+        self, url: str, expected: str | None
+    ) -> None:
+        """Return the still-percent-encoded password, or ``None`` when there is none."""
+        assert credential_url_password(url) == expected
+
+    def test_an_unparseable_url_raises_rather_than_answering_none(self) -> None:
+        """Propagate the parse failure instead of reporting "no credential here".
+
+        ``None`` and the exception mean opposite things to a caller that masks:
+        ``None`` licenses returning the input untouched, which for an
+        unparseable credential URL would emit the password in the clear. A
+        malformed bracketed IPv6 literal is the only shape that raises.
+        """
+        with pytest.raises(ValueError, match="Invalid IPv6 URL"):
+            credential_url_password("https://user:pw@[bad:ipv6/")
+
+    def test_a_plain_url_never_raises(self) -> None:
+        """Confirm the raise above is specific, not a blanket parse failure."""
+        assert credential_url_password(_PLAIN_URL) is None
+
+
+class TestMapCredentialUrlPassword:
+    """Cover :func:`map_credential_url_password`'s rewrite and its pass-throughs."""
+
+    def test_applies_the_transform_to_the_password_only(self) -> None:
+        """Rewrite the password segment and leave every other component alone."""
+        assert map_credential_url_password(_CREDENTIAL_URL, str.upper) == (
+            "http://nomad-user:NOMAD-SECRET@nomad.internal:4646/v1/jobs"
+        )
+
+    def test_preserves_every_component_around_the_password(self) -> None:
+        """Keep scheme, username, host, port, path, params, query and fragment."""
+        rewritten = map_credential_url_password(
+            "http://u:pw@host:4646/v1/jobs;p=1?region=eu#frag", lambda _password: "X"
+        )
+
+        assert rewritten == "http://u:X@host:4646/v1/jobs;p=1?region=eu#frag"
+
+    def test_preserves_ipv6_brackets_and_port(self) -> None:
+        """Keep a bracketed IPv6 host and its port through the reassembly."""
+        rewritten = map_credential_url_password(
+            "https://u:pw@[2001:db8::1]:8443/api", lambda _password: "X"
+        )
+
+        assert rewritten == "https://u:X@[2001:db8::1]:8443/api"
+
+    def test_preserves_an_empty_username(self) -> None:
+        """Keep the empty username of a ``:password@host`` URL rather than dropping it."""
+        rewritten = map_credential_url_password(
+            "http://:pw@host:4646/v1", lambda _password: "X"
+        )
+
+        assert rewritten == "http://:X@host:4646/v1"
+
+    def test_hands_the_transform_the_still_encoded_password(self) -> None:
+        """Pass the raw percent-encoded segment so an encrypt/decrypt round trip is exact.
+
+        ``urlparse`` does not unquote the password, and neither does the
+        reassembly, so a password carrying ``@`` or ``:`` survives byte-for-byte
+        only if the transform sees exactly what the URL holds.
+        """
+        seen: list[str] = []
+
+        map_credential_url_password(
+            "https://u:p%40ss%3Aword@host/",
+            lambda password: seen.append(password) or "",
+        )
+
+        assert seen == ["p%40ss%3Aword"]
+
+    def test_round_trips_a_percent_encoded_password_byte_for_byte(self) -> None:
+        """Return the original URL when the transform is the identity."""
+        url = "https://u:p%40ss%3Aword@host/"
+
+        assert map_credential_url_password(url, lambda password: password) == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            _PLAIN_URL,
+            "http://nomad-user@nomad.internal:4646",
+            "http://nomad-user:@nomad.internal:4646",
+        ],
+        ids=["no-userinfo", "username-only", "empty-password"],
+    )
+    def test_returns_the_url_unchanged_when_there_is_no_password(
+        self, url: str
+    ) -> None:
+        """Leave a URL the transform has nothing to apply to byte-identical.
+
+        An empty password is *absent*, not a credential: transforming it would
+        invent one where the operator supplied none.
+        """
+        assert map_credential_url_password(url, lambda _password: "INVENTED") == url
+
+    def test_an_unparseable_url_propagates_rather_than_returning_the_input(
+        self,
+    ) -> None:
+        """Refuse to hand back the untransformed URL when the parse fails.
+
+        Returning the input here would mean a caller replacing a password with a
+        mask silently emits the real one instead — which is what
+        ``masking._redact_credential_url_token`` catches this exception to avoid.
+        """
+        with pytest.raises(ValueError, match="Invalid IPv6 URL"):
+            map_credential_url_password(
+                "https://user:pw@[bad:ipv6/", lambda _password: CREDENTIAL_URL_MASK
+            )
 
 
 class TestPreservableSecretStr:
