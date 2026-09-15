@@ -399,7 +399,7 @@
 | app/tasks/db/seed.py                                                                                                         |      144 |        9 |       38 |        7 |     90% |824-\>837, 838-\>852, 1017-1025, 1030-\>1010, 1036-1038, 1049, 1061, 1094 |
 | app/tasks/deps.py                                                                                                            |      110 |        3 |       30 |        0 |     98% |     64-66 |
 | app/tasks/execution/exceptions.py                                                                                            |        8 |        0 |        0 |        0 |    100% |           |
-| app/tasks/execution/executors/celery/models.py                                                                               |       87 |        0 |       16 |        0 |    100% |           |
+| app/tasks/execution/executors/celery/models.py                                                                               |       90 |        0 |       16 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/constants.py                                                                             |        1 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/exceptions.py                                                                            |        4 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/models.py                                                                                |      935 |       68 |      320 |       19 |     92% |191, 370, 440-443, 444-\>exit, 484, 486-\>480, 535, 578, 913, 975-\>977, 1192-\>1197, 1201, 1207, 1242-1247, 1338-\>1334, 1485-\>1507, 1792, 1883, 2267-2269, 2295-2296, 2333-2334, 2368-2369, 2415-\>2460, 2450-\>2415, 2684-2685, 2726, 2824-2825, 2899-2900, 2923-2979 |
@@ -474,7 +474,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29607** | **1714** | **7272** |  **658** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29610** | **1714** | **7272** |  **658** | **93%** |           |
 
 
 ## Setup coverage badge
