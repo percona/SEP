@@ -70,12 +70,7 @@ async def _mock_rejected_file_stream(
     :param headers: Optional exception headers preserved on the response.
     :return: Never yields; exists only to satisfy the async-generator protocol.
     """
-    kwargs: dict[str, Any] = {"status_code": status_code}
-    if detail is not None:
-        kwargs["detail"] = detail
-    if headers is not None:
-        kwargs["headers"] = headers
-    raise HTTPException(**kwargs)
+    raise HTTPException(status_code, detail=detail, headers=headers)
     yield  # pragma: no cover — makes this an async generator
 
 
@@ -124,7 +119,6 @@ async def _mock_blocked_after_prime_file_stream(
     """
     yield priming_chunk
     await asyncio.Event().wait()
-    yield b""  # pragma: no cover — never reached
 
 
 @pytest.fixture
@@ -395,9 +389,8 @@ class TestDownloadTaskHistoryFile:
         """Assert upstream 500 is logged before the error response is returned.
 
         FastAPI's ``@app.exception_handler(500)`` only sees non-HTTPException
-        failures, so error priming must log 5xx HTTPExceptions itself — then
-        re-raise so ExceptionMiddleware still returns the real status instead of
-        a hand-built body that would hide the failure from on-call.
+        failures, so error priming must log 5xx HTTPExceptions itself before
+        re-raising for ExceptionMiddleware to return the real status.
         """
         mock_tasks_client_dep.get.return_value = {
             "backup.sql": {"size": 2048, "is_dir": False}
@@ -615,7 +608,5 @@ class TestDownloadThroughTheRealClientDependency:
 
                 await app_state_tasks_client.close_when_idle()
                 assert app_state_tasks_client._session is not None
-
-                # Exit without draining — cancels the blocked in-flight stream
 
         assert app_state_tasks_client._session is None

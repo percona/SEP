@@ -39,8 +39,6 @@ from app.tasks.models import FileMetadata, TaskHistoryResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
-# Kept on primed-stream error responses: every proxy header from
-# STREAMING_PROXY_HEADERS, plus Content-Disposition for the download filename.
 _ERROR_RESPONSE_HEADERS = frozenset(
     {key.lower() for key in STREAMING_PROXY_HEADERS} | {"content-disposition"}
 )
@@ -70,54 +68,42 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
     async def stream_response(self, send: Send) -> None:
         """Prime the body iterator before sending the ASGI start message.
 
-        ``HTTPException`` is re-raised before any response bytes are sent so
-        ExceptionMiddleware can build the status response. 5xx errors are logged
-        here because they would not reach ``internal_error_handler``. Empty
-        successful bodies (``StopAsyncIteration``) are handled locally.
-
-        Delays ``http.response.start`` until the first upstream chunk (or error)
-        arrives — accepted TTFB cost for correct status on rejection. After
-        priming, delegates the start/body/end sends to
-        ``StreamingResponse.stream_response``.
-
         :param send: ASGI send callable used to emit response start, body, and
             end messages.
         """
-        body_iter: AsyncIterator[Any] = aiter(self.body_iterator)
+        body_iter = aiter(self.body_iterator)
 
-        # Hold headers until the first upstream pull settles (TTFB tradeoff).
         try:
             first_chunk = await anext(body_iter)
         except HTTPException as exc:
             self._prepare_primed_http_exception(exc)
             raise
         except StopAsyncIteration:
-            # Empty file — send normal 200 with empty body
-            first_chunk = None
-
-        async def primed() -> AsyncGenerator[Any, None]:
-            if first_chunk is not None:
+            self.body_iterator = body_iter
+        else:
+            async def primed() -> AsyncGenerator[Any, None]:
                 yield first_chunk
-            async for chunk in body_iter:
-                yield chunk
+                async for chunk in body_iter:
+                    yield chunk
 
-        self.body_iterator = primed()
+            self.body_iterator = primed()
         await super().stream_response(send)
 
     def _prepare_primed_http_exception(self, exc: HTTPException) -> None:
-        """Log 5xx and attach proxy/disposition headers before re-raise."""
-        # 5xx HTTPExceptions never reach ServerErrorMiddleware's 500 handler.
+        """Log 5xx and attach proxy/disposition headers before re-raise.
+
+        :param exc: Upstream ``HTTPException`` raised by the first pull; the
+            preserved response headers are merged into ``exc.headers``.
+        """
         if exc.status_code >= http_status.HTTP_500_INTERNAL_SERVER_ERROR:
             logger.exception(
                 "Upstream error while priming file download stream:",
                 exc_info=exc,
             )
-        # ExceptionMiddleware builds a fresh JSON response; carry proxy and
-        # disposition headers so they are not dropped on the error path.
         preserve = {
             key: value
             for key, value in self.headers.items()
-            if key.lower() in _ERROR_RESPONSE_HEADERS
+            if key in _ERROR_RESPONSE_HEADERS
         }
         if preserve:
             exc.headers = {**(exc.headers or {}), **preserve}
