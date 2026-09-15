@@ -431,17 +431,19 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
     )
 
 
-def already_supplied(service_account_token: str, pmm_api_key: str) -> bool:
-    """Return whether a token is already configured for either canonical name.
+def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
+    """Return the already-configured token under either canonical name, or None.
 
-    A blank value counts as absent at every layer, which is why the profile's
-    baked empty token does not read as a configured one.
+    ``AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`` wins when both resolve to
+    different values. A blank value counts as absent at every layer, which is
+    why the profile's baked empty token does not read as a configured one.
 
     :param service_account_token: The resolved Grafana service-account token.
     :param pmm_api_key: The resolved ``PMM.API_KEY``.
-    :return: Whether minting must be skipped.
+    :return: The non-blank token to fan out, or ``None`` when neither name
+        carries one.
     """
-    return bool(service_account_token.strip() or pmm_api_key.strip())
+    return service_account_token.strip() or pmm_api_key.strip() or None
 
 
 def resolve_provider() -> GrafanaSDK | None:
@@ -473,9 +475,12 @@ def resolve_provider() -> GrafanaSDK | None:
         return None
     if not isinstance(provider, GrafanaAuthProvider):
         return None
-    if already_supplied(
-        provider.service_account_token.get_secret_value(),
-        pmm_api_key.get_secret_value() if pmm_api_key else "",
+    if (
+        supplied_token(
+            provider.service_account_token.get_secret_value(),
+            pmm_api_key.get_secret_value() if pmm_api_key else "",
+        )
+        is not None
     ):
         return None
     return provider
