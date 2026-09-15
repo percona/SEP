@@ -3160,7 +3160,10 @@ class TestUploadResponseConfidentiality:
                 _UPLOAD_URL,
                 status=status.HTTP_201_CREATED,
                 payload={
-                    "result": {"sys_id": "att-1", "customer_note": "upload-body-sentinel"}
+                    "result": {
+                        "sys_id": "att-1",
+                        "customer_note": "upload-body-sentinel",
+                    }
                 },
             )
             with caplog.at_level("DEBUG", logger=api.logger.name):
