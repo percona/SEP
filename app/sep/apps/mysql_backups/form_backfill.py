@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, TYPE_CHECKING
+from typing import Annotated, Any, ClassVar, TYPE_CHECKING
 
 import yaml
 
@@ -26,11 +26,13 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
+from app.sep.apps.framework.form_dsl import FormRules
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
 from app.sep.apps.mysql_backups.forms import (
     BACKUP_DIR_UI,
     BackupCreate,
     encryption_format_for_passes,
+    LENIENT_BACKUP_FORM_RULES,
     OWNER,
     UploadProvider,
 )
@@ -87,9 +89,20 @@ class LegacyBackupCreate(BackupCreate):
     and those tasks ran and reported success, so they are part of the population
     that has to reconstruct rather than be skipped.
 
+    The upload-reachability rules are dropped for the same reason: a GPG timing no
+    backup script reaches without an upload target is exactly the shape the
+    create form rejects, and it is also the commonest shape among the tasks that
+    still need a stamp. Dropping the rules is not a downgrade risk — a stamp
+    re-saved at the schema default is still rejected by the timing-versus-format
+    rule and by ``xtrabackup_aes256_keyfile``'s own ``Forbidden``.
+
     :param backup_dir: The backup root directory; optional here and un-stripped,
         unlike on the create model.
+    :cvar __form_rules__: The create model's rules minus the upload-reachability
+        pair.
     """
+
+    __form_rules__: ClassVar[FormRules] = LENIENT_BACKUP_FORM_RULES
 
     backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 

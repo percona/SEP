@@ -3,7 +3,7 @@
     "alert_on_fail": false,
     "chaining": true,
     "pii_anonymization": false,
-    "scheduling": true,
+    "scheduling": false,
     "stats": false
   },
   "description": "Configure and run Percona Backup for MongoDB (PBM) logical or physical restore operations.",

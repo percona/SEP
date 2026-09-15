@@ -15,42 +15,69 @@
 
 """Tests for the app-state periodic-task gating orchestrator."""
 
+import json
+import logging
+from datetime import datetime
+
 import pytest
+from pytest_mock import MockerFixture
+from sqlalchemy import delete
 from sqlalchemy_celery_beat import IntervalSchedule
-from sqlalchemy_celery_beat.models import Period, PeriodicTask
+from sqlalchemy_celery_beat.models import Period, PeriodicTask, PeriodicTaskChanged
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
+from app.core.utils.date_time import utc_now
+from app.sep import periodic_tasks
+from app.sep.apps.framework.registry import AppRegistry
+from app.sep.apps.mysql_backups.forms import OWNER as BACKUPS_OWNER
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.sep.crud import SEPPluginPeriodicTaskManager
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 from app.sep.periodic_tasks import (
     apply_effective_enabled,
+    disable_schedules_for_owners,
+    disable_unschedulable_task_schedules,
     release_unowned_task_gating,
     seed_app_periodic_task_rows,
 )
+from app.tasks.models import ANY_OWNER, Task
+from tests.app.factories import TaskFactory
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
+SYSTEM_BEAT_TASK = "app.sep.snippets.celery.sync_snippets"
+USER_BEAT_TASK = "app.tasks.celery.execute_task_by_name"
 
 
 async def _seed_periodic_task(
-    session: AsyncSession, name: str, *, enabled: bool, every: int = 10
+    session: AsyncSession,
+    name: str,
+    *,
+    enabled: bool,
+    every: int = 10,
+    task: str = SYSTEM_BEAT_TASK,
+    args: str = "[]",
+    kwargs: str = "{}",
 ) -> PeriodicTask:
     """Create a celery-beat ``PeriodicTask`` row with its interval schedule."""
     schedule = IntervalSchedule(every=every, period=Period.MINUTES)
     session.add(schedule)
     await session.flush()
-    task = PeriodicTask(
+    periodic_task = PeriodicTask(
         name=name,
-        task="app.sep.snippets.celery.sync_snippets",
+        task=task,
         enabled=enabled,
+        args=args,
+        kwargs=kwargs,
         schedule_model=schedule,
     )
-    session.add(task)
+    session.add(periodic_task)
     await session.commit()
-    await session.refresh(task)
-    return task
+    await session.refresh(periodic_task)
+    return periodic_task
 
 
 def _snippets_schedule() -> list[SystemPeriodicTaskSchedule]:
@@ -460,3 +487,340 @@ class TestReleaseUnownedTaskGating:
         await release_unowned_task_gating(celery_beat_session, self._unowned_schedule())
 
         commit_spy.assert_not_called()
+
+
+async def _seed_task(
+    session: AsyncSession, name: str, owner: str, *, deleted_at: datetime | None = None
+) -> Task:
+    """Persist a Tasks-database ``Task`` row under ``owner``."""
+    task = TaskFactory.build(name=name, owner=owner, deleted_at=deleted_at)
+    session.add(task)
+    await session.commit()
+    return task
+
+
+async def _seed_user_schedule(
+    session: AsyncSession,
+    name: str,
+    *,
+    enabled: bool = True,
+    args: str = "[]",
+    kwargs: str = "{}",
+) -> PeriodicTask:
+    """Seed a user schedule the Tasks service would have written."""
+    return await _seed_periodic_task(
+        session,
+        name,
+        enabled=enabled,
+        task=USER_BEAT_TASK,
+        args=args,
+        kwargs=kwargs,
+    )
+
+
+async def _clear_changed_marker(session: AsyncSession) -> None:
+    """Drop the beat reload marker so a later read proves the sweep rewrote it."""
+    await session.execute(delete(PeriodicTaskChanged))  # ty: ignore[deprecated]
+    await session.commit()
+
+
+async def _read_enabled(session: AsyncSession, name: str) -> bool:
+    """Return the current ``enabled`` bit of the schedule named ``name``."""
+    session.expire_all()
+    row = await BasePeriodicTaskManager.first(session, name=name)
+    assert row is not None, f"no schedule named {name!r}"
+    return row.enabled
+
+
+def _sweep_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """Return the sweep's own WARNING messages, ignoring the beat library's logs."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == periodic_tasks.__name__ and record.levelno == logging.WARNING
+    ]
+
+
+@pytest.mark.asyncio
+class TestDisableSchedulesForOwners:
+    """Cover the startup sweep that switches off unschedulable owners' schedules."""
+
+    async def test_restore_schedule_is_switched_off(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Disable an enabled restore schedule and signal the beat reload."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+        await _clear_changed_marker(celery_beat_session)
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == ["nightly-restore"]
+        assert await _read_enabled(celery_beat_session, "nightly-restore") is False
+        assert [m for m in _sweep_warnings(caplog) if "nightly-restore" in m]
+        result = await celery_beat_session.exec(select(PeriodicTaskChanged.last_update))
+        assert result.one_or_none() is not None
+
+    async def test_other_owners_and_system_rows_are_untouched(
+        self, session: AsyncSession, celery_beat_session: AsyncSession
+    ) -> None:
+        """Leave backup, ``ANY_OWNER`` and system schedules enabled."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_task(session, "b1", BACKUPS_OWNER)
+        await _seed_task(session, "inventory-sync", ANY_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-backup",
+            kwargs=json.dumps({"task_name": "b1"}),
+        )
+        await _seed_user_schedule(
+            celery_beat_session,
+            "inventory-sync-schedule",
+            kwargs=json.dumps({"task_name": "inventory-sync"}),
+        )
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+
+        await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert await _read_enabled(celery_beat_session, "nightly-restore") is False
+        assert await _read_enabled(celery_beat_session, "nightly-backup") is True
+        assert (
+            await _read_enabled(celery_beat_session, "inventory-sync-schedule") is True
+        )
+        assert await _read_enabled(celery_beat_session, SNIPPETS_TASK) is True
+
+    async def test_rows_running_another_celery_callable_are_never_examined(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Ignore a beat row whose callable is not the task-execution entry point.
+
+        ``PeriodicTaskManager`` pins ``task`` to ``execute_task_by_name``, so a row
+        running anything else is never enumerated — not switched off even when its
+        arguments name an unschedulable task, and not warned about when it carries
+        no task name at all.
+        """
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_periodic_task(
+            celery_beat_session,
+            "impostor",
+            enabled=True,
+            task=SYSTEM_BEAT_TASK,
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == []
+        assert await _read_enabled(celery_beat_session, "impostor") is True
+        assert await _read_enabled(celery_beat_session, SNIPPETS_TASK) is True
+        assert _sweep_warnings(caplog) == []
+
+    async def test_second_run_is_a_no_op(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Leave every row as it stands on a second startup: only enabled ones match."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+        await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        with caplog.at_level(logging.WARNING):
+            caplog.clear()
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == []
+        assert _sweep_warnings(caplog) == []
+
+    async def test_already_disabled_schedule_is_left_alone(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Skip a restore schedule an operator already switched off."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            enabled=False,
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == []
+        assert _sweep_warnings(caplog) == []
+
+    async def test_soft_deleted_task_is_not_matched(
+        self, session: AsyncSession, celery_beat_session: AsyncSession
+    ) -> None:
+        """Leave a schedule alone when its restore task is soft-deleted."""
+        await _seed_task(session, "r1", RESTORES_OWNER, deleted_at=utc_now())
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+
+        switched_off = await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert switched_off == []
+        assert await _read_enabled(celery_beat_session, "nightly-restore") is True
+
+    async def test_positional_args_encoding_is_resolved(
+        self, session: AsyncSession, celery_beat_session: AsyncSession
+    ) -> None:
+        """Cover a pre-existing row that names its task positionally in ``args``."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session, "legacy-restore", args=json.dumps(["r1"]), kwargs="{}"
+        )
+
+        switched_off = await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert switched_off == ["legacy-restore"]
+
+    async def test_kwargs_task_name_overrides_positional_args(
+        self, session: AsyncSession, celery_beat_session: AsyncSession
+    ) -> None:
+        """Resolve to ``kwargs.task_name``, as the Tasks model does."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_task(session, "b1", BACKUPS_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session,
+            "repointed",
+            args=json.dumps(["r1"]),
+            kwargs=json.dumps({"task_name": "b1"}),
+        )
+
+        switched_off = await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert switched_off == []
+        assert await _read_enabled(celery_beat_session, "repointed") is True
+
+    async def test_malformed_row_is_skipped_with_a_warning(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Skip a row whose arguments will not parse without stopping the sweep."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(celery_beat_session, "corrupt", kwargs="{not json")
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == ["nightly-restore"]
+        assert await _read_enabled(celery_beat_session, "corrupt") is True
+        assert [m for m in _sweep_warnings(caplog) if "corrupt" in m]
+
+    async def test_wrong_shape_arguments_are_skipped_with_a_warning(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Skip a row whose ``kwargs`` parses to the wrong JSON shape."""
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session, "list-kwargs", kwargs=json.dumps(["r1"])
+        )
+        await _seed_user_schedule(
+            celery_beat_session,
+            "nightly-restore",
+            kwargs=json.dumps({"task_name": "r1"}),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            switched_off = await disable_schedules_for_owners(
+                session, celery_beat_session, [RESTORES_OWNER]
+            )
+
+        assert switched_off == ["nightly-restore"]
+        assert await _read_enabled(celery_beat_session, "list-kwargs") is True
+        assert [m for m in _sweep_warnings(caplog) if "list-kwargs" in m]
+
+    async def test_no_owners_returns_an_empty_list(
+        self, session: AsyncSession, celery_beat_session: AsyncSession
+    ) -> None:
+        """Return an empty list when the caller supplies no owners."""
+        assert (
+            await disable_schedules_for_owners(session, celery_beat_session, []) == []
+        )
+
+
+@pytest.mark.asyncio
+class TestDisableUnschedulableTaskSchedules:
+    """Cover the startup entry point that resolves the owners from the registry."""
+
+    async def test_no_unschedulable_owner_opens_no_session(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Skip both databases when every registered task app offers scheduling."""
+        mocker.patch.object(
+            periodic_tasks,
+            "get_app_registry",
+            return_value=AppRegistry([]),
+        )
+        tasks_maker = mocker.patch.object(
+            periodic_tasks, "get_tasks_session_maker", side_effect=AssertionError
+        )
+        beat_maker = mocker.patch.object(
+            periodic_tasks, "get_celery_beat_session_maker", side_effect=AssertionError
+        )
+
+        await disable_unschedulable_task_schedules()
+
+        tasks_maker.assert_not_called()
+        beat_maker.assert_not_called()
