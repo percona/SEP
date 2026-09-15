@@ -556,10 +556,10 @@ class SectionLayout:
 
     :param key: The section key referenced by :attr:`Ui.section`.
     :param title: The section heading.
-    :param description: Optional helper text for the section. Whether it is
-        shown is the renderer's choice — SEP's own renderer places it beneath
-        the heading, PMM's omits it — so do not put guidance here that a user
-        must see. Defaults to ``None``.
+    :param description: Optional helper text for the section. SEP's
+        renderer shows it beneath the heading, but a renderer may omit it,
+        so do not put guidance here that a user must see. Defaults to
+        ``None``.
     :param advanced: Whether the section holds expert options rather than the
         common case. The renderer withholds advanced sections behind a single
         "Show advanced options" control placed after the ordinary ones, and
