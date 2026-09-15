@@ -511,7 +511,9 @@ class TestCeleryExecutorRunCallable:
             await executor._run_callable(task, io.StringIO(), io.StringIO())
 
     @pytest.mark.asyncio
-    async def test_outside_allowed_namespace_raises_before_import(self, executor) -> None:
+    async def test_outside_allowed_namespace_raises_before_import(
+        self, executor
+    ) -> None:
         """Assert a callable outside the allowed namespace is not imported."""
         task = self._make_task("os.system")
         with (
