@@ -193,6 +193,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
+	@"${VENV_BIN}"/python -m app.core.celery.bootstrap
 
 checkmigrations: migrate
 	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
