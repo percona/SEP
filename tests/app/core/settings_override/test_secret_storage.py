@@ -70,13 +70,19 @@ CREDENTIAL_PASSWORD = "hunter2"
 SECRET_STORAGE_LOGGER = "app.core.settings_override.secret_storage"
 
 
-def url_password(url: object) -> str | None:
+def url_password(url: object) -> str:
     """Return the userinfo password of a stored URL leaf.
 
+    Fails the calling test when the leaf carries none: every caller asserts on a
+    password the walker was supposed to transform, so an absent one is a failure
+    to surface rather than a value to hand on.
+
     :param url: The stored leaf, which the walker normalizes to text.
-    :return: The raw password segment, or ``None`` when there is none.
+    :return: The raw password segment.
     """
-    return urlparse(str(url)).password
+    password = urlparse(str(url)).password
+    assert password is not None, f"no password segment in {url!r}"
+    return password
 
 
 def url_without_password(url: object) -> str:
@@ -567,6 +573,26 @@ class TestEncryptCredentialUrlLeaves:
         assert is_encrypted(url_password(stored))
         assert decrypt(url_password(stored)) == CREDENTIAL_PASSWORD
         assert url_without_password(stored) == url_without_password(CREDENTIAL_URL)
+
+    def test_encrypts_a_password_that_is_itself_shaped_like_ciphertext(self) -> None:
+        """Encrypt a URL password ``is_encrypted`` would misread as already-encrypted.
+
+        The credential-URL mirror of
+        ``test_encrypts_a_secret_that_is_itself_shaped_like_ciphertext``. The
+        write path always receives plaintext, so short-circuiting on the
+        structural predicate here would store an operator's password in the
+        clear, and the read path would then fail to decrypt it and drop the
+        override silently.
+        """
+        assert is_encrypted(FERNET_SHAPED_PLAINTEXT), (
+            "the fixture must exercise the misreading"
+        )
+        url = f"https://u:{FERNET_SHAPED_PLAINTEXT}@host:8443/api"
+
+        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+        assert url_password(stored) != FERNET_SHAPED_PLAINTEXT
+        assert decrypt(url_password(stored)) == FERNET_SHAPED_PLAINTEXT
 
     def test_encrypts_the_endpoint_inside_a_whole_object_override(self) -> None:
         """Rewrite the URL password and the ``SecretStr`` sibling in one pass."""
