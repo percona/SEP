@@ -647,18 +647,19 @@ def _build_execution_response(
     history: dict[str, Any],
     script: SnippetScript | None,
 ) -> ATWIncidentExecutionResponse:
-    """Merge a recorded execution row with its upstream task-history payload.
+    """Merge a recorded execution with live task history and the snippet title.
 
     :param execution: The locally-recorded execution row.
     :param history: The upstream task-history payload, empty when unavailable.
-    :param script: The resolved snippet whose parameter metadata drives argument
-        masking, or ``None`` when its filename no longer resolves.
+    :param script: The resolved snippet supplying the title and parameter metadata
+        for argument masking, or ``None`` when its filename no longer resolves.
     :return: The combined execution response.
     """
     masked_args, args_withheld = _execution_args(history, script)
     return ATWIncidentExecutionResponse(
         id=execution.id,
         snippet_filename=execution.snippet_filename,
+        snippet_title=None if script is None else script.snippet.title,
         task_history_id=execution.task_history_id,
         created_at=execution.created_at,
         task_status=history.get("status"),
