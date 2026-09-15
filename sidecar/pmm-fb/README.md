@@ -342,10 +342,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   only: the PR left both `PMM_FB_TAG` and `NOMAD_VERSION` exactly as the base
   branch carried them and that inherited build has since been collected. A tag
   or version the PR itself moved must be verifiable, or the job fails. Its
-  `pmm-agent` is
-  the released one, not the feature build's, so a change on the client side of
-  the feature build — `pmm-agent`, the Nomad client configuration — is **not**
-  exercised on an arm64 engine. Validate those on amd64.
+  `pmm-agent` is the released one, not the feature build's, so a change on the
+  client side of the feature build — `pmm-agent`, the Nomad client
+  configuration — is **not** exercised on an arm64 engine. Validate those on
+  amd64.
 
   **Running the amd64 feature-build client under emulation instead.** Set
   `SEP_MYSQL_PLATFORM=linux/amd64` in `.env` and re-run `./bootstrap.sh`: it
