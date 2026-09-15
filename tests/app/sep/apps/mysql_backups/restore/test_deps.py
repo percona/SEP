@@ -101,8 +101,13 @@ async def test_resolve_restore_entities_non_mydumper_passes_numeric_service_id_a
 async def test_resolve_restore_entities_mydumper_rejects_missing_service(
     mock_remote_api,
 ):
-    """Reject a MyDumper restore without a destination service."""
-    form = RestoreCreate(
+    """Reject a MyDumper restore without a destination service.
+
+    The ``Requires`` gate on ``service_id`` already rejects this body at model
+    validation, so the guard here is defence in depth and the form has to be
+    built with ``model_construct`` to reach it.
+    """
+    form = RestoreCreate.model_construct(
         hostname="restore-host",
         task_name="restore-task",
         service_id=None,
