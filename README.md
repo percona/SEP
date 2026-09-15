@@ -25,7 +25,7 @@
 | app/core/auth/providers/grafana/sdk.py                                                                                       |       54 |        0 |        6 |        0 |    100% |           |
 | app/core/auth/utils.py                                                                                                       |        6 |        1 |        0 |        0 |     83% |        35 |
 | app/core/celery/bootstrap.py                                                                                                 |       31 |        2 |        2 |        1 |     91% |  141, 145 |
-| app/core/celery/config.py                                                                                                    |       34 |        0 |        2 |        0 |    100% |           |
+| app/core/celery/config.py                                                                                                    |       35 |        0 |        2 |        0 |    100% |           |
 | app/core/celery/crud.py                                                                                                      |       26 |        1 |        4 |        0 |     97% |        97 |
 | app/core/celery/db.py                                                                                                        |        8 |        0 |        0 |        0 |    100% |           |
 | app/core/celery/deps.py                                                                                                      |       10 |        0 |        0 |        0 |    100% |           |
@@ -476,7 +476,7 @@
 | app/tasks/routes.py                                                                                                          |      242 |       14 |       46 |        4 |     94% |153-157, 242-\>246, 279, 329-338, 345, 458, 501, 516, 676, 690, 695, 722, 725-\>727 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **29946** | **1715** | **7358** |  **660** | **93%** |           |
+| **TOTAL**                                                                                                                    | **29947** | **1715** | **7358** |  **660** | **93%** |           |
 
 
 ## Setup coverage badge
