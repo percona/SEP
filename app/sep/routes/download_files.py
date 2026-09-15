@@ -52,12 +52,17 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
     ``http.response.start``. That lets ExceptionMiddleware turn the error into a
     real status response instead of a misleading 200 with an empty body.
 
+    Tradeoff: time-to-first-byte waits on the first upstream chunk (or error)
+    before headers are sent. That is intentional for this proxy-timing-sensitive
+    download route — correct status on upstream rejection matters more than
+    speculative early headers. See SEP-1878.
+
     FastAPI installs ``@app.exception_handler(500)`` on ServerErrorMiddleware,
     which only sees non-``HTTPException`` failures. Upstream 5xx arrives as
     ``HTTPException``, so this class logs those explicitly before re-raising —
     otherwise downloads can fail silently from an on-call/observability
     standpoint. Proxy/disposition headers from this response are copied onto the
-    raised ``HTTPException`` so they survive ExceptionMiddleware. See SEP-1878.
+    raised ``HTTPException`` so they survive ExceptionMiddleware.
     """
 
     async def stream_response(self, send: Send) -> None:
@@ -67,60 +72,50 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
         ExceptionMiddleware can build the status response. 5xx errors are logged
         here because they would not reach ``internal_error_handler``. Empty
         successful bodies (``StopAsyncIteration``) are handled locally.
+
+        Delays ``http.response.start`` until the first upstream chunk (or error)
+        arrives — accepted TTFB cost for correct status on rejection. After
+        priming, delegates the start/body/end sends to
+        ``StreamingResponse.stream_response``.
         """
         body_iter: AsyncIterator[Any] = aiter(self.body_iterator)
 
+        # Hold headers until the first upstream pull settles (TTFB tradeoff).
         try:
             first_chunk = await anext(body_iter)
         except HTTPException as exc:
-            # 5xx HTTPExceptions never reach ServerErrorMiddleware's 500 handler.
-            if exc.status_code >= http_status.HTTP_500_INTERNAL_SERVER_ERROR:
-                logger.exception(
-                    "Upstream error while priming file download stream:",
-                    exc_info=exc,
-                )
-            # ExceptionMiddleware builds a fresh JSON response; carry proxy and
-            # disposition headers so they are not dropped on the error path.
-            preserve = {
-                key: value
-                for key, value in self.headers.items()
-                if key.lower() in _ERROR_RESPONSE_HEADERS
-            }
-            if preserve:
-                exc.headers = {**(exc.headers or {}), **preserve}
+            self._prepare_primed_http_exception(exc)
             raise
         except StopAsyncIteration:
             # Empty file — send normal 200 with empty body
             first_chunk = None
 
-        # Success path — send 200 and stream body
-        await send(
-            {
-                "type": "http.response.start",
-                "status": self.status_code,
-                "headers": self.raw_headers,
-            }
-        )
+        async def primed() -> AsyncGenerator[Any, None]:
+            if first_chunk is not None:
+                yield first_chunk
+            async for chunk in body_iter:
+                yield chunk
 
-        if first_chunk is not None:
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": self.render(first_chunk),
-                    "more_body": True,
-                }
+        self.body_iterator = primed()
+        await super().stream_response(send)
+
+    def _prepare_primed_http_exception(self, exc: HTTPException) -> None:
+        """Log 5xx and attach proxy/disposition headers before re-raise."""
+        # 5xx HTTPExceptions never reach ServerErrorMiddleware's 500 handler.
+        if exc.status_code >= http_status.HTTP_500_INTERNAL_SERVER_ERROR:
+            logger.exception(
+                "Upstream error while priming file download stream:",
+                exc_info=exc,
             )
-
-        async for chunk in body_iter:
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": self.render(chunk),
-                    "more_body": True,
-                }
-            )
-
-        await send({"type": "http.response.body", "body": b"", "more_body": False})
+        # ExceptionMiddleware builds a fresh JSON response; carry proxy and
+        # disposition headers so they are not dropped on the error path.
+        preserve = {
+            key: value
+            for key, value in self.headers.items()
+            if key.lower() in _ERROR_RESPONSE_HEADERS
+        }
+        if preserve:
+            exc.headers = {**(exc.headers or {}), **preserve}
 
 
 @router.get(
