@@ -298,6 +298,10 @@ class TestDownloadTaskHistoryFile:
         )
 
         assert response.status_code == upstream_status
+        assert response.headers["x-accel-buffering"] == "no"
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="backup.sql"'
+        )
 
     def test_upstream_500_is_logged_before_error_response(
         self, test_client, mock_tasks_client_dep, task_history_response, mocker

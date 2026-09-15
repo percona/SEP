@@ -39,6 +39,10 @@ from app.tasks.models import FileMetadata, TaskHistoryResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
+# Kept on primed-stream error responses so nginx still disables buffering and
+# clients still see the download filename when upstream rejects before bytes.
+_ERROR_RESPONSE_HEADERS = frozenset({"x-accel-buffering", "content-disposition"})
+
 
 class ErrorPrimingStreamingResponse(StreamingResponse):
     """StreamingResponse that checks for upstream errors before sending status.
@@ -52,7 +56,8 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
     which only sees non-``HTTPException`` failures. Upstream 5xx arrives as
     ``HTTPException``, so this class logs those explicitly before re-raising —
     otherwise downloads can fail silently from an on-call/observability
-    standpoint. See SEP-1878.
+    standpoint. Proxy/disposition headers from this response are copied onto the
+    raised ``HTTPException`` so they survive ExceptionMiddleware. See SEP-1878.
     """
 
     async def stream_response(self, send: Send) -> None:
@@ -74,6 +79,15 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
                     "Upstream error while priming file download stream:",
                     exc_info=exc,
                 )
+            # ExceptionMiddleware builds a fresh JSON response; carry proxy and
+            # disposition headers so they are not dropped on the error path.
+            preserve = {
+                key: value
+                for key, value in self.headers.items()
+                if key.lower() in _ERROR_RESPONSE_HEADERS
+            }
+            if preserve:
+                exc.headers = {**(exc.headers or {}), **preserve}
             raise
         except StopAsyncIteration:
             # Empty file — send normal 200 with empty body
