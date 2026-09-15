@@ -62,7 +62,7 @@ def test_backup_source_is_remote_choice_cascading_on_service_id() -> None:
 
 
 def test_service_id_leads_the_backup_specific_task_fields() -> None:
-    """Open the Task section with the field the rest of the form cascades from.
+    """Open the Task section with the field ``backup_source`` cascades from.
 
     ``backup_source`` and ``schema_id`` both depend on ``service_id``, so asking
     for the restore method first leaves an operator discovering the dependency by
@@ -113,11 +113,7 @@ def test_service_id_is_gated_required_on_mydumper_only() -> None:
 def test_mydumper_restore_rejects_a_missing_destination_service(
     service_id: str | None,
 ) -> None:
-    """Reject a Mydumper restore that names no destination service, by its label.
-
-    Without the gate the body validated and failed later inside the inventory
-    lookup, with an error that never named the field the operator has to fill.
-    """
+    """Reject a Mydumper restore that names no destination service, by its label."""
     with pytest.raises(
         ValidationError,
         match="Destination Database Service is required for a Mydumper restore",

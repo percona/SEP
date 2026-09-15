@@ -28,6 +28,7 @@ so the connectivity, detail-model, and injected-extras suite methods skip.
 from typing import Any
 
 from fastapi import status
+from pytest_mock import MockerFixture
 
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
@@ -66,8 +67,9 @@ def _valid_restore_body(
     """Return a valid restore create/update body resolving against the kit mocks.
 
     Pairs the seeded MySQL service / executor host with a shell-safe
-    ``backup_source`` so the field validator passes; restore declares no per-mode
-    field gates, so the same body is valid for every ``backup_type``.
+    ``backup_source`` so the field validator passes. ``service_id`` is only gated
+    on a Mydumper restore, and naming the seeded service satisfies that gate, so
+    the same body is valid for every ``backup_type``.
     """
     return {
         "task_name": task_name,
@@ -499,12 +501,16 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert fields["schema_id"]["depends_on"] == "service_id"
 
     def test_create_422_on_a_mydumper_restore_without_a_destination_service(
-        self, contract_client: Any, mock_task_api: Any, mock_inventory_api: Any, mocker
+        self,
+        contract_client: Any,
+        mock_task_api: Any,
+        mock_inventory_api: Any,
+        mocker: MockerFixture,
     ) -> None:
         """Reject a service-less Mydumper restore at body validation, before any lookup.
 
-        Such a body used to reach ``resolve_restore_entities`` and fail inside the
-        inventory lookup with an error that never named the field.
+        The resolver refuses the same body with a 422 naming the field too, so the
+        assertions pin the gate's own message rather than the field name alone.
         """
         lookup = mocker.spy(mock_inventory_api, "get")
         base = app_base_url(self.app_def)
@@ -514,7 +520,10 @@ class TestRestoreContract(DerivedRouterContractTests):
         response = contract_client.post(f"{base}/", json=body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "Destination Database Service" in response.text
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in response.text
+        )
         assert mock_task_api.create_count == 0
         assert lookup.await_count == 0
 
@@ -561,7 +570,10 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert detail.status_code == status.HTTP_200_OK, detail.text
         assert detail.json()["data"][RESERVED_FORM_KEY] == stored_form
         assert resubmit.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "Destination Database Service" in resubmit.text
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in resubmit.text
+        )
 
     def test_schema_gates_transport_and_decryption_fields(
         self, contract_client: Any
