@@ -310,24 +310,32 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   `.env`, and the executor builds and runs natively — no Docker Desktop setting
   is involved. It decides by the engine's architecture, not the shell's.
 
-  **Why the executor must not be emulated.** Nomad's `raw_exec` spawns every
-  task with `clone3(CLONE_INTO_CGROUP)` on cgroups v2, Go has no fallback on
-  that path, and QEMU 7.0 and later leave `clone3` unimplemented. Under QEMU
-  every dispatch therefore dies inside the executor with `fork/exec
-  /usr/bin/sh: function not implemented` before any script output exists — the
-  run shows as failed with an empty log — while the node still fingerprints
-  `raw_exec` healthy and stays in SEP's executor list, because that check reads
-  only `enabled = true`. Measured on an M3 Pro (2026-09-08): five for five
-  backups and diagnostics failed exactly so, and so did SEP's own background
-  `mysql-sync` and `system-facts-sync` dispatches. Verified the same day on
-  another arm64 Mac with a default Docker Desktop: as shipped, a diagnostic and
-  an XtraBackup both failed that way; with this harness both succeeded on the
-  native executor, the released client having reconnected under the
-  registration the feature-build client had created. `pmm-server`'s own Nomad
-  client is not affected — it runs as uid 1000, Nomad places no cgroup then,
-  and it spawns with plain `clone` — but it remains the non-root, sudo-less
-  node it always was, where the builtin snippets that require sudo end
-  `unlaunchable`; it is no substitute for `sep-mysql`.
+  **Why the executor must not be emulated.** Nomad's `raw_exec` spawns a task
+  with `clone3(CLONE_INTO_CGROUP)` only where it places that task into a
+  cgroup; everywhere else it spawns with plain `clone` and never issues the
+  syscall at all. Go has no fallback on the placing path, and QEMU 7.0 and
+  later leave `clone3` unimplemented. So what decides whether the syscall
+  matters is the host's cgroup layout, and Nomad's own mode detection asks two
+  things of it: the unified `cgroup2fs` hierarchy at `/sys/fs/cgroup`, *and*
+  all of `cpuset cpu io memory pids` offered in its `cgroup.controllers`.
+  `sep-mysql` is deliberately such a host — `privileged: true` with
+  `cgroup: host`, which is what lets the client fingerprint and place at all —
+  so there the syscall is load-bearing, and under QEMU every dispatch dies
+  inside the executor with `fork/exec /usr/bin/sh: function not implemented`
+  before any script output exists — the run shows as failed with an empty log —
+  while the node still fingerprints `raw_exec` healthy and stays in SEP's
+  executor list, because that check reads only `enabled = true`. Measured on an
+  M3 Pro (2026-09-08): five for five backups and diagnostics failed exactly so,
+  and so did SEP's own background `mysql-sync` and `system-facts-sync`
+  dispatches. Verified the same day on another arm64 Mac with a default Docker
+  Desktop: as shipped, a diagnostic and an XtraBackup both failed that way; with
+  this harness both succeeded on the native executor, the released client having
+  reconnected under the registration the feature-build client had created.
+  `pmm-server`'s own Nomad client is the same rule seen from the other side — it
+  runs as uid 1000, Nomad places no cgroup then, and it spawns with plain
+  `clone` — but it remains the non-root, sudo-less node it always was, where the
+  builtin snippets that require sudo end `unlaunchable`; it is no substitute for
+  `sep-mysql`.
 
   **What the released client does and does not stand in for.** Its aarch64
   `tools/nomad` is the feature build's own Nomad version, and the build asserts
@@ -348,8 +356,11 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   not support Rosetta), then *Use Rosetta for x86_64/amd64 emulation on Apple
   Silicon*, Apply & restart. `sep-mysql`'s entrypoint probes again at container
   start, since Docker's default seccomp profile also answers `clone3` with
-  `ENOSYS` on an unprivileged container. `SEP_FB_SKIP_CLONE3_CHECK=1`, in the
-  shell or in `.env`, skips both probes. Either way, treat an emulated
+  `ENOSYS` on an unprivileged container. That second probe refuses only where
+  the syscall is load-bearing by the two-part test above; on a root that is not
+  `cgroup2fs`, or one whose `cgroup.controllers` withholds any of the five, it
+  names the condition and starts the node anyway. `SEP_FB_SKIP_CLONE3_CHECK=1`,
+  in the shell or in `.env`, skips both probes. Either way, treat an emulated
   `pmm-server` as evidence for functional behaviour only: nothing timing-shaped
   survives translation, so the start periods set here and any Nomad scheduling
   race are not measurable on such a host.
