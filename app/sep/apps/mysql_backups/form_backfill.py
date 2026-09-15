@@ -96,10 +96,17 @@ class LegacyBackupCreate(BackupCreate):
     re-saved at the schema default is still rejected by the timing-versus-format
     rule and by ``xtrabackup_aes256_keyfile``'s own ``Forbidden``.
 
+    The binary/compression rules go with them, since the lenient bundle declares no
+    sections: a task saved before the form gated compression on the backup binary
+    can hold a pairing the create model now rejects, and the operator needs the edit
+    form to load in order to correct it. The rejection stays on the create and
+    update routes, so saving the reopened form still fails until the algorithm
+    matches the binary.
+
     :param backup_dir: The backup root directory; optional here and un-stripped,
         unlike on the create model.
     :cvar __form_rules__: The create model's rules minus the upload-reachability
-        pair.
+        pair and the binary/compression section.
     """
 
     __form_rules__: ClassVar[FormRules] = LENIENT_BACKUP_FORM_RULES

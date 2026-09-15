@@ -42,7 +42,7 @@ from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
 from typing import Any, BinaryIO, ClassVar, NoReturn, Self
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlparse
 
 from aiohttp import (
     ClientResponse,
@@ -50,6 +50,7 @@ from aiohttp import (
     ClientSession,
     ClientTimeout,
     ContentTypeError,
+    encode_basic_auth,
     FormData,
     TCPConnector,
 )
@@ -81,7 +82,9 @@ from app.core.utils.fields import (
     NonEmptyStr,
     redact_credential_url,
     RelativeFilePathField,
+    strip_credential_url_userinfo,
 )
+from app.core.utils.strings import shorten_text
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
@@ -101,6 +104,11 @@ _REDACTED_VALUE = "****"
 # Stands in for a response body a caller withheld from the log, so the line
 # keeps naming the request that produced it.
 _WITHHELD_BODY = "<withheld>"
+# Bounds the decoded body reaching the exception log: the upstream answering
+# HTML rather than JSON decides that body's size, so a large error page would
+# otherwise flood the log with a single record.
+_NON_JSON_LOG_MAX_CHARS = 2000
+_TRUNCATION_MARKER = "... (truncated)"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -225,6 +233,20 @@ def is_non_json_success(exc: HTTPException) -> bool:
     """
     return exc.status_code < status.HTTP_400_BAD_REQUEST and bool(
         (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+    )
+
+
+def _carries_authorization(*header_maps: Mapping[str, str] | None) -> bool:
+    """Report whether any of the header mappings already sets ``Authorization``.
+
+    :param header_maps: Header mappings to inspect; ``None`` entries are skipped.
+    :return: ``True`` when one of them carries the header under any casing.
+    """
+    return any(
+        name.lower() == "authorization"
+        for headers in header_maps
+        if headers
+        for name in headers
     )
 
 
@@ -428,7 +450,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             )
             timeout = ClientTimeout(total=300, connect=5, sock_connect=5, sock_read=120)
             self._session = ClientSession(
-                base_url=self.base_url,
+                base_url=self.session_base_url,
                 headers=self.headers or None,
                 json_serialize=json_serializer,
                 connector=connector,
@@ -592,7 +614,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
     @contextmanager
     def suppress_response_log(self) -> Generator[Self]:
-        """Withhold the response body from the debug log for the call.
+        """Withhold the response body from the transport's own log records for the call.
 
         Register that the parsed response body must not reach the log for the
         duration of the call. Use this where the caller keeps only the values it
@@ -602,9 +624,8 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         Guards the two response-logging sites in :meth:`request` and nothing
         else: :meth:`stream` logs no response body of its own, so a caller
         wrapping it gains no guarantee here. The second of the two sites reports
-        a non-JSON response, and today renders a stream handle rather than the
-        content itself, so the substitution there is a placeholder against the
-        argument changing rather than a leak being closed.
+        a non-JSON response and logs the body's decoded text, so suppression
+        there withholds the upstream's own error page from the exception line.
 
         Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
         accumulate onto the set an enclosing block registered, this flag has
@@ -691,6 +712,68 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return url.rstrip("/")
 
     @property
+    def session_base_url(self) -> str:
+        """Return the base URL the aiohttp session is built from, minus userinfo.
+
+        aiohttp derives basic auth from a URL's userinfo and then refuses any
+        request that also carries an explicit ``Authorization`` header, raising
+        ``ValueError`` before a connection is opened. Every caller that presents
+        a header of its own — a forwarded user token via :meth:`RemoteAPI.auth`,
+        or a client class whose :attr:`headers` names an API key — would hit
+        that on a credential-bearing endpoint, so the userinfo is kept out of
+        the session URL and re-applied per request by
+        :meth:`_unopposed_endpoint_credential` only when nothing competes
+        with it.
+
+        :return: :attr:`base_url` with any userinfo segment removed.
+        """
+        return strip_credential_url_userinfo(self.base_url)
+
+    @property
+    def _endpoint_credential_header(self) -> str | None:
+        """Return the basic ``Authorization`` value the endpoint's userinfo encodes.
+
+        Reproduces the header aiohttp would have derived from the URL, so a
+        client with no competing header puts the same bytes on the wire as
+        before. Reads :attr:`base_url` rather than :attr:`endpoint` so it stays
+        the exact complement of what :attr:`session_base_url` removes, including
+        for a subclass that overrides either one. The segments are
+        percent-decoded and then latin-1 encoded, the two steps aiohttp applies
+        to a URL-embedded credential.
+
+        :return: The encoded header value, or ``None`` when the base URL carries
+            no userinfo.
+        """
+        parsed = urlparse(self.base_url)
+        if not parsed.username and not parsed.password:
+            return None
+        return encode_basic_auth(
+            unquote(parsed.username or ""), unquote(parsed.password or ""), "latin1"
+        )
+
+    def _unopposed_endpoint_credential(
+        self, headers: Mapping[str, str] | None
+    ) -> str | None:
+        """Return the endpoint's embedded credential unless a header competes with it.
+
+        An ``Authorization`` header the call site set — directly, via
+        :meth:`extra_headers`, or through the client's own :attr:`headers` —
+        wins over the endpoint's embedded credential. The two cannot share a
+        request: HTTP carries one ``Authorization`` header, and the explicit one
+        is the narrower credential (the identity this call acts as, or the key
+        the remote API itself requires), while the URL userinfo is a
+        configuration-wide default. :class:`NomadExecutor` already resolves the
+        same conflict this way.
+
+        :param headers: The per-call headers assembled for the outgoing request.
+        :return: The credential to send, or ``None`` when there is none to send
+            or a header already occupies the slot.
+        """
+        if _carries_authorization(headers, self.headers):
+            return None
+        return self._endpoint_credential_header
+
+    @property
     def headers(self) -> dict[str, str]:
         """Return the headers to be used in API requests.
 
@@ -746,6 +829,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         if correlation_id != "-":
             kwargs["headers"] = kwargs.pop("headers", {}) | {
                 "X-Correlation-ID": correlation_id
+            }
+        if credential := self._unopposed_endpoint_credential(kwargs.get("headers")):
+            kwargs["headers"] = kwargs.pop("headers", {}) | {
+                "Authorization": credential
             }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
@@ -1075,13 +1162,22 @@ class RemoteAPI(BaseRemoteAPI):
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
+                # %r, not %s: the body is untrusted upstream text, so rendering it
+                # raw would let its own newlines and control characters forge
+                # further log lines out of one record.
                 self.logger.exception(
-                    "RemoteAPI (%s): %s request to %s response content (%s): %s",
+                    "RemoteAPI (%s): %s request to %s response content (%s): %r",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
-                    _WITHHELD_BODY if withhold_body else response.content,
+                    _WITHHELD_BODY
+                    if withhold_body
+                    else shorten_text(
+                        await response.text(errors="replace"),
+                        max_length=_NON_JSON_LOG_MAX_CHARS,
+                        ellipsis=_TRUNCATION_MARKER,
+                    ),
                 )
                 raise exception_for_status(
                     err.status,

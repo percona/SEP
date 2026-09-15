@@ -20,30 +20,80 @@ stored JSON, so every case here pairs a settings class and an override key with
 the JSON shape that key actually persists.
 """
 
+import logging
 from collections import defaultdict, OrderedDict
 from collections.abc import MutableMapping
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 from pydantic import BaseModel, SecretStr
 
 from app.core.alerts.config import AlertSettings
-from app.core.config import BaseYamlSettings, Settings
+from app.core.config import BaseYamlSettings, PMMSettings, Settings
 from app.core.encryption import decrypt, DecryptionError, encrypt, is_encrypted
+from app.core.settings_override.registry import (
+    annotated_type,
+    annotation_is_credential_url,
+    coerce_field_value,
+    resolve_nested_field,
+)
 from app.core.settings_override.secret_storage import (
+    _ALL_LEAF_KINDS,
     _positional_args,
-    _transform_secret_leaves,
+    _transform_leaves,
+    decrypt_credential_url_leaves,
     decrypt_secret_leaves,
     encrypt_secret_leaves,
+    reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
 )
+from app.core.utils.fields import CredentialHttpUrl
 from app.sep.config import SEPSettings
+from app.tasks.config import TasksSettings
 from tests.app.encryption_fixtures import FERNET_SHAPED_PLAINTEXT, foreign_token
 
 PMM_KEY = "PMM"
 PMM_NESTED_KEY = "PMM__API_KEY"
+PMM_ENDPOINT_KEY = "PMM__ENDPOINT"
 PROVIDERS_KEY = "PROVIDERS"
 DELIVERY_INPUTS_KEY = "DIAGNOSTICS_DELIVERY_INPUTS"
+INVENTORY_ENDPOINT_KEY = "INVENTORY_ENDPOINT"
+TASKS_ENDPOINT_KEY = "TASKS_ENDPOINT"
+NOMAD_ENDPOINT_KEY = "NOMAD__ENDPOINT"
+
+CREDENTIAL_URL = "https://inv-user:hunter2@inv.example.com:8443/api"
+CREDENTIAL_PASSWORD = "hunter2"
+
+#: The walker's own logger name, so a caplog assertion cannot silently widen to
+#: a line some other module emitted.
+SECRET_STORAGE_LOGGER = "app.core.settings_override.secret_storage"
+
+
+def url_password(url: object) -> str:
+    """Return the userinfo password of a stored URL leaf.
+
+    Fails the calling test when the leaf carries none: every caller asserts on a
+    password the walker was supposed to transform, so an absent one is a failure
+    to surface rather than a value to hand on.
+
+    :param url: The stored leaf, which the walker normalizes to text.
+    :return: The raw password segment.
+    """
+    password = urlparse(str(url)).password
+    assert password is not None, f"no password segment in {url!r}"
+    return password
+
+
+def url_without_password(url: object) -> str:
+    """Return ``url`` with its password blanked, for comparing the surrounding parts.
+
+    :param url: The stored leaf to strip.
+    :return: The URL with an empty password segment.
+    """
+    parsed = urlparse(str(url))
+    host = parsed.netloc.rsplit("@", 1)[-1]
+    return str(url).replace(f":{parsed.password}@{host}", f":@{host}")
 
 
 def pmm_payload(api_key: object = "pmm-secret") -> dict[str, object]:
@@ -56,6 +106,33 @@ def pmm_payload(api_key: object = "pmm-secret") -> dict[str, object]:
         "endpoint": "https://pmm.example.com",
         "api_key": api_key,
         "verify_ssl": True,
+    }
+
+
+def pmm_payload_with_credential_endpoint(
+    api_key: object = "pmm-secret",
+    endpoint: str = CREDENTIAL_URL,
+) -> dict[str, object]:
+    """Return a whole-object ``PMM`` override carrying both leaf kinds at once.
+
+    The mixed row is what separates the broad entry points from the
+    credential-URL-scoped pair the data migrations call.
+
+    :param api_key: The value to place at the ``SecretStr`` leaf.
+    :param endpoint: The value to place at the credential-URL leaf.
+    :return: The override row's stored value.
+    """
+    return {"endpoint": endpoint, "api_key": api_key, "verify_ssl": True}
+
+
+def delivery_inputs_payload_with_credential_endpoint() -> dict[str, object]:
+    """Return a materializer-backed override carrying both leaf kinds.
+
+    :return: The override row's stored value.
+    """
+    return {
+        "endpoint": CREDENTIAL_URL,
+        "secrets": {"token": "intake-token", "api_key": "intake-api-key"},
     }
 
 
@@ -317,7 +394,7 @@ class TestAnnotationShapes:
 
     Each shape is one the walker's own type-argument handling admits, so a gap
     here is a silent plaintext store rather than an error. Driven through
-    ``_transform_secret_leaves`` directly because no settings class declares
+    ``_transform_leaves`` directly because no settings class declares
     them, which is exactly why the codebase cannot exercise them for us.
     """
 
@@ -329,7 +406,13 @@ class TestAnnotationShapes:
         :param value: The stored value at that position.
         :return: The transformed value.
         """
-        return _transform_secret_leaves(annotation, value, encrypt)
+        return _transform_leaves(
+            annotation,
+            value,
+            encrypt,
+            kinds=_ALL_LEAF_KINDS,
+            context="TestAnnotationShapes",
+        )
 
     @pytest.mark.parametrize(
         "annotation",
@@ -397,6 +480,57 @@ class TestAnnotationShapes:
 
         assert [decrypt(item) for item in stored] == ["s1", "s2"]
 
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            list[CredentialHttpUrl],
+            set[CredentialHttpUrl],
+            tuple[CredentialHttpUrl, ...],
+        ],
+        ids=["list", "set", "variadic-tuple"],
+    )
+    def test_a_collection_of_credential_urls_reaches_every_element(
+        self, annotation: Any
+    ) -> None:
+        """Resolve a collection's element annotation to its credential-URL member.
+
+        No settings field declares this shape today, which is precisely why the
+        codebase cannot exercise it: a gap here is a silent plaintext store
+        rather than an error the day one is added.
+        """
+        stored = self._encrypt(annotation, [CREDENTIAL_URL, CREDENTIAL_URL])
+
+        assert [decrypt(url_password(item)) for item in stored] == [
+            CREDENTIAL_PASSWORD,
+            CREDENTIAL_PASSWORD,
+        ]
+
+    def test_a_mapping_of_credential_urls_reaches_every_value(self) -> None:
+        """Resolve a mapping's value annotation to its credential-URL member."""
+        stored = self._encrypt(
+            dict[str, CredentialHttpUrl], {"a": CREDENTIAL_URL, "b": CREDENTIAL_URL}
+        )
+
+        assert decrypt(url_password(stored["a"])) == CREDENTIAL_PASSWORD
+        assert decrypt(url_password(stored["b"])) == CREDENTIAL_PASSWORD
+
+    def test_positional_flattening_discards_the_credential_url_marker(self) -> None:
+        """Pin why the position predicate runs before ``_positional_args``.
+
+        The credential-URL marker lives in ``__metadata__``, and this flattener
+        strips ``Annotated`` — so a predicate written over its output answers
+        ``False`` for the one live leaf whose marker is annotation-visible, and
+        every credential URL would be stored in the clear. Ordering the branch
+        ahead of the flattening is what the walker relies on, and nothing else
+        would fail if that ordering were swapped.
+        """
+        annotation = annotated_type(PMMSettings.model_fields["endpoint"])
+
+        assert annotation_is_credential_url(annotation)
+        assert not any(
+            annotation_is_credential_url(arg) for arg in _positional_args(annotation)
+        )
+
     def test_union_members_reach_the_tie_break_in_declaration_order(self) -> None:
         """Preserve a union's declared order through the positional flattening.
 
@@ -411,3 +545,409 @@ class TestAnnotationShapes:
             list[int],
             SecretStr,
         ]
+
+
+class TestEncryptCredentialUrlLeaves:
+    """Cover the write path over every override-reachable credential-URL leaf.
+
+    Only the userinfo password is rewritten: the endpoint an operator reads out
+    of a raw database dump stays legible, which is the whole point of
+    transforming the segment rather than the leaf.
+    """
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "key"),
+        [
+            (SEPSettings, INVENTORY_ENDPOINT_KEY),
+            (SEPSettings, TASKS_ENDPOINT_KEY),
+            (Settings, PMM_ENDPOINT_KEY),
+            (TasksSettings, NOMAD_ENDPOINT_KEY),
+        ],
+    )
+    def test_encrypts_the_password_of_a_scalar_leaf(
+        self, settings_cls: type[BaseYamlSettings], key: str
+    ) -> None:
+        """Encrypt the embedded password and leave the endpoint readable."""
+        stored = encrypt_secret_leaves(settings_cls, key, CREDENTIAL_URL)
+
+        assert is_encrypted(url_password(stored))
+        assert decrypt(url_password(stored)) == CREDENTIAL_PASSWORD
+        assert url_without_password(stored) == url_without_password(CREDENTIAL_URL)
+
+    def test_encrypts_a_password_that_is_itself_shaped_like_ciphertext(self) -> None:
+        """Encrypt a URL password ``is_encrypted`` would misread as already-encrypted.
+
+        The credential-URL mirror of
+        ``test_encrypts_a_secret_that_is_itself_shaped_like_ciphertext``. The
+        write path always receives plaintext, so short-circuiting on the
+        structural predicate here would store an operator's password in the
+        clear, and the read path would then fail to decrypt it and drop the
+        override silently.
+        """
+        assert is_encrypted(FERNET_SHAPED_PLAINTEXT), (
+            "the fixture must exercise the misreading"
+        )
+        url = f"https://u:{FERNET_SHAPED_PLAINTEXT}@host:8443/api"
+
+        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+        assert url_password(stored) != FERNET_SHAPED_PLAINTEXT
+        assert decrypt(url_password(stored)) == FERNET_SHAPED_PLAINTEXT
+
+    def test_encrypts_the_endpoint_inside_a_whole_object_override(self) -> None:
+        """Rewrite the URL password and the ``SecretStr`` sibling in one pass."""
+        stored = encrypt_secret_leaves(
+            Settings, PMM_KEY, pmm_payload_with_credential_endpoint()
+        )
+
+        assert decrypt(url_password(stored["endpoint"])) == CREDENTIAL_PASSWORD
+        assert decrypt(stored["api_key"]) == "pmm-secret"
+
+    def test_encrypts_a_non_optional_child_inside_a_whole_object_override(self) -> None:
+        """Reach a model child whose ``Annotated`` Pydantic hoisted onto its ``FieldInfo``.
+
+        ``NomadExecutor.endpoint`` is non-``Optional``, so its marker is absent
+        from ``.annotation`` and present only via ``annotated_type``. A
+        whole-object ``NOMAD`` override descends through ``_field_annotation``
+        to reach it, which is the one path a nested-leaf test does not exercise.
+        """
+        stored = encrypt_secret_leaves(
+            TasksSettings, "NOMAD", {"endpoint": CREDENTIAL_URL, "verify_ssl": True}
+        )
+
+        assert decrypt(url_password(stored["endpoint"])) == CREDENTIAL_PASSWORD
+        assert stored["verify_ssl"] is True
+
+    def test_encrypts_the_endpoint_inside_a_materializer_payload(self) -> None:
+        """Reach the credential URL stored beside a secret-valued mapping."""
+        stored = encrypt_secret_leaves(
+            SEPSettings,
+            DELIVERY_INPUTS_KEY,
+            delivery_inputs_payload_with_credential_endpoint(),
+        )
+
+        assert decrypt(url_password(stored["endpoint"])) == CREDENTIAL_PASSWORD
+        assert decrypt(stored["secrets"]["token"]) == "intake-token"
+        assert decrypt(stored["secrets"]["api_key"]) == "intake-api-key"
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://inv.example.com:8443/api",
+            "https://inv-user@inv.example.com:8443/api",
+            "https://inv-user:@inv.example.com:8443/api",
+            "https://user:pw@[bad:ipv6/",
+        ],
+        ids=["no-userinfo", "username-only", "empty-password", "unparseable"],
+    )
+    def test_leaves_a_url_with_no_transformable_password_alone(self, url: str) -> None:
+        """Return a URL byte-identical rather than inventing or corrupting a credential.
+
+        An empty password is absence, not a credential, and the unparseable
+        shape is the one ``urlparse`` raises on — neither may reach ``encrypt``.
+        """
+        assert encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url) == url
+
+    @pytest.mark.parametrize("leaf", [None, 42, {"not": "a url"}, ["x"]])
+    def test_leaves_a_non_url_leaf_alone(self, leaf: object) -> None:
+        """Pass a leaf that is neither text nor a URL object through untouched."""
+        assert encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, leaf) == leaf
+
+    def test_naming_the_key_it_skipped_and_never_the_value(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Log which override key was left unparsed, without echoing the URL.
+
+        Asserted rather than left implicit: a test that only checks the leaf came
+        back unchanged passes identically against a silent implementation, and a
+        silently skipped row is the shape an operator cannot diagnose. The URL
+        carries a password so that the no-echo assertion has something to catch.
+        """
+        url = "https://user:pw@[bad:ipv6/"
+
+        with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
+            encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+        assert "could not be parsed" in caplog.text
+        assert f"SEPSettings.{INVENTORY_ENDPOINT_KEY}" in caplog.text
+        assert url not in caplog.text
+
+    def test_a_credential_free_endpoint_is_skipped_silently(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Say nothing about an endpoint that simply carries no credential.
+
+        This runs per row on every snapshot refresh, so a line here would be
+        steady-state noise rather than a diagnosable event.
+        """
+        url = "https://inv.example.com:8443/api"
+
+        with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
+            assert (
+                encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url) == url
+            )
+
+        assert [
+            record for record in caplog.records if record.name == SECRET_STORAGE_LOGGER
+        ] == []
+
+    def test_round_trips_a_percent_encoded_password(self) -> None:
+        """Encrypt and restore a password carrying ``@`` and ``:`` byte-for-byte.
+
+        ``urlparse`` hands back the still-encoded segment, so the encrypted and
+        restored URL match the submitted one only when the transform never
+        unquotes it.
+        """
+        url = "https://u:p%40ss%3Aword@host:8443/api"
+
+        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+        assert decrypt(url_password(stored)) == "p%40ss%3Aword"
+        assert decrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored) == url
+
+    def test_preserves_an_ipv6_host_and_port(self) -> None:
+        """Keep the bracketed literal and port through the parse/reassemble."""
+        url = "https://u:pw@[2001:db8::1]:8443/api"
+
+        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+        assert stored.startswith("https://u:")
+        assert stored.endswith("@[2001:db8::1]:8443/api")
+        assert decrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored) == url
+
+    def test_ciphertext_never_passes_through_url_validation(self) -> None:
+        """Pin that the stored token survives, which pydantic's ``HttpUrl`` would corrupt.
+
+        ``HttpUrl`` percent-encodes the Fernet token's ``=`` padding to ``%3D``.
+        The orderings that keep it away — validate before encrypting on write,
+        decrypt before validating on read — are what this asserts is intact.
+        """
+        stored = encrypt_secret_leaves(
+            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+        )
+
+        assert "%3D" not in url_password(stored)
+        assert is_encrypted(url_password(stored))
+
+    def test_unresolvable_key_returns_the_url_unchanged(self) -> None:
+        """Return the value untouched for a key resolving to no field."""
+        assert (
+            encrypt_secret_leaves(SEPSettings, "NO_SUCH_FIELD", CREDENTIAL_URL)
+            == CREDENTIAL_URL
+        )
+
+
+class TestCredentialUrlWritePathValueType:
+    """Cover the leaf type the write path actually hands the walker.
+
+    ``coerce_field_value`` validates a ``CredentialHttpUrl`` field to a
+    :class:`pydantic_core.Url` and ``unwrap_secrets_for_storage`` passes the
+    object through, so three of the four live leaves reach the walker as URL
+    objects rather than text. Every payload here is built through
+    ``coerce_field_value`` for that reason: a hand-written string cannot fail.
+    """
+
+    @staticmethod
+    def _coerced(settings_cls: type[BaseYamlSettings], key: str) -> Any:
+        """Return what the write path hands the walker for ``key``.
+
+        :param settings_cls: The settings class owning ``key``.
+        :param key: The override row's key.
+        :return: The validated value, as ``coerce_field_value`` produces it.
+        """
+        if "__" in key:
+            resolved = resolve_nested_field(settings_cls, key)
+            assert resolved is not None, f"{key} must resolve to a nested field"
+            field_info = resolved[1]
+        else:
+            field_info = settings_cls.model_fields[key]
+        return coerce_field_value(field_info, CREDENTIAL_URL)
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "key"),
+        [
+            (SEPSettings, INVENTORY_ENDPOINT_KEY),
+            (SEPSettings, TASKS_ENDPOINT_KEY),
+            (TasksSettings, NOMAD_ENDPOINT_KEY),
+        ],
+    )
+    def test_a_url_object_leaf_is_encrypted_and_stored_as_text(
+        self, settings_cls: type[BaseYamlSettings], key: str
+    ) -> None:
+        """Normalize the ``Url`` the write path produces instead of skipping it.
+
+        A leaf branch guarded on ``isinstance(value, str)`` returns these three
+        untouched, which is a green suite and plaintext on disk for exactly the
+        fields the ticket names first.
+        """
+        coerced = self._coerced(settings_cls, key)
+        assert not isinstance(coerced, str), "the fixture must exercise the URL object"
+
+        stored = encrypt_secret_leaves(settings_cls, key, coerced)
+
+        assert isinstance(stored, str)
+        assert decrypt(url_password(stored)) == CREDENTIAL_PASSWORD
+        assert url_without_password(stored) == url_without_password(CREDENTIAL_URL)
+
+    def test_a_str_leaf_is_encrypted_the_same_way(self) -> None:
+        """Cover the sibling whose ``AsTypeValidator`` casts back to text."""
+        coerced = self._coerced(Settings, PMM_ENDPOINT_KEY)
+        assert isinstance(coerced, str), "PMM__ENDPOINT stores text"
+
+        stored = encrypt_secret_leaves(Settings, PMM_ENDPOINT_KEY, coerced)
+
+        assert decrypt(url_password(stored)) == CREDENTIAL_PASSWORD
+
+    def test_normalizing_a_url_object_reproduces_the_submitted_string(self) -> None:
+        """Pin that storing the normalized text changes nothing about the column.
+
+        The JSON column's serializer emits the same string for the ``Url``
+        object, so returning text where the caller passed one is invisible
+        downstream.
+        """
+        coerced = self._coerced(SEPSettings, INVENTORY_ENDPOINT_KEY)
+
+        assert str(coerced) == CREDENTIAL_URL
+
+
+class TestReencryptCredentialUrlLeaves:
+    """Cover the idempotent, credential-URL-scoped upgrade the revisions call."""
+
+    def test_encrypts_a_plaintext_password(self) -> None:
+        """Rewrite a password the pre-release write path stored in the clear."""
+        stored = reencrypt_credential_url_leaves(
+            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+        )
+
+        assert decrypt(url_password(stored)) == CREDENTIAL_PASSWORD
+
+    def test_a_second_run_rewrites_nothing(self) -> None:
+        """Leave an already-encrypted password byte-identical on a re-run.
+
+        ``is_encrypted`` on the whole credential URL is always ``False`` — the
+        URL is not a Fernet token — so an idempotence check applied to the leaf
+        instead of the password re-encrypts every run and destroys the plaintext.
+        """
+        once = reencrypt_credential_url_leaves(
+            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+        )
+
+        assert not is_encrypted(once)
+        assert (
+            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, once)
+            == once
+        )
+
+    def test_a_foreign_token_password_is_never_re_encrypted(self) -> None:
+        """Leave ciphertext this key cannot decrypt alone, since re-encrypting destroys it."""
+        url = f"https://u:{foreign_token()}@host:8443/api"
+
+        assert (
+            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            == url
+        )
+
+    def test_a_fernet_shaped_plaintext_password_is_skipped(self) -> None:
+        """Pin the inherited limitation: a token-shaped plaintext stays in the clear."""
+        url = f"https://u:{FERNET_SHAPED_PLAINTEXT}@host:8443/api"
+
+        assert (
+            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            == url
+        )
+
+    def test_leaves_a_secret_sibling_in_the_clear(self) -> None:
+        """Rewrite only the URL password, never a plaintext ``SecretStr`` leaf.
+
+        The ``SecretStr`` half belongs to the earlier revision; rewriting it
+        here would make this revision's downgrade stop being its own inverse.
+        """
+        stored = reencrypt_credential_url_leaves(
+            Settings, PMM_KEY, pmm_payload_with_credential_endpoint(api_key="plain")
+        )
+
+        assert decrypt(url_password(stored["endpoint"])) == CREDENTIAL_PASSWORD
+        assert stored["api_key"] == "plain"
+
+
+class TestDecryptCredentialUrlLeaves:
+    """Cover the credential-URL-scoped downgrade the revisions call."""
+
+    def test_restores_the_original_url(self) -> None:
+        """Return the submitted URL byte-identical after an encrypt/decrypt round trip."""
+        stored = reencrypt_credential_url_leaves(
+            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+        )
+
+        assert (
+            decrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored)
+            == CREDENTIAL_URL
+        )
+
+    def test_passes_a_legacy_plaintext_password_through(self) -> None:
+        """Leave a row written before the revision ran resolvable."""
+        assert (
+            decrypt_credential_url_leaves(
+                SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            )
+            == CREDENTIAL_URL
+        )
+
+    def test_raises_on_a_foreign_token_password(self) -> None:
+        """Raise :class:`DecryptionError` for a password minted under another key."""
+        url = f"https://u:{foreign_token()}@host:8443/api"
+
+        with pytest.raises(DecryptionError):
+            decrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+
+    def test_leaves_a_secret_sibling_ciphertext_byte_identical(self) -> None:
+        """Leave the earlier revision's ``SecretStr`` ciphertext exactly as it stands.
+
+        Asserted byte-for-byte rather than with ``is_encrypted``: a
+        re-encryption under a fresh Fernet IV would satisfy the weaker check
+        while having rewritten the very data this downgrade must not touch.
+        """
+        seeded = encrypt_secret_leaves(
+            Settings, PMM_KEY, pmm_payload_with_credential_endpoint()
+        )
+
+        restored = decrypt_credential_url_leaves(Settings, PMM_KEY, seeded)
+
+        assert url_password(restored["endpoint"]) == CREDENTIAL_PASSWORD
+        assert restored["api_key"] == seeded["api_key"]
+
+
+class TestBroadEntryPointsCoverBothLeafKinds:
+    """Pin that the read and write paths stay broad while the revisions narrow.
+
+    ``cache.py`` and ``routes.py`` must transform both leaf kinds; only the
+    credential-URL revisions are scoped to that kind. Narrowing the broad pair
+    would leave a ``SecretStr`` in the clear on every write.
+    """
+
+    def test_the_write_path_transforms_both_kinds(self) -> None:
+        """Encrypt the URL password and the ``SecretStr`` sibling in one call."""
+        stored = encrypt_secret_leaves(
+            Settings, PMM_KEY, pmm_payload_with_credential_endpoint()
+        )
+
+        assert is_encrypted(url_password(stored["endpoint"]))
+        assert is_encrypted(stored["api_key"])
+
+    def test_the_read_path_restores_both_kinds(self) -> None:
+        """Restore the URL password and the ``SecretStr`` sibling in one call."""
+        payload = pmm_payload_with_credential_endpoint()
+        stored = encrypt_secret_leaves(Settings, PMM_KEY, payload)
+
+        assert decrypt_secret_leaves(Settings, PMM_KEY, stored) == payload
+
+    def test_the_broad_upgrade_transforms_both_kinds(self) -> None:
+        """Cover both kinds from ``reencrypt_secret_leaves``, which the earlier revisions call."""
+        stored = reencrypt_secret_leaves(
+            Settings, PMM_KEY, pmm_payload_with_credential_endpoint()
+        )
+
+        assert is_encrypted(url_password(stored["endpoint"]))
+        assert is_encrypted(stored["api_key"])

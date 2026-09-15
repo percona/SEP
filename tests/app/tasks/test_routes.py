@@ -487,6 +487,38 @@ async def test_create_task_history_normalizes_failure_reason(
     assert len(reason) == MAX_FAILURE_REASON_LENGTH
 
 
+@pytest.mark.parametrize(
+    "task_status",
+    [
+        task_status
+        for task_status in TaskHistoryStatusEnum
+        if task_status.operator_summary() is None
+    ],
+)
+@pytest.mark.asyncio
+async def test_create_task_history_rejects_failure_reason_without_summary(
+    test_client, created_task_with_history, task_status
+):
+    """Assert a reason conflicts with a status carrying no operator summary."""
+    response = test_client.post(
+        "/history/",
+        json={
+            "task_id": created_task_with_history.task.id,
+            "execution_request": {
+                "task": created_task_with_history.task.name,
+                "target": "node-1",
+            },
+            "status": task_status.value,
+            "failure_reason": "Task execution failed.",
+        },
+    )
+
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+    error = response.json()["detail"][0]
+    assert "failure_reason" in error["loc"]
+    assert "status" in error["msg"]
+
+
 @pytest.mark.asyncio
 async def test_create_task_history_returns_a_serializable_row(
     test_client, created_task_with_history
