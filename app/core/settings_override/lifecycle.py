@@ -387,8 +387,6 @@ async def start_refresh_task(
     proxies: ProxyRegistry,
     interval: timedelta,
     callbacks: CallbackRegistry | None = None,
-    *,
-    seed_timeout: float | None = None,
 ) -> asyncio.Task:
     """Perform an initial refresh and start a background refresh loop.
 
@@ -401,15 +399,10 @@ async def start_refresh_task(
     proxies without firing rebind callbacks (long-lived objects are constructed
     against the effective snapshot directly during lifespan startup).
 
-    The inline seed always goes through :func:`bounded_seed`. On a
-    ``seed_timeout`` expiry the periodic refresher is still created, so the
-    child starts with a possibly incomplete seed (proxies published before the
-    hang keep their DB overrides) rather than without a refresher. When a
-    cancelled seed is still unwinding, periodic cycles skip
-    :func:`refresh_all` until that task completes so a stuck session cannot
-    pile up further pool checkouts. When ``seed_timeout`` is ``None`` the
-    seed awaits unbounded, matching the historical behaviour used by the web
-    lifespans.
+    The inline seed always goes through :func:`bounded_seed` unbounded
+    (``seed_timeout=None``), matching the web lifespan contract. Bounded
+    seeds for prefork children live on
+    :class:`~app.core.settings_override.worker.WorkerRefresher`.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
@@ -419,31 +412,23 @@ async def start_refresh_task(
         this at construction time.
     :param callbacks: Optional rebind callbacks fired by the periodic loop when
         a watched override changes. Not applied to the initial refresh.
-    :param seed_timeout: Optional wall-clock budget in seconds for the inline
-        seed. ``None`` (the default) leaves the seed unbounded.
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
     :raises Exception: Re-raises any failure from the inline initial
         :func:`refresh_all` call — in practice limited to
         ``session_maker_factory()`` failures (see :func:`refresh_all` for the
         narrowed contract). Connection-time DB failures from the initial
-        snapshot build are caught per-proxy and do NOT propagate. A
-        ``seed_timeout`` expiry is caught here and does NOT propagate; the
-        periodic task is still created. Subsequent iterations inside the
-        background task are also wrapped in ``except`` and do NOT propagate;
-        only ``session_maker_factory()`` failures at startup can break the
-        lifespan.
+        snapshot build are caught per-proxy and do NOT propagate. Subsequent
+        iterations inside the background task are wrapped in ``except`` and do
+        NOT propagate; only ``session_maker_factory()`` failures at startup can
+        break the lifespan.
     """
-    _seeded, seed_pending = await bounded_seed(
-        session_maker_factory, proxies, seed_timeout
-    )
+    await bounded_seed(session_maker_factory, proxies, None)
     interval_seconds = interval.total_seconds()
 
     async def _loop() -> None:
         while True:
             await asyncio.sleep(interval_seconds)
-            if seed_pending is not None and not seed_pending.done():
-                continue
             try:
                 await refresh_all(session_maker_factory, proxies, callbacks)
             except Exception:
