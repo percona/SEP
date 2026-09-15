@@ -511,6 +511,17 @@ class TestCeleryExecutorRunCallable:
             await executor._run_callable(task, io.StringIO(), io.StringIO())
 
     @pytest.mark.asyncio
+    async def test_outside_allowed_namespace_raises_before_import(self, executor) -> None:
+        """Assert a callable outside the allowed namespace is not imported."""
+        task = self._make_task("os.system")
+        with (
+            patch("importlib.import_module") as mock_import,
+            pytest.raises(ValueError, match="allowed namespace"),
+        ):
+            await executor._run_callable(task, io.StringIO(), io.StringIO())
+        mock_import.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_writes_executing_prefix(self, executor, mock_module) -> None:
         """Assert stdout buffer starts with an 'Executing' line."""
         task = self._make_task("app.fake.module.async_func")
