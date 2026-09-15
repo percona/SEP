@@ -34,6 +34,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.encryption import encrypt
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.lifecycle import (
+    bounded_refresh,
     bounded_seed,
     fire_change_callbacks,
     previous_or_base,
@@ -534,6 +535,39 @@ async def test_bounded_seed_expiry_returns_false_and_logs_error(
         record.levelname == "ERROR"
         and f"{seed_timeout:.2f}s" in record.message
         and "incomplete" in record.message
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_bounded_refresh_logs_exception_raised_while_unwinding(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log a real failure that surfaces after cancel, not only CancelledError."""
+    _proxy, registry = _make_proxies()
+
+    async def _fail_after_cancel(*_args: object, **_kwargs: object) -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            raise RuntimeError("session cleanup failed") from None
+
+    monkeypatch.setattr(
+        "app.core.settings_override.lifecycle.refresh_all", _fail_after_cancel
+    )
+
+    with caplog.at_level("WARNING", logger="app.core.settings_override.lifecycle"):
+        completed, pending = await bounded_refresh(lambda: None, registry, budget=0.05)
+        assert completed is False
+        assert pending is not None
+        with suppress(RuntimeError):
+            await pending
+
+    assert any(
+        record.levelname == "WARNING"
+        and "unwinding after cancellation" in record.message
+        and "session cleanup failed" in record.message
         for record in caplog.records
     )
 

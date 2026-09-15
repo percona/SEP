@@ -57,12 +57,18 @@ SessionMakerFactory = Callable[[], async_sessionmaker]
 
 
 def _drain_cancelled_refresh_task(task: asyncio.Task) -> None:
-    """Retrieve a finished refresh task's exception so it is not logged as unretrieved.
+    """Retrieve a finished refresh task's exception and log it if there is one.
 
     :param task: The finished refresh task (cancelled tasks are ignored).
     """
-    if not task.cancelled():
-        task.exception()
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.warning(
+            "Settings-override refresh raised while unwinding after cancellation: %r",
+            exc,
+        )
 
 
 class SnapshotChange(NamedTuple):

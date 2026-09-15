@@ -182,13 +182,13 @@ class WorkerRefresher:
         ``wait_for``, which would still hang on a stuck
         ``AsyncSession.__aexit__``). Budget expiry logs once at WARNING and
         retains the cancelled task handle; exceptions raised from the
-        ``run_until_complete`` call are logged and swallowed. Failures that
-        surface only while a cancelled refresh is still unwinding are not
-        observed here. Neither case fails or aborts the task that triggered
-        the refresh. Because proxies publish sequentially, a timed-out or
-        failed cycle may leave a split registry (earlier proxies refreshed,
-        later ones on their prior snapshots) rather than rolling everything
-        back.
+        ``run_until_complete`` call are logged and swallowed. A failure that
+        surfaces only while a cancelled refresh is still unwinding is logged
+        by the drain callback when that task finishes, not by this method.
+        Neither case fails or aborts the task that triggered the refresh.
+        Because proxies publish sequentially, a timed-out or failed cycle may
+        leave a split registry (earlier proxies refreshed, later ones on their
+        prior snapshots) rather than rolling everything back.
         The interval stamp advances on every attempted due refresh so a
         failing cycle cannot hammer the database on every subsequent
         dispatch.
