@@ -39,9 +39,11 @@ from app.tasks.models import FileMetadata, TaskHistoryResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["tasks"])
 
-# Kept on primed-stream error responses so nginx still disables buffering and
-# clients still see the download filename when upstream rejects before bytes.
-_ERROR_RESPONSE_HEADERS = frozenset({"x-accel-buffering", "content-disposition"})
+# Kept on primed-stream error responses: every proxy header from
+# STREAMING_PROXY_HEADERS, plus Content-Disposition for the download filename.
+_ERROR_RESPONSE_HEADERS = frozenset(
+    {key.lower() for key in STREAMING_PROXY_HEADERS} | {"content-disposition"}
+)
 
 
 class ErrorPrimingStreamingResponse(StreamingResponse):
