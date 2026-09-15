@@ -37,7 +37,9 @@ class TestHostBootstrapStateStatus:
 
     def test_all_pending_is_pending(self) -> None:
         """A run nothing has touched yet reports pending, not running."""
-        assert _state(StepStatus.PENDING, StepStatus.PENDING).status == StepStatus.PENDING
+        assert (
+            _state(StepStatus.PENDING, StepStatus.PENDING).status == StepStatus.PENDING
+        )
 
     def test_one_running_is_running(self) -> None:
         """One step actively running makes the whole host running."""
