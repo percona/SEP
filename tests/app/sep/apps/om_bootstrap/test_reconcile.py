@@ -21,8 +21,13 @@ from uuid import uuid4
 import pytest
 
 from app.sep.apps.om_bootstrap import reconcile
-from app.sep.apps.om_bootstrap.models import BootstrapRun
-from app.sep.apps.om_bootstrap.persistence import dump_host_states, parse_host_states
+from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
+from app.sep.apps.om_bootstrap.persistence import (
+    dump_host_states,
+    dump_run_steps,
+    parse_host_states,
+    parse_run_steps,
+)
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
     InstallMethod,
@@ -121,13 +126,28 @@ class TestReconcileStep:
 class TestReconcileRun:
     """Assert reconcile_run updates run.hosts in place and reports whether anything changed."""
 
-    def _run(self, steps: list[StepRecord]) -> BootstrapRun:
+    def _run(
+        self,
+        steps: list[StepRecord],
+        *,
+        rollback_steps: list[StepRecord] | None = None,
+        run_steps: list[StepRecord] | None = None,
+    ) -> BootstrapRun:
         return BootstrapRun(
             install_method=InstallMethod.PACKAGES,
             os=OperatingSystem.UBUNTU,
             mongodb_version="8.0",
             replica_set_name="rs-test",
-            hosts=dump_host_states([HostBootstrapState(host="node00", steps=steps)]),
+            hosts=dump_host_states(
+                [
+                    HostBootstrapState(
+                        host="node00",
+                        steps=steps,
+                        rollback_steps=rollback_steps or [],
+                    )
+                ]
+            ),
+            run_steps=dump_run_steps(run_steps or []),
         )
 
     @pytest.mark.asyncio
@@ -198,3 +218,120 @@ class TestReconcileRun:
             await reconcile.reconcile_run(_tasks_api("running"), run)
 
         cleanup.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconciles_run_level_steps_too(self) -> None:
+        """A run-level dispatch's outcome lands in run.run_steps, not just hosts."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="rs_initiate",
+                    status=StepStatus.RUNNING,
+                    task_history_id=TASK_HISTORY_ID,
+                )
+            ],
+        )
+
+        changed = await reconcile.reconcile_run(_tasks_api("success"), run)
+
+        assert changed is True
+        assert parse_run_steps(run)[0].status == StepStatus.SUCCEEDED
+
+    @pytest.mark.asyncio
+    async def test_cleans_up_a_run_level_step_under_the_seed_host(self) -> None:
+        """A run-level step's scratch script is named under the run's first host."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="rs_initiate",
+                    status=StepStatus.RUNNING,
+                    task_history_id=TASK_HISTORY_ID,
+                )
+            ],
+        )
+        run.id = uuid4()
+
+        with patch(
+            "app.sep.apps.om_bootstrap.reconcile.cleanup_step_script"
+        ) as cleanup:
+            await reconcile.reconcile_run(_tasks_api("success"), run)
+
+        cleanup.assert_called_once_with(str(run.id), "node00", "rs_initiate")
+
+    @pytest.mark.asyncio
+    async def test_reconciles_rollback_steps_too(self) -> None:
+        """A rollback dispatch's outcome lands in the host's rollback_steps."""
+        run = self._run(
+            [StepRecord(name="install_package", status=StepStatus.FAILED)],
+            rollback_steps=[
+                StepRecord(
+                    name="stop_service",
+                    status=StepStatus.RUNNING,
+                    task_history_id=TASK_HISTORY_ID,
+                )
+            ],
+        )
+
+        changed = await reconcile.reconcile_run(_tasks_api("success"), run)
+
+        assert changed is True
+        assert parse_host_states(run)[0].rollback_steps[0].status == (
+            StepStatus.SUCCEEDED
+        )
+
+    @pytest.mark.asyncio
+    async def test_marks_a_fully_succeeded_run_succeeded(self) -> None:
+        """Once every host and run-level step succeeds, the run itself does too."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            run_steps=[
+                StepRecord(
+                    name="create_pmm_monitoring_user",
+                    status=StepStatus.RUNNING,
+                    task_history_id=TASK_HISTORY_ID,
+                )
+            ],
+        )
+        assert run.status == BootstrapRunStatus.RUNNING
+
+        changed = await reconcile.reconcile_run(_tasks_api("success"), run)
+
+        assert changed is True
+        assert run.status == BootstrapRunStatus.SUCCEEDED
+        assert run.finished_at is not None
+
+    @pytest.mark.asyncio
+    async def test_does_not_mark_succeeded_while_a_host_step_is_pending(self) -> None:
+        """A run isn't done just because its run-level steps finished first."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.PENDING)],
+            run_steps=[StepRecord(name="rs_initiate", status=StepStatus.SUCCEEDED)],
+        )
+
+        await reconcile.reconcile_run(AsyncMock(), run)
+
+        assert run.status == BootstrapRunStatus.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_does_not_override_an_already_terminal_status(self) -> None:
+        """A run the stepper already marked FAILED/ROLLED_BACK is left alone."""
+        run = self._run([StepRecord(name="verify", status=StepStatus.SUCCEEDED)])
+        run.status = BootstrapRunStatus.FAILED
+
+        await reconcile.reconcile_run(AsyncMock(), run)
+
+        assert run.status == BootstrapRunStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_pending_rollback_steps_do_not_block_success(self) -> None:
+        """A never-triggered rollback list (all PENDING) doesn't count against success."""
+        run = self._run(
+            [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
+            rollback_steps=[StepRecord(name="stop_service")],
+        )
+
+        await reconcile.reconcile_run(AsyncMock(), run)
+
+        assert run.status == BootstrapRunStatus.SUCCEEDED

@@ -124,6 +124,12 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
         :func:`~app.sep.apps.om_bootstrap.persistence.parse_host_states`). Read
         and written whole; see the module docstring for why this is not a
         normalized per-step table.
+    :param run_steps: This run's run-level steps
+        (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),
+        as plain JSON
+        :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` dicts -- the same
+        shape and the same "read and written whole" treatment as ``hosts``, just
+        not scoped to any one host (see :func:`~app.sep.apps.om_bootstrap.persistence.parse_run_steps`).
     :param error: The failure detail when the run itself raised, outside any
         single host's steps -- e.g. a spec that failed validation before any
         host was touched.
@@ -168,6 +174,14 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     # JSON, not postgresql.JSONB directly: PostgreSQL is the dialect that gets a
     # variant carved out of it here, same reasoning as ProbeRun.nodes.
     hosts: list[dict[str, Any]] = SQLField(
+        default_factory=list,
+        sa_column=Column(
+            JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
+            nullable=False,
+            server_default="[]",
+        ),
+    )
+    run_steps: list[dict[str, Any]] = SQLField(
         default_factory=list,
         sa_column=Column(
             JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
