@@ -15,7 +15,6 @@
 
 """Cover the side-car's schema gate and the program table it is wired into."""
 
-import re
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -23,15 +22,17 @@ from uuid import uuid4
 
 import pytest
 
-from tests.sidecar.conftest import schema_steps, SIDECAR_DIR
+from tests.sidecar.conftest import (
+    BUDGET_ASSIGNMENT,
+    CONTAINERFILE,
+    GATE,
+    SCHEMA_STEPS,
+    SIDECAR_DIR,
+)
 
-GATE = SIDECAR_DIR / "wait_for_schema.sh"
-CONTAINERFILE = SIDECAR_DIR / "Containerfile.sidecar"
 HEALTHCHECK = SIDECAR_DIR / "healthcheck.sh"
 
 GATE_INVOCATION = "./wait_for_schema.sh"
-SCHEMA_STEPS = schema_steps()
-"""Every schema step an API program waits for, in program-table order."""
 
 GATED_PROGRAMS = {
     "sep": "python -m app.sep.main",
@@ -41,7 +42,6 @@ GATED_PROGRAMS = {
 """Each gated API program and the command the gate must precede."""
 
 ALEMBIC_ONE_SHOTS = ("migrate-sep", "migrate-inventory", "migrate-tasks")
-BUDGET_ASSIGNMENT = re.compile(r"^readonly WAIT_BUDGET_SECONDS=\d+$", re.MULTILINE)
 
 RunGate = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -51,10 +51,10 @@ def sentinel_names() -> Iterator[list[str]]:
     """Return one sentinel name per schema step, cleaning up what it wrote.
 
     The gate derives ``/tmp/migrate-<name>.ok`` from each name it is given, and
-    that path is hardcoded across the entrypoint, the program table and the
-    healthcheck alike. Unique names keep a run off a developer's real sentinels
-    and off a sibling xdist worker's, without introducing a directory knob that
-    exists only for the tests.
+    that path is hardcoded across the entrypoint, the program table, the
+    healthcheck and ``clear_sentinels.sh`` alike. Unique names keep a run off a
+    developer's real sentinels and off a sibling xdist worker's, without
+    introducing a directory knob that exists only for the tests.
 
     :return: One name per schema step, positionally aligned with them.
     """
