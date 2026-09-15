@@ -31,22 +31,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ -z "$BASE_REF" ]; then
+          if [ -z "$PR_NUMBER" ]; then
             echo "No pull-request context; nothing to gate."
             echo "protected=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # github.event replays the original event on a re-run; resolve the base the PR has now.
+          if ! base_ref="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')" \
+              || [ -z "$base_ref" ]; then
+            echo "::error::Could not resolve the base branch of pull request #$PR_NUMBER."
+            exit 1
+          fi
           if ! branches="$(gh api --paginate \
               "repos/$REPO/branches?protected=true&per_page=100" \
               --jq '.[].name')"; then
-            echo "::error::Could not determine whether '$BASE_REF' is protected."
+            echo "::error::Could not determine whether '$base_ref' is protected."
             exit 1
           fi
-          if grep -Fxq -- "$BASE_REF" <<<"$branches"; then
+          if grep -Fxq -- "$base_ref" <<<"$branches"; then
+            echo "Base branch '$base_ref' is protected; the label gate applies."
             echo "protected=true" >> "$GITHUB_OUTPUT"
           else
+            echo "Base branch '$base_ref' is not protected; the label gate is off."
             echo "protected=false" >> "$GITHUB_OUTPUT"
           fi
 
