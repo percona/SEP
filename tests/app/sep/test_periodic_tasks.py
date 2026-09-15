@@ -519,7 +519,7 @@ async def _seed_user_schedule(
 
 async def _clear_changed_marker(session: AsyncSession) -> None:
     """Drop the beat reload marker so a later read proves the sweep rewrote it."""
-    await session.execute(delete(PeriodicTaskChanged))
+    await session.execute(delete(PeriodicTaskChanged))  # ty: ignore[deprecated]
     await session.commit()
 
 
@@ -567,7 +567,7 @@ class TestDisableSchedulesForOwners:
         assert switched_off == ["nightly-restore"]
         assert await _read_enabled(celery_beat_session, "nightly-restore") is False
         assert [m for m in _sweep_warnings(caplog) if "nightly-restore" in m]
-        result = await celery_beat_session.execute(
+        result = await celery_beat_session.execute(  # ty: ignore[deprecated]
             select(PeriodicTaskChanged.last_update)
         )
         assert result.scalar_one_or_none() is not None

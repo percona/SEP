@@ -244,9 +244,11 @@ async def disable_schedules_for_owners(
             schedules.append(candidate)
     if not schedules:
         return []
-    names = [schedule.name for schedule in schedules]
+    names: list[str] = [  # ty: ignore[invalid-assignment]
+        schedule.name for schedule in schedules
+    ]
     for schedule in schedules:
-        schedule.enabled = False
+        schedule.enabled = False  # ty: ignore[invalid-assignment]
         celery_beat_session.add(schedule)
     await celery_beat_session.commit()
     for name in names:
