@@ -51,12 +51,22 @@ function makeEntry(
       meta: {},
       tracking: {},
     } as unknown as TaskHistoryEntry['execution_request'],
+    unreadable_request_leaves: [],
     ...overrides,
   };
 }
 
 const ALL_STATUSES: TaskHistoryEntry[] = (
-  ['success', 'failed', 'running', 'pending', 'stopped', 'lost', 'stale'] as TaskHistoryStatus[]
+  [
+    'success',
+    'failed',
+    'running',
+    'pending',
+    'stopped',
+    'lost',
+    'stale',
+    'unlaunchable',
+  ] as TaskHistoryStatus[]
 ).map((status, idx) => makeEntry(idx + 1, status));
 
 const COMPLETED_ONLY: TaskHistoryEntry[] = [

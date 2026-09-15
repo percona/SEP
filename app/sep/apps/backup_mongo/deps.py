@@ -25,6 +25,7 @@ from aiohttp import ClientResponseError
 from fastapi import Depends
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
@@ -268,7 +269,7 @@ async def _fetch_backup_derived_detail(
         derived = await get_backups_task(derived_name, tasks_api)
     except HTTPNotFoundException:
         return None
-    history_response = await tasks_api.get(f"/{derived.name}/history/")
+    history_response = as_json_object(await tasks_api.get(f"/{derived.name}/history/"))
     return derived, history_response["items"]
 
 

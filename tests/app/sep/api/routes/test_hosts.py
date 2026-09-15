@@ -15,6 +15,8 @@
 
 """Tests for the SEP hosts JSON API route at ``/api/sep/hosts/``."""
 
+from collections.abc import Iterator
+
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -190,7 +192,7 @@ class TestSepHostsAuth:
     """Tests for ``/api/sep/hosts/`` authentication enforcement."""
 
     @pytest.fixture
-    def unauthenticated_client(self) -> TestClient:
+    def unauthenticated_client(self) -> Iterator[TestClient]:
         """Yield a TestClient with no auth dependency overrides applied."""
         previous = sep_app.dependency_overrides
         sep_app.dependency_overrides = {}

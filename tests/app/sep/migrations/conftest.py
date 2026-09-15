@@ -17,16 +17,13 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from types import ModuleType
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.scripts import load_script
 
 # The create_alert_backup_table revision: the head of the alerts branch, the
 # app the PMM-embedded side-car's allow-list strip removes.
@@ -69,13 +66,4 @@ def load_sync_alembic_version_locations() -> ModuleType:
 
     :return: The loaded sync script module.
     """
-    script_path = REPO_ROOT / "scripts" / "sync_alembic_version_locations.py"
-    spec = importlib.util.spec_from_file_location(
-        "sync_alembic_version_locations", script_path
-    )
-    assert spec is not None, f"cannot load {script_path}"
-    assert spec.loader is not None, f"cannot load {script_path}"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["sync_alembic_version_locations"] = module
-    spec.loader.exec_module(module)
-    return module
+    return load_script("sync_alembic_version_locations")

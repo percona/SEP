@@ -17,7 +17,7 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, TYPE_CHECKING
 
 from annotated_types import Gt, Le
 from pydantic import AfterValidator, Field, PositiveInt
@@ -34,8 +34,15 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
     not_overridable_field,
 )
-from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.hook_resolver import is_dotted_module_path
+
+if TYPE_CHECKING:
+    # The package export resolves through a PEP 562 __getattr__ that has to
+    # declare `object`, so import the class itself for annotations and keep the
+    # lazy path for the runtime binding that breaks the import cycle.
+    from app.tasks.execution.executors.nomad.models import NomadExecutor
+else:
+    from app.tasks.execution.executors.nomad import NomadExecutor
 
 MAX_LOG_RETENTION_DAYS = 365
 
@@ -121,6 +128,10 @@ class TasksSettings(BaseYamlAppSettings):
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
+    :param PENDING_ALLOCATION_TIMEOUT_SECONDS: The maximum seconds a RUNNING
+        TaskHistory row may wait behind a Nomad allocation that has never
+        produced TaskStates before sync escalates it to LOST. Measured from
+        ``started_at``. Must be positive. Defaults to 3600.
     :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
         logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
         positive integer no greater than 365. Defaults to 90.
@@ -164,29 +175,50 @@ class TasksSettings(BaseYamlAppSettings):
     UVICORN_PORT: int = 8002
     NOMAD: NomadExecutor = nested_overridable_field(...)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
-    SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
-        SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
+    SECURITY_HEADERS: (
+        SecurityHeadersOptions | None
+    ) = (  # ty: ignore[invalid-assignment]
+        nested_overridable_field(
+            SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
+        )
     )
-    SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
-        timedelta(minutes=5), advanced=True
+    SYNC_LOCK_TTL: Annotated[
+        timedelta, Gt(timedelta(0))
+    ] = (  # ty: ignore[invalid-assignment]
+        hot_field(timedelta(minutes=5), advanced=True)
     )
-    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
-        PreExecutionCheckMode.DISABLED
+    PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = (  # ty: ignore[invalid-assignment]
+        hot_field(PreExecutionCheckMode.DISABLED)
     )
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600, advanced=True)
-    LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(
-        90, advanced=True
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(3600, advanced=True)
     )
-    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000, advanced=True)
+    PENDING_ALLOCATION_TIMEOUT_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(3600, advanced=True)
+    )
+    LOG_RETENTION_DAYS: Annotated[
+        int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)
+    ] = (  # ty: ignore[invalid-assignment]
+        hot_field(90, advanced=True)
+    )
+    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        10_000, advanced=True
+    )
     LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
     INVENTORY_SYNC_INTERVAL: IntervalSchedule | None = None
     INVENTORY_SYNC_SYNCER: SyncerName | None = None
-    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
-    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
-    HOOK_MODULE_ALLOWLIST: tuple[HookModuleRoot, ...] = not_overridable_field(
-        ("app.sep.apps",)
+    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        104857600, advanced=True
+    )
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(1000, advanced=True)
+    )
+    HOOK_MODULE_ALLOWLIST: tuple[
+        HookModuleRoot, ...
+    ] = (  # ty: ignore[invalid-assignment]
+        not_overridable_field(("app.sep.apps",))
     )
 
 

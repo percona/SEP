@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pytest
+from cryptography.fernet import Fernet
 
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
@@ -46,6 +47,10 @@ DATABASE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
 
 BLANK_BEAT_URI = {"CELERY__BEAT_DBURI": ""}
 """A blank inherited beat URI, the shape the helper has to clear."""
+
+FERNET_KEY = Fernet.generate_key().decode("ascii")
+"""A real key rather than a placeholder, so these cases carry a value the
+settings classes would accept."""
 
 
 def source_helper(**inputs: str) -> subprocess.CompletedProcess[str]:
@@ -247,20 +252,28 @@ def test_neither_a_beat_store_nor_a_password_is_exported_by_default():
     assert not [name for name in environment if name.endswith("__DATABASE__PASSWORD")]
 
 
-def test_grafana_token_reaches_the_provider_and_the_pmm_client():
-    """Assert one minted token serves both Grafana sign-in and the PMM syncer."""
+GRAFANA_FAN_OUT_NAMES = (
+    "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
+    "PMM__API_KEY",
+    "TASKS__NOMAD__API_KEY",
+)
+"""Every canonical name ``export_grafana_token`` resolves from one token."""
+
+
+def test_grafana_token_reaches_every_canonical_destination():
+    """Assert one token serves Grafana sign-in, the PMM syncer and the Nomad executor."""
     environment = exported(source_helper(SECRET_KEY="k", SEP_GRAFANA_TOKEN="glsa_x"))
 
-    assert environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_x"
-    assert environment["PMM__API_KEY"] == "glsa_x"
+    assert {
+        name: environment.get(name) for name in GRAFANA_FAN_OUT_NAMES
+    } == dict.fromkeys(GRAFANA_FAN_OUT_NAMES, "glsa_x")
 
 
 def test_no_grafana_variables_without_a_token():
     """Leave the profile's empty token standing when no token is supplied."""
     environment = exported(source_helper(SECRET_KEY="k"))
 
-    assert "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN" not in environment
-    assert "PMM__API_KEY" not in environment
+    assert not [name for name in GRAFANA_FAN_OUT_NAMES if name in environment]
 
 
 def test_the_grafana_fan_out_survives_as_a_callable_function():
@@ -269,15 +282,15 @@ def test_the_grafana_fan_out_survives_as_a_callable_function():
         source_helper_then("export_grafana_token glsa_minted", SECRET_KEY="k")
     )
 
-    assert (
-        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
-    )
-    assert environment["PMM__API_KEY"] == "glsa_minted"
+    assert {
+        name: environment.get(name) for name in GRAFANA_FAN_OUT_NAMES
+    } == dict.fromkeys(GRAFANA_FAN_OUT_NAMES, "glsa_minted")
 
 
-def test_a_mounted_single_name_outranks_a_minted_token(tmp_path: Path):
-    """Leave a mounted name to its file while the other takes the minted value."""
-    secrets_dir = write_secrets(tmp_path, PMM__API_KEY="from-file")
+@pytest.mark.parametrize("mounted", GRAFANA_FAN_OUT_NAMES)
+def test_a_mounted_single_name_outranks_a_minted_token(tmp_path: Path, mounted: str):
+    """Leave a mounted name to its file while the others take the minted value."""
+    secrets_dir = write_secrets(tmp_path, **{mounted: "from-file"})
 
     environment = exported(
         source_helper_then(
@@ -285,26 +298,27 @@ def test_a_mounted_single_name_outranks_a_minted_token(tmp_path: Path):
         )
     )
 
-    assert (
-        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
-    )
-    assert "PMM__API_KEY" not in environment
+    assert mounted not in environment
+    for name in GRAFANA_FAN_OUT_NAMES:
+        if name != mounted:
+            assert environment[name] == "glsa_minted"
 
 
-def test_an_explicit_single_name_outranks_a_minted_token():
+@pytest.mark.parametrize("explicit", GRAFANA_FAN_OUT_NAMES)
+def test_an_explicit_single_name_outranks_a_minted_token(explicit: str):
     """Leave an operator's own value standing, which the mint must never displace."""
     environment = exported(
         source_helper_then(
             "export_grafana_token glsa_minted",
             SECRET_KEY="k",
-            PMM__API_KEY="glsa_explicit",
+            **{explicit: "glsa_explicit"},
         )
     )
 
-    assert environment["PMM__API_KEY"] == "glsa_explicit"
-    assert (
-        environment["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"] == "glsa_minted"
-    )
+    assert environment[explicit] == "glsa_explicit"
+    for name in GRAFANA_FAN_OUT_NAMES:
+        if name != explicit:
+            assert environment[name] == "glsa_minted"
 
 
 @pytest.mark.parametrize(
@@ -418,6 +432,58 @@ def test_a_blank_secret_key_variable_does_not_shadow_the_file(tmp_path: Path):
     environment = exported(source_helper(SECRET_KEY="", SECRETS_DIR=secrets_dir))
 
     assert "SECRET_KEY" not in environment
+
+
+def test_an_encryption_key_from_a_file_is_not_exported(tmp_path: Path):
+    """Leave a mounted key to the file, which every settings class reads itself."""
+    secrets_dir = write_secrets(tmp_path, ENCRYPTION_KEY=FERNET_KEY)
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_a_lowercase_encryption_key_file_is_not_exported(tmp_path: Path):
+    """Match the file case-insensitively, the way the settings source matches it."""
+    secrets_dir = write_secrets(tmp_path, encryption_key=FERNET_KEY)
+
+    environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_a_blank_encryption_key_does_not_shadow_the_file(tmp_path: Path):
+    """Clear a blank inherited key, which was measured to shadow a valid file.
+
+    A blank environment variable still counts as supplied, so without the clear
+    it outranks the mounted file and the settings classes refuse to start on the
+    empty value.
+    """
+    secrets_dir = write_secrets(tmp_path, ENCRYPTION_KEY=FERNET_KEY)
+
+    environment = exported(
+        source_helper(SECRET_KEY="k", ENCRYPTION_KEY="", SECRETS_DIR=secrets_dir)
+    )
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
+
+
+def test_an_explicit_encryption_key_is_left_exported():
+    """Keep an operator's own key, which no lower channel may displace."""
+    environment = exported(source_helper(SECRET_KEY="k", ENCRYPTION_KEY=FERNET_KEY))
+
+    assert environment["ENCRYPTION_KEY"] == FERNET_KEY
+
+
+def test_no_encryption_key_is_exported_when_nothing_supplies_one():
+    """Leave the name unset, which is what sends the entrypoint to its helper."""
+    environment = exported(source_helper(SECRET_KEY="k"))
+
+    assert environment
+    assert "ENCRYPTION_KEY" not in environment
 
 
 def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(tmp_path: Path):
@@ -734,6 +800,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         "PMM__ENDPOINT",
         "AUTH__PROVIDER__GRAFANA__ENDPOINT",
         "TASKS__NOMAD__ENDPOINT",
+        "TASKS__NOMAD__API_KEY",
         "SEP_INTERNAL_TOKEN",
         "BASE_URL",
     )

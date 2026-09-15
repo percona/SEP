@@ -15,7 +15,7 @@
 
 """Define shared fixtures for the alert_troubleshooting plugin tests."""
 
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -69,7 +69,7 @@ def api_client(test_client: TestClient, session: AsyncSession) -> TestClient:
 
 
 @pytest.fixture
-def unauthenticated_client(session: AsyncSession) -> TestClient:
+def unauthenticated_client(session: AsyncSession) -> Iterator[TestClient]:
     """Return a TestClient with no auth overrides — API calls should 401."""
     sep_app.dependency_overrides[get_session] = lambda: session
     yield TestClient(sep_app, raise_server_exceptions=False)

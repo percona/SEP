@@ -53,6 +53,8 @@ _COLLECTOR_FIELD_NAME = "collector_type"
 dipper_schema = AppSchema(
     name="dipper",
     display_name="Collect Diagnostic Data",
+    item_display_name="data collection",
+    item_display_name_plural="data collections",
     description="Run diagnostic data collection scripts on managed database hosts.",
     forms=[
         FormSection(
@@ -264,6 +266,8 @@ def build_dipper_form_schema(
     return AppSchema(
         name="dipper",
         display_name=script.title,
+        item_display_name=dipper_schema.item_display_name,
+        item_display_name_plural=dipper_schema.item_display_name_plural,
         description=script.description or dipper_schema.description,
         forms=forms,
         capabilities=dipper_schema.capabilities,

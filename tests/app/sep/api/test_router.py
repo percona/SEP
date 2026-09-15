@@ -96,23 +96,25 @@ class TestApiRouterComposition:
         checksums_route_tags = [
             route.tags
             for route in apps_router.routes
-            if hasattr(route, "path") and "checksums" in route.path
+            if "checksums" in getattr(route, "path", "")
         ]
         assert checksums_route_tags
         assert all("checksums" in tags for tags in checksums_route_tags)
 
     def test_apps_router_included_via_api_router(self) -> None:
-        """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
+        """Assert schema-carrying plugins mount their schema route on ``sep_app``.
 
-        Both plugins mount under ``/api/apps/{name}/schema`` on the composed
-        application router.
+        Each such plugin mounts under ``/api/apps/{name}/schema`` on the composed
+        application router. Inventory declares no ``AppSchema``, so it is asserted
+        absent: it is the case that distinguishes a mounted router from a mounted
+        schema.
         """
         api_plugin_paths = {
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
         assert "/api/apps/atw/schema" in api_plugin_paths
         assert "/api/apps/checksums/schema" in api_plugin_paths
-        assert "/api/apps/inventory/schema" in api_plugin_paths
+        assert "/api/apps/inventory/schema" not in api_plugin_paths
 
     def test_legacy_plugins_prefix_removed_from_route_table(self) -> None:
         """Assert no composed route remains under the retired ``/api/plugins`` prefix."""
@@ -466,9 +468,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.apps.alters.api_routes.router",
         )
         router = build_apps_router(build_app_registry([plugin]))
-        tagged = [
-            r.tags for r in router.routes if hasattr(r, "path") and "alters" in r.path
-        ]
+        tagged = [r.tags for r in router.routes if "alters" in getattr(r, "path", "")]
         assert tagged
         assert all("alters" in tags for tags in tagged)
 

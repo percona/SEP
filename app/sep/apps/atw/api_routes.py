@@ -34,6 +34,7 @@ from app.core.exceptions import (
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import StrippedNonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
     ATWBatchExecuteItemResponse,
@@ -65,11 +66,14 @@ from app.sep.apps.atw.deps import (
     AtwIncidentDep,
     AtwSnippetSearchQueryDep,
     ClosedAtwIncidentDep,
+    diagnostics_case_search_available,
     diagnostics_send_disabled_reasons,
     IsDiagnosticsSendConfigured,
     OpenAtwIncidentDep,
 )
 from app.sep.apps.atw.models import (
+    AtwCaseMatch,
+    AtwCaseSearchResponse,
     AtwConfigResponse,
     AtwIncident,
     AtwIncidentExecution,
@@ -83,11 +87,14 @@ from app.sep.apps.atw.models import (
 )
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.deps import ApiCurrentUser, SessionDep, TaskAPI
+from app.sep.bundle_upload.factory import get_delivery_executor
+from app.sep.bundle_upload.resolver import resolve_delivery_plan
+from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
+from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +111,23 @@ ATW_SNIPPET_RESOLUTION_WARNING = (
 )
 NO_TASK_ID_ERROR = "Dispatched, but the Tasks API returned no task id; not recorded."
 UNRECORDED_EXECUTION_ERROR = "Dispatched, but the execution row could not be recorded"
+
+#: How long a case search may take before the field falls back to free text.
+#: Deliberately far below the delivery probe's 15s and the intra-cluster 5s:
+#: those bound a one-off operator action, while this is issued while someone is
+#: still typing. ``RemoteAPI`` carries only a session-level timeout
+#: (``sock_read=120``), so this is what actually bounds the call.
+CASE_SEARCH_TIMEOUT_SECONDS = 3
+
+#: The longest search term the route forwards to the receiver. A case reference
+#: or a title fragment is far shorter; the cap is what keeps an arbitrary string
+#: out of the provider's query.
+MAX_CASE_SEARCH_TERM_LENGTH = 128
+
+#: The most matches the route offers the dialog. ``CaseSearchStep`` declares no
+#: limit of its own, so without this the response's cardinality is whatever the
+#: receiver returns.
+MAX_CASE_SEARCH_MATCHES = 25
 
 
 class ATWSnippetSummary(BaseModel):
@@ -548,6 +572,22 @@ def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return meta if isinstance(meta, Mapping) else None
 
 
+def _args_unreadable_upstream(history: Mapping[str, Any]) -> bool:
+    """Return whether the tasks service could not read an execution's arguments.
+
+    Read off the documented ``unreadable_request_leaves`` field rather than
+    inferred from the value: the service serialises a leaf it could not decrypt
+    as ``null``, which is exactly what an execution recording no arguments also
+    looks like. The field is shape-checked because ``history`` is unvalidated on
+    this side, matching :func:`_execution_meta`.
+
+    :param history: The upstream task-history payload.
+    :return: Whether the recorded arguments are unreadable upstream.
+    """
+    unreadable = history.get("unreadable_request_leaves")
+    return isinstance(unreadable, list) and ARGS_LEAF in unreadable
+
+
 def _execution_args(
     history: dict[str, Any], script: SnippetScript | None
 ) -> tuple[str | None, bool]:
@@ -574,13 +614,19 @@ def _execution_args(
     separate arm: they arrive as the ``ValueError`` and ``TypeError`` they
     respectively subclass.
 
+    A row the tasks service stored encrypted and could not read back also
+    withholds. It is recognised from the documented ``unreadable_request_leaves``
+    field, never by inspecting the value: the service already serialises such a
+    leaf as ``null``, which is otherwise indistinguishable from an execution that
+    recorded no arguments.
+
     :param history: The upstream task-history payload, empty when unavailable.
     :param script: The resolved snippet, or ``None`` when its filename no longer
         resolves and the parameter metadata masking needs is unavailable.
     :return: The masked argument string paired with the withheld flag; a ``None``
         string and a false flag mean the execution recorded no arguments.
     """
-    if not history:
+    if not history or _args_unreadable_upstream(history):
         return None, True
     if (meta := _execution_meta(history)) is None:
         return None, True
@@ -628,12 +674,71 @@ def _build_execution_response(
 async def atw_config() -> AtwConfigResponse:
     """Report whether the incident send action is available.
 
-    Not gated by the send guard -- this endpoint is what reports that guard, so
+    Not gated by the send guard: this endpoint is what reports that guard, so
     it must answer whether or not a receiver is configured.
 
-    :return: The reasons the send action is withheld; empty when it is offered.
+    :return: The reasons the send action is withheld, and whether the
+        case-reference field may search the receiver.
     """
-    return AtwConfigResponse(send_disabled_reasons=diagnostics_send_disabled_reasons())
+    return AtwConfigResponse(
+        send_disabled_reasons=diagnostics_send_disabled_reasons(),
+        case_search_available=diagnostics_case_search_available(),
+    )
+
+
+@router.get("/case-search/", dependencies=[IsApiAdmin])
+async def atw_case_search(
+    term: Annotated[
+        StrippedNonEmptyStr,
+        Query(
+            max_length=MAX_CASE_SEARCH_TERM_LENGTH,
+            description="The support case reference or title fragment to match.",
+        ),
+    ],
+) -> AtwCaseSearchResponse:
+    """Search the configured delivery provider for support cases matching ``term``.
+
+    No way the search itself can fail reaches the caller as an error: a
+    deployment that declares no case-search section, stored inputs that no
+    longer fit the plan, a refused credential, an unreachable receiver and a
+    search that outran its bound all report the same unavailability, which the
+    caller renders as the plain text field rather than as a search that found
+    nothing.
+
+    Restricted to administrators, unlike the app's other reads. The router
+    resolves a minimum role for unsafe methods only, so a safe method carries
+    whatever guard it declares itself; this one issues the deployment's own
+    receiver credential, and the dialog that calls it is already offered to
+    administrators alone.
+
+    :param term: The caller's typed search term, the only input it accepts.
+        Surrounding whitespace is stripped, so a whitespace-only term is
+        refused rather than reaching the receiver as a match-everything
+        fragment.
+    :return: The matched cases, or that the search could not run. At most
+        ``MAX_CASE_SEARCH_MATCHES`` are offered, so a plan that declares no
+        provider-side limit still cannot hand the dialog an unbounded list.
+    """
+    plan = resolve_delivery_plan().plan
+    if plan is None or plan.case_search is None:
+        return AtwCaseSearchResponse(available=False, matches=[])
+    try:
+        async with asyncio.timeout(CASE_SEARCH_TIMEOUT_SECONDS):
+            async with get_delivery_executor(plan) as executor:
+                matches = await executor.search_cases(term)
+    except Exception as error:  # noqa: BLE001 -- degraded, never surfaced to the dialog
+        # ``RemoteAPI.request`` maps an upstream error body's ``detail`` onto
+        # the exception it raises, so rendering the exception would log a value
+        # the receiver supplied.
+        logger.warning("Diagnostics case search failed (%s).", type(error).__name__)
+        return AtwCaseSearchResponse(available=False, matches=[])
+    return AtwCaseSearchResponse(
+        available=True,
+        matches=[
+            AtwCaseMatch(reference=match.reference, title=match.title)
+            for match in matches[:MAX_CASE_SEARCH_MATCHES]
+        ],
+    )
 
 
 async def _resolve_selected_executions(

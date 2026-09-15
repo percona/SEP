@@ -25,6 +25,7 @@ from fastapi import Depends
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
+from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import _gathered_latest_history
 from app.sep.apps.backup_mongo.models import BackupType
@@ -452,7 +453,7 @@ async def _fetch_restore_child_detail(
         child = await get_restores_task(child_name, tasks_api)
     except HTTPNotFoundException:
         return None
-    history_response = await tasks_api.get(f"/{child.name}/history/")
+    history_response = as_json_object(await tasks_api.get(f"/{child.name}/history/"))
     return child, history_response["items"]
 
 

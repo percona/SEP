@@ -350,3 +350,106 @@ class TestReferencedServiceIds:
         )
 
         assert [run.service_id for run in page.items] == [7]
+
+
+class TestListForHistoryIds:
+    """Cover the task-history-keyed query behind the task-scoped catalog route."""
+
+    @pytest.mark.asyncio
+    async def test_orders_newest_finished_first(self, session) -> None:
+        """Sort by run completion, identically to the per-service query."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 3, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=3,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 5, 0, tzinfo=UTC),
+        )
+
+        by_history = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2, 3], pagination=_PAGE
+        )
+        by_service = await MysqlBackupRunManager.list_for_service(
+            session, _key("svc-a"), pagination=_PAGE
+        )
+
+        assert [r.task_history_id for r in by_history.items] == [3, 1, 2]
+        assert [r.task_history_id for r in by_history.items] == [
+            r.task_history_id for r in by_service.items
+        ]
+
+    @pytest.mark.asyncio
+    async def test_null_finished_at_sorts_last(self, session) -> None:
+        """Sort a run that never reported a finish time below one that did."""
+        await _save(session, task_history_id=1, service_name="svc-a")
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2], pagination=_PAGE
+        )
+
+        assert [r.task_history_id for r in page.items] == [2, 1]
+
+    @pytest.mark.asyncio
+    async def test_empty_id_list_returns_an_empty_page(self, session) -> None:
+        """Return an empty page for a task with no successful runs to select by.
+
+        An empty ``IN`` renders as a degenerate always-false predicate, so the
+        query is skipped outright rather than left to agree with its own count.
+        """
+        await _save(session, task_history_id=1, service_name="svc-a")
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [], pagination=_PAGE
+        )
+
+        assert page.items == []
+        assert page.total == 0
+
+    @pytest.mark.asyncio
+    async def test_selects_only_the_given_ids(self, session) -> None:
+        """Return the rows for the requested history ids and no others."""
+        for history_id in range(1, 5):
+            await _save(
+                session, task_history_id=history_id, service_name=f"svc-{history_id}"
+            )
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [2, 3], pagination=_PAGE
+        )
+
+        assert page.total == 2  # noqa: PLR2004
+        assert sorted(r.task_history_id for r in page.items) == [2, 3]
+
+    @pytest.mark.asyncio
+    async def test_spans_services(self, session) -> None:
+        """Return every catalogued run for the task, whatever service it named.
+
+        A task's target can be re-pointed, so keying on the history ids must not
+        silently drop the runs recorded under the previous service.
+        """
+        await _save(session, task_history_id=1, service_name="svc-old", service_id=1)
+        await _save(session, task_history_id=2, service_name="svc-new", service_id=2)
+
+        page = await MysqlBackupRunManager.list_for_history_ids(
+            session, [1, 2], pagination=_PAGE
+        )
+
+        assert page.total == 2  # noqa: PLR2004
+        assert {r.service_name for r in page.items} == {"svc-old", "svc-new"}

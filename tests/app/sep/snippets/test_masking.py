@@ -19,7 +19,7 @@ import shlex
 from typing import Any
 
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, create_model, Field
 
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.masking import (
@@ -465,6 +465,23 @@ class TestMaskCredentialUrls:
 
         assert mask_snippet_args(args, model) == "--mongodb-uri mongodb://host:27017"
 
+    def test_unparseable_uri_is_masked_whole_rather_than_recorded_in_the_clear(self):
+        """Replace a URI the parser rejects outright instead of passing it through.
+
+        A malformed bracketed IPv6 literal makes ``urlparse`` raise, so no
+        password segment can be located to mask. Recording the token as-is would
+        put the real credential in the stored arguments, so the whole value is
+        replaced instead — the one direction that is safe when the parse fails.
+        """
+        model = _model([{"name": "mongodb-uri", "type": "str", "required": True}])
+        args = _args(model, **{"mongodb-uri": "mongodb://u:p3cret@[bad:ipv6/db"})
+
+        masked = mask_snippet_args(args, model)
+
+        assert masked is not None
+        assert "p3cret" not in masked
+        assert SENSITIVE_ARG_MASK in masked
+
     def test_token_with_an_at_sign_but_no_scheme_is_left_unchanged(self):
         """Skip an ordinary ``user@host`` token -- the pre-filter needs ``://`` too."""
         model = _model([{"name": "login", "type": "str", "required": True}])
@@ -484,7 +501,7 @@ class TestNonArgumentFieldsAreSkipped:
     """Cover which of the model's fields the spec derives a parameter shape from."""
 
     @staticmethod
-    def _model_with_base_fields() -> type:
+    def _model_with_base_fields() -> type[BaseModel]:
         """Return an execution model carrying every non-argument base field.
 
         ``extra_args`` and ``sudo`` only exist on the model when the frontmatter
@@ -539,13 +556,10 @@ class TestNonArgumentFieldsAreSkipped:
     def test_an_excluded_field_is_skipped_by_its_marking_not_its_name(self):
         """Skip a field marked ``exclude`` even under an unrecognised name."""
         model = self._model_with_base_fields()
-        renamed = type(
+        renamed = create_model(
             "RenamedBaseField",
-            (model,),
-            {
-                "__annotations__": {"target_host": str},
-                "target_host": Field(default="host1", exclude=True),
-            },
+            __base__=model,
+            target_host=(str, Field(default="host1", exclude=True)),
         )
 
         spec_names = {spec.name for spec in _masking_spec(renamed)}

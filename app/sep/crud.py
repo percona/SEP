@@ -17,7 +17,7 @@
 
 import logging
 from collections.abc import Collection
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import UUID4
@@ -26,6 +26,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
+from app.core.db.utils import advisory_lock_key, try_pg_advisory_xact_lock
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now
 from app.sep.models import (
@@ -42,6 +43,7 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
+from app.sep.sync.constants import SYNC_RUN_LOCK_NAMESPACE
 from app.sep.sync.exceptions import (
     SyncInstanceAlreadyInProgressError,
     SyncItemAlreadyInProgressError,
@@ -221,17 +223,27 @@ class SyncInstanceManager(BaseSQLModelManager):
         stale_after: timedelta | None = None,
         **extra_fields: Any,
     ) -> SyncInstance:
-        """Create and save a new SyncInstance in the database.
+        """Create and save a new SyncInstance, refusing a syncer's second run.
 
-        This method checks if a synchronization instance with the same `syncer` is
-        already in progress (i.e., has items with status `PENDING` or `RUNNING`). If so,
-        it raises a `SyncInstanceAlreadyInProgressError`. Otherwise, it creates and
-        saves the new `SyncInstance`.
+        A syncer owns at most one run: the whole reclaim, conflict-check and insert
+        sequence runs under a per-syncer advisory lock, so two workers entering it
+        at once cannot both find the syncer free and both insert. On PostgreSQL the
+        refusal is a guarantee; SQLite has no advisory lock, and its single-writer
+        locking is what the non-concurrent test suite relies on instead.
 
-        When ``stale_after`` is supplied, an in-progress conflict is first re-examined
-        for abandoned runs: items left behind by a killed worker would otherwise
-        block the syncer permanently, because the hanging-item sweep runs only when
-        the run exits through its context manager.
+        A run is a conflict while it holds a ``PENDING``/``RUNNING`` item, and — with
+        ``stale_after`` supplied — while its own row is in progress and younger than
+        that age. The instance-level half covers a run that has not written its first
+        item yet, and its age bound is what keeps it from fencing a syncer for good,
+        since a run abandoned that early leaves the reclaim nothing to measure.
+        Without ``stale_after`` there is no such bound, and the conflict check stays
+        item-only.
+
+        When ``stale_after`` is supplied, abandoned runs are reclaimed before that
+        check runs and without waiting for an item conflict to justify it, because a
+        worker killed after its last item write leaves a stale run that no item
+        conflict would ever surface. Whatever the reclaim spared is what the conflict
+        check then sees.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
@@ -240,21 +252,92 @@ class SyncInstanceManager(BaseSQLModelManager):
             abandoned and reclaimed. Defaults to ``None``, which never reclaims.
         :param extra_fields: Additional fields to be set on the SyncInstance.
         :return: The newly created and saved SyncInstance.
-        :raises SyncInstanceAlreadyInProgressError: If a SyncInstance with the same
-            ``syncer`` is already in progress and could not be reclaimed as stale.
+        :raises SyncInstanceAlreadyInProgressError: If a run of the same ``syncer``
+            is already in progress, could not be reclaimed as stale, or is being
+            created by a concurrent caller.
         """
-        syncs_in_progress = await cls._items_in_progress(
-            session, instance_create.syncer
-        )
-        if syncs_in_progress and stale_after is not None:
-            await cls.reclaim_stale_runs(session, instance_create.syncer, stale_after)
-            syncs_in_progress = await cls._items_in_progress(
-                session,
-                instance_create.syncer,
+        syncer = instance_create.syncer
+        async with try_pg_advisory_xact_lock(
+            session,
+            SYNC_RUN_LOCK_NAMESPACE,
+            advisory_lock_key(syncer),
+        ) as owns_creation:
+            # Refused rather than queued: waiting would pin a connection until the
+            # peer finishes claiming the syncer, only to then refuse on what the
+            # peer wrote. A caller refused while the peer turns out to refuse too
+            # loses one scheduled run, which is the safe direction.
+            if not owns_creation:
+                raise SyncInstanceAlreadyInProgressError(
+                    detail=f"A run of syncer {syncer!r} is being created already.",
+                )
+            if stale_after is not None:
+                await cls.reclaim_stale_runs(session, syncer, stale_after)
+            # Read after the reclaim, never before it: the reclaim commits
+            # separately, so a run it spared for resuming mid-reclaim can hold an
+            # item an earlier read never saw, and refusing on a stale empty list
+            # would start a second run.
+            syncs_in_progress = await cls._items_in_progress(session, syncer)
+            if syncs_in_progress:
+                raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
+            if stale_after is not None and (
+                active_runs := await cls._instances_in_progress(
+                    session,
+                    syncer,
+                    newer_than=utc_now() - stale_after,
+                )
+            ):
+                raise SyncInstanceAlreadyInProgressError(
+                    detail=(
+                        f"A run of syncer {syncer!r} is already in progress: "
+                        f"{active_runs}."
+                    ),
+                )
+            return await super().create(session, instance_create, **extra_fields)
+
+    @classmethod
+    async def _instances_in_progress(
+        cls,
+        session: AsyncSession,
+        syncer: str,
+        *,
+        newer_than: datetime,
+        # pagination-ok: bounded by the runs a syncer can hold at once, which this
+        # very check keeps at one.
+    ) -> list[UUID4]:
+        """Return a syncer's in-progress runs that are still recent.
+
+        Reads the run's own timestamps rather than its items' so that a run which
+        has not written an item yet still counts as in progress.
+
+        No path leaves an instance row rewritten and still ``PENDING``/``RUNNING``:
+        an insert starts the run and every later write carries a terminal status, so
+        ``updated_at`` is NULL for every row this predicate can match and the
+        ``coalesce`` resolves to ``created_at``. It is defence for the day a run's
+        own row is touched mid-flight, not what dates a run today — a long sync
+        still writing bumps its items' timestamps and is fenced by
+        :meth:`_items_in_progress` instead.
+
+        :param session: The SQLAlchemy asynchronous session to use for database
+            operations.
+        :param syncer: The name of the synchronizer to inspect.
+        :param newer_than: The age bound a run's own timestamp has to clear to
+            count. Anything older is presumed abandoned and left for the reclaim, or
+            for the next run to ignore where the reclaim cannot measure it.
+        :return: The IDs of that syncer's recent in-progress runs.
+        """
+        query = select(col(SyncInstance.id)).where(
+            col(SyncInstance.syncer) == syncer,
+            col(SyncInstance.status).in_(
+                [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
+            ),
+            func.coalesce(
+                col(SyncInstance.updated_at),
+                col(SyncInstance.created_at),
             )
-        if syncs_in_progress:
-            raise SyncInstanceAlreadyInProgressError(syncs_in_progress)
-        return await super().create(session, instance_create, **extra_fields)
+            >= newer_than,
+        )
+        result = await cls._exec(session, query)
+        return list(result.all())
 
     @classmethod
     async def _items_in_progress(
@@ -291,12 +374,13 @@ class SyncInstanceManager(BaseSQLModelManager):
         """Fail the runs of a syncer whose items stopped progressing long ago.
 
         A run is stale when the newest activity across **all** of its items predates
-        ``stale_after``, so a run still making progress is never reclaimed. The item
-        flip is a single conditional statement, so a second reclaimer arriving
-        concurrently matches no rows rather than reclaiming twice. It covers every
-        stale run already fenced as ``FAILED``, not only the ones this call fenced,
-        so a reclaim interrupted between its two statements resumes on the next
-        attempt instead of leaving the syncer blocked.
+        ``stale_after``, so a run still making progress is never reclaimed. Two
+        classes qualify: a run still holding ``PENDING``/``RUNNING`` items, and a
+        ``RUNNING`` run whose items have all gone terminal. A run that wrote no item
+        carries no activity to measure and is left alone.
+
+        Both the fence and the item flip are single conditional statements, so a
+        concurrent reclaimer matches no rows rather than reclaiming twice.
 
         ``snapshot_complete`` is deliberately left untouched: a partially applied run
         must never be counted as a complete generation.
@@ -323,36 +407,56 @@ class SyncInstanceManager(BaseSQLModelManager):
         last_activity = func.max(
             func.coalesce(col(SyncItem.updated_at), col(SyncItem.created_at)),
         )
-        query = (
+        cutoff = utc_now() - stale_after
+        stale_activity = (
             select(col(SyncItem.sync_instance_id))
-            .where(col(SyncItem.sync_instance_id).in_(in_progress))
             .group_by(col(SyncItem.sync_instance_id))
-            .having(last_activity < utc_now() - stale_after)
+            .having(last_activity < cutoff)
         )
-        result = await cls._exec(session, query)
-        stale_instance_ids = list(result.all())
+        blocked = stale_activity.where(col(SyncItem.sync_instance_id).in_(in_progress))
+        # Kept as a second query rather than folded into the one above: that one must
+        # stay item-keyed so a reclaim interrupted after fencing still finds its run
+        # and releases the items. Excluding those runs makes the two sets disjoint,
+        # and grouping over items is what leaves a run that wrote none out of both.
+        idle = stale_activity.join(SyncInstance).where(
+            col(SyncInstance.syncer) == syncer,
+            col(SyncInstance.status) == SyncStatusEnum.RUNNING,
+            col(SyncItem.sync_instance_id).not_in(in_progress),
+        )
+        blocked_result = await cls._exec(session, blocked)
+        idle_result = await cls._exec(session, idle)
+        stale_instance_ids = [*blocked_result.all(), *idle_result.all()]
         if not stale_instance_ids:
             return []
         # The instance is fenced first, and only then are its items released.
         # Each statement commits on its own, so flipping the items first would
         # leave a window in which a reclaimed-but-live worker still reads
-        # ``RUNNING`` and walks into its retire phase. The status predicate keeps
-        # a run that finished between the query above and this update: it has
-        # already written its own verdict, and is no longer anyone's to reclaim.
+        # ``RUNNING`` and walks into its retire phase. Both predicates re-assert
+        # what the query above selected on, because it committed separately: a run
+        # that finished meanwhile has written its own verdict, and one whose worker
+        # resumed and touched an item is progressing after all. The re-assertion
+        # repeats the candidate narrowing so its grouping is index-seekable rather
+        # than spanning every item row; restricting the rows cannot change a
+        # surviving group's ``max()``, since every group is one instance's items.
         reclaimed_ids = await cls.update_where(
             session,
             {"status": SyncStatusEnum.FAILED},
             col(SyncInstance.id).in_(stale_instance_ids),
+            col(SyncInstance.id).in_(
+                stale_activity.where(
+                    col(SyncItem.sync_instance_id).in_(stale_instance_ids),
+                ),
+            ),
             col(SyncInstance.status).in_(
                 [SyncStatusEnum.PENDING, SyncStatusEnum.RUNNING],
             ),
             returning=["id"],
         )
         # Items are released for every stale instance already fenced, not only the
-        # ones this call fenced. A crash between the two statements leaves a FAILED
+        # ones this call fenced: a crash between the two statements leaves a FAILED
         # instance whose items were never released, and the update above then matches
-        # nothing on every later attempt -- so without this the syncer would stay
-        # blocked by exactly the abandoned run the reclaim exists to clear.
+        # nothing on every later attempt, blocking the syncer with exactly the
+        # abandoned run the reclaim exists to clear.
         fenced = await cls._exec(
             session,
             select(col(SyncInstance.id)).where(
@@ -391,10 +495,14 @@ class SyncInstanceManager(BaseSQLModelManager):
         earlier in the run, whose in-memory value would not reflect a reclaim
         committed by another worker.
 
-        This establishes that *this* run was not reclaimed, not that it is the
-        syncer's only run: the concurrent-run refusal in ``create`` reads and writes
-        non-atomically, so two runs can each hold a ``RUNNING`` instance and both
-        pass. Exclusivity needs an ownership primitive this does not provide.
+        A ``True`` answer establishes exclusive ownership, not merely liveness, for a
+        run ``create`` claimed on PostgreSQL with a ``stale_after`` and whose own row
+        is younger than that age: those are the conditions under which ``create``
+        refuses a second run of the syncer, and what makes this usable as the gate on
+        a destructive action rather than only as a reclaim detector. Outside them —
+        on SQLite, which has no advisory lock, for a run claimed without
+        ``stale_after``, or for one that outlived it without writing an item — it
+        establishes liveness alone.
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.

@@ -564,6 +564,46 @@ class TestSnippetsApiPerSnippetSchema:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["display_name"] == snippet.filename
 
+    async def test_unmarked_fields_omit_the_destructive_key(
+        self, test_client, create_snippet
+    ):
+        """Keep ``destructive`` off the wire for a schema whose fields are unmarked.
+
+        This route sets ``response_model_exclude_none`` but is excluded from the
+        parameterless-``GET …/schema`` snapshot set, so nothing else pins that
+        the optional attribute stays absent here.
+        """
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        assert fields
+        assert not any("destructive" in field for field in fields)
+
+    async def test_record_names_describe_a_run_not_the_script(
+        self, test_client, create_snippet
+    ):
+        """Serve fixed ``run`` / ``runs`` nouns beside the snippet's own title."""
+        snippet = await create_snippet("hello.sh", approved=True)
+
+        response = test_client.get(
+            f"{API_BASE}/snippet/schema",
+            params={"snippet_filename": snippet.filename},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["display_name"] == snippet.title
+        assert body["item_display_name"] == "run"
+        assert body["item_display_name_plural"] == "runs"
+
     async def test_returns_per_snippet_schema_with_preview_field(
         self, test_client, create_snippet
     ):

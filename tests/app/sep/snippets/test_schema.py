@@ -429,6 +429,7 @@ class TestVisibilityGates:
         field = field_for(
             SnippetMetaParameter(name="start", type="str", visible_when_not="list")
         )
+        assert field.forbidden is not None
         assert len(field.forbidden) == 1
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
@@ -437,6 +438,7 @@ class TestVisibilityGates:
         field = field_for(
             SnippetMetaParameter(name="start", type="str", visible_when="list")
         )
+        assert field.forbidden is not None
         assert len(field.forbidden) == 1
         assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "list"}}
 
@@ -449,6 +451,7 @@ class TestVisibilityGates:
                 visible_when_not={"parameter": "mode", "equals": "advanced"},
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"equals": {"mode": "advanced"}}
 
     def test_condition_on_choice_field(self):
@@ -461,6 +464,7 @@ class TestVisibilityGates:
                 visible_when_not="list",
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
 
@@ -487,6 +491,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", requires_when_not="mode")
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"not": {"truthy": "mode"}}
 
     def test_requires_when_equals_lowers_to_equals_gate(self):
@@ -498,6 +503,7 @@ class TestGateLowering:
                 requires_when={"parameter": "mode", "equals": "write"},
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"equals": {"mode": "write"}}
 
     def test_forbidden_when_lowers_to_forbidden_gate(self):
@@ -505,6 +511,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", forbidden_when="mode")
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "mode"}
         assert field.requires is None
 
@@ -513,6 +520,7 @@ class TestGateLowering:
         field = field_for(
             SnippetMetaParameter(name="reason", type="str", forbidden_when_not="mode")
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "mode"}}
 
     def test_requires_and_forbidden_both_lowered(self):
@@ -525,7 +533,9 @@ class TestGateLowering:
                 forbidden_when="read_mode",
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {"truthy": "write_mode"}
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {"truthy": "read_mode"}
 
     def test_requires_when_not_equals_lowers_to_negated_equals_gate(self):
@@ -537,6 +547,7 @@ class TestGateLowering:
                 requires_when_not={"parameter": "mode", "equals": "write"},
             )
         )
+        assert field.requires is not None
         assert field.requires[0].when.to_dict() == {
             "not": {"equals": {"mode": "write"}}
         }
@@ -550,6 +561,7 @@ class TestGateLowering:
                 forbidden_when_not={"parameter": "mode", "equals": "read"},
             )
         )
+        assert field.forbidden is not None
         assert field.forbidden[0].when.to_dict() == {
             "not": {"equals": {"mode": "read"}}
         }
@@ -584,6 +596,7 @@ async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
 
     parameters_section = next(s for s in schema.forms if s.title == "Parameters")
     start_field = next(f for f in parameters_section.fields if f.name == "start")
+    assert start_field.forbidden is not None
     assert start_field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
 
@@ -977,3 +990,21 @@ async def test_widened_helpers_accept_non_snippet_basesnippet():
 
     execution_args = script.get_execution_model().model_construct(executor_host="host1")
     assert isinstance(evaluate_snippet_gates(script, execution_args), list)
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_names_the_record_a_run(create_snippet):
+    """Name the record a run of the script, not the script the title names."""
+    snippet = await create_snippet("hello.sh", approved=True)
+
+    schema = build_snippet_schema(snippet)
+
+    assert schema.display_name == snippet.title
+    assert schema.item_display_name == "run"
+    assert schema.item_display_name_plural == "runs"
+
+
+def test_snippets_plugin_schema_names_the_record_a_script():
+    """Name the app-level record a script, distinct from the app's own title."""
+    assert SNIPPETS_PLUGIN_SCHEMA.item_display_name == "script"
+    assert SNIPPETS_PLUGIN_SCHEMA.item_display_name_plural == "scripts"

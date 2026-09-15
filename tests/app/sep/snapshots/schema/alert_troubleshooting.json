@@ -5,6 +5,8 @@
   },
   "display_name": "Alert Troubleshooting",
   "forms": [],
+  "item_display_name": "Alert Troubleshooting",
+  "item_display_name_plural": "Alert Troubleshooting",
   "list_view": {
     "columns": [
       {
@@ -21,5 +23,47 @@
     "default_sort": "service_type",
     "overview_hidden_fields": []
   },
-  "name": "alert_troubleshooting"
+  "name": "alert_troubleshooting",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

@@ -30,8 +30,10 @@ from enum import StrEnum
 from functools import cached_property
 from itertools import product
 from pathlib import Path
+from types import TracebackType
 from typing import Any, ClassVar, NamedTuple
 
+import requests
 from aiohttp import (
     ClientError,
     ClientTimeout,
@@ -39,6 +41,7 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
+from pydantic import computed_field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -59,6 +62,11 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
+from app.core.utils.fields import (
+    AuthCredentialSecretStr,
+    AuthSchemeStr,
+    strip_credential_url_userinfo,
+)
 from app.core.utils.pydantic import field_with_metadata
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
@@ -68,6 +76,7 @@ from app.tasks.execution.executors.nomad.exceptions import (
     JobNotFoundError,
 )
 from app.tasks.execution.executors.nomad.steps import (
+    LAUNCH_CHECK_EXIT_CODE,
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
 )
@@ -192,6 +201,7 @@ def _nomad_event_exit_code(ev: dict) -> Any:
 
 _STALE_SKIP_TASK_NAME = NomadStep.CHECK_STALENESS
 _STALE_SKIP_EXIT_CODE = 75
+_LAUNCH_CHECK_TASK_NAME = NomadStep.CHECK_LAUNCHABLE
 
 # Statuses a RUNNING row may reach on the allocation status alone, when the
 # allocation carries no task states to corroborate it. SUCCESS is excluded: an
@@ -329,24 +339,27 @@ def _status_from_step_states(alloc: dict[str, Any]) -> TaskHistoryStatusEnum:
     return TaskHistoryStatusEnum.FAILED if failed else TaskHistoryStatusEnum.SUCCESS
 
 
-def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
-    """Return ``True`` when the ``check-staleness`` prestart task exited 75.
+def _detect_step_sentinel(
+    task_states: dict[str, Any] | None, *, task_name: str, exit_code: int
+) -> bool:
+    """Return whether one prestart task terminated with its sentinel exit code.
 
-    Walk the Nomad ``TaskStates`` dict produced by an allocation sync and
-    look for a ``Terminated`` event on the ``check-staleness`` task whose
-    exit code matches the stale-skip sentinel. Shape drift across Nomad API
-    responses is tolerated — missing keys or unexpected types simply short
-    circuit to ``False``.
+    Walk the Nomad ``TaskStates`` dict produced by an allocation sync and look
+    for a ``Terminated`` event on ``task_name`` whose exit code matches. Shape
+    drift across Nomad API responses is tolerated — missing keys or unexpected
+    types simply short circuit to ``False``.
+
+    Each caller reads only its own step's state, so which sentinel fired is
+    decided per step rather than by the order Nomad happened to run them in.
 
     :param task_states: The ``TaskStates`` object from a Nomad allocation.
-    :type task_states: dict[str, Any] | None
-    :return: ``True`` when the allocation aborted because of the staleness
-        preamble; ``False`` otherwise.
-    :rtype: bool
+    :param task_name: The Nomad task whose termination carries the sentinel.
+    :param exit_code: The sentinel exit code that step aborts with.
+    :return: ``True`` when that step terminated with that code.
     """
     if not isinstance(task_states, dict):
         return False
-    state = task_states.get(_STALE_SKIP_TASK_NAME)
+    state = task_states.get(task_name)
     if not isinstance(state, dict):
         return False
     events = state.get("Events")
@@ -357,13 +370,65 @@ def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
             continue
         if event.get("Type") != "Terminated":
             continue
-        exit_code = _nomad_event_exit_code(event)
+        event_exit_code = _nomad_event_exit_code(event)
         try:
-            if int(exit_code) == _STALE_SKIP_EXIT_CODE:
+            if int(event_exit_code) == exit_code:
                 return True
         except (TypeError, ValueError):
             continue
     return False
+
+
+def _detect_stale_skip(task_states: dict[str, Any] | None) -> bool:
+    """Return ``True`` when the ``check-staleness`` prestart task exited 75.
+
+    :param task_states: The ``TaskStates`` object from a Nomad allocation.
+    :return: ``True`` when the allocation aborted because of the staleness
+        preamble; ``False`` otherwise.
+    """
+    return _detect_step_sentinel(
+        task_states,
+        task_name=_STALE_SKIP_TASK_NAME,
+        exit_code=_STALE_SKIP_EXIT_CODE,
+    )
+
+
+def _detect_unlaunchable(task_states: dict[str, Any] | None) -> bool:
+    """Return ``True`` when the ``check-launchable`` prestart task aborted.
+
+    An allocation from a job registered before that step existed carries no
+    such task state and resolves ``False``, so in-flight runs are unaffected.
+
+    :param task_states: The ``TaskStates`` object from a Nomad allocation.
+    :return: ``True`` when the node could not resolve the launch command chain;
+        ``False`` otherwise.
+    """
+    return _detect_step_sentinel(
+        task_states,
+        task_name=_LAUNCH_CHECK_TASK_NAME,
+        exit_code=LAUNCH_CHECK_EXIT_CODE,
+    )
+
+
+def _sentinel_status(
+    *, stale_skip: bool, unlaunchable: bool
+) -> TaskHistoryStatusEnum | None:
+    """Return the terminal status a prestart sentinel abort implies, if any.
+
+    Staleness wins where both fired: a run that should not have been dispatched
+    at all outranks anything learned about the node it landed on. Stating the
+    precedence once keeps the two branches of
+    :meth:`NomadExecutor._apply_terminal_status` from drifting apart.
+
+    :param stale_skip: Whether the staleness preamble aborted the run.
+    :param unlaunchable: Whether the launch check aborted the run.
+    :return: The status to stamp, or ``None`` when no sentinel fired.
+    """
+    if stale_skip:
+        return TaskHistoryStatusEnum.STALE
+    if unlaunchable:
+        return TaskHistoryStatusEnum.UNLAUNCHABLE
+    return None
 
 
 def _append_exit_code_suffix(
@@ -378,6 +443,78 @@ def _append_exit_code_suffix(
         return
     if f"exit code {code_int}" not in desc_lower:
         parts.append(f"(exit code {exit_code})")
+
+
+def _failed_step_reason(alloc: dict[str, Any]) -> str | None:
+    """Return prose naming the first producing step that failed, if any.
+
+    Reads the failing step off the allocation's task states: those carry a
+    per-step ``Failed`` flag and the ``Terminated`` events holding exit codes,
+    while :func:`_status_from_step_states` answers only failed-vs-success and
+    names no step. Steps are walked in execution order rather than the order
+    Nomad serialized them in, so a payload failure is reported ahead of a
+    cleanup step that failed after it.
+
+    The exit code is read off the step's *last* ``Terminated`` event. A step
+    Nomad restarted carries one per attempt, oldest first, so the last is the
+    termination the allocation ended on rather than the first attempt's.
+
+    A malformed allocation, task-state container or step state is skipped
+    rather than raised on, so shape drift costs a reason rather than the whole
+    sync.
+
+    :param alloc: The allocation details from Nomad.
+    :return: The reason, or ``None`` when no producing step reports a failure.
+    """
+    task_states = _alloc_task_states(alloc)
+    for step in sorted(task_states, key=lambda name: _alloc_step_sort_key(alloc, name)):
+        if not NomadStep.is_persistable(step):
+            continue
+        state = task_states.get(step)
+        if not isinstance(state, dict) or not state.get("Failed"):
+            continue
+        description = f"Step {step!r} failed"
+        parts = [description]
+        events = state.get("Events")
+        if isinstance(events, list):
+            for event in reversed(events):
+                if not isinstance(event, dict):
+                    continue
+                if event.get("Type") != "Terminated":
+                    continue
+                exit_code = _nomad_event_exit_code(event)
+                if exit_code is not None:
+                    _append_exit_code_suffix(parts, description, exit_code)
+                    break
+        return f"{' '.join(parts)}."
+    return None
+
+
+def _terminal_status_reason(
+    status: TaskHistoryStatusEnum, alloc: dict[str, Any]
+) -> str | None:
+    """Return the stored reason for a status the Nomad sync just resolved.
+
+    ``FAILED`` reports the failing producing step and its exit code, and stores
+    ``None`` when the allocation names none — the shape a client-status-derived
+    failure has. Restating the status as "Failed." there would spend the
+    column's ``None`` on a value that adds nothing to the status, where ``None``
+    is what the column documents as "the reason is unknown". Every other status
+    takes its prose from the enum, and a status carrying none stores ``None``.
+
+    The enum's fragments are verb phrases written for the mid-sentence slot in
+    :meth:`~app.tasks.models.TaskHistory.alert_for_status`, so they are rendered
+    as standalone sentences here rather than given a subject: "The run
+    execution tracking lost" is not a sentence.
+
+    :param status: The terminal status the sync resolved.
+    :param alloc: The allocation details from Nomad.
+    :return: The reason to store, or ``None`` when the status carries none.
+    """
+    if status == TaskHistoryStatusEnum.FAILED:
+        return _failed_step_reason(alloc)
+    summary = status.operator_summary()
+    return f"{summary[:1].upper()}{summary[1:]}." if summary else None
 
 
 def _sortable_nomad_tracking_event(
@@ -500,6 +637,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :param check_cert_expiry_interval: Beat schedule for ``check_nomad_cert_expiry``
         (e.g. once per day). Set to ``None`` to skip registering the periodic task
         in ``app.tasks.db.seed`` (Celery beat will not run the check).
+    :param api_key: Credential sent as ``Authorization: <auth_scheme> <api_key>``
+        on both the synchronous and the asynchronous request path. It takes
+        precedence over any userinfo embedded in ``endpoint``, which is stripped
+        for as long as a key is configured. An empty value counts as unset,
+        leaving whatever ``endpoint`` carries. A control character is rejected
+        here rather than at send time. Defaults to ``None``.
+    :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
+        ``api_key``. Defaults to ``"Bearer"``.
     :param terminal_log_drain_max_attempts: Number of bounded re-fetch attempts
         after terminal detection to drain any stdout/stderr tail Nomad's
         ``logmon`` flushes shortly after the task finishes. Each attempt waits
@@ -539,23 +684,96 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
     # Reuses the shared TLS overlay so every remote-api model marks these the same.
     INHERITED_MARKERS: ClassVar[InheritedMarkers] = REMOTE_API_TLS_MARKERS
-    secure: bool = hot_field(default=False, advanced=True)
-    timeout: int = hot_field(10, advanced=True)
-    minify_payload: bool = hot_field(default=True, advanced=True)
-    log_socket_read_timeout: int = hot_field(10, advanced=True)
-    cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
-    terminal_log_drain_max_attempts: int = hot_field(5, ge=0, advanced=True)
-    terminal_log_drain_interval: float = hot_field(0.5, gt=0, advanced=True)
-    log_anonymization_max_withheld_bytes: int = hot_field(
-        _ONE_MEBIBYTE, gt=0, advanced=True
+    secure: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=False, advanced=True
     )
-    log_capture_hold_seconds: int = hot_field(
+    timeout: int = hot_field(10, advanced=True)  # ty: ignore[invalid-assignment]
+    minify_payload: bool = hot_field(  # ty: ignore[invalid-assignment]
+        default=True, advanced=True
+    )
+    log_socket_read_timeout: int = hot_field(  # ty: ignore[invalid-assignment]
+        10, advanced=True
+    )
+    cert_expiry_warn_days: int = hot_field(  # ty: ignore[invalid-assignment]
+        7, ge=1, advanced=True
+    )
+    terminal_log_drain_max_attempts: int = hot_field(  # ty: ignore[invalid-assignment]
+        5, ge=0, advanced=True
+    )
+    terminal_log_drain_interval: float = hot_field(  # ty: ignore[invalid-assignment]
+        0.5, gt=0, advanced=True
+    )
+    log_anonymization_max_withheld_bytes: int = (  # ty: ignore[invalid-assignment]
+        hot_field(_ONE_MEBIBYTE, gt=0, advanced=True)
+    )
+    log_capture_hold_seconds: int = hot_field(  # ty: ignore[invalid-assignment]
         LOG_CAPTURE_HOLD_DEFAULT_SECONDS, ge=1, advanced=True
     )
-    check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
-        metadata={"reload": ReloadClassification.HOT, "advanced": True},
-        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+    check_cert_expiry_interval: (
+        IntervalSchedule | None
+    ) = (  # ty: ignore[invalid-assignment]
+        field_with_metadata(
+            metadata={"reload": ReloadClassification.HOT, "advanced": True},
+            default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
+        )
     )
+    api_key: AuthCredentialSecretStr | None = None
+    auth_scheme: AuthSchemeStr = hot_field(  # ty: ignore[invalid-assignment]
+        "Bearer", advanced=True
+    )
+
+    _sync_session: requests.Session | None = None
+
+    @property
+    def _configured_api_key(self) -> str | None:
+        """Return the configured API key's plain value, or ``None`` when unset.
+
+        An empty secret counts as unset: :class:`~pydantic.SecretStr` defines
+        ``__len__``, so a blank value is falsy and would otherwise emit a bearer
+        header with no credential. Every site that branches on the credential
+        reads it here, so the two request paths cannot disagree about what
+        counts as configured.
+
+        :return: The plain API key when a non-empty one is configured, else
+            ``None``.
+        """
+        return self.api_key.get_secret_value() if self.api_key else None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return the headers to be used in Nomad requests.
+
+        Carries the configured API key as an ``Authorization`` header; without
+        one the inherited empty header set stands.
+
+        :return: A dictionary containing the headers for Nomad API requests.
+        """
+        api_key = self._configured_api_key
+        if api_key is None:
+            return super().headers
+        return {
+            **super().headers,
+            "Authorization": f"{self.auth_scheme} {api_key}",
+        }
+
+    @computed_field
+    @property
+    def base_url(self) -> str:
+        """Compute the base URL, dropping userinfo once an API key is configured.
+
+        ``__aenter__`` builds the aiohttp session from this value, so this is
+        where the asynchronous path takes the strip that
+        :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
+        It stays a computed field, so it continues to appear in ``model_dump``
+        and therefore in the config fingerprint
+        :class:`~app.tasks.execution.nomad_lifecycle.NomadLifecycle` compares.
+
+        :return: The base URL of the Nomad endpoint.
+        """
+        url = super().base_url
+        if self._configured_api_key is None:
+            return url
+        return strip_credential_url_userinfo(url)
 
     @cached_property
     def backend(self) -> Nomad:
@@ -571,14 +789,50 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 cert = (self.ssl_certfile, self.ssl_keyfile)
             else:
                 cert = (self.ssl_certfile,)
+        address = str(self.endpoint).rstrip("/")
+        session = requests.Session()
+        if self._configured_api_key is not None:
+            address = strip_credential_url_userinfo(address)
+            session.headers.update(self.headers)
+        self._sync_session = session
         return Nomad(
-            address=str(self.endpoint).rstrip("/"),
+            address=address,
             secure=self.secure,
             timeout=self.timeout,
             verify=(self.secure and self.verify_ssl and self.ssl_cafile)
             or self.verify_ssl,
             cert=cert,
+            session=session,
         )
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the asynchronous context manager, releasing both HTTP clients.
+
+        The inherited exit closes the aiohttp session; this one also closes the
+        ``requests.Session`` handed to python-nomad, which the executor owns
+        rather than the library. Retirement runs through
+        :meth:`~app.core.requests.remote_api.BaseRemoteAPI.close_when_idle`, so
+        the close lands once the last consumer hold has drained.
+
+        Dropping the cached :attr:`backend` alongside it keeps a re-entered
+        executor symmetric with the inherited half, which rebuilds its session
+        on the next ``__aenter__``: without the drop, the cache would hand the
+        next caller a client whose session is closed.
+
+        :param exc_type: The exception type, if any.
+        :param exc_val: The exception value, if any.
+        :param exc_tb: The traceback, if any.
+        """
+        await super().__aexit__(exc_type, exc_val, exc_tb)
+        self.__dict__.pop("backend", None)
+        if self._sync_session is not None:
+            self._sync_session.close()
+            self._sync_session = None
 
     @staticmethod
     def timestamp_to_datetime(timestamp: int) -> datetime:
@@ -1237,12 +1491,19 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     queue_item.id,
                 )
                 queue_item.status = TaskHistoryStatusEnum.FAILED
+                queue_item.set_failure_reason(
+                    "The executor job produced no allocation and has no pending "
+                    "evaluation."
+                )
                 queue_item.started_at = None
         except JobNotFoundError:
             logger.warning(
                 "Lost job and allocation from task history %s", queue_item.id
             )
             queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, {})
+            )
         return None
 
     def _stamp_finished_at(
@@ -1279,9 +1540,12 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         moves the row out of RUNNING on that signal alone, because a row left
         RUNNING blocks every later dispatch of the same task, target and payload
         with a 409. While the job lives, a pending or running allocation is
-        simply still starting and is left alone. Once the job is dead nothing
-        will advance it, so any other status resolves to LOST: an allocation
-        that started no task produced no exit code to have earned SUCCESS.
+        simply still starting and is left alone until
+        ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` elapses from ``started_at``, after
+        which the row escalates to LOST and the job is deregistered so Nomad
+        cannot still place it. Once the job is dead nothing will advance it, so
+        any other status resolves to LOST: an allocation that started no task
+        produced no exit code to have earned SUCCESS.
 
         :param queue_item: The task history record for tracking this execution.
         :param writer_session: The dedicated session to use for log chunk
@@ -1302,18 +1566,23 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
 
         task_states = _alloc_task_states(alloc)
         stale_skip = _detect_stale_skip(task_states)
+        unlaunchable = _detect_unlaunchable(task_states)
         capture_hold_ready = _detect_capture_hold_ready(alloc)
 
         try:
             job = self.get_job(job_id)
         except JobNotFoundError:
             queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, alloc)
+            )
         else:
             self._apply_terminal_status(
                 queue_item,
                 alloc,
                 job,
                 stale_skip=stale_skip,
+                unlaunchable=unlaunchable,
                 capture_hold_ready=capture_hold_ready,
             )
 
@@ -1342,6 +1611,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         job: dict[str, Any],
         *,
         stale_skip: bool,
+        unlaunchable: bool,
         capture_hold_ready: bool,
     ) -> None:
         """Resolve and stamp the task history's status from the allocation.
@@ -1353,36 +1623,59 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         jobs registered before the hold step existed and as the fallback for any
         case where Nomad skips a step rather than marking it ``dead``.
 
-        A stale-skip abort overrides the derived status on either path. An
-        operator stop overrides a success but never a failure, matching
+        A prestart sentinel abort overrides the derived status on either path:
+        both aborts leave a *failed* prestart step behind and a failed
+        allocation, either of which would otherwise be reported as an ordinary
+        payload failure. Where both fired, staleness wins — see
+        :func:`_sentinel_status`. Each sentinel is read off its own step's task
+        state, so the resolved status does not depend on the order Nomad ran the
+        two prestart tasks in.
+
+        An operator stop overrides a success but never a failure, matching
         :meth:`get_task_history_status_from_alloc_status`, where ``stopped``
         guards only the ``COMPLETE`` arm: a payload that already failed is
         reported ``FAILED`` even when a stop lands in the same window, so the
         failure is not relabelled as an operator action.
 
+        When the allocation still has no task states and a non-terminal client
+        status, :meth:`_should_escalate_pending_allocation` may escalate the
+        row to LOST once ``PENDING_ALLOCATION_TIMEOUT_SECONDS`` has elapsed
+        since ``started_at``. The job is deregistered first so Nomad cannot
+        still place the allocation after the duplicate-dispatch guard drops; a
+        Nomad error is swallowed so a hiccup cannot leave the row RUNNING. The
+        finish time is ``utc_now()`` rather than the allocation's
+        ``ModifyTime``, which may predate the timeout on a never-placed
+        allocation and would under-report ``duration``.
+
         :param queue_item: The running task history record to stamp.
         :param alloc: The current Nomad allocation dict.
         :param job: The Nomad job dict backing the allocation.
         :param stale_skip: Whether the staleness preamble aborted the run.
+        :param unlaunchable: Whether the launch check aborted the run because
+            the node could not resolve the command chain.
         :param capture_hold_ready: Whether every producing step has stopped
             behind a live hold step.
         """
         task_states = _alloc_task_states(alloc)
+        sentinel = _sentinel_status(stale_skip=stale_skip, unlaunchable=unlaunchable)
         if capture_hold_ready:
             self._stamp_finished_at(queue_item, alloc)
-            if stale_skip:
-                queue_item.status = TaskHistoryStatusEnum.STALE
+            if sentinel is not None:
+                queue_item.status = sentinel
+                queue_item.set_failure_reason(_terminal_status_reason(sentinel, alloc))
                 return
             status = _status_from_step_states(alloc)
             if job.get("Stop", False) and status is not TaskHistoryStatusEnum.FAILED:
                 status = TaskHistoryStatusEnum.STOPPED
             queue_item.status = status
+            queue_item.set_failure_reason(_terminal_status_reason(status, alloc))
             return
 
         if job["Status"] == NOMAD_DEAD_JOB_STATUS:
             self._stamp_finished_at(queue_item, alloc)
-            if stale_skip:
-                queue_item.status = TaskHistoryStatusEnum.STALE
+            if sentinel is not None:
+                queue_item.status = sentinel
+                queue_item.set_failure_reason(_terminal_status_reason(sentinel, alloc))
                 return
             status = self.get_task_history_status_from_alloc_status(
                 alloc.get("ClientStatus"),
@@ -1393,6 +1686,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                 status
                 if task_states or status in _DEAD_END_ALLOC_STATUSES
                 else TaskHistoryStatusEnum.LOST
+            )
+            queue_item.set_failure_reason(
+                _terminal_status_reason(queue_item.status, alloc)
             )
             return
 
@@ -1413,6 +1709,51 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             )
             self._stamp_finished_at(queue_item, alloc)
             queue_item.status = dead_end_status
+            queue_item.set_failure_reason(
+                _terminal_status_reason(dead_end_status, alloc)
+            )
+        elif self._should_escalate_pending_allocation(queue_item):
+            logger.warning(
+                "Allocation %s of task history %s has remained without task "
+                "states past the pending-allocation timeout; marking LOST",
+                alloc["ID"],
+                queue_item.id,
+            )
+            try:
+                self.backend.job.deregister_job(job["ID"])
+            except BaseNomadException:
+                logger.warning(
+                    "Could not deregister job %s while escalating task history "
+                    "%s past the pending-allocation timeout; marking LOST anyway",
+                    job["ID"],
+                    queue_item.id,
+                    exc_info=True,
+                )
+            queue_item.finished_at = utc_now()
+            queue_item.status = TaskHistoryStatusEnum.LOST
+            queue_item.set_failure_reason(
+                _terminal_status_reason(TaskHistoryStatusEnum.LOST, alloc)
+            )
+
+    def _should_escalate_pending_allocation(self, queue_item: TaskHistory) -> bool:
+        """Return whether a TaskStates-less allocation has outlived the age bound.
+
+        Ages from ``queue_item.started_at`` so the bound does not reset across a
+        FollowupEvalID reschedule chain. A missing ``started_at`` never
+        escalates: the row has not entered RUNNING in a measurable way.
+
+        :param queue_item: The RUNNING task history row under sync.
+        :return: ``True`` when the configured bound has elapsed.
+        """
+        if queue_item.started_at is None:
+            return False
+        # Lazy import keeps app.tasks.config out of the nomad.models import
+        # chain (config imports NomadExecutor back from this package).
+        from app.tasks import config as tasks_config
+
+        bound = tasks_config.tasks_settings.PENDING_ALLOCATION_TIMEOUT_SECONDS
+        elapsed = utc_now() - make_datetime_utc(queue_item.started_at)
+        return elapsed.total_seconds() >= bound
 
     async def _persist_nomad_task_logs(
         self,
@@ -2349,10 +2690,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :param queue_item: The task history record whose tracking carries the ids.
         :return: The job and evaluation identifiers, in that order.
         """
-        return (
-            queue_item.execution_request.tracking["job_id"],
-            queue_item.execution_request.tracking["evaluation_id"],
-        )
+        tracking = queue_item.execution_request.tracking or {}
+        return (tracking["job_id"], tracking["evaluation_id"])
 
     async def stream_logs(
         self,

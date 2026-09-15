@@ -171,26 +171,27 @@ class _TTLCache(Generic[T]):
         self.store[key] = (value, expires_at)
         self.store.move_to_end(key)
 
-    def get(self, key: tuple[Any, ...], now: float) -> tuple[bool, T | None]:
+    def get(self, key: tuple[Any, ...], now: float) -> T:
         """Get a value from the cache, checking for expiration.
 
+        Raises rather than returning a ``(hit, value)`` pair, so a cached value
+        that is itself ``None`` stays distinguishable from a miss.
+
         :param key: Cache key.
-        :type key: tuple[Any, ...]
         :param now: Current monotonic time in fractional seconds.
-        :type now: float
-        :return: Tuple of `(hit, value)` where `hit` is `True` if found and not expired.
-        :rtype: tuple[bool, T | None]
+        :return: The cached value.
+        :raises KeyError: When the key is absent or its entry has expired.
         """
         if key in self.store:
             value, exp = self.store[key]
             if exp > now:
                 self.store.move_to_end(key)
                 self.hits += 1
-                return True, value
+                return value
 
         self.store.pop(key, None)
         self.misses += 1
-        return False, None
+        raise KeyError(key)
 
     def clear(self) -> None:
         """Clear all cached entries and reset statistics."""
@@ -264,9 +265,10 @@ def ttl_cache(
             key = _make_key(args=args, kwargs=kwargs, typed=typed)
             now = monotonic()
             with cache.lock:
-                hit, value = cache.get(key, now)
-                if hit:
-                    return value
+                try:
+                    return cache.get(key, now)
+                except KeyError:
+                    pass
             result = func(*args, **kwargs)
             now = monotonic()
             with cache.lock:

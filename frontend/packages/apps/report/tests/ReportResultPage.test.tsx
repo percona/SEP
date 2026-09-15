@@ -24,9 +24,17 @@ import type { ReactNode } from 'react';
 import { ReportResultPage } from '../src/ReportResultPage';
 import type { ReportData } from '../src/types';
 
+/** Flipped per test to cover the read-only (non-admin) rendering. */
+let mockCanMutate = true;
+
 vi.mock('@sep/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
+  useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
+
+beforeEach(() => {
+  mockCanMutate = true;
+});
 
 import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as {
@@ -356,5 +364,41 @@ describe('ReportResultPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /upload to servicenow/i })).toBeDisabled();
     });
+  });
+});
+
+describe('ReportResultPage — write access', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url.includes('/apps/report/config')) {
+        return Promise.resolve({ data: { upload_disabled_reasons: [] } });
+      }
+      return Promise.resolve({ data: MOCK_REPORT });
+    });
+  });
+
+  const reportParams = { since: 'now-7d', until: 'now', full: true, refresh: false };
+
+  it('renders the PDF and upload actions for a session that may mutate', async () => {
+    renderWithProviders(<ReportResultPage />, { params: reportParams });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /Upload to ServiceNow/i })).toBeInTheDocument();
+  });
+
+  it('renders neither action for a non-admin, keeping the report readable', async () => {
+    mockCanMutate = false;
+    renderWithProviders(<ReportResultPage />, { params: reportParams });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /health.*security report/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /Download PDF/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Upload to ServiceNow/i })).not.toBeInTheDocument();
+    // Navigation-only affordance is untouched.
+    expect(screen.getByRole('button', { name: /Generate New Report/i })).toBeInTheDocument();
   });
 });

@@ -15,7 +15,14 @@
 
 """Define tests for ``app.tasks.logs.line_split``."""
 
+from __future__ import annotations
+
+from typing import SupportsIndex, TYPE_CHECKING
+
 import pytest
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 from app.tasks.logs.line_split import (
     LineRelease,
@@ -164,16 +171,22 @@ class _ScanRecordingBytearray(bytearray):
         super().__init__(*args)
         self.scan_starts: list[int] = []
 
-    def rfind(self, sub: bytes, start: int = 0, *args: int) -> int:
+    def rfind(
+        self,
+        sub: ReadableBuffer | SupportsIndex,
+        start: SupportsIndex | None = None,
+        end: SupportsIndex | None = None,
+        /,
+    ) -> int:
         """Log the scan start offset and delegate to ``bytearray.rfind``.
 
         :param sub: The byte sequence to search for.
         :param start: The offset the search starts from.
-        :param args: Any trailing ``end`` argument.
+        :param end: The offset the search stops at.
         :return: The index of the last occurrence, or ``-1``.
         """
-        self.scan_starts.append(start)
-        return super().rfind(sub, start, *args)
+        self.scan_starts.append(int(start or 0))
+        return super().rfind(sub, start, end)
 
 
 def _replay_with_full_scans(

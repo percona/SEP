@@ -24,6 +24,7 @@ the read path and the write path on different databases.
 
 import json
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
@@ -39,6 +40,7 @@ from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.models import IntervalSchedule as IntervalScheduleOption
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.tasks.config import tasks_settings
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
 from tests.app.db_schema import apply_schema
@@ -47,24 +49,6 @@ PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
 MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 FIFTEEN_MINUTES = IntervalScheduleOption(every=15, period=Period.MINUTES)
 OPERATOR_TASK_NAME = "run_inventory-sync_15_minutes"
-
-
-@pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
 
 
 @pytest_asyncio.fixture(name="tasks_maker")
@@ -129,6 +113,21 @@ def _operator_kwargs(syncer: str | None = None) -> str:
             **({"execution_data": {"meta": {"syncer": syncer}}} if syncer else {}),
         }
     )
+
+
+async def _stamp_seeded_row(
+    beat_maker: async_sessionmaker[AsyncSession], **fields: datetime
+) -> None:
+    """Write timing fields onto the seeded row, standing in for a beat dispatch."""
+    async with beat_maker() as session:
+        row = await BasePeriodicTaskManager.first(
+            session, name=seed_module.INVENTORY_SYNC_SCHEDULE_NAME
+        )
+        assert row is not None
+        for field, value in fields.items():
+            setattr(row, field, value)
+        session.add(row)
+        await session.commit()
 
 
 async def _seeded_rows(
@@ -340,3 +339,97 @@ async def test_startup_seeds_the_schedule(configured, beat_maker, tasks_maker, m
 
     (row,) = await _seeded_rows(beat_maker)
     assert json.loads(row.kwargs)["execution_data"]["meta"]["syncer"] == PMM_SYNCER
+
+
+@pytest.mark.asyncio
+async def test_the_seeded_schedule_is_marked_due_in_the_database(
+    configured, beat_maker
+) -> None:
+    """Assert a fresh seed persists the due-now marker and no fabricated run time."""
+    before = utc_now()
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert row.start_time is not None
+    assert before <= make_datetime_utc(row.start_time) <= utc_now()
+    assert row.last_run_at is None
+
+
+@pytest.mark.asyncio
+async def test_reseeding_preserves_a_recorded_dispatch(configured, beat_maker) -> None:
+    """Assert a boot after the first dispatch neither re-arms nor re-dates the row."""
+    await seed_module.seed_system_periodic_tasks()
+    dispatched_at = utc_now()
+    (seeded,) = await _seeded_rows(beat_maker)
+    marked_at = seeded.start_time
+    await _stamp_seeded_row(beat_maker, last_run_at=dispatched_at)
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert make_datetime_utc(row.last_run_at) == dispatched_at
+    assert row.start_time == marked_at
+
+
+@pytest.mark.asyncio
+async def test_the_other_seeded_schedules_keep_their_timing(
+    configured, beat_maker
+) -> None:
+    """Assert the marker is opt-in per entry, so no sibling schedule acquires it."""
+    await seed_module.seed_system_periodic_tasks()
+
+    async with beat_maker() as session:
+        rows = await BasePeriodicTaskManager.list(session)
+    siblings = [
+        row for row in rows if row.name != seed_module.INVENTORY_SYNC_SCHEDULE_NAME
+    ]
+    assert siblings
+    assert all(row.start_time is None for row in siblings)
+    assert all(row.last_run_at is None for row in siblings)
+
+
+@pytest.mark.asyncio
+async def test_upgrading_an_install_that_already_dispatched_adds_no_marker(
+    configured, beat_maker
+) -> None:
+    """Assert an upgrade leaves an existing row's persisted run time to decide it."""
+    dispatched_at = utc_now()
+    async with beat_maker() as session:
+        await _insert_operator_row(
+            session,
+            _operator_kwargs(PMM_SYNCER),
+            name=seed_module.INVENTORY_SYNC_SCHEDULE_NAME,
+        )
+    await _stamp_seeded_row(beat_maker, last_run_at=dispatched_at)
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert make_datetime_utc(row.last_run_at) == dispatched_at
+    assert row.start_time is None
+
+
+@pytest.mark.asyncio
+async def test_upgrading_an_install_that_never_dispatched_stays_unmarked(
+    configured, beat_maker
+) -> None:
+    """Assert the accepted residual: an existing never-run row keeps today's timing.
+
+    Marking it would mean writing timing onto a row that already exists, which is
+    what keeps an upgrade from dispatching a sync it would not otherwise have
+    dispatched. Pinned so the residual stays a decision rather than becoming an
+    unnoticed regression.
+    """
+    async with beat_maker() as session:
+        await _insert_operator_row(
+            session,
+            _operator_kwargs(PMM_SYNCER),
+            name=seed_module.INVENTORY_SYNC_SCHEDULE_NAME,
+        )
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (row,) = await _seeded_rows(beat_maker)
+    assert row.start_time is None
+    assert row.last_run_at is None

@@ -15,6 +15,7 @@
 
 """Tests for BaseSnippet and Snippet models."""
 
+import hashlib
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -970,13 +971,18 @@ class TestFromPath:
     @pytest.mark.asyncio
     async def test_creates_snippet_from_file(self, base_dir):
         """Verify from_path creates a snippet with correct hash and filename."""
+        content = "echo hello\n"
         snippet_file = base_dir / "hello.sh"
-        snippet_file.write_text("echo hello\n")
+        snippet_file.write_text(content, encoding="utf-8")
 
         snippet = await BaseSnippet.from_path("hello.sh")
 
         assert snippet.filename == "hello.sh"
         assert len(snippet.md5_digest) == MD5_DIGEST_LENGTH
+        assert (
+            snippet.md5_digest
+            == hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
+        )
         assert snippet.size > 0
 
     @pytest.mark.asyncio

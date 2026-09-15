@@ -44,6 +44,7 @@ from app.sep.apps.framework.rules import (
     FieldGate,
     Predicate,
 )
+from app.sep.apps.framework.schema import HelpPlacement
 
 __all__ = [
     "ArgFormat",
@@ -52,6 +53,7 @@ __all__ = [
     "Forbidden",
     "FormLayout",
     "FormRules",
+    "HelpPlacement",
     "Hidden",
     "HostRef",
     "Option",
@@ -107,6 +109,15 @@ class Ui:
     :param section: The layout-section key the field belongs to; must match a
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
+    :param destructive: Opt-in notice that *setting or enabling* this field
+        causes irreversible loss — of user data, or of operator-managed state
+        such as a hand-tuned configuration file; the value is the consequence
+        sentence a confirmation surfaces. Presence is the mark — deliberately
+        one string rather than the ``disabled`` / ``disabled_reason`` pair used
+        by :class:`Option`, because a field marked destructive with no text
+        gives a renderer nothing to show, and one attribute makes that state
+        unrepresentable rather than merely invalid. A blank or whitespace-only
+        value is rejected at construction. Defaults to ``None`` (unmarked).
     :param depends_on: For a cascade reference (``SchemaRef`` / ``TableRef`` /
         ``HostRef``) or a :class:`RemoteChoices` field, the field name whose
         value drives this field's options or default selection. Required for
@@ -131,16 +142,72 @@ class Ui:
         default; ``None`` sets the form default to ``None``; any other value sets
         the form default to that value. The model's own default — what the JSON
         body validates against — is never affected.
+    :param help_placement: Where the renderer shows this field's
+        ``description``. ``"inline"`` puts it under the input, where a format
+        hint belongs — visible while someone types into the field it describes.
+        ``"tooltip"`` puts it behind a help icon beside the label, which keeps
+        prose from dominating a form that has a lot of it. ``None`` (the
+        default) lets the renderer decide by length: a description that fits
+        roughly one line renders inline, a longer one goes behind the icon. Set
+        it only where that default reads wrong. Reference and selector fields
+        ignore it and are always inline — their label is a plain string the
+        renderer also uses in validation messages, so there is no node to hang
+        an icon from. Defaults to ``None``.
+    :param parent: Name of a sibling ``bool`` field, in the same section, that
+        this field parameterises. The renderer draws the field indented beneath
+        that toggle and keeps it non-interactive until the toggle is on, rather
+        than hiding it, so a reader can see what enabling the toggle will offer.
+        Presentation only, per this class's governing rule: it changes nothing
+        about what the server accepts. A field that must also be *rejected*
+        while its toggle is off says so with its own ``Forbidden``, which is a
+        per-field validation decision rather than something the pointer
+        implies.
+        :func:`~app.sep.apps.framework.form_dsl.derivation.derive_form_sections`
+        checks only that the target is a same-section ``bool`` that is not
+        itself parented. Defaults to ``None``.
     """
 
     label: str | None = None
     section: str
     description: str | None = None
+    destructive: str | None = None
     depends_on: str | None = None
     order: int = 0
     required: bool | None = None
     widget: FieldWidget | None = None
     default: Any = _UNSET
+    parent: str | None = None
+    help_placement: HelpPlacement | None = None
+
+    def __post_init__(self) -> None:
+        """Reject a marker whose opt-in string carries nothing.
+
+        :raises ValueError: When ``destructive`` or ``parent`` is set to a blank
+            or whitespace-only string.
+        """
+        if self.destructive is not None and not self.destructive.strip():
+            raise ValueError(
+                "Ui(destructive=...) must carry the consequence text a "
+                "confirmation shows; omit the keyword to leave the field "
+                "unmarked"
+            )
+        if self.help_placement is not None:
+            try:
+                object.__setattr__(
+                    self, "help_placement", HelpPlacement(self.help_placement)
+                )
+            except ValueError:
+                known = sorted(member.value for member in HelpPlacement)
+                raise ValueError(
+                    f"Ui(help_placement={self.help_placement!r}) is not one of "
+                    f"{known}; omit the keyword to let the renderer place the "
+                    "description by length"
+                ) from None
+        if self.parent is not None and not self.parent.strip():
+            raise ValueError(
+                "Ui(parent=...) must name the sibling bool field this field "
+                "parameterises; omit the keyword to leave the field unparented"
+            )
 
     @property
     def has_default(self) -> bool:
@@ -312,15 +379,26 @@ class HostRef:
     (``multiple=True``) may still emit ``depends_on`` on ``MultiHostField``,
     but cascade auto-select is single-host only today.
 
+    ``target_service`` is independent of ``Ui(depends_on=...)``: setting it does
+    not turn on cascade auto-select. It names the service field whose node
+    address the renderer compares against the selected host for a non-blocking
+    co-location warning. When it is omitted, derivation falls back to
+    ``Ui(depends_on=...)`` when that is set, so a form that already declares a
+    service-driven cascade gets the warning with no new declaration.
+
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
     :param multiple: When ``True``, the field is a multi-value selector backed by
         a ``list[...]`` / ``set[...]`` annotation and derives a
         ``MultiHostField``. Defaults to ``False`` (single-value).
+    :param target_service: Optional name of the service field used for the
+        co-location warning. ``None`` (the default) lets derivation fall back
+        to ``Ui(depends_on=...)`` when that is set.
     """
 
     allow_custom: bool = False
     multiple: bool = False
+    target_service: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -480,6 +558,20 @@ class SectionLayout:
     :param title: The section heading.
     :param description: Optional helper text beneath the heading. Defaults to
         ``None``.
+    :param advanced: Whether the section holds expert options rather than the
+        common case. The renderer withholds advanced sections behind a single
+        "Show advanced options" control placed after the ordinary ones, and
+        reveals them as ordinary top-level sections — so a form with several
+        expert sections costs one row at rest instead of one per section. It
+        reveals them on its own, and expands the section concerned, whenever
+        one holds a value other than its default or a field an error points
+        into. Membership needs no adjacency: the renderer collects them
+        wherever they appear, preserving order. A single reveal bucket is
+        deliberate: a titled group shell would nest one disclosure inside
+        another, and a second reveal control on the same form is the
+        progressive-disclosure pattern it exists to avoid. A custom control
+        label, if a form ever needs one, is an additive ``FormLayout``-level
+        addition rather than a change to this flag. Defaults to ``False``.
     :param collapsible: Whether the renderer may collapse the section. Defaults
         to ``False``.
     :param collapsed_by_default: Whether a collapsible section starts collapsed.
@@ -494,6 +586,7 @@ class SectionLayout:
     key: str
     title: str
     description: str | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False

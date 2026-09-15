@@ -277,8 +277,7 @@ class TestEncryptFilesAes256WorkerCount:
 
 _DECRYPT_METHODS = (
     "_decrypt_file_aes256",
-    "_decrypt_checkpoint_file",
-    "_decrypt_info_file",
+    "_decrypt_metadata_file",
     "_run_xbcrypt",
 )
 
@@ -299,7 +298,9 @@ class TestDecryptFileAes256:
         enc = tmp_path / "xtrabackup_checkpoints.xbcrypt"
         enc.write_text("enc")
         inst, _, calls = _payload_instance(_DECRYPT_METHODS)
-        inst._decrypt_checkpoint_file("/keys/aes.key", str(tmp_path))
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+        )
         assert calls == [
             [
                 _XBCRYPT_BIN,
@@ -312,17 +313,46 @@ class TestDecryptFileAes256:
         ]
         assert not enc.exists()
 
-    def test_info_decrypt_honors_compression_ext(self, tmp_path) -> None:
-        """Assert the info file input/output names carry the compression extension."""
+    def test_compressible_decrypt_honors_the_compression_ext(self, tmp_path) -> None:
+        """Assert a compressible file is decrypted under its compressed name.
+
+        The AES-256 pass runs after compression, so on disk the info file is
+        ``xtrabackup_info.zst.xbcrypt``. A name composed without the extension
+        misses it, and the decrypt no-ops on the absent path rather than failing,
+        leaving the file encrypted with nothing said.
+        """
         (tmp_path / "xtrabackup_info.zst.xbcrypt").write_text("enc")
         inst, _, calls = _payload_instance(_DECRYPT_METHODS)
         inst.compress = True
         inst.get_compression_ext = lambda: ".zst"
-        inst._decrypt_info_file("/keys/aes.key", str(tmp_path))
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_info", compressible=True
+        )
         io_args = [a for a in calls[0] if a.startswith(("--input=", "--output="))]
         assert io_args == [
             f"--input={tmp_path}/xtrabackup_info.zst.xbcrypt",
             f"--output={tmp_path}/xtrabackup_info.zst",
+        ]
+
+    def test_non_compressible_decrypt_ignores_the_compression_ext(
+        self, tmp_path
+    ) -> None:
+        """Assert the checkpoints file keeps its plain name in a compressed backup.
+
+        Only the info file is compressed, so composing the extension onto every
+        metadata file would miss the one that is not.
+        """
+        (tmp_path / "xtrabackup_checkpoints.xbcrypt").write_text("enc")
+        inst, _, calls = _payload_instance(_DECRYPT_METHODS)
+        inst.compress = True
+        inst.get_compression_ext = lambda: ".zst"
+        inst._decrypt_metadata_file(
+            "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+        )
+        io_args = [a for a in calls[0] if a.startswith(("--input=", "--output="))]
+        assert io_args == [
+            f"--input={tmp_path}/xtrabackup_checkpoints.xbcrypt",
+            f"--output={tmp_path}/xtrabackup_checkpoints",
         ]
 
     def test_decrypt_failure_raises_and_cleans(self, tmp_path) -> None:
@@ -332,5 +362,7 @@ class TestDecryptFileAes256:
         cleaned = {"n": 0}
         inst._clean_after_error = lambda: cleaned.__setitem__("n", cleaned["n"] + 1)
         with pytest.raises(backup_error):
-            inst._decrypt_checkpoint_file("/keys/aes.key", str(tmp_path))
+            inst._decrypt_metadata_file(
+                "/keys/aes.key", str(tmp_path), "xtrabackup_checkpoints"
+            )
         assert cleaned["n"] == 1

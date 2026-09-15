@@ -666,7 +666,7 @@ def get_security_checks(path_to_graphs: str) -> None:
 #
 # Main
 #
-def main() -> None:
+def main() -> int:
     # Make sure PMM is reachable, and get major version
     pmm_version = get_pmm_version()
     print(f"- Detected PMM version: {pmm_version}")

@@ -18,9 +18,8 @@
 import logging
 from collections.abc import Awaitable, Callable, Iterable
 from types import TracebackType
-from typing import Annotated, Any, ClassVar, Self, TypeVar
+from typing import Any, ClassVar, Self, TypeVar
 
-from annotated_types import Ge
 from async_lru import alru_cache
 
 from app.core.config import settings
@@ -31,8 +30,15 @@ from app.sep.clients.pmm import (
     PMMService,
 )
 from app.sep.crud import SyncEntityAbsenceManager, SyncInstanceManager
-from app.sep.inventory import CreatedEntity, CreatedNode, CreatedService, Node
+from app.sep.inventory import (
+    CreatedEntity,
+    CreatedNode,
+    CreatedService,
+    Node,
+    Service,
+)
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.sync.fields import MissingGraceGenerations
 from app.sep.sync.models import BaseSyncer, claim_identity
 
 logger = logging.getLogger(__name__)
@@ -53,6 +59,9 @@ class PMMSyncer(BaseSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type that can be synchronized.
         Set to `SyncInventoryEntityTypeEnum.SERVICE`.
+    :cvar mirrors_entity_levels: The node and service levels, whose own fields
+        this syncer compares against PMM and writes back through ``update_node``
+        and ``update_service``.
     :cvar reads_retired_entities: The node and service levels, whose incoming
         reports this syncer matches against the local inventory by external id.
     :param inventory_api: The remote API interface for interacting with the inventory
@@ -70,16 +79,16 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = frozenset(
+        {SyncInventoryEntityTypeEnum.NODE, SyncInventoryEntityTypeEnum.SERVICE}
+    )
     reads_retired_entities: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
         frozenset(
             {SyncInventoryEntityTypeEnum.NODE, SyncInventoryEntityTypeEnum.SERVICE}
         )
     )
     keepalive_api: bool = True
-    # The floor is 2, not 1: at 1 the grace counter collapses back to acting on a
-    # single reported absence, which is the behaviour it exists to end.
-    # Expressed as an annotation constraint for the reason ``stale_run_after`` is.
-    missing_grace_generations: Annotated[int, Ge(2)] = 2
+    missing_grace_generations: MissingGraceGenerations = 2
     _pmm_api: PMMRemoteAPI | None = None
     _generation: PMMInventorySnapshot | None = None
 
@@ -99,9 +108,9 @@ class PMMSyncer(BaseSyncer):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException],
-        exc_val: BaseException,
-        exc_tb: TracebackType,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Exit the asynchronous context manager.
 
@@ -128,7 +137,7 @@ class PMMSyncer(BaseSyncer):
         :rtype: PMMRemoteAPI
         :raises ValueError: If the PMM API client has not been initialized.
         """
-        if getattr(self, "_pmm_api", None) is None:
+        if self._pmm_api is None:
             raise ValueError("PMM API client has not been initialized.")
         return self._pmm_api
 
@@ -199,8 +208,11 @@ class PMMSyncer(BaseSyncer):
         """Check whether this run's SyncInstance has been reclaimed out from under it.
 
         Every ledger write and every retirement is gated on this: a run reclaimed
-        while it worked must perform neither. It does not establish that this is the
-        syncer's only run; see ``SyncInstanceManager.is_still_owned``.
+        while it worked must perform neither. Under the conditions
+        ``SyncInstanceManager.is_still_owned`` documents — which the syncer's own
+        ``stale_run_after`` satisfies on PostgreSQL — it also establishes that this is
+        the syncer's only run, so a missing-grace counter cannot be spent twice over
+        by two runs racing in one moment.
 
         :return: ``True`` while this run's ``SyncInstance`` is still ``RUNNING``.
         """
@@ -451,17 +463,20 @@ class PMMSyncer(BaseSyncer):
     async def perform_service_sync(
         self,
         created_service: CreatedService,
-        updated_service: PMMService,
+        updated_service: Service,
     ) -> None:
         """Synchronize data for a specific service.
 
         Update the local inventory service with data from the PMM API.
 
         :param created_service: The local service instance to synchronize.
-        :type created_service: CreatedService
         :param updated_service: The updated service data fetched from the PMM API.
-        :type updated_service: PMMService
+        :raises TypeError: If ``updated_service`` is not a ``PMMService``.
         """
+        if not isinstance(updated_service, PMMService):
+            raise TypeError(
+                f"PMMSyncer requires a PMMService, got {type(updated_service).__name__}"
+            )
         if created_service.node.external_id != updated_service.node_id:
             nodes = await self.get_inventory_nodes(
                 external_id=created_service.node.external_id,

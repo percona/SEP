@@ -40,11 +40,16 @@ _NOMAD_B = {"endpoint": "https://nomad-b.example.org"}
 _NOMAD_WITH_CREDS = {
     "endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646",
 }
+_NOMAD_WITH_KEY = {**_NOMAD_A, "api_key": "glsa_realtoken"}
+_NOMAD_WITH_ROTATED_KEY = {**_NOMAD_A, "api_key": "glsa_rotated"}
 
 
 def _override_nomad(config: dict[str, object]) -> None:
     """Publish a merged ``NomadExecutor`` NOMAD override on the tasks proxy snapshot."""
-    tasks_settings._set_snapshot({"NOMAD": NomadExecutor.model_validate(config)})
+    executor = NomadExecutor.model_validate(config)
+    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"NOMAD": executor}
+    )
 
 
 def test_normalize_passes_through_executor() -> None:
@@ -151,7 +156,7 @@ async def test_reconcile_opens_a_fresh_session_for_a_copied_override() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         startup = holder.current
-        tasks_settings._set_snapshot(
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"NOMAD": startup.model_copy(update={"log_socket_read_timeout": 13})}
         )
 
@@ -169,7 +174,9 @@ async def test_reconcile_construction_failure_keeps_old_executor() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         old = holder.current
-        tasks_settings._set_snapshot({"NOMAD": {"endpoint": "not-a-url"}})
+        tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"NOMAD": {"endpoint": "not-a-url"}}
+        )
         with pytest.raises(ValidationError):
             await holder.reconcile()
         assert holder.current is old
@@ -250,3 +257,25 @@ async def test_get_request_executor_yields_a_celery_executor_unheld() -> None:
     assert len(yielded) == 1
     assert isinstance(yielded[0], CeleryExecutor)
     assert not hasattr(yielded[0], "hold")  # the nullcontext branch, not a hold
+
+
+@pytest.mark.asyncio
+async def test_aenter_preserves_the_configured_api_key() -> None:
+    """Rebuild the executor on entry with the real key, not the JSON mask."""
+    _override_nomad(_NOMAD_WITH_KEY)
+    async with NomadLifecycle(FastAPI()) as holder:
+        assert holder.current.api_key is not None
+        assert holder.current.api_key.get_secret_value() == "glsa_realtoken"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_rebinds_when_only_the_api_key_rotates() -> None:
+    """Swap the executor on reconcile when the key rotates and nothing else moves."""
+    _override_nomad(_NOMAD_WITH_KEY)
+    async with NomadLifecycle(FastAPI()) as holder:
+        old = holder.current
+        _override_nomad(_NOMAD_WITH_ROTATED_KEY)
+        await holder.reconcile()
+        assert holder.current is not old
+        assert holder.current.api_key is not None
+        assert holder.current.api_key.get_secret_value() == "glsa_rotated"

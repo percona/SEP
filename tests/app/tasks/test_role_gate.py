@@ -15,6 +15,7 @@
 
 """Define tests for the unsafe-method role gate on the Tasks sub-app."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -45,7 +46,7 @@ def bearer_client(
     celery_beat_session: AsyncSession,
     mock_executor: AsyncMock,
     casdoor_mock,
-) -> TestClient:
+) -> Iterator[TestClient]:
     """Yield a Tasks TestClient that authenticates every request by Bearer token.
 
     No authentication dependency is overridden: the gate resolves the user

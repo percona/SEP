@@ -17,11 +17,25 @@
 
 import ast
 import pathlib
+from typing import Any
+
+from app.sep.apps.mysql_backups.restore.models import RestoreConfigAll
 
 RESTORE_PAYLOAD_PATH = (
     pathlib.Path(__file__).parents[6]
     / "app/sep/apps/mysql_backups/restore/xtrabackup_payload"
 )
+
+
+def legacy_default(field_name: str) -> Any:
+    """Return a gated field's pre-declaration default, read from the config model.
+
+    The config models still declare ``percona`` / ``22`` / ``s3cmd``, so reading
+    them here keeps the tests from carrying a second copy of the table the
+    normalizer itself derives.
+    """
+    default = RestoreConfigAll.model_fields[field_name].default
+    return getattr(default, "value", default)
 
 
 def restore_payload_tree() -> ast.Module:

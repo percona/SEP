@@ -37,6 +37,8 @@ function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTa
     execute_request: null,
     period: 'every 1 hours',
     next_run_at: null,
+    next_runs: [],
+    timezone: 'UTC',
     ...overrides,
   };
 }

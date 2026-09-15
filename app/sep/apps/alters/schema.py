@@ -50,6 +50,8 @@ alters_schema = derive_app_schema(
     alters_views.layout,
     name="alters",
     display_name="Alters",
+    item_display_name="schema change",
+    item_display_name_plural="schema changes",
     description=(
         "Run pt-online-schema-change to perform online MySQL schema modifications."
     ),

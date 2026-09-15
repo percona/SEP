@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import Pagination
+from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.apps import (
@@ -82,6 +83,13 @@ SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
+
+#: Run state pinned on the upstream history row execute fixtures return. Both
+#: differ from every value the field would otherwise take -- the model defaults
+#: (``PENDING`` and ``utc_now()``) and ``TaskHistoryResponseFactory``'s declared
+#: ``SUCCESS`` -- so asserting them tells a forwarded field from a defaulted one.
+EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 SYNTH_CREATED_BY = "synth-user-id"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
@@ -114,7 +122,7 @@ class MockTaskAPI:
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._ids = count(1)
         self.create_count = 0
-        self.last_create_payload: dict[str, Any] | None = None
+        self.last_create_payload: dict[str, Any] = {}
         self.last_update_payload: dict[str, Any] | None = None
 
     def seed_task(
@@ -197,9 +205,11 @@ class MockTaskAPI:
         if path == "/connectivity-check/":
             return {"success": True, "error": None}
         if path.startswith("/execute/"):
-            return TaskHistoryResponseFactory.build(id=next(self._ids)).model_dump(
-                mode="json"
-            )
+            return TaskHistoryResponseFactory.build(
+                id=next(self._ids),
+                status=EXECUTE_STATUS,
+                created_at=EXECUTE_CREATED_AT,
+            ).model_dump(mode="json")
         return self._create(json)
 
     async def put(
@@ -565,10 +575,12 @@ class SynthExecuteWrite(BaseModel):
 
 
 class SynthExecuteResponse(BaseModel):
-    """Represent the execute response carrying the dispatched task name and id."""
+    """Represent the execute response carrying the dispatched run's identity and state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 class SynthCapabilities(BaseModel):
@@ -714,7 +726,7 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
     :param tasks_api: The Tasks API client used to look up the owner's tasks.
     :raises HTTPConflictException: When any owned task's latest status is RUNNING.
     """
-    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER})
+    listing = as_json_object(await tasks_api.get("/", params={"owner": SYNTH_OWNER}))
     names = [item["name"] for item in listing["items"]]
     statuses = await batch_get_latest_statuses(tasks_api, names)
     if any(

@@ -40,6 +40,7 @@ from pathlib import Path
 from pydantic import BaseModel, create_model, Field
 from sqlalchemy import column
 
+from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -179,7 +180,9 @@ def _build_form_schema(script: _DiskScript, *, name: str) -> AppSchema:
     Mirrors the snippets ``build_snippet_schema`` shape: one section per parameter
     group (or a single ``"Parameters"`` section) built from ``field_for``, plus a
     trailing ``"Execution"`` section carrying the executor-host field and — for a
-    sudo-optional or sudo-always script — a sudo toggle.
+    sudo-optional or sudo-always script — a sudo toggle. The record names follow
+    the same mirror: this form creates a *run* of the script rather than the
+    script, so they are fixed instead of derived from the script's title.
 
     :param script: The disk-loaded script whose parameters drive the form.
     :param name: The app name recorded on the synthesised schema.
@@ -223,6 +226,8 @@ def _build_form_schema(script: _DiskScript, *, name: str) -> AppSchema:
     return AppSchema(
         name=name,
         display_name=snippet.title,
+        item_display_name="run",
+        item_display_name_plural="runs",
         description=snippet.description or None,
         forms=forms,
         list_view=_list_view(),
@@ -306,6 +311,8 @@ def build_disk_script_source(
     artifact_type: str,
     name: str,
     display_name: str,
+    item_display_name: str | None = None,
+    item_display_name_plural: str | None = None,
     list_query_spec: ListQuerySpec = DISK_SCRIPT_LIST_QUERY_SPEC,
 ) -> ScriptSource[_DiskScript]:
     """Wire a disk-backed ``BaseSnippet`` subclass into a framework ``ScriptSource``.
@@ -317,6 +324,13 @@ def build_disk_script_source(
         download URL (register it in the app's ``artifact_base_dirs``).
     :param name: The app name recorded on the derived schemas.
     :param display_name: The plugin-level display name served at ``GET /schema``.
+    :param item_display_name: The name for one record the app-level create form
+        produces, in mid-sentence form. Passed through as-is, so ``None`` leaves
+        ``AppSchema`` to default it from ``display_name``. Names the app's own
+        record, not the per-script one, which is always a ``run``. Defaults to
+        ``None``.
+    :param item_display_name_plural: The name for several such records, defaulted
+        by the same route. Defaults to ``None``.
     :param list_query_spec: The sort/search allowlist the source replays in-process on
         every list call; its public keys must name ``_DiskScript`` attributes
         (``filename``, ``execution_task_name``). Defaults to the shared
@@ -328,6 +342,9 @@ def build_disk_script_source(
     :raises TypeError: When ``list_query_spec`` is not a ``ListQuerySpec``. Checked
         here, at wiring time, because the source replays it on every list call; a
         ``None`` slipped past the annotation would otherwise fail per request.
+    :raises pydantic.ValidationError: When ``display_name`` or either record name
+        is empty, from the unguarded ``static_schema`` construction below. Also a
+        wiring-time failure: the schema is built once, when the source is.
     """
     if not isinstance(list_query_spec, ListQuerySpec):
         raise TypeError(
@@ -347,7 +364,9 @@ def build_disk_script_source(
             if path.is_file()
         ]
 
-    list_scripts = in_memory_list_scripts(materialize_scripts, list_query_spec)
+    list_scripts = in_memory_list_scripts(
+        materialize_scripts, InMemoryListQueryApplier(list_query_spec)
+    )
 
     def build_form_schema(script: _DiskScript) -> AppSchema:
         return _build_form_schema(script, name=name)
@@ -365,7 +384,11 @@ def build_disk_script_source(
         build_execution_meta=build_meta,
         list_response=_list_response,
         static_schema=AppSchema(
-            name=name, display_name=display_name, list_view=_list_view()
+            name=name,
+            display_name=display_name,
+            item_display_name=item_display_name,
+            item_display_name_plural=item_display_name_plural,
+            list_view=_list_view(),
         ),
         list_response_model=DiskScriptListRow,
         in_memory_list_query=True,

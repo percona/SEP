@@ -87,9 +87,15 @@ class TaskFormModel(AppFormModel):
 
     :param task_name: The human-readable task name; required and non-empty.
     :param hostname: The executor host the task runs on; required and non-empty.
+        The default ``HostRef(target_service="service_id")`` ties the
+        co-location warning to a service field named ``service_id``; subclasses
+        that name their service field differently must override with an explicit
+        ``HostRef(target_service=...)``.
     """
 
     task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
+        NonEmptyStr,
+        HostRef(target_service="service_id"),
+        Ui(label=EXECUTION_HOST_LABEL, section="Task"),
     ]

@@ -24,5 +24,6 @@ APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
         settings_cls=InventoryAppSettings,
         proxy=inventory_app_settings,
         app_key="inventory",
+        reseed_keys=frozenset({"COLLECTION_INTERVAL"}),
     ),
 ]

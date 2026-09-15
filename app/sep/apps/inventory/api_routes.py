@@ -16,76 +16,47 @@
 """Define the JSON API router for the Inventory plugin.
 
 Mounted at ``/api/apps/inventory/`` via ``apps_router`` in
-``app/sep/api/router.py``. Like other plugin proxies, these routes rely on the
-parent ``api_router`` for API authentication. The ``schema_endpoint`` helper
-additionally attaches ``IsApiAuthenticated`` to the schema route only; the list
-and detail handlers do not duplicate that dependency.
+``app/sep/api/router.py``, which supplies the API authentication these routes
+rely on.
 
-Proxies read access to nodes, services, schemas, and tables to the inventory
-HTTP API through ``InventoryAPI`` in ``app.sep.deps`` (``RemoteAPI`` toward the
-inventory service). List handlers unwrap paginated ``items`` into a JSON array
-for the schema-driven React client. The four entities are read-only here: no
-handler creates, updates, or deletes one. The syncers author that data — PMM
-supplies nodes and services, while ``MySQLSyncer`` discovers schemas and tables
-from the database itself — and they write through the inventory service, which
-remains the canonical CRUD surface at ``/api/inventory/*``.
+This is an operator API only — the plugin ships no browser surface, so nothing
+here proxies entity reads. Read the catalog from the inventory service itself
+at ``/api/inventory/*``, which remains its canonical CRUD surface and the one
+the syncers write through.
 
-Besides those reads, this router mounts the ad-hoc inventory-sync trigger
-(``POST /sync/``) and the running-state polling endpoint
-(``GET /sync/status/``) consumed by the React inventory sync control. Schedule
-discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
-also mounted here so the React schedule UI can fetch its data
-through the plugin API gateway. Periodic-task CRUD remains delegated to
+The router mounts the ad-hoc inventory-sync trigger (``POST /sync/``), the
+running-state polling endpoint (``GET /sync/status/``), schedule discovery
+(``GET /``), available-syncers (``GET /available-syncers/``), and the
+per-service connectivity probe. Periodic-task CRUD remains delegated to
 ``/api/tasks/periodic/*`` as the single source of truth; this router does not
 duplicate that surface.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Response, status
 from sqlmodel import col
 
 from app.core.exceptions import HTTPBadRequestException
-from app.core.pagination import (
-    build_proxied_page,
-    PaginatedResponse,
-    PaginationDep,
-)
-from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.inventory.connectivity import probe_service_connectivity
 from app.sep.apps.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
     InternalTokenDep,
-    inventory_plugin_query_params,
-    inventory_service_detail_path,
-    inventory_service_list_path,
-    inventory_system_observation_path,
     InventoryAvailableSyncersDep,
     InventorySyncStatusResponse,
     InventorySyncTriggerWrite,
-    require_inventory_plugin_entity,
     SyncersDep,
-    SYSTEM_OBSERVATION_SEGMENT,
-    unwrap_inventory_plugin_list_payload,
-)
-from app.sep.apps.inventory.list_query import (
-    InventoryListQueryDep,
-    list_query_upstream_params,
 )
 from app.sep.apps.inventory.models import (
     INVENTORY_SYNC_TASK_NAME,
     PluginTaskResponse,
     SyncRunSummary,
 )
-from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.inventory.sync import run_inventory_sync
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.deps import (
     CreatedServiceDep,
-    InventoryAPI,
     IsApiAdmin,
     SessionDep,
     TaskAPI,
@@ -95,7 +66,6 @@ from app.tasks.connectivity.models import ConnectivityCheckResponse
 from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 
 router = APIRouter()
-schema_endpoint(router=router, plugin_schema=inventory_schema)
 
 # Module-level singleton avoids the B008 lint warning about function calls in
 # argument defaults; the optional-body semantics are unchanged.
@@ -151,9 +121,8 @@ async def inventory_sync_trigger(
 async def inventory_sync_status(session: SessionDep) -> InventorySyncStatusResponse:
     """Return whether an inventory-wide sync is running, plus recent run outcomes.
 
-    Replaces the server-rendered ``sync_is_running`` template variable
-    used by the Jinja2 inventory page so the React control can poll the
-    same state without scraping HTML.
+    Lets an operator poll a sync they triggered through ``POST /sync/``
+    without scraping any rendered page.
 
     :param session: SQLModel async session.
     :return: The running flag and the most recent runs, newest first.
@@ -190,9 +159,7 @@ async def inventory_plugin_tasks() -> list[PluginTaskResponse]:
     """Return the list of periodic task names for the Inventory plugin.
 
     Hard-coded because the Inventory plugin's periodic tasks are a fixed pair
-    (``inventory-sync`` and ``inventory-collection``). The shape matches what the
-    React ``usePluginTasks('inventory')`` hook expects: a list of objects with at
-    minimum a ``name`` key.
+    (``inventory-sync`` and ``inventory-collection``).
 
     :return: The plugin's periodic tasks, each with its name and display name.
     """
@@ -221,82 +188,6 @@ async def inventory_available_syncers(
     return available_syncers
 
 
-@router.get("/{entity}/")
-async def inventory_list_entity(
-    request: Request,
-    entity: str,
-    inventory_api: InventoryAPI,
-    pagination: PaginationDep,
-    list_query: InventoryListQueryDep,
-) -> PaginatedResponse[Any]:
-    """List inventory nodes, services, schemas, or tables.
-
-    :param request: Inbound request; its query string carries entity filters.
-    :param entity: Inventory entity type (nodes, services, schemas, tables).
-    :param inventory_api: Async client for the Inventory sub-app.
-    :param pagination: Validated offset/limit forwarded to the upstream call.
-    :param list_query: Allowlist-vetted sort/search for this entity.
-    :return: A paginated envelope echoing the requested window.
-    """
-    entity = require_inventory_plugin_entity(entity)
-    params = inventory_plugin_query_params(request)
-    params["offset"] = pagination.offset
-    params["limit"] = pagination.limit
-    # Drop raw sort/search before merging the validated adapter output so a
-    # blank or omitted search cannot leak through from the query string.
-    params.pop("sort", None)
-    params.pop("search", None)
-    params.update(list_query_upstream_params(list_query))
-    data = await inventory_api.get(inventory_service_list_path(entity), params=params)
-    items = unwrap_inventory_plugin_list_payload(data)
-    envelope = data if isinstance(data, dict) else {}
-    return build_proxied_page(items, envelope, pagination, client_side_filtered=False)
-
-
-@router.get(f"/nodes/{{node_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
-async def inventory_node_system_observation(
-    node_id: int,
-    inventory_api: InventoryAPI,
-) -> Any:
-    """Proxy the host-level system observation for a node (read-only).
-
-    Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
-    endpoint via ``InventoryAPI``. This three-segment literal path cannot
-    collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
-    upstream HTTP 404 propagates unchanged, along with the ``detail`` that tells
-    a node whose observation has not been collected yet — which the React panel
-    renders as an empty state — apart from a node that does not exist.
-
-    :param node_id: Primary key of the node.
-    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-    :return: The host-level system observation payload.
-    """
-    return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
-
-
-@router.get(f"/services/{{service_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
-async def inventory_service_system_observation(
-    service_id: int,
-    inventory_api: InventoryAPI,
-) -> Any:
-    """Proxy the service-level system observation for a service (read-only).
-
-    Forwards to the inventory sub-app's
-    ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
-    An upstream HTTP 404 propagates unchanged, along with the ``detail`` that
-    tells a service whose observation has not been collected yet — which the
-    React panel renders as an empty state — apart from a service that does not
-    exist.
-
-    :param service_id: Primary key of the service.
-    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-    :return: The service-level system observation payload.
-    """
-    return await inventory_api.get(
-        inventory_system_observation_path("services", service_id)
-    )
-
-
 @router.post(
     "/services/{service_id:int}/check-connectivity/",
     dependencies=[IsApiAdmin],
@@ -307,12 +198,9 @@ async def inventory_service_check_connectivity(
 ) -> ConnectivityCheckResponse:
     """Run a database connectivity probe for a service from its executor host.
 
-    Backs the React connectivity control on the service detail page. A probe
-    that ran but could not connect is reported as HTTP 200 with
+    A probe that ran but could not connect is reported as HTTP 200 with
     ``success=false`` and the upstream message in ``error``; only a probe that
-    could not be attempted at all is an error status. This three-segment
-    literal path cannot collide with the two-segment
-    ``/{entity}/{item_id:int}`` detail matcher.
+    could not be attempted at all is an error status.
 
     :param service: The service to probe, resolved from the path id.
     :param tasks_api: Authenticated Tasks ``RemoteAPI`` client.
@@ -324,14 +212,3 @@ async def inventory_service_check_connectivity(
         returns an unparseable body.
     """
     return await probe_service_connectivity(service, tasks_api)
-
-
-@router.get("/{entity}/{item_id:int}")
-async def inventory_get_entity(
-    entity: str,
-    item_id: int,
-    inventory_api: InventoryAPI,
-) -> Any:
-    """Retrieve a single inventory node, service, schema, or table."""
-    entity = require_inventory_plugin_entity(entity)
-    return await inventory_api.get(inventory_service_detail_path(entity, item_id))

@@ -26,6 +26,7 @@ covered by ``tests/app/sep/test_deps.py::TestGetTasksApi`` and not duplicated he
 """
 
 from collections.abc import AsyncIterator, Iterator
+from datetime import datetime, UTC
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -650,3 +651,50 @@ class TestProxyResponseValidation:
             "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+class TestRemoteProvenance:
+    """Cover a remote class, whose provenance is stamped upstream and forwarded back."""
+
+    def test_patch_returns_the_upstream_stamp(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """Return the actor the owning sub-app recorded, not one SEP invents.
+
+        The Tasks client carries the caller's own bearer token, so the Tasks
+        sub-app resolves the same principal and stamps the row locally.
+        """
+        upstream = _tasks_setting(value=7200, has_override=True)
+        upstream["updated_at"] = "2026-09-04T12:00:00Z"
+        upstream["updated_by"] = "remote-admin"
+        mock_tasks.patch.return_value = [upstream]
+
+        response = admin_client.patch(
+            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        entry = response.json()[0]
+        assert entry["updated_by"] == "remote-admin"
+        assert datetime.fromisoformat(entry["updated_at"]) == datetime(
+            2026, 9, 4, 12, 0, tzinfo=UTC
+        )
+
+    def test_detail_defaults_provenance_when_upstream_omits(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """Default both fields to ``null`` for an upstream that predates them.
+
+        Guards the mixed-version case: a newer SEP proxying an older Tasks
+        sub-app must keep working rather than 500 on the missing keys.
+        """
+        mock_tasks.get.return_value = _tasks_setting(has_override=True)
+
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["updated_at"] is None
+        assert body["updated_by"] is None

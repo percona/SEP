@@ -149,7 +149,7 @@ describe('TestConnectionButton', () => {
     expect(await screen.findByTestId('connectivity-empty')).toBeInTheDocument();
   });
 
-  it('renders SSL-error and generic-error chips (covers all six statuses)', async () => {
+  it('renders SSL-error and generic-error chips (covers all nine statuses)', async () => {
     stubResults([
       { service: 'pmm', reachable: false, status: 'ssl_error', detail: 'SSL verification failed.' },
       {
@@ -166,6 +166,59 @@ describe('TestConnectionButton', () => {
     const results = await screen.findByTestId('connectivity-results');
     expect(within(results).getByTestId('conn-status-pmm')).toHaveTextContent(/ssl error/i);
     expect(within(results).getByTestId('conn-status-inventory')).toHaveTextContent(/^error$/i);
+  });
+
+  it('renders a labelled chip for each delivery-specific status', async () => {
+    stubResults([
+      {
+        service: 'delivery',
+        reachable: false,
+        status: 'not_configured',
+        detail: 'Diagnostics delivery is not configured',
+      },
+      {
+        service: 'pmm',
+        reachable: false,
+        status: 'inputs_drifted',
+        detail: 'Stored inputs no longer match the configured plan.',
+      },
+      {
+        service: 'inventory',
+        reachable: false,
+        status: 'probe_undeclared',
+        detail: 'No connectivity probe is declared.',
+      },
+    ]);
+
+    renderButton();
+    await userEvent.click(screen.getByRole('button', { name: /test connection/i }));
+
+    const results = await screen.findByTestId('connectivity-results');
+    expect(within(results).getByTestId('conn-status-delivery')).toHaveTextContent(
+      /not configured/i,
+    );
+    expect(within(results).getByTestId('conn-status-pmm')).toHaveTextContent(/inputs drifted/i);
+    expect(within(results).getByTestId('conn-status-inventory')).toHaveTextContent(
+      /no probe declared/i,
+    );
+  });
+
+  it('asks the backend to probe the delivery receiver alongside the other targets', async () => {
+    // The target list is hardcoded in the component, so a backend-only change
+    // would otherwise ship a target the shipped UI never requests.
+    let requested: string[] = [];
+    server.use(
+      http.post(CONN_URL, async ({ request }) => {
+        requested = ((await request.json()) as { targets: string[] }).targets;
+        return HttpResponse.json([] satisfies ConnectivityResult[]);
+      }),
+    );
+
+    renderButton();
+    await userEvent.click(screen.getByRole('button', { name: /test connection/i }));
+
+    await waitFor(() => expect(requested).toContain('delivery'));
+    expect(requested).toEqual(['pmm', 'inventory', 'tasks', 'nomad', 'delivery']);
   });
 
   it('falls back to the reachable flag when the status is unknown', async () => {

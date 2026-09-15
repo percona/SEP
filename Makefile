@@ -56,8 +56,18 @@ DARWIN_DYLD = if [ "$$(uname -s)" = "Darwin" ]; then \
 		done; \
 	fi;
 
+# `[ -d "${VENV}" ]` is what makes a caller-supplied VENV a *selector*. Without
+# it the guard tests only the active shell, never the path the caller just
+# named, so `make VENV=<existing env> <target>` runs `python -m venv` over that
+# environment -- rewriting its pyvenv.cfg to whichever python3 is first on PATH
+# while bin/python stays on the interpreter it was built with. Every tool in it
+# then dies with ModuleNotFoundError: No module named 'encodings', one command
+# later, in something unrelated.
 venv: pyproject.toml poetry.lock
-	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
+	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "${VENV}" ] || { \
+		echo "venv: building ${VENV} with $$("${PYTHON}" -V) ($$(command -v "${PYTHON}"))"; \
+		"${PYTHON}" -m venv "${VENV}"; \
+	}
 	@"${PIP}" install --no-cache ${START_PKGS};
 	@source "${VENV_BIN}"/activate; "${POETRY}" install --all-extras --all-groups
 
@@ -91,11 +101,19 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
-# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
-# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
-# must not gate any automated check.
+# Static type checking (Astral ty); CI runs it as the blocking `typecheck` job.
+# Passes no paths, so `[tool.ty.src]` stays the single definition of the surface.
+# `--python` is load-bearing: VIRTUAL_ENV is never exported, so ty would resolve
+# imports against whichever interpreter is first on PATH.
+# See docs/development/ty-policy.md under `Enforcement`.
 typecheck: venv
-	@"${VENV_BIN}"/ty check
+	@"${VENV_BIN}"/ty check --python "${VENV}"
+
+# Report the ty diagnostics a branch adds against BASE_SHA, which reaches the
+# script through the recipe environment rather than being pasted into it.
+# Advisory in CI. See docs/development/ty-policy.md under `Enforcement`.
+typecheck-diff: venv
+	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)
 
 lint: ruff
 
@@ -118,6 +136,10 @@ dev-frontend:
 # One-time legacy data['_form'] backfill for framework-migrated task apps.
 backfill-legacy-forms: venv
 	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
+
+# Read-only counterpart: reports the saved stamps a create form now rejects.
+form-audit: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_audit $(AUDIT_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -171,9 +193,10 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
+	@"${VENV_BIN}"/python -m app.core.celery.bootstrap
 
 checkmigrations: migrate
-	@"${VENV_BIN}"/python scripts/check_alembic_revision_tree.py
+	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
 	@ret=0; \
 	for app in $(APPS); do \
 	  echo "Checking migrations for $$app"; \
@@ -184,6 +207,10 @@ checkmigrations: migrate
 	  exit $$ret; \
 	fi
 	@echo "All migration checks passed."
+
+mergemigrations: venv alembic.ini
+	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
+	@"${VENV_BIN}"/python -m scripts.merge_alembic_heads
 
 test: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --dist ${PYTEST_DIST} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
@@ -215,6 +242,15 @@ smoke-xtrabackup-variants: venv
 check-nomad-payload-size: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_nomad_payload_size.py $(ARGS)
 
+check-sidecar-purge: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/check_sidecar_purge.py $(ARGS)
+
+# A Fernet key is 32 random bytes in url-safe base64, so this needs neither the
+# venv nor cryptography: an operator runs it on a fresh checkout to copy the one
+# line it prints, and the venv bootstrap would both fail there and bury the key.
+encryption-key:
+	@$(PYTHON) -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
@@ -244,13 +280,16 @@ changelog-list:
 # variables are auto-exported, so the shell (not Make's textual expansion) supplies
 # the value and embedded spaces/quotes stay intact; a literal `$` must be written
 # `$$` on the command line. $(if ...) gates presence. Recognised variables: NAME
-# TYPE DISPLAY_NAME DESCRIPTION GROUP SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD
-# SCRIPT NO_INPUT ENABLE DERIVE_UPDATE DERIVE_DELETE.
+# TYPE DISPLAY_NAME ITEM_DISPLAY_NAME ITEM_DISPLAY_NAME_PLURAL DESCRIPTION GROUP
+# SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD SCRIPT NO_INPUT ENABLE
+# DERIVE_UPDATE DERIVE_DELETE.
 startapp:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
 		$(if $(NAME),--name "$$NAME") \
 		$(if $(TYPE),--type "$$TYPE") \
 		$(if $(DISPLAY_NAME),--display-name "$$DISPLAY_NAME") \
+		$(if $(ITEM_DISPLAY_NAME),--item-display-name "$$ITEM_DISPLAY_NAME") \
+		$(if $(ITEM_DISPLAY_NAME_PLURAL),--item-display-name-plural "$$ITEM_DISPLAY_NAME_PLURAL") \
 		$(if $(DESCRIPTION),--description "$$DESCRIPTION") \
 		$(if $(GROUP),--group "$$GROUP") \
 		$(if $(SERVICE_TYPE),--service-type "$$SERVICE_TYPE") \
@@ -364,4 +403,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size release-prep release-rc release-stable trigger-jenkins lint-pipelines changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms form-audit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check

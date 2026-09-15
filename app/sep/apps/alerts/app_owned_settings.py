@@ -29,5 +29,6 @@ APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
         settings_cls=AlertsSettings,
         proxy=alerts_settings,
         app_key="alerts",
+        reseed_keys=frozenset({"BACKUP_INTERVAL"}),
     ),
 ]

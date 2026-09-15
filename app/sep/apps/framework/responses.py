@@ -23,7 +23,8 @@ from typing import Any, cast, overload, Protocol, TypeVar
 from pydantic import BaseModel, computed_field, create_model, Field, FutureDatetime
 
 from app.core.pagination import build_proxied_page, PaginatedResponse, Pagination
-from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA
+from app.core.requests import as_json_object
+from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
@@ -72,6 +73,12 @@ def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
 
 def root_segment(path: str) -> str:
     """Return the leading field name of a dotted/indexed view path.
+
+    Stripping the index is only sound for paths resolved against serialized
+    rows, where ``[N]`` is a real segment. Conditional-rule references are not
+    such paths — the decoration-time gate in
+    :func:`~app.sep.apps.framework.rules._validate_plan_against_model_fields`
+    keeps its own index-rejecting split on purpose.
 
     :param path: A list-view column key or detail-view field path (for example
         ``"target.service"`` or ``"data.meta[0]"``).
@@ -164,15 +171,15 @@ class BaseTaskResponse(BaseModel):
     owner: str = Field(exclude=True)
     service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     status: TaskHistoryStatusEnum | None = None
-    last_executed_at: datetime | None = None
+    last_executed_at: UTCDatetime | None = None
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
     protected: bool
     alert_on_fail: bool
     anonymize_mask: int | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UTCDatetime | None = None
+    updated_at: UTCDatetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None
@@ -219,12 +226,22 @@ class TaskExecuteWrite(BaseModel):
 class TaskExecutionResponse(BaseModel):
     """Represent the default response from a task execute route.
 
+    ``started_at`` is deliberately not carried: the worker sets it, so it is
+    still ``None`` on the row this response is built from.
+
     :param task_name: The name of the task that was executed.
     :param task_id: The id of the task-history row created by the tasks API.
+        Optional because :class:`~app.tasks.models.TaskHistoryResponse` types it
+        so, not because a dispatched run is expected to lack one.
+    :param status: The status of the task-history row the tasks API created,
+        as it stood at dispatch.
+    :param created_at: When the tasks API created that row.
     """
 
     task_name: str
     task_id: int | None = None
+    status: TaskHistoryStatusEnum
+    created_at: UTCDatetime
 
 
 class TaskResponseBuilder(Protocol[R]):
@@ -411,8 +428,10 @@ async def build_task_list_responses(
         bound into every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
     """
-    response = await tasks_api.get(
-        "/", params=_owner_list_params(owner, pagination, extra_params)
+    response = as_json_object(
+        await tasks_api.get(
+            "/", params=_owner_list_params(owner, pagination, extra_params)
+        )
     )
     tasks = [Task.model_validate(item) for item in response["items"]]
     if task_filter is not None:

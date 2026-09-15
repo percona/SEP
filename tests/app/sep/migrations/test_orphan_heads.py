@@ -33,8 +33,9 @@ from app.sep.migrations._orphan_heads import (
     partition_heads,
     skip_unresolvable_heads,
 )
+from tests.app.alembic_paths import ALEMBIC_INI
 
-from .conftest import ALEMBIC_INI, ALERTS_HEAD, UNKNOWN_REVISION, write_revision
+from .conftest import ALERTS_HEAD, UNKNOWN_REVISION, write_revision
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 

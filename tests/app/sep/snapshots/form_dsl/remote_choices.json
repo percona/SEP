@@ -2,6 +2,7 @@
   "display_name": "Remote Choices",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -50,6 +51,8 @@
       "title": "Main"
     }
   ],
+  "item_display_name": "Remote Choices",
+  "item_display_name_plural": "Remote Choices",
   "list_view": {
     "columns": [
       {
@@ -60,5 +63,47 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "remote_choices"
+  "name": "remote_choices",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

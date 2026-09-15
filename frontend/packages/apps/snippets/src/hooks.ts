@@ -482,7 +482,7 @@ export function useSnippetsCapabilities() {
  * Mutation: trigger a manual refresh of the snippets cache from disk.
  *
  * Admin + deployment-gated by ``manual_sync_enabled``; callers should
- * gate the affordance on both ``isAdmin`` and the capabilities flag
+ * gate the affordance on both ``canMutate`` and the capabilities flag
  * before invoking. On success, every cached snippet query is invalidated
  * (``['snippets']`` prefix) since refresh can add, update, or remove rows.
  */

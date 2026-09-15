@@ -21,6 +21,7 @@ along with utility functions to process queue items.
 
 import json
 import logging
+import typing
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from hashlib import sha256
@@ -29,14 +30,20 @@ from typing import Any
 
 from celery import Task as CeleryTask
 from celery.app.task import Context
-from celery.signals import task_revoked, worker_process_init, worker_process_shutdown
+from celery.signals import (
+    task_prerun,
+    task_revoked,
+    worker_process_init,
+    worker_process_shutdown,
+)
 from cryptography import x509
 from fastapi.encoders import jsonable_encoder
 from nomad.api.exceptions import BaseNomadException
 from sqlalchemy import cast, func, literal, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import undefer
+from sqlalchemy.orm import QueryableAttribute, undefer
+from sqlalchemy.sql import ColumnElement
 from sqlmodel import col, or_
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -74,6 +81,7 @@ from app.tasks.deps import (
 )
 from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
+from app.tasks.execution_request_secrets import ENCRYPTED_META_KEYS
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -103,7 +111,9 @@ def task_revoked_handler(*, request: Context, expired: bool, **kwargs: Any) -> N
         and expired
     ):
         logger.info("Deleting expired TaskHistory %s", queue_id)
-        celery.loop.run_until_complete(delete_task_history(queue_id))
+        celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+            delete_task_history(queue_id)
+        )
 
 
 def build_tasks_override_proxies() -> ProxyRegistry:
@@ -120,7 +130,7 @@ def build_tasks_override_proxies() -> ProxyRegistry:
 
 
 _refresher = WorkerRefresher(
-    lambda: celery.loop,
+    lambda: celery.loop,  # ty: ignore[unresolved-attribute]
     lambda: get_async_session_maker(),
     build_tasks_override_proxies,
 )
@@ -128,20 +138,20 @@ _refresher = WorkerRefresher(
 
 @worker_process_init.connect
 def start_settings_override_refresher(**kwargs: Any) -> None:
-    """Start the Tasks worker's DB-backed settings-override refresher.
+    """Seed and arm the Tasks worker's DB-backed settings-override refresher.
 
     Wired to ``worker_process_init`` so each prefork child runs its own refresher
     bound to that child's event loop. ``app.celery`` registers
     ``init_child_event_loop`` first (it is imported before this module), so Celery
     dispatches it first and the child loop is recreated before ``WorkerRefresher``
     resolves it. The enabled gate, the idempotent early-return, the initial inline
-    refresh and the shutdown drain all live in :class:`WorkerRefresher`; periodic
-    progress thereafter is best-effort, advancing only while a task drives
-    ``celery.loop.run_until_complete``. The inline seed is bounded by a fraction
-    of ``celery.conf.worker_proc_alive_timeout`` so a hanging database cannot
-    push the child past the prefork pool's liveness deadline; on expiry the
-    periodic refresher still starts and the child runs with env-only overrides
-    until a later cycle lands.
+    seed and the shutdown disarm all live in :class:`WorkerRefresher`; after the
+    seed, refreshes are pulled from ``task_prerun`` via
+    :func:`refresh_tasks_overrides_if_due`. The inline seed is bounded by a
+    fraction of ``celery.conf.worker_proc_alive_timeout`` so a hanging database
+    cannot push the child past the prefork pool's liveness deadline; on expiry
+    the child is still armed and may retain a possibly incomplete seed until
+    the next due task boundary.
 
     ``anonymizer_settings._resolve()`` runs unconditionally for validation even
     when the refresher is disabled. Celery catches and logs whatever a signal
@@ -155,18 +165,32 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     :raises Exception: Propagates a session-maker failure from the initial
         inline refresh, absorbed the same way. Per-proxy refresh failures and
         a bounded-seed expiry are caught and logged inside the refresher; the
-        latter still starts the periodic task.
+        latter still arms the child for boundary refresh.
     """
-    anonymizer_settings._resolve()  # noqa: SLF001
+    anonymizer_settings._resolve()  # noqa: SLF001  # ty: ignore[unresolved-attribute]
     _refresher.start(proc_alive_timeout=celery.conf.worker_proc_alive_timeout)
+
+
+@task_prerun.connect
+def refresh_tasks_overrides_if_due(**_: Any) -> None:
+    """Refresh Tasks-side overrides at this task boundary when the interval is due.
+
+    Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when
+    disarmed or inside the interval. Each refresher (SEP-side and Tasks-side)
+    keeps its own due-check state, so a boundary that is due for both pays two
+    refreshes.
+
+    :param _: The ``task_prerun`` signal keyword arguments (unused).
+    """
+    _refresher.maybe_refresh()
 
 
 @worker_process_shutdown.connect
 def stop_settings_override_refresher(**kwargs: Any) -> None:
-    """Stop and drain the worker's settings-override refresher on shutdown.
+    """Disarm the worker's settings-override refresher on shutdown.
 
     A no-op when the refresher never started (disabled, or shutdown fired before
-    init).
+    init). After disarm, :func:`refresh_tasks_overrides_if_due` no-ops.
 
     :param kwargs: The ``worker_process_shutdown`` signal keyword arguments
         (unused).
@@ -191,9 +215,11 @@ def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     :rtype: dict[str, Any]
     """
     logger.info("Executing task with queue_id: %s", queue_id)
-    queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
+    queue_item = celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+        get_task_history(queue_id)
+    )
     return jsonable_encoder(
-        celery.loop.run_until_complete(
+        celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
             dispatch_queue_item(queue_item, await_annotations=True)
         )
     )
@@ -224,25 +250,27 @@ def execute_task_by_name(
     :return: The data of the processed TaskHistory.
     :rtype: dict[str, Any]
     """
-    task_history = celery.loop.run_until_complete(
+    task_history = celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
         prepare_periodic_task_history(task_name, execution_data)
     )
     try:
-        failed = celery.loop.run_until_complete(
+        failed = celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
             _pre_dispatch_payload_check(task_history, task_name, periodic_task_name)
         )
         if failed is not None:
             return jsonable_encoder(failed)
-        skipped = celery.loop.run_until_complete(
+        skipped = celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
             _pre_dispatch_health_check(task_history, task_name, periodic_task_name)
         )
         if skipped is not None:
             return jsonable_encoder(skipped)
-        task_history = celery.loop.run_until_complete(
-            dispatch_queue_item(
-                task_history,
-                await_annotations=True,
-                periodic_task_name=periodic_task_name,
+        task_history = (
+            celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+                dispatch_queue_item(
+                    task_history,
+                    await_annotations=True,
+                    periodic_task_name=periodic_task_name,
+                )
             )
         )
     except BaseNomadException:
@@ -263,7 +291,9 @@ def execute_task_by_name(
             }
             if periodic_task_name:
                 alert_data["source"] = f"{periodic_task_name}:{alert_data['source']}"
-            celery.loop.run_until_complete(alert_service.trigger(alert_data))
+            celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+                alert_service.trigger(alert_data)
+            )
     return jsonable_encoder(task_history)
 
 
@@ -338,6 +368,7 @@ async def _persist_failed_dispatch(
     target = task_history.execution_request.target
     alert_on_fail = task_history.task.alert_on_fail
     task_history.status = TaskHistoryStatusEnum.FAILED
+    task_history.set_failure_reason(reason)
     task_history.finished_at = utc_now()
 
     async_session = get_async_session_maker()
@@ -420,15 +451,22 @@ async def _pre_dispatch_payload_check(
     periodic_task_name: str | None,
     session: AsyncSession | None = None,
 ) -> TaskHistory | None:
-    """Gate dispatch on payload resolvability, failing terminally when it cannot resolve.
+    """Gate dispatch on a resolvable execution request, failing terminally otherwise.
 
-    Resolve and read the ``file://`` payload reference before dispatch so that a
-    reference which is unresolvable (orphaned or missing file) or unreadable
-    (permission, decode, or a file removed between the existence check and the
-    read) raises here — before dispatch — and becomes a terminal FAILED via
-    :func:`_persist_failed_dispatch` instead of an endless Celery retry that
+    Two conditions, both becoming a terminal FAILED via
+    :func:`_persist_failed_dispatch` rather than an endless Celery retry that
     leaves the history non-terminal. Return ``None`` to proceed with normal
     dispatch.
+
+    The first is a leaf this deployment's ``ENCRYPTION_KEY`` could not decrypt.
+    It is checked before the payload read, and not merely as a precaution: the
+    stored ciphertext carries no ``file://`` prefix, so the read below would
+    succeed and hand the token itself to the executor as the payload. A row
+    loaded by id is re-dispatched, so that is reachable rather than theoretical.
+
+    The second is a ``file://`` payload reference that is unresolvable (orphaned
+    or missing file) or unreadable (permission, decode, or a file removed
+    between the existence check and the read).
 
     :param task_history: The TaskHistory to dispatch, from any gated path
         (sync, connectivity, chain, queue, or periodic).
@@ -438,9 +476,19 @@ async def _pre_dispatch_payload_check(
     :param session: The caller's session, forwarded to
         :func:`_persist_failed_dispatch` so a caller-attached ``task_history`` is
         persisted through its own session rather than a second one.
-    :return: The saved FAILED TaskHistory when the payload cannot resolve;
+    :return: The saved FAILED TaskHistory when the request cannot be resolved;
         ``None`` to proceed with normal dispatch.
     """
+    if unreadable := task_history.execution_request.unreadable_leaves:
+        reason = (
+            f"Task execution request could not be decrypted for "
+            f"{periodic_task_name or task_name!r}: {', '.join(unreadable)} "
+            f"could not be read with the configured ENCRYPTION_KEY"
+        )
+        logger.error(reason)
+        return await _persist_failed_dispatch(
+            task_history, task_name, periodic_task_name, reason, session
+        )
     try:
         _ = task_history.execution_request.payload_content
     except (PayloadReferenceError, OSError, UnicodeDecodeError) as exc:
@@ -458,13 +506,17 @@ async def _pre_dispatch_payload_check(
 @celery.task
 def sync_running_tasks() -> None:
     """Define Celery task to sync running tasks."""
-    celery.loop.run_until_complete(sync_running_items())
+    celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+        sync_running_items()
+    )
 
 
 @celery.task
 def purge_task_history_logs() -> None:
     """Define Celery task to purge aged task-execution logs."""
-    celery.loop.run_until_complete(_purge_task_history_logs())
+    celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+        _purge_task_history_logs()
+    )
 
 
 async def _purge_task_history_logs() -> None:
@@ -528,7 +580,9 @@ def sync_task_history(task_history_id: int) -> None:
     :type task_history_id: int
     """
     logger.info("Syncing task history %s", task_history_id)
-    celery.loop.run_until_complete(sync_queue_item(task_history_id))
+    celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+        sync_queue_item(task_history_id)
+    )
     logger.info("Finished syncing task history %s", task_history_id)
 
 
@@ -598,9 +652,10 @@ async def dispatch_queue_item(
 ) -> TaskHistory:
     """Process an item from the history table.
 
-    Gate every caller on payload resolvability via
+    Gate every caller on a resolvable execution request via
     :func:`_pre_dispatch_payload_check` before touching the dispatch lock, so an
-    unresolvable ``file://`` payload short-circuits to a terminal FAILED
+    unresolvable ``file://`` payload, or a leaf this deployment's
+    ``ENCRYPTION_KEY`` cannot decrypt, short-circuits to a terminal FAILED
     TaskHistory instead of surfacing as an unhandled error on the callers that
     do not run the gate themselves (the sync, connectivity, and chain paths).
 
@@ -615,7 +670,7 @@ async def dispatch_queue_item(
         payload gate so a periodic dispatch failure enriches the failure reason
         and alert source consistently with :func:`_pre_dispatch_health_check`.
     :return: The TaskHistory object post execution, or the FAILED TaskHistory
-        persisted by the payload gate when the payload cannot resolve.
+        persisted by the pre-dispatch gate when the request cannot be resolved.
     :raises HTTPConflictException: If the queue item status is not PENDING,
         raises a 409 Conflict error.
     :raises HTTPBadRequestException: If the task backend is unsupported,
@@ -696,66 +751,175 @@ async def _dispatch_queue_item(
     return result
 
 
+def _postgresql_meta_clauses(queued: TaskExecutionRequest) -> list[ColumnElement[bool]]:
+    """Return the ``jsonb`` predicates narrowing candidates by ``queued``'s meta.
+
+    A key in :data:`ENCRYPTED_META_KEYS` carries no predicate: it is ciphertext
+    at rest and encryption is non-deterministic, so no SQL comparison can match
+    it. Every other key keeps its containment or per-key equality, which is what
+    lets the GIN index on ``execution_request->'meta'`` still serve the query.
+
+    :param queued: The execution request being dispatched.
+    :return: One predicate per comparable meta key, empty when there is none.
+    """
+    scalar_subset: dict[str, Any] = {}
+    container_items: list[tuple[str, Any]] = []
+    for field, raw_value in (queued.meta or {}).items():
+        if field in ENCRYPTED_META_KEYS:
+            continue
+        if isinstance(raw_value, list | dict):
+            container_items.append((field, raw_value))
+        else:
+            scalar_subset[field] = raw_value
+    meta_jsonb = col(TaskHistory.execution_request).op("->")(
+        literal("meta", Text, literal_execute=True)
+    )
+    clauses: list[ColumnElement[bool]] = []
+    if scalar_subset:
+        clauses.append(
+            meta_jsonb.op("@>")(cast(literal(json.dumps(scalar_subset), Text), JSONB))
+        )
+    clauses.extend(
+        meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
+        == cast(literal(json.dumps(raw_value), Text), JSONB)
+        for field, raw_value in container_items
+    )
+    return clauses
+
+
+def _json_extract_meta_clauses(
+    engine_name: str, queued: TaskExecutionRequest
+) -> list[ColumnElement[bool]]:
+    """Return the per-key text-equality predicates for a non-PostgreSQL engine.
+
+    An encrypted key is skipped for the same reason as in the ``jsonb`` branch.
+
+    :param engine_name: The bound engine's dialect name.
+    :param queued: The execution request being dispatched.
+    :return: One predicate per comparable meta key, empty when there is none.
+    """
+    clauses: list[ColumnElement[bool]] = []
+    for field, raw_value in (queued.meta or {}).items():
+        if field in ENCRYPTED_META_KEYS:
+            continue
+        extracted = func_json_extract(
+            engine_name, TaskHistory.execution_request, "meta", field
+        )
+        if isinstance(raw_value, list | dict):
+            comparable = json.dumps(raw_value, separators=(",", ":"))
+            extracted = cast(extracted, Text)
+        else:
+            comparable = prepare_unsafe_value_for_json_comparison(
+                engine_name, raw_value
+            )
+        clauses.append(extracted == comparable)
+    return clauses
+
+
+def _encrypted_leaves_match(
+    candidate: TaskExecutionRequest, queued: TaskExecutionRequest
+) -> bool:
+    """Return whether two execution requests agree on their encrypted leaves.
+
+    ``payload`` and every key in :data:`ENCRYPTED_META_KEYS` are stored as
+    ciphertext, and encryption derives a fresh IV per call, so two encryptions of
+    one value never compare equal in SQL. Both sides here are plaintext, which
+    makes this the comparison the SQL predicates used to make, but only because
+    the caller has already excluded a candidate carrying unreadable leaves, whose
+    values stay ciphertext and would compare unequal to anything.
+
+    :param candidate: The execution request of a row the query narrowed to, with
+        every protected leaf readable.
+    :param queued: The execution request being dispatched.
+    :return: Whether every encrypted leaf holds an equal value on both sides.
+    """
+    if candidate.payload != queued.payload:
+        return False
+    candidate_meta = candidate.meta or {}
+    queued_meta = queued.meta or {}
+    return all(
+        candidate_meta.get(key) == queued_meta.get(key) for key in ENCRYPTED_META_KEYS
+    )
+
+
 async def _raise_if_identical_task_conflict(
     queue_item: TaskHistory, session: AsyncSession
 ) -> None:
+    """Refuse a dispatch duplicating one already in flight for the same task.
+
+    Matching runs in two stages because several leaves of the execution request
+    are stored encrypted and encryption is non-deterministic: SQL narrows on
+    every plaintext leaf (task name, target, active status, ``task_id``, and each
+    ``meta`` key the column still holds in the clear), then ``payload`` and every
+    encrypted ``meta`` key are compared in Python against the decrypted
+    candidates. The candidate set is bounded by how many runs of one task are in
+    flight at once, and the deferred ``execution_request`` is undeferred so
+    reading it triggers no per-row load.
+
+    The two stages differ in kind, and the encrypted keys changed sides: SQL
+    matches a ``meta`` key by containment, which ignores a key the incoming
+    request does not carry, while the Python stage compares those keys by
+    equality on both sides. A request carrying no ``args`` therefore no longer
+    matches an in-flight one that carries some. That is correct, since the two
+    are not the same request, but it is a narrowing rather than a straight
+    translation.
+
+    A candidate whose stored document does not validate comes back as the raw
+    value rather than a request, and is skipped: it cannot be compared, and a
+    document that will not parse is not a duplicate of one that did. Only leaves
+    the SQL never reads can produce this, since a row malformed in ``task``,
+    ``target`` or a compared ``meta`` key fails the narrowing first.
+
+    A candidate whose protected leaves this key cannot read is refused instead of
+    skipped. Its values stay ciphertext, so they compare unequal to every
+    plaintext and the row would silently stop deduplicating, which for a
+    schema-changing task means two concurrent runs against one table. The queued
+    side is always readable here, because dispatch is gated on that before this
+    runs, so the mismatch is one-sided and cannot be resolved by comparing.
+
+    :param queue_item: The history row about to be dispatched.
+    :param session: The session to query candidates through.
+    :raises HTTPConflictException: If an active row for the same task carries an
+        identical execution request, or carries one that cannot be read and so
+        cannot be ruled out as a duplicate.
+    """
     engine_name = session.get_bind().name
-    is_postgresql = engine_name.startswith(DatabaseDialect.POSTGRESQL)
-    meta_where_clauses = []
-    if queue_item.execution_request.meta:
-        if is_postgresql:
-            scalar_subset = {}
-            container_items = []
-            for field, raw_value in queue_item.execution_request.meta.items():
-                if isinstance(raw_value, list | dict):
-                    container_items.append((field, raw_value))
-                else:
-                    scalar_subset[field] = raw_value
-            meta_jsonb = col(TaskHistory.execution_request).op("->")(
-                literal("meta", Text, literal_execute=True)
+    queued = queue_item.execution_request
+    meta_where_clauses = (
+        _postgresql_meta_clauses(queued)
+        if engine_name.startswith(DatabaseDialect.POSTGRESQL)
+        else _json_extract_meta_clauses(engine_name, queued)
+    )
+    candidates = await TaskHistoryManager.list(
+        session,
+        func_json_extract(engine_name, TaskHistory.execution_request, "task")
+        == queued.task,
+        func_json_extract(engine_name, TaskHistory.execution_request, "target")
+        == queued.target,
+        *meta_where_clauses,
+        col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
+        col(TaskHistory.id) != queue_item.id,
+        query_options=[
+            undefer(
+                typing.cast("QueryableAttribute[Any]", TaskHistory.execution_request)
             )
-            if scalar_subset:
-                meta_where_clauses.append(
-                    meta_jsonb.op("@>")(
-                        cast(literal(json.dumps(scalar_subset), Text), JSONB)
-                    )
-                )
-            for field, raw_value in container_items:
-                meta_where_clauses.append(
-                    meta_jsonb.op("->")(literal(field, Text, literal_execute=True))
-                    == cast(literal(json.dumps(raw_value), Text), JSONB)
-                )
-        else:
-            for field, raw_value in queue_item.execution_request.meta.items():
-                extracted = func_json_extract(
-                    engine_name, TaskHistory.execution_request, "meta", field
-                )
-                if isinstance(raw_value, list | dict):
-                    comparable = json.dumps(raw_value, separators=(",", ":"))
-                    extracted = cast(extracted, Text)
-                else:
-                    comparable = prepare_unsafe_value_for_json_comparison(
-                        engine_name, raw_value
-                    )
-                meta_where_clauses.append(extracted == comparable)
-    if identical_task := (
-        await TaskHistoryManager.first(
-            session,
-            func_json_extract(engine_name, TaskHistory.execution_request, "task")
-            == queue_item.execution_request.task,
-            func_json_extract(engine_name, TaskHistory.execution_request, "target")
-            == queue_item.execution_request.target,
-            func_json_extract(engine_name, TaskHistory.execution_request, "payload")
-            == queue_item.execution_request.payload,
-            *meta_where_clauses,
-            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
-            col(TaskHistory.id) != queue_item.id,
-            task_id=queue_item.task_id,
-        )
-    ):
-        raise HTTPConflictException(
-            f"Identical queue item already running ({identical_task.id})."
-        )
+        ],
+        task_id=queue_item.task_id,
+    )
+    for identical_task in candidates:
+        candidate = identical_task.execution_request
+        if not isinstance(candidate, TaskExecutionRequest):
+            continue
+        if candidate.unreadable_leaves:
+            raise HTTPConflictException(
+                f"In-flight queue item ({identical_task.id}) cannot be compared: "
+                "its stored execution request could not be read with the "
+                "configured ENCRYPTION_KEY."
+            )
+        if _encrypted_leaves_match(candidate, queued):
+            raise HTTPConflictException(
+                f"Identical queue item already running ({identical_task.id})."
+            )
 
 
 async def sync_running_items() -> None:
@@ -839,6 +1003,7 @@ async def sync_queue_item(queue_id: int) -> TaskHistory:
                 "status",
                 "started_at",
                 "finished_at",
+                "failure_reason",
                 "sync_in_progress_started_at",
             ],
         )
@@ -1010,7 +1175,9 @@ def check_nomad_cert_expiry() -> None:
     Celery beat registration uses ``TASKS.NOMAD.CHECK_CERT_EXPIRY_INTERVAL``; when
     it is ``None`` the periodic task is not seeded (see :mod:`app.tasks.db.seed`).
     """
-    celery.loop.run_until_complete(_check_nomad_cert_expiry())
+    celery.loop.run_until_complete(  # ty: ignore[unresolved-attribute]
+        _check_nomad_cert_expiry()
+    )
 
 
 async def _check_nomad_cert_expiry() -> None:

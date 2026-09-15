@@ -48,6 +48,7 @@ from app.core.utils.fields import CredentialHttpUrl
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
 from app.sep.apps.framework.registry import (
+    collect_app_owned_settings_classes,
     get_app_registry,
 )
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
@@ -213,57 +214,65 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     block) or ``app.sep.main:sep_app`` standalone (in which case
     ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
 
+    The app-owned half of the callback registry is collected from the
+    activation list, so this function names no app package: the PMM-embedded
+    side-car image strips every deactivated app, and an entry spelled by
+    importing one cannot resolve there. ``collect_app_owned_settings_classes``
+    imports every activated app module, so it runs at call time. Hoisting it
+    to this module's scope would relocate the app-tree import to import time.
+
     :param app: The FastAPI application instance, used to wire endpoint rebind
         callbacks against ``app.state``.
     :return: None
+    :raises TypeError: Propagates from ``collect_app_owned_settings_classes``
+        when an app's ``APP_OWNED_SETTINGS_CLASSES`` declaration is malformed.
+    :raises ValueError: Propagates from ``collect_app_owned_settings_classes``
+        when an activated app's declaration is invalid; that function
+        enumerates the cases.
     """
-    # Imported here rather than at module scope: this module is reachable from
-    # the Celery include list, and importing an app's config at import time
-    # pulls the app tree in alongside the ``celery.py`` modules loaded from it.
-    from app.sep.apps.alerts.config import AlertsSettings
-    from app.sep.apps.inventory.config import InventoryAppSettings
-
     callbacks: CallbackRegistry = {
-        (
-            SettingClassEnum.SEP_SETTINGS,
-            "INVENTORY_ENDPOINT",
-        ): _make_remote_api_rebinder(
-            app,
-            "inventory_api",
-            sep_settings,
-            "INVENTORY_ENDPOINT",
-            ssl_cafile=settings.SSL_CAFILE,
-            ssl_keyfile=inventory_settings.SSL_KEYFILE,
-            ssl_certfile=inventory_settings.SSL_CERTFILE,
-        ),
-        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): _make_remote_api_rebinder(
-            app,
-            "tasks_api",
-            sep_settings,
-            "TASKS_ENDPOINT",
-            ssl_cafile=settings.SSL_CAFILE,
-            ssl_keyfile=tasks_settings.SSL_KEYFILE,
-            ssl_certfile=tasks_settings.SSL_CERTFILE,
-        ),
-        (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
-        (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
-        (
-            SettingClassEnum.SNIPPETS_SETTINGS,
-            "SYNC_INTERVAL",
-        ): _reseed_system_periodic_tasks,
-        (
-            AlertsSettings.__name__,
-            "BACKUP_INTERVAL",
-        ): _reseed_system_periodic_tasks,
-        (
-            InventoryAppSettings.__name__,
-            "COLLECTION_INTERVAL",
-        ): _reseed_system_periodic_tasks,
-        (
-            SettingClassEnum.SEP_SETTINGS,
-            "APP_DRAIN",
-        ): _reseed_system_periodic_tasks,
+        (entry.setting_class, key): _reseed_system_periodic_tasks
+        for entry in collect_app_owned_settings_classes()
+        for key in entry.reseed_keys
     }
+    callbacks.update(
+        {
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "INVENTORY_ENDPOINT",
+            ): _make_remote_api_rebinder(
+                app,
+                "inventory_api",
+                sep_settings,
+                "INVENTORY_ENDPOINT",
+                ssl_cafile=settings.SSL_CAFILE,
+                ssl_keyfile=inventory_settings.SSL_KEYFILE,
+                ssl_certfile=inventory_settings.SSL_CERTFILE,
+            ),
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "TASKS_ENDPOINT",
+            ): _make_remote_api_rebinder(
+                app,
+                "tasks_api",
+                sep_settings,
+                "TASKS_ENDPOINT",
+                ssl_cafile=settings.SSL_CAFILE,
+                ssl_keyfile=tasks_settings.SSL_KEYFILE,
+                ssl_certfile=tasks_settings.SSL_CERTFILE,
+            ),
+            (SettingClassEnum.SETTINGS, "PMM"): invalidate_pmm_clients,
+            (SettingClassEnum.SETTINGS, "LOGGING"): apply_logging_dictconfig,
+            (
+                SettingClassEnum.SNIPPETS_SETTINGS,
+                "SYNC_INTERVAL",
+            ): _reseed_system_periodic_tasks,
+            (
+                SettingClassEnum.SEP_SETTINGS,
+                "APP_DRAIN",
+            ): _reseed_system_periodic_tasks,
+        }
+    )
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.

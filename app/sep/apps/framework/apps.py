@@ -411,6 +411,20 @@ class TaskExecutionApp(BaseApp):
         ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
+    :param item_display_name: The name for one record this app's create form
+        produces (for example ``backup``), threaded into the derived
+        ``GET /schema`` (``AppSchema.item_display_name``). Written in
+        mid-sentence form so a consumer capitalises the first character itself.
+        Defaults to ``None``, which leaves the schema to fall back to
+        ``display_name``. Read only on the derived-schema path: a
+        ``script_source`` app declares its record names on the source instead,
+        and a ``schema=`` app carries them on ``AppSchema`` directly, so setting
+        this on either is rejected at construction (see
+        :meth:`_validate_item_display_names`).
+    :param item_display_name_plural: The name for several such records (for
+        example ``backups``), threaded into
+        ``AppSchema.item_display_name_plural`` under the same condition.
+        Declared independently of the singular. Defaults to ``None``.
     :param related_apps: Separately registered apps the React shell surfaces as
         sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
         derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
@@ -421,6 +435,8 @@ class TaskExecutionApp(BaseApp):
     """
 
     owner: str
+    item_display_name: str | None = None
+    item_display_name_plural: str | None = None
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
@@ -485,6 +501,28 @@ class TaskExecutionApp(BaseApp):
             ref.check_connectivity for ref in iter_service_refs(self.create_model)
         )
 
+    @property
+    def offers_scheduling(self) -> bool:
+        """Return whether the schema this app serves declares ``scheduling``.
+
+        A script-source app serves its ``static_schema``; any other app serves the
+        ``schema=`` passthrough when one is set and the schema derived from its
+        views bundle otherwise. Reading the same source keeps the answer equal to
+        the capabilities the UI gates every schedule entry point on.
+
+        :return: ``True`` when the served capabilities declare ``scheduling``.
+        """
+        if self.script_source is not None:
+            static_schema = self.script_source.static_schema
+            capabilities = (
+                static_schema.capabilities if static_schema is not None else None
+            )
+        elif self.app_schema is not None:
+            capabilities = self.app_schema.capabilities
+        else:
+            capabilities = self.views.capabilities
+        return capabilities is not None and capabilities.scheduling
+
     @model_validator(mode="after")
     def _build_api_router(self) -> Self:
         """Validate the definition, bind the task dependency, and build the router.
@@ -504,8 +542,8 @@ class TaskExecutionApp(BaseApp):
         :raises ValueError: When the schema source, the create-payload path, the
             connectivity references, the route knobs, the list-query wiring, the
             response/filter knobs, the ``response_model`` / ``response_builder``
-            agreement, the list-view columns, or the ``ArgFormat`` markers are
-            inconsistent (see the per-aspect helpers).
+            agreement, the list-view columns, the ``ArgFormat`` markers, or the
+            item display names are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
@@ -519,6 +557,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_view_columns()
         self._validate_arg_formats()
         self._validate_related_apps()
+        self._validate_item_display_names()
 
     def _validate_related_apps(self) -> None:
         """Reject ``related_apps`` on definitions that do not derive a schema.
@@ -557,6 +596,35 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: duplicate related_apps route_segment "
                 f"values {duplicates}"
+            )
+
+    def _validate_item_display_names(self) -> None:
+        """Reject item display names on definitions that do not derive a schema.
+
+        ``item_display_name`` and ``item_display_name_plural`` are schema
+        metadata read only on the derived-schema path (``_resolve_plugin_schema``);
+        a ``schema=`` passthrough app carries its record names on ``AppSchema``
+        directly, and a ``script_source`` app serves ``static_schema`` instead, so
+        setting either field on those definitions is silently ignored downstream.
+
+        :raises ValueError: When ``item_display_name`` or
+            ``item_display_name_plural`` is set on a ``schema=`` or
+            ``script_source`` app.
+        """
+        if self.item_display_name is None and self.item_display_name_plural is None:
+            return
+        if self.script_source is not None:
+            raise ValueError(
+                "TaskExecutionApp: item_display_name/item_display_name_plural are "
+                "schema metadata for a model-first app; a script_source app "
+                "declares its record names on the source — drop them from the "
+                "definition"
+            )
+        if self.app_schema is not None:
+            raise ValueError(
+                "TaskExecutionApp: a schema= app carries its record names on "
+                "AppSchema — drop item_display_name/item_display_name_plural "
+                "from the definition"
             )
 
     def _validate_connectivity_refs(self) -> None:
@@ -1248,6 +1316,8 @@ class TaskExecutionApp(BaseApp):
             self.views.layout,
             name=self.name,
             display_name=self.display_name,
+            item_display_name=self.item_display_name,
+            item_display_name_plural=self.item_display_name_plural,
             description=self.description,
             capabilities=self.views.capabilities,
             list_view=self.views.list_view,
@@ -1281,7 +1351,7 @@ class TaskExecutionApp(BaseApp):
             status: TaskHistoryStatusEnum | None = None,
             last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
-        ) -> response_model:
+        ) -> response_model:  # ty: ignore[invalid-type-form]
             mapping = context or {}
             return build_default_task_response(
                 response_model,
@@ -1351,7 +1421,7 @@ class TaskExecutionApp(BaseApp):
                 *,
                 status: TaskHistoryStatusEnum | None = None,
                 **_: Any,
-            ) -> create_response_model:
+            ) -> create_response_model:  # ty: ignore[invalid-type-form]
                 return build_default_task_response(create_response_model, task, status)
 
             return _builder
@@ -1395,7 +1465,9 @@ class TaskExecutionApp(BaseApp):
         alert_detail_builder = self.alert_detail_builder
         run_result_recorder = self.run_result_recorder
         body_marker = Form() if self.create_form_encoded else Body()
-        form_param = Annotated[self.create_model, body_marker]
+        form_param = Annotated[
+            self.create_model, body_marker  # ty: ignore[invalid-type-form]
+        ]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

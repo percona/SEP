@@ -16,8 +16,11 @@
 """Define tests for the Tasks database seed module."""
 
 import json
+import re
 import subprocess
 import time
+from pathlib import Path
+from typing import TypedDict
 
 import pytest
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
@@ -27,7 +30,9 @@ from app.core.celery.models import IntervalSchedule
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     _CHECK_STALENESS_TASK,
+    _launch_check_shell,
     _LOG_CAPTURE_HOLD_TASK,
+    EFFECTIVE_INTERPRETER_PATH,
     LOG_CAPTURE_HOLD_SHELL,
     NOMAD_EXEC_ARTIFACT,
     NOMAD_EXEC_PYTHON_ARTIFACT,
@@ -40,7 +45,10 @@ from app.tasks.db.seed import (
 from app.tasks.execution.executors.nomad.constants import (
     CHECK_NOMAD_CERT_EXPIRY_TASK_NAME,
 )
-from app.tasks.execution.executors.nomad.steps import NomadStep
+from app.tasks.execution.executors.nomad.steps import (
+    LAUNCH_CHECK_EXIT_CODE,
+    NomadStep,
+)
 from app.tasks.models import (
     INTERNAL_TASK_NAMES,
     INVENTORY_COLLECTION_TASK_NAME,
@@ -60,12 +68,61 @@ NOMAD_TEMPLATES_WITH_STALENESS = [
     NOMAD_EXEC_PYTHON_ARTIFACT,
 ]
 PYTHON_TEMPLATES_WITH_PREPARE_ENV = [NOMAD_RUN_PYTHON, NOMAD_EXEC_PYTHON_ARTIFACT]
+# Every template that interpolates a launch command from meta. ``run-python``
+# is absent: it runs the venv interpreter ``prepare-env`` built, from a payload.
+NOMAD_TEMPLATES_WITH_LAUNCH_CHECK = [
+    NOMAD_RUN_COMMAND,
+    NOMAD_EXEC_ARTIFACT,
+    NOMAD_EXEC_PYTHON_ARTIFACT,
+]
+# The subset whose ``run-script`` launches from the effective interpreter, which
+# is what makes stripping a redundant ``sudo`` prefix observable.
+ARTIFACT_TEMPLATES_WITH_STRIP = [NOMAD_EXEC_ARTIFACT, NOMAD_EXEC_PYTHON_ARTIFACT]
 STALE_EXIT_CODE = 75
 # Generous next to the sub-second release measured against live Nomad, but far
 # below the 30 s deadline these tests spawn the hold with.
 SIGNAL_RESPONSE_BUDGET_SECONDS = 5
 STALE_ELAPSED_SECONDS = 7200
 FRESH_ELAPSED_SECONDS = 1
+ROOT_UID = 0
+UNPRIVILEGED_UID = 1000
+# Commands the stubbed node resolves. ``postgres`` is deliberately absent, so a
+# rule that resolved ``sudo -u postgres <cmd>``'s option *value* would abort an
+# invocation that runs; ``nosuchinterp`` is never provided.
+RESOLVABLE_ON_NODE = ("bash", "python3", "psql")
+#: Executor-node shapes the check must tell apart, as (task uid, ``sudo`` present).
+NODE_SHAPES = {
+    "root-no-sudo": (ROOT_UID, False),
+    "root-sudo": (ROOT_UID, True),
+    "user-no-sudo": (UNPRIVILEGED_UID, False),
+    "user-sudo": (UNPRIVILEGED_UID, True),
+}
+
+
+class LaunchCheckVariant(TypedDict):
+    """Carry one launch-check variant's keyword arguments.
+
+    Typed because the mapping is unpacked as ``**kwargs``: a bare dict of
+    heterogeneous values discards every argument's type at the call.
+    """
+
+    meta_key: str
+    allow_strip: bool
+    launches: str | None
+
+
+#: The launch-check variants the seeded specs build, as the keyword arguments
+#: that build each. ``python-artifact`` resolves the venv builder rather than the
+#: interpreter meta, because its ``run-script`` never execs the meta.
+LAUNCH_CHECK_VARIANTS: dict[str, LaunchCheckVariant] = {
+    "artifact": {"meta_key": "interpreter", "allow_strip": True, "launches": None},
+    "command": {"meta_key": "command", "allow_strip": False, "launches": None},
+    "python-artifact": {
+        "meta_key": "interpreter",
+        "allow_strip": True,
+        "launches": "python3",
+    },
+}
 
 
 class TestNomadStepNameParity:
@@ -375,6 +432,772 @@ class TestStalenessPreambleShell:
         line = result.stdout.decode().strip()
         assert line.startswith("SEP_STALE_SKIP: elapsed=")
         assert "threshold=5s" in line
+
+
+class TestArtifactLauncher:
+    """Cover the artifact specs launching from the effective interpreter.
+
+    Both launchers now read a file the ``check-launchable`` step writes, so the
+    step is load-bearing for every artifact execution rather than only failing
+    ones. These tests execute the launcher strings under ``/bin/sh``.
+    """
+
+    def _payload(self, task_dir: Path) -> None:
+        """Write a payload script that echoes its own argv, one entry per line."""
+        script = task_dir / "script"
+        script.write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done\n')
+        script.chmod(0o755)
+        (task_dir / "args_file").write_text("alpha\nbeta gamma\n")
+
+    def _launcher(self, template: dict) -> str:
+        """Return the template's ``run-script`` shell string."""
+        run_script = next(
+            task
+            for task in template["TaskGroups"][0]["Tasks"]
+            if task["Name"] == NomadStep.RUN_SCRIPT
+        )
+        assert run_script["Config"]["command"] == "sh"
+        return run_script["Config"]["args"][1]
+
+    def _run(
+        self,
+        script: str,
+        *,
+        task_dir: Path,
+        alloc_dir: Path,
+        env: dict[str, str],
+        path: str = "/usr/bin:/bin",
+    ) -> subprocess.CompletedProcess:
+        """Run a launcher string with Nomad's directory references resolved."""
+        resolved = script.replace("${NOMAD_TASK_DIR}", str(task_dir)).replace(
+            "${NOMAD_ALLOC_DIR}", str(alloc_dir)
+        )
+        return subprocess.run(
+            ["/bin/sh", "-c", resolved],
+            env={"PATH": path, **env},
+            capture_output=True,
+            check=False,
+        )
+
+    def test_passes_the_same_argv_as_a_direct_xargs_exec(self, tmp_path: Path) -> None:
+        """Assert wrapping the launcher in ``sh -c`` did not reshape the argv.
+
+        ``beta gamma`` must still reach the payload as two arguments. This is
+        the regression the rewrite could plausibly introduce, and the only
+        thing that covers it.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+
+        rewritten = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+        direct = subprocess.run(
+            [
+                "xargs",
+                "--arg-file",
+                str(task_dir / "args_file"),
+                "env",
+                "-S",
+                "sh",
+                str(task_dir / "script"),
+            ],
+            env={"PATH": "/usr/bin:/bin"},
+            capture_output=True,
+            check=False,
+        )
+
+        assert rewritten.returncode == 0, rewritten.stderr
+        assert direct.returncode == 0, direct.stderr
+        assert rewritten.stdout == direct.stdout
+        assert rewritten.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_launches_from_the_effective_interpreter_when_written(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a stripped interpreter, not the raw meta, reaches the payload.
+
+        The meta still carries the ``sudo`` prefix the check dropped, so a
+        launcher that ignored the handoff file would fail on the node the strip
+        exists for.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+        (alloc_dir / "sep_interpreter").write_text("sh")
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sudo sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_falls_back_to_the_meta_when_the_handoff_is_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a missing handoff file leaves behaviour exactly as it was.
+
+        Without the fallback an absent or empty file would make ``env -S ""``
+        exec the *script* as the interpreter.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    def test_falls_back_when_the_handoff_is_empty(self, tmp_path: Path) -> None:
+        """Assert an empty handoff file is treated as no handoff at all."""
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir()
+        self._payload(task_dir)
+        (alloc_dir / "sep_interpreter").write_text("")
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sh"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().split() == ["alpha", "beta", "gamma"]
+
+    @pytest.mark.parametrize(
+        ("effective", "sudo_expected"),
+        [("python3", "no"), ("sudo python3", "yes")],
+    )
+    def test_python_launcher_reads_sudo_from_the_effective_interpreter(
+        self, tmp_path: Path, effective: str, sudo_expected: str
+    ) -> None:
+        """Assert the venv python is prefixed from the handoff, not the meta.
+
+        On a stripped root allocation the meta still says ``sudo python3`` while
+        the effective interpreter says ``python3``; reading the meta would
+        re-introduce the prefix the check just removed.
+        """
+        task_dir = tmp_path / "local"
+        task_dir.mkdir()
+        alloc_dir = tmp_path / "alloc"
+        (alloc_dir / "venv" / "bin").mkdir(parents=True)
+        self._payload(task_dir)
+        venv_python = alloc_dir / "venv" / "bin" / "python3"
+        venv_python.write_text('#!/bin/sh\necho "python:$*"\n')
+        venv_python.chmod(0o755)
+        (alloc_dir / "sep_interpreter").write_text(effective)
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        sudo_stub = bin_dir / "sudo"
+        sudo_stub.write_text('#!/bin/sh\necho "sudo-used"\nexec "$@"\n')
+        sudo_stub.chmod(0o755)
+
+        result = self._run(
+            self._launcher(NOMAD_EXEC_PYTHON_ARTIFACT),
+            task_dir=task_dir,
+            alloc_dir=alloc_dir,
+            env={"NOMAD_META_interpreter": "sudo python3"},
+            path=f"{bin_dir}:/usr/bin:/bin",
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (b"sudo-used" in result.stdout) is (sudo_expected == "yes")
+        assert b"python:" in result.stdout
+
+
+class TestLaunchCheckTemplateShape:
+    """Cover the launch-check task's injection across the Nomad templates."""
+
+    def _check_task(self, template: dict) -> dict | None:
+        """Return the template's launch-check task, or ``None`` when absent."""
+        return next(
+            (
+                task
+                for task in template["TaskGroups"][0]["Tasks"]
+                if task["Name"] == NomadStep.CHECK_LAUNCHABLE
+            ),
+            None,
+        )
+
+    def _check_script(self, template: dict) -> str:
+        """Return the shell body of the template's launch-check step.
+
+        Names the missing step when there is none, rather than subscripting
+        ``None`` and reporting a ``TypeError`` several frames from the cause.
+        """
+        task = self._check_task(template)
+        assert task is not None, "template carries no check-launchable step"
+        return task["Config"]["args"][1]
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_LAUNCH_CHECK)
+    def test_check_is_a_non_sidecar_prestart_task(self, template) -> None:
+        """Assert the check runs, and can abort the allocation, before the payload."""
+        check = self._check_task(template)
+
+        assert check is not None
+        assert check["Lifecycle"] == {"hook": "prestart", "sidecar": False}
+        assert check["Driver"] == "raw_exec"
+        assert check["Config"]["command"] == "sh"
+        assert check["RestartPolicy"] == {"Attempts": 0, "Mode": "fail"}
+
+    def test_run_python_has_no_check(self) -> None:
+        """Assert the payload-driven spec is left alone.
+
+        ``run-python`` declares no launch-command meta — it runs the venv
+        interpreter it built — so there is no command chain to resolve.
+        """
+        assert self._check_task(NOMAD_RUN_PYTHON) is None
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_LAUNCH_CHECK)
+    def test_check_reads_the_template_own_launch_meta(
+        self, template, tmp_path: Path
+    ) -> None:
+        """Assert each spec's check resolves the meta key that spec launches.
+
+        Executed rather than pattern-matched against the built string: a check
+        wired to the wrong meta key reads an unset variable, which short-circuits
+        to a silent pass on every input — the failure mode a substring
+        assertion would report as healthy.
+        """
+        meta_key = "command" if template is NOMAD_RUN_COMMAND else "interpreter"
+        script = self._check_script(template)
+        # An unprivileged node with no `sudo`, so a bare `sudo ` prefix aborts
+        # in every variant: the python spec's launcher prefixes the venv python
+        # with it, so that variant resolves `sudo` even though it deliberately
+        # ignores the interpreter token that follows.
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        stub = bin_dir / "id"
+        stub.write_text(f"#!/bin/sh\necho {UNPRIVILEGED_UID}\n")
+        stub.chmod(0o755)
+
+        def run(env: dict[str, str]) -> int:
+            return subprocess.run(
+                [
+                    "/bin/sh",
+                    "-c",
+                    script.replace(EFFECTIVE_INTERPRETER_PATH, "/dev/null"),
+                ],
+                env={"PATH": str(bin_dir), "NOMAD_META_target": "node-1", **env},
+                capture_output=True,
+                check=False,
+            ).returncode
+
+        assert run({f"NOMAD_META_{meta_key}": "sudo x"}) == LAUNCH_CHECK_EXIT_CODE
+        other = "interpreter" if meta_key == "command" else "command"
+        assert run({f"NOMAD_META_{other}": "sudo x"}) == 0
+
+    @pytest.mark.parametrize("template", ARTIFACT_TEMPLATES_WITH_STRIP)
+    def test_artifact_checks_hand_the_interpreter_forward(self, template) -> None:
+        """Assert the artifact specs' checks write the effective interpreter."""
+        script = self._check_script(template)
+
+        assert EFFECTIVE_INTERPRETER_PATH in script
+
+    def test_run_command_check_writes_nothing(self) -> None:
+        """Assert the abort-only check leaves no handoff file behind.
+
+        ``run-command``'s launcher reads its meta directly, so a file written
+        here would never be read — and its meta carries no SEP-applied ``sudo``
+        prefix to strip in the first place.
+        """
+        script = self._check_script(NOMAD_RUN_COMMAND)
+
+        assert script
+        assert EFFECTIVE_INTERPRETER_PATH not in script
+
+    @pytest.mark.parametrize("template", NOMAD_TEMPLATES_WITH_LAUNCH_CHECK)
+    def test_check_task_is_not_shared_between_templates(self, template) -> None:
+        """Assert each template holds its own check rather than a shared dict.
+
+        The templates are module-level mutables Nomad job registration reads;
+        one shared dict would let a per-template edit leak across all three.
+        """
+        checks = [
+            task
+            for task in template["TaskGroups"][0]["Tasks"]
+            if task["Name"] == NomadStep.CHECK_LAUNCHABLE
+        ]
+
+        assert len(checks) == 1
+        others = [
+            self._check_task(other)
+            for other in NOMAD_TEMPLATES_WITH_LAUNCH_CHECK
+            if other is not template
+        ]
+        assert all(checks[0] is not other for other in others)
+
+
+def _build_check(*, meta_key: str, allow_strip: bool, launches: str | None) -> str:
+    """Build one launch-check variant from its stored keyword arguments."""
+    return _launch_check_shell(meta_key, allow_strip=allow_strip, launches=launches)
+
+
+class TestLaunchCheckShell:
+    """Execute the launch-check preamble under ``/bin/sh`` on a stubbed node.
+
+    ``id`` is stubbed on ``PATH`` rather than acquiring a real uid 0. The two
+    were measured to agree on every row below, and a stub needs no user
+    namespace, which CI runners do not uniformly provide.
+    """
+
+    def _node(self, tmp_path: Path, node: str) -> Path:
+        """Build the stub ``PATH`` directory standing in for the executor node."""
+        uid, has_sudo = NODE_SHAPES[node]
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir(exist_ok=True)
+        stubs = {"id": f"#!/bin/sh\necho {uid}\n"}
+        for name in RESOLVABLE_ON_NODE:
+            stubs[name] = "#!/bin/sh\nexit 0\n"
+        if has_sudo:
+            stubs["sudo"] = "#!/bin/sh\nexit 0\n"
+        for name, body in stubs.items():
+            stub = bin_dir / name
+            stub.write_text(body)
+            stub.chmod(0o755)
+        return bin_dir
+
+    def _run(
+        self,
+        tmp_path: Path,
+        *,
+        node: str,
+        meta: str,
+        variant: str = "artifact",
+    ) -> tuple[subprocess.CompletedProcess, Path]:
+        """Run the built preamble; return the process and the handoff file."""
+        bin_dir = self._node(tmp_path, node)
+        kwargs = LAUNCH_CHECK_VARIANTS[variant]
+        meta_key = kwargs["meta_key"]
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir(exist_ok=True)
+        handoff = alloc_dir / "sep_interpreter"
+        script = _build_check(**kwargs).replace(
+            EFFECTIVE_INTERPRETER_PATH, str(handoff)
+        )
+        result = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env={
+                "PATH": str(bin_dir),
+                f"NOMAD_META_{meta_key}": meta,
+                "NOMAD_META_target": "node-1",
+            },
+            capture_output=True,
+            check=False,
+            cwd=tmp_path,
+        )
+        return result, handoff
+
+    @pytest.mark.parametrize(
+        ("node", "meta", "expected_exit", "expected_effective"),
+        [
+            ("root-no-sudo", "sudo bash", 0, "bash"),
+            ("root-no-sudo", "sudo python3", 0, "python3"),
+            ("root-no-sudo", "sudo nosuchinterp", LAUNCH_CHECK_EXIT_CODE, None),
+            ("root-no-sudo", "sudo -u postgres bash", LAUNCH_CHECK_EXIT_CODE, None),
+            ("root-no-sudo", "sudo FOO=1 bash", LAUNCH_CHECK_EXIT_CODE, None),
+            ("root-sudo", "sudo bash", 0, "sudo bash"),
+            ("user-no-sudo", "sudo bash", LAUNCH_CHECK_EXIT_CODE, None),
+            ("user-sudo", "sudo bash", 0, "sudo bash"),
+            (
+                "user-sudo",
+                "sudo -u postgres nosuchinterp",
+                LAUNCH_CHECK_EXIT_CODE,
+                None,
+            ),
+            ("user-sudo", "sudo -u postgres psql", 0, "sudo -u postgres psql"),
+            ("user-no-sudo", "bash", 0, "bash"),
+            ("user-no-sudo", "nosuchinterp", LAUNCH_CHECK_EXIT_CODE, None),
+            ("user-no-sudo", "FOO=1 bash", 0, "FOO=1 bash"),
+            ("user-no-sudo", "bash -x", 0, "bash -x"),
+            ("user-no-sudo", "'/tmp/x/true2'", 0, "'/tmp/x/true2'"),
+            ("root-no-sudo", "'/tmp/x/true2'", 0, "'/tmp/x/true2'"),
+            (
+                "user-no-sudo",
+                "env FOO=1 nosuchinterp",
+                0,
+                "env FOO=1 nosuchinterp",
+            ),
+            ("user-no-sudo", "/tmp/g/ba*", LAUNCH_CHECK_EXIT_CODE, None),
+            ("user-no-sudo", "-u FOO bash", 0, "-u FOO bash"),
+            ("user-no-sudo", "-i bash", 0, "-i bash"),
+            ("user-sudo", "sudo -x dbuser bash", 0, "sudo -x dbuser bash"),
+            (
+                "user-sudo",
+                "sudo --unknown-opt dbuser bash",
+                0,
+                "sudo --unknown-opt dbuser bash",
+            ),
+            ("user-sudo", "sudo -i nosuchinterp", 0, "sudo -i nosuchinterp"),
+            ("user-sudo", "sudo -n nosuchinterp", LAUNCH_CHECK_EXIT_CODE, None),
+            (
+                "user-sudo",
+                "sudo --non-interactive nosuchinterp",
+                LAUNCH_CHECK_EXIT_CODE,
+                None,
+            ),
+            ("user-sudo", "sudo -E -H psql", 0, "sudo -E -H psql"),
+        ],
+    )
+    def test_resolves_the_launch_chain(
+        self,
+        tmp_path: Path,
+        node: str,
+        meta: str,
+        expected_exit: int,
+        expected_effective: str | None,
+    ) -> None:
+        """Assert each node/interpreter pair resolves to its planned outcome."""
+        result, handoff = self._run(tmp_path, node=node, meta=meta)
+
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+        if expected_effective is None:
+            assert not handoff.exists()
+        else:
+            assert handoff.read_text() == expected_effective
+
+    @pytest.mark.parametrize(
+        ("node", "meta", "expected_command"),
+        [
+            ("root-no-sudo", "sudo nosuchinterp", "nosuchinterp"),
+            ("root-no-sudo", "sudo -u postgres bash", "sudo"),
+            ("root-no-sudo", "sudo FOO=1 bash", "sudo"),
+            ("user-no-sudo", "sudo bash", "sudo"),
+            ("user-sudo", "sudo -u postgres nosuchinterp", "nosuchinterp"),
+            ("user-no-sudo", "nosuchinterp", "nosuchinterp"),
+            ("user-no-sudo", "/tmp/g/ba*", "/tmp/g/ba*"),
+            ("user-sudo", "sudo -n nosuchinterp", "nosuchinterp"),
+            ("user-sudo", "sudo --non-interactive nosuchinterp", "nosuchinterp"),
+        ],
+    )
+    def test_abort_line_names_the_unresolvable_command_and_node(
+        self,
+        tmp_path: Path,
+        node: str,
+        meta: str,
+        expected_command: str,
+    ) -> None:
+        """Assert the abort log line carries the failing command and the node.
+
+        That line is the operator's only diagnostic: ``run-script`` never
+        starts, so nothing else in the allocation says what could not be found.
+        Asserted as the *whole* output: a strip that happened first must not
+        report itself above an abort, since a success-shaped line heading the
+        only diagnostic an unlaunchable execution produces is misleading.
+        """
+        result, _ = self._run(tmp_path, node=node, meta=meta)
+
+        assert result.returncode == LAUNCH_CHECK_EXIT_CODE
+        assert (
+            result.stdout.decode().strip()
+            == f"SEP_UNLAUNCHABLE: command={expected_command} node=node-1"
+        )
+
+    def test_strip_announces_itself(self, tmp_path: Path) -> None:
+        """Assert a stripped ``sudo`` prefix is reported on the step's stdout."""
+        result, _ = self._run(tmp_path, node="root-no-sudo", meta="sudo bash")
+
+        assert result.returncode == 0
+        assert result.stdout.decode().strip() == "SEP_SUDO_STRIPPED: node=node-1"
+
+    @pytest.mark.parametrize(
+        ("named_sudo", "expected_effective"),
+        [("present", "{sudo} bash"), ("absent", "bash")],
+    )
+    def test_strip_asks_whether_the_named_sudo_resolves(
+        self, tmp_path: Path, named_sudo: str, expected_effective: str
+    ) -> None:
+        """Assert a path-named ``sudo`` is stripped only when it is really absent.
+
+        Asking whether the bare name ``sudo`` resolves answers the wrong
+        question for ``/opt/x/sudo``: on a root node with no ``sudo`` on
+        ``PATH`` the operator's own binary would be dropped, and a binary named
+        by path may be a wrapper that lowers privilege rather than the stock
+        no-op-as-root ``sudo``.
+        """
+        bin_dir = self._node(tmp_path, "root-no-sudo")
+        custom = tmp_path / "opt" / "sudo"
+        if named_sudo == "present":
+            custom.parent.mkdir(parents=True, exist_ok=True)
+            custom.write_text("#!/bin/sh\nexit 0\n")
+            custom.chmod(0o755)
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir(exist_ok=True)
+        handoff = alloc_dir / "sep_interpreter"
+        script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
+            EFFECTIVE_INTERPRETER_PATH, str(handoff)
+        )
+
+        result = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env={
+                "PATH": str(bin_dir),
+                "NOMAD_META_interpreter": f"{custom} bash",
+                "NOMAD_META_target": "node-1",
+            },
+            capture_output=True,
+            check=False,
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == expected_effective.format(sudo=custom)
+
+    @pytest.mark.parametrize(
+        "meta",
+        [
+            "'/tmp/x/true2'",
+            '"/tmp/x/true2"',
+            "$HOME/bin/python3",
+            "`which bash`",
+            "/tmp/a\\ b/bash",
+        ],
+    )
+    def test_declines_every_metacharacter_form(self, tmp_path: Path, meta: str) -> None:
+        """Assert each alternative of the metachar guard passes its meta through.
+
+        The guard is a raw string of five ``case`` alternatives, and ``sh -n``
+        cannot catch a mistyped one — only executing each form can, and the
+        failure it would cause is a false abort on a working configuration.
+        """
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=meta)
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == meta
+
+    def test_declines_an_assignment_that_changes_where_the_command_resolves(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a ``PATH=`` prefix is passed through rather than resolved.
+
+        ``env -S`` applies a leading ``NAME=VALUE`` *before* locating the
+        command, so ``PATH=/opt/toolchain bash`` finds a ``bash`` that exists
+        only under that toolchain. Skipping the assignment and resolving
+        against the step's own ``PATH`` would abort an execution the launcher
+        runs.
+        """
+        toolchain = tmp_path / "toolchain"
+        toolchain.mkdir()
+        only_there = toolchain / "toolchain-bash"
+        only_there.write_text("#!/bin/sh\nexit 0\n")
+        only_there.chmod(0o755)
+        meta = f"PATH={toolchain} toolchain-bash"
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=meta)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert handoff.read_text() == meta
+
+    def test_declines_a_relative_interpreter_path_that_resolves_here(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a resolvable relative path is passed through, not resolved.
+
+        This step pins no ``work_dir`` and ``run-script`` pins one, so the two
+        would resolve the same relative path against different directories.
+        """
+        bin_dir = self._node(tmp_path, "user-no-sudo")
+        relative = Path("rel") / "interp"
+        (tmp_path / "rel").mkdir()
+        (tmp_path / relative).write_text("#!/bin/sh\nexit 0\n")
+        (tmp_path / relative).chmod(0o755)
+        alloc_dir = tmp_path / "alloc"
+        alloc_dir.mkdir(exist_ok=True)
+        handoff = alloc_dir / "sep_interpreter"
+        script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
+            EFFECTIVE_INTERPRETER_PATH, str(handoff)
+        )
+
+        result = subprocess.run(
+            ["/bin/sh", "-c", script],
+            env={
+                "PATH": str(bin_dir),
+                "NOMAD_META_interpreter": str(relative),
+                "NOMAD_META_target": "node-1",
+            },
+            capture_output=True,
+            check=False,
+            cwd=tmp_path,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert handoff.read_text() == str(relative)
+
+    def test_declines_a_relative_interpreter_path_that_does_not_resolve_here(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert an unresolvable relative path is passed through, not aborted.
+
+        The inverse of the case above and the one that hurts: ``run-script``
+        pins a ``work_dir`` under the task dir and this step pins none, so a
+        payload-relative interpreter can be executable where the launcher runs
+        while being absent here. Resolving it against this step's cwd would
+        abort an execution the launcher completes.
+        """
+        relative = "rel/interp"
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=relative)
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert handoff.read_text() == relative
+
+    @pytest.mark.parametrize(
+        ("kind", "mode"),
+        [("non-executable file", 0o644), ("directory", 0o755)],
+    )
+    def test_aborts_on_a_path_that_exists_but_cannot_be_executed(
+        self, tmp_path: Path, kind: str, mode: int
+    ) -> None:
+        """Assert an unexecutable absolute interpreter aborts rather than runs.
+
+        ``command -v`` answers whether the shell would accept the word, not
+        whether the node can exec it: ``dash`` and ``busybox ash`` both report
+        a bare-existing path as found, so an interpreter without the execute
+        bit — or a directory — would reach ``run-script``, fail with 126 and
+        land in ``FAILED``, which is the outcome this step exists to separate
+        out. Only ``bash`` checks the mode, so the guard cannot be left to the
+        node's choice of ``sh``.
+        """
+        target = tmp_path / "interp"
+        if kind == "directory":
+            target.mkdir()
+        else:
+            target.write_text("#!/bin/sh\nexit 0\n")
+        target.chmod(mode)
+
+        result, handoff = self._run(tmp_path, node="user-no-sudo", meta=str(target))
+
+        assert result.returncode == LAUNCH_CHECK_EXIT_CODE, result.stdout
+        assert (
+            result.stdout.decode().strip()
+            == f"SEP_UNLAUNCHABLE: command={target} node=node-1"
+        )
+        assert not handoff.exists()
+
+    @pytest.mark.parametrize(
+        ("node", "meta", "expected_exit", "expected_effective"),
+        [
+            # The venv python is what runs, so an interpreter the node lacks is
+            # not a reason to abort -- prepare-env builds the venv from python3.
+            ("user-no-sudo", "python3.12", 0, "python3.12"),
+            ("user-sudo", "sudo python3.12", 0, "sudo python3.12"),
+            # A sudo prefix the node cannot satisfy still aborts, because the
+            # launcher really does exec `sudo <venv python>` for it.
+            ("user-no-sudo", "sudo python3.12", LAUNCH_CHECK_EXIT_CODE, None),
+            # ... and on a root node with no sudo it is stripped instead.
+            ("root-no-sudo", "sudo python3.12", 0, "python3.12"),
+        ],
+    )
+    def test_python_variant_resolves_the_venv_builder_not_the_meta(
+        self,
+        tmp_path: Path,
+        node: str,
+        meta: str,
+        expected_exit: int,
+        expected_effective: str | None,
+    ) -> None:
+        """Assert the python spec's check ignores an interpreter it never execs.
+
+        ``exec-python-artifact``'s ``run-script`` always runs the venv python
+        and reads the meta only for a ``"sudo "`` prefix test, so resolving the
+        meta's own token would abort a runnable execution for any operator who
+        maps ``.py`` to something other than ``python3``.
+        """
+        result, handoff = self._run(
+            tmp_path, node=node, meta=meta, variant="python-artifact"
+        )
+
+        assert result.returncode == expected_exit, result.stdout + result.stderr
+        if expected_effective is None:
+            assert not handoff.exists()
+        else:
+            assert handoff.read_text() == expected_effective
+
+    def test_declines_an_unrecognized_sudo_option_cluster(self, tmp_path: Path) -> None:
+        """Assert a bundled short-option cluster is passed through, not aborted.
+
+        ``-nu postgres`` ends in a value-taking option the walker does not
+        decompose, so the token after it is not the command. Aborting on that
+        guess would fail an invocation that works today.
+        """
+        result, handoff = self._run(
+            tmp_path, node="user-sudo", meta="sudo -nu postgres nosuchinterp"
+        )
+
+        assert result.returncode == 0
+        assert handoff.read_text() == "sudo -nu postgres nosuchinterp"
+
+    def test_run_command_variant_neither_strips_nor_writes(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert the abort-only variant leaves no handoff file behind.
+
+        ``run-command``'s launcher reads the meta directly, so a handoff file
+        would be written and never read.
+        """
+        result, handoff = self._run(
+            tmp_path, node="root-no-sudo", meta="sudo bash", variant="command"
+        )
+
+        assert result.returncode == LAUNCH_CHECK_EXIT_CODE
+        assert not handoff.exists()
+
+    @pytest.mark.parametrize("variant", sorted(LAUNCH_CHECK_VARIANTS))
+    def test_shell_string_parses(self, variant: str) -> None:
+        """Assert the concatenated fragments form a syntactically valid script.
+
+        The builder joins fragments, so a dropped ``;`` is otherwise caught only
+        when Nomad runs the step.
+        """
+        script = _build_check(**LAUNCH_CHECK_VARIANTS[variant])
+
+        parsed = subprocess.run(
+            ["/bin/sh", "-n", "-c", script], capture_output=True, check=False
+        )
+
+        assert parsed.returncode == 0, parsed.stderr
+
+    @pytest.mark.parametrize("variant", sorted(LAUNCH_CHECK_VARIANTS))
+    def test_only_brace_reference_is_the_alloc_dir(self, variant: str) -> None:
+        """Assert no ``${...}`` reference Nomad cannot resolve reaches the spec.
+
+        Nomad interpolates ``${...}`` through its own variable table before
+        spawning the shell and fails config validation on anything it does not
+        know, so shell locals must use the bareword form. ``${NOMAD_ALLOC_DIR}``
+        is in that table and is the one brace form that is correct here.
+
+        Asserted as an exact set rather than a subset: only the stripping
+        variant writes the handoff file, so a subset assertion would hold
+        vacuously for the abort-only one even if every brace reference vanished.
+        """
+        kwargs = LAUNCH_CHECK_VARIANTS[variant]
+        script = _build_check(**kwargs)
+
+        expected = {"${NOMAD_ALLOC_DIR}"} if kwargs["allow_strip"] else set()
+        assert set(re.findall(r"\$\{[^}]*\}", script)) == expected
 
 
 def test_internal_task_names_membership_is_exact() -> None:

@@ -151,6 +151,18 @@ class TestListAppsForNavigation:
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
 
+    async def test_sidebar_carries_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry each app's ``sidebar`` flag, inventory's opt-out included."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            assert entry["sidebar"] == registry.get(app_key).sidebar
+        assert entries["inventory"]["sidebar"] is False
+
     async def test_react_route_and_nav_icon_carry_registry_values(
         self, api_user_client: TestClient
     ) -> None:

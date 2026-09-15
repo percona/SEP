@@ -145,8 +145,9 @@ TableDep = Annotated[Table, Depends(get_table)]
 async def get_node_including_retired(session: SessionDep, node_id: int) -> Node:
     """Retrieve a node by its identifier, retired or not.
 
-    Used by the retire and revive routes so that re-retiring an already-retired
-    node is a no-op rather than a 404, and a tombstone stays revivable.
+    Serves the routes whose subject is legitimately a tombstone: re-retiring an
+    already-retired node is a no-op rather than a 404, a tombstone stays
+    revivable, and an identity link's predecessor is routinely one.
 
     :param session: The asynchronous database session.
     :param node_id: The unique identifier of the node to retrieve.

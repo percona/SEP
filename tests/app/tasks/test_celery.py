@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cryptography import x509
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from nomad.api.exceptions import BaseNomadException
@@ -38,6 +39,7 @@ from sqlmodel.pool import StaticPool
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import is_encrypted
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils import json_serializer, utc_now
 from app.tasks import celery as celery_module
@@ -60,8 +62,13 @@ from app.tasks.celery import (
     task_revoked_handler,
 )
 from app.tasks.crud import TaskHistoryLogManager, TaskHistoryManager, TaskManager
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.models import BaseExecutor
+from app.tasks.execution_request_secrets import (
+    CONFIG_META_KEY,
+    ENCRYPTED_META_KEYS,
+    PAYLOAD_LEAF,
+)
 from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     DispatchLock,
@@ -76,9 +83,25 @@ from app.tasks.models import (
 )
 from tests.app.db_schema import apply_schema
 from tests.app.factories import TaskFactory
+from tests.app.tasks.conftest import (
+    overwrite_execution_request,
+    stored_execution_request,
+)
 
 MODULE = "app.tasks.celery"
+# Derived rather than spelled out: ``_chain_on_failure`` chains on any terminal
+# status but SUCCESS, so a literal list silently stops covering the policy the
+# moment a terminal status is added -- which is exactly how the last one landed
+# with no test turning red.
+NON_SUCCESS_TERMINAL_STATUSES = sorted(
+    status
+    for status in TaskHistoryStatusEnum
+    if status.is_terminal() and status is not TaskHistoryStatusEnum.SUCCESS
+)
 EXPECTED_NOMAD_CERT_RESOLVE_CALLS = 2
+# A plaintext meta value seeded alongside the encrypted ones, asserted on to
+# show the `@>` predicate still carries the leaves that stayed queryable.
+_PRIORITY_META_VALUE = 5
 ANCHOR = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
 
 
@@ -513,21 +536,22 @@ class TestRaiseIfIdenticalTaskConflict:
     async def _capture_meta_clauses(queue_item, bind_name):
         """Run the dispatch dedup helper and return its compiled meta clauses.
 
-        Patch ``TaskHistoryManager.first`` to capture every positional argument,
-        filter out the non-meta clauses (``task``/``target``/``payload``/
-        ``status``/``id``), then render each remaining clause against the
-        PostgreSQL dialect with literal binds so substring assertions can
-        inspect the inlined values.
+        Patch ``TaskHistoryManager.list`` to capture every positional argument,
+        drop the two leading (``task``/``target``) and two trailing
+        (``status``/``id``) non-meta clauses, then render each remaining clause
+        against the PostgreSQL dialect with literal binds so substring assertions
+        can inspect the inlined values. ``payload`` is no longer among them: it
+        is compared in Python, off the loaded candidate.
         """
         session = _make_session_mock(bind_name=bind_name)
         with patch(
-            "app.tasks.celery.TaskHistoryManager.first",
+            "app.tasks.celery.TaskHistoryManager.list",
             new_callable=AsyncMock,
-            return_value=None,
-        ) as mock_first:
+            return_value=[],
+        ) as mock_list:
             await _raise_if_identical_task_conflict(queue_item, session)
-        positional_args = mock_first.await_args.args[1:]
-        meta_clauses = positional_args[3:-2]
+        positional_args = mock_list.await_args.args[1:]
+        meta_clauses = positional_args[2:-2]
         rendered = [
             str(
                 clause.compile(
@@ -561,6 +585,41 @@ class TestRaiseIfIdenticalTaskConflict:
             assert "json_extract" in clause.lower()
             assert "@>" not in clause
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bind_name", ["sqlite", "postgresql"])
+    async def test_no_encrypted_meta_key_gets_a_sql_predicate(
+        self, bind_name: str
+    ) -> None:
+        """Assert no encrypted ``meta`` key is ever compared in SQL.
+
+        Encryption is non-deterministic, so a predicate over one of these keys
+        would stop matching an identical resubmit. The keys come from the leaf
+        inventory rather than being listed here, so a leaf added to it is covered
+        without editing this test, and the plaintext sibling asserts the
+        narrowing was dropped only for the encrypted ones.
+
+        :param bind_name: The dialect the mocked session reports.
+        """
+        task = _make_task()
+        secret = "hunter2"
+        queue_item = _make_history(
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-1",
+                meta={"target": "node-1"}
+                | {key: f"--password {secret}" for key in ENCRYPTED_META_KEYS},
+                payload=None,
+            ),
+        )
+
+        _, rendered = await self._capture_meta_clauses(queue_item, bind_name)
+
+        assert rendered, "the plaintext key must still be narrowed on"
+        assert all(secret not in clause for clause in rendered)
+        for key in ENCRYPTED_META_KEYS:
+            assert all(f"'{key}'" not in clause for clause in rendered)
+
 
 async def _create_pg_task(
     session: AsyncSession,
@@ -588,18 +647,20 @@ async def _seed_pg_history(
 ) -> TaskHistory:
     """Persist a ``TaskHistory`` row as live DB state for the dedup query.
 
-    The row is only ever matched through SQL, never attribute-accessed, so its
-    ``execution_request`` is a plain dict (persisted into the ``jsonb`` column).
+    The ``execution_request`` is a real ``TaskExecutionRequest`` because the
+    guard no longer matches every leaf through SQL: the two encrypted leaves are
+    compared in Python off the candidate row, so the seeded row has to expose the
+    same attributes a production candidate does.
     """
     row = TaskHistory(
         task_id=task_id,
         status=status,
-        execution_request={
-            "task": task_name,
-            "target": target,
-            "meta": meta,
-            "payload": payload,
-        },
+        execution_request=TaskExecutionRequest(
+            task=task_name,
+            target=target,
+            meta=meta,
+            payload=payload,
+        ),
         executed_by="seed-user",
     )
     return await TaskHistoryManager.save(session, row)
@@ -705,6 +766,285 @@ class TestIdenticalTaskConflictStatusScoping:
         with pytest.raises(
             HTTPConflictException, match="Identical queue item already running"
         ):
+            await _raise_if_identical_task_conflict(queue_item, session)
+
+
+class TestIdenticalTaskConflictEncryptedLeaves:
+    """Exercise the dedup guard over the leaves that are stored encrypted.
+
+    ``meta["args"]``, ``meta["config"]`` and ``payload`` are ciphertext at rest
+    and encryption is non-deterministic, so none of them can be compared in SQL
+    any more. The guard narrows in SQL on the plaintext leaves and compares these
+    in Python off the loaded candidate, which is dialect-independent and
+    therefore runs on the default test engine.
+
+    Every test here expunges the session before running the guard: without it the
+    identity map hands back the in-memory row that was just seeded, and the
+    decrypt-on-load the comparison depends on never happens.
+    """
+
+    @pytest.mark.asyncio
+    async def test_identical_encrypted_request_still_conflicts(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert an identical resubmit conflicts while every leaf is ciphertext.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        meta = {
+            "target": "node-1",
+            "args": "restore --password hunter2",
+            CONFIG_META_KEY: "master_password: hunter2\n",
+        }
+        seeded = await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            payload="secret document",
+        )
+        stored = await stored_execution_request(session, seeded.id)
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, payload="secret document"
+        )
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_identical_request_without_payload_conflicts(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert two requests carrying no payload still match on the other leaves.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        meta = {"target": "node-1", "args": "--dry-run"}
+        await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta=meta, payload=None
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, payload=None
+        )
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_differing_args_does_not_conflict(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a different command line passes even though both are ciphertext.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", "args": "--fast"},
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task,
+            meta={"target": "node-1", "args": "--slow"},
+            item_id=_UNSEEDED_ITEM_ID,
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_differing_config_does_not_conflict(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert two runs of one task differing only in config are not duplicates.
+
+        ``config`` joined the encrypted leaves after ``args`` did, and its SQL
+        predicate went with it. Nothing else distinguishes these two rows, so
+        without the Python comparison covering the key as well, the second
+        submission would be refused as a duplicate of the first.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", CONFIG_META_KEY: "master_host: db-1\n"},
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task,
+            meta={"target": "node-1", CONFIG_META_KEY: "master_host: db-2\n"},
+            item_id=_UNSEEDED_ITEM_ID,
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_queued_without_args_does_not_match_a_candidate_with_them(
+        self, session: AsyncSession
+    ) -> None:
+        """Pin the narrowing: ``args`` is compared by equality, not containment.
+
+        The SQL stage matches a ``meta`` key by containment, which ignores a key
+        the incoming request does not carry, so before ``args`` moved into the
+        Python stage this pair deduplicated. Equality is the more accurate
+        reading, since a request with no arguments is not the same request as
+        one with them, but the change is silent, so it is pinned here.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", "args": "--fast"},
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task, meta={"target": "node-1"}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_candidate_without_args_does_not_conflict(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a stored row carrying no ``args`` never matches one that does.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta={"target": "node-1"}
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task,
+            meta={"target": "node-1", "args": "--fast"},
+            item_id=_UNSEEDED_ITEM_ID,
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_args_only_meta_still_narrows_and_compares(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a candidate whose meta is only ``args`` produces no meta predicate.
+
+        The SQL narrows on task, target, status and ``task_id`` alone; the Python
+        comparison is what still separates the two rows.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta={"args": "--fast"}
+        )
+        session.expunge_all()
+
+        await _raise_if_identical_task_conflict(
+            _pg_queue_item(task, meta={"args": "--slow"}, item_id=_UNSEEDED_ITEM_ID),
+            session,
+        )
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(
+                _pg_queue_item(
+                    task, meta={"args": "--fast"}, item_id=_UNSEEDED_ITEM_ID
+                ),
+                session,
+            )
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_candidate_is_skipped_not_raised_on(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a stored row that does not parse cannot break the dispatch.
+
+        ``process_result_value`` hands back the raw document when it will not
+        validate, so the Python comparison meets something with no ``payload``
+        attribute. The row is malformed in ``tracking``, which the SQL narrowing
+        never reads, so ``task``, ``target`` and the compared ``meta`` key all
+        still match and the candidate reaches the comparison.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        seeded = await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta={"target": "node-1"}
+        )
+        await overwrite_execution_request(
+            session,
+            seeded.id,
+            {
+                "task": task.name,
+                "target": "node-1",
+                "meta": {"target": "node-1"},
+                "tracking": "not-a-mapping",
+            },
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task, meta={"target": "node-1"}, item_id=_UNSEEDED_ITEM_ID
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, session)
+
+    @pytest.mark.asyncio
+    async def test_an_unreadable_candidate_is_refused_not_ignored(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a candidate this key cannot read blocks rather than falls through.
+
+        Its leaves stay ciphertext, so every plaintext comparison against them
+        fails and the row would silently stop deduplicating. The queued side is
+        always readable at this point, because dispatch is gated on that first,
+        so nothing can resolve the mismatch by comparing.
+
+        :param session: The async session fixture the guard queries.
+        """
+        task = await _create_pg_task(session)
+        token = Fernet(Fernet.generate_key()).encrypt(b'"--fast"').decode("ascii")
+        seeded = await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta={"target": "node-1"}
+        )
+        await overwrite_execution_request(
+            session,
+            seeded.id,
+            {
+                "task": task.name,
+                "target": "node-1",
+                "meta": {"target": "node-1", "args": token},
+                "payload": None,
+            },
+        )
+        session.expunge_all()
+        queue_item = _pg_queue_item(
+            task,
+            meta={"target": "node-1", "args": "--fast"},
+            item_id=_UNSEEDED_ITEM_ID,
+        )
+
+        with pytest.raises(HTTPConflictException, match="cannot be compared"):
             await _raise_if_identical_task_conflict(queue_item, session)
 
 
@@ -1056,6 +1396,79 @@ class TestRaiseIfIdenticalTaskConflictRealPostgres:
                 postgres_session,
             )
 
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_identical_encrypted_request_still_conflicts(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """Assert an identical resubmit conflicts on ``jsonb`` with every leaf encrypted.
+
+        The dialect-independent half of this runs on the default engine; this arm
+        proves the narrowed ``@>`` predicate still selects the candidate once the
+        encrypted keys are excluded from it.
+
+        :param postgres_session: The real-PostgreSQL session the guard queries.
+        """
+        task = await _create_pg_task(postgres_session)
+        meta = {
+            "target": "node-1",
+            "priority": 5,
+            "args": "restore --password hunter2",
+            CONFIG_META_KEY: "master_password: hunter2\n",
+        }
+        seeded = await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta=meta,
+            payload="secret document",
+        )
+        stored = await stored_execution_request(postgres_session, seeded.id)
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+        assert stored["meta"]["priority"] == _PRIORITY_META_VALUE
+        postgres_session.expunge_all()
+        queue_item = _pg_queue_item(
+            task, meta=meta, item_id=_UNSEEDED_ITEM_ID, payload="secret document"
+        )
+
+        with pytest.raises(
+            HTTPConflictException, match="Identical queue item already running"
+        ):
+            await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("key", ENCRYPTED_META_KEYS)
+    async def test_a_differing_encrypted_meta_key_does_not_conflict(
+        self, postgres_session: AsyncSession, key: str
+    ) -> None:
+        """Assert two rows differing only in one encrypted key pass on ``jsonb`` too.
+
+        Each key is exercised because losing its SQL predicate is what makes the
+        Python comparison the only thing separating the rows, and the keys come
+        from the inventory so a leaf added to it is covered here as well.
+
+        :param postgres_session: The real-PostgreSQL session the guard queries.
+        :param key: The encrypted ``meta`` key the two requests disagree on.
+        """
+        task = await _create_pg_task(postgres_session)
+        await _seed_pg_history(
+            postgres_session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1", key: "--fast"},
+        )
+        postgres_session.expunge_all()
+        queue_item = _pg_queue_item(
+            task,
+            meta={"target": "node-1", key: "--slow"},
+            item_id=_UNSEEDED_ITEM_ID,
+        )
+
+        await _raise_if_identical_task_conflict(queue_item, postgres_session)
+
 
 class TestDeleteTaskHistory:
     """Test delete_task_history."""
@@ -1324,6 +1737,7 @@ class TestPurgeTaskHistoryLogs:
                 await _purge_task_history_logs()
 
             mock_alert.assert_awaited_once()
+            assert mock_alert.await_args is not None
             alert = mock_alert.await_args[0][0]
             assert alert["severity"] == AlertSeverity.ERROR
             assert alert["dedup_key"] == "purge_task_history_logs"
@@ -1580,6 +1994,7 @@ class TestSyncQueueItem:
             result = await sync_queue_item(pending_item.id)
 
         mock_executor.sync_task_history.assert_awaited_once()
+        assert mock_executor.sync_task_history.await_args is not None
         called_args, called_kwargs = mock_executor.sync_task_history.await_args
         assert called_args == (running_item,)
         assert "writer_session" in called_kwargs
@@ -1630,6 +2045,7 @@ class TestSyncQueueItem:
             "status",
             "started_at",
             "finished_at",
+            "failure_reason",
             "sync_in_progress_started_at",
         }
         assert result is saved_item
@@ -1907,6 +2323,7 @@ class TestSyncQueueItemChainDispatch:
             "status",
             "started_at",
             "finished_at",
+            "failure_reason",
             "sync_in_progress_started_at",
         }
         saved_arg = mock_save.await_args.args[1]
@@ -2067,15 +2484,7 @@ class TestSyncQueueItemChainDispatch:
         mock_chain.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "status",
-        [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.LOST,
-            TaskHistoryStatusEnum.STALE,
-        ],
-    )
+    @pytest.mark.parametrize("status", NON_SUCCESS_TERMINAL_STATUSES)
     async def test_dispatches_chain_on_failure_with_flag(self, status) -> None:
         """Assert sync_queue_item dispatches chain on non-success terminal status with flag."""
         main_task = _make_chain_task("main-task")
@@ -2366,6 +2775,16 @@ async def _seed_history(
         return history
 
 
+async def _set_history_running(async_session_maker, task_history_id: int) -> None:
+    """Set a seeded TaskHistory to RUNNING so ``sync_queue_item`` syncs it."""
+    async with async_session_maker() as session:
+        await TaskHistoryManager.update_where(
+            session,
+            {"status": TaskHistoryStatusEnum.RUNNING},
+            id=task_history_id,
+        )
+
+
 async def _list_log_chunks(async_session_maker, task_history_id: int):
     """Return all TaskHistoryLog chunks for ``task_history_id``."""
     async with async_session_maker() as session:
@@ -2481,6 +2900,36 @@ class TestExecuteTaskByName:
             assert stderr_chunks
             assert "not ready on Nomad" in stderr_chunks[0].content
             assert stderr_chunks[0].source == "execution"
+
+    def test_unhealthy_target_persists_failure_reason_matching_stderr(self, mocker):
+        """Assert the persisted failure_reason is the reason written to stderr."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="test-task", alert_on_fail=False)
+            )
+            mock_executor = MagicMock(spec=BaseExecutor)
+            mock_executor.get_hosts = MagicMock()
+            mock_executor.get_hosts.return_value = {}
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=mock_executor
+            )
+            mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            saved = rows[0]
+            chunks = test_loop.run_until_complete(
+                _list_log_chunks(async_session_maker, saved.id)
+            )
+            stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
+            assert saved.failure_reason == stderr_chunks[0].content
+            assert "not ready on Nomad" in saved.failure_reason
 
     def test_unhealthy_target_no_alert_when_alert_on_fail_false(self, mocker):
         """Assert the FAILED row + log chunk are written but no alert fires."""
@@ -3079,6 +3528,52 @@ class TestSyncQueueItemRegression:
         parent_arg = mock_chain.await_args.args[1]
         assert "execution_request" not in sa_inspect(parent_arg).unloaded
 
+    def test_failure_reason_survives_the_sync_save(self, mocker):
+        """Assert a reason the executor set survives ``sync_queue_item``'s save.
+
+        ``sync_queue_item`` loads the row in one session, hands it to the
+        executor under a second, and saves it under a third, so this pins the
+        round trip that the per-arm Nomad unit tests cannot see: they assert
+        against the in-memory ``queue_item``, which carries the reason whether
+        or not the final UPDATE writes it.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(async_session_maker, name="reason-persist-task")
+            )
+            history = test_loop.run_until_complete(
+                _seed_history(async_session_maker, task, payload=None)
+            )
+            test_loop.run_until_complete(
+                _set_history_running(async_session_maker, history.id)
+            )
+
+            async def fake_sync(
+                item: TaskHistory,
+                *,
+                writer_session=None,
+                await_annotations: bool = False,
+            ) -> TaskHistory:
+                del writer_session, await_annotations
+                item.status = TaskHistoryStatusEnum.FAILED
+                item.set_failure_reason("Step 'run-script' failed (exit code 1).")
+                return item
+
+            fake_executor = MagicMock(spec=BaseExecutor)
+            fake_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+            mocker.patch(
+                "app.tasks.celery.get_executor_for_task", return_value=fake_executor
+            )
+            mocker.patch("app.tasks.celery.maybe_record_run", new_callable=AsyncMock)
+
+            test_loop.run_until_complete(sync_queue_item(history.id))
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert rows[0].failure_reason == "Step 'run-script' failed (exit code 1)."
+
 
 def _write_self_signed_pem(
     path: Path,
@@ -3310,13 +3805,101 @@ class TestCheckNomadCertExpiry:
         mock_check = MagicMock(return_value=coro)
         mocker.patch(f"{MODULE}._check_nomad_cert_expiry", mock_check)
         mocker.patch.object(
-            app_celery.loop,
+            app_celery.loop,  # ty: ignore[unresolved-attribute]
             "run_until_complete",
             autospec=True,
         )
 
         check_nomad_cert_expiry()
-        app_celery.loop.run_until_complete.assert_called_once_with(coro)
+        app_celery.loop.run_until_complete.assert_called_once_with(  # ty: ignore[unresolved-attribute]
+            coro
+        )
+
+
+class TestPreDispatchUnreadableRequest:
+    """Test the pre-dispatch refusal of an execution request that cannot be read.
+
+    A persisted row is re-dispatched by id, so a leaf this deployment's key
+    cannot decrypt would otherwise reach the executor as the stored token.
+    """
+
+    @pytest.mark.asyncio
+    async def test_unreadable_row_fails_terminally_without_dispatching(
+        self, session: AsyncSession, mocker
+    ) -> None:
+        """Assert the row is persisted FAILED with a reason and never dispatched.
+
+        :param session: The async session the row is seeded and loaded through.
+        :param mocker: The patching fixture used to observe the dispatch boundary.
+        """
+        task = await _create_pg_task(session)
+        token = Fernet(Fernet.generate_key()).encrypt(b'"secret"').decode("ascii")
+        seeded = await _seed_pg_history(
+            session, task_id=task.id, task_name=task.name, meta={"target": "node-1"}
+        )
+        await overwrite_execution_request(
+            session,
+            seeded.id,
+            {
+                "task": task.name,
+                "target": "node-1",
+                "meta": {"target": "node-1"},
+                "payload": token,
+            },
+        )
+        session.expunge_all()
+        loaded = await TaskHistoryManager.get_or_404(
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=seeded.id,
+        )
+        mock_dispatch = mocker.patch(
+            f"{MODULE}._dispatch_queue_item", new_callable=AsyncMock
+        )
+
+        result = await dispatch_queue_item(loaded, session)
+
+        mock_dispatch.assert_not_awaited()
+        assert result.status == TaskHistoryStatusEnum.FAILED
+        assert result.finished_at is not None
+        assert result.failure_reason is not None
+        assert PAYLOAD_LEAF in result.failure_reason
+        assert "ENCRYPTION_KEY" in result.failure_reason
+
+    @pytest.mark.asyncio
+    async def test_readable_row_is_dispatched_normally(
+        self, session: AsyncSession, mocker
+    ) -> None:
+        """Assert the refusal is scoped to an unreadable row, not to every row.
+
+        :param session: The async session the row is seeded and loaded through.
+        :param mocker: The patching fixture used to observe the dispatch boundary.
+        """
+        task = await _create_pg_task(session)
+        seeded = await _seed_pg_history(
+            session,
+            task_id=task.id,
+            task_name=task.name,
+            meta={"target": "node-1"},
+            payload="secret document",
+        )
+        session.expunge_all()
+        loaded = await TaskHistoryManager.get_or_404(
+            session,
+            select_related=[TaskHistory.task],
+            query_options=[undefer(TaskHistory.execution_request)],
+            id=seeded.id,
+        )
+        mock_dispatch = mocker.patch(
+            f"{MODULE}._dispatch_queue_item",
+            new_callable=AsyncMock,
+            return_value=loaded,
+        )
+
+        await dispatch_queue_item(loaded, session)
+
+        mock_dispatch.assert_awaited_once()
 
 
 class TestPreDispatchPayloadCheck:
@@ -3367,6 +3950,38 @@ class TestPreDispatchPayloadCheck:
             stderr_chunks = [c for c in chunks if c.stream == TaskLogType.STDERR]
             assert stderr_chunks
             assert "file:///nonexistent/x_payload" in stderr_chunks[0].content
+
+    def test_unresolvable_payload_persists_failure_reason(self, mocker):
+        """Assert the persisted failure_reason names the task and the underlying error.
+
+        The payload-resolution failure is the one reason permitted to interpolate
+        an underlying error message, so the stored value carries it verbatim.
+        """
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data=self._BROKEN_DATA,
+                )
+            )
+            mocker.patch(
+                "app.tasks.celery._dispatch_queue_item",
+                new_callable=AsyncMock,
+            )
+
+            _run_skip_gate(test_loop, task_name="test-task")
+
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            saved = rows[0]
+            assert saved.failure_reason is not None
+            assert "Task payload could not be resolved" in saved.failure_reason
+            assert "/nonexistent/x_payload" in saved.failure_reason
+            assert "\n" not in saved.failure_reason
 
     def test_unresolvable_payload_gates_before_health_check(self, mocker):
         """Assert the payload gate persists FAILED before the health check runs Nomad.

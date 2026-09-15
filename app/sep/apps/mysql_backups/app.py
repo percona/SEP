@@ -40,7 +40,10 @@ from app.sep.apps.framework.apps import (
 )
 from app.sep.apps.framework.schema import RelatedApp
 from app.sep.apps.mysql_backups.api_routes import router as catalog_router
-from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
+from app.sep.apps.mysql_backups.deps import (
+    build_mysql_backups_api_task_response,
+    get_mysql_backups_task,
+)
 from app.sep.apps.mysql_backups.forms import BackupCreate, BackupTaskResponse, OWNER
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
@@ -52,6 +55,8 @@ from app.sep.deps import get_username_mapping
 app = TaskExecutionApp(
     name="mysql_backups",
     display_name="MySQL Backups",
+    item_display_name="backup",
+    item_display_name_plural="backups",
     uri_path="/mysql_backups",
     css_class="mysql_backups",
     group="backups",
@@ -59,6 +64,7 @@ app = TaskExecutionApp(
     nav_icon=NavIcon.MYSQL,
     description="Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
     owner=OWNER,
+    get_task=get_mysql_backups_task,
     create_model=BackupCreate,
     response_model=BackupTaskResponse,
     views=mysql_backups_views,

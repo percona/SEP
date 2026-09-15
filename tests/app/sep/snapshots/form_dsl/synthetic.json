@@ -12,6 +12,7 @@
   ],
   "forms": [
     {
+      "advanced": false,
       "cardinality_rules": [
         {
           "fields": [
@@ -173,12 +174,29 @@
             "mysql"
           ],
           "type": "service"
+        },
+        {
+          "default": false,
+          "destructive": "Existing rows are dropped before the load.",
+          "label": "Destructive Bool",
+          "name": "a_destructive_bool",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "default": "",
+          "destructive": "The named directory is emptied before the run.",
+          "label": "Destructive String",
+          "name": "a_destructive_string",
+          "required": false,
+          "type": "string"
         }
       ],
       "render_after_submit": false,
       "title": "Main"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
@@ -208,6 +226,8 @@
       "title": "Gated"
     }
   ],
+  "item_display_name": "Synthetic",
+  "item_display_name_plural": "Synthetic",
   "list_view": {
     "columns": [
       {
@@ -218,5 +238,47 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "synthetic"
+  "name": "synthetic",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

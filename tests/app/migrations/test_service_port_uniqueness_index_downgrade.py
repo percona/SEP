@@ -23,8 +23,6 @@ only that a migration exists, never that its ``downgrade()`` runs against the
 data its ``upgrade()`` admits.
 """
 
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -33,9 +31,7 @@ from sqlalchemy import create_engine
 
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
+from tests.app.alembic_paths import ALEMBIC_INI
 
 #: The revision immediately below the dropped-index one — downgrading to it
 #: runs the deletion and restores the pre-drop index.

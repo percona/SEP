@@ -18,8 +18,12 @@
 __all__ = [
     "UPSTREAM_NON_JSON_HEADER",
     "BaseRemoteAPI",
+    "JSONBody",
     "RemoteAPI",
+    "as_json_array",
+    "as_json_object",
     "exception_for_status",
+    "is_non_json_success",
 ]
 
 import asyncio
@@ -38,7 +42,7 @@ from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
 from typing import Any, BinaryIO, ClassVar, NoReturn, Self
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlparse
 
 from aiohttp import (
     ClientResponse,
@@ -46,6 +50,7 @@ from aiohttp import (
     ClientSession,
     ClientTimeout,
     ContentTypeError,
+    encode_basic_auth,
     FormData,
     TCPConnector,
 )
@@ -77,7 +82,9 @@ from app.core.utils.fields import (
     NonEmptyStr,
     redact_credential_url,
     RelativeFilePathField,
+    strip_credential_url_userinfo,
 )
+from app.core.utils.strings import shorten_text
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
@@ -94,6 +101,14 @@ _SENSITIVE_HEADERS = frozenset(
 # logs. Compared case-insensitively against JSON/form body keys.
 _SENSITIVE_BODY_FIELDS = frozenset({"password", "secret", "token"})
 _REDACTED_VALUE = "****"
+# Stands in for a response body a caller withheld from the log, so the line
+# keeps naming the request that produced it.
+_WITHHELD_BODY = "<withheld>"
+# Bounds the decoded body reaching the exception log: the upstream answering
+# HTML rather than JSON decides that body's size, so a large error page would
+# otherwise flood the log with a single record.
+_NON_JSON_LOG_MAX_CHARS = 2000
+_TRUNCATION_MARKER = "... (truncated)"
 
 # Stamped on the raised ``HTTPException`` when an error response has a non-JSON
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
@@ -107,6 +122,10 @@ FileContent = bytes | BinaryIO | AsyncIterable[bytes]
 
 #: A single multipart file part: ``(filename, content, content_type)``.
 FileSpec = tuple[str, FileContent, str]
+
+#: The parsed body of a JSON response: an object, an array of objects, or
+#: ``None`` when the server answered HTTP 204 with no body.
+JSONBody = dict[str, Any] | list[dict[str, Any]] | None
 
 # Maps an upstream error status to the project exception that represents it, so
 # RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
@@ -159,6 +178,78 @@ def exception_for_status(
     return exc_class(detail, headers=headers)
 
 
+def as_json_object(payload: JSONBody) -> dict[str, Any]:
+    """Return ``payload`` as a JSON object, rejecting any other shape.
+
+    The verb methods declare the whole union a JSON body may take — an object,
+    an array, or ``None`` on HTTP 204. A caller that reads the result as a
+    mapping is asserting a shape the transport never checked; this checks it and
+    turns a mis-shaped upstream answer into a 502 rather than a ``TypeError``
+    further down.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload as a plain dict.
+    :raises HTTPBadGatewayException: If the payload is not a JSON object.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def as_json_array(payload: JSONBody) -> list[dict[str, Any]]:
+    """Return ``payload`` as a JSON array of objects, rejecting any other shape.
+
+    The elements are checked too, so the returned ``list[dict[str, Any]]`` is a
+    verified claim rather than an asserted one.
+
+    :param payload: The parsed body returned by a :class:`BaseRemoteAPI` verb.
+    :return: The payload itself, once every element is confirmed to be an object.
+    :raises HTTPBadGatewayException: If the payload is not a JSON array, or any
+        element of it is not a JSON object.
+    """
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        raise HTTPBadGatewayException(
+            detail="The server answered with an unexpected payload shape."
+        )
+    return payload
+
+
+def is_non_json_success(exc: HTTPException) -> bool:
+    """Return whether ``exc`` reports a successful answer whose body was not JSON.
+
+    :meth:`RemoteAPI.request` parses every body but a ``204`` before it checks
+    the status, so a receiver answering ``200 text/plain`` (an acknowledgement
+    string, an HTML health page, an empty non-``204`` body) surfaces as a
+    ``2xx`` :class:`fastapi.HTTPException` rather than as the success it is.
+    Callers that do not need the parsed body use this to tell that case from a
+    real upstream error.
+
+    :param exc: The exception :meth:`RemoteAPI.request` raised.
+    :return: ``True`` when the status is below 400 and the body was not JSON.
+    """
+    return exc.status_code < status.HTTP_400_BAD_REQUEST and bool(
+        (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+    )
+
+
+def _carries_authorization(*header_maps: Mapping[str, str] | None) -> bool:
+    """Report whether any of the header mappings already sets ``Authorization``.
+
+    :param header_maps: Header mappings to inspect; ``None`` entries are skipped.
+    :return: ``True`` when one of them carries the header under any casing.
+    """
+    return any(
+        name.lower() == "authorization"
+        for headers in header_maps
+        if headers
+        for name in headers
+    )
+
+
 def _sanitize_request_kwargs(
     kwargs: dict[str, Any],
     *,
@@ -206,9 +297,7 @@ def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
     """Raise :class:`ValueError` for a stream line larger than the cap.
 
     :param size: Size in bytes of the offending line or pending buffer.
-    :type size: int
     :param path: The stream path, included in the error message.
-    :type path: str
     :raises ValueError: Always — this function never returns.
     """
     msg = (
@@ -229,36 +318,43 @@ async def _iter_lines_from_chunks(
     line larger than ``_MAX_STREAM_LINE_BYTES`` to protect consumers from a
     runaway producer.
 
+    Every chunk consumes the newlines it introduced and drops what precedes
+    them, so the carried remainder is newline-free when the next chunk arrives.
+    Searching only the arriving bytes therefore finds exactly what a search from
+    the front finds, at a cost proportional to the chunk rather than to the
+    remainder behind it.
+
     :param chunks: An async iterator producing byte chunks (e.g. from
         ``aiohttp`` ``StreamReader.iter_any()``).
-    :type chunks: AsyncIterator[bytes]
     :param path: The stream path, included in the error message when a single
         line exceeds the cap.
-    :type path: str
     :yield: Each line as ``bytes`` with its trailing newline preserved; the
         final unterminated chunk is also yielded when the stream ends without
         a newline.
-    :rtype: AsyncGenerator[bytes, None]
     :raises ValueError: If a single line exceeds ``_MAX_STREAM_LINE_BYTES``.
     """
     buffer = bytearray()
     async for chunk in chunks:
         if not chunk:
             continue
+        # Two cursors, not one: the terminator can only be in the arriving
+        # bytes, but the line it ends begins at the front of the buffer, where
+        # the remainder carried from earlier chunks sits.
+        search_from = len(buffer)
         buffer.extend(chunk)
-        offset = 0
+        line_start = 0
         while True:
-            newline_pos = buffer.find(b"\n", offset)
+            newline_pos = buffer.find(b"\n", search_from)
             if newline_pos == -1:
                 break
             line_end = newline_pos + 1
-            line_size = line_end - offset
+            line_size = line_end - line_start
             if line_size > _MAX_STREAM_LINE_BYTES:
                 _raise_stream_line_too_big(line_size, path)
-            yield bytes(buffer[offset:line_end])
-            offset = line_end
-        if offset:
-            del buffer[:offset]
+            yield bytes(buffer[line_start:line_end])
+            line_start = search_from = line_end
+        if line_start:
+            del buffer[:line_start]
         if len(buffer) > _MAX_STREAM_LINE_BYTES:
             _raise_stream_line_too_big(len(buffer), path)
     if buffer:
@@ -314,6 +410,9 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             "api_extra_sensitive_body_fields", default=frozenset()
         )
     )
+    _suppress_response_log: ContextVar[bool] = PrivateAttr(
+        default_factory=lambda: ContextVar("api_suppress_response_log", default=False)
+    )
 
     def __hash__(self) -> int:
         """Compute the hash based on the endpoint and SSL configuration.
@@ -351,7 +450,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             )
             timeout = ClientTimeout(total=300, connect=5, sock_connect=5, sock_read=120)
             self._session = ClientSession(
-                base_url=self.base_url,
+                base_url=self.session_base_url,
                 headers=self.headers or None,
                 json_serialize=json_serializer,
                 connector=connector,
@@ -513,6 +612,34 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         finally:
             self._extra_sensitive_body_fields.reset(token)
 
+    @contextmanager
+    def suppress_response_log(self) -> Generator[Self]:
+        """Withhold the response body from the transport's own log records for the call.
+
+        Register that the parsed response body must not reach the log for the
+        duration of the call. Use this where the caller keeps only the values it
+        names itself and the rest of the body is data it must neither retain nor
+        return, so the body must not outlive the request in a log line either.
+
+        Guards the two response-logging sites in :meth:`request` and nothing
+        else: :meth:`stream` logs no response body of its own, so a caller
+        wrapping it gains no guarantee here. The second of the two sites reports
+        a non-JSON response and logs the body's decoded text, so suppression
+        there withholds the upstream's own error page from the exception line.
+
+        Unlike :meth:`redact_headers` and :meth:`redact_body_fields`, which
+        accumulate onto the set an enclosing block registered, this flag has
+        nothing to union; an enclosing suppression survives an inner block's
+        exit unchanged.
+
+        :return: The instance with response logging withheld.
+        """
+        token = self._suppress_response_log.set(True)
+        try:
+            yield self
+        finally:
+            self._suppress_response_log.reset(token)
+
     @cached_property
     def logger(self) -> logging.Logger:
         """Return logger object to use.
@@ -524,11 +651,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return logging.getLogger(self.logger_name)
 
     @property
-    def session(self) -> ClientSession:
+    def session(self) -> ClientSession | None:
         """Get the ClientSession used in requests.
 
-        :return: The ClientSession used in requests.
-        :rtype: ClientSession
+        :return: The ClientSession used in requests, or ``None`` before the
+            client is opened and after it is closed — which is what callers
+            test for to decide whether to enter it.
         """
         return self._session
 
@@ -582,6 +710,68 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         if self.base_path.strip("/"):
             url = url.replace(self.base_path, "")
         return url.rstrip("/")
+
+    @property
+    def session_base_url(self) -> str:
+        """Return the base URL the aiohttp session is built from, minus userinfo.
+
+        aiohttp derives basic auth from a URL's userinfo and then refuses any
+        request that also carries an explicit ``Authorization`` header, raising
+        ``ValueError`` before a connection is opened. Every caller that presents
+        a header of its own — a forwarded user token via :meth:`RemoteAPI.auth`,
+        or a client class whose :attr:`headers` names an API key — would hit
+        that on a credential-bearing endpoint, so the userinfo is kept out of
+        the session URL and re-applied per request by
+        :meth:`_unopposed_endpoint_credential` only when nothing competes
+        with it.
+
+        :return: :attr:`base_url` with any userinfo segment removed.
+        """
+        return strip_credential_url_userinfo(self.base_url)
+
+    @property
+    def _endpoint_credential_header(self) -> str | None:
+        """Return the basic ``Authorization`` value the endpoint's userinfo encodes.
+
+        Reproduces the header aiohttp would have derived from the URL, so a
+        client with no competing header puts the same bytes on the wire as
+        before. Reads :attr:`base_url` rather than :attr:`endpoint` so it stays
+        the exact complement of what :attr:`session_base_url` removes, including
+        for a subclass that overrides either one. The segments are
+        percent-decoded and then latin-1 encoded, the two steps aiohttp applies
+        to a URL-embedded credential.
+
+        :return: The encoded header value, or ``None`` when the base URL carries
+            no userinfo.
+        """
+        parsed = urlparse(self.base_url)
+        if not parsed.username and not parsed.password:
+            return None
+        return encode_basic_auth(
+            unquote(parsed.username or ""), unquote(parsed.password or ""), "latin1"
+        )
+
+    def _unopposed_endpoint_credential(
+        self, headers: Mapping[str, str] | None
+    ) -> str | None:
+        """Return the endpoint's embedded credential unless a header competes with it.
+
+        An ``Authorization`` header the call site set — directly, via
+        :meth:`extra_headers`, or through the client's own :attr:`headers` —
+        wins over the endpoint's embedded credential. The two cannot share a
+        request: HTTP carries one ``Authorization`` header, and the explicit one
+        is the narrower credential (the identity this call acts as, or the key
+        the remote API itself requires), while the URL userinfo is a
+        configuration-wide default. :class:`NomadExecutor` already resolves the
+        same conflict this way.
+
+        :param headers: The per-call headers assembled for the outgoing request.
+        :return: The credential to send, or ``None`` when there is none to send
+            or a header already occupies the slot.
+        """
+        if _carries_authorization(headers, self.headers):
+            return None
+        return self._endpoint_credential_header
 
     @property
     def headers(self) -> dict[str, str]:
@@ -639,6 +829,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         if correlation_id != "-":
             kwargs["headers"] = kwargs.pop("headers", {}) | {
                 "X-Correlation-ID": correlation_id
+            }
+        if credential := self._unopposed_endpoint_credential(kwargs.get("headers")):
+            kwargs["headers"] = kwargs.pop("headers", {}) | {
+                "Authorization": credential
             }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
@@ -926,6 +1120,16 @@ class RemoteAPI(BaseRemoteAPI):
             A ``3xx`` response also raises when the caller passed
             ``allow_redirects=False``: the redirect was not followed, so the
             status is reported rather than treated as a result.
+        :raises aiohttp.ClientError: If the underlying
+            :class:`aiohttp.ClientSession` request fails during transport or
+            connection handling.
+        :raises TimeoutError: If the request's effective timeout is exceeded,
+            whether from the session's configured :class:`aiohttp.ClientTimeout` or
+            a per-request ``timeout=`` override.
+        :raises json.JSONDecodeError: If :meth:`aiohttp.ClientResponse.json`'s
+            default loader fails to parse a JSON-content-typed response body.
+        :raises UnicodeDecodeError: If a JSON-content-typed response body cannot
+            be decoded using its declared or inferred character encoding.
         """
         follows_redirects = kwargs.get("allow_redirects", True)
         async with self._request(method, path, **kwargs) as response:
@@ -944,6 +1148,8 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     detail="The server answered with an unfollowed redirect.",
                 )
+            withhold_body = self._suppress_response_log.get()
+            response_data: JSONBody = None
             try:
                 response_data = await response.json()
                 self.logger.debug(
@@ -952,18 +1158,26 @@ class RemoteAPI(BaseRemoteAPI):
                     method,
                     path,
                     response.status,
-                    response_data,
+                    _WITHHELD_BODY if withhold_body else response_data,
                 )
                 response.raise_for_status()
             except ContentTypeError as err:
-                response_content = response.content
+                # %r, not %s: the body is untrusted upstream text, so rendering it
+                # raw would let its own newlines and control characters forge
+                # further log lines out of one record.
                 self.logger.exception(
-                    "RemoteAPI (%s): %s request to %s response content (%s): %s",
+                    "RemoteAPI (%s): %s request to %s response content (%s): %r",
                     redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
-                    response_content,
+                    _WITHHELD_BODY
+                    if withhold_body
+                    else shorten_text(
+                        await response.text(errors="replace"),
+                        max_length=_NON_JSON_LOG_MAX_CHARS,
+                        ellipsis=_TRUNCATION_MARKER,
+                    ),
                 )
                 raise exception_for_status(
                     err.status,
@@ -1099,8 +1313,6 @@ class RemoteAPI(BaseRemoteAPI):
                 "POST", path, data=payload, headers=headers, **kwargs
             )
         except HTTPException as exc:
-            if exc.status_code < status.HTTP_400_BAD_REQUEST and (
-                exc.headers or {}
-            ).get(UPSTREAM_NON_JSON_HEADER):
+            if is_non_json_success(exc):
                 return None
             raise

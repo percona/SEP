@@ -103,12 +103,12 @@ class ClientRegistry:
         key = self._make_key(cls, **kwargs)
 
         client = self._clients.get(key)
-        if client is not None:
+        if isinstance(client, cls):
             return client
 
         async with self._locks[key]:
             client = self._clients.get(key)
-            if client is not None:
+            if isinstance(client, cls):
                 return client
 
             client = cls(**kwargs)

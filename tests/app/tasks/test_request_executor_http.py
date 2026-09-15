@@ -22,6 +22,7 @@ route is verified at the framework level, not just in unit tests.
 """
 
 import asyncio
+from collections.abc import Iterator
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -38,7 +39,7 @@ from app.main import app as combined_app
 from app.tasks.config import tasks_settings
 from app.tasks.crud import TaskHistoryManager
 from app.tasks.deps import get_session
-from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import tasks_app
 from app.tasks.models import TaskHistory
@@ -55,7 +56,7 @@ def _nomad_executor(endpoint: str) -> NomadExecutor:
 
 
 @pytest.fixture
-def holder_client(regular_user: CasdoorUser) -> TestClient:
+def holder_client(regular_user: CasdoorUser) -> Iterator[TestClient]:
     """Yield a Tasks client whose lifecycle holder serves a stub executor."""
     stub = MagicMock()
     stub.get_hosts = MagicMock(return_value={"node1": "10.0.0.1"})
@@ -147,7 +148,9 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
     await TaskHistoryManager.save(session, created_task_with_history)
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_settings._set_snapshot({"NOMAD": _nomad_executor(NOMAD_ENDPOINT)})
+    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+        {"NOMAD": _nomad_executor(NOMAD_ENDPOINT)}
+    )
 
     try:
         async with NomadLifecycle(tasks_app) as holder:
@@ -172,7 +175,7 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
                     assert response.status_code == status.HTTP_200_OK
                     await asyncio.wait_for(stat_started.wait(), timeout=10)
 
-                    tasks_settings._set_snapshot(
+                    tasks_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
                         {"NOMAD": _nomad_executor("http://nomad-new.example.org")}
                     )
                     await holder.reconcile()
@@ -183,7 +186,7 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
                     body = await response.drain()
     finally:
         tasks_app.dependency_overrides = {}
-        tasks_settings._set_snapshot({})
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     assert body == payload
     assert old._session is None

@@ -120,6 +120,8 @@ async def test_request_methods(
                 response = await remote_api.patch(test_path, json=request_payload)
             elif method == "DELETE":
                 response = await remote_api.delete(test_path)
+            else:
+                raise AssertionError(f"unparametrized method: {method}")
 
             assert response == response_data
 
@@ -305,7 +307,7 @@ async def test_request_non_json_404_stays_bare_http_exception(remote_api):
         )
     )
     mock_response.status = status.HTTP_404_NOT_FOUND
-    mock_response.content = b"<html>404 Not Found</html>"
+    mock_response.text = AsyncMock(return_value="<html>404 Not Found</html>")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response
@@ -348,7 +350,7 @@ async def test_request_non_json_mapped_non_404_keeps_mapping_with_header(
         )
     )
     mock_response.status = error_status
-    mock_response.content = b"<html>bad gateway</html>"
+    mock_response.text = AsyncMock(return_value="<html>bad gateway</html>")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response
@@ -528,12 +530,16 @@ async def test_request_debug_log_redacts_authorization_header(
 
 @pytest.mark.asyncio
 async def test_request_debug_log_redacts_url_credentials(caplog):
-    """The request debug log masks a password embedded in the endpoint URL."""
+    """The request debug log masks a password embedded in the endpoint URL.
+
+    The mock carries no userinfo because the session is built from the
+    credential-free URL, which is what the request is matched against.
+    """
     password = "hunter2"
     api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
     with aioresponses() as m:
         m.get(
-            "http://user:hunter2@localhost:8000/ping",
+            "http://localhost:8000/ping",
             status=status.HTTP_200_OK,
             payload={},
         )
@@ -547,12 +553,16 @@ async def test_request_debug_log_redacts_url_credentials(caplog):
 
 @pytest.mark.asyncio
 async def test_response_debug_log_redacts_url_credentials(caplog):
-    """The response debug log masks a password embedded in the endpoint URL."""
+    """The response debug log masks a password embedded in the endpoint URL.
+
+    The mock carries no userinfo because the session is built from the
+    credential-free URL, which is what the request is matched against.
+    """
     password = "hunter2"
     api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
     with aioresponses() as m:
         m.get(
-            "http://user:hunter2@localhost:8000/ping",
+            "http://localhost:8000/ping",
             status=status.HTTP_200_OK,
             payload={"ok": True},
         )
@@ -607,7 +617,7 @@ async def test_request_content_type_error(remote_api):
         )
     )
     mock_response.status = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-    mock_response.content = b"not-json"
+    mock_response.text = AsyncMock(return_value="not-json")
 
     mock_context_manager = AsyncMock()
     mock_context_manager.__aenter__.return_value = mock_response

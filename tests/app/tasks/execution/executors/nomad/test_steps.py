@@ -39,6 +39,7 @@ def test_nomad_step_members_are_literal_wire_values() -> None:
     assert NomadStep.PREPARE_ENV == "prepare-env"
     assert NomadStep.CLEAN_UP == "clean-up"
     assert NomadStep.CHECK_STALENESS == "check-staleness"
+    assert NomadStep.CHECK_LAUNCHABLE == "check-launchable"
     assert NomadStep.LOG_CAPTURE_HOLD == "log-capture-hold"
     assert NomadStep.STEP1 == "step1"
     assert {member.value for member in NomadStep} == {
@@ -46,6 +47,7 @@ def test_nomad_step_members_are_literal_wire_values() -> None:
         "prepare-env",
         "clean-up",
         "check-staleness",
+        "check-launchable",
         "log-capture-hold",
         "step1",
     }
@@ -97,6 +99,7 @@ def test_anonymized_steps_remain_run_script_and_step1() -> None:
     assert NOMAD_STEP_ANONYMIZE[NomadStep.PREPARE_ENV] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CLEAN_UP] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.CHECK_STALENESS] is False
+    assert NOMAD_STEP_ANONYMIZE[NomadStep.CHECK_LAUNCHABLE] is False
     assert NOMAD_STEP_ANONYMIZE[NomadStep.LOG_CAPTURE_HOLD] is False
 
 

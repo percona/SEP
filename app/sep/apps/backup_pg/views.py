@@ -24,6 +24,7 @@ verbatim from the previous hand-written ``AppSchema`` so the schema wire
 format is unchanged.
 """
 
+from app.sep.apps.backup_pg.models import BackupType
 from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import (
     FormLayout,
@@ -40,7 +41,7 @@ from app.sep.apps.framework.schema import (
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
-from app.sep.apps.shared.backups.columns import BACKUP_TYPE_COLUMN
+from app.sep.apps.shared.backups.columns import backup_type_column
 
 backup_pg_views = Views(
     layout=FormLayout(
@@ -52,7 +53,7 @@ backup_pg_views = Views(
     list_view=ListView(
         columns=default_columns(
             EXECUTOR_HOST_COLUMN,
-            BACKUP_TYPE_COLUMN,
+            backup_type_column(BackupType.LABELS),
         ),
         default_sort="name",
     ),
@@ -64,7 +65,11 @@ backup_pg_views = Views(
                     DetailField(path="hostname", label=EXECUTION_HOST_LABEL),
                     DetailField(path="host", label="Host"),
                     DetailField(path="port", label="Port"),
-                    DetailField(path="backup_type", label="Type"),
+                    DetailField(
+                        path="backup_type",
+                        label="Type",
+                        value_labels=BackupType.LABELS,
+                    ),
                     DetailField(path="created_at", label="Created at"),
                     DetailField(path="updated_at", label="Updated at"),
                 ],

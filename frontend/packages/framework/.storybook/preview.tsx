@@ -20,7 +20,7 @@ import { ThemeContextProvider, sepThemeOptions } from '@percona/percona-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Preview } from '@storybook/react-vite';
 import { MemoryRouter } from 'react-router';
-import { apiClient } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext } from '@sep/api';
 import {
   installStorybookSseMocks,
   registerFetchResponse,
@@ -67,15 +67,20 @@ const preview: Preview = {
         registerFetchResponse(prefix, body);
       }
 
+      // Stories exist to show components at full capability, so they render as
+      // an administrator: with no provider ``useAuth`` resolves to a signed-out,
+      // non-admin session and every write control is hidden.
       return (
-        <QueryClientProvider client={queryClient}>
-          <ThemeContextProvider themeOptions={sepThemeOptions}>
-            <CssBaseline />
-            <MemoryRouter>
-              <Story />
-            </MemoryRouter>
-          </ThemeContextProvider>
-        </QueryClientProvider>
+        <AuthContext value={ADMIN_SESSION}>
+          <QueryClientProvider client={queryClient}>
+            <ThemeContextProvider themeOptions={sepThemeOptions}>
+              <CssBaseline />
+              <MemoryRouter>
+                <Story />
+              </MemoryRouter>
+            </ThemeContextProvider>
+          </QueryClientProvider>
+        </AuthContext>
       );
     },
   ],

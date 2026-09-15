@@ -29,7 +29,6 @@
 
 import type { EnabledApp } from '@sep/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import DnsIcon from '@mui/icons-material/Dns';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import BackupIcon from '@mui/icons-material/Backup';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
@@ -106,10 +105,14 @@ const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
 /** Always-on non-app destinations, prepended ahead of the derived app tree. */
 const STATIC_NAV_ENTRIES: NavItem[] = [
   { title: 'Dashboard', icon: DashboardIcon, to: ROUTES.dashboard },
-  { title: 'Inventory', icon: DnsIcon, to: ROUTES.inventory },
 ];
 
-/** App keys handled by static chrome above; excluded from the derived tree. */
+/**
+ * App keys kept out of the derived tree.
+ *
+ * ``inventory`` ships no browser surface, so it must not gain a sidebar entry
+ * even in a deployment whose backend reports ``sidebar: true`` for it.
+ */
 const STATIC_APP_KEYS = new Set(['inventory']);
 
 type TopLevelEntry = { order: number | null; key: string; item: NavItem };
@@ -150,9 +153,9 @@ function leafNavItem(app: EnabledApp): NavItem {
  * Derive sidebar navigation items from the API's per-app placement data.
  *
  * When ``apps`` is undefined (a cold first load or a cold first-load error,
- * with no React Query cache to fall back on) only the static Dashboard +
- * Inventory entries render. After a successful load, React Query retains the
- * last-good data across transient errors, so the full derived tree stays.
+ * with no React Query cache to fall back on) only the static Dashboard entry
+ * renders. After a successful load, React Query retains the last-good data
+ * across transient errors, so the full derived tree stays.
  *
  * Visible apps (``enabled``, ``sidebar``, excluding the statically-handled keys
  * and nested sub-app keys) are partitioned into groups and ungrouped leaves;

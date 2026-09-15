@@ -63,7 +63,9 @@ def _extract_function(payload_path: pathlib.Path, func_name: str) -> Callable:
             module = ast.Module(body=[node], type_ignores=[])
             namespace: dict[str, object] = {}
             exec(compile(module, str(payload_path), "exec"), namespace)
-            return namespace[func_name]
+            extracted = namespace[func_name]
+            assert callable(extracted)
+            return extracted
     raise RuntimeError(
         f"{func_name} not found in {payload_path}. "
         "Has the function been renamed or removed?"

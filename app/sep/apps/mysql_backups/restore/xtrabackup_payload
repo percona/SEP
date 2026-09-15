@@ -1368,7 +1368,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         self.ssh_key = server_data.get('SSH_KEY', 'id_rsa')
         self.pre_script = server_data.get('PRE_SCRIPT')
         self.post_script = server_data.get('POST_SCRIPT')
-        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', "innobackupex")
+        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
         self.s3_tool = server_data.get('S3_TOOL', 's3cmd')
         self.keyring_file_data = server_data.get('KEYRING_FILE_DATA')
 
@@ -1913,7 +1913,6 @@ class Xtrabackup(Restore):
         super(Xtrabackup, self).__init__(server_data, 'X')
 
         self.datadir = server_data.get('DATADIR', None)
-        self.kill_mysql = server_data.get('KILL_MYSQL', False)
         self.xtrabackup_aes256_keyfile = server_data.get('XTRABACKUP_AES256_KEYFILE', DEFAULT_CFG_DIR + '/xb_keyfile')
         self.mysql_init_command = server_data.get('MYSQL_INIT_COMMAND', False)  # Deprecated by custom
         self.custom_mysql_init_command = server_data.get('CUSTOM_MYSQL_INIT_COMMAND', False)

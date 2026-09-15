@@ -28,10 +28,17 @@ so the connectivity, detail-model, and injected-extras suite methods skip.
 from typing import Any
 
 from fastapi import status
+from pytest_mock import MockerFixture
 
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.app import app as restore_app
+from app.sep.apps.mysql_backups.restore.models import (
+    RestoreCreate,
+    S3Tool,
+    SourceTransport,
+)
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -43,6 +50,12 @@ from tests.app.sep.apps.framework.kit import (
     SYNTH_SERVICE_HOST,
     SYNTH_SERVICE_PORT,
 )
+from tests.app.sep.apps.mysql_backups.description_coverage import (
+    assert_every_declared_field_is_described,
+    assert_schema_serves_only_declared_descriptions,
+    assert_schema_serves_only_declared_destructive_marks,
+)
+from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 _NEW_TASK_NAME = "contract-new-restore"
 _UNKNOWN_TASK_NAME = "contract-unknown-restore"
@@ -54,8 +67,9 @@ def _valid_restore_body(
     """Return a valid restore create/update body resolving against the kit mocks.
 
     Pairs the seeded MySQL service / executor host with a shell-safe
-    ``backup_source`` so the field validator passes; restore declares no per-mode
-    field gates, so the same body is valid for every ``backup_type``.
+    ``backup_source`` so the field validator passes. ``service_id`` is only gated
+    on a Mydumper restore, and naming the seeded service satisfies that gate, so
+    the same body is valid for every ``backup_type``.
     """
     return {
         "task_name": task_name,
@@ -85,6 +99,84 @@ class TestRestoreContract(DerivedRouterContractTests):
         :return: A valid restore update body resolving against the kit mocks.
         """
         return _valid_restore_body(task_name=task_name)
+
+    def test_schema_id_is_labelled_for_its_meaning(self, contract_client: Any) -> None:
+        """Serve the schema field under the database it targets, not the restore verb.
+
+        The field selects which database to restore *into*; the old label read as
+        the action itself and left operators guessing what to enter.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        fields = {
+            field["name"]: field
+            for form in response.json()["forms"]
+            for field in form["fields"]
+        }
+        assert fields["schema_id"]["label"] == "Target database"
+
+    def test_schema_capabilities(self, contract_client: Any) -> None:
+        """Serve ``scheduling: false`` so every schedule control stays hidden.
+
+        A scheduled restore would re-run a destructive restore of one fixed
+        ``backup_source`` on every tick with nobody present to confirm the target.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.json()["capabilities"] == {
+            "chaining": True,
+            "alert_on_fail": True,
+            "scheduling": False,
+            "stats": False,
+            "pii_anonymization": False,
+        }
+
+    def test_every_declared_field_is_described(self) -> None:
+        """Require helper text on every field the restore form declares itself.
+
+        A restore is configured under incident pressure, so a field an operator
+        has to guess at is a field they get wrong.
+        """
+        assert_every_declared_field_is_described(RestoreCreate)
+
+    def test_schema_serves_only_declared_descriptions(
+        self, contract_client: Any
+    ) -> None:
+        """Serve each declared field's description verbatim, and only those.
+
+        The inherited Task fields have to stay undescribed here, because
+        describing them would move every other schema-driven app's schema too.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_descriptions(response.json(), RestoreCreate)
+
+    def test_schema_marks_only_the_destructive_fields(
+        self, contract_client: Any
+    ) -> None:
+        """Publish the consequence text on exactly the fields that destroy something.
+
+        Pinning the whole marked set rather than one field is what makes an
+        over-application visible: a confirmation operators learn to click
+        through costs the qualifying fields the attention they need.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert_schema_serves_only_declared_destructive_marks(
+            response.json(),
+            RestoreCreate,
+            {"overwrite_tables", "datadir", "restore_mycnf"},
+        )
 
     def test_create_201(self, contract_client: Any, mock_task_api: Any) -> None:
         """Create a task via a real JSON POST with a valid body, returning 201.
@@ -180,6 +272,44 @@ class TestRestoreContract(DerivedRouterContractTests):
         )
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
+    def test_schema_pins_section_collapse_posture(self, contract_client: Any) -> None:
+        """Pin every restore-form section's collapse posture and the visible fields.
+
+        Under incident pressure the form must be completable from what is on
+        screen: ``Task`` stays expanded and now carries the required
+        ``backup_source`` together with the ``service_id`` it depends on, while
+        every expert section is collapsible *and* collapsed. Section order is
+        pinned too, since it derives from field first-appearance on the model —
+        ``General`` sits after the mode sections so the expert block reads last.
+        ``advanced`` is pinned as ``False`` throughout: this form has one
+        candidate section, and putting it alone behind the reveal control would
+        add a click rather than save a row.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        assert [
+            (
+                section["title"],
+                section["collapsible"],
+                section["collapsed_by_default"],
+            )
+            for section in sections
+        ] == [
+            ("Task", False, False),
+            ("Mydumper", True, True),
+            ("XtraBackup", True, True),
+            ("Binlog", True, True),
+            ("General", True, True),
+        ]
+        assert [section["advanced"] for section in sections] == [False] * len(sections)
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert "service_id" in task_fields
+        assert "backup_source" in task_fields
+
     def test_update_round_trips_stored_form(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:
@@ -198,3 +328,289 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert (
             mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY] == stored_form
         )
+
+    def test_create_local_restore_stamps_no_transport_values(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Stamp a local restore without the SSH and object-store values it never uses.
+
+        The three fields used to submit ``percona`` / ``22`` / ``s3cmd`` on every
+        restore; declaring the source is what lets them stay out of the stamp.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body["source_transport"] = SourceTransport.LOCAL.value
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        stamped = mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY]
+        assert stamped["ssh_user"] is None
+        assert stamped["ssh_port"] is None
+        assert stamped["s3_tool"] is None
+
+    def test_create_accepts_ssh_credentials_under_an_ssh_source(
+        self, contract_client: Any
+    ) -> None:
+        """Accept the SSH trio when the declared source is reached over SSH."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            source_transport=SourceTransport.SSH.value,
+            ssh_user="deploy",
+            ssh_port=2222,
+            ssh_key="prod-key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_create_rejects_s3_tool_under_a_gcs_source(
+        self, contract_client: Any
+    ) -> None:
+        """Reject ``s3_tool`` for a GCS source, whose download never consults it.
+
+        A ``gs://`` source is fetched by ``gs_copy``'s ``gcloud storage rsync``,
+        and the one path that does read ``s3_tool`` on a GCS restore selects
+        ``aws s3 ls`` for a ``gs://`` URL, which cannot list the source.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            backup_source="gs://bucket/backups/latest",
+            source_transport=SourceTransport.GCS.value,
+            s3_tool=S3Tool.AWSCLI.value,
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT, (
+            response.text
+        )
+
+    def test_create_accepts_a_cleared_s3_tool_select(
+        self, contract_client: Any
+    ) -> None:
+        """Accept an emptied ``s3_tool`` select, which submits ``""`` rather than a value."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            backup_source="s3://bucket/backups/latest",
+            source_transport=SourceTransport.S3.value,
+            s3_tool="",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_create_422_on_ssh_credentials_under_a_local_source(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject SSH credentials a local source cannot consume, before any POST."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(source_transport=SourceTransport.LOCAL.value, ssh_user="deploy")
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert mock_task_api.create_count == 0
+
+    def test_create_422_on_gpg_password_file_without_gpg(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject a GPG password file on a restore declaring no GPG pass."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        body.update(
+            source_encryption=EncryptionFormat.NONE.value,
+            gpg_password_file="/etc/gpg.pass",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert mock_task_api.create_count == 0
+
+    def test_update_round_trips_a_stamp_predating_the_source_controls(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Accept an edit of a restore stamped before the source controls existed.
+
+        A stored stamp is a full model dump, so every pre-existing one carries
+        ``percona`` / ``22`` / ``s3cmd`` and the derived ``PUT`` re-submits it
+        verbatim. Editing such a restore must not 422 while waiting for the
+        manual backfill command to run.
+        """
+        base = app_base_url(self.app_def)
+        task_name = "contract-legacy-restore"
+        contract_client.post(f"{base}/", json=_valid_restore_body(task_name=task_name))
+        legacy_form = {
+            **mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY],
+            **{
+                name: legacy_default(name)
+                for name in ("ssh_user", "ssh_port", "s3_tool")
+            },
+        }
+        del legacy_form["source_transport"]
+        del legacy_form["source_encryption"]
+
+        response = contract_client.put(f"{base}/{task_name}", json=legacy_form)
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        restamped = mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY]
+        assert restamped["source_transport"] == SourceTransport.LOCAL.value
+        assert restamped["ssh_user"] is None
+
+    def test_schema_leads_the_task_section_with_the_destination_service(
+        self, contract_client: Any
+    ) -> None:
+        """Serve ``service_id`` ahead of ``backup_type``, gated required for Mydumper.
+
+        The field lists Backup Source, fills the Mydumper target database and is
+        where a Mydumper restore loads, so it leads the backup-specific fields —
+        after the two identity fields every task form inherits.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert task_fields[:4] == [
+            "task_name",
+            "hostname",
+            "service_id",
+            "backup_type",
+        ]
+        fields = {field["name"]: field for form in sections for field in form["fields"]}
+        service_id = fields["service_id"]
+        assert service_id["required"] is False
+        assert service_id["requires"] == [
+            {
+                "when": {"equals": {"backup_type": BackupType.MYDUMPER.value}},
+                "message": (
+                    "Destination Database Service is required for a Mydumper restore."
+                ),
+            }
+        ]
+        assert fields["backup_source"]["depends_on"] == "service_id"
+        assert fields["schema_id"]["depends_on"] == "service_id"
+
+    def test_create_422_on_a_mydumper_restore_without_a_destination_service(
+        self,
+        contract_client: Any,
+        mock_task_api: Any,
+        mock_inventory_api: Any,
+        mocker: MockerFixture,
+    ) -> None:
+        """Reject a service-less Mydumper restore at body validation, before any lookup.
+
+        The resolver refuses the same body with a 422 naming the field too, so the
+        assertions pin the gate's own message rather than the field name alone.
+        """
+        lookup = mocker.spy(mock_inventory_api, "get")
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+        del body["service_id"]
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in response.text
+        )
+        assert mock_task_api.create_count == 0
+        assert lookup.await_count == 0
+
+    def test_create_201_for_a_non_mydumper_restore_without_a_destination_service(
+        self, contract_client: Any
+    ) -> None:
+        """Accept an XtraBackup restore that records no destination service."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+        del body["service_id"]
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+
+    def test_a_stored_mydumper_stamp_without_a_service_still_reads(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """List and serve a Mydumper restore stamped before the service was required.
+
+        Neither read path re-validates the stamp into a hard failure — the detail
+        builder's source-declaring override returns nothing on a validation error
+        — so such a restore keeps its row, its detail and the edit form seeded
+        from it. Saving it unchanged is what the gate rejects, by name.
+        """
+        task_name = "contract-serviceless-mydumper"
+        stored_form = {
+            **_valid_restore_body(task_name=task_name),
+            "service_id": None,
+        }
+        mock_task_api.seed_task(
+            task_name,
+            owner=self.app_def.owner,
+            data_extra={RESERVED_FORM_KEY: stored_form},
+        )
+        base = app_base_url(self.app_def)
+
+        listing = contract_client.get(f"{base}/")
+        detail = contract_client.get(f"{base}/{task_name}")
+        resubmit = contract_client.put(f"{base}/{task_name}", json=stored_form)
+
+        assert listing.status_code == status.HTTP_200_OK, listing.text
+        assert task_name in {row["name"] for row in listing.json()["items"]}
+        assert detail.status_code == status.HTTP_200_OK, detail.text
+        assert detail.json()["data"][RESERVED_FORM_KEY] == stored_form
+        assert resubmit.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert (
+            "Destination Database Service is required for a Mydumper restore"
+            in resubmit.text
+        )
+
+    def test_schema_gates_transport_and_decryption_fields(
+        self, contract_client: Any
+    ) -> None:
+        """Serve the source controls ungated and every field they govern gated.
+
+        The gates use only ``equals`` / ``any`` / ``not``, which the renderer
+        already evaluates, so no new predicate reaches a consumer.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        sections = response.json()["forms"]
+        fields = {field["name"]: field for form in sections for field in form["fields"]}
+        task_fields = [field["name"] for field in sections[0]["fields"]]
+        assert "source_transport" in task_fields
+        assert "source_encryption" in task_fields
+        assert "forbidden" not in fields["source_transport"]
+        assert "forbidden" not in fields["source_encryption"]
+        for name in ("ssh_user", "ssh_port", "ssh_key"):
+            assert fields[name]["forbidden"] == [
+                {"when": {"not_equals": {"source_transport": "ssh"}}}
+            ], name
+        assert fields["s3_tool"]["forbidden"] == [
+            {"when": {"not_equals": {"source_transport": "s3"}}}
+        ]
+        assert fields["gpg_password_file"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_encryption": "gpg"}},
+                            {"equals": {"source_encryption": "dual"}},
+                        ]
+                    }
+                }
+            }
+        ]

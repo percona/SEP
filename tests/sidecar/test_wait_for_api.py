@@ -16,7 +16,6 @@
 
 import logging
 from collections.abc import Iterator
-from configparser import RawConfigParser
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,10 +25,7 @@ from app.inventory.config import inventory_settings
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from sidecar import wait_for_api as helper
-from tests.sidecar.conftest import SIDECAR_DIR
-
-SUPERVISORD_CONF = SIDECAR_DIR / "supervisord.conf"
-CONTAINERFILE = SIDECAR_DIR / "Containerfile.sidecar"
+from tests.sidecar.conftest import CONTAINERFILE
 
 HELPER_INVOCATION = "python3 wait_for_api.py"
 BEAT_INVOCATION = "celery -A app.celery beat"
@@ -106,24 +102,6 @@ def gate_logs_fixture() -> Iterator[_RecordCollector]:
         logger.removeHandler(collector)
         logger.setLevel(previous_level)
         logger.disabled = previous_disabled
-
-
-@pytest.fixture
-def program_settings() -> dict[str, dict[str, str]]:
-    """Return the side-car's supervisord programs, keyed by program name.
-
-    ``RawConfigParser`` rather than the interpolating default: the file carries
-    ``%(ENV_...)s`` names supervisord expands, which the default parser rejects.
-
-    :return: Each ``[program:...]`` section's settings, keyed by the bare name.
-    """
-    parser = RawConfigParser()
-    parser.read_string(SUPERVISORD_CONF.read_text(encoding="utf-8"))
-    return {
-        section.split(":", 1)[1]: dict(parser[section])
-        for section in parser.sections()
-        if section.startswith("program:")
-    }
 
 
 @pytest.fixture

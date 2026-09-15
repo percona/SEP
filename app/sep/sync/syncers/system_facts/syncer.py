@@ -73,13 +73,19 @@ class SystemFactsSyncer(BaseTaskSyncer):
 
     :cvar SYNC_TO_LIMIT: The highest entity type synchronized. Set to
         ``SyncInventoryEntityTypeEnum.SERVICE`` (no schema/table recursion).
-    :vartype SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum]
+    :cvar mirrors_entity_levels: Empty, stated rather than inherited. This syncer
+        walks nodes and services but writes a separate observation resource
+        instead of their own fields, so refreshing either level's freshness would
+        report a confirmation it never made — and would mask a failing PMM mirror
+        of the same row.
     :cvar EOL_ENGINE_TYPES: Service types whose engine version is collected.
-    :vartype EOL_ENGINE_TYPES: ClassVar[frozenset[ServiceTypeEnum]]
     """
 
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
+    )
+    mirrors_entity_levels: ClassVar[frozenset[SyncInventoryEntityTypeEnum]] = (
+        frozenset()
     )
     EOL_ENGINE_TYPES: ClassVar[frozenset[ServiceTypeEnum]] = frozenset(
         {

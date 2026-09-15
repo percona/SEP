@@ -29,6 +29,11 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
+    "SettingProvenance",
+    "annotated_type",
+    "annotation_contains_credential_url",
+    "annotation_contains_secret",
+    "annotation_is_credential_url",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -52,7 +57,7 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "override_keys_for_rows",
+    "override_provenance_for_rows",
     "override_rows_for_key",
     "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
@@ -83,6 +88,7 @@ from app.core.settings_override.policy import (
     is_restriction_active,
 )
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.fields import (
     _credential_url_serializer,
     preserve_credential_url_password,
@@ -94,6 +100,8 @@ from app.core.utils.pydantic import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pydantic.fields import FieldInfo
     from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -470,21 +478,28 @@ def hot_field_names(settings_cls: type[BaseYamlSettings]) -> frozenset[str]:
     )
 
 
-def _annotated_type(field_info: FieldInfo) -> Any:
+def annotated_type(field_info: FieldInfo) -> Any:
     """Reassemble the constraint-preserving annotated type for a field.
 
     Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
     ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
     ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
     in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
-    would accept values the original settings model rejects -- e.g. a negative
+    would accept values the original settings model rejects — e.g. a negative
     integer override for a ``PositiveInt`` field would silently load.
 
+    Public for a second reason, and it is the load-bearing one for the at-rest
+    walker in :mod:`app.core.settings_override.secret_storage`: Pydantic hoists
+    a non-``Optional`` field's ``Annotated`` metadata onto ``FieldInfo``, so
+    ``field_info.annotation`` alone is a bare type carrying none of the markers
+    that decide how a leaf is stored. A field typed
+    :data:`~app.core.utils.fields.CredentialHttpUrl` presents as a bare
+    :class:`pydantic_core.Url`, and a classifier reading ``.annotation``
+    silently misses it. A second re-assembly there would drift from this one.
+
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :return: The field's annotation, wrapped in ``Annotated`` together with its
         preserved constraint metadata when any constraints are present.
-    :rtype: Any
     """
     constraints = tuple(
         item
@@ -492,7 +507,9 @@ def _annotated_type(field_info: FieldInfo) -> Any:
         if not isinstance(item, CustomFieldMetadata)
     )
     if constraints:
-        return Annotated[(field_info.annotation, *constraints)]
+        return Annotated[
+            (field_info.annotation, *constraints)  # ty: ignore[invalid-type-form]
+        ]
     return field_info.annotation
 
 
@@ -509,7 +526,7 @@ def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
     :raises ValidationError: If ``raw`` cannot be coerced to the declared
         type or violates a preserved constraint. Callers handle and log.
     """
-    return TypeAdapter(_annotated_type(field_info)).validate_python(raw)
+    return TypeAdapter(annotated_type(field_info)).validate_python(raw)
 
 
 def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
@@ -518,15 +535,12 @@ def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
     Mirrors the validation that :func:`app.core.settings_override.cache.build_snapshot`
     performs when materialising a DB-override row into a typed Python value,
     including preservation of constraint metadata (``PositiveInt`` etc.) via
-    the ``_annotated_type`` reassembly.
+    the ``annotated_type`` reassembly.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded value to validate and coerce.
-    :type raw: Any
     :return: The validated Python value matching the field's annotation plus
         its preserved constraint metadata.
-    :rtype: Any
     :raises ValidationError: If ``raw`` cannot be coerced or violates a
         preserved constraint. Callers in the API layer map this to HTTP 422.
     """
@@ -1106,38 +1120,90 @@ def canonical_override_key(settings_cls: type[BaseModel], key: str) -> str:
     return "__".join(chain)
 
 
-def override_keys_for_rows(
+class SettingProvenance(NamedTuple):
+    """Carry the last-written stamp reported for one overridden key.
+
+    :param updated_at: When the contributing row was last written, falling back
+        to its creation time for a row that predates explicit stamping. Stamps
+        carry second granularity.
+    :param updated_by: The username that last wrote the contributing row, or
+        ``None`` for a row written before the actor column existed.
+    """
+
+    updated_at: datetime
+    updated_by: str | None
+
+
+def _provenance_keys_for_row(
+    settings_cls: type[BaseModel],
+    row: SettingOverride,
+) -> Iterator[str]:
+    """Yield every key one override row reports an override for.
+
+    The row's own stored ``key`` always counts, which keeps the report correct
+    when a row was stored under a non-canonical casing. A ``__``-delimited row
+    additionally contributes every canonical prefix of its resolved chain: the
+    top-level parent, each intermediate sub-model path, and the canonical leaf
+    key. A promoted parent therefore reports an override when only deeper nested
+    rows exist.
+
+    :param settings_cls: The Pydantic settings class the row belongs to.
+    :param row: One active override row.
+    :return: The stored key followed by each canonical prefix of its chain.
+    """
+    yield row.key
+    if "__" not in row.key:
+        return
+    resolved = resolve_nested_field(settings_cls, row.key)
+    if resolved is None:
+        return
+    chain, _ = resolved
+    for i in range(1, len(chain) + 1):
+        yield "__".join(chain[:i])
+
+
+def override_provenance_for_rows(
     settings_cls: type[BaseModel],
     rows: list[SettingOverride],
-) -> set[str]:
-    """Return the set of keys (and canonical prefixes) with active overrides.
+) -> dict[str, SettingProvenance]:
+    """Return the last-written stamp for every key with an active override.
 
-    Each row's own ``key`` is included; additionally, every ``__``-delimited row
-    contributes every canonical prefix of its resolved chain -- the top-level
-    parent, each intermediate sub-model path, and the canonical leaf key. This
-    lets a ``field_meta.key in override_keys`` lookup report ``has_override=True``
-    for a promoted parent or an intermediate sub-model when only deeper nested
-    rows exist, and keeps the flag correct when a row was stored under a
-    non-canonical casing.
+    The mapping's key set is exactly the set of keys carrying an override, so a
+    caller derives ``has_override`` as ``key in mapping`` and the flag cannot
+    drift from the stamps beside it. :func:`_provenance_keys_for_row` decides
+    which keys each row contributes.
+
+    When several rows contribute to one key, which is the ordinary case for a
+    nested parent, the row with the latest stamp wins, breaking ties on the
+    higher ``id``. Ties are the common case rather than a corner: ``utc_now``
+    zeroes microseconds and one PATCH batch stamps every key it writes with a
+    single shared timestamp.
+
+    ``id`` is creation order, not write order, so the tie-break orders rows the
+    same batch wrote but cannot order two separate writes that land in the same
+    second: there the reported pair comes from whichever contributing row was
+    created later, which need not be the one written later. Second-granularity
+    stamps make that distinction unrecoverable rather than merely unqueried, so
+    the tie-break buys determinism, not accuracy.
 
     :param settings_cls: The Pydantic settings class the rows belong to.
-    :type settings_cls: type[BaseModel]
     :param rows: The active override rows for the class.
-    :type rows: list[SettingOverride]
-    :return: The set of keys and canonical prefixes carrying an override.
-    :rtype: set[str]
+    :return: One :class:`SettingProvenance` per key carrying an override.
     """
-    keys = {row.key for row in rows}
+    ranked: dict[str, tuple[tuple[datetime, int], SettingOverride]] = {}
     for row in rows:
-        if "__" not in row.key:
-            continue
-        resolved = resolve_nested_field(settings_cls, row.key)
-        if resolved is None:
-            continue
-        chain, _ = resolved
-        for i in range(1, len(chain) + 1):
-            keys.add("__".join(chain[:i]))
-    return keys
+        # SQLModel skips validation on a ``table=True`` model, so a stamp loaded
+        # from the database bypasses the ``UTCDatetime`` normalizer and can
+        # arrive naive, which would not compare against an aware sibling.
+        rank = (make_datetime_utc(row.updated_at or row.created_at), row.id or 0)
+        for key in _provenance_keys_for_row(settings_cls, row):
+            current = ranked.get(key)
+            if current is None or rank > current[0]:
+                ranked[key] = (rank, row)
+    return {
+        key: SettingProvenance(updated_at=rank[0], updated_by=row.updated_by)
+        for key, (rank, row) in ranked.items()
+    }
 
 
 def _stored_key_matches_override_key(
@@ -1148,10 +1214,9 @@ def _stored_key_matches_override_key(
     """Return whether a stored override key resolves to the same field as ``key``.
 
     Nested keys go through :func:`canonical_override_key`. Top-level keys also
-    match case-insensitively: the previous SQL ``WHERE key = ...`` lookup
-    inherited MySQL's ``utf8mb4_0900_ai_ci`` collation, so moving the filter
-    into Python must not drop a mixed-case top-level row that DELETE/PATCH
-    used to find. Snapshot application still ignores unknown casing via
+    match case-insensitively so mixed-case stored keys remain visible to
+    DELETE/PATCH after the filter moved into Python. Snapshot application still
+    ignores unknown casing via
     :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
     removes those inert rows, and PATCH heals their stored key to the
     canonical spelling so the next snapshot can read them.
@@ -1182,7 +1247,7 @@ async def override_rows_for_key(
     non-canonically-cased nested or top-level row visible to DELETE and PATCH,
     which previously matched the stored column with dialect-dependent SQL
     equality and, after the filter moved into Python, missed mixed-case
-    top-level rows on MySQL.
+    top-level rows.
 
     Inactive rows are included: both write paths currently match on
     ``(setting_class, key)`` alone, so an inactive row stays deletable and
@@ -1274,10 +1339,30 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
     subclasses of a polymorphic base remain reachable (limited to subclasses
     already imported when this runs).
 
+    A model's fields are queued through :func:`annotated_type` rather than as
+    bare ``.annotation`` values, because Pydantic hoists a non-``Optional``
+    field's ``Annotated`` metadata onto ``FieldInfo``. Descending on the bare
+    annotation drops every marker one level down, which is invisible to a
+    predicate keyed on a type and fatal to one keyed on metadata.
+
+    Queueing those aliases is also why ``keep_alive`` exists. The cycle guard
+    keys on :func:`id`, which only identifies an object for as long as that
+    object lives, and :func:`annotated_type` returns a value ``Annotated``
+    built on demand rather than an attribute of anything. ``typing`` memoises
+    that construction in a 128-entry LRU whose overflow is evicted, and skips
+    it altogether for metadata that does not hash, so a walk wide enough to
+    pass either limit frees an alias whose address a later one can reuse — and
+    a recycled address already in ``seen`` would silently prune a subtree the
+    walk never looked at. Holding every visited object for the duration keeps
+    the addresses distinct. The leaves this guards reach the at-rest
+    encryption predicates, where a pruned subtree means a credential stored in
+    the clear, so the walk must not depend on when a cache evicts.
+
     :param annotation: The type annotation to walk.
     :return: An iterator over the referenced type arguments.
     """
     seen = set()
+    keep_alive: list[Any] = []
     stack = [annotation]
     while stack:
         current = stack.pop()
@@ -1287,13 +1372,16 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         if ident in seen:
             continue
         seen.add(ident)
+        keep_alive.append(current)
         yield current
         origin = typing.get_origin(current)
-        if origin in {Union, UnionType} or origin is not None:
+        if origin is not None:
             stack.extend(typing.get_args(current))
             continue
         if isinstance(current, type) and issubclass(current, BaseModel):
-            stack.extend(nested.annotation for nested in current.model_fields.values())
+            stack.extend(
+                annotated_type(nested) for nested in current.model_fields.values()
+            )
             stack.extend(current.__subclasses__())
 
 
@@ -1303,21 +1391,34 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
 SECRET_STR_MASK = "**********"  # noqa: S105 # nosec B105
 
 
+def annotation_contains_secret(annotation: Any) -> bool:
+    """Return whether a Pydantic secret type is reachable from ``annotation``.
+
+    Walks the annotation recursively (nested models and imported concrete
+    subclasses of polymorphic bases), looking for
+    :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
+
+    Public because the at-rest walker in
+    :mod:`app.core.settings_override.secret_storage` decides which leaves to
+    encrypt with this exact rule, and a second copy of it there would let the
+    two drift into disagreeing about which fields are credentials.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a secret type is reachable from the annotation.
+    """
+    return any(
+        isinstance(arg, type) and issubclass(arg, SecretStr | SecretBytes)
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
 def _field_contains_secret(field_info: FieldInfo) -> bool:
     """Return whether ``field_info`` exposes a Pydantic secret anywhere in its annotation.
-
-    Walks the annotation recursively via :func:`_iter_type_arguments`
-    (nested models and imported concrete subclasses of polymorphic bases),
-    looking for :class:`pydantic.SecretStr` or :class:`pydantic.SecretBytes`.
 
     :param field_info: The Pydantic field metadata for the target attribute.
     :return: ``True`` when a secret type is reachable from the annotation.
     """
-    secret_types = (SecretStr, SecretBytes)
-    for arg in _iter_type_arguments(field_info.annotation):
-        if isinstance(arg, type) and issubclass(arg, secret_types):
-            return True
-    return False
+    return annotation_contains_secret(field_info.annotation)
 
 
 def _unwrap_secret_value(current: Any) -> str | bytes | None:
@@ -1366,25 +1467,79 @@ def unwrap_secrets_for_storage(value: Any) -> Any:
 
 
 def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:
-    """Return whether ``metadata`` carries the credential URL JSON serializer."""
+    """Return whether ``metadata`` carries the credential URL JSON serializer.
+
+    :param metadata: The ``__metadata__`` tuple of an ``Annotated`` type.
+    :return: ``True`` when the credential-URL serializer is among the markers.
+    """
     return any(
         isinstance(item, WrapSerializer) and item.func is _credential_url_serializer
         for item in metadata
     )
 
 
-def is_credential_url_field(field_info: FieldInfo) -> bool:
-    """Return whether ``field_info`` serializes as a credential-bearing URL."""
-    if _metadata_has_credential_url_serializer(field_info.metadata):
-        return True
-    for arg in _iter_type_arguments(field_info.annotation):
-        if _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ())):
+def annotation_contains_credential_url(annotation: Any) -> bool:
+    """Return whether a credential-bearing URL is reachable from ``annotation``.
+
+    The subtree question, and the counterpart of
+    :func:`annotation_contains_secret`: it descends nested models and imported
+    subclasses looking for the credential-URL marker anywhere below. Use
+    :func:`annotation_is_credential_url` for "is the value *at this position*
+    one", which is what a leaf transform needs.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when the marker is reachable from the annotation.
+    """
+    return any(
+        _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ()))
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
+def annotation_is_credential_url(annotation: Any) -> bool:
+    """Return whether the value at this JSON position is itself a credential URL.
+
+    Flattens unions and optionals but deliberately **not** ``Annotated``: the
+    marker lives in ``__metadata__``, so stripping the wrapper first — which
+    ``secret_storage._positional_args`` does — discards the very thing being
+    tested.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a value at this position is a credential-bearing URL.
+    """
+    stack = [annotation]
+    while stack:
+        current = stack.pop()
+        if current is None or current is type(None):
+            continue
+        if _metadata_has_credential_url_serializer(
+            getattr(current, "__metadata__", ())
+        ):
             return True
+        if hasattr(current, "__metadata__"):
+            stack.append(typing.get_args(current)[0])
+            continue
+        if typing.get_origin(current) in {Union, UnionType}:
+            stack.extend(typing.get_args(current))
     return False
 
 
+def is_credential_url_field(field_info: FieldInfo) -> bool:
+    """Return whether ``field_info``'s subtree carries a credential-bearing URL.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :return: ``True`` when the marker is reachable from the field's annotation.
+    """
+    return annotation_contains_credential_url(annotated_type(field_info))
+
+
 def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
-    """Read ``name`` from a live model or a materializer fingerprint mapping."""
+    """Read ``name`` from a live model or a materializer fingerprint mapping.
+
+    :param current: The stored value, a model instance or a mapping.
+    :param name: The field name to read.
+    :return: The attribute or mapping entry, or ``None`` when either is absent.
+    """
     if current is None:
         return None
     if isinstance(current, Mapping):
@@ -1397,13 +1552,25 @@ def preserve_credential_urls_in_model_payload(
     current: Any,
     incoming: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Restore masked URL passwords inside a materializer PATCH payload."""
+    """Restore masked URL passwords inside a materializer PATCH payload.
+
+    Each child is classified with the **position** predicate rather than the
+    subtree one :func:`is_credential_url_field` asks. A model-typed child whose
+    own leaf is a credential URL answers the subtree question ``True``, would
+    take the scalar branch below, fail its ``isinstance(result[name], str)``
+    guard and ``continue`` — skipping the nested recursion that child needs.
+
+    :param model_cls: The model whose fields ``incoming`` is keyed by.
+    :param current: The effective stored value to restore passwords from.
+    :param incoming: The payload submitted in the PATCH body.
+    :return: ``incoming`` with any masked URL passwords restored.
+    """
     result = dict(incoming)
     for name, field_info in model_cls.model_fields.items():
         if name not in result:
             continue
         leaf_current = _read_mapping_or_model_attr(current, name)
-        if is_credential_url_field(field_info):
+        if annotation_is_credential_url(annotated_type(field_info)):
             if isinstance(result[name], str) and leaf_current is not None:
                 result[name] = preserve_credential_url_password(
                     str(leaf_current), result[name]
@@ -2081,19 +2248,16 @@ def iter_nested_leaf_keys(
     ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
     single leaf (their items are not expanded). Segments are the canonical
     attribute names from ``model_fields``, so each yielded key matches the form
-    :func:`resolve_nested_field` and :func:`override_keys_for_rows` produce, and
-    ``"__".join(chain) == key`` holds by construction.
+    :func:`resolve_nested_field` and :func:`override_provenance_for_rows`
+    produce, and ``"__".join(chain) == key`` holds by construction.
 
     Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
     submodel (e.g. a scalar HOT field), letting the caller fall back to a single
     top-level entry.
 
     :param settings_cls: The settings class declaring ``parent_field_name``.
-    :type settings_cls: type[BaseModel]
     :param parent_field_name: The top-level field whose leaves to enumerate.
-    :type parent_field_name: str
-    :yield: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
-    :rtype: Iterator[tuple[str, tuple[str, ...]]]
+    :return: A ``(canonical_key, segment_chain)`` pair for one nested leaf.
     """
     parent_info = settings_cls.model_fields.get(parent_field_name)
     if parent_info is None:
@@ -2163,15 +2327,13 @@ def _resolve_default(field_info: FieldInfo) -> Any:
     Pydantic sets ``field_info.default`` to :data:`PydanticUndefined` when a
     field is declared with ``Field(default_factory=...)``. Returning that
     sentinel through the metadata layer makes ``dump_field_value`` emit
-    ``None`` -- misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
+    ``None`` — misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
     real default is the factory's return value (e.g. ``[]``). Invoke the
     factory eagerly so the API surfaces the actual default.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :return: The resolved default value, or :data:`PydanticUndefined` when
         neither ``default`` nor ``default_factory`` is declared.
-    :rtype: Any
     """
     if field_info.default is not PydanticUndefined:
         return field_info.default
@@ -2184,7 +2346,7 @@ def _resolve_default(field_info: FieldInfo) -> Any:
 def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     """Return a JSON-safe representation of ``value`` for the response model.
 
-    Delegates to ``TypeAdapter(_annotated_type(field_info)).dump_python(value, mode='json')``
+    Delegates to ``TypeAdapter(annotated_type(field_info)).dump_python(value, mode='json')``
     so nested Pydantic models, enums, timedeltas, URLs and paths all serialise
     to their canonical JSON shape, including field metadata such as credential-URL
     serializers and constraint annotations. :class:`pydantic.SecretStr` /
@@ -2204,13 +2366,10 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     and know it cannot be edited via the API.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param value: The Python value to serialise.
-    :type value: Any
     :return: A JSON-serialisable representation of ``value``, or ``None`` when
         ``value`` is :data:`pydantic_core.PydanticUndefined` (the field has no
         declared default).
-    :rtype: Any
     """
     if value is PydanticUndefined:
         return None
@@ -2223,6 +2382,6 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
                 TypeAdapter(type(item)).dump_python(item, mode="json")
                 for item in sorted(value, key=_stable_collection_sort_key)
             ]
-        return TypeAdapter(_annotated_type(field_info)).dump_python(value, mode="json")
+        return TypeAdapter(annotated_type(field_info)).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
         return None

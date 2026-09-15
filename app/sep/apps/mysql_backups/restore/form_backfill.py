@@ -27,13 +27,21 @@ from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
-from app.sep.apps.mysql_backups.restore.models import OWNER, RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import (
+    normalize_source_declaration,
+    OWNER,
+    RestoreCreate,
+)
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
-__all__ = ["FORM_BACKFILL_ENTRY", "reconstruct_mysql_restores_form"]
+__all__ = [
+    "FORM_BACKFILL_ENTRY",
+    "reconstruct_mysql_restores_form",
+    "repair_mysql_restores_stamp",
+]
 
 _RESTORE_FORM_FIELDS = frozenset(RestoreCreate.model_fields)
 _EXPLICIT_FORM_KEYS = frozenset(
@@ -172,7 +180,40 @@ def reconstruct_mysql_restores_form(
         body["service_id"] = service_id
     if schema_id is not None:
         body["schema_id"] = schema_id
-    return body
+    return normalize_source_declaration(body)
+
+
+def repair_mysql_restores_stamp(
+    stored_form: dict[str, Any],
+    _task: Task,
+    _ctx: FormBackfillContext,
+) -> dict[str, Any] | None:
+    """Declare the source controls on a stamp written before they existed.
+
+    The stamp is a full model dump, so one predating the controls carries the
+    ``percona`` / ``22`` / ``s3cmd`` defaults the gates now reject. Running the
+    shared normalizer declares the source and drops those values together, which
+    is what makes the returned body valid on its own terms: a body that named a
+    transport while still carrying values that transport forbids would fail
+    validation, and the orchestrator records that as ``skipped_invalid`` rather
+    than surfacing it.
+
+    What this adds over the re-validation the orchestrator performs anyway is the
+    decision of whether a repair is owed at all; the normalizer call keeps the
+    returned dict correct without relying on that downstream pass.
+
+    Neither the task row nor the backfill context is read: the stamp carries every
+    field the inference needs.
+
+    :param stored_form: A copy of the task's existing ``data['_form']``.
+    :param _task: The stamped task row.
+    :param _ctx: Shared backfill context.
+    :return: The repaired form, or ``None`` when the stamp already declares a source.
+    """
+    if stored_form.get("source_transport") is not None:
+        return None
+
+    return normalize_source_declaration(stored_form)
 
 
 FORM_BACKFILL_ENTRY = FormBackfillEntry(
@@ -180,4 +221,5 @@ FORM_BACKFILL_ENTRY = FormBackfillEntry(
     owner=OWNER,
     create_model=RestoreCreate,
     reconstructor=reconstruct_mysql_restores_form,
+    stamp_repairer=repair_mysql_restores_stamp,
 )

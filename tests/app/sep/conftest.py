@@ -44,6 +44,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.sep.config import App, sep_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.conftest import (  # noqa: F401
     api_admin_client_no_bearer,
     async_test_client,
@@ -56,9 +57,6 @@ from tests.app.conftest import (  # noqa: F401
     test_client,
     unauthenticated_client,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 
 REDUCED_ACTIVATION = [
     App(module_name=name) for name in ("inventory", "atw", "mysql_backups")

@@ -16,8 +16,10 @@
 """Tests for the ``AppRegistry`` and its builders in ``registry.py``."""
 
 import importlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from dataclasses import replace
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -28,11 +30,13 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.celery.config import STATIC_CELERY_INCLUDE
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.utils import json_serializer
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.atw.schema import atw_schema
+from app.sep.apps.backup_mongo.restore.models import OWNER as RESTORE_MONGO_OWNER
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import (
@@ -46,20 +50,24 @@ from app.sep.apps.framework.registry import (
     get_app_registry,
     resolve_app_settings_metadata,
 )
-from app.sep.apps.inventory.schema import inventory_schema
+from app.sep.apps.framework.schema import Capabilities
+from app.sep.apps.mysql_backups.forms import OWNER as BACKUPS_OWNER
 from app.sep.apps.mysql_backups.inventory_references import (
     referenced_inventory_entities,
 )
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
 from app.sep.models import AppLifecycleEnum, AppState
+from app.tasks.models import ANY_OWNER
 from tests.app.db_schema import apply_schema
+from tests.app.sep.apps.framework.kit import synth_app, synth_app_kwargs
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry_cache() -> None:
+def _clear_registry_cache() -> Iterator[None]:
     """Reset the cached registry so each test rebuilds from its own input."""
     get_app_registry.cache_clear()
     yield
@@ -549,16 +557,12 @@ class TestBespokeBaseAppDefinitions:
         app = get_app_registry().get(plugin)
         assert app.api_router is api_routes.router
 
-    def test_inventory_definition_carries_schema(self) -> None:
-        """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
-        assert get_app_registry().get("inventory").app_schema is inventory_schema
-
     def test_tasks_definition_carries_schema(self) -> None:
         """Carry ``TASKS_PLUGIN_SCHEMA`` on the tasks definition's ``app_schema``."""
         assert get_app_registry().get("tasks").app_schema is TASKS_PLUGIN_SCHEMA
 
     @pytest.mark.parametrize(
-        "plugin", ["alert_troubleshooting", "alerts", "dipper", "report"]
+        "plugin", ["alert_troubleshooting", "alerts", "dipper", "inventory", "report"]
     )
     def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
         """Register the schemaless bespoke definitions without an ``app_schema``."""
@@ -625,6 +629,38 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
         await engine.dispose()
 
 
+def _checksums_declaring(mocker: MockerFixture, declared: Any) -> None:
+    """Make the ``checksums`` app declare ``declared`` on its second import.
+
+    ``collect_app_owned_settings_classes`` imports each activated module twice:
+    once through ``build_app_registry`` and once to read the declaration. The
+    first import must return the real package so the app resolves and registers
+    its key; only the second is swapped for a stub carrying ``declared``.
+
+    :param mocker: The ``pytest-mock`` fixture used to patch the import.
+    :param declared: The value the stub exposes as
+        ``APP_OWNED_SETTINGS_CLASSES``: a list of entries, or a malformed
+        value when the test drives a rejection path.
+    """
+    fake_module = mocker.MagicMock()
+    fake_module.APP_OWNED_SETTINGS_CLASSES = declared
+    real_checksums = importlib.import_module("app.sep.apps.checksums")
+    import_calls = {"count": 0}
+
+    def import_side_effect(name: str):
+        if name == "app.sep.apps.checksums":
+            import_calls["count"] += 1
+            if import_calls["count"] == 1:
+                return real_checksums
+            return fake_module
+        return importlib.import_module(name)
+
+    mocker.patch(
+        "app.sep.apps.framework.registry.import_module",
+        side_effect=import_side_effect,
+    )
+
+
 class TestCollectAppOwnedSettingsClasses:
     """Tests for ``collect_app_owned_settings_classes``."""
 
@@ -637,6 +673,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.app_key == "alerts"
         assert entry.settings_cls is AlertsSettings
         assert entry.proxy is alerts_settings
+        assert entry.reseed_keys == frozenset({"BACKUP_INTERVAL"})
 
     def test_collects_report_declaration(self) -> None:
         """Return the report app's own ``HealthReportSettings`` entry."""
@@ -647,6 +684,7 @@ class TestCollectAppOwnedSettingsClasses:
         assert entry.app_key == "report"
         assert entry.settings_cls is HealthReportSettings
         assert entry.proxy is health_report_settings
+        assert entry.reseed_keys == frozenset()
 
     def test_reduced_activation_declares_no_alerts_entry(self) -> None:
         """Return no alerts entry under the PMM-embedded activation list."""
@@ -676,23 +714,7 @@ class TestCollectAppOwnedSettingsClasses:
             proxy=alerts_settings,
             app_key="checksums",
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [dup_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [dup_entry])
         with pytest.raises(ValueError, match="more than one app-owned"):
             collect_app_owned_settings_classes(
                 [App(module_name="alerts"), App(module_name="checksums")],
@@ -706,74 +728,77 @@ class TestCollectAppOwnedSettingsClasses:
             proxy=alerts_settings,
             app_key="ghost",
         )
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, [fake_entry])
         with pytest.raises(ValueError, match="unknown app key 'ghost'"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
     def test_rejects_non_list_declaration(self, mocker: MockerFixture) -> None:
         """Fail when ``APP_OWNED_SETTINGS_CLASSES`` is not a list."""
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = "not-a-list"
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, "not-a-list")
         with pytest.raises(TypeError, match="must be a list"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
 
     def test_rejects_non_entry_list_items(self, mocker: MockerFixture) -> None:
         """Fail when list items are not ``AppOwnedClassEntry`` instances."""
-        fake_module = mocker.MagicMock()
-        fake_module.APP_OWNED_SETTINGS_CLASSES = ["not-an-entry"]
-        real_checksums = importlib.import_module("app.sep.apps.checksums")
-        import_calls = {"count": 0}
-
-        def import_side_effect(name: str):
-            if name == "app.sep.apps.checksums":
-                import_calls["count"] += 1
-                if import_calls["count"] == 1:
-                    return real_checksums
-                return fake_module
-            return importlib.import_module(name)
-
-        mocker.patch(
-            "app.sep.apps.framework.registry.import_module",
-            side_effect=import_side_effect,
-        )
+        _checksums_declaring(mocker, ["not-an-entry"])
         with pytest.raises(TypeError, match="AppOwnedClassEntry"):
             collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_unknown_reseed_key(self, mocker: MockerFixture) -> None:
+        """Fail when ``reseed_keys`` names a field absent from ``settings_cls``.
+
+        A typo'd or renamed field must fail collection rather than silently
+        registering a beat-reseed callback that can never fire.
+        """
+        fake_entry = AppOwnedClassEntry(
+            setting_class=AlertsSettings.__name__,
+            settings_cls=AlertsSettings,
+            proxy=alerts_settings,
+            app_key="checksums",
+            reseed_keys=frozenset({"BACKUP_INTERVL"}),
+        )
+        _checksums_declaring(mocker, [fake_entry])
+        with pytest.raises(ValueError, match="not a hot-reloadable field"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_non_hot_reseed_key(self, mocker: MockerFixture) -> None:
+        """Fail when ``reseed_keys`` names a real field that is not marked HOT.
+
+        ``cleanup_interval`` exists on ``HealthReportSettings`` but carries no
+        HOT marker, pinning the HOT half of the check separately from the
+        field-existence half covered by ``test_rejects_unknown_reseed_key``.
+        """
+        fake_entry = AppOwnedClassEntry(
+            setting_class=HealthReportSettings.__name__,
+            settings_cls=HealthReportSettings,
+            proxy=health_report_settings,
+            app_key="checksums",
+            reseed_keys=frozenset({"cleanup_interval"}),
+        )
+        _checksums_declaring(mocker, [fake_entry])
+        with pytest.raises(ValueError, match="not a hot-reloadable field"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_accepts_reseed_key_withheld_by_the_allowlist(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Accept a ``reseed_keys`` entry the runtime allowlist would withhold.
+
+        Collection-time validation reads the static declaration only
+        (``include_policy_gate=False``): a deployment that narrows
+        ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` so it no longer names
+        ``AlertsSettings.BACKUP_INTERVAL`` must not fail startup.
+        """
+        mocker.patch.object(
+            settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", {"SEPSettings.APP_DRAIN"}
+        )
+        entries = collect_app_owned_settings_classes([App(module_name="alerts")])
+        assert entries[0].reseed_keys == frozenset({"BACKUP_INTERVAL"})
 
 
 @pytest.mark.asyncio
 class TestResolveAppSettingsMetadata:
-    """Tests for ``resolve_app_settings_metadata``."""
+    """Test ``resolve_app_settings_metadata``."""
 
     async def test_returns_alerts_identity(
         self, override_session: AsyncSession
@@ -1360,3 +1385,68 @@ class TestCollectInventoryReferenceProviders:
 
         with pytest.raises(TypeError, match="must be callable"):
             collect_inventory_reference_providers([App(module_name="mysql_backups")])
+
+
+def _task_app_offering(owner: str, key: str, *, scheduling: bool) -> TaskExecutionApp:
+    """Build a synthetic task app under ``owner`` with the given scheduling flag.
+
+    :param owner: The ``Task.owner`` the app claims.
+    :param key: The registry key, unique within the registry under test.
+    :param scheduling: Whether the app's served schema declares ``scheduling``.
+    :return: The synthetic definition.
+    """
+    return synth_app(
+        key=key,
+        owner=owner,
+        views=replace(
+            synth_app_kwargs()["views"],
+            capabilities=Capabilities(scheduling=scheduling),
+        ),
+    )
+
+
+class TestSchedulingOwners:
+    """Cover the owner-level scheduling predicate and the sweep's owner set."""
+
+    def test_an_owner_whose_app_offers_scheduling(self) -> None:
+        """Allow an owner every registered task app carrying it offers scheduling for."""
+        assert get_app_registry().owner_offers_scheduling(BACKUPS_OWNER) is True
+
+    @pytest.mark.parametrize(
+        "owner",
+        [RESTORES_OWNER, RESTORE_MONGO_OWNER, ANY_OWNER, "NOT_A_REGISTERED_OWNER"],
+    )
+    def test_refused_owners(self, owner: str) -> None:
+        """Refuse a restore owner, ``ANY_OWNER``, and an owner no app carries."""
+        assert get_app_registry().owner_offers_scheduling(owner) is False
+
+    def test_unschedulable_task_owners(self) -> None:
+        """Report exactly the restore owners as the set the startup sweep covers."""
+        assert get_app_registry().unschedulable_task_owners() == frozenset(
+            {RESTORES_OWNER, RESTORE_MONGO_OWNER}
+        )
+
+    def test_a_shared_owner_needs_every_app_to_offer_scheduling(self) -> None:
+        """Refuse an owner two apps share when one of them withholds scheduling."""
+        registry = AppRegistry(
+            [
+                _task_app_offering("SHARED", "shared-yes", scheduling=True),
+                _task_app_offering("SHARED", "shared-no", scheduling=False),
+            ]
+        )
+
+        assert registry.owner_offers_scheduling("SHARED") is False
+        assert "SHARED" in registry.unschedulable_task_owners()
+
+    def test_any_owner_is_refused_and_never_swept(self) -> None:
+        """Refuse ``ANY_OWNER`` even when its app advertises scheduling, and skip it.
+
+        An app declaring ``ANY_OWNER`` does not speak for the unclaimed tasks that
+        default to it, so its schedules are neither permitted nor switched off.
+        """
+        registry = AppRegistry(
+            [_task_app_offering(ANY_OWNER, "any-owner-app", scheduling=True)]
+        )
+
+        assert registry.owner_offers_scheduling(ANY_OWNER) is False
+        assert registry.unschedulable_task_owners() == frozenset()

@@ -31,6 +31,7 @@ from app.inventory.crud import (
 from app.inventory.models import Node, Service
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
+    NodeWriteFactory,
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
 )
@@ -103,6 +104,69 @@ async def test_service_observation_create_roundtrip(
     assert fetched.service_id == service.id
     assert fetched.db_engine_version == write.db_engine_version
     _assert_observed_at_equal(fetched.observed_at, write.observed_at)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_host_observation_postgres_timestamp_roundtrip(
+    postgres_session: AsyncSession,
+) -> None:
+    """Assert host observation timestamps round-trip on PostgreSQL for create and update."""
+    node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    created = await HostSystemObservationManager.create(
+        postgres_session,
+        HostSystemObservationWriteFactory.build(observed_at=created_at),
+        node_id=node.id,
+    )
+    fetched = await HostSystemObservationManager.get(postgres_session, id=created.id)
+    assert fetched is not None
+    _assert_observed_at_equal(fetched.observed_at, created_at)
+
+    updated_at = datetime(2026, 6, 2, 15, 30, tzinfo=UTC)
+    updated = await HostSystemObservationManager.update(
+        postgres_session,
+        fetched,
+        HostSystemObservationWriteFactory.build(observed_at=updated_at),
+        node_id=node.id,
+    )
+    refreshed = await HostSystemObservationManager.get(postgres_session, id=updated.id)
+    assert refreshed is not None
+    _assert_observed_at_equal(refreshed.observed_at, updated_at)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_service_observation_postgres_timestamp_roundtrip(
+    postgres_session: AsyncSession,
+) -> None:
+    """Assert service observation timestamps round-trip on PostgreSQL for create and update."""
+    node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
+    service = await ServiceManager.create(
+        postgres_session, ServiceWriteFactory.build(), node_id=node.id
+    )
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    created = await ServiceSystemObservationManager.create(
+        postgres_session,
+        ServiceSystemObservationWriteFactory.build(observed_at=created_at),
+        service_id=service.id,
+    )
+    fetched = await ServiceSystemObservationManager.get(postgres_session, id=created.id)
+    assert fetched is not None
+    _assert_observed_at_equal(fetched.observed_at, created_at)
+
+    updated_at = datetime(2026, 6, 2, 15, 30, tzinfo=UTC)
+    updated = await ServiceSystemObservationManager.update(
+        postgres_session,
+        fetched,
+        ServiceSystemObservationWriteFactory.build(observed_at=updated_at),
+        service_id=service.id,
+    )
+    refreshed = await ServiceSystemObservationManager.get(
+        postgres_session, id=updated.id
+    )
+    assert refreshed is not None
+    _assert_observed_at_equal(refreshed.observed_at, updated_at)
 
 
 @pytest.mark.asyncio

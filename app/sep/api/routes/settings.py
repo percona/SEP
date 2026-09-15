@@ -44,7 +44,13 @@ from app.sep.apps.framework.registry import (
     resolve_app_settings_metadata,
 )
 from app.sep.config import sep_settings, SEPSettings
-from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, TaskAPI
+from app.sep.deps import (
+    ApiAdminUsername,
+    IsApiAdmin,
+    RequireBearerForUnsafeMethods,
+    SessionDep,
+    TaskAPI,
+)
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 # TasksSettings is owned by the Tasks sub-app, so SEP proxies it server-side
@@ -84,6 +90,7 @@ router = build_settings_router(
     classes=SEP_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsApiAdmin,
+    actor_dep=ApiAdminUsername,
     mutation_deps=[RequireBearerForUnsafeMethods],
     remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
     remote_api_dep=TaskAPI,

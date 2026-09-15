@@ -23,6 +23,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
@@ -91,6 +92,7 @@ def build_backup_write_body(
         "hostname": hostname,
         "service_id": service_id,
         "backup_type": backup_type.value,
+        "backup_dir": "/backups",
         "upload": ["S3"],
         "s3_bucket": "bkt",
     }
@@ -125,6 +127,34 @@ class TestSchemaEndpoint:
             "scheduling": True,
             "stats": False,
             "pii_anonymization": False,
+        }
+
+    def test_schema_publishes_the_task_status_vocabulary(self, test_client):
+        """Declare every status value and whether it ends a run."""
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
+        assert body["task_statuses"] == [
+            {
+                "value": status_value.value,
+                "terminal": status_value.is_terminal(),
+                "output_available": status_value.is_finished(),
+            }
+            for status_value in TaskHistoryStatusEnum
+        ]
+
+    def test_schema_distinguishes_terminal_from_output_available(self, test_client):
+        """Publish both completion predicates for lost and successful runs."""
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
+        statuses = {entry["value"]: entry for entry in body["task_statuses"]}
+
+        assert statuses[TaskHistoryStatusEnum.LOST.value] == {
+            "value": TaskHistoryStatusEnum.LOST.value,
+            "terminal": True,
+            "output_available": False,
+        }
+        assert statuses[TaskHistoryStatusEnum.SUCCESS.value] == {
+            "value": TaskHistoryStatusEnum.SUCCESS.value,
+            "terminal": True,
+            "output_available": True,
         }
 
     def test_schema_includes_backup_type_field(self, test_client):
@@ -362,6 +392,28 @@ class TestCreateEndpoint:
                 },
                 id="tmpdir-and-post-run-together",
             ),
+            pytest.param(
+                {
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="in-place-gpg-without-an-upload-target",
+            ),
+            pytest.param(
+                {
+                    "backup_type": BackupType.BINLOG,
+                    "binlog_prefix": "bp",
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "post_run_encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="binlog-post-run-gpg-without-an-upload-target",
+            ),
         ],
     )
     def test_create_rejects_invalid_encryption_combo(
@@ -383,6 +435,39 @@ class TestCreateEndpoint:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
+    def test_create_names_the_upload_requirement_in_the_error_body(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Return a 422 whose detail says what to change.
+
+        The rule is app-scoped, and the SPA's rule engine evaluates section-scoped
+        rules only, so the message in this body is the whole of what reaches the
+        operator.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            encryption_format=EncryptionFormat.GPG.value,
+            encrypt=True,
+            encryption_recipient="ops@example.com",
+            upload=[],
+            s3_bucket=None,
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        messages = [error["msg"] for error in response.json()["detail"]]
+        assert any("requires at least one upload provider" in msg for msg in messages)
+        mock_task_api_dep.post.assert_not_called()
+
     def test_create_rejects_missing_required_fields(
         self, test_client, mock_task_api_dep
     ):
@@ -391,6 +476,87 @@ class TestCreateEndpoint:
             "/api/apps/mysql_backups/", json={}, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "backup_type",
+        [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG],
+    )
+    def test_create_rejects_omitted_backup_dir(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        backup_type,
+    ):
+        """Refuse a body without a backup directory, whichever backup type it names.
+
+        Every create-path payload reads ``settings["BACKUP_DIR"]`` by direct
+        index, so a task accepted without one dies on the execution host. The
+        field carries no per-mode gate, so the rejection is type-independent.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id, backup_type=backup_type
+        )
+        body.pop("backup_dir", None)
+
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert ["body", "backup_dir"] in [
+            error["loc"] for error in response.json()["detail"]
+        ]
+        mock_task_api_dep.post.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("backup_dir", "expected_type"),
+        [
+            pytest.param("", "string_too_short", id="empty-string"),
+            pytest.param("   ", "string_too_short", id="whitespace-only"),
+            pytest.param(None, "string_type", id="null"),
+        ],
+    )
+    def test_create_rejects_blank_backup_dir(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        backup_dir,
+        expected_type,
+    ):
+        """Refuse a blank or null backup directory, with the error on the field.
+
+        The derived schema's required rule stops the SPA sending ``""`` and it
+        never produces ``null``, but that rule is a non-empty test rather than a
+        non-blank one, so a whitespace-only entry reaches the model and this
+        rejection is the live guard for it rather than a fallback. Pinning the
+        error to ``backup_dir`` is what lets the SPA attach it to the input
+        rather than to a form-level banner.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id, backup_dir=backup_dir
+        )
+
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert [
+            error["type"]
+            for error in response.json()["detail"]
+            if error["loc"] == ["body", "backup_dir"]
+        ] == [expected_type]
         mock_task_api_dep.post.assert_not_called()
 
     def test_create_rejects_empty_upload_list(

@@ -15,23 +15,17 @@
 
 """Tests for the ``scripts/release.py`` CLI."""
 
-import importlib.util
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "release.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("release", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-release = importlib.util.module_from_spec(_spec)
-sys.modules["release"] = release
-_spec.loader.exec_module(release)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+release = load_script("release")
 
 
 SAMPLE_PYPROJECT = """\
@@ -495,8 +489,8 @@ def test_dev_pr_keeps_gh_token_when_pr_token_unset(monkeypatch):
     assert os.environ["GH_TOKEN"] == "pat-token"
 
 
-def test_dev_pr_passes_skip_test_label(monkeypatch):
-    """``gh pr create`` is invoked with ``--label skip-test``."""
+def test_dev_pr_passes_qa_not_required_label(monkeypatch):
+    """``gh pr create`` is invoked with the ``qa not required`` label."""
     monkeypatch.setenv("GH_TOKEN", "pat-token")
     monkeypatch.delenv("GH_PR_TOKEN", raising=False)
     observed_tokens: list[str | None] = []
@@ -508,7 +502,7 @@ def test_dev_pr_passes_skip_test_label(monkeypatch):
     assert len(observed_argvs) == 1
     argv = observed_argvs[0]
     assert "--label" in argv
-    assert argv[argv.index("--label") + 1] == "skip-test"
+    assert argv[argv.index("--label") + 1] == "qa not required"
 
 
 # --- cmd_rc dev-version-bump call-site -------------------------------------

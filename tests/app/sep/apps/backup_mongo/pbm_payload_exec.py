@@ -39,6 +39,8 @@ class FakePopen:
     malformed ``pbm config`` readback without a bespoke class per test module.
     """
 
+    _communicate_result: Callable[[list[str]], tuple[bytes, bytes]]
+
     def __init__(
         self,
         cmd: list[str],
@@ -70,8 +72,14 @@ class FakePopen:
         if construction_error is not None:
             raise construction_error
         self.cmd = cmd
-        self._returncode = returncode
-        self._communicate_result = communicate_result
+        self._returncode: int | Callable[[list[str]], int] = returncode
+        # A callable is not provably distinct from a tuple, so a narrowing test
+        # on the union cannot yield a clean pair; settle the arm here instead.
+        if isinstance(communicate_result, tuple):
+            fixed_result = communicate_result
+            self._communicate_result = lambda _cmd: fixed_result
+        else:
+            self._communicate_result = communicate_result
         if captured is not None:
             captured.append(cmd)
 
@@ -95,18 +103,15 @@ class FakePopen:
 
         :return: The exit code the payload's ``proc.returncode`` access observes.
         """
-        if callable(self._returncode):
-            return self._returncode(self.cmd)
-        return self._returncode
+        returncode = self._returncode
+        return returncode if isinstance(returncode, int) else returncode(self.cmd)
 
     def communicate(self) -> tuple[bytes, bytes]:
         """Return the configured ``(stdout, stderr)`` pair.
 
         :return: The bytes pair the payload's ``proc.communicate()`` call observes.
         """
-        if callable(self._communicate_result):
-            return self._communicate_result(self.cmd)
-        return self._communicate_result
+        return self._communicate_result(self.cmd)
 
 
 def run_payload(path: pathlib.Path) -> dict[str, object]:

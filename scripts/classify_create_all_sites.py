@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-REAL_DB_ENGINES = ("postgres_engine", "mysql_engine")
+REAL_DB_ENGINES = ("postgres_engine",)
 
 
 class Bucket(StrEnum):

@@ -16,10 +16,12 @@
 """Cover SEP database seeding and system periodic-task contributions."""
 
 import json
-from collections.abc import AsyncIterator
+import logging
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat import IntervalSchedule
@@ -36,12 +38,14 @@ from app.sep import periodic_tasks as periodic_tasks_module
 from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.inventory.config import inventory_app_settings
+from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 from app.tasks.models import INVENTORY_COLLECTION_TASK_NAME
 from tests.app.db_schema import apply_schema
+from tests.app.factories import TaskFactory
 
 SNIPPETS_TASK = "sep__sync_snippets"
 ALERTS_TASK = "sep__backup_alert_config"
@@ -64,7 +68,7 @@ def _registry_app(key: str, specs: list[AppPeriodicTask]) -> BaseApp:
 
 
 @pytest.fixture(autouse=True)
-def _clear_registry_cache() -> None:
+def _clear_registry_cache() -> Iterator[None]:
     """Rebuild the registry from each test's patched ``APPS``."""
     get_app_registry.cache_clear()
     yield
@@ -92,13 +96,19 @@ async def seed_maker_fixture() -> AsyncIterator:
 def patched_seed(mocker, seed_maker):
     """Patch the seed module's session maker and stub the periodic-task work.
 
-    Both the celery-beat task seeding (``init_periodic_tasks_db``) and the
-    cross-database gating (``sync_app_periodic_task_gating``) are stubbed so the
-    AppState-only tests never reach a real scheduler database.
+    The celery-beat task seeding (``init_periodic_tasks_db``), the cross-database
+    gating (``sync_app_periodic_task_gating``) and the unschedulable-owner sweep
+    (``disable_unschedulable_task_schedules``) are stubbed so the AppState-only
+    tests never reach a real scheduler or tasks database.
     """
     mocker.patch.object(seed_module, "get_async_session_maker", return_value=seed_maker)
     mocker.patch.object(
         seed_module, "sync_app_periodic_task_gating", new_callable=mocker.AsyncMock
+    )
+    mocker.patch.object(
+        seed_module,
+        "disable_unschedulable_task_schedules",
+        new_callable=mocker.AsyncMock,
     )
     return mocker.patch.object(
         seed_module, "init_periodic_tasks_db", new_callable=mocker.AsyncMock
@@ -262,7 +272,7 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
     from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
     from app.sep.snippets.config import snippets_settings
 
-    snippets_settings._set_snapshot(
+    snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": CoreIntervalSchedule(every=30, period=Period.MINUTES)}
     )
     try:
@@ -271,17 +281,17 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
             every=30, period=Period.MINUTES
         )
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     # A different override on the next call is reflected (no import-time freeze).
-    snippets_settings._set_snapshot(
+    snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": CoreIntervalSchedule(every=5, period=Period.MINUTES)}
     )
     try:
         schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
         assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
     finally:
-        snippets_settings._set_snapshot({})
+        snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
 
 class TestInventoryCollectionSchedule:
@@ -301,11 +311,13 @@ class TestInventoryCollectionSchedule:
 
     def test_no_entry_while_the_interval_is_unset(self) -> None:
         """Seed no schedule on the shipped default, so nothing is ever deleted."""
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": None}
+        )
         try:
             assert self._entries(seed_module.get_system_periodic_tasks()) == []
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_builds_the_execute_by_name_entry(self) -> None:
         """Point the entry at the SEP task through ``execute_task_by_name``.
@@ -315,11 +327,13 @@ class TestInventoryCollectionSchedule:
         task path must arrive verbatim: the Inventory app ships no ``celery.py``
         to prefix it with, and prefixing would point beat at nothing.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         assert schedule.schedule == ONE_DAY
         (entry,) = schedule.tasks
@@ -336,11 +350,13 @@ class TestInventoryCollectionSchedule:
         The callable lives in the app package the embedded image strips, so a
         schedule that outlived its app would fire and fail on every tick.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         (entry,) = schedule.tasks
         assert entry.owner_app_key == "inventory"
@@ -352,28 +368,36 @@ class TestInventoryCollectionSchedule:
         seeder: ``get_system_periodic_tasks`` re-reads the proxy snapshot on
         every call, so the override refresh callback re-seeds beat in place.
         """
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
             assert schedule.schedule == ONE_DAY
 
-            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": SIX_HOURS})
+            inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+                {"COLLECTION_INTERVAL": SIX_HOURS}
+            )
             (schedule,) = self._entries(seed_module.get_system_periodic_tasks())
             assert schedule.schedule == SIX_HOURS
 
-            inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": None})
+            inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+                {"COLLECTION_INTERVAL": None}
+            )
             assert self._entries(seed_module.get_system_periodic_tasks()) == []
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_repeated_calls_do_not_accumulate_the_entry(self) -> None:
         """Build a fresh set per call, so repeated boots do not duplicate it."""
-        inventory_app_settings._set_snapshot({"COLLECTION_INTERVAL": ONE_DAY})
+        inventory_app_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
+            {"COLLECTION_INTERVAL": ONE_DAY}
+        )
         try:
             first = seed_module.get_system_periodic_tasks()
             second = seed_module.get_system_periodic_tasks()
         finally:
-            inventory_app_settings._set_snapshot({})
+            inventory_app_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
         assert len(self._entries(first)) == 1
         assert len(self._entries(second)) == 1
@@ -557,7 +581,7 @@ class TestAppScheduleContribution:
 
         mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("alerts")])
 
-        alerts_settings._set_snapshot(
+        alerts_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"BACKUP_INTERVAL": CoreIntervalSchedule(every=6, period=Period.HOURS)}
         )
         try:
@@ -568,9 +592,9 @@ class TestAppScheduleContribution:
                 every=6, period=Period.HOURS
             )
         finally:
-            alerts_settings._set_snapshot({})
+            alerts_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
-        alerts_settings._set_snapshot(
+        alerts_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
             {"BACKUP_INTERVAL": CoreIntervalSchedule(every=12, period=Period.HOURS)}
         )
         try:
@@ -581,7 +605,7 @@ class TestAppScheduleContribution:
                 every=12, period=Period.HOURS
             )
         finally:
-            alerts_settings._set_snapshot({})
+            alerts_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
     def test_report_kwargs_assemble_from_non_default_entry(self, mocker) -> None:
         """Carry kwargs only for non-default report schedule-entry fields."""
@@ -624,35 +648,14 @@ class TestAppScheduleContribution:
         app = get_app_registry().get("alerts")
         assert app is not None
         assert app.periodic_task_schedules is not None
-        contributed = (
-            app.periodic_task_schedules()
-            if callable(app.periodic_task_schedules)
-            else app.periodic_task_schedules
-        )
+        schedules = app.periodic_task_schedules
+        contributed = schedules if isinstance(schedules, list) else schedules()
         assert ALERTS_TASK in {spec.name for spec in contributed}
 
 
 def test_celery_result_expires_configured() -> None:
     """Celery results have a TTL so result backends do not grow forever."""
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
-
-
-@pytest_asyncio.fixture(name="beat_maker")
-async def beat_maker_fixture() -> AsyncIterator:
-    """Provide a session maker bound to an in-memory celery-beat DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
-    async with engine.begin() as conn:
-        await apply_schema(conn, PeriodicTask.__table__.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -695,6 +698,78 @@ class TestInitSepDbPeriodicTaskGating:
             "get_celery_beat_session_maker",
             return_value=beat_maker,
         )
+        mocker.patch.object(
+            periodic_tasks_module, "get_tasks_session_maker", return_value=seed_maker
+        )
+
+    async def test_startup_survives_an_unreadable_tasks_database(
+        self, mocker, seed_maker, beat_maker, caplog
+    ) -> None:
+        """Boot, and say so, when the sweep cannot reach the tasks database.
+
+        The sweep is the only step here that reads the tasks database, and a
+        deployment whose ``sep`` track has migrated ahead of its ``tasks`` track
+        reaches it before the table exists. Asserting the log line as well as the
+        survival is deliberate: a test that only checks ``init_sep_db`` returned
+        passes equally against a silent ``except``.
+        """
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings, "APPS", [_plugin("mysql_backups")]
+        )
+        mocker.patch.object(
+            seed_module,
+            "disable_unschedulable_task_schedules",
+            new_callable=mocker.AsyncMock,
+            side_effect=SQLAlchemyError("no such table: periodictask"),
+        )
+
+        with caplog.at_level(logging.ERROR, logger=seed_module.logger.name):
+            await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert "mysql_backups" in states
+        assert [
+            record
+            for record in caplog.records
+            if "unschedulable task schedules" in record.getMessage()
+        ]
+
+    async def test_restore_schedules_are_switched_off(
+        self, mocker, seed_maker, beat_maker
+    ) -> None:
+        """Disable a stored restore schedule on the first startup after upgrade."""
+        async with beat_maker() as session:
+            schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+            session.add(schedule)
+            await session.flush()
+            session.add(
+                PeriodicTask(
+                    name="nightly-restore",
+                    task="app.tasks.celery.execute_task_by_name",
+                    enabled=True,
+                    kwargs=json.dumps({"task_name": "r1"}),
+                    schedule_model=schedule,
+                )
+            )
+            await session.commit()
+        async with seed_maker() as session:
+            session.add(
+                TaskFactory.build(name="r1", owner=RESTORES_OWNER, deleted_at=None)
+            )
+            await session.commit()
+        self._patch_gate_session_makers(mocker, seed_maker, beat_maker)
+        mocker.patch.object(
+            seed_module.sep_settings, "APPS", [_plugin("mysql_backups")]
+        )
+
+        await seed_module.init_sep_db()
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name="nightly-restore")
+        assert task is not None, "no schedule named 'nightly-restore'"
+        assert task.enabled is False
 
     @pytest.mark.parametrize("app_enabled", [True, False])
     async def test_gate_reflects_app_state(

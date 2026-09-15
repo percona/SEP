@@ -34,6 +34,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
+from tests.app.sep.apps.framework.kit import EXECUTE_CREATED_AT, EXECUTE_STATUS
 
 API_BASE = "/api/apps/backup_mongo/restore"
 EMAIL_MASK = PIIEntity.encode_selection({PIIEntity.EMAIL_ADDRESS})
@@ -211,6 +212,22 @@ class TestRestoreMongoAppSchemaEndpoint:
 
         assert response.json()["name"] == "backup_mongo_restores"
 
+    def test_schema_capabilities(self, test_client):
+        """Serve ``scheduling: false`` so every schedule control stays hidden.
+
+        A scheduled restore would re-run a destructive restore of one fixed
+        ``backup_source`` on every tick with nobody present to confirm the target.
+        """
+        response = test_client.get(f"{API_BASE}/schema")
+
+        assert response.json()["capabilities"] == {
+            "chaining": True,
+            "alert_on_fail": False,
+            "scheduling": False,
+            "stats": False,
+            "pii_anonymization": False,
+        }
+
     def test_schema_collapses_restore_options_and_defaults_task_name(self, test_client):
         """Collapse Restore Options by default and pre-fill task_name."""
         response = test_client.get(f"{API_BASE}/schema")
@@ -290,7 +307,7 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
-        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00"
+        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00Z"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
         assert body["items"][1]["status"] is None
         assert body["items"][1]["last_executed_at"] is None
@@ -1000,11 +1017,18 @@ class TestRestoreMongoApiUpdate:
 def build_restore_execute_response(
     task_id: int | None = 99, task_name: str = "mongo-restore-task"
 ) -> dict:
-    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests."""
+    """Build a minimal TaskHistoryResponse-shaped dict for execute endpoint tests.
+
+    ``status`` and ``created_at`` are pinned to values ``TaskHistoryResponse``
+    would not itself supply (``PENDING`` and ``utc_now()``), so asserting them
+    distinguishes a field forwarded from the upstream row from a defaulted one.
+    """
     return {
         "id": task_id,
         "execution_request": {"task": task_name, "target": "mongo-restore-host"},
         "task": {**build_restore_task(task_name), "deleted_at": None},
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -1032,6 +1056,30 @@ class TestRestoreMongoApiExecute:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/execute/mongo-restore-task", json={}
         )
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_execute_returns_the_dispatched_run_state(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """Return the dispatched run's status and creation time for a restore.
+
+        This app derives an execute route but binds no contract mixin, so the
+        run-state assertions ``DerivedRouterContractTests`` makes for the other
+        derived execute routes have to be made here.
+        """
+        task = build_restore_task("mongo-restore-task")
+        mock_task_api_dep.get = AsyncMock(return_value=task)
+        mock_task_api_dep.post = AsyncMock(
+            return_value=build_restore_execute_response()
+        )
+
+        response = test_client.post(f"{API_BASE}/mongo-restore-task/execute", json={})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert set(data) == {"task_name", "task_id", "status", "created_at"}
+        assert data["status"] == EXECUTE_STATUS.value
+        assert data["created_at"] == EXECUTE_CREATED_AT
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_404_for_unknown_task(

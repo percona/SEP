@@ -53,6 +53,13 @@ repos:
         additional_dependencies: ["python-minifier==2.11.3"]
         files: ^app/sep/apps/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
+      - id: check-sidecar-purge
+        name: Check side-car purge layer ordering
+        description: "Ensure no apt/dpkg instruction follows the purge layer"
+        entry: python3 scripts/check_sidecar_purge.py --check-ordering
+        language: system
+        files: ^(sidecar/Containerfile\.sidecar|scripts/check_sidecar_purge\.py)$
+        pass_filenames: false
       - id: gen-xtrabackup-payload-variants
         name: Check xtrabackup payload variants
         description: "Ensure the generated xtrabackup payload variants match the canonical payload"

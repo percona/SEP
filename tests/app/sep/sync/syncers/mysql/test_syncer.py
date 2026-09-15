@@ -67,6 +67,8 @@ from tests.app.factories import (
     CreatedTableFactory,
     MOCK_CREATED_NODE_ID,
 )
+from tests.app.scan_recording import ScanRecordingBytearray
+from tests.app.sep.sync.conftest import entity_posts, sync_health_posts
 
 # Pinned verbatim rather than imported: this syncer opting into tombstones is what
 # lets it match a reappearing entity, so losing the parameter must fail the test.
@@ -76,7 +78,9 @@ RETIRED_INCLUSIVE_PARAMS = {"include_retired": "true"}
 @pytest.fixture
 def mock_mysql_syncer(mock_remote_api) -> MySQLSyncer:
     """Test fixture: return a MySQLSyncer with mocked APIs."""
-    return MySQLSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
+    return MySQLSyncer(  # ty: ignore[missing-argument]
+        tasks_api=mock_remote_api, inventory_api=mock_remote_api
+    )
 
 
 @pytest_asyncio.fixture
@@ -91,7 +95,7 @@ async def bound_mysql_syncer(session, mock_remote_api) -> MySQLSyncer:
         session,
         SyncInstanceWrite(syncer=MySQLSyncer.get_name()),
     )
-    syncer = MySQLSyncer(
+    syncer = MySQLSyncer(  # ty: ignore[missing-argument]
         tasks_api=mock_remote_api,
         inventory_api=mock_remote_api,
         sync_instance=sync_instance,
@@ -257,7 +261,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_raises_on_no_match(self, mock_remote_api):
         """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -278,7 +282,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_name_matches(self, mock_remote_api):
         """Assert matched name is returned when strict and name is in hosts."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -293,7 +297,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_strict_address_matches(self, mock_remote_api):
         """Assert matched target is returned when strict and address matches."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -308,7 +312,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_non_strict_fallback(self, mock_remote_api):
         """Assert first host is returned as fallback when non-strict and no match."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
         )
@@ -322,7 +326,7 @@ class TestConfigAndTargets:
     @pytest.mark.asyncio
     async def test_get_task_target_force_overrides_strict(self, mock_remote_api):
         """Assert ``force_executor_host`` takes priority over strict matching."""
-        syncer = MySQLSyncer(
+        syncer = MySQLSyncer(  # ty: ignore[missing-argument]
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
@@ -700,11 +704,9 @@ class TestPerformMethods:
 
         await bound_mysql_syncer.perform_service_sync(created_service, updated)
 
-        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
-        assert (
-            bound_mysql_syncer.inventory_api.post.await_args.args[0]
-            == f"/services/{created_service.id}/schemas/"
-        )
+        assert entity_posts(bound_mysql_syncer.inventory_api) == [
+            f"/services/{created_service.id}/schemas/"
+        ]
         # The stale schema is retired in inventory.
         bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
             f"/schemas/{stale_schema.id}"
@@ -758,11 +760,9 @@ class TestPerformMethods:
 
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
-        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
-        assert (
-            bound_mysql_syncer.inventory_api.post.await_args.args[0]
-            == f"/schemas/{created_schema.id}/tables/"
-        )
+        assert entity_posts(bound_mysql_syncer.inventory_api) == [
+            f"/schemas/{created_schema.id}/tables/"
+        ]
         bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
             f"/tables/{stale_table.id}"
         )
@@ -936,6 +936,78 @@ class TestStreamsAndParsing:
         assert out == [{"x": 1}]
 
     @pytest.mark.asyncio
+    async def test_iter_lines_gzip_stream_reassembles_a_line_across_many_pieces(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test yielding a line whole after many newline-free decompressed pieces."""
+        pieces = [b"x" * 32] * 16 + [b"end\n"]
+
+        class QueuedDecompressor:
+            """Return one queued piece per ``decompress`` call, then nothing."""
+
+            def __init__(self) -> None:
+                """Queue the pieces this stub hands out."""
+                self._pieces = iter(pieces)
+
+            def decompress(self, _data: bytes) -> bytes:
+                """Return the next queued piece.
+
+                :param _data: The compressed bytes, ignored by this stub.
+                :return: The next piece, or ``b""`` once the queue is empty.
+                """
+                return next(self._pieces, b"")
+
+            def flush(self) -> bytes:
+                """Return no trailing bytes; every piece arrives by decompress."""
+                return b""
+
+        mocker.patch(
+            "app.sep.sync.syncers.mysql.syncer.zlib.decompressobj",
+            return_value=QueuedDecompressor(),
+        )
+
+        async def chunks() -> AsyncGenerator[bytes, None]:
+            for _ in pieces:
+                yield b"ignored"
+
+        lines = [
+            line async for line in mock_mysql_syncer._iter_lines_gzip_stream(chunks())
+        ]
+
+        assert lines == ["x" * 512 + "end"]
+
+    @pytest.mark.asyncio
+    async def test_stream_ndjson_file_reassembles_object_split_across_chunks(
+        self, mock_mysql_syncer, mocker
+    ):
+        """Test parsing an NDJSON object that straddles many chunk boundaries.
+
+        A dropped remainder truncates the line into invalid JSON, which this path
+        logs and skips rather than failing on — so the row would vanish from the
+        sync with nothing but a log line to say so.
+        """
+        row = {"name": "x" * 200}
+        comp = gzip.compress(json.dumps(row).encode() + b"\n", mtime=0)
+
+        async def fake_stream(
+            _url: str, params: dict | None = None
+        ) -> AsyncGenerator[bytes, None]:
+            for start in range(0, len(comp), 8):
+                yield comp[start : start + 8]
+
+        mocker.patch.object(
+            mock_mysql_syncer.tasks_api,
+            "stream_chunks",
+            return_value=fake_stream("", {}),
+        )
+        logged = mocker.patch("app.sep.sync.syncers.mysql.syncer.logger.exception")
+
+        out = [obj async for obj in mock_mysql_syncer.stream_ndjson_file(1, "x.gz")]
+
+        assert out == [row]
+        logged.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_wait_for_task_output_default_payload(
         self, mock_mysql_syncer, mocker
     ):
@@ -950,6 +1022,205 @@ class TestStreamsAndParsing:
         )
         res = await mock_mysql_syncer.wait_for_task_output(config="{}", target="host")
         assert isinstance(res, TaskRunResult)
+
+
+def _replay_split_with_full_scans(
+    buffer: bytearray, data: bytes, encoding: str = "utf-8"
+) -> list[str]:
+    """Replay one call through the unnarrowed loop as an equivalence oracle.
+
+    Mirrors what ``_split_lines_from_buffer`` did before the search was
+    narrowed: one cursor, restarting the search at ``0`` on every call.
+
+    :param buffer: The carried buffer, mutated in place as the real call would.
+    :param data: The arriving bytes.
+    :param encoding: The character encoding to decode each line with.
+    :return: The lines the call would have yielded.
+    """
+    lines: list[str] = []
+    if data:
+        buffer.extend(data)
+        offset = 0
+        while True:
+            newline_pos = buffer.find(b"\n", offset)
+            if newline_pos == -1:
+                if offset:
+                    del buffer[:offset]
+                break
+            line_bytes = buffer[offset:newline_pos]
+            if line_bytes:
+                lines.append(line_bytes.decode(encoding))
+            offset = newline_pos + 1
+    return lines
+
+
+DATA_SEQUENCES = [
+    pytest.param([], id="no-calls"),
+    pytest.param([b""], id="empty-data"),
+    pytest.param([b"", b"", b""], id="only-empty-data"),
+    pytest.param([b"line\n"], id="single-terminated"),
+    pytest.param([b"no-newline"], id="single-unterminated"),
+    pytest.param([b"a", b"b", b"c"], id="newline-free-run"),
+    pytest.param([b"x" * 16] * 8 + [b"end\n"], id="long-run-then-completion"),
+    pytest.param([b"one-", b"line-", b"split\nnext\n"], id="straddles-three-calls"),
+    pytest.param([b"tail", b"\nlead"], id="newline-is-first-arriving-byte"),
+    pytest.param([b"a\nb\nc\n"], id="multiple-terminators-one-call"),
+    pytest.param([b"\n\n\n"], id="only-terminators"),
+    pytest.param([b"x\n", b"\n"], id="empty-line-in-its-own-call"),
+    pytest.param([b"a\r", b"\nb"], id="carriage-return-is-not-a-terminator"),
+    pytest.param([b"tail", b"", b"\n"], id="empty-data-mid-run"),
+    pytest.param(
+        ["caf\u00e9=x\n".encode()[:5], "caf\u00e9=x\n".encode()[5:]],
+        id="multibyte-split",
+    ),
+]
+
+
+class TestSplitLinesFromBuffer:
+    """Test the narrowed newline search in ``_split_lines_from_buffer``."""
+
+    @staticmethod
+    def _drive(
+        payloads: list[bytes], buffer: bytearray | None = None
+    ) -> tuple[list[list[str]], bytes]:
+        """Run ``payloads`` through ``_split_lines_from_buffer`` in order.
+
+        :param payloads: The arriving byte payloads, one per call.
+        :param buffer: The buffer to carry across calls; a fresh one by default.
+        :return: The lines each call yielded, and the bytes left buffered.
+        """
+        buffer = bytearray() if buffer is None else buffer
+        yielded = [
+            list(MySQLSyncer._split_lines_from_buffer(buffer, payload, "utf-8"))
+            for payload in payloads
+        ]
+        return yielded, bytes(buffer)
+
+    @pytest.mark.parametrize("payloads", DATA_SEQUENCES)
+    def test_matches_the_unnarrowed_loop(self, payloads: list[bytes]) -> None:
+        """Assert the narrowed search yields what a search from zero yields."""
+        oracle_buffer = bytearray()
+        expected = [
+            _replay_split_with_full_scans(oracle_buffer, payload)
+            for payload in payloads
+        ]
+
+        yielded, buffer = self._drive(payloads)
+
+        assert yielded == expected
+        assert buffer == bytes(oracle_buffer)
+
+    @pytest.mark.parametrize("payloads", DATA_SEQUENCES)
+    def test_buffer_holds_no_terminator_after_a_call(
+        self, payloads: list[bytes]
+    ) -> None:
+        """Assert the premise the narrowed search rests on holds after each call.
+
+        A future edit that leaves a newline behind makes every later call skip
+        it, silently gluing two lines together.
+        """
+        buffer = bytearray()
+        for payload in payloads:
+            list(MySQLSyncer._split_lines_from_buffer(buffer, payload, "utf-8"))
+            assert b"\n" not in buffer
+
+    def test_abandoned_generator_leaves_the_buffer_fit_for_the_next_call(
+        self,
+    ) -> None:
+        """Assert stopping mid-iteration strands no terminator in the buffer.
+
+        The trim runs before the first yield, so a consumer that stops early
+        loses the lines it never took rather than leaving a terminator the next
+        call's narrowed search would skip past, gluing two lines into one.
+        """
+        buffer = bytearray()
+        lines = MySQLSyncer._split_lines_from_buffer(buffer, b"a\nb\n", "utf-8")
+
+        assert next(lines) == "a"
+        lines.close()
+        assert b"\n" not in buffer
+
+        yielded, remainder = self._drive([b"c\n"], buffer=buffer)
+
+        assert yielded == [["c"]]
+        assert remainder == b""
+
+    def test_straddling_line_keeps_the_carried_remainder(self) -> None:
+        """Assert the first line a call completes still carries earlier bytes.
+
+        Collapsing the search cursor into the line-start cursor drops the
+        remainder and hands a truncated line to the JSON decoder, which
+        ``stream_ndjson_file`` logs and skips rather than failing on.
+        """
+        yielded, buffer = self._drive([b"thr", b"ee\n"])
+
+        assert yielded == [[], ["three"]]
+        assert buffer == b""
+
+    def test_empty_lines_stay_dropped(self) -> None:
+        """Assert consecutive terminators still yield nothing."""
+        yielded, buffer = self._drive([b"a\n", b"\n\n", b"b\n"])
+
+        assert yielded == [["a"], [], ["b"]]
+        assert buffer == b""
+
+    def test_carriage_return_is_retained_in_the_line(self) -> None:
+        """Test retaining a carriage return, which does not terminate a line."""
+        yielded, _ = self._drive([b"progress\r", b"done\n"])
+
+        assert yielded == [[], ["progress\rdone"]]
+
+    def test_multibyte_codepoint_split_across_calls_decodes_intact(self) -> None:
+        """Assert a codepoint straddling two calls is decoded undamaged."""
+        raw = "caf\u00e9=x\n".encode()
+        yielded, buffer = self._drive([raw[:4], raw[4:]])
+
+        assert yielded == [[], ["caf\u00e9=x"]]
+        assert buffer == b""
+
+    def test_unterminated_partial_codepoint_is_withheld_not_decoded(self) -> None:
+        """Assert a call ending mid-codepoint yields nothing and raises nothing."""
+        yielded, buffer = self._drive(["caf\u00e9".encode()[:4]])
+
+        assert yielded == [[]]
+        assert buffer == b"caf\xc3"
+
+    def test_undecodable_line_raises_like_the_unnarrowed_loop(self) -> None:
+        """Assert an invalid byte inside a completed line still raises."""
+        payload = b"bad\xffline\n"
+        with pytest.raises(UnicodeDecodeError):
+            _replay_split_with_full_scans(bytearray(), payload)
+        with pytest.raises(UnicodeDecodeError):
+            self._drive([payload])
+
+    def test_scan_starts_at_the_pre_append_length(self) -> None:
+        """Assert each call's search begins where the previous one stopped."""
+        buffer = ScanRecordingBytearray()
+        yielded, _ = self._drive([b"x" * 4] * 4, buffer=buffer)
+
+        assert yielded == [[], [], [], []]
+        assert [start for start, _ in buffer.scans] == [0, 4, 8, 12]
+
+    def test_total_scan_work_is_linear_in_the_delivered_bytes(self) -> None:
+        """Assert a newline-free run never re-examines the carried remainder."""
+        buffer = ScanRecordingBytearray()
+        payloads = [b"x" * 32] * 16 + [b"end\n"]
+        self._drive(payloads, buffer=buffer)
+
+        scanned = sum(end - start for start, end in buffer.scans)
+        assert scanned == sum(map(len, payloads))
+
+    def test_releasing_call_still_scans_only_its_own_bytes(self) -> None:
+        """Assert the call that yields the buffer narrows its search too.
+
+        Work proportional to the buffer is legitimate on the call that decodes
+        and hands those bytes over; the search for the terminator is not.
+        """
+        buffer = ScanRecordingBytearray()
+        yielded, _ = self._drive([b"x" * 64, b"end\n"], buffer=buffer)
+
+        assert yielded == [[], ["x" * 64 + "end"]]
+        assert buffer.scans[-2:] == [(64, 68), (68, 68)]
 
 
 class TestModelIteratorsAndGuards:
@@ -1166,5 +1437,61 @@ class TestTombstoneReconciliation:
         await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
 
         # The live row matched, so nothing was created, revived, or retired.
-        bound_mysql_syncer.inventory_api.post.assert_not_awaited()
+        assert entity_posts(bound_mysql_syncer.inventory_api) == []
         bound_mysql_syncer.inventory_api.delete.assert_not_awaited()
+
+
+class TestMirroredEntityLevels:
+    """Test which entity levels this syncer's attempts write sync health for."""
+
+    def test_schema_and_table_are_the_mirrored_levels(self) -> None:
+        """Own exactly the two levels ``update_schema`` and ``update_table`` write."""
+        assert MySQLSyncer.mirrors_entity_levels == frozenset(
+            {
+                SyncInventoryEntityTypeEnum.SCHEMA,
+                SyncInventoryEntityTypeEnum.TABLE,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_traversed_service_is_never_reported(
+        self, bound_mysql_syncer, created_node, created_service, session, mocker
+    ) -> None:
+        """Confirm nothing about a service this syncer only walks through.
+
+        ``perform_node_sync`` reaches the node's services to get at their
+        schemas and never calls ``update_service``, so a service's mirrored
+        values are PMM's to confirm — refreshing them here would report a
+        confirmation this run never made, and mask a failing PMM mirror.
+
+        The cascade runs for real: only ``alert_service.trigger`` is mocked, so
+        the walk reaches the shared ``sync_service`` boundary the reporter is
+        wired into.
+        """
+        mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
+        created_node.services = [created_service]
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            created_service.id,
+        )
+        # No schemas_path, so the real fetch_service yields an empty schemas index.
+        bound_mysql_syncer._inventory_index_cache[
+            _MySQLSyncResultEntityTypeEnum.SERVICES
+        ][created_service.address] = (None, {})
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+
+        await bound_mysql_syncer.perform_node_sync(created_node, created_node)
+
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.SERVICE, created_service.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        ), (
+            "the walk must have reached the service for the absence below to mean anything"
+        )
+        assert sync_health_posts(bound_mysql_syncer.inventory_api) == []
