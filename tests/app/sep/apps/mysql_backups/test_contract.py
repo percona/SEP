@@ -38,6 +38,7 @@ from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
 from app.sep.apps.mysql_backups.forms import (
+    ALLOWED_COMPRESSIONS,
     ALLOWED_XTRABACKUP_BIN_COMPRESSIONS,
     BackupCreate,
     CompressionAlgorithm,
@@ -358,7 +359,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     def test_schema_publishes_the_binary_compression_gate(
         self, contract_client: Any
     ) -> None:
-        """Serve one compression rule per backup binary, on that field's section.
+        """Serve one compression rule per gated binary, on that field's section.
 
         The renderer evaluates section-scoped rules only, so this is the scope that
         gets the operator a message before submit rather than after. Asserted
@@ -384,8 +385,18 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
             for rule in section["fail_when"]
             if rule["error_fields"] == ["compression_algorithm"]
         ]
-        assert len(rules) == len(ALLOWED_XTRABACKUP_BIN_COMPRESSIONS)
-        for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items():
+        # Derived with the builder's own skip condition rather than counting the
+        # whole matrix: a binary that accepts every algorithm the type offers has
+        # nothing to reject and is served no rule, so a row widened to the full
+        # list would otherwise fail here for being correct.
+        gated = {
+            binary: allowed
+            for binary, allowed in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS.items()
+            if set(allowed) != set(ALLOWED_COMPRESSIONS[BackupType.XTRABACKUP])
+        }
+
+        assert len(rules) == len(gated)
+        for binary, allowed in gated.items():
             rule = next(
                 rule for rule in rules if f"is {binary.value!r}" in rule["message"]
             )

@@ -415,3 +415,17 @@ class TestXtrabackupBinaryCompressionMatrix:
                 rule.message and f"is {binary.value!r}" in rule.message
                 for rule in _BINARY_COMPRESSION_FAIL_RULES
             )
+
+    def test_the_create_model_carries_the_rules_on_the_field_s_section(self):
+        """Attach the built rules to the section that declares the field.
+
+        Section scope is what gets the rules evaluated before submit, so rules
+        built here but left off the section would gate the POST and nothing else.
+        Asserted in this module because it is the one that owns the rule tuple;
+        the leniency the backfill model derives from the same split is pinned by
+        ``TestBinaryCompressionBackfillLeniency`` in ``test_form_backfill.py``.
+        """
+        rules = BackupCreate.__form_rules__
+
+        assert set(rules.sections) == {"General"}
+        assert rules.sections["General"].fail_when == _BINARY_COMPRESSION_FAIL_RULES

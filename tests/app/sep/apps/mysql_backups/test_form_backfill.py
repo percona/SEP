@@ -33,11 +33,7 @@ from app.sep.apps.mysql_backups.form_backfill import (
     reconstruct_mysql_backups_form,
     repair_mysql_backups_stamp,
 )
-from app.sep.apps.mysql_backups.forms import (
-    _BINARY_COMPRESSION_FAIL_RULES,
-    BackupCreate,
-    EncryptionFormat,
-)
+from app.sep.apps.mysql_backups.forms import BackupCreate, EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.payload_variants import PROVIDERS
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
@@ -777,17 +773,20 @@ class TestBinaryCompressionBackfillLeniency:
     def test_lenient_backfill_model_drops_the_binary_rules(self):
         """Pin the section carve-out the backfill model's leniency rests on.
 
-        Derived from both rule sets rather than restated: a rule appended straight
-        to :attr:`BackupCreate.__form_rules__` would otherwise never reach the
-        lenient model, silently, which is the failure the split exists to avoid.
-        The app-scoped half of the split is pinned by
+        Stated as the difference between the two models rather than against the
+        rule tuple itself, which keeps the claim on the public ``__form_rules__``
+        surface: a rule appended straight to :attr:`BackupCreate.__form_rules__`
+        would otherwise never reach the lenient model, silently, which is the
+        failure the split exists to avoid. Which rules the strict section carries
+        is pinned by ``TestXtrabackupBinaryCompressionMatrix`` in
+        ``test_forms.py``, and the app-scoped half of the split by
         ``TestEncryptionNeedsAReachableRuntime`` in ``test_forms_gating.py``.
         """
         strict = BackupCreate.__form_rules__
         lenient = LegacyBackupCreate.__form_rules__
 
         assert set(strict.sections) == {"General"}
-        assert strict.sections["General"].fail_when == _BINARY_COMPRESSION_FAIL_RULES
+        assert strict.sections["General"].fail_when
         assert not lenient.sections
 
     def test_lenient_model_still_enforces_the_mode_rules(self):
