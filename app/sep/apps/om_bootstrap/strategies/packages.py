@@ -54,6 +54,18 @@ DATA_PATH = "/var/lib/mongo"
 #: Where the packaged mongod's own config file lives on both supported OSes.
 CONFIG_PATH = "/etc/mongod.conf"
 
+#: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
+#: OSes. The unit is ``Type=forking``, so this has to agree with the systemd unit
+#: exactly -- see :meth:`PackagesInstallStrategy._configure_mongod`.
+PID_FILE_PATH = "/var/run/mongod.pid"
+
+#: Where mongod's own logs go once it forks. Not the same thing as the unit's
+#: ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` -- those capture
+#: only the pre-fork parent, which prints nothing once mongod backgrounds
+#: itself. ``/var/log/mongodb`` already exists, owned by ``mongod``, from the
+#: package's own post-install.
+LOG_PATH = "/var/log/mongodb/mongod.log"
+
 #: Minimum free space at :data:`DATA_PATH` ``pre_check`` requires, in bytes.
 #: 5 GiB -- generous for phase-1's single-member/three-member replica sets, not a
 #: sized-for-production figure.
@@ -91,11 +103,30 @@ def _mongosh_eval(js: str) -> StepAction:
     quoting bugs that show up trying to nest a JS string literal inside a shell
     double-quoted one.
 
+    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1`` matters specifically for
+    ``create_pmm_monitoring_user``, run against a freshly keyFile-secured member
+    with no user yet: mongosh probes ``admin.atlascli`` (Atlas CLI local-deployment
+    detection) as its first command on every connection, before anything in
+    ``js`` runs. That probe is not on MongoDB's localhost-exception allow-list, so
+    it gets rejected as unauthorized -- and confirmed against a real run, that
+    rejection closes the exception for the rest of the session, so the *intended*
+    first-user ``createUser`` then fails too with the same "not authorized" error,
+    even run as literally the next command. Harmless on ``rs_initiate``, which
+    doesn't need the exception (``replSetInitiate`` is separately allowed
+    unauthenticated whenever no replica set config exists yet) -- set here rather
+    than only on the one call site so no future ``_mongosh_eval`` caller inherits
+    the same trap.
+
     :param js: The JavaScript to evaluate.
     :return: The step action.
     """
     return StepAction(
-        command=["sh", "-c", f"mongosh --quiet --eval {shlex.quote(js)}"],
+        command=[
+            "sh",
+            "-c",
+            f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+            f"mongosh --quiet --eval {shlex.quote(js)}",
+        ],
         timeout_s=60,
     )
 
@@ -254,19 +285,48 @@ class PackagesInstallStrategy:
 
         Assumes a keyFile already exists at :data:`KEY_FILE_PATH` -- planted by
         ``distribute_keyfile``, immediately before this step.
+
+        Also creates :data:`DATA_PATH`, owned by ``mongod``, rather than
+        assuming the package's own post-install already did -- confirmed
+        against a real failure that it does not: mongod exits immediately on
+        first start with ``NonExistentPath: Data directory /var/lib/mongo not
+        found``, and ``start_service`` (``systemctl enable --now``) reports
+        success regardless, since ``Type=forking`` only waits for the initial
+        fork, not for mongod's own startup logic to run. ``verify``, a step
+        later, is what actually surfaces the failure -- by then the run has
+        already reported ``start_service`` as done.
+
+        Sets ``processManagement.fork``/``pidFilePath`` for the same reason:
+        the packaged ``mongod.service`` is ``Type=forking``, so systemd waits for
+        mongod itself to daemonize and write :data:`PID_FILE_PATH`. Without
+        ``fork: true`` mongod runs in the foreground indefinitely -- confirmed
+        against a real run where mongod started and stayed healthy, but systemd's
+        default 90s ``TimeoutStartSec`` elapsed waiting for a fork that was never
+        coming and killed it, so ``verify`` found nothing listening on 27017 a
+        step later, again after ``start_service`` had already reported success.
+
+        ``systemLog.path`` is required alongside ``fork: true`` -- mongod refuses
+        to start at all otherwise (``BadValue: --fork has to be used with
+        --logpath or --syslog``), confirmed against a real run once the
+        fork-without-a-logpath combination above was fixed. The unit's own
+        ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` do not stand
+        in for this: those capture only the pre-fork parent, which prints
+        nothing once mongod backgrounds itself.
         """
         config = (
             f"net:\n  bindIp: 0.0.0.0\n"
             f"storage:\n  dbPath: {DATA_PATH}\n"
             f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
             f"replication:\n  replSetName: {spec.replica_set_name}\n"
+            f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
+            f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
+        )
+        command = (
+            f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
+            f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
         )
         return StepAction(
-            command=[
-                "sh",
-                "-c",
-                f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n",
-            ],
+            command=["sh", "-c", command],
             timeout_s=30,
         )
 
