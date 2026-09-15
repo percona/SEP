@@ -221,15 +221,16 @@ async def refresh_all(
     inherit the aborted transaction. Failures that occur *before* per-proxy
     iteration begins -- specifically from ``session_maker_factory()`` or
     ``async_session_maker()`` -- are NOT handled here; they propagate to the
-    caller. The background refresher in :func:`start_refresh_task` wraps its
-    periodic invocation in a broad ``except`` so transient engine/pool
-    errors do not kill the task.
+    caller. Callers wrap their invocations in a broad ``except`` so transient
+    engine/pool errors do not kill the refresher: the web path in
+    :func:`start_refresh_task`'s periodic loop, and the worker path in
+    :meth:`~app.core.settings_override.worker.WorkerRefresher.maybe_refresh`.
 
     When ``callbacks`` is supplied, the snapshot in effect before each proxy's
     republish is diffed against the new one and the registered callback for any
     changed ``(setting_class, key)`` is fired (see :func:`fire_change_callbacks`).
     A proxy whose republish failed is skipped without firing callbacks. The
-    initial inline refresh in :func:`start_refresh_task` passes no callbacks, so
+    initial inline seed in :func:`bounded_seed` passes no callbacks, so
     startup seeding never triggers a rebind.
 
     :param session_maker_factory: A zero-argument callable returning a
@@ -406,21 +407,16 @@ async def start_refresh_task(
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
-    :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
-    :type proxies: ProxyRegistry
     :param interval: The wall-clock delay between refresh cycles. Must be a
         positive duration; the :class:`Settings` field validator enforces
         this at construction time.
-    :type interval: timedelta
     :param callbacks: Optional rebind callbacks fired by the periodic loop when
         a watched override changes. Not applied to the initial refresh.
-    :type callbacks: CallbackRegistry | None
     :param seed_timeout: Optional wall-clock budget in seconds for the inline
         seed. ``None`` (the default) leaves the seed unbounded.
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
-    :rtype: asyncio.Task
     :raises Exception: Re-raises any failure from the inline initial
         :func:`refresh_all` call — in practice limited to
         ``session_maker_factory()`` failures (see :func:`refresh_all` for the

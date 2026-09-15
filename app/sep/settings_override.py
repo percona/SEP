@@ -205,6 +205,7 @@ def start_sep_settings_override_refresher(**_: Any) -> None:
     the child is still armed and may retain a possibly incomplete seed until
     the next due task boundary.
 
+    :param _: The ``worker_process_init`` signal keyword arguments (unused).
     :raises Exception: Propagates whatever composing the proxy registry or the
         initial inline refresh raises — a malformed app-owned declaration
         (``TypeError`` / ``ValueError``) or a session-maker failure — and is
@@ -224,9 +225,9 @@ def refresh_sep_overrides_if_due(**_: Any) -> None:
 
     Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when
     disarmed or inside the interval. ``WORKER_OVERRIDE_CALLBACKS`` (PMM client
-    eviction, LOGGING dictConfig) were registered at :meth:`start`, so a
-    changed endpoint or credential still invalidates cached clients before the
-    task body runs.
+    eviction, LOGGING dictConfig) were registered at :meth:`WorkerRefresher.start`,
+    so a changed endpoint or credential still invalidates cached clients before
+    the task body runs.
 
     :param _: The ``task_prerun`` signal keyword arguments (unused).
     """
@@ -239,5 +240,7 @@ def stop_sep_settings_override_refresher(**_: Any) -> None:
 
     A no-op when the refresher never started (disabled, or shutdown fired before
     init). After disarm, :func:`refresh_sep_overrides_if_due` no-ops.
+
+    :param _: The ``worker_process_shutdown`` signal keyword arguments (unused).
     """
     _refresher.stop()
