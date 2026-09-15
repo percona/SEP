@@ -100,17 +100,20 @@ default:
   # to provision the `sep` role sets, shared with pmm-managed (50) and Grafana
   # (100). SEP holds itself to 10% of it. Worst case with every pool full, where
   # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
-  #   sep          1 x 5 + celery-DB 15                    20
+  #   sep          2 x 5 + celery-DB 15                    25
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25
   #   worker       parent 2 x 5, plus 4 children x 25     110
-  #   beat         NullPool, one per open session           1
+  #   beat         2 x 5 + NullPool scheduler              11
   #   sync locks   one held per configured syncer           2
-  #                                                total  163 of 200
+  #                                                total  178 of 200
+  # Both sep and beat reach a service-DB engine they do not own: sep imports the
+  # tasks one through periodic_tasks, and beat loads the worker's task modules
+  # because celery beat runs init_worker() before starting the scheduler.
   # Not in the total: the four schema one-shots add 4 at boot, and every sync
   # claim that arrives while another holds the lock briefly opens one more.
-  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25, so 5 children
-  # (188) is the most the 10% policy allows.
+  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25, so a fifth
+  # child (203) would not fit and 4 is the most the 10% policy allows.
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server
