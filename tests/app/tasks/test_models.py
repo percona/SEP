@@ -98,7 +98,7 @@ class TestTaskBackendEnum:
 
 
 class TestTaskHistoryStatusEnum:
-    """Test TaskHistoryStatusEnum values and is_finished method."""
+    """Test TaskHistoryStatusEnum values and output-availability predicates."""
 
     def test_all_values_exist(self) -> None:
         """Assert all eight status values exist."""
@@ -125,7 +125,7 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns True for terminal statuses."""
+        """Assert is_finished returns True for statuses with observed outcomes."""
         assert status.is_finished() is True
 
     @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns False for unfinished statuses."""
+        """Assert is_finished returns False when output retrieval is not meaningful."""
         assert status.is_finished() is False
 
     @pytest.mark.parametrize(

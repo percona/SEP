@@ -401,34 +401,42 @@
   "name": "archives",
   "task_statuses": [
     {
+      "output_available": true,
       "terminal": true,
       "value": "failed"
     },
     {
+      "output_available": false,
       "terminal": false,
       "value": "pending"
     },
     {
+      "output_available": false,
       "terminal": false,
       "value": "running"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "success"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "stopped"
     },
     {
+      "output_available": false,
       "terminal": true,
       "value": "lost"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "stale"
     },
     {
+      "output_available": true,
       "terminal": true,
       "value": "unlaunchable"
     }

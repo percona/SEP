@@ -6995,9 +6995,10 @@ export interface components {
      *         surfaces as sibling tabs (for example a restore app nested under a
      *         backups parent). Defaults to ``None``.
      *     :param task_statuses: The task-status vocabulary a client polls against,
-     *         declaring per status value whether it ends a run. Server-authored, so a
-     *         supplied value is replaced rather than honoured. Withheld (``None``) for
-     *         a plugin declaring ``entities``, whose records are not task runs.
+     *         declaring per status value both run terminality and whether output
+     *         retrieval is meaningful. Server-authored, so a supplied value is
+     *         replaced rather than honoured. Withheld (``None``) for a plugin
+     *         declaring ``entities``, whose records are not task runs.
      */
     framework__AppSchema: {
       capabilities?: components['schemas']['framework__Capabilities'] | null;
@@ -8917,13 +8918,19 @@ export interface components {
     };
     /**
      * TaskStatusDescriptor
-     * @description Declare one task-status value and whether it ends a run.
+     * @description Declare one task-status value and its run terminality/output predicates.
      *
      *     :param value: The status as it appears on a task-history payload.
      *     :param terminal: Whether a run in this status will not transition again, so
      *         a client polling for completion can stop re-reading on it.
+     *     :param output_available: Whether the run reached an observed outcome, so its
+     *         output may be requested and may legitimately be empty, as for ``stale``
+     *         and ``unlaunchable``. ``lost`` is excluded because its outcome was never
+     *         observed.
      */
     framework__TaskStatusDescriptor: {
+      /** Output Available */
+      output_available: boolean;
       /** Terminal */
       terminal: boolean;
       value: components['schemas']['TaskHistoryStatusEnum'];

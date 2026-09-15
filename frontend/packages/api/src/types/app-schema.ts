@@ -504,8 +504,9 @@ export interface RelatedApp {
 // ── Task status vocabulary ──────────────────────────────────────────────
 
 /**
- * One task-status value and whether it ends a run. A client polling a task to
- * completion re-reads until the row reaches a status whose `terminal` is true.
+ * One task-status value and its run-completion predicates. A client polling a
+ * task to completion re-reads until the row reaches a status whose `terminal`
+ * is true.
  */
 export interface TaskStatusDescriptor {
   /** A `TaskHistoryStatusEnum` member, deliberately widened to `string` here
@@ -516,6 +517,8 @@ export interface TaskStatusDescriptor {
    * that wants runtime discovery should read this type rather than that one. */
   value: string;
   terminal: boolean;
+  /** Whether the run reached an observed outcome, so output may be requested. */
+  output_available: boolean;
 }
 
 // ── Top-level schema ────────────────────────────────────────────────────
