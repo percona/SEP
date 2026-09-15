@@ -586,7 +586,6 @@ class TestTasksSettingsNestedOverrides:
             json={"security_headers__x_frame_options_deny": False},
         )
         assert patched.status_code == status.HTTP_200_OK
-        # The collapse is the claim, so the count before the delete is the test
         assert (
             len(
                 await SettingsOverrideManager.list(
