@@ -16,6 +16,7 @@
 """Cover the MySQL entrypoint's clone3 gate and the cgroups layout it reads."""
 
 import os
+import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,11 +28,17 @@ from tests.sidecar.conftest import SIDECAR_DIR
 
 ENTRYPOINT = SIDECAR_DIR / "pmm-fb" / "mysql-entrypoint.sh"
 
+BASH = shutil.which("bash") or "/bin/bash"
+"""Resolved here, because a run with a narrowed ``PATH`` cannot find the shell."""
+
 CGROUP_ROOT_ASSIGNMENT = "CGROUP_ROOT=/sys/fs/cgroup"
 DATADIR_ASSIGNMENT = "DATADIR=/var/lib/mysql"
 
 REFUSED_NO_CLONE3 = 3
 """Exit status the entrypoint uses when clone3 is load-bearing and unimplemented."""
+
+MISSING_COMMAND = 2
+"""Exit status ``need_cmd`` uses when a declared precondition is absent."""
 
 STOPPED_AT_MYSQLD = 1
 """Exit status of a run that cleared the gate.
@@ -75,7 +82,8 @@ RunEntrypoint = Callable[..., subprocess.CompletedProcess[str]]
 class Harness:
     """Carry the throwaway entrypoint copy and the callable that drives it.
 
-    :param run: Invoke the copy against a chosen probe verdict and cgroup layout.
+    :param run: Invoke the copy against a chosen probe verdict and cgroup layout,
+        optionally with one declared command missing from ``PATH``.
     :param cgroup_root: Where the copy's ``CGROUP_ROOT`` was retargeted.
     :param mysqld_marker: Written by the ``mysqld`` stub, so a test separates a
         run that reached the server from one the gate stopped.
@@ -105,7 +113,8 @@ def harness(tmp_path: Path) -> Harness:
     script fails here instead of leaving the copy aimed at the host's own paths.
 
     :param tmp_path: The per-test temporary directory.
-    :return: The script runner and the three stub markers.
+    :return: The script runner, the retargeted cgroup root, and the three stub
+        markers.
     """
     cgroup_root = tmp_path / "cgroup"
     cgroup_root.mkdir()
@@ -148,31 +157,35 @@ def harness(tmp_path: Path) -> Harness:
         controllers: str | None = ALL_CONTROLLERS,
         *,
         skip_check: bool = False,
+        omit: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         write_stub("python3", f"touch {probe_marker}\necho {verdict}")
         reply = f"echo {fs_type}" if fs_type else "exit 1"
         write_stub("stat", f'printf %s "$*" > {stat_marker}\n{reply}')
+        if omit is not None:
+            (bin_dir / omit).unlink()
         controllers_file = cgroup_root / "cgroup.controllers"
         if controllers is None:
             controllers_file.unlink(missing_ok=True)
         else:
             controllers_file.write_text(f"{controllers}\n", encoding="utf-8")
         # A developer who exported these to drive their own bring-up would
-        # otherwise decide the case under test
+        # otherwise decide the case under test. DEBUG is one of them: the
+        # entrypoint documents it and turns on xtrace, which puts the tokens
+        # these tests assert the absence of into stderr
         inherited = {
             name: value
             for name, value in os.environ.items()
-            if not name.startswith(("SEP_MYSQL_", "SEP_FB_"))
+            if not name.startswith(("SEP_MYSQL_", "SEP_FB_")) and name != "DEBUG"
         }
-        environment = {
-            **inherited,
-            **PASSWORDS,
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        }
+        # Only the stubs once a command is omitted, so the host's own copy
+        # cannot stand in for the one the precondition is meant to miss
+        path = str(bin_dir) if omit else f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
+        environment = {**inherited, **PASSWORDS, "PATH": path}
         if skip_check:
             environment["SEP_FB_SKIP_CLONE3_CHECK"] = "1"
         return subprocess.run(
-            ["bash", str(script)],
+            [BASH, str(script)],
             capture_output=True,
             text=True,
             check=False,
@@ -281,6 +294,23 @@ def test_unreadable_verdict_proceeds(harness: Harness, fs_type: str) -> None:
     assert_proceeded(harness, result)
     assert not harness.stat_marker.exists()
     assert "clone3 probe gave no verdict (CLONE3_ERR=13)" in result.stderr
+
+
+def test_a_missing_stat_is_refused_at_the_precondition(harness: Harness) -> None:
+    """Refuse before the gate runs when the command it reads the layout with is gone.
+
+    ``stat`` is declared alongside the other preconditions for one reason: an
+    absent one yields an empty filesystem type, which reads as "not cgroup2fs"
+    and starts the node on the single layout where clone3 really is
+    load-bearing. Nothing else in this module would fail if the declaration
+    were dropped, so the permissive branch is what this pins against.
+    """
+    result = harness.run(verdict="CLONE3_ENOSYS", omit="stat")
+
+    assert result.returncode == MISSING_COMMAND, result.stderr
+    assert "✗ Missing required command: stat" in result.stderr
+    assert not harness.probe_marker.exists()
+    assert not harness.mysqld_marker.exists()
 
 
 @pytest.mark.parametrize("fs_type", ["cgroup2fs", "tmpfs"])
