@@ -31,7 +31,7 @@ from pydantic import (
 )
 
 from app.core.celery.config import CeleryOptions
-from app.core.config import BaseYamlSettings, PMMSettings
+from app.core.config import BaseYamlSettings, PMMSettings, Settings
 from app.core.settings_override.api.routes import (
     _remote_wiring,
     _settings_response_from_field,
@@ -39,6 +39,9 @@ from app.core.settings_override.api.routes import (
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    annotated_type,
+    annotation_contains_credential_url,
+    annotation_is_credential_url,
     chain_has_advanced,
     coerce_field_value,
     dump_field_value,
@@ -54,8 +57,10 @@ from app.core.settings_override.registry import (
     SettingProvenance,
 )
 from app.core.utils.date_time import utc_now
-from app.core.utils.fields import CredentialHttpUrl
-from app.sep.config import SEPSettings
+from app.core.utils.fields import CredentialHttpUrl, StrHttpUrl
+from app.sep.config import DeliveryPlanInputs, SEPSettings
+from app.tasks.config import TasksSettings
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 
 
 class _NestedWithSecret(BaseModel):
@@ -117,7 +122,7 @@ def test_coerce_field_value_strict_int_rejects(bad_value: object) -> None:
 
     ``Strict()`` blocks the lax ``bool``/``float -> int`` coercion that a plain
     ``int`` annotation would silently accept; ``Gt(0)``/``Le(365)`` are preserved
-    through ``_annotated_type`` reassembly so the bounds still reject 0 and 366.
+    through ``annotated_type`` reassembly so the bounds still reject 0 and 366.
     """
     field = _FixtureSettings.model_fields["HOT_STRICT_INT"]
     with pytest.raises(ValidationError):
@@ -211,13 +216,115 @@ def test_is_credential_url_field_recognises_all_aliases() -> None:
 
     The shared mask-rejecting validator adds metadata beside the serializer; this
     pins that detection still keys off serializer-function identity alone.
+    ``NomadExecutor.endpoint`` is the inherited non-``Optional`` case, whose
+    ``Annotated`` Pydantic hoists onto ``FieldInfo`` — detection has to resolve
+    it through :func:`annotated_type` rather than reading ``.annotation``.
     """
     for field in (
         SEPSettings.model_fields["INVENTORY_ENDPOINT"],
         PMMSettings.model_fields["endpoint"],
         CeleryOptions.model_fields["broker_url"],
+        NomadExecutor.model_fields["endpoint"],
     ):
         assert is_credential_url_field(field)
+
+
+class TestCredentialUrlPredicatePair:
+    """Cover the subtree/position split between the two credential-URL predicates.
+
+    ``annotation_contains_credential_url`` answers "does this subtree reach
+    one", the question the read-surface redaction asks; ``annotation_is_credential_url``
+    answers "is the value at this position one", which is what the at-rest leaf
+    transform needs. A model-typed parent separates them.
+    """
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "field_name"),
+        [
+            (SEPSettings, "INVENTORY_ENDPOINT"),
+            (SEPSettings, "TASKS_ENDPOINT"),
+            (PMMSettings, "endpoint"),
+            (NomadExecutor, "endpoint"),
+            (DeliveryPlanInputs, "endpoint"),
+        ],
+    )
+    def test_a_live_leaf_answers_both_predicates(
+        self, settings_cls: type[BaseModel], field_name: str
+    ) -> None:
+        """Report a scalar credential-URL leaf as both reachable and positional."""
+        annotation = annotated_type(settings_cls.model_fields[field_name])
+
+        assert annotation_is_credential_url(annotation)
+        assert annotation_contains_credential_url(annotation)
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "field_name"),
+        [
+            (Settings, "PMM"),
+            (Settings, "CELERY"),
+            (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
+        ],
+    )
+    def test_a_model_typed_parent_reaches_one_without_being_one(
+        self, settings_cls: type[BaseModel], field_name: str
+    ) -> None:
+        """Separate a parent whose *child* is the credential URL from the child itself.
+
+        A leaf transform that used the subtree predicate here would try to
+        rewrite the whole stored object as if it were a URL string.
+        """
+        annotation = annotated_type(settings_cls.model_fields[field_name])
+
+        assert annotation_contains_credential_url(annotation)
+        assert not annotation_is_credential_url(annotation)
+
+    def test_neither_predicate_fires_on_a_plain_url(self) -> None:
+        """Report a URL type carrying no credential-URL marker as neither."""
+        assert not annotation_contains_credential_url(StrHttpUrl)
+        assert not annotation_is_credential_url(StrHttpUrl)
+
+
+class TestCredentialUrlFieldsAreNotSecretBearing:
+    """Pin that the at-rest change never leaks into the API's ``is_secret`` flag.
+
+    ``is_secret`` is published on every settings LIST/DETAIL response. Widening
+    ``annotation_contains_secret`` to cover credential URLs would flip these four
+    to ``True`` while encrypting nothing, because the leaf gate is the Pydantic
+    secret type and neither ``HttpUrl`` nor ``str`` subclasses it.
+    """
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "key"),
+        [
+            (SEPSettings, "INVENTORY_ENDPOINT"),
+            (SEPSettings, "TASKS_ENDPOINT"),
+        ],
+    )
+    def test_a_top_level_credential_url_field_is_not_secret(
+        self, settings_cls: type[BaseYamlSettings], key: str
+    ) -> None:
+        """Report ``is_secret`` as ``False`` for a top-level credential-URL field."""
+        metadata = next(
+            entry for entry in iter_class_fields(settings_cls) if entry.key == key
+        )
+
+        assert metadata.is_secret is False
+
+    @pytest.mark.parametrize(
+        ("settings_cls", "key"),
+        [
+            (Settings, "PMM__endpoint"),
+            (TasksSettings, "NOMAD__endpoint"),
+        ],
+    )
+    def test_a_nested_credential_url_leaf_is_not_secret(
+        self, settings_cls: type[BaseYamlSettings], key: str
+    ) -> None:
+        """Report ``is_secret`` as ``False`` for a nested credential-URL leaf."""
+        metadata = resolve_nested_field_metadata(settings_cls, key)
+
+        assert metadata is not None
+        assert metadata.is_secret is False
 
 
 def test_dump_field_value_redacts_nested_secret() -> None:
@@ -230,7 +337,7 @@ def test_dump_field_value_redacts_nested_secret() -> None:
 
 
 class _NoDefault(BaseYamlSettings):
-    """Synthetic settings class with a required HOT field (no default)."""
+    """Declare a required HOT field carrying no default."""
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["NODEF"]
     BARE: int = hot_field(...)
