@@ -299,6 +299,54 @@ class TestDownloadTaskHistoryFile:
 
         assert response.status_code == upstream_status
 
+    def test_upstream_500_is_logged_before_error_response(
+        self, test_client, mock_tasks_client_dep, task_history_response, mocker
+    ):
+        """Assert upstream 500 is logged before the error response is returned.
+
+        FastAPI's ``@app.exception_handler(500)`` only sees non-HTTPException
+        failures, so error priming must log 5xx HTTPExceptions itself — then
+        re-raise so ExceptionMiddleware still returns the real status instead of
+        a hand-built body that would hide the failure from on-call.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        log_exception = mocker.patch("app.sep.routes.download_files.logger.exception")
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
+        log_exception.assert_called_once()
+        assert (
+            log_exception.call_args.args[0]
+            == "Upstream error while priming file download stream:"
+        )
+
+    def test_upstream_400_is_not_logged_as_server_error(
+        self, test_client, mock_tasks_client_dep, task_history_response, mocker
+    ):
+        """Assert client-error upstream rejections are not logged as server errors."""
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            HTTP_400_BAD_REQUEST
+        )
+        log_exception = mocker.patch("app.sep.routes.download_files.logger.exception")
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_400_BAD_REQUEST
+        log_exception.assert_not_called()
+
     def test_empty_upstream_file_returns_200_with_empty_body(
         self, test_client, mock_tasks_client_dep, task_history_response
     ):

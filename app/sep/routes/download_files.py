@@ -15,7 +15,6 @@
 
 """Define routes for listing and downloading files from tasks."""
 
-import json
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator
 from pathlib import Path
@@ -45,43 +44,37 @@ class ErrorPrimingStreamingResponse(StreamingResponse):
     """StreamingResponse that checks for upstream errors before sending status.
 
     Standard StreamingResponse sends HTTP 200 before iterating the body. This
-    subclass primes the generator first: if the first pull raises HTTPException,
-    it sends that error status instead of 200. This ensures upstream rejections
-    (401/403/410/500) propagate correctly rather than appearing as 200 with an
-    empty body. See SEP-1878.
+    subclass primes the generator first so upstream rejections raise before any
+    ``http.response.start``. That lets ExceptionMiddleware turn the error into a
+    real status response instead of a misleading 200 with an empty body.
+
+    FastAPI installs ``@app.exception_handler(500)`` on ServerErrorMiddleware,
+    which only sees non-``HTTPException`` failures. Upstream 5xx arrives as
+    ``HTTPException``, so this class logs those explicitly before re-raising —
+    otherwise downloads can fail silently from an on-call/observability
+    standpoint. See SEP-1878.
     """
 
     async def stream_response(self, send: Send) -> None:
-        """Override to prime the body iterator before sending the start message."""
+        """Override to prime the body iterator before sending the start message.
+
+        ``HTTPException`` is re-raised before any response bytes are sent so
+        ExceptionMiddleware can build the status response. 5xx errors are logged
+        here because they would not reach ``internal_error_handler``. Empty
+        successful bodies (``StopAsyncIteration``) are handled locally.
+        """
         body_iter: AsyncIterator[Any] = aiter(self.body_iterator)
 
-        # Prime the generator to surface upstream errors before committing status
         try:
             first_chunk = await anext(body_iter)
         except HTTPException as exc:
-            # Upstream rejected — send error response instead of 200
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": exc.status_code,
-                    "headers": [
-                        (b"content-type", b"application/json"),
-                        *[
-                            (k.encode(), v.encode())
-                            for k, v in (exc.headers or {}).items()
-                        ],
-                    ],
-                }
-            )
-            detail = exc.detail or "An error occurred"
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": json.dumps({"detail": detail}).encode(),
-                    "more_body": False,
-                }
-            )
-            return
+            # 5xx HTTPExceptions never reach ServerErrorMiddleware's 500 handler.
+            if exc.status_code >= http_status.HTTP_500_INTERNAL_SERVER_ERROR:
+                logger.exception(
+                    "Upstream error while priming file download stream:",
+                    exc_info=exc,
+                )
+            raise
         except StopAsyncIteration:
             # Empty file — send normal 200 with empty body
             first_chunk = None
@@ -152,9 +145,9 @@ async def download_task_history_file(
 ) -> StreamingResponse:
     """Stream a task history's archived file as a binary download.
 
-    Uses ErrorPrimingStreamingResponse so that upstream errors (401/403/410/500)
-    surface as the real status code rather than a misleading 200 with an empty
-    body. See SEP-1878.
+    Uses ErrorPrimingStreamingResponse so upstream errors raise before status is
+    committed (and 5xx are logged) rather than appearing as a misleading 200 with
+    an empty body. See SEP-1878.
     """
     headers = dict(STREAMING_PROXY_HEADERS)
     path = request.query_params.get("path")
