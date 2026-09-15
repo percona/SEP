@@ -9538,6 +9538,12 @@ export interface components {
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
      *     markers drive only the ``GET /schema`` widgets, while the conditional,
      *     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
+     *
+     *     ``service_id`` is declared first because the rest of the form cascades from
+     *     it, and its ``Requires`` gate is the one split from that rule: the gate
+     *     enforces *presence* here, so a Mydumper body naming no service is rejected
+     *     before any inventory call, while deciding the value is a resolvable service
+     *     rather than a typed name or the placeholder stays in ``deps``.
      */
     mysql_backups__RestoreCreate: {
       /**

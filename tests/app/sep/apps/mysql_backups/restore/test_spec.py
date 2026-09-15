@@ -52,6 +52,9 @@ def _form(
         hostname="restore-host",
         task_name="restore-task",
         backup_type=backup_type,
+        # A Mydumper restore has to name an inventory service; the other two
+        # methods legitimately leave the destination unset.
+        service_id="7" if backup_type == BackupType.MYDUMPER else None,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
         xtrabackup_bin_cmd=xtrabackup_bin_cmd,
@@ -134,6 +137,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.LOCAL,
@@ -142,6 +146,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="db01:/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.SSH,
