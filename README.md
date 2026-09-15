@@ -164,7 +164,7 @@
 | app/sep/apps/alerts/restore.py                                                                                               |       95 |        0 |       26 |        0 |    100% |           |
 | app/sep/apps/alters/api\_routes.py                                                                                           |       38 |        3 |        0 |        0 |     92% |82, 140-145 |
 | app/sep/apps/alters/app.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       12 |     91% |98, 128-\>140, 134-\>133, 138-\>133, 141, 217-\>219, 344, 411-412, 468, 551, 574-575, 695, 706, 708, 747-\>751 |
+| app/sep/apps/alters/deps.py                                                                                                  |      209 |       12 |       62 |       11 |     92% |98, 128-\>140, 134-\>133, 138-\>133, 141, 344, 411-412, 468, 551, 574-575, 695, 706, 708, 747-\>751 |
 | app/sep/apps/alters/form\_backfill.py                                                                                        |       32 |        1 |       10 |        1 |     95% |       100 |
 | app/sep/apps/alters/models.py                                                                                                |       49 |        1 |        6 |        1 |     96% |       121 |
 | app/sep/apps/alters/schema.py                                                                                                |        7 |        0 |        0 |        0 |    100% |           |
@@ -354,7 +354,7 @@
 | app/sep/models.py                                                                                                            |       75 |        1 |        2 |        1 |     97% |       254 |
 | app/sep/periodic\_tasks.py                                                                                                   |       95 |        0 |       38 |        0 |    100% |           |
 | app/sep/routes/artifacts.py                                                                                                  |       38 |        1 |       14 |        1 |     96% |        87 |
-| app/sep/routes/download\_files.py                                                                                            |       44 |        0 |        8 |        1 |     98% |   88-\>94 |
+| app/sep/routes/download\_files.py                                                                                            |       68 |        0 |       14 |        2 |     98% |109-\>exit, 173-\>179 |
 | app/sep/routes/execution\_events.py                                                                                          |       12 |        0 |        2 |        0 |    100% |           |
 | app/sep/routes/stream\_logs.py                                                                                               |       78 |       26 |       12 |        4 |     64% |88-100, 109, 113-129, 131-136, 188-\>183, 196-201, 203-207, 212-217 |
 | app/sep/settings\_override.py                                                                                                |       46 |        0 |        2 |        0 |    100% |           |
@@ -480,7 +480,7 @@
 | app/tasks/routes.py                                                                                                          |      244 |       14 |       48 |        4 |     94% |154-158, 243-\>247, 280, 330-339, 346, 459, 502, 517, 677, 691, 696, 723, 726-\>728 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30103** | **1710** | **7390** |  **660** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30127** | **1710** | **7396** |  **660** | **93%** |           |
 
 
 ## Setup coverage badge
