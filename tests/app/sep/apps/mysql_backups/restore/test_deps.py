@@ -17,6 +17,7 @@
 
 import pytest
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import (
@@ -59,6 +60,24 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
     assert resolved.dest_host == node.address
     assert resolved.dest_port == service.port
     assert resolved.database == schema.name
+
+
+@pytest.mark.asyncio
+async def test_resolve_restore_entities_mydumper_rejects_missing_service(
+    mock_remote_api,
+):
+    """Reject a MyDumper restore without a destination service."""
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=None,
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+
+    with pytest.raises(HTTPUnprocessableEntityException):
+        await resolve_restore_entities(form, mock_remote_api)
 
 
 @pytest.mark.asyncio

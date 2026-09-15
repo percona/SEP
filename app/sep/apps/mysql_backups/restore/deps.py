@@ -65,7 +65,7 @@ async def resolve_restore_entities(
         lookup fails with a status other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
-        if form.service_id is not None and not form.service_id.isdigit():
+        if form.service_id is None or not form.service_id.isdigit():
             raise HTTPUnprocessableEntityException(
                 detail=(
                     "Destination Database Service must be an existing MySQL service "
@@ -75,7 +75,7 @@ async def resolve_restore_entities(
         service = await get_created_entity(
             inventory_api,
             SyncInventoryEntityTypeEnum.SERVICE,
-            form.service_id,
+            int(form.service_id),
             type=ServiceTypeEnum.MYSQL,
         )
         dest_host = dest_port = None
@@ -84,11 +84,15 @@ async def resolve_restore_entities(
             dest_host = host.strip()
             dest_port = int(port_str.strip())
         database = None
-        if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
+        if (
+            form.schema_id is not None
+            and form.schema_id.isdigit()
+            and int(form.schema_id) > 0
+        ):
             schema = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.SCHEMA,
-                form.schema_id,
+                int(form.schema_id),
                 service_id=service.id,
             )
             database = schema.name
@@ -106,7 +110,7 @@ async def resolve_restore_entities(
             service = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.SERVICE,
-                form.service_id,
+                int(form.service_id),
                 type=ServiceTypeEnum.MYSQL,
             )
         except HTTPNotFoundException:
