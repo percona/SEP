@@ -81,6 +81,7 @@ jobs:
               - 'sidecar/healthcheck.sh'
               - 'sidecar/entrypoint.sh'
               - 'sidecar/wait_for_schema.sh'
+              - 'sidecar/clear_sentinels.sh'
               - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
@@ -353,6 +354,7 @@ jobs:
             test -f /home/sep/app/healthcheck.sh
             test -x /home/sep/app/entrypoint.sh
             test -x /home/sep/app/wait_for_schema.sh
+            test -x /home/sep/app/clear_sentinels.sh
             test -f /home/sep/app/settings-env.sh
             test -f /home/sep/app/settings.yaml
           '
