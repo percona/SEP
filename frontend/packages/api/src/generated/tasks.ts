@@ -264,6 +264,8 @@ export interface paths {
      *     :param session: The SQLAlchemy asynchronous session.
      *     :param task: The task history to persist.
      *     :return: The saved task history record.
+     *     :raises HTTPUnprocessableEntityException: If ``failure_reason`` conflicts
+     *         with a status that carries no operator-facing summary.
      */
     post: operations['tasks_create_task_history_history__post'];
     delete?: never;
