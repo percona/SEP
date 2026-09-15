@@ -178,9 +178,10 @@ container_runtime() {
 }
 
 # Asks the amd64 emulator the question Nomad's executor will ask it: clone3 is
-# how raw_exec spawns every task, and QEMU 7.0 and later do not implement it.
-# Only the probe's printed verdict decides — a pull or runtime failure says
-# nothing about the emulator, so it is reported and does not block.
+# how raw_exec spawns a task it places into a cgroup via the unified v2
+# hierarchy, and QEMU 7.0 and later do not implement it. Only the probe's
+# printed verdict decides — a pull or runtime failure says nothing about the
+# emulator, so it is reported and does not block.
 check_amd64_emulation() {
     [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
     local runtime out

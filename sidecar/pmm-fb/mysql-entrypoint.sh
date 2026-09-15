@@ -42,6 +42,11 @@ need_cmd pmm-agent
 need_cmd pmm-admin
 need_cmd install
 need_cmd python3
+# Coreutils, as install already is, so this cannot fail in an image the
+# entrypoint can otherwise run. Declared anyway so a missing stat can never
+# silently take the cgroups gate's permissive branch on a host where clone3 is
+# load-bearing, which is the one direction that guard exists to prevent.
+need_cmd stat
 
 usage() {
     cat << 'EOF'
@@ -86,6 +91,9 @@ SEED_MARKER=/var/lib/mysql/.sep-seed-imported
 USERS_MARKER=/var/lib/mysql/.sep-users-created
 SERVICE_NAME=sep-mysql
 PMM_CONFIG_FILE="${PMM_AGENT_CONFIG_FILE:-/usr/local/percona/pmm/config/pmm-agent.yaml}"
+CGROUP_ROOT=/sys/fs/cgroup
+# What Nomad's detect() requires before it will place a task into a cgroup
+REQUIRED_CG2_CONTROLLERS=(cpuset cpu io memory pids)
 
 # Wrapped rather than expanded at top level: ${VAR:?} puts the value itself
 # into the xtrace line
@@ -97,18 +105,43 @@ require_secrets() {
 
 without_xtrace require_secrets
 
-# raw_exec spawns every task with clone3, so a node where the syscall is
-# unimplemented registers, fingerprints healthy, and fails every dispatch with
-# `fork/exec …: function not implemented`. Refuse to become that node. The two
-# sources of ENOSYS and the fix for each are in README.md § Caveats, and the
-# messages below name them. Only the probe's printed verdict decides.
+# The controllers line is matched padded, and each controller with its own
+# surrounding spaces, so cpu cannot match inside cpuset — a bare substring test
+# would call that layout complete and refuse a node Nomad would have downgraded.
+cg2_controllers_complete() {
+    local available controller
+    available=" $(cat "${CGROUP_ROOT}/cgroup.controllers" 2> /dev/null) "
+    for controller in "${REQUIRED_CG2_CONTROLLERS[@]}"; do
+        [[ ${available} == *" ${controller} "* ]] || return 1
+    done
+    return 0
+}
+
+# raw_exec spawns a task with clone3 only to place it into a cgroup, which is
+# the unified hierarchy's CLONE_INTO_CGROUP path; Go issues the older clone
+# otherwise. So an unimplemented clone3 costs this node nothing unless Nomad
+# would really place it — which is what the two checks below establish, the
+# same pair Nomad's own detect() makes (client/lib/cgroupslib/mount.go). Where
+# it is load-bearing the node registers, fingerprints healthy, and fails every
+# dispatch with `fork/exec …: function not implemented`; refuse to become that
+# node. The two sources of ENOSYS and the fix for each are in README.md
+# § Caveats, and the messages below name them.
 require_clone3() {
     [[ ${SEP_FB_SKIP_CLONE3_CHECK:-0} == "1" ]] && return 0
-    local out
+    local out cgroup_fs
     out="$(python3 /usr/local/bin/clone3_probe.py 2>&1)" || true
     case "${out}" in
         *CLONE3_OK*) return 0 ;;
         *CLONE3_ENOSYS*)
+            cgroup_fs="$(stat -fc %T "${CGROUP_ROOT}" 2> /dev/null)"
+            if [[ ${cgroup_fs} != "cgroup2fs" ]]; then
+                info "clone3 is unimplemented here (ENOSYS), but ${CGROUP_ROOT} is ${cgroup_fs:-unreadable}, not cgroup2fs: Nomad places no cgroup on this layout and spawns with plain clone; continuing"
+                return 0
+            fi
+            if ! cg2_controllers_complete; then
+                info "clone3 is unimplemented here (ENOSYS), but ${CGROUP_ROOT}/cgroup.controllers does not offer all of ${REQUIRED_CG2_CONTROLLERS[*]}: Nomad places no cgroup without them and spawns with plain clone; continuing"
+                return 0
+            fi
             error 'clone3 is unimplemented here (ENOSYS): Nomad cannot launch a single task on this node'
             error 'Unprivileged container? compose.yaml runs sep-mysql privileged; a plain docker run needs --privileged or --security-opt seccomp=unconfined'
             error 'Emulated amd64 on an arm64 engine? Set SEP_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh to build this node natively, or enable Rosetta (Docker Desktop → Settings → General → "Apple Virtualization framework" + "Use Rosetta for x86_64/amd64 emulation")'
