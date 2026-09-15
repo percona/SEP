@@ -38,7 +38,7 @@ SENTINEL_PREFIX = "/tmp/migrate-"
 """The prefix every shipped sentinel path is built from."""
 
 BUDGET_ASSIGNMENT = re.compile(r"^readonly WAIT_BUDGET_SECONDS=\d+$", re.MULTILINE)
-"""The gate's budget constant, which a case that must outlive it rewrites."""
+"""The gate's budget constant, which a case needing a different wait rewrites."""
 
 ALLOWLIST_KEY = ("SETTINGS_OVERRIDE", "ALLOWED_KEYS")
 """The nested profile path carrying the override allowlist.
