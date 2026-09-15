@@ -1219,21 +1219,6 @@ files = [
 toml = ["tomli ; python_full_version <= \"3.11.0a6\""]
 
 [[package]]
-name = "croniter"
-version = "6.2.2"
-description = "croniter provides iteration for datetime object with cron like format"
-optional = false
-python-versions = ">=3.9"
-groups = ["main"]
-files = [
-    {file = "croniter-6.2.2-py3-none-any.whl", hash = "sha256:a5d17b1060974d36251ea4faf388233eca8acf0d09cbd92d35f4c4ac8f279960"},
-    {file = "croniter-6.2.2.tar.gz", hash = "sha256:ba60832a5ec8e12e51b8691c3309a113d1cf6526bdf1a48150ce8ec7a532d0ab"},
-]
-
-[package.dependencies]
-python-dateutil = "*"
-
-[[package]]
 name = "cryptography"
 version = "50.0.0"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
@@ -3122,7 +3107,7 @@ version = "26.2"
 description = "The PyPA recommended tool for installing Python packages."
 optional = false
 python-versions = ">=3.10"
-groups = ["audit", "dev"]
+groups = ["audit"]
 files = [
     {file = "pip-26.2-py3-none-any.whl", hash = "sha256:931c303696af6fa3417112103b1cad26890e5a07eccb5b99783700e33f2b8aad"},
     {file = "pip-26.2.tar.gz", hash = "sha256:2d8542afcc84cdd8e846c2b36b2861fad1da376dd98f8e7113e9108a3c331690"},
@@ -5666,14 +5651,14 @@ wasabi = ">=0.9.1"
 
 [[package]]
 name = "weasyprint"
-version = "69.0"
+version = "70.0"
 description = "The Awesome Document Factory"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "weasyprint-69.0-py3-none-any.whl", hash = "sha256:475951cfd917014de6d4d005caff48c6aa867e7e42b80cd5b16a0484a1609ee6"},
-    {file = "weasyprint-69.0.tar.gz", hash = "sha256:a7a32f39ca16bd82ef11de99c92ea4b5f14951c9033af035e451ce4f4ee0a88c"},
+    {file = "weasyprint-70.0-py3-none-any.whl", hash = "sha256:5043e55e38d2a2af2b2b871e869697b1f65dad5f8b4a3677961d04ceacf9c5fe"},
+    {file = "weasyprint-70.0.tar.gz", hash = "sha256:c263abf0e86c747b12af678b67f85f4abbfb97d18a20503031e7ba94e4b8cf8c"},
 ]
 
 [package.dependencies]
@@ -6024,4 +6009,4 @@ test = ["pytest"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11.9,!=3.12.0,!=3.12.1,!=3.12.2,<3.14"
-content-hash = "6c6ba71ddb3cdad34e4742e6283cd3ed1a1f9bd0f9f235473d3aaa80bfe9511d"
+content-hash = "0d95baed734244e63ce0ec7e35d51735dfbc5a89a9028562977871389e3b7132"

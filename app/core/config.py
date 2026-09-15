@@ -71,6 +71,7 @@ from starlette.types import Lifespan
 from app import BASE_DIR
 from app.core.celery.config import CeleryOptions
 from app.core.db.config import DatabaseOptions
+from app.core.db.exception_handlers import register_db_capacity_handlers
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
     SecurityHeadersOptions,
@@ -444,7 +445,6 @@ def _encryption_key_error() -> str:
     is resolved because the setting is a relative path by default, and a
     process whose working directory is not the one the reader is standing in
     would otherwise be told to edit ``.env`` without being told which.
-
     ``openssl rand -hex 32``, which ``SECRET_KEY``'s own message offers,
     produces 64 characters Fernet rejects, so the two remediations are
     deliberately different.
@@ -475,9 +475,17 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
 
     :param REFRESH_INTERVAL: How often each service refreshes its DB-backed
         setting overrides. Defaults to 30 seconds, and must be strictly
-        positive: ``start_refresh_task()`` hands ``interval.total_seconds()``
-        straight to ``asyncio.sleep()``, so a non-positive value would turn the
-        refresher into a tight loop that hammers the database every iteration.
+        positive. In a web process this is the wall-clock delay between
+        periodic refresh cycles (``start_refresh_task`` hands
+        ``interval.total_seconds()`` to ``asyncio.sleep``). In a prefork
+        worker child it is checked at task boundaries — at most one refresh
+        per interval per child per refresher — rather than a free-running
+        timer; the same value is also the hang budget passed to
+        ``bounded_refresh``, so lowering it for fresher overrides also
+        tightens how long a due task may stall. A child running both the
+        SEP-side and Tasks-side refreshers can pay that budget twice when
+        both are due at the same boundary. A non-positive value is rejected
+        so neither path can hammer the database every iteration.
     :param REFRESHER_ENABLED: Master kill-switch for the DB-override
         background refresher. Tests set this to ``False`` to keep
         ``TestClient`` lifespans hermetic; production leaves it ``True``.
@@ -1050,7 +1058,8 @@ def create_app(
         Starlette strips it before matching routes and ``request.url_for`` re-adds
         it. Defaults to ``""``, which is inert: FastAPI writes the ASGI scope key
         only for a non-empty value, so the unprefixed app is untouched.
-    :return: An instance of the FastAPI application with an attached Celery app.
+    :return: An instance of the FastAPI application, carrying the database
+        capacity handlers every sub-application inherits from here.
     """
     openapi_kwargs = {}
     if title is not None:
@@ -1072,6 +1081,7 @@ def create_app(
         dependencies=dependencies,
         **openapi_kwargs,
     )
+    register_db_capacity_handlers(app)
     if backend_cors_origins is not None:
         app.add_middleware(
             CORSMiddleware,

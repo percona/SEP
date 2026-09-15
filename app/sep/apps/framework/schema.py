@@ -55,6 +55,7 @@ __all__ = [
     "ServiceField",
     "StringField",
     "TableField",
+    "TaskStatusDescriptor",
     "TextAreaField",
     "YamlField",
     "declared_field_names_from_forms",
@@ -88,6 +89,7 @@ from app.sep.apps.framework.rules import (
     FieldGate,
 )
 from app.sep.apps.labels import EXECUTION_HOST_LABEL
+from app.tasks.models import TaskHistoryStatusEnum
 
 # Dots are permitted so nested one-of branch fields can use paths such as
 # ``source.source_db_id`` (see :class:`OneOfGroup`).
@@ -211,6 +213,20 @@ class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
     YAML = auto()
 
 
+class HelpPlacement(StrEnum):
+    """Say where a field's ``description`` is shown, overriding the default.
+
+    The renderer otherwise places help by length — a description that fits
+    roughly one line sits under the input, a longer one goes behind a help icon
+    beside the label. Setting this is for the cases where that reads wrong: a
+    terse note that is still secondary, or a long one someone needs in front of
+    them while they type.
+    """
+
+    TOOLTIP = "tooltip"
+    INLINE = "inline"
+
+
 class BaseField(SchemaBaseModel):
     """Define the abstract base for every concrete field in the plugin schema DSL.
 
@@ -228,8 +244,10 @@ class BaseField(SchemaBaseModel):
     :param description: Optional helper text rendered beneath the field.
         Defaults to ``None``.
     :param destructive: Optional consequence text marking the field as one
-        whose enabled or set state irreversibly destroys user data; presence
-        is the mark and the value is what a confirmation displays. Typed
+        whose enabled or set state irreversibly destroys something the operator
+        cannot get back — user data, or operator-managed state such as a
+        hand-tuned configuration file; presence is the mark and the value is
+        what a confirmation displays. Typed
         optional so a route serialising with ``exclude_none`` drops it from the
         wire until a field opts in, which is what keeps the discovery schemas
         byte-identical; a route without that posture publishes it as an
@@ -245,6 +263,26 @@ class BaseField(SchemaBaseModel):
     :param forbidden: Optional list of binary self-cardinality gates: when
         any gate's ``when`` predicate matches, the field must be absent.
         Defaults to ``None``.
+    :param help_placement: Optional override for where the field's
+        ``description`` is shown — ``"inline"`` under the input, ``"tooltip"``
+        behind a help icon beside the label. ``None`` (the default) lets the
+        renderer decide by length: roughly one line renders inline, longer
+        prose goes behind the icon. Reference and selector fields ignore it and
+        are always inline, having a plain-string label with no node to hang an
+        icon from. Typed optional so a route serialising with ``exclude_none``
+        keeps it off the wire until a field opts in.
+    :param parent: Optional name of a sibling ``bool`` field, in the same
+        section, that this field parameterises. The schema-driven React
+        renderer draws the field indented beneath that toggle and inert until
+        it is on, rather than hiding it. Presentation only — it does not change
+        what the server accepts, and the disable state comes from the named
+        field's truthiness alone. A field that additionally declares a
+        ``forbidden`` gate on the parent being falsy is still nested rather
+        than hidden: the renderer recognises that shape and consumes it as the
+        disable condition, while every other gate keeps hiding the field.
+        Typed optional so a route serialising with ``exclude_none`` drops it
+        from the wire until a field opts in, the same posture as
+        ``destructive``. Defaults to ``None``.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -255,6 +293,8 @@ class BaseField(SchemaBaseModel):
     default: Any | None = None
     requires: list[FieldGate] | None = None
     forbidden: list[FieldGate] | None = None
+    parent: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)] | None = None
+    help_placement: HelpPlacement | None = None
 
 
 class BoolField(BaseField):
@@ -847,29 +887,27 @@ class FormSection(SchemaBaseModel):
     """Represent a labelled group of related fields rendered as one fieldset.
 
     :param title: The section heading displayed above the grouped fields.
-    :type title: NonEmptyStr
     :param description: Optional helper text rendered beneath the section
         heading. Defaults to ``None``.
-    :type description: NonEmptyStr | None
     :param fields: The list of fields belonging to this section. May include
         :class:`OneOfGroup` containers alongside leaf fields.
-    :type fields: list[AnyField]
     :param cardinality_rules: Optional cross-field cardinality constraints
         scoped to the fields in this section. Defaults to ``None``.
-    :type cardinality_rules: list[CardinalityRule] | None
     :param fail_when: Optional predicate-only invariants scoped to this
         section. Defaults to ``None``.
-    :type fail_when: list[FailRule] | None
+    :param advanced: Whether the section holds expert options rather than the
+        common case. The renderer withholds advanced sections behind a single
+        "Show advanced options" control placed after the ordinary ones and
+        reveals them as ordinary top-level sections, so several expert sections
+        cost one row at rest instead of one each. Membership needs no
+        adjacency. Defaults to ``False``.
     :param collapsible: Whether the renderer may collapse this section behind
         a toggle. Defaults to ``False``.
-    :type collapsible: bool
     :param collapsed_by_default: Whether a collapsible section should start
         collapsed. Ignored when ``collapsible`` is ``False``. Defaults to
         ``False``.
-    :type collapsed_by_default: bool
     :param render_after_submit: Whether this section should render after the
         submit button instead of before it. Defaults to ``False``.
-    :type render_after_submit: bool
     :param forbidden: Optional gates that hide the entire section when any
         of them fires. The schema-driven React renderer skips the section
         and unregisters every child field from the form so stale values
@@ -882,7 +920,6 @@ class FormSection(SchemaBaseModel):
         ``truthy``/``present`` predicates silently pass while
         ``falsy``/``absent`` predicates see the children as missing.
         Author ``fail_when`` rules accordingly.
-    :type forbidden: list[FieldGate] | None
     """
 
     title: NonEmptyStr
@@ -890,6 +927,7 @@ class FormSection(SchemaBaseModel):
     fields: list[AnyField]
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+    advanced: bool = False
     collapsible: bool = False
     collapsed_by_default: bool = False
     render_after_submit: bool = False
@@ -1607,6 +1645,41 @@ class AppEntitySchema(SchemaBaseModel):
         return self
 
 
+class TaskStatusDescriptor(SchemaBaseModel):
+    """Declare one task-status value and its run terminality/output predicates.
+
+    :param value: The status as it appears on a task-history payload.
+    :param terminal: Whether a run in this status will not transition again, so
+        a client polling for completion can stop re-reading on it.
+    :param output_available: Whether the run reached an observed outcome, so its
+        output may be requested and may legitimately be empty, as for ``stale``
+        and ``unlaunchable``. ``lost`` is excluded because its outcome was never
+        observed.
+    """
+
+    value: TaskHistoryStatusEnum
+    terminal: bool
+    output_available: bool
+
+
+def _task_status_descriptors() -> list[TaskStatusDescriptor]:
+    """Return the task-status vocabulary in enum declaration order.
+
+    :return: One descriptor per :class:`TaskHistoryStatusEnum` member, each
+        classified by :meth:`TaskHistoryStatusEnum.is_terminal` and
+        :meth:`TaskHistoryStatusEnum.is_finished` (the observed-outcome
+        predicate backing ``output_available``).
+    """
+    return [
+        TaskStatusDescriptor(
+            value=status,
+            terminal=status.is_terminal(),
+            output_available=status.is_finished(),
+        )
+        for status in TaskHistoryStatusEnum
+    ]
+
+
 class AppSchema(SchemaBaseModel):
     """Represent a plugin's complete schema: form sections, list view, capabilities.
 
@@ -1665,6 +1738,11 @@ class AppSchema(SchemaBaseModel):
     :param related_apps: Optional separately registered apps the React shell
         surfaces as sibling tabs (for example a restore app nested under a
         backups parent). Defaults to ``None``.
+    :param task_statuses: The task-status vocabulary a client polls against,
+        declaring per status value both run terminality and whether output
+        retrieval is meaningful. Server-authored, so a supplied value is
+        replaced rather than honoured. Withheld (``None``) for a plugin
+        declaring ``entities``, whose records are not task runs.
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -1683,6 +1761,7 @@ class AppSchema(SchemaBaseModel):
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
     related_apps: list[RelatedApp] | None = None
+    task_statuses: list[TaskStatusDescriptor] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1694,6 +1773,31 @@ class AppSchema(SchemaBaseModel):
             were supplied or nothing could be filled.
         """
         return _fill_item_display_names(data)
+
+    @model_validator(mode="after")
+    def _populate_task_statuses(self) -> Self:
+        """Publish the status vocabulary, or withhold it for entity plugins.
+
+        The list is derived from :class:`~app.tasks.models.TaskHistoryStatusEnum`
+        and overwrites whatever a caller supplied, though a supplied value still
+        has to parse as ``list[TaskStatusDescriptor]`` first, since the field is
+        declared rather than computed.
+
+        Deriving it here rather than at the construction sites covers every path
+        that *validates* an ``AppSchema`` — ``__init__`` and ``model_validate``
+        — including the ``schema=`` passthrough that never reaches
+        ``derive_app_schema``. ``model_construct`` and ``model_copy`` bypass
+        validation and so bypass this.
+
+        A ``computed_field`` is the more idiomatic derivation and is ruled out
+        here: :class:`SchemaBaseModel` sets ``extra="forbid"``, and a computed
+        field serialises into the dump without being an accepted input, so every
+        ``AppSchema`` round-trip back through ``model_validate`` would fail.
+
+        :return: The validated plugin schema instance.
+        """
+        self.task_statuses = None if self.entities else _task_status_descriptors()
+        return self
 
     @model_validator(mode="after")
     def _validate_detail_view_required_for_task_type(self) -> Self:

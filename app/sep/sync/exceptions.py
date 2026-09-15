@@ -15,6 +15,8 @@
 
 """Define reusable Sync exceptions for the SEP app."""
 
+from pydantic import ValidationError
+
 from app.sep.models import SyncInventoryEntityTypeEnum, SyncItem
 
 
@@ -103,13 +105,43 @@ class SyncInstanceAlreadyInProgressError(SyncError):
     that is already being handled by another synchronizer.
 
     :param sync_items: The synchronization items that are already in progress.
-    :type sync_items: Sequence[SyncItem]
+    :param detail: A message describing a conflict that no item evidences, such as
+        a run that has not written its first item yet. Carries sync bookkeeping
+        only: this type is allowlisted for verbatim storage on
+        ``last_sync_error``, which the inventory read routes serve, so a message
+        it carries must hold nothing a reader may not see — the allowlist is keyed
+        on the type, not on which raising path recorded it.
     """
 
-    def __init__(self, *sync_items: SyncItem) -> None:
+    def __init__(self, *sync_items: SyncItem, detail: str | None = None) -> None:
         self.sync_items = sync_items
-        message = (
+        message = detail or (
             f"A sync instance with this syncer is already in progress for the "
             f"following sync items: {sync_items}."
         )
         super().__init__(message)
+
+
+class SyncerConfigurationError(SyncError):
+    """Raise when a configured syncer cannot be constructed from its settings.
+
+    Wraps the ``pydantic.ValidationError`` a syncer raises for an unusable setting so
+    callers can tell a misconfiguration apart from a runtime fault: the sync trigger
+    answers it with a 503 instead of letting it surface as an unhandled 500, and a
+    scheduled run fails with the offending field named. The message names the fields
+    and not their values, since it reaches an API client; the wrapped error stays on
+    ``__cause__`` for the log.
+
+    :param syncer: Dotted path of the syncer that could not be constructed.
+    :param error: The validation failure the syncer raised for its settings.
+    """
+
+    def __init__(self, syncer: str, error: ValidationError) -> None:
+        self.syncer = syncer
+        self.fields = [
+            ".".join(str(part) for part in item["loc"])
+            for item in error.errors()
+            if item["loc"]
+        ]
+        named = f": {', '.join(self.fields)}" if self.fields else ""
+        super().__init__(f"Syncer {syncer!r} rejected its configured settings{named}")

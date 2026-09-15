@@ -27,6 +27,7 @@ recreates the table instead of altering it in place.
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
 import pytest
 from alembic import command
@@ -73,8 +74,8 @@ from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     LONG_USERNAME_LENGTH,
     PMM_API_KEY,
-    PMM_ENDPOINT,
     ROUTING_KEY,
+    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -88,8 +89,23 @@ _SEEDED_OVERRIDE_VALUE = 5
 _SEP_PRE_ENCRYPTION_REVISION = "c9880f0ac1bd"
 
 
+#: A credential-bearing endpoint, whose userinfo password the credential-URL
+#: revision encrypts while leaving the rest of the URL legible.
+_CREDENTIAL_URL = "https://inv-user:inv-secret@inventory.internal:8080/api"
+_CREDENTIAL_PASSWORD = "inv-secret"
+
+#: A ``PMM`` endpoint carrying a password, so the whole-object row holds both
+#: leaf kinds at once: the ``SecretStr`` ``api_key`` one revision encrypts and
+#: the credential URL the next one does. That row is what proves the second
+#: revision's downgrade is its own inverse rather than the broad helper's.
+_PMM_CREDENTIAL_ENDPOINT = "https://pmm-user:pmm-secret@pmm.example.com:8443/"
+
 _SEED_ROWS = [
-    (SETTINGS_TOKEN, "PMM", {"endpoint": PMM_ENDPOINT, "api_key": PMM_API_KEY}),
+    (
+        SETTINGS_TOKEN,
+        "PMM",
+        {"endpoint": _PMM_CREDENTIAL_ENDPOINT, "api_key": PMM_API_KEY},
+    ),
     (SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY),
     (SETTINGS_TOKEN, "LOGGING", "DEBUG"),
     (
@@ -98,6 +114,7 @@ _SEED_ROWS = [
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS", 7200),
+    (SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
 ]
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
@@ -523,6 +540,10 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
     takes. The values come back through ``jsonb`` rather than SQLite's ``json``,
     which is what makes this the dialect arm of the walker's coverage.
 
+    Both leaf kinds are seeded: a whole-value ``SecretStr`` leaf and a
+    credential-bearing URL, whose userinfo password alone is rewritten while the
+    surrounding endpoint stays legible.
+
     The Tasks chain then runs over the same physical table and must neither
     re-encrypt what the SEP chain rewrote nor touch the rows whose
     ``setting_class`` it cannot resolve.
@@ -539,11 +560,18 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
 
     stored = _stored_override_values(sync_url)
     assert decrypt(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
-    assert stored[(SETTINGS_TOKEN, "PMM")]["endpoint"] == PMM_ENDPOINT
+    pmm_endpoint = urlparse(stored[(SETTINGS_TOKEN, "PMM")]["endpoint"])
+    assert decrypt(pmm_endpoint.password) == "pmm-secret"
+    assert pmm_endpoint.hostname == "pmm.example.com"
     assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
     provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
     assert decrypt(provider["routing_key"]) == ROUTING_KEY
     assert provider["PROVIDER"] == "pagerduty"
+    endpoint = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
+    assert decrypt(endpoint.password) == _CREDENTIAL_PASSWORD
+    assert endpoint.username == "inv-user"
+    assert endpoint.hostname == "inventory.internal"
+    assert endpoint.path == "/api"
     assert stored[(SETTINGS_TOKEN, "LOGGING")] == before[(SETTINGS_TOKEN, "LOGGING")]
     assert (
         stored[(TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS")]

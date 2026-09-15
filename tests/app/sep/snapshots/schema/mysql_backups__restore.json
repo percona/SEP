@@ -3,7 +3,7 @@
     "alert_on_fail": true,
     "chaining": true,
     "pii_anonymization": false,
-    "scheduling": true,
+    "scheduling": false,
     "stats": false
   },
   "description": "Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
@@ -31,6 +31,7 @@
   "display_name": "MySQL Restores",
   "forms": [
     {
+      "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
       "fields": [
@@ -49,6 +50,27 @@
           "type": "host"
         },
         {
+          "allow_custom": true,
+          "description": "Populates Backup Source and the Mydumper target database, and is where a Mydumper restore loads. XtraBackup and Binlog only record the name, so a typed one works.",
+          "label": "Destination Database Service",
+          "name": "service_id",
+          "required": false,
+          "requires": [
+            {
+              "message": "Destination Database Service is required for a Mydumper restore.",
+              "when": {
+                "equals": {
+                  "backup_type": "M"
+                }
+              }
+            }
+          ],
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
           "choices": [
             {
               "label": "Mydumper",
@@ -63,6 +85,7 @@
               "value": "B"
             }
           ],
+          "description": "Restore method for this task; it has to match how the backup was taken, and it selects which sections below apply",
           "label": "Backup Type",
           "name": "backup_type",
           "required": true,
@@ -70,116 +93,86 @@
         },
         {
           "allow_custom": true,
-          "label": "Destination Database Service",
-          "name": "service_id",
-          "required": false,
-          "service_types": [
-            "mysql"
-          ],
-          "type": "service"
-        },
-        {
-          "allow_custom": true,
           "depends_on": "service_id",
-          "description": "Where the backup is stored. Select a database service above to list its completed backups, then pick one — or enter a local path (/backups/mydumper/20240101), a remote host (db01:/path/to/backup), s3://bucket/path, or gs://bucket/path. Add /latest to any of these to restore the most recent backup. Avoid these characters: $ ; | & ( ) `",
+          "description": "Pick a service above to list its backups, or type a path: /backups/mydumper/20240101, db01:/path, s3://bucket/path or gs://bucket/path. Add /latest for the most recent.",
           "endpoint_url": "/apps/mysql_backups/backup-sources/choices",
           "label": "Backup Source",
           "name": "backup_source",
           "required": true,
           "type": "remote_choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "Local path",
+              "value": "local"
+            },
+            {
+              "label": "Remote host over SSH",
+              "value": "ssh"
+            },
+            {
+              "label": "S3-compatible object storage",
+              "value": "s3"
+            },
+            {
+              "label": "Google Cloud Storage",
+              "value": "gcs"
+            }
+          ],
+          "default": "local",
+          "description": "How the backup above is reached. Selecting a transport reveals only the credentials that transport uses.",
+          "label": "Backup location",
+          "name": "source_transport",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "choices": [
+            {
+              "label": "No encryption",
+              "value": "none"
+            },
+            {
+              "label": "GPG",
+              "value": "gpg"
+            },
+            {
+              "label": "AES-256 (XtraBackup only)",
+              "value": "aes256"
+            },
+            {
+              "label": "AES-256 + GPG (XtraBackup only)",
+              "value": "dual"
+            }
+          ],
+          "default": "none",
+          "description": "Which encryption the backup being restored was written with. The GPG formats reveal the password file used to decrypt it.",
+          "label": "Backup encryption",
+          "name": "source_encryption",
+          "required": false,
+          "type": "choice"
         }
       ],
       "render_after_submit": false,
       "title": "Task"
     },
     {
-      "collapsed_by_default": true,
-      "collapsible": true,
-      "fields": [
-        {
-          "label": "Logging directory",
-          "min_length": 1,
-          "name": "logging_dir",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "label": "Port",
-          "name": "port",
-          "required": false,
-          "type": "integer"
-        },
-        {
-          "label": "Custom MySQL init command",
-          "min_length": 1,
-          "name": "custom_mysql_init_command",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "default": "percona",
-          "label": "SSH user",
-          "min_length": 1,
-          "name": "ssh_user",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "default": 22,
-          "label": "SSH port",
-          "name": "ssh_port",
-          "required": false,
-          "type": "integer"
-        },
-        {
-          "label": "SSH key name",
-          "min_length": 1,
-          "name": "ssh_key",
-          "required": false,
-          "type": "string"
-        },
-        {
-          "choices": [
-            {
-              "label": "s3cmd",
-              "value": "s3cmd"
-            },
-            {
-              "label": "awscli",
-              "value": "awscli"
-            }
-          ],
-          "default": "s3cmd",
-          "label": "S3 tool",
-          "name": "s3_tool",
-          "required": false,
-          "type": "choice"
-        },
-        {
-          "label": "GPG password file",
-          "min_length": 1,
-          "name": "gpg_password_file",
-          "required": false,
-          "type": "string"
-        }
-      ],
-      "render_after_submit": false,
-      "title": "General"
-    },
-    {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
           "allow_custom": true,
           "depends_on": "service_id",
-          "description": "--database myloader option (database to restore to)",
+          "description": "Database the backup is loaded into. Leave empty to restore into the backup's own databases. A typed name is ignored — same as leaving it empty.",
           "label": "Target database",
           "name": "schema_id",
           "required": false,
           "type": "schema"
         },
         {
+          "description": "Staging directory on the target host where the backup is assembled before it is loaded; the staging copy is removed once the load succeeds, and left behind after a failure (defaults to /tmp)",
           "label": "Local path",
           "min_length": 1,
           "name": "local_path",
@@ -188,6 +181,7 @@
         },
         {
           "default": false,
+          "description": "Let the load replace tables that already exist in the target database. Without it the load fails on the first table that is already there.",
           "destructive": "Existing tables in the target database are dropped before the backup is loaded. Rows written since the backup was taken are lost.",
           "label": "Overwrite tables",
           "name": "overwrite_tables",
@@ -196,12 +190,14 @@
         },
         {
           "default": 4,
+          "description": "How many tables are loaded in parallel",
           "label": "Myloader threads",
           "name": "myloader_threads",
           "required": false,
           "type": "integer"
         },
         {
+          "description": "Extra arguments appended to the myloader command",
           "label": "Myloader extra args",
           "min_length": 1,
           "name": "myloader_extra_args",
@@ -209,6 +205,7 @@
           "type": "string"
         },
         {
+          "description": "Databases to leave out of the restore, comma-separated. They are filtered out as the backup is fetched, by file name, and are ignored for a Google Cloud Storage source.",
           "label": "Skip databases",
           "min_length": 1,
           "name": "skip_databases",
@@ -216,6 +213,7 @@
           "type": "string"
         },
         {
+          "description": "Databases to restore, comma-separated, ignoring the rest of the backup. Filtered as the backup is fetched, by file name, and ignored for a Google Cloud Storage source.",
           "label": "Include databases",
           "min_length": 1,
           "name": "include_databases",
@@ -223,6 +221,7 @@
           "type": "string"
         },
         {
+          "description": "Path on the target host to a script run before the load. A .sql file is executed against the target MySQL; anything else runs as a command.",
           "label": "Pre-script",
           "min_length": 1,
           "name": "pre_script",
@@ -230,6 +229,7 @@
           "type": "string"
         },
         {
+          "description": "Path on the target host to a script run after the load. A .sql file is executed against the target MySQL; anything else runs as a command.",
           "label": "Post-script",
           "min_length": 1,
           "name": "post_script",
@@ -250,17 +250,21 @@
       "title": "Mydumper"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
           "default": false,
+          "description": "Restore only the base backup and ignore the incrementals chained to it",
           "label": "Skip incrementals",
           "name": "skip_incrementals",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "MySQL data directory the backup is restored into. Required: it has to exist already, and everything currently in it is deleted.",
+          "destructive": "The data directory is emptied before the backup is restored into it. Whatever it holds now, including a live dataset, is lost.",
           "label": "Data directory",
           "min_length": 1,
           "name": "datadir",
@@ -268,13 +272,7 @@
           "type": "string"
         },
         {
-          "default": false,
-          "label": "Kill MySQL",
-          "name": "kill_mysql",
-          "required": false,
-          "type": "bool"
-        },
-        {
+          "description": "Memory the prepare step may use, as a size such as 2G (defaults to 100M)",
           "label": "XtraBackup prepare memory",
           "min_length": 1,
           "name": "xb_prepare_memory",
@@ -283,6 +281,7 @@
         },
         {
           "default": 4,
+          "description": "How many files are decrypted and decompressed in parallel (defaults to 4). Clearing it leaves the decompression unbounded.",
           "label": "XtraBackup parallel",
           "name": "xb_parallel",
           "required": false,
@@ -303,6 +302,7 @@
               "value": "mariadb-backup"
             }
           ],
+          "description": "Which binary prepares the backup; pick the one matching the tool that took it",
           "label": "XtraBackup binary",
           "name": "xtrabackup_bin_cmd",
           "required": false,
@@ -310,12 +310,15 @@
         },
         {
           "default": false,
+          "description": "Restore the MySQL configuration files saved in the backup before preparing it, rewriting server id to a fresh value. Choosing one that is not already taken queries the replication source below.",
+          "destructive": "Each configuration file saved in the backup is written over the live file at its original path, outside the data directory. No copy of what those files held is kept, so hand-tuned settings are lost.",
           "label": "Restore my.cnf",
           "name": "restore_mycnf",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Directory where an incremental chain is assembled before it is prepared (defaults to /tmp/pxb_incrementals)",
           "label": "Incremental destination path",
           "min_length": 1,
           "name": "incremental_dest_path",
@@ -323,6 +326,7 @@
           "type": "string"
         },
         {
+          "description": "Extra arguments appended to the prepare command",
           "label": "XtraBackup restore args",
           "min_length": 1,
           "name": "xtrabackup_restore_args",
@@ -330,6 +334,7 @@
           "type": "string"
         },
         {
+          "description": "Keyring file the prepare needs for a backup with encrypted tablespaces; read only when the backup binary above is xtrabackup. Falls back to a path found in the configuration files stored inside the backup when left empty.",
           "label": "Keyring file data",
           "min_length": 1,
           "name": "keyring_file_data",
@@ -337,6 +342,7 @@
           "type": "string"
         },
         {
+          "description": "AES-256 key file the backup was encrypted with, needed to decrypt it before the prepare",
           "label": "XtraBackup AES-256 keyfile",
           "min_length": 1,
           "name": "xtrabackup_aes256_keyfile",
@@ -345,6 +351,7 @@
         },
         {
           "default": false,
+          "description": "Start replication once the restore finishes, using the coordinates saved in the backup",
           "label": "Slave from master",
           "name": "slave_from_master",
           "required": false,
@@ -352,36 +359,45 @@
         },
         {
           "default": false,
+          "description": "Wait for the restored replica to catch up and fail the task if it does not. Needs replication to be started above.",
           "label": "Wait for catchup",
           "name": "wait_for_catchup",
+          "parent": "slave_from_master",
           "required": false,
           "type": "bool"
         },
         {
+          "description": "Replication source the restored instance connects to. Used when replication is started above.",
           "label": "Master IP",
           "min_length": 1,
           "name": "master_ip",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         },
         {
           "default": 3306,
+          "description": "Port used to query the replication source for an unused server id when 'Restore my.cnf' is set. Starting replication itself uses the port in the coordinates saved in the backup.",
           "label": "Master port",
           "name": "master_port",
           "required": false,
           "type": "integer"
         },
         {
+          "description": "Account the restored instance replicates with",
           "label": "Master user",
           "min_length": 1,
           "name": "master_user",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         },
         {
+          "description": "Password for the replication account",
           "label": "Master password",
           "min_length": 1,
           "name": "master_password",
+          "parent": "slave_from_master",
           "required": false,
           "type": "string"
         }
@@ -399,10 +415,12 @@
       "title": "XtraBackup"
     },
     {
+      "advanced": false,
       "collapsed_by_default": true,
       "collapsible": true,
       "fields": [
         {
+          "description": "First binlog file to replay",
           "label": "Start file",
           "min_length": 1,
           "name": "start_file",
@@ -410,12 +428,14 @@
           "type": "string"
         },
         {
+          "description": "Position in the first file to start replaying from",
           "label": "Start position",
           "name": "start_position",
           "required": false,
           "type": "integer"
         },
         {
+          "description": "Last binlog file to replay",
           "label": "Stop file",
           "min_length": 1,
           "name": "stop_file",
@@ -423,12 +443,14 @@
           "type": "string"
         },
         {
+          "description": "Position in the last file to stop replaying at",
           "label": "Stop position",
           "name": "stop_position",
           "required": false,
           "type": "integer"
         },
         {
+          "description": "Dump the binlog range to restore.sql in the staging directory first and then apply that file, instead of piping the binlogs straight into MySQL",
           "label": "Use SQL file",
           "min_length": 1,
           "name": "use_sql_file",
@@ -436,6 +458,7 @@
           "type": "string"
         },
         {
+          "description": "Extra arguments appended to the mysqlbinlog replay command",
           "label": "Binlog restore extra args",
           "min_length": 1,
           "name": "binlog_restore_extra_args",
@@ -454,6 +477,142 @@
       ],
       "render_after_submit": false,
       "title": "Binlog"
+    },
+    {
+      "advanced": false,
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "description": "Directory on the target host for this restore's log files",
+          "label": "Logging directory",
+          "min_length": 1,
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Port SEP connects to on the target host when it queries the server during an XtraBackup restore (defaults to 3306). A Mydumper restore loads over the destination service's own address and a Binlog restore replays through a local client, so neither uses it.",
+          "label": "Port",
+          "name": "port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Service command used to stop and start MySQL during an XtraBackup restore, such as /usr/bin/systemctl; detected automatically when left empty. Mydumper and Binlog restores never stop MySQL, so they ignore it.",
+          "label": "Custom MySQL init command",
+          "min_length": 1,
+          "name": "custom_mysql_init_command",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "SSH user for fetching a backup stored on a remote host. Defaults to percona when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH user",
+          "min_length": 1,
+          "name": "ssh_user",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "SSH port for fetching a backup stored on a remote host. Defaults to 22 when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH port",
+          "name": "ssh_port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Unused for the sources above: a local path, remote host, S3 or Google Cloud Storage fetch always authenticates with the SSH user's own id_rsa key.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "ssh"
+                }
+              }
+            }
+          ],
+          "label": "SSH key name",
+          "min_length": 1,
+          "name": "ssh_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "s3cmd",
+              "value": "s3cmd"
+            },
+            {
+              "label": "awscli",
+              "value": "awscli"
+            }
+          ],
+          "description": "Client used to download the backup. Defaults to s3cmd when left blank.",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "source_transport": "s3"
+                }
+              }
+            }
+          ],
+          "label": "S3 tool",
+          "name": "s3_tool",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "description": "Path on the target host to the file holding the passphrase for a GPG-encrypted backup",
+          "forbidden": [
+            {
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_encryption": "gpg"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_encryption": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "label": "GPG password file",
+          "min_length": 1,
+          "name": "gpg_password_file",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "General"
     }
   ],
   "item_display_name": "restore",
@@ -507,5 +666,47 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "mysql_backups_restores"
+  "name": "mysql_backups_restores",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
 }

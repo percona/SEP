@@ -18,9 +18,9 @@
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
-from app.core.celery.models import IntervalSchedule, Period
+from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import is_hot_reloadable
 from app.sep.apps.report.config import (
@@ -165,6 +165,26 @@ class TestReportScheduleEntry:
         assert entry.full is True
         assert entry.refresh is False
         assert entry.upload is True
+
+    def test_a_runnable_crontab_schedule_still_loads(self) -> None:
+        """Assert a cron the scheduler can run is accepted from settings."""
+        entry = ReportScheduleEntry.model_validate(
+            {"schedule": {"minute": "0", "hour": "2"}}
+        )
+        assert isinstance(entry.schedule, CrontabSchedule)
+        assert entry.schedule.minute == "0"
+
+    def test_an_unrunnable_crontab_schedule_fails_at_load(self) -> None:
+        """Assert a malformed cron fails at settings load, naming the field.
+
+        It previously reached the seed path and raised a bare ``ValueError``
+        there instead.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            ReportScheduleEntry.model_validate(
+                {"schedule": {"minute": "not-a-cron", "hour": "2"}}
+            )
+        assert "schedule" in str(excinfo.value)
 
 
 class TestHealthReportSettingsProxy:

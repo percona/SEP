@@ -45,6 +45,7 @@ default:
       - AnonymizerSettings.DEFAULT_ENTITIES
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
+      - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
 
   AUTH:
     PROVIDER:
@@ -74,8 +75,17 @@ default:
     # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    # Each prefork child builds its own engines, so this bounds the worker's share
+    # of the connection budget recorded above the DATABASE block. Celery's default
+    # is one child per CPU the container sees, which is every core on the host.
+    WORKER_CONCURRENCY: 4
     BEAT_ENGINE_OPTIONS:
       POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
+      # No sizing keys. celery-beat runs as its own program here, never forked, so
+      # its scheduler engine is a NullPool: MAX_OVERFLOW raises TypeError at beat
+      # startup, and POOL_SIZE and POOL_TIMEOUT are dropped. The engines these
+      # options do size (one each in sep and tasks, one per worker child that runs
+      # inventory collection) therefore stay at SQLAlchemy's 5 + 10.
 
   # One database for all three services: PMM_ENABLE_SEP provisions exactly the
   # `sep` role and `sep` database, so this is defined once and aliased below.
@@ -84,12 +94,35 @@ default:
   # The alias is one object, so a second profile block must not override a single
   # service's DATABASE keys: the profile merge is in-place and would move all three.
   # test_profile_carries_a_single_default_block keeps this file to one block.
+
+  # Connection budget. PMM gives the `sep` role no connection limit; the cap is
+  # PostgreSQL's server-wide max_connections of 2000, which every PMM new enough
+  # to provision the `sep` role sets, shared with pmm-managed (50) and Grafana
+  # (100). SEP holds itself to 10% of it. Worst case with every pool full, where
+  # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
+  #   sep          2 x 5 + celery-DB 15                    25
+  #   inventory    1 x 5                                    5
+  #   tasks        2 x 5 + celery-DB 15                    25
+  #   worker       parent 2 x 5, plus 4 children x 25     110
+  #   beat         2 x 5 + NullPool scheduler              11
+  #   sync locks   one held per configured syncer           2
+  #                                                total  178 of 200
+  # Both sep and beat reach a service-DB engine they do not own: sep imports the
+  # tasks one through periodic_tasks, and beat loads the worker's task modules
+  # because celery beat runs init_worker() before starting the scheduler.
+  # Not in the total: the four schema one-shots add 4 at boot, and every sync
+  # claim that arrives while another holds the lock briefly opens one more.
+  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25, so a fifth
+  # child (203) would not fit and 4 is the most the 10% policy allows.
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server
     NAME: sep
     PORT: 5432
     USER: sep
+    POOL_SIZE: 3
+    MAX_OVERFLOW: 2
+    POOL_TIMEOUT: 10.0
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -142,6 +175,46 @@ default:
         results_pointer: /result
         reference_pointer: /number
         title_pointer: /short_description
+      # Targets the same table the case search above already reads, so the
+      # probe adds no ACL dependency the deployment does not already have.
+      probe:
+        path: api/now/table/sn_customerservice_case
+        query:
+          sysparm_limit: {source: literal, value: "1"}
+          sysparm_fields: {source: literal, value: sys_id}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+      connection_details:
+        path: api/now/table/api_key
+        query:
+          # Scope the read to the rows this identity owns rather than trusting
+          # the api_key row ACL to expose exactly one. It does not single out
+          # the key that signed the request: a second key issued to the same
+          # identity would make the row returned arbitrary.
+          sysparm_query:
+            source: literal
+            value: "user=javascript:gs.getUserID()"
+          # The projection is what keeps `token` and `token_hash` out of the
+          # response, not a tidiness preference. Do not widen it.
+          sysparm_fields:
+            source: literal
+            value: "name,active,expires,user.name,user.company.name,user.company.number"
+          # Reference fields come back as opaque sys_ids without this, so the
+          # account and the company would be reported as unreadable.
+          sysparm_display_value: {source: literal, value: "all"}
+          sysparm_limit: {source: literal, value: "1"}
+        headers:
+          x-sn-apikey: {source: secret, name: sn_api_key}
+        # Every pointer ends at `display_value` because the parameter above
+        # wraps each field as {display_value, value}; one stopping at the field
+        # name lands on a container and its pair is dropped in silence.
+        details:
+          Account name: /result/0/user.company.name/display_value
+          Account number: /result/0/user.company.number/display_value
+          Key: /result/0/name/display_value
+          ServiceNow user: /result/0/user.name/display_value
+          Active: /result/0/active/display_value
+          Expires: /result/0/expires/display_value
       upload:
         path: api/now/attachment/upload
         headers:
@@ -193,6 +266,7 @@ default:
     DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9002
+    # PENDING_ALLOCATION_TIMEOUT_SECONDS: 3600  # Max seconds a RUNNING row may wait for an allocation to produce TaskStates before escalating to LOST
     NOMAD:
       # Credential-free so this file validates standalone; the credentialed form
       # arrives as the canonical Nomad endpoint variable.

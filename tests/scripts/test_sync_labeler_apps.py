@@ -15,21 +15,13 @@
 
 """Tests for the ``scripts/sync_labeler_apps.py`` CLI."""
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_labeler_apps.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("sync_labeler_apps", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-sync_labeler_apps = importlib.util.module_from_spec(_spec)
-sys.modules["sync_labeler_apps"] = sync_labeler_apps
-_spec.loader.exec_module(sync_labeler_apps)
+sync_labeler_apps = load_script("sync_labeler_apps")
 
 _EXISTING_RULES = """\
 python:

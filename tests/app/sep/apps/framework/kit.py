@@ -83,6 +83,13 @@ SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
+
+#: Run state pinned on the upstream history row execute fixtures return. Both
+#: differ from every value the field would otherwise take -- the model defaults
+#: (``PENDING`` and ``utc_now()``) and ``TaskHistoryResponseFactory``'s declared
+#: ``SUCCESS`` -- so asserting them tells a forwarded field from a defaulted one.
+EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
+EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
 SYNTH_CREATED_BY = "synth-user-id"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
@@ -198,9 +205,11 @@ class MockTaskAPI:
         if path == "/connectivity-check/":
             return {"success": True, "error": None}
         if path.startswith("/execute/"):
-            return TaskHistoryResponseFactory.build(id=next(self._ids)).model_dump(
-                mode="json"
-            )
+            return TaskHistoryResponseFactory.build(
+                id=next(self._ids),
+                status=EXECUTE_STATUS,
+                created_at=EXECUTE_CREATED_AT,
+            ).model_dump(mode="json")
         return self._create(json)
 
     async def put(
@@ -566,10 +575,12 @@ class SynthExecuteWrite(BaseModel):
 
 
 class SynthExecuteResponse(BaseModel):
-    """Represent the execute response carrying the dispatched task name and id."""
+    """Represent the execute response carrying the dispatched run's identity and state."""
 
     task_name: str
     task_id: int
+    status: TaskHistoryStatusEnum
+    created_at: datetime
 
 
 class SynthCapabilities(BaseModel):

@@ -17,18 +17,22 @@
 
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import Annotated, Any, ClassVar, TYPE_CHECKING
 
 import yaml
 
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
+from app.sep.apps.framework.form_dsl import FormRules
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
 from app.sep.apps.mysql_backups.forms import (
+    BACKUP_DIR_UI,
     BackupCreate,
     encryption_format_for_passes,
+    LENIENT_BACKUP_FORM_RULES,
     OWNER,
     UploadProvider,
 )
@@ -43,6 +47,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "FORM_BACKFILL_ENTRIES",
+    "LegacyBackupCreate",
     "reconstruct_mysql_backups_form",
     "repair_mysql_backups_stamp",
 ]
@@ -65,6 +70,48 @@ _EXPLICIT_FORM_KEYS = frozenset(
     }
 )
 _PARSE_ONLY_KEYS = frozenset({"name", "host", "port"})
+
+
+class LegacyBackupCreate(BackupCreate):
+    """Validate a reconstructed form body against the create form's older contract.
+
+    A stored config written before the create form required a backup directory has
+    no ``BACKUP_DIR`` key, so the reconstructed body omits ``backup_dir``.
+    Validating that against the strict create model would skip the task, and a task
+    with no ``_form`` stamp has no Edit affordance at all — leaving an operator able
+    to delete and recreate it but not to repair it. The rejection belongs on the
+    create and update routes, which keep
+    :class:`~app.sep.apps.mysql_backups.forms.BackupCreate`.
+
+    The field is declared exactly as the create model declared it before the
+    tightening, ``NonEmptyStr`` and not ``StrippedNonEmptyStr``: the older form
+    accepted a whitespace-only directory, the payload joined it as a relative path,
+    and those tasks ran and reported success, so they are part of the population
+    that has to reconstruct rather than be skipped.
+
+    The upload-reachability rules are dropped for the same reason: a GPG timing no
+    backup script reaches without an upload target is exactly the shape the
+    create form rejects, and it is also the commonest shape among the tasks that
+    still need a stamp. Dropping the rules is not a downgrade risk — a stamp
+    re-saved at the schema default is still rejected by the timing-versus-format
+    rule and by ``xtrabackup_aes256_keyfile``'s own ``Forbidden``.
+
+    The binary/compression rules go with them, since the lenient bundle declares no
+    sections: a task saved before the form gated compression on the backup binary
+    can hold a pairing the create model now rejects, and the operator needs the edit
+    form to load in order to correct it. The rejection stays on the create and
+    update routes, so saving the reopened form still fails until the algorithm
+    matches the binary.
+
+    :param backup_dir: The backup root directory; optional here and un-stripped,
+        unlike on the create model.
+    :cvar __form_rules__: The create model's rules minus the upload-reachability
+        pair and the binary/compression section.
+    """
+
+    __form_rules__: ClassVar[FormRules] = LENIENT_BACKUP_FORM_RULES
+
+    backup_dir: Annotated[NonEmptyStr | EmptyStrToNone, BACKUP_DIR_UI] = None
 
 
 def _extract_upload_from_meta(meta: dict[str, Any]) -> list[str]:
@@ -205,7 +252,7 @@ FORM_BACKFILL_ENTRIES = [
     FormBackfillEntry(
         app_key="mysql_backups",
         owner=OWNER,
-        create_model=BackupCreate,
+        create_model=LegacyBackupCreate,
         reconstructor=reconstruct_mysql_backups_form,
         stamp_repairer=repair_mysql_backups_stamp,
     ),

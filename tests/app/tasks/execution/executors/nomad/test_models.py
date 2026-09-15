@@ -22,16 +22,18 @@ from base64 import b64encode
 from binascii import b2a_base64
 from collections import defaultdict
 from collections.abc import AsyncIterator, Callable, Iterator
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from unittest.mock import AsyncMock, call, MagicMock, patch
 
 import pytest
-from aiohttp import ClientError, ClientResponseError, ClientTimeout
+import requests
+from aiohttp import ClientError, ClientRequest, ClientResponseError, ClientTimeout
 from fastapi import status
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from yarl import URL
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.settings_override.registry import (
@@ -114,6 +116,10 @@ DRAIN_SETTINGS_VARIANTS = [
 ]
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
+PENDING_ALLOCATION_TIMEOUT_OVERRIDE = 60
+PENDING_ALLOCATION_WITHIN_BOUND_AGE = 30
+PENDING_ALLOCATION_BOUNDARY_AGE = 30
+PENDING_ALLOCATION_PAST_BOUND_AGE = 120
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
 MULTI_CHUNK_LOG_SECOND_OFFSET = 42
 EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
@@ -524,6 +530,246 @@ class TestBackendProperty:
         _ = executor.backend
         call_kwargs = mock_nomad_cls.call_args[1]
         assert call_kwargs["verify"] == "/path/ca.pem"
+
+
+class TestNomadExecutorApiKey:
+    """Cover the configured API key on both executor request paths.
+
+    The synchronous python-nomad client and the asynchronous aiohttp session
+    each snapshot their headers once per session, so the credential is model
+    state rather than a per-call context.
+    """
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_sync_session_carries_the_bearer_header(self, mock_nomad_cls) -> None:
+        """Assert ``backend`` hands python-nomad a session carrying the header."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        _ = executor.backend
+        session = mock_nomad_cls.call_args[1]["session"]
+        assert session.headers["Authorization"] == "Bearer glsa_supersecret"
+
+    @pytest.mark.asyncio
+    async def test_the_async_session_carries_the_bearer_header(self) -> None:
+        """Assert the entered aiohttp session defaults to the bearer header."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        async with executor:
+            assert executor._session.headers["Authorization"] == (
+                "Bearer glsa_supersecret"
+            )
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_exit_closes_the_sync_session_and_drops_the_backend(
+        self, mock_nomad_cls
+    ) -> None:
+        """Assert retirement releases the session the executor owns."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        with patch.object(requests.Session, "close", autospec=True) as mock_close:
+            async with executor:
+                _ = executor.backend
+                session = mock_nomad_cls.call_args[1]["session"]
+                mock_close.assert_not_called()
+
+            mock_close.assert_called_once_with(session)
+
+        assert executor._sync_session is None
+        assert "backend" not in executor.__dict__
+
+        rebuilt_from = mock_nomad_cls.call_count
+        async with executor:
+            _ = executor.backend
+            assert mock_nomad_cls.call_count == rebuilt_from + 1
+            assert mock_nomad_cls.call_args[1]["session"] is not session
+
+    def test_the_configured_scheme_is_honoured(self) -> None:
+        """Assert ``auth_scheme`` selects the scheme the header announces."""
+        executor = _build_executor(api_key="glsa_supersecret", auth_scheme="Basic")
+        assert executor.headers["Authorization"] == "Basic glsa_supersecret"
+
+    def test_no_key_emits_no_header(self) -> None:
+        """Assert an unconfigured key leaves the header set byte-identical to today."""
+        assert _build_executor().headers == {}
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_no_key_leaves_the_sync_session_unauthenticated(
+        self, mock_nomad_cls
+    ) -> None:
+        """Assert the session handed to python-nomad carries no authorization header."""
+        _ = _build_executor().backend
+        session = mock_nomad_cls.call_args[1]["session"]
+        assert "Authorization" not in session.headers
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_userinfo_alone_still_authenticates(self, mock_nomad_cls) -> None:
+        """Assert an endpoint credential keeps working when no key is configured."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        _ = executor.backend
+        assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
+        assert "hunter2" in executor.base_url
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_key_wins_over_userinfo_on_the_sync_path(self, mock_nomad_cls) -> None:
+        """Assert the address loses its userinfo so the header is the credential sent."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        call_kwargs = mock_nomad_cls.call_args[1]
+        assert call_kwargs["address"] == "http://localhost:4646"
+        assert call_kwargs["session"].headers["Authorization"] == (
+            "Bearer glsa_supersecret"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_key_wins_over_userinfo_on_the_async_path(self) -> None:
+        """Assert ``base_url`` loses its userinfo so aiohttp cannot derive basic auth."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        assert executor.base_url == "http://localhost:4646"
+        async with executor:
+            assert executor._session.headers["Authorization"] == (
+                "Bearer glsa_supersecret"
+            )
+
+    @pytest.mark.asyncio
+    async def test_the_async_request_url_yields_the_bearer(self) -> None:
+        """Assert the header survives on the URL aiohttp actually requests.
+
+        ``aiohttp`` derives basic auth in :class:`~aiohttp.ClientRequest` from the
+        *joined* per-request URL, not from ``base_url``, and lets it overwrite an
+        explicit header. Asserting on ``base_url`` alone would stay green if
+        userinfo were ever reintroduced during the join.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        async with executor:
+            request = ClientRequest(
+                "GET",
+                URL(executor.base_url + executor.prepare_path("/v1/jobs")),
+                headers=executor._session.headers,
+            )
+        assert request.headers["Authorization"] == "Bearer glsa_supersecret"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_sync_request_url_yields_the_bearer(self, mock_nomad_cls) -> None:
+        """Assert the header survives once ``requests`` has prepared the request.
+
+        ``requests`` applies URL userinfo in ``Session.prepare_request``, after
+        the session default header is set, so the prepared request is the only
+        place the precedence is observable.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        call_kwargs = mock_nomad_cls.call_args[1]
+        session = call_kwargs["session"]
+        prepared = session.prepare_request(
+            requests.Request("GET", f"{call_kwargs['address']}/v1/jobs")
+        )
+        assert prepared.headers["Authorization"] == "Bearer glsa_supersecret"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_an_empty_key_counts_as_unset_on_both_paths(self, mock_nomad_cls) -> None:
+        """Assert a blank mounted secret falls through to whatever the URL carries."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key=""
+        )
+        _ = executor.backend
+        assert executor.headers == {}
+        assert "Authorization" not in mock_nomad_cls.call_args[1]["session"].headers
+        assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
+        assert "hunter2" in executor.base_url
+
+    @pytest.mark.parametrize(
+        "scheme", ["", " ", "Bearer x\r\nX-Injected: yes", "Bea rer", "Bearer\x00"]
+    )
+    def test_a_non_token_auth_scheme_is_rejected(self, scheme: str) -> None:
+        """Refuse a scheme no ``Authorization`` header value can carry.
+
+        Both HTTP clients raise at send time on such a value, so accepting it
+        here would trade a settings-validation error for every later Nomad
+        request failing.
+        """
+        with pytest.raises(ValidationError):
+            _build_executor(api_key="glsa_supersecret", auth_scheme=scheme)
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "glsa_tok\n",
+            "glsa\r\nX-Injected: yes",
+            "glsa\x00tok",
+            "glsa\x0btok",
+            "a\x7f",
+        ],
+    )
+    def test_a_key_one_client_refuses_to_send_is_rejected(self, key: str) -> None:
+        """Refuse a credential the HTTP clients will not put on the wire.
+
+        The scheme is constrained for the same reason; the key is the half an
+        operator pastes, so a trailing newline is the ordinary way one arrives.
+        """
+        with pytest.raises(ValidationError):
+            _build_executor(api_key=key)
+
+    @pytest.mark.parametrize(
+        "key", ["glsa_tok", "eyJhbGci.eyJzdWIi.Sf-Kx==", "a b", "tok+/=~", "glsa\ttok"]
+    )
+    def test_a_key_both_clients_will_send_is_accepted(self, key: str) -> None:
+        """Accept every credential shape both clients put on the wire.
+
+        A key is not held to RFC 7230's ``token``: base64 padding, spaces and
+        ``HTAB`` are all sent unchanged by both, so none of them is rejected.
+        """
+        assert _build_executor(api_key=key).headers["Authorization"] == f"Bearer {key}"
+
+    @pytest.mark.parametrize("scheme", ["Bearer", "Basic", "Token", "X-Custom.v1"])
+    def test_a_token_auth_scheme_is_accepted(self, scheme: str) -> None:
+        """Accept every scheme shape RFC 7230's ``token`` production allows."""
+        executor = _build_executor(api_key="glsa_supersecret", auth_scheme=scheme)
+        assert executor.headers["Authorization"] == f"{scheme} glsa_supersecret"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_the_address_never_carries_a_credential(self, mock_nomad_cls) -> None:
+        """Assert neither credential reaches the address python-nomad embeds in URLs.
+
+        ``BaseNomadException`` renders the response body only, so keeping both
+        credentials out of the address is what keeps the synchronous path's
+        errors and request URLs free of them.
+        """
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646",
+            api_key="glsa_supersecret",
+        )
+        _ = executor.backend
+        address = mock_nomad_cls.call_args[1]["address"]
+        assert address == "http://localhost:4646"
+        assert "glsa_supersecret" not in address
+        assert "hunter2" not in address
+
+    @pytest.mark.asyncio
+    async def test_the_request_debug_log_withholds_the_key(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Assert the per-request debug line never renders the configured key."""
+        executor = _build_executor(api_key="glsa_supersecret")
+        async with executor:
+            context = MagicMock()
+            context.__aenter__ = AsyncMock(return_value=MagicMock())
+            context.__aexit__ = AsyncMock(return_value=None)
+            executor._session.request = MagicMock(return_value=context)
+            with caplog.at_level(logging.DEBUG, logger=executor.logger.name):
+                async with executor._request("GET", "/v1/jobs"):
+                    pass
+        assert "Sending GET request" in caplog.text
+        assert "glsa_supersecret" not in caplog.text
 
 
 class TestRegisterJob:
@@ -2101,12 +2347,14 @@ class TestSyncTaskHistoryWithoutTaskStates:
         } | overrides
 
     @staticmethod
-    def _queue_item() -> TaskHistory:
+    def _queue_item(*, started_at: datetime | None = None) -> TaskHistory:
         """Return a RUNNING task history tracking ``alloc-1``/``job-1``.
 
+        :param started_at: Optional RUNNING entry time used by the pending-
+            allocation age bound.
         :return: The task history the sync under test starts from.
         """
-        return _build_queue_item(
+        queue_item = _build_queue_item(
             tracking={
                 "allocation_id": "alloc-1",
                 "evaluation_id": "eval-1",
@@ -2114,6 +2362,8 @@ class TestSyncTaskHistoryWithoutTaskStates:
             },
             status=TaskHistoryStatusEnum.RUNNING,
         )
+        queue_item.started_at = started_at
+        return queue_item
 
     @staticmethod
     def _backend(
@@ -2144,7 +2394,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_pending_allocation_stays_running(self, mock_nomad_cls):
         """Assert a still-starting allocation does not raise and remains RUNNING."""
-        self._backend(mock_nomad_cls, self._alloc())
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
         executor = _build_executor()
 
         result = await executor._sync_task_history(self._queue_item())
@@ -2154,6 +2404,7 @@ class TestSyncTaskHistoryWithoutTaskStates:
         assert result.execution_request.tracking is not None
         assert result.execution_request.tracking["task_states"] == {}
         assert result.execution_request.tracking["allocation_id"] == "alloc-2"
+        mock_backend.job.deregister_job.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -2437,6 +2688,173 @@ class TestSyncTaskHistoryWithoutTaskStates:
 
         assert result.status == TaskHistoryStatusEnum.FAILED
 
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_within_bound_stays_running(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert a still-starting pending allocation is left RUNNING before the bound."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_WITHIN_BOUND_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.RUNNING
+        assert result.finished_at is None
+        mock_backend.job.deregister_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.utc_now")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_exceeds_bound_escalates_to_lost(
+        self, mock_nomad_cls, mock_utc_now: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert a TaskStates-less pending allocation past the bound becomes LOST."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = self._backend(
+            mock_nomad_cls,
+            self._alloc(ModifyTime=1_700_000_000_000_000_000),
+        )
+        executor = _build_executor()
+        now = datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC)
+        mock_utc_now.return_value = now
+        started_at = now - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at == now
+        assert result.failure_reason == "Execution tracking lost."
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_is_logged(
+        self,
+        mock_nomad_cls,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Assert the age-bound escalation leaves a recoverable worker-log trace."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        with caplog.at_level(logging.WARNING):
+            await executor._sync_task_history(self._queue_item(started_at=started_at))
+
+        assert "alloc-2" in caplog.text
+        assert "pending-allocation timeout" in caplog.text
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_uses_configured_bound(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert an age exactly equal to the configured bound escalates."""
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_BOUNDARY_AGE,
+        )
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_BOUNDARY_AGE)
+
+        result = await executor._sync_task_history(
+            self._queue_item(started_at=started_at)
+        )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at is not None
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_escalation_deregister_failure_still_lands_lost(
+        self,
+        mock_nomad_cls,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Assert a Nomad hiccup on deregister still stamps LOST.
+
+        Swallowing keeps the duplicate-dispatch 409 from surviving a failed
+        reap; the job may still be placed, but that is logged rather than
+        re-blocking the row.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = self._backend(mock_nomad_cls, self._alloc())
+        mock_backend.job.deregister_job.side_effect = BaseNomadException(
+            MagicMock(text="gone")
+        )
+        executor = _build_executor()
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+
+        with caplog.at_level(logging.WARNING):
+            result = await executor._sync_task_history(
+                self._queue_item(started_at=started_at)
+            )
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.finished_at is not None
+        mock_backend.job.deregister_job.assert_called_once_with("job-1")
+        assert "Could not deregister job job-1" in caplog.text
+        assert "marking LOST anyway" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_should_escalate_pending_allocation_coerces_naive_started_at(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+    ):
+        """Assert the age bound compares safely after an ORM load strips tzinfo.
+
+        ``DateTimeWithTimezone`` does not coerce on load; SQLite and MySQL return
+        ``started_at`` tz-naive. The sync path loads through ``get_or_404``, so the
+        predicate must tolerate that shape.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        started_at = utc_now() - timedelta(seconds=PENDING_ALLOCATION_PAST_BOUND_AGE)
+        queue_item = created_task_with_history
+        queue_item.status = TaskHistoryStatusEnum.RUNNING
+        queue_item.started_at = started_at
+        await TaskHistoryManager.save(session, queue_item)
+
+        reloaded = await TaskHistoryManager.get_or_404(session, id=queue_item.id)
+        assert reloaded.started_at is not None
+        assert reloaded.started_at.tzinfo is None
+
+        assert _build_executor()._should_escalate_pending_allocation(reloaded) is True
+
 
 class TestSyncTaskHistoryFailureReason:
     """Test the reason ``_sync_task_history`` stores alongside each terminal status."""
@@ -2629,6 +3047,48 @@ class TestSyncTaskHistoryFailureReason:
         )
 
         result = await _build_executor()._sync_task_history(self._queue_item())
+
+        assert result.status == TaskHistoryStatusEnum.LOST
+        assert result.failure_reason == "Execution tracking lost."
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_pending_allocation_timeout_stores_the_lost_prose(
+        self, mock_nomad_cls, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Assert pending-allocation escalation stores the LOST prose.
+
+        This is the only ``_apply_terminal_status`` arm that previously stamped
+        LOST without ``set_failure_reason``; operators see ``failure_reason``
+        through the history field list, and ``None`` there means unknown.
+        """
+        monkeypatch.setattr(
+            tasks_settings,
+            "PENDING_ALLOCATION_TIMEOUT_SECONDS",
+            PENDING_ALLOCATION_TIMEOUT_OVERRIDE,
+        )
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        alloc = {
+            "ID": "alloc-2",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "ClientStatus": NomadAllocStatusEnum.PENDING,
+        }
+        mock_backend.allocation.get_allocation.return_value = alloc
+        mock_backend.allocations.get_allocations.return_value = [alloc]
+        mock_backend.client.stream_logs.stream.return_value = ""
+        mock_backend.job.get_job.return_value = {
+            "ID": "job-1",
+            "Status": "running",
+            "Stop": False,
+        }
+        queue_item = self._queue_item()
+        queue_item.started_at = utc_now() - timedelta(
+            seconds=PENDING_ALLOCATION_PAST_BOUND_AGE
+        )
+
+        result = await _build_executor()._sync_task_history(queue_item)
 
         assert result.status == TaskHistoryStatusEnum.LOST
         assert result.failure_reason == "Execution tracking lost."

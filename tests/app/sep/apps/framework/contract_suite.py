@@ -72,6 +72,8 @@ from tests.app.factories import (
     MOCK_CREATED_TABLE_ID,
 )
 from tests.app.sep.apps.framework.kit import (
+    EXECUTE_CREATED_AT,
+    EXECUTE_STATUS,
     SEEDED_TASK_NAME,
     SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
@@ -944,6 +946,33 @@ class DerivedRouterContractTests:
         response = contract_client.post(f"{base}/{SEEDED_TASK_NAME}/execute", json=body)
 
         assert response.status_code == status.HTTP_201_CREATED
+
+    def test_execute_201_carries_run_state(self, contract_client: TestClient) -> None:
+        """Assert the execute body carries the dispatched run's state.
+
+        The upstream fake returns a full history row, so the two fields are
+        forwarded from it rather than defaulted by the response model.
+        """
+        if not self.app_def.capabilities.execute:
+            pytest.skip("execute capability disabled")
+        write_body = (
+            ModelFactory.create_factory(
+                self.app_def.execute_write_model or TaskExecuteWrite
+            )
+            .build()
+            .model_dump(mode="json")
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.post(
+            f"{base}/{SEEDED_TASK_NAME}/execute", json=write_body
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert body["task_name"] == SEEDED_TASK_NAME
+        assert body["status"] == EXECUTE_STATUS.value
+        assert body["created_at"] == EXECUTE_CREATED_AT
 
     def test_execute_route_absent(self) -> None:
         """Assert no derived execute route exists when execute is disabled."""

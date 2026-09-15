@@ -18,11 +18,18 @@
 Section *membership* and *order* are declared on
 :class:`~app.sep.apps.mysql_backups.forms.BackupCreate` (via ``Ui(section=...)``
 and field-declaration order); what lives here is the part the model cannot
-express: the section titles, the collapse/whole-section-hide metadata, the list
-columns, and the UI capability flags. These feed the derived ``GET /schema`` and
-are carried over from the previous hand-written ``AppSchema``; the one addition
-is the Encryption section's group ``description`` that guides operators from the
-explicit encryption format to the fields that parameterise it.
+express: the section titles, the collapse/whole-section-hide metadata, the
+which sections are advanced, the list columns, and the UI capability flags. These feed
+the derived ``GET /schema``.
+
+Two things here are not carried over from the previous hand-written
+``AppSchema``: the Encryption section's group ``description``, which guides
+operators from the explicit encryption format to the fields that parameterise
+it, and ``advanced=True`` on General, Encryption and Upload, which puts the
+three behind one "Show advanced options" control so the required fields fit a
+screen. The renderer collects advanced sections wherever they appear and
+renders them after the ordinary ones, so this asks nothing of the section
+order.
 """
 
 from app.sep.apps.framework.apps import Views
@@ -53,6 +60,7 @@ mysql_backups_views = Views(
             SectionLayout(
                 key="General",
                 title="General",
+                advanced=True,
                 collapsible=True,
                 collapsed_by_default=True,
             ),
@@ -80,22 +88,18 @@ mysql_backups_views = Views(
             SectionLayout(
                 key="Encryption",
                 title="Encryption",
+                advanced=True,
                 collapsible=True,
                 collapsed_by_default=True,
                 description=(
                     "Pick an 'Encryption format' first; the fields below are that "
-                    "format's parameters. GPG timings are independent — in-place "
-                    "('Encrypt backup', optionally with 'Encrypt using tmpdir'), "
-                    "applied during upload, and post-run ('Encrypt after backup "
-                    "completes'), applied on the host; enable either or both, and "
-                    "either needs a recipient. 'Encrypt using tmpdir' and 'Encrypt "
-                    "after backup completes' are mutually exclusive. AES-256 needs "
-                    "a key file and is XtraBackup-only."
+                    "format's parameters."
                 ),
             ),
             SectionLayout(
                 key="Upload",
                 title="Upload",
+                advanced=True,
                 collapsible=True,
                 collapsed_by_default=True,
             ),

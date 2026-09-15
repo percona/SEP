@@ -20,6 +20,7 @@ from typing import Annotated, Any
 
 import yaml
 from fastapi import Body
+from pydantic import ValidationError
 
 from app.core.exceptions import (
     HTTPNotFoundException,
@@ -27,7 +28,7 @@ from app.core.exceptions import (
 )
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
-from app.sep.apps.framework.spec import stamp_form_input
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.apps.mysql_backups.restore.spec import (
@@ -56,15 +57,23 @@ async def resolve_restore_entities(
     so it annotates XtraBackup and Binlog restores as-is and is rejected for
     MyDumper, which needs the service address to derive its destination.
 
+    A resolved service whose address carries no port yields ``dest_host`` alone,
+    and the payload applies its own ``3306`` default. One resolving to no address
+    at all is rejected rather than tolerated: an unset ``dest_host`` drops
+    ``DEST_HOST`` from the emitted config, which the payload reads as
+    ``localhost`` and loads into whatever MySQL runs on the executor instead of
+    the destination the operator chose.
+
     :param form: The validated restore create form.
     :param inventory_api: The Inventory API used to resolve the references.
     :return: The resolved facts fed into :func:`build_restore_spec`.
     :raises HTTPException: When a MyDumper service reference is a typed name or the
-        unknown-service placeholder, or its lookup fails; or when a non-MyDumper
-        lookup fails with a status other than 404.
+        unknown-service placeholder, its lookup fails, or it resolves to a service
+        carrying no address; or when a non-MyDumper lookup fails with a status
+        other than 404.
     """
     if form.backup_type == BackupType.MYDUMPER:
-        if form.service_id is not None and not form.service_id.isdigit():
+        if form.service_id is None or not form.service_id.isdecimal():
             raise HTTPUnprocessableEntityException(
                 detail=(
                     "Destination Database Service must be an existing MySQL service "
@@ -74,20 +83,30 @@ async def resolve_restore_entities(
         service = await get_created_entity(
             inventory_api,
             SyncInventoryEntityTypeEnum.SERVICE,
-            form.service_id,
+            int(form.service_id),
             type=ServiceTypeEnum.MYSQL,
         )
-        dest_host = dest_port = None
-        if isinstance(service.address, str) and ":" in service.address:
-            host, port_str = service.address.split(":", 1)
-            dest_host = host.strip()
-            dest_port = int(port_str.strip())
+        host, _, port = (service.address or "").partition(":")
+        dest_host = host.strip()
+        if not dest_host:
+            raise HTTPUnprocessableEntityException(
+                detail=(
+                    "Destination Database Service must resolve to a network address "
+                    "for a MyDumper restore"
+                )
+            )
+        port = port.strip()
+        dest_port = int(port) if port else None
         database = None
-        if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
+        if (
+            form.schema_id is not None
+            and form.schema_id.isdigit()
+            and int(form.schema_id) > 0
+        ):
             schema = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.SCHEMA,
-                form.schema_id,
+                int(form.schema_id),
                 service_id=service.id,
             )
             database = schema.name
@@ -105,7 +124,7 @@ async def resolve_restore_entities(
             service = await get_created_entity(
                 inventory_api,
                 SyncInventoryEntityTypeEnum.SERVICE,
-                form.service_id,
+                int(form.service_id),
                 type=ServiceTypeEnum.MYSQL,
             )
         except HTTPNotFoundException:
@@ -166,6 +185,44 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
         return None, host, port
 
 
+def _declared_source_override(task: Task) -> dict[str, Any]:
+    """Return a ``data`` override declaring the source of a stamp that predates it.
+
+    The edit form seeds each field from the served stamp and falls back to the
+    schema default where the stamp has no value, so a stamp written before the
+    source controls existed would seed ``source_transport`` to ``local``. The
+    gates then hide the SSH and object-store fields, and a hidden field is
+    dropped from the submission entirely, so saving that form would discard
+    credentials the restore still needs. Declaring the inferred source here means
+    the form opens on the transport the stored values imply and keeps them
+    visible.
+
+    Re-validating through :class:`RestoreCreate` rather than calling the
+    normalizer directly keeps the served stamp exactly what a subsequent ``PUT``
+    would accept. It is tolerant of a stamp that cannot be validated at all,
+    because this builder also serves the list route, where one unparseable task
+    must not take out the whole page.
+
+    :param task: The restore task being serialized.
+    :return: A single-key ``data`` override, or an empty mapping when the stamp
+        already declares a source, is absent, or does not validate.
+    """
+    data = task.data
+    if not data:
+        return {}
+    stored_form = data.get(RESERVED_FORM_KEY)
+    if (
+        not isinstance(stored_form, dict)
+        or stored_form.get("source_transport") is not None
+    ):
+        return {}
+    try:
+        declared = RestoreCreate.model_validate(stored_form).model_dump(mode="json")
+    except ValidationError:
+        return {}
+    return {"data": {**data, RESERVED_FORM_KEY: declared}}
+
+
 def build_restore_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
@@ -192,6 +249,7 @@ def build_restore_api_task_response(
             "host": host,
             "port": port,
             "hostname": meta.get("target") if meta else None,
+            **_declared_source_override(task),
         },
     )
 

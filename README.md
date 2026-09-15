@@ -144,6 +144,8 @@ These are some, but not all, the possible settings you can have, per app:
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
+| TASKS__NOMAD__API_KEY      | tasks     | no       | N/A                                                 | N/A                                              |
+| TASKS__NOMAD__AUTH_SCHEME  | tasks     | no       | Bearer                                              | Bearer                                           |
 | TASKS__NOMAD__SECURE       | tasks     | no       | False                                               | N/A                                              |
 | TASKS__NOMAD__VERIFY_SSL   | tasks     | no       | False                                               | True                                             |
 | TASKS__NOMAD__TIMEOUT      | tasks     | no       | 10                                                  | 10                                               |
@@ -174,6 +176,13 @@ These are some, but not all, the possible settings you can have, per app:
 | SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
 | SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
+
+`TASKS__NOMAD__API_KEY` is sent on every Nomad request as
+`Authorization: <TASKS__NOMAD__AUTH_SCHEME> <TASKS__NOMAD__API_KEY>`, and takes
+precedence over a `user:password` embedded in `TASKS__NOMAD__ENDPOINT`: while a
+key is set the endpoint's userinfo is stripped, since both HTTP clients would
+otherwise derive basic auth from it and override the header. Leave the key unset
+to keep authenticating with the endpoint's own userinfo, if it carries any.
 
 The active authentication provider is configured under `AUTH__PROVIDER__<NAME>__*`,
 and **exactly one** provider may be configured. Casdoor is the built-in default,

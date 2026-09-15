@@ -39,6 +39,7 @@ from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_mongo.restore.app import app as mongo_restore_app
 from app.sep.apps.framework import (
     BaseTaskResponse,
     ConnectivityWarning,
@@ -64,6 +65,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.schema import (
     AppSchema,
     BoolField,
+    Capabilities,
     Column,
     ColumnFormat,
     FormSection,
@@ -71,12 +73,16 @@ from app.sep.apps.framework.schema import (
     RelatedApp,
 )
 from app.sep.apps.framework.script_source import ScriptSource
+from app.sep.apps.mysql_backups.app import app as mysql_backups_app
+from app.sep.apps.mysql_backups.restore.app import app as mysql_restore_app
+from app.sep.apps.snippets.app import app as snippets_app
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.deps import InventoryAPI, IsApiAuthenticated
+from app.sep.snippets.schema import SNIPPETS_PLUGIN_SCHEMA
 from app.tasks.models import Task, TaskWrite
 from tests.app.factories import (
     CreatedNodeFactory,
@@ -88,6 +94,8 @@ from tests.app.sep.apps.framework.contract_suite import (
     routes_of as _routes,
 )
 from tests.app.sep.apps.framework.kit import (
+    EXECUTE_CREATED_AT,
+    EXECUTE_STATUS,
     synth_app,
     synth_app_kwargs,
     synth_reject_running_task,
@@ -116,6 +124,8 @@ from tests.app.sep.apps.framework.kit import (
     SynthResponse as _SynthResponse,
 )
 
+# scaffolding-dup-ok: pre-existing on main in both this file and
+# test_script_source.py; extracting it is unrelated to this change.
 _BASE = f"/api/apps{_PREFIX}"
 _SCRIPT_BASE = f"/api/apps{_SCRIPT_PREFIX}"
 
@@ -368,6 +378,8 @@ def _execute_response(name: str, task_id: int = 99) -> dict:
         "id": task_id,
         "execution_request": {"task": "synth-cmd", "target": "host1"},
         "task": {**_task_dict(name), "deleted_at": None},
+        "status": EXECUTE_STATUS.value,
+        "created_at": EXECUTE_CREATED_AT,
     }
 
 
@@ -876,7 +888,12 @@ class TestExecuteRoute:
         response = client.post(f"{_BASE}/t-1/execute", json={"note": "go"})
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert response.json() == {"task_name": "t-1", "task_id": 99}
+        assert response.json() == {
+            "task_name": "t-1",
+            "task_id": 99,
+            "status": EXECUTE_STATUS.value,
+            "created_at": EXECUTE_CREATED_AT,
+        }
 
 
 class TestVerbGating:
@@ -1906,3 +1923,46 @@ class TestItemDisplayNames:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["item_display_name"] == app_def.display_name
         assert response.json()["item_display_name_plural"] == app_def.display_name
+
+
+class TestOffersScheduling:
+    """Cover the served-schema source ``offers_scheduling`` reads its answer from."""
+
+    def test_model_first_app_reads_its_views_capabilities(self) -> None:
+        """Answer ``True`` for an app whose derived schema declares ``scheduling``."""
+        assert mysql_backups_app.offers_scheduling is True
+
+    def test_model_first_app_withholding_scheduling(self) -> None:
+        """Answer ``False`` for a derived-schema app that withholds ``scheduling``."""
+        assert mysql_restore_app.offers_scheduling is False
+
+    def test_passthrough_schema_app_reads_the_passthrough(self) -> None:
+        """Answer from the ``schema=`` passthrough rather than the views bundle."""
+        assert mongo_restore_app.offers_scheduling is False
+
+    def test_app_declaring_no_capabilities_at_all(self) -> None:
+        """Answer ``False`` when the served schema carries no capabilities."""
+        app_def = _synth_app(
+            views=replace(synth_app_kwargs()["views"], capabilities=None)
+        )
+
+        assert app_def.offers_scheduling is False
+
+    def test_script_source_app_reads_its_static_schema(self) -> None:
+        """Answer from ``script_source.static_schema`` for a script-flavored app."""
+        assert snippets_app.offers_scheduling is False
+
+    def test_script_source_static_schema_wins(self) -> None:
+        """Follow the static schema, the only source a script app serves."""
+        scheduling_schema = SNIPPETS_PLUGIN_SCHEMA.model_copy(
+            update={"capabilities": Capabilities(scheduling=True)}
+        )
+        app_def = snippets_app.model_copy(
+            update={
+                "script_source": replace(
+                    snippets_app.script_source, static_schema=scheduling_schema
+                )
+            }
+        )
+
+        assert app_def.offers_scheduling is True

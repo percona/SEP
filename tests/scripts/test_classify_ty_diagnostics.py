@@ -370,6 +370,8 @@ def _claiming_groups(fingerprint):
 
 
 CALL_IN_TYPE_EXPRESSION = "Function calls are not allowed in type expressions"
+RULE_CLAIMED_BY_NO_GROUP = "synthetic-rule-a"
+SIBLING_RULE_CLAIMED_BY_NO_GROUP = "synthetic-rule-b"
 
 
 def test_factory_built_alias_group_claims_only_the_module_it_is_confined_to():
@@ -418,3 +420,342 @@ def test_runtime_computed_model_group_does_not_claim_a_bare_call():
             "Variable of type `type[BaseUser]` is not allowed in a type expression",
         )
     )
+
+
+def _without_paths(name: str) -> tuple:
+    """Return :data:`GROUPS` with one group's path confinement dropped.
+
+    :param name: The group to strip.
+    :return: The table, with that group rebuilt carrying no paths.
+    """
+    return tuple(
+        classify_ty_diagnostics._group(
+            group.name,
+            " ".join(sorted(group.rules)),
+            group.pattern.pattern,
+            group.discriminant,
+        )
+        if group.name == name
+        else group
+        for group in classify_ty_diagnostics.GROUPS
+    )
+
+
+def test_group_constraint_audit_accepts_the_shipped_table():
+    """Report nothing for the table as committed.
+
+    This is the pin the rest of the audit's tests are read against: a new group
+    that carries no discriminant fails here, so the table cannot grow an
+    unconfined entry without a red test.
+    """
+    assert classify_ty_diagnostics.group_constraint_failures() == []
+
+
+def test_group_constraint_audit_rejects_a_pattern_quoting_only_a_wildcard():
+    """Report a group whose backticks quote a wildcard rather than a symbol.
+
+    Backticks alone are not the discriminant. This pattern claims every
+    ``unresolved-attribute`` diagnostic in the tree — including the two typos
+    the receiver-predicate tests above pin as first-party — so accepting it
+    would let the table launder a genuine defect into a suppressible artifact,
+    which is the whole failure the audit exists to catch.
+    """
+    wildcard = classify_ty_diagnostics._group(
+        "wildcard-attributes",
+        "unresolved-attribute",
+        r"^Object of type `.+` has no attribute `.+`$",
+        "nothing the reader could grep",
+    )
+
+    (failure,) = classify_ty_diagnostics.group_constraint_failures(groups=(wildcard,))
+    assert "wildcard-attributes" in failure
+    assert wildcard.claims(
+        (
+            "app/sep/apps/alerts/celery.py",
+            "unresolved-attribute",
+            "Object of type `Celery` has no attribute `brokr_url`",
+        )
+    )
+
+
+def test_group_constraint_audit_names_a_group_whose_confinement_is_dropped():
+    """Report the call-in-type-expression group once its path is taken away.
+
+    The group's message names no symbol, so the path is its only discriminant —
+    removing it must turn the table red, or the audit is asserting nothing about
+    the one group it was written for.
+    """
+    (failure,) = classify_ty_diagnostics.group_constraint_failures(
+        groups=_without_paths("factory-built-annotated-alias")
+    )
+
+    assert "factory-built-annotated-alias" in failure
+    assert "invalid-type-form" in failure
+
+
+def test_group_constraint_audit_requires_evidence_under_every_claimed_rule():
+    """Report a two-rule group the corpus only declines under one of its rules.
+
+    A declined fingerprint shows the pattern discriminating within *that* rule
+    and says nothing about the other, where the group still claims every
+    matching diagnostic in the tree.
+
+    The rules are synthetic because this module is itself the corpus
+    :func:`corpus_fingerprints` reads: a fixture naming a real ty rule would pin
+    that rule as first-party for the whole table and relax the audit these tests
+    exercise. Naming a rule no group claims keeps the fixture inert.
+    """
+    two_rules = classify_ty_diagnostics._group(
+        "two-rule-no-symbol",
+        f"{RULE_CLAIMED_BY_NO_GROUP} {SIBLING_RULE_CLAIMED_BY_NO_GROUP}",
+        f"^{CALL_IN_TYPE_EXPRESSION}$",
+        "nothing",
+    )
+    one = [("app/sep/config.py", RULE_CLAIMED_BY_NO_GROUP, "Some other message")]
+    both = [
+        *one,
+        ("app/sep/routes/users.py", SIBLING_RULE_CLAIMED_BY_NO_GROUP, "Another"),
+    ]
+
+    assert classify_ty_diagnostics.group_constraint_failures(
+        groups=(two_rules,), corpus=one
+    )
+    assert (
+        classify_ty_diagnostics.group_constraint_failures(
+            groups=(two_rules,), corpus=both
+        )
+        == []
+    )
+
+
+def test_group_constraint_audit_tightens_when_the_corpus_yields_nothing():
+    """Fail an otherwise-cleared group when no corpus evidence is available.
+
+    The unreadable-corpus branch resolves toward strictness, and a caller that
+    treated the empty set as "no objection" would turn every unreadable corpus
+    into a silent pass. Asserting the direction is what keeps that branch from
+    becoming a hole with a test-shaped cover over it.
+
+    The rule is synthetic for the reason given in the test above.
+    """
+    unconfined = classify_ty_diagnostics._group(
+        "no-discriminant",
+        RULE_CLAIMED_BY_NO_GROUP,
+        f"^{CALL_IN_TYPE_EXPRESSION}$",
+        "nothing",
+    )
+    declined = [("app/sep/routes/users.py", RULE_CLAIMED_BY_NO_GROUP, "Something else")]
+
+    assert (
+        classify_ty_diagnostics.group_constraint_failures(
+            groups=(unconfined,), corpus=declined
+        )
+        == []
+    )
+    assert classify_ty_diagnostics.group_constraint_failures(
+        groups=(unconfined,), corpus=[]
+    )
+
+
+def test_corpus_read_resolves_a_message_bound_to_a_module_constant(tmp_path):
+    """Read a fingerprint whose message arrives through a name, not a literal.
+
+    Both spellings are asserted because this suite uses both, and a literal-only
+    read would drop whichever one the author of a future test preferred. The
+    annotated form is included for the same reason: adding a ``: str`` to a
+    constant must not silently shrink the corpus.
+
+    The rule is synthetic because the expected-value tuples below are read back
+    out of this module by the very function under test, so a real ty rule here
+    would pin itself as first-party for the whole table.
+    """
+    rule = RULE_CLAIMED_BY_NO_GROUP
+    source = write_file(
+        tmp_path,
+        "corpus.py",
+        f'INLINE = ("app/sep/routes/users.py", "{rule}", "inline message")\n'
+        f'BARE = "{CALL_IN_TYPE_EXPRESSION}"\n'
+        f'VIA_NAME = ("app/sep/config.py", "{rule}", BARE)\n'
+        f'ANNOTATED: str = "{CALL_IN_TYPE_EXPRESSION} twice"\n'
+        f'VIA_ANNOTATED = ("app/sep/deps.py", "{rule}", ANNOTATED)\n',
+    )
+
+    assert classify_ty_diagnostics.corpus_fingerprints(source) == frozenset(
+        {
+            ("app/sep/routes/users.py", rule, "inline message"),
+            ("app/sep/config.py", rule, CALL_IN_TYPE_EXPRESSION),
+            ("app/sep/deps.py", rule, f"{CALL_IN_TYPE_EXPRESSION} twice"),
+        }
+    )
+
+
+def test_corpus_read_ignores_a_triple_that_is_not_a_fingerprint(tmp_path):
+    """Skip three-string tuples whose elements are not a path, rule and message.
+
+    A false positive is not inert: a spurious fingerprint enters the pinned
+    corpus, and one landing on an unconfined group's rule would clear that group
+    instead of failing it.
+
+    The rule is synthetic for the reason given two tests above.
+    """
+    rule = RULE_CLAIMED_BY_NO_GROUP
+    source = write_file(
+        tmp_path,
+        "corpus.py",
+        'BOGUS = ("a", "b", "c")\n'
+        f'NO_PATH = ("not-a-path", "{rule}", "a message")\n'
+        f'PAIR = ("app/sep/config.py", "{rule}")\n'
+        f'REAL = ("app/sep/config.py", "{rule}", "a message")\n',
+    )
+
+    assert classify_ty_diagnostics.corpus_fingerprints(source) == frozenset(
+        {("app/sep/config.py", rule, "a message")}
+    )
+
+
+def test_corpus_read_treats_an_undecodable_module_as_absent(tmp_path):
+    """Return the empty set for a corpus that is missing, unparseable or not UTF-8.
+
+    All three are "unreadable", and the decode case is the one that reaches the
+    reader as a ``ValueError`` rather than an ``OSError`` — left uncaught it
+    would propagate out of ``check`` instead of tightening the audit.
+    """
+    undecodable = tmp_path / "undecodable.py"
+    undecodable.write_bytes(b'JUNK = "\xff\xfe"\n')
+
+    assert (
+        classify_ty_diagnostics.corpus_fingerprints(tmp_path / "gone.py") == frozenset()
+    )
+    assert classify_ty_diagnostics.corpus_fingerprints(undecodable) == frozenset()
+    assert (
+        classify_ty_diagnostics.corpus_fingerprints(
+            write_file(tmp_path, "broken.py", "def (:\n")
+        )
+        == frozenset()
+    )
+
+
+def test_check_fails_on_an_over_claiming_table(tmp_path, capsys, monkeypatch):
+    """Exit non-zero from ``check`` when a group claims more than it proves.
+
+    The run reconciles — the same output is both baseline and current, so no
+    fingerprint went missing — which is what makes this assert the new verdict
+    is independent of the reconciliation rather than riding on it.
+    """
+    run = _output(FIRST_PARTY_ROW)
+    manifest = _manifest(tmp_path, run)
+    assert _check(tmp_path, manifest, run) == 0
+    capsys.readouterr()
+
+    monkeypatch.setattr(
+        classify_ty_diagnostics,
+        "GROUPS",
+        _without_paths("factory-built-annotated-alias"),
+    )
+
+    assert _check(tmp_path, manifest, run) == 1
+    assert "factory-built-annotated-alias" in capsys.readouterr().out
+
+
+#: One row per group whose only discriminant is the symbol its message names:
+#: the artifact it is meant to claim, and a first-party diagnostic of the same
+#: rule it must decline. The six are the groups carrying neither a path
+#: constraint nor a negative pin, so nothing but these tests demonstrates that
+#: their patterns separate anything.
+SYMBOL_ONLY_GROUPS = [
+    (
+        "pydantic-fieldinfo",
+        (
+            "app/sep/apps/backup/models.py",
+            "invalid-assignment",
+            "Object of type `FieldInfo` is not assignable to `str`",
+        ),
+        (
+            "app/sep/apps/backup/models.py",
+            "invalid-assignment",
+            "Object of type `str` is not assignable to `int`",
+        ),
+    ),
+    (
+        "env-populated-required-params",
+        (
+            "app/core/celery/app.py",
+            "missing-argument",
+            "No argument provided for required parameter `CELERY`",
+        ),
+        (
+            "app/core/celery/app.py",
+            "missing-argument",
+            "No argument provided for required parameter `task_id`",
+        ),
+    ),
+    (
+        "third-party-overload-sets",
+        (
+            "app/core/db/crud.py",
+            "no-matching-overload",
+            "No overload of bound method `AsyncSession.exec` matches arguments",
+        ),
+        (
+            "app/core/db/crud.py",
+            "no-matching-overload",
+            "No overload of bound method `TaskHistoryManager.save` matches arguments",
+        ),
+    ),
+    (
+        "sa-type-typedecorator",
+        (
+            "app/core/db/types.py",
+            "invalid-argument-type",
+            "Expected `type[Any] | PydanticUndefinedType`, found `EncryptedString`",
+        ),
+        (
+            "app/core/db/types.py",
+            "invalid-argument-type",
+            "Expected `str`, found `int`",
+        ),
+    ),
+    (
+        "subscripted-generics-called",
+        (
+            "app/sep/apps/framework/schema.py",
+            "call-non-callable",
+            "Object of type `GenericAlias` is not callable",
+        ),
+        (
+            "app/sep/apps/framework/schema.py",
+            "call-non-callable",
+            "Object of type `None` is not callable",
+        ),
+    ),
+    (
+        "fastapi-query-default",
+        (
+            "app/sep/api/routes/delivery_connection.py",
+            "invalid-parameter-default",
+            "Default value of type `Query` is not assignable to `int`",
+        ),
+        (
+            "app/sep/api/routes/delivery_connection.py",
+            "invalid-parameter-default",
+            "Default value of type `None` is not assignable to `str`",
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize(("name", "artifact", "first_party"), SYMBOL_ONLY_GROUPS)
+def test_a_symbol_only_group_claims_its_artifact_and_declines_its_rule(
+    name, artifact, first_party
+):
+    """Pin what the symbol in each unconfined group's message actually separates.
+
+    These six groups carry no path constraint, so the symbol their pattern
+    quotes is the whole of their evidence, and ``group_constraint_failures``
+    accepts that symbol without checking it separates anything. A rule that
+    reads its own regex cannot: the pattern is the claim under test. Only a
+    same-rule diagnostic the group declines shows the discriminant working,
+    which is why the audit counts one of these as evidence in its own right.
+    """
+    assert name in _claiming_groups(artifact)
+    assert _claiming_groups(first_party) == []

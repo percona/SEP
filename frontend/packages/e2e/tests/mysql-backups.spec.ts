@@ -797,3 +797,109 @@ test.describe('MySQL Backups — encryption_format POST body', () => {
     expect(posts[0]).toHaveProperty('encryption_recipient', 'ops@example.com');
   });
 });
+
+// ── Required Task-section field vs. a collapsed section ───────────────────────
+//
+// These serve the *renderer*, not mysql_backups: the schema below is written
+// here rather than fetched, so reverting the app's own field declaration leaves
+// them passing. What they pin is the client half of a required field's
+// mechanism — that a required string in a non-collapsed section renders with the
+// HTML required attribute, that RHF suppresses the POST outright rather than
+// letting a 422 round-trip, and that the typed value arrives under the right
+// body key. Which section mysql_backups actually declares, and that the field is
+// required there, is pinned server-side against the live derived schema by
+// ``test_schema_pins_section_collapse_posture``; that is the test a revert
+// fails. Section order here is Task, Upload, General rather than the app's own
+// order — only the collapse posture is mirrored.
+const MOCK_SCHEMA_WITH_COLLAPSED_GENERAL = {
+  ...MOCK_SCHEMA,
+  forms: [
+    {
+      ...MOCK_SCHEMA.forms[0],
+      fields: [
+        ...MOCK_SCHEMA.forms[0].fields,
+        { type: 'string', name: 'backup_dir', label: 'Backup directory', required: true },
+      ],
+    },
+    ...MOCK_SCHEMA.forms.slice(1),
+    {
+      title: 'General',
+      collapsible: true,
+      collapsed_by_default: true,
+      fields: [{ type: 'string', name: 'logging_dir', label: 'Logging directory' }],
+    },
+  ],
+};
+
+test.describe('MySQL Backups — required backup directory on the create form', () => {
+  const posts: Array<Record<string, unknown>> = [];
+
+  test.beforeEach(async ({ page }) => {
+    tasks.length = 0;
+    posts.length = 0;
+    await mockMysqlBackupsRoutes(page, { capturePosts: posts });
+    await page.route('**/api/apps/mysql_backups/schema', (route) =>
+      route.fulfill({ json: MOCK_SCHEMA_WITH_COLLAPSED_GENERAL }),
+    );
+  });
+
+  test('the backup directory is visible when the form opens, unlike a collapsed field', async ({
+    page,
+  }) => {
+    await page.goto('/apps/mysql_backups');
+    await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page
+      .getByRole('button', { name: /^New (MySQL Backups|task)/i })
+      .first()
+      .click();
+
+    const backupDir = page.getByLabel(/Backup directory/);
+    await expect(backupDir).toBeVisible();
+    await expect(backupDir).toHaveAttribute('required', '');
+
+    // A collapsed section unmounts its children, so the General field is absent
+    // rather than merely hidden. Expanding it has to bring the field back —
+    // without that half, this assertion would also pass for a field the schema
+    // never declared, which is the case it is meant to exclude.
+    const loggingDir = page.getByLabel(/Logging directory/);
+    await expect(loggingDir).toHaveCount(0);
+    await page.getByRole('button', { name: 'General' }).click();
+    await expect(loggingDir).toBeVisible();
+
+    await page.screenshot({
+      path: 'test-results/screenshots/backup-dir-visible-on-open.png',
+    });
+  });
+
+  test('submitting without a backup directory is refused and fires no POST', async ({ page }) => {
+    await openCreateFormAndFillRequired(page, 'needs-dir');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByText(/Backup directory is required/i)).toBeVisible();
+    expect(posts).toHaveLength(0);
+  });
+
+  test('a filled backup directory reaches the POST body', async ({ page }) => {
+    await openCreateFormAndFillRequired(page, 'has-dir');
+    await page.getByLabel('S3 bucket').fill('my-bucket');
+    await page.getByLabel(/Backup directory/).fill('/backups');
+
+    await page
+      .getByRole('button', { name: /submit|create|save/i })
+      .last()
+      .click();
+
+    await expect(page.getByRole('row', { name: /has-dir/ })).toBeVisible({
+      timeout: 15_000,
+    });
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toHaveProperty('backup_dir', '/backups');
+  });
+});

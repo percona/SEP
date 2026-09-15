@@ -43,12 +43,14 @@ from app.core.settings_override.api.models import SettingClassAppMetadata
 from app.core.settings_override.api.routes import AppOwnedClassEntry
 from app.core.settings_override.registry import is_hot_reloadable
 from app.core.utils import import_var
+from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.inventory_references import InventoryReferenceProvider
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum
+from app.tasks.models import ANY_OWNER
 
 
 class AppRegistry:
@@ -279,6 +281,46 @@ class AppRegistry:
         :rtype: BaseApp | None
         """
         return self._by_key.get(key)
+
+    def owner_offers_scheduling(self, owner: str) -> bool:
+        """Return whether a task under ``owner`` may be put on a schedule.
+
+        Fail closed: ``ANY_OWNER`` is refused, since an app declaring it does not
+        speak for the unclaimed tasks that default to it; an owner no registered
+        task app carries is refused; and an owner several task apps share is
+        allowed only when every one of them serves the ``scheduling`` capability.
+
+        :param owner: The ``Task.owner`` value to resolve.
+        :return: ``True`` when ``owner`` is not ``ANY_OWNER``, at least one
+            registered task app carries it, and all of them offer scheduling.
+        """
+        if owner == ANY_OWNER:
+            return False
+        apps = [
+            app
+            for app in self._apps
+            if isinstance(app, TaskExecutionApp) and app.owner == owner
+        ]
+        return bool(apps) and all(app.offers_scheduling for app in apps)
+
+    def unschedulable_task_owners(self) -> frozenset[str]:
+        """Return the owners of registered task apps that do not offer scheduling.
+
+        ``ANY_OWNER`` is excluded. It is the default owner of every task no app
+        claims, the seeded system tasks among them, so an app declaring it does
+        not speak for those tasks.
+
+        :return: Each registered task-app owner other than ``ANY_OWNER`` for which
+            :meth:`owner_offers_scheduling` is ``False``.
+        """
+        owners = {
+            app.owner
+            for app in self._apps
+            if isinstance(app, TaskExecutionApp) and app.owner != ANY_OWNER
+        }
+        return frozenset(
+            owner for owner in owners if not self.owner_offers_scheduling(owner)
+        )
 
 
 def _derive_app_key(module_name: str) -> str:

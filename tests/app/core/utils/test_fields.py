@@ -19,6 +19,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import (
+    AuthSchemeStr,
     bounded_int_from_empty_str_factory,
     dsn_safe,
     TCP_PORT_MAX,
@@ -91,6 +92,26 @@ class TestTcpPort:
         """Reject ports outside the 1-65535 range."""
         with pytest.raises(ValidationError):
             TypeAdapter(TcpPort).validate_python(port)
+
+
+class TestAuthSchemeStr:
+    """Cover the ``AuthSchemeStr`` RFC 7230 ``token`` field type."""
+
+    @pytest.mark.parametrize(
+        "scheme", ["Bearer", "Basic", "Token", "X-Custom.v1", "a!#$%&'*+^_`|~-"]
+    )
+    def test_accepts_token_schemes(self, scheme: str) -> None:
+        """Accept every scheme shape the ``token`` production allows."""
+        assert TypeAdapter(AuthSchemeStr).validate_python(scheme) == scheme
+
+    @pytest.mark.parametrize(
+        "scheme",
+        ["", " ", "Bea rer", "Bearer\r\nX-Injected: yes", "Bearer\n", "Bearer\x00"],
+    )
+    def test_rejects_values_no_header_can_carry(self, scheme: str) -> None:
+        """Reject whitespace and control bytes, which no header value can carry."""
+        with pytest.raises(ValidationError):
+            TypeAdapter(AuthSchemeStr).validate_python(scheme)
 
 
 class TestDsnSafe:

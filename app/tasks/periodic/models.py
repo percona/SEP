@@ -16,11 +16,10 @@
 """Define models for periodic tasks in the Tasks app."""
 
 import json
-from datetime import datetime, timedelta, UTC
+from datetime import datetime
+from functools import cached_property
 from typing import Any, Self
-from zoneinfo import ZoneInfo
 
-from croniter import croniter
 from pydantic import (
     BaseModel,
     computed_field,
@@ -33,7 +32,11 @@ from sqlalchemy_celery_beat.models import PeriodicTask
 from app.core.celery.models import (
     CrontabSchedule,
     IntervalSchedule,
-    reject_unmanageable_period,
+    ManageableInterval,
+)
+from app.core.celery.schedules import (
+    next_run_times,
+    schedule_timezone,
 )
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.tasks.models import TaskExecuteRequest, TaskHistoryStatusEnum
@@ -78,25 +81,64 @@ class PeriodicTaskExecuteRequest(TaskExecuteRequest):
         return
 
 
+def reject_schedule_that_cannot_produce_runs(
+    interval: IntervalSchedule | None,
+    crontab: CrontabSchedule | None,
+    start_time: datetime | None,
+) -> None:
+    """Reject a schedule whose upcoming runs fall outside the datetime range.
+
+    ``every`` is unbounded and ``start_time`` reaches ``datetime.max``, so a
+    large enough cadence, or one anchored close enough to the end of the
+    representable range, overflows while the runs are being computed. Those runs
+    are reported by computed fields, so the overflow would answer a read with a
+    500 rather than a validation error, and a stored row of that shape fails the
+    whole list endpoint rather than only its own detail response.
+
+    Checks the schedule and its anchor together, and runs the real computation:
+    the reachable ceiling depends on how far past ``start_time`` the last
+    reported run lands, so neither input bounds it alone.
+
+    :param interval: The interval schedule, if set.
+    :param crontab: The crontab schedule, if set.
+    :param start_time: The earliest time the schedule may fire, if any.
+    :raises ValueError: If computing the upcoming runs overflows.
+    """
+    try:
+        next_run_times(interval=interval, crontab=crontab, start_time=start_time)
+    except OverflowError as exc:
+        raise ValueError(
+            "Schedule cannot be scheduled: its next runs fall outside the"
+            " representable date range."
+        ) from exc
+
+
+def reject_unless_one_schedule_is_set(
+    interval: IntervalSchedule | None, crontab: CrontabSchedule | None
+) -> None:
+    """Reject a schedule that sets both scheduling methods, or neither.
+
+    :param interval: The interval schedule, if set.
+    :param crontab: The crontab schedule, if set.
+    :raises ValueError: If both or neither scheduling methods are set.
+    """
+    if interval is None and crontab is None:
+        raise ValueError("Either `interval` or `crontab` must be set.")
+    if interval is not None and crontab is not None:
+        raise ValueError("Only one of `interval` or `crontab` can be set.")
+
+
 class BasePeriodicTask(BaseModel):
     """Define the base model for periodic tasks.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The task identifier.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime | None
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     """
 
     name: str
@@ -117,7 +159,6 @@ class BasePeriodicTask(BaseModel):
         an interval or crontab schedule.
 
         :return: A string representing the task's period.
-        :rtype: str
         """
         if self.interval is not None:
             return str(self.interval)
@@ -133,10 +174,7 @@ class BasePeriodicTask(BaseModel):
         :rtype: Self
         :raises ValueError: If both or neither scheduling methods are set.
         """
-        if self.interval is None and self.crontab is None:
-            raise ValueError("Either `interval` or `crontab` must be set.")
-        if self.interval is not None and self.crontab is not None:
-            raise ValueError("Only one of `interval` or `crontab` can be set.")
+        reject_unless_one_schedule_is_set(self.interval, self.crontab)
         return self
 
 
@@ -147,25 +185,15 @@ class PeriodicTaskResponse(BasePeriodicTask):
     last run time, total run count, and date changed.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The SEP task name.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime | None
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param id: The unique identifier of the periodic task.
-    :type id: int
     :param last_run_at: The datetime of the last run.
-    :type last_run_at: UTCDatetime | None
     :param total_run_count: The total number of times the task has run.
-    :type total_run_count: int
     :param date_changed: The datetime when the task was last changed.
-    :type date_changed: UTCDatetime | None
     :param last_run_status: The result of this schedule's own most recent
         run, or ``None`` when the schedule has never run. Resolved as the
         earliest system-triggered history for this task name at or after the
@@ -173,10 +201,8 @@ class PeriodicTaskResponse(BasePeriodicTask):
         task name is not misattributed.
     :param interval: The interval schedule for the task. Defaults to None. This field
         is populated with the alias "model_intervalschedule".
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None. This field
         is populated with the alias "model_crontabschedule".
-    :type crontab: CrontabSchedule | None
     """
 
     id: int
@@ -192,36 +218,52 @@ class PeriodicTaskResponse(BasePeriodicTask):
     )
 
     @computed_field
+    @cached_property
+    def next_runs(self) -> list[UTCDatetime]:
+        """Compute the next scheduled execution times.
+
+        Report what Celery beat will do with this schedule, computed through the
+        scheduler's own schedule objects, so the API's account of the task and
+        the scheduler's behaviour cannot disagree.
+
+        Cached per instance so a page of schedules computes each row once rather
+        than once per computed field reading it.
+
+        :return: Up to :data:`~app.core.celery.schedules.NEXT_RUNS_PREVIEW_COUNT`
+            UTC execution times, empty when the task is disabled.
+        """
+        return next_run_times(
+            interval=self.interval,
+            crontab=self.crontab,
+            start_time=self.start_time,
+            last_run_at=self.last_run_at,
+            enabled=self.enabled,
+        )
+
+    @computed_field
     @property
     def next_run_at(self) -> UTCDatetime | None:
         """Compute the next scheduled execution time.
 
-        Return the next execution time based on the task's schedule. For crontab
-        schedules, use `croniter` to compute the next fire time from the cron
-        expression in the schedule's timezone, converted to UTC. For interval
-        schedules, add the interval duration to `last_run_at`, falling back to
-        `start_time`, then the current time.
-
-        :return: The next scheduled execution time in UTC, or `None` if the task
-            is disabled.
-        :rtype: UTCDatetime | None
+        :return: The first of :attr:`next_runs`, or ``None`` when the task is
+            disabled.
         """
-        if not self.enabled:
-            return None
-        if self.crontab is not None:
-            tz = ZoneInfo(self.crontab.timezone)
-            now = datetime.now(tz)
-            cron_expr = (
-                f"{self.crontab.minute} {self.crontab.hour} "
-                f"{self.crontab.day_of_month} {self.crontab.month_of_year} "
-                f"{self.crontab.day_of_week}"
-            )
-            return croniter(cron_expr, now).get_next(datetime).astimezone(UTC)
-        if self.interval is not None:
-            delta = timedelta(**{self.interval.period.value: self.interval.every})
-            base = self.last_run_at or self.start_time or datetime.now(UTC)
-            return base + delta
-        return None
+        return self.next_runs[0] if self.next_runs else None
+
+    @computed_field
+    @property
+    def timezone(self) -> str:
+        """Report the zone this task's schedule is defined in.
+
+        For a crontab schedule this is the crontab's own zone. For an interval
+        schedule it is ``UTC`` unconditionally, ``start_time`` set or not: an
+        interval's cadence is an absolute ``timedelta`` with no wall-clock
+        anchor, and ``start_time`` is a ``UTCDatetime``, which coerces away
+        whatever zone the client sent, so neither could carry another zone.
+
+        :return: The IANA zone name the schedule is defined in.
+        """
+        return schedule_timezone(self.interval, self.crontab)
 
     @model_validator(mode="before")
     @classmethod
@@ -233,9 +275,7 @@ class PeriodicTaskResponse(BasePeriodicTask):
         `execute_request` fields.
 
         :param data: The input data containing task execution details.
-        :type data: Any
         :return: The modified data with populated task fields.
-        :rtype: Any
         """
         if isinstance(data, PeriodicTask):
             data = data.__dict__
@@ -266,26 +306,19 @@ class PeriodicTaskWrite(BasePeriodicTask):
     creating or updating periodic tasks in the database.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The Celery task name.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
-    :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
+    :param interval: The interval schedule for the task. Narrowed to the periods
+        an operator can also manage from the UI. Defaults to None.
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     :param kwargs: A JSON string representing additional keyword arguments for the task.
-    :type kwargs: str
     """
 
     kwargs: str
+    interval: ManageableInterval | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -320,31 +353,23 @@ class PeriodicTaskWrite(BasePeriodicTask):
         Converts the `kwargs` dictionary to a JSON string if it is a dictionary.
 
         :param v: The kwargs value to encode.
-        :type v: Any
         :return: The encoded kwargs as a JSON string.
-        :rtype: Any
         """
         if isinstance(v, dict):
             return json.dumps(v)
         return v
 
-    @field_validator("interval")
-    @classmethod
-    def validate_min_interval(
-        cls, v: IntervalSchedule | None
-    ) -> IntervalSchedule | None:
-        """Ensure the interval is not lower than 1 minute.
+    @model_validator(mode="after")
+    def validate_schedule_can_produce_runs(self) -> Self:
+        """Ensure the stored schedule will not overflow when its runs are read.
 
-        Defers to :data:`app.core.celery.models.MANAGEABLE_PERIODS`, the same
-        bound the operator-settable interval fields annotate with, so a cadence
-        accepted at one boundary cannot be refused at the other.
-
-        :param v: The interval schedule to validate.
-        :return: The validated interval schedule.
+        :return: The validated instance.
+        :raises ValueError: If computing the upcoming runs overflows.
         """
-        if v is None:
-            return v
-        return reject_unmanageable_period(v)
+        reject_schedule_that_cannot_produce_runs(
+            self.interval, self.crontab, self.start_time
+        )
+        return self
 
 
 class PeriodicTaskUpdate(PeriodicTaskWrite):
@@ -353,23 +378,14 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
     Extends `PeriodicTaskWrite` and adds validations specific to updating tasks.
 
     :param name: The name of the periodic task.
-    :type name: str
     :param task: The Celery task name.
-    :type task: str
     :param start_time: The start time for the task execution.
-    :type start_time: UTCDatetime | None
     :param enabled: Whether the task is enabled.
-    :type enabled: bool
     :param description: A description of the task.
-    :type description: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     :param kwargs: A JSON string representing additional keyword arguments for the task.
-    :type kwargs: str
     """
 
     @field_validator("kwargs", mode="before")
@@ -381,9 +397,7 @@ class PeriodicTaskUpdate(PeriodicTaskWrite):
         of the 'task_name' field.
 
         :param v: The kwargs value to encode.
-        :type v: Any
         :return: The encoded kwargs as a JSON string.
-        :rtype: Any
         :raises ValueError: If 'task_name' is missing in kwargs.
         """
         if isinstance(v, dict):
@@ -400,27 +414,65 @@ class PeriodicTaskCreate(PeriodicTaskWrite):
     new periodic tasks.
 
     :param task: The Celery task name.
-    :type task: str
     :param execute_request: The execution request details for the task.
-    :type execute_request: PeriodicTaskExecuteRequest | None
     :param interval: The interval schedule for the task. Defaults to None.
-    :type interval: IntervalSchedule | None
     :param crontab: The crontab schedule for the task. Defaults to None.
-    :type crontab: CrontabSchedule | None
     :param kwargs: A JSON string representing additional keyword arguments for the task.
-    :type kwargs: str
     :param name: The name of the periodic task. Defaults to an empty string, meaning
         the value will be automatically generated on create.
-    :type name: str
     :param start_time: The start time for the task execution. Defaults to None.
-    :type start_time:  UTCDatetime | None
     :param enabled: Whether the task is enabled. Defaults to True.
-    :type enabled: bool
     :param description: A description of the task. Defaults to an empty string.
-    :type description: str
     """
 
     name: str = ""
     start_time: UTCDatetime | None = None
     enabled: bool = True
     description: str = ""
+
+
+class SchedulePreviewWrite(BaseModel):
+    """Define the schedule a preview is requested for.
+
+    Carries the schedule fields of a create request and nothing else: a preview
+    persists nothing, so it needs no task name, owner, or execution details.
+
+    :param interval: The interval schedule to preview. Defaults to None.
+    :param crontab: The crontab schedule to preview. Defaults to None.
+    :param start_time: The earliest time the schedule may fire. Defaults to None.
+    """
+
+    interval: ManageableInterval | None = None
+    crontab: CrontabSchedule | None = None
+    start_time: UTCDatetime | None = None
+
+    @model_validator(mode="after")
+    def validate_one_schedule_is_set(self) -> Self:
+        """Ensure that exactly one scheduling method is set.
+
+        :return: The validated SchedulePreviewWrite instance.
+        :raises ValueError: If both or neither scheduling methods are set, or if
+            computing the upcoming runs overflows.
+        """
+        reject_unless_one_schedule_is_set(self.interval, self.crontab)
+        reject_schedule_that_cannot_produce_runs(
+            self.interval, self.crontab, self.start_time
+        )
+        return self
+
+
+class SchedulePreviewResponse(BaseModel):
+    """Represent the upcoming runs of a schedule that has not been saved.
+
+    Uses the same field names and shapes as the matching computed fields on
+    :class:`PeriodicTaskResponse`, so a client renders a preview and a saved
+    schedule through one code path.
+
+    :param timezone: The zone the schedule is defined in.
+    :param next_run_at: The first upcoming run, or ``None`` when there is none.
+    :param next_runs: The upcoming runs, empty when there are none.
+    """
+
+    timezone: str
+    next_run_at: UTCDatetime | None
+    next_runs: list[UTCDatetime]

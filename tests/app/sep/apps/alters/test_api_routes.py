@@ -250,7 +250,7 @@ class TestAltersApiList:
         assert "service_type" not in row
         assert "owner" not in row
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
-        assert row["last_executed_at"] == "2026-07-07T09:00:00"
+        assert row["last_executed_at"] == "2026-07-07T09:00:00Z"
         assert "anonymize_mask" in row
         assert isinstance(row["anonymized_entities"], list)
         assert "connectivity_warning" in row

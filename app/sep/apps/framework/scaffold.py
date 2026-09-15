@@ -81,7 +81,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 PLUGINS_DIR = _REPO_ROOT / "app" / "sep" / "apps"
 TESTS_DIR = _REPO_ROOT / "tests" / "app" / "sep" / "apps"
-SETTINGS_FILE = _REPO_ROOT / "settings.yaml"
+SETTINGS_FILE_ENV_VAR = "SEP_SCAFFOLD_SETTINGS_FILE"
+#: The ``settings.yaml`` new apps are registered in. Redirectable through
+#: :data:`SETTINGS_FILE_ENV_VAR` so a caller that must not touch the working
+#: tree can point the registration at a throwaway copy — the seam a child
+#: process needs, since it cannot monkeypatch this module the way an in-process
+#: caller does.
+SETTINGS_FILE = Path(
+    os.environ.get(SETTINGS_FILE_ENV_VAR) or _REPO_ROOT / "settings.yaml"
+)
 
 # Stdlib-only mirrors of ServiceTypeEnum / NavIcon member names: importing the
 # real enums would pull pydantic/sqlalchemy (ServiceTypeEnum) or the framework
@@ -460,10 +468,12 @@ def render_app(config: ScaffoldConfig) -> list[Path]:
             continue
         if config.script_path is not None and relative == _SAMPLE_SCRIPT_TEMPLATE:
             continue
-        rendered = _render(template_path.read_text(), context, template_path)
+        rendered = _render(
+            template_path.read_text(encoding="utf-8"), context, template_path
+        )
         target = _target_path(config.name, relative, file_name)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(rendered)
+        target.write_text(rendered, encoding="utf-8")
         written.append(target)
     _ruff_fix(written)
     return written
@@ -605,7 +615,7 @@ def _atomic_write(path: Path, text: str) -> None:
     """
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w") as handle:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
         Path(tmp).replace(path)
     except BaseException:
@@ -623,7 +633,7 @@ def write_settings_entry(name: str, *, enabled: bool = False) -> bool:
         ``settings.yaml`` has no default ``SEP.APPS`` block.
     """
     new_text, changed = insert_app_entry(
-        SETTINGS_FILE.read_text(), name, enabled=enabled
+        SETTINGS_FILE.read_text(encoding="utf-8"), name, enabled=enabled
     )
     if changed:
         _atomic_write(SETTINGS_FILE, new_text)
@@ -1232,7 +1242,9 @@ def _print_preview(console: Console, config: ScaffoldConfig) -> None:
         references an unknown placeholder.
     """
     template = _TEMPLATES_DIR / config.flavor / "app.py.tmpl"
-    preview = _render(template.read_text(), _build_context(config), template)
+    preview = _render(
+        template.read_text(encoding="utf-8"), _build_context(config), template
+    )
     console.print(f"\nScaffolding {config.flavor.value!r} app {config.name!r}:")
     console.print(f"  display name: {config.display_name}")
     console.print(f"  enabled:      {config.enabled}")

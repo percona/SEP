@@ -21,7 +21,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "jsdom": "^29.1.1",
     "typescript": "~6.0.3",
-    "vitest": "^4.0.0"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "@emotion/react": "^11.0.0",

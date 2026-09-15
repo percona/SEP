@@ -63,6 +63,10 @@ function expectHelp(label: string, present: boolean) {
   }
 }
 
+// Every described field here pins `help_placement: 'tooltip'`. The file is
+// about the icon reaching each field kind across real app shapes; the
+// length-based default would put most of these descriptions inline instead,
+// which is covered on its own in the placement tests.
 describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
   it('backup_mongo-like create form: icons on described fields only', () => {
     const sections: FormSection[] = [
@@ -74,6 +78,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'credentials_path',
             label: 'Credentials Path',
             description: 'Optional path to MongoDB URI credentials on the Nomad node',
+            help_placement: 'tooltip',
           },
         ],
       },
@@ -94,6 +99,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'storage_s3_region',
             label: 'S3 Region',
             description: 'Required for S3 storage.',
+            help_placement: 'tooltip',
           },
           { type: 'string', name: 'storage_filesystem_path', label: 'Filesystem Path' },
         ],
@@ -106,6 +112,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'backup_priority',
             label: 'Node Priority (YAML)',
             description: 'YAML mapping of mongod addresses to backup priority.',
+            help_placement: 'tooltip',
           },
           { type: 'integer', name: 'backup_compression_level', label: 'Compression Level' },
           {
@@ -113,6 +120,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'pitr_enabled',
             label: 'Enable PITR',
             description: 'Enable point-in-time recovery.',
+            help_placement: 'tooltip',
           },
         ],
       },
@@ -145,12 +153,14 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'schema_name',
             label: 'Schema',
             description: 'Schema to alter; pick from inventory or type a name.',
+            help_placement: 'tooltip',
           },
           {
             type: 'string',
             name: 'table_name',
             label: 'Table',
             description: 'Table to alter; pick from inventory or type a name.',
+            help_placement: 'tooltip',
           },
         ],
       },
@@ -162,12 +172,14 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'dry_run',
             label: 'Dry Run',
             description: 'Simulate without swapping the original and new table',
+            help_placement: 'tooltip',
           },
           {
             type: 'string',
             name: 'print',
             label: 'Print',
             description: 'Print SQL statements to STDOUT',
+            help_placement: 'tooltip',
           },
           { type: 'integer', name: 'chunk_time', label: 'Chunk Time' },
         ],
@@ -201,12 +213,14 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'sudo',
             label: 'Run with sudo',
             description: 'Prepend sudo to the interpreter when the snippet is executed.',
+            help_placement: 'tooltip',
           },
           {
             type: 'integer',
             name: 'minutes',
             label: 'Lookback minutes',
             description: 'Shared window applied to every selected snippet.',
+            help_placement: 'tooltip',
           },
           { type: 'string', name: 'note', label: 'Operator note' },
         ],
@@ -221,6 +235,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'overrides.snip0.path',
             label: 'Path',
             description: 'Filesystem path to inspect for this snippet only.',
+            help_placement: 'tooltip',
           },
           { type: 'integer', name: 'overrides.snip0.threshold', label: 'Threshold %' },
         ],
@@ -256,24 +271,28 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             label: 'PMM server URL',
             description:
               'Base URL of PMM server. Leave empty to use configured default (PMM.ENDPOINT).',
+            help_placement: 'tooltip',
           },
           {
             type: 'string',
             name: 'node',
             label: 'Node name',
             description: 'Node name of audit target (required unless using --list).',
+            help_placement: 'tooltip',
           },
           {
             type: 'bool',
             name: 'list',
             label: 'List services',
             description: 'List nodes and services on the PMM server instead of collecting graphs.',
+            help_placement: 'tooltip',
           },
           {
             type: 'integer',
             name: 'width',
             label: 'Image width',
             description: 'Width of images in pixels.',
+            help_placement: 'tooltip',
             default: 1280,
           },
           {
@@ -281,6 +300,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'start',
             label: 'Start time (UTC)',
             description: 'Starting timestamp for graph data. Defaults to 24h ago.',
+            help_placement: 'tooltip',
           },
           { type: 'string', name: 'extra_tag', label: 'Extra tag' },
         ],
@@ -315,6 +335,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'table_name',
             label: 'Table Name',
             description: 'Table to inspect on the executor host.',
+            help_placement: 'tooltip',
           },
           { type: 'string', name: 'database_name', label: 'Database Name' },
           {
@@ -322,6 +343,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'format',
             label: 'Output format',
             description: 'How to render the snippet result.',
+            help_placement: 'tooltip',
             // >3 choices use the select shell (help icon); ≤3 use radios + caption.
             choices: [
               { label: 'Plain text', value: 'text' },
@@ -335,6 +357,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'verbose',
             label: 'Verbose',
             description: 'Increase output verbosity.',
+            help_placement: 'tooltip',
           },
           { type: 'integer', name: 'limit', label: 'Row limit' },
         ],
@@ -348,6 +371,7 @@ describe('SchemaFormRenderer — cross-app help-icon spot-check', () => {
             name: 'sudo',
             label: 'Run with sudo',
             description: 'Prepend sudo to the interpreter when the snippet is executed.',
+            help_placement: 'tooltip',
           },
         ],
       },

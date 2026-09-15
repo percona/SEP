@@ -32,9 +32,13 @@ from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY,
     reconstruct_mysql_restores_form,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate
+from app.sep.apps.mysql_backups.restore.models import (
+    RestoreCreate,
+    SourceTransport,
+)
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
+from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 
 def _service(
@@ -343,3 +347,110 @@ def test_backfill_single_task_stamps_mysql_restores_form():
     assert stamped_form["backup_type"] == BackupType.MYDUMPER.value
     assert stamped_form["backup_source"] == "host.example.com:/backups/mydumper"
     assert stamped_form["alert_on_fail"] is True
+
+
+def _stamped_restore_task(stored_form: dict, *, name: str = "restore-stamped") -> Task:
+    """Build a restore task row already carrying a ``data['_form']`` stamp."""
+    task = _legacy_restore_task(name=name)
+    task.data[RESERVED_FORM_KEY] = stored_form
+    return task
+
+
+def _pre_declaration_stamp(**overrides: object) -> dict:
+    """Return a stamp as it was written before the source controls existed."""
+    stamp = {
+        "task_name": "restore-stamped",
+        "hostname": "executor-1",
+        "backup_type": BackupType.MYDUMPER.value,
+        "backup_source": "/backups/mydumper/latest",
+        "service_id": "12",
+        "ssh_user": legacy_default("ssh_user"),
+        "ssh_port": legacy_default("ssh_port"),
+        "s3_tool": legacy_default("s3_tool"),
+    }
+    stamp.update(overrides)
+    return stamp
+
+
+def test_repair_declares_the_source_and_strips_what_it_forbids():
+    """Declare the source on a pre-declaration stamp so the gates accept it."""
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _stamped_restore_task(_pre_declaration_stamp())
+
+    outcome = _backfill_single_task(
+        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+    )
+
+    assert outcome.label == "repaired"
+    assert outcome.stamped_data is not None
+    repaired = outcome.stamped_data[RESERVED_FORM_KEY]
+    assert repaired["source_transport"] == SourceTransport.LOCAL.value
+    assert repaired["ssh_user"] is None
+    assert repaired["ssh_port"] is None
+    assert repaired["s3_tool"] is None
+
+
+def test_repair_keeps_credentials_the_inferred_transport_can_use():
+    """Keep a non-default SSH credential and infer the transport that consumes it."""
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _stamped_restore_task(
+        _pre_declaration_stamp(ssh_user="deploy", ssh_key="prod-key")
+    )
+
+    outcome = _backfill_single_task(
+        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+    )
+
+    assert outcome.label == "repaired"
+    assert outcome.stamped_data is not None
+    repaired = outcome.stamped_data[RESERVED_FORM_KEY]
+    assert repaired["source_transport"] == SourceTransport.SSH.value
+    assert repaired["ssh_user"] == "deploy"
+    assert repaired["ssh_key"] == "prod-key"
+
+
+def test_repair_skips_a_stamp_that_already_declares_its_source():
+    """Leave an operator's own declaration untouched."""
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _stamped_restore_task(
+        {
+            "task_name": "restore-stamped",
+            "hostname": "executor-1",
+            "backup_type": BackupType.MYDUMPER.value,
+            "backup_source": "/backups/mydumper/latest",
+            "source_transport": SourceTransport.LOCAL.value,
+        }
+    )
+
+    outcome = _backfill_single_task(
+        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+    )
+
+    assert outcome.label == "skipped_existing"
+    assert outcome.stamped_data is None
+
+
+def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():
+    """Return a legacy-reconstructed body that validates against the new gates."""
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_restore_task(
+        backup_type=BackupType.MYDUMPER,
+        backup_source="db01:/backups/mydumper",
+        dest_host="10.0.0.5",
+        dest_port=3306,
+        all_servers={"SSH_USER": "percona", "SSH_PORT": 22, "S3_TOOL": "s3cmd"},
+    )
+
+    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+
+    assert body is not None
+    assert body["source_transport"] == SourceTransport.SSH.value
+    RestoreCreate.model_validate(body)

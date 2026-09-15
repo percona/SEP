@@ -1374,8 +1374,8 @@ def derive_execute_route(
     resolve the task, POST ``/execute/{task.name}`` to the Tasks API with the
     request body's non-``None`` fields, validate the upstream reply as a
     :class:`~app.tasks.models.TaskHistoryResponse`, and return
-    ``response_model(task_name=..., task_id=...)``. The route pins
-    ``status_code=201`` and the standard guard set
+    ``response_model(task_name=..., task_id=..., status=..., created_at=...)``.
+    The route pins ``status_code=201`` and the standard guard set
     ``[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps]``.
 
     The generated handler annotates its ``task`` parameter with ``task_dep``
@@ -1410,7 +1410,10 @@ def derive_execute_route(
         the requestBody schema and the body-validation ``422``. Defaults to
         :class:`~app.sep.apps.framework.responses.TaskExecuteWrite`.
     :param response_model: The execute response model, constructed with
-        ``task_name`` and ``task_id`` keyword arguments. Defaults to
+        ``task_name``, ``task_id``, ``status`` and ``created_at`` keyword
+        arguments. A model that declares fewer of them drops the rest silently,
+        while one configured ``extra="forbid"`` would raise at dispatch.
+        Defaults to
         :class:`~app.sep.apps.framework.responses.TaskExecutionResponse`.
     :param name: The route name; drives the OpenAPI ``operationId`` and
         ``summary``. ``None`` falls back to the inner handler's ``__name__``.
@@ -1458,7 +1461,12 @@ def derive_execute_route(
             json=body.model_dump(exclude_none=True),
         )
         task_history = TaskHistoryResponse.model_validate(created)
-        return response_model(task_name=task.name, task_id=task_history.id)
+        return response_model(
+            task_name=task.name,
+            task_id=task_history.id,
+            status=task_history.status,
+            created_at=task_history.created_at,
+        )
 
     router.add_api_route(
         "/{task_name}/execute",
