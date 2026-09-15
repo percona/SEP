@@ -1100,7 +1100,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.SUCCESS, finished_at=early
         )
-        failed = await _create_task_history(
+        await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=later
         )
         await _create_task_history(
@@ -1114,7 +1114,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.RUNNING
-        assert latest.finished_at == failed.finished_at
+        assert latest.finished_at == later
 
     @pytest.mark.asyncio
     async def test_only_running_never_finished_has_no_finish(
@@ -1140,7 +1140,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         """Assert a FAILED run still reports its finish time (it did run)."""
         task = await _create_task(session, name="latest-failed")
         finished = utc_now() - timedelta(minutes=30)
-        row = await _create_task_history(
+        await _create_task_history(
             session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=finished
         )
 
@@ -1151,7 +1151,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         latest = result[task.name]
         assert latest is not None
         assert latest.status == TaskHistoryStatusEnum.FAILED
-        assert latest.finished_at == row.finished_at
+        assert latest.finished_at == finished
 
     @pytest.mark.asyncio
     async def test_no_executor_filter_returns_newest_regardless(
