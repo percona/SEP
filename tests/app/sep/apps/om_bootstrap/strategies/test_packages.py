@@ -17,7 +17,12 @@
 
 import pytest
 
-from app.sep.apps.om_bootstrap.strategies.packages import PackagesInstallStrategy
+from app.sep.apps.om_bootstrap.strategies.packages import (
+    DATA_PATH,
+    LOG_PATH,
+    PackagesInstallStrategy,
+    PID_FILE_PATH,
+)
 from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
     InstallMethod,
@@ -146,6 +151,42 @@ class TestBuildStep:
 
         assert "replSetName: rs-test" in " ".join(action.command)
 
+    def test_configure_mongod_creates_the_data_directory(self) -> None:
+        """Mongod exits immediately on first start if nobody creates this first."""
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
+
+    def test_configure_mongod_forks(self) -> None:
+        """mongod.service is Type=forking.
+
+        Without fork: true it never satisfies systemd's readiness check and
+        gets killed once TimeoutStartSec elapses.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "fork: true" in command
+        assert f"pidFilePath: {PID_FILE_PATH}" in command
+
+    def test_configure_mongod_sets_a_logpath(self) -> None:
+        """Mongod refuses to start at all with fork: true and no logpath.
+
+        ``BadValue: --fork has to be used with --logpath or --syslog`` --
+        confirmed against a real run.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert f"path: {LOG_PATH}" in command
+
     def test_distribute_keyfile_requires_params(self) -> None:
         """Without a keyFile to plant, this is a programming error, not a blank file."""
         with pytest.raises(ValueError, match="key_file_content"):
@@ -218,6 +259,23 @@ class TestBuildRunStep:
         assert "pmm_monitor" in command
         assert "generated-secret" in command
         assert "clusterMonitor" in command
+
+    def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
+        """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
+
+        Confirmed against a real run where every attempt to create the first
+        user failed "not authorized" even though create_pmm_monitoring_user's
+        own command was correct -- the probe, not our command, burned it.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "create_pmm_monitoring_user",
+            ["node00"],
+            _spec(OperatingSystem.UBUNTU),
+            params={"username": "pmm_monitor", "password": "generated-secret"},
+        )
+
+        command = " ".join(action.command)
+        assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
 
 
 class TestPlanRollbackSteps:
