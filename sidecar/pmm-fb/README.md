@@ -312,12 +312,14 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
 
   **Why the executor must not be emulated.** Nomad's `raw_exec` spawns a task
   with `clone3(CLONE_INTO_CGROUP)` only where it places that task into a
-  cgroup; everywhere else it spawns with plain `clone` and never issues the
-  syscall at all. Go has no fallback on the placing path, and QEMU 7.0 and
-  later leave `clone3` unimplemented. So what decides whether the syscall
-  matters is the host's cgroup layout, and Nomad's own mode detection asks two
-  things of it: the unified `cgroup2fs` hierarchy at `/sys/fs/cgroup`, *and*
-  all of `cpuset cpu io memory pids` offered in its `cgroup.controllers`.
+  cgroup *at spawn time* — the unified v2 hierarchy's path. On v1 it still
+  places the task, by writing PIDs after a plain `clone`, and where it places
+  none it spawns with plain `clone` too; neither issues the syscall at all. Go
+  has no fallback on the placing path, and QEMU 7.0 and later leave `clone3`
+  unimplemented. So what decides whether the syscall matters is the host's
+  cgroup layout, and Nomad's own mode detection asks two things of it: the
+  unified `cgroup2fs` hierarchy at `/sys/fs/cgroup`, *and* all of
+  `cpuset cpu io memory pids` offered in its `cgroup.controllers`.
   What `sep-mysql` gets is that host layout, not one of its own —
   `privileged: true` with `cgroup: host`, which is what lets the client
   fingerprint and place at all — so where the host answers both, the syscall
