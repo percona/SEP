@@ -162,7 +162,9 @@ async def test_service_observation_postgres_timestamp_roundtrip(
         ServiceSystemObservationWriteFactory.build(observed_at=updated_at),
         service_id=service.id,
     )
-    refreshed = await ServiceSystemObservationManager.get(postgres_session, id=updated.id)
+    refreshed = await ServiceSystemObservationManager.get(
+        postgres_session, id=updated.id
+    )
     assert refreshed is not None
     _assert_observed_at_equal(refreshed.observed_at, updated_at)
 
