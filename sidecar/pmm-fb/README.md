@@ -318,9 +318,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   matters is the host's cgroup layout, and Nomad's own mode detection asks two
   things of it: the unified `cgroup2fs` hierarchy at `/sys/fs/cgroup`, *and*
   all of `cpuset cpu io memory pids` offered in its `cgroup.controllers`.
-  `sep-mysql` is deliberately such a host — `privileged: true` with
-  `cgroup: host`, which is what lets the client fingerprint and place at all —
-  so there the syscall is load-bearing, and under QEMU every dispatch dies
+  What `sep-mysql` gets is that host layout, not one of its own —
+  `privileged: true` with `cgroup: host`, which is what lets the client
+  fingerprint and place at all — so where the host answers both, the syscall
+  is load-bearing in the container too, and under QEMU every dispatch dies
   inside the executor with `fork/exec /usr/bin/sh: function not implemented`
   before any script output exists — the run shows as failed with an empty log —
   while the node still fingerprints `raw_exec` healthy and stays in SEP's

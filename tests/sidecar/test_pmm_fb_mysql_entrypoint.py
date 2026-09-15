@@ -270,10 +270,16 @@ def test_served_clone3_never_reads_the_layout(harness: Harness, fs_type: str) ->
 
 @pytest.mark.parametrize("fs_type", ["cgroup2fs", "tmpfs"])
 def test_unreadable_verdict_proceeds(harness: Harness, fs_type: str) -> None:
-    """Start the node on any layout when the probe draws no conclusion."""
+    """Start the node on any layout when the probe draws no conclusion.
+
+    The layout is never consulted either: ``CLONE3_ERR`` is a log-and-continue
+    branch this ticket leaves untouched, so an unconditional ``stat`` would be a
+    regression that the exit status alone cannot see.
+    """
     result = harness.run(verdict="CLONE3_ERR=13", fs_type=fs_type)
 
     assert_proceeded(harness, result)
+    assert not harness.stat_marker.exists()
     assert "clone3 probe gave no verdict (CLONE3_ERR=13)" in result.stderr
 
 
