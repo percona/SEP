@@ -2927,6 +2927,306 @@ class TestConnectionDetailsResponseConfidentiality:
 
 
 @pytest.mark.asyncio
+class TestProbeResponseConfidentiality:
+    """Cover keeping a probe's answer out of the transport's debug log."""
+
+    async def test_a_successful_probe_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Pass the probe while the body the receiver answered with is withheld."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_200_OK,
+                payload={"result": [{"note": "probe-body-sentinel"}]},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.probe()
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "probe-body-sentinel" not in caplog.text
+
+    async def test_a_non_json_probe_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Keep a plain-text acknowledgement's content out of every log record."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_200_OK,
+                body="probe-body-sentinel",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    await executor.probe()
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "probe-body-sentinel" not in caplog.text
+
+    async def test_an_error_probe_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Withhold the body of a refused probe, the path a leak matters most on."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_probe_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _PROBE_URL,
+                status=status.HTTP_401_UNAUTHORIZED,
+                payload={"detail": "probe-body-sentinel"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.probe()
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "probe-body-sentinel" not in caplog.text
+
+
+@pytest.mark.asyncio
+class TestCaseSearchResponseConfidentiality:
+    """Cover keeping a case search's answer out of the transport's debug log."""
+
+    async def test_no_case_field_the_row_carries_reaches_a_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Answer the declared matches while the rest of the row is withheld."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": [
+                        {
+                            "number": "CS0001",
+                            "short_description": "Disk pressure",
+                            "customer_note": "search-body-sentinel",
+                        }
+                    ]
+                },
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    matches = await executor.search_cases("CS00")
+
+        assert matches == [CaseMatch(reference="CS0001", title="Disk pressure")]
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "search-body-sentinel" not in caplog.text
+
+    async def test_a_non_json_search_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Keep a non-JSON answer's content out of every log record."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_200_OK,
+                body="search-body-sentinel",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.search_cases("CS00")
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "search-body-sentinel" not in caplog.text
+
+    async def test_an_error_search_body_reaches_no_log_record(
+        self, api: RemoteAPI, caplog
+    ):
+        """Withhold the body of a refused search, the path a leak matters most on."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_case_search_plan()), api)
+        with aioresponses() as mock:
+            mock.get(
+                _CASE_SEARCH_URL,
+                status=status.HTTP_403_FORBIDDEN,
+                payload={"detail": "search-body-sentinel"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.search_cases("CS00")
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "search-body-sentinel" not in caplog.text
+
+
+@pytest.mark.asyncio
+class TestResolutionStepResponseConfidentiality:
+    """Cover keeping a resolution step's answer out of the transport's debug log."""
+
+    async def test_no_field_beyond_the_declared_outputs_reaches_a_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Extract the declared output while the rest of the body is withheld."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                payload={
+                    "result": {
+                        "sys_id": "sys-1",
+                        "customer_note": "resolution-body-sentinel",
+                    }
+                },
+            )
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={"result": {"sys_id": "att-1"}},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    result = await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref="CS0001",
+                        manifest=_MANIFEST,
+                    )
+
+        assert result.reference == "att-1"
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "resolution-body-sentinel" not in caplog.text
+
+    async def test_a_non_json_step_body_reaches_no_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Keep a non-JSON answer's content out of every log record."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_200_OK,
+                body="resolution-body-sentinel",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.upload_bundle(
+                            source_ref="src-9",
+                            bundle=bundle,
+                            case_ref="CS0001",
+                            manifest=_MANIFEST,
+                        )
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "resolution-body-sentinel" not in caplog.text
+
+    async def test_an_error_step_body_reaches_no_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Withhold the body of a refused step, the path a leak matters most on."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_one_step_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _TICKET_URL,
+                status=status.HTTP_404_NOT_FOUND,
+                payload={"detail": "resolution-body-sentinel"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.upload_bundle(
+                            source_ref="src-9",
+                            bundle=bundle,
+                            case_ref="CS0001",
+                            manifest=_MANIFEST,
+                        )
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "resolution-body-sentinel" not in caplog.text
+
+
+@pytest.mark.asyncio
+class TestUploadResponseConfidentiality:
+    """Cover keeping the upload's answer out of the transport's debug log."""
+
+    async def test_no_field_beyond_the_reference_reaches_a_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Extract the reference while the rest of the body is withheld."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                payload={
+                    "result": {"sys_id": "att-1", "customer_note": "upload-body-sentinel"}
+                },
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    result = await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert result.reference == "att-1"
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "upload-body-sentinel" not in caplog.text
+
+    async def test_a_non_json_upload_body_reaches_no_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Keep a plain-text acknowledgement's content out of every log record."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_201_CREATED,
+                body="upload-body-sentinel",
+                content_type="text/plain",
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    result = await executor.upload_bundle(
+                        source_ref="src-9",
+                        bundle=bundle,
+                        case_ref=None,
+                        manifest=_MANIFEST,
+                    )
+
+        assert result.reference is None
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "upload-body-sentinel" not in caplog.text
+
+    async def test_an_error_upload_body_reaches_no_log_record(
+        self, api: RemoteAPI, bundle: BundleSource, caplog
+    ):
+        """Withhold the body of a refused upload, the path a leak matters most on."""
+        executor = DeliveryPlanExecutor(DeliveryPlan(**_upload_only_plan()), api)
+        with aioresponses() as mock:
+            mock.post(
+                _UPLOAD_URL,
+                status=status.HTTP_409_CONFLICT,
+                payload={"detail": "upload-body-sentinel"},
+            )
+            with caplog.at_level("DEBUG", logger=api.logger.name):
+                async with api:
+                    with pytest.raises(HTTPException):
+                        await executor.upload_bundle(
+                            source_ref="src-9",
+                            bundle=bundle,
+                            case_ref=None,
+                            manifest=_MANIFEST,
+                        )
+
+        assert _RESPONSE_LOG_MARKER in caplog.text
+        assert "upload-body-sentinel" not in caplog.text
+
+
+@pytest.mark.asyncio
 class TestConnectionDetailsSecretRedaction:
     """Cover masking the step's own credential in the request log."""
 

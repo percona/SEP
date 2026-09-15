@@ -30,6 +30,8 @@ conditional, loop, or templating construct exists.
 
 Resolution-step responses are read only for the outputs the plan declares and are
 then discarded -- they may carry data the caller must neither retain nor return.
+Every response the executor receives is withheld from the transport's log on the
+same grounds, so no body outlives its request in a log line either.
 This module lives in ``app.sep`` but imports only from ``app.core`` and no other
 ``app.sep`` module, keeping it promotable to core if a second service ever
 becomes a real consumer.
@@ -804,10 +806,11 @@ class DeliveryPlanExecutor:
         plan carries is accepted at the endpoint it names.
 
         A probe declares no response-body contract, so any successful status is
-        a success whatever the receiver answered with. ``RemoteAPI.request``
-        parses the body before checking the status and would otherwise report a
-        healthy receiver's ``200 text/plain`` acknowledgement as an upstream
-        error, the way it does for an upload's.
+        a success whatever the receiver answered with, and nothing is read out
+        of the body, so it is withheld from the transport's log as well.
+        ``RemoteAPI.request`` parses the body before checking the status and
+        would otherwise report a healthy receiver's ``200 text/plain``
+        acknowledgement as an upstream error, the way it does for an upload's.
 
         :raises DeliveryPlanError: When the plan declares no probe step.
         :raises HTTPException: Propagates the project exception ``RemoteAPI``
@@ -824,7 +827,10 @@ class DeliveryPlanExecutor:
             }
         )
         logger.debug("Delivery plan: probing the receiver.")
-        with self._api.redact_headers(_secret_valued_keys(step.headers)):
+        with (
+            self._api.redact_headers(_secret_valued_keys(step.headers)),
+            self._api.suppress_response_log(),
+        ):
             try:
                 await self._api.request(
                     "GET", step.path, allow_redirects=False, **request_kwargs
@@ -840,6 +846,10 @@ class DeliveryPlanExecutor:
         search is not a send. Only the reference and title the plan's pointers
         address are returned; the rest of the response is discarded, so no part
         of it the plan did not ask for reaches the caller.
+
+        The response body is withheld from the transport's log for the duration
+        of the call, on the same grounds: only the addressed values are kept, so
+        the rest must not outlive the request in a log line either.
 
         The term is held against the pattern the plan declares before it is
         composed into any value. A receiver's query language gives its clause
@@ -870,7 +880,10 @@ class DeliveryPlanExecutor:
             }
         )
         logger.debug("Delivery plan: searching the receiver for cases.")
-        with self._api.redact_headers(_secret_valued_keys(step.headers)):
+        with (
+            self._api.redact_headers(_secret_valued_keys(step.headers)),
+            self._api.suppress_response_log(),
+        ):
             response = await self._api.request(
                 "GET", step.path, allow_redirects=False, **request_kwargs
             )
@@ -1117,6 +1130,10 @@ class DeliveryPlanExecutor:
     ) -> dict[str, str]:
         """Issue one resolution step and extract the outputs it declares.
 
+        Only the outputs the plan declares are kept, so the response body is
+        withheld from the transport's log for the duration of the call: the rest
+        of it must not outlive the request in a log line either.
+
         :param step: The resolution step to run.
         :param inputs: The send inputs keyed by their plan-facing names.
         :param outputs: Outputs extracted by the steps that ran before this one.
@@ -1147,6 +1164,7 @@ class DeliveryPlanExecutor:
             with (
                 self._api.redact_headers(_secret_valued_keys(step.headers)),
                 self._api.redact_body_fields(_secret_valued_keys(step.body)),
+                self._api.suppress_response_log(),
             ):
                 response = await self._api.request(
                     step.method,
@@ -1235,7 +1253,9 @@ class DeliveryPlanExecutor:
         The bundle's content is handed to the transport as it arrived, so a
         handle or an async iterator streams rather than being buffered. Only the
         headers need masking here: the multipart body is an opaque payload the
-        request log never expands.
+        request log never expands. The receiver's own response is withheld from
+        the transport's log: only the reference the plan names is kept out of
+        it, so the rest must not outlive the request in a log line either.
 
         Redirects are not followed. A receiver that answers a credential-bearing
         request with a redirect would have the body replayed to the new
@@ -1274,7 +1294,10 @@ class DeliveryPlanExecutor:
                     "fields": self._resolve_map(step.fields, inputs, outputs, manifest),
                 }
             )
-            with self._api.redact_headers(_secret_valued_keys(step.headers)):
+            with (
+                self._api.redact_headers(_secret_valued_keys(step.headers)),
+                self._api.suppress_response_log(),
+            ):
                 response = await self._api.upload(
                     step.path,
                     files={
