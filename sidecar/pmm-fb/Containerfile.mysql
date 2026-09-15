@@ -49,6 +49,15 @@ COPY --from=pmmclient /usr/local/percona/pmm /usr/local/percona/pmm
 RUN [ -z "${NOMAD_VERSION}" ] \
     || /usr/local/percona/pmm/tools/nomad version | head -1 | grep -qx "Nomad v${NOMAD_VERSION}" \
     || { echo "tools/nomad is '$(/usr/local/percona/pmm/tools/nomad version | head -1)', not v${NOMAD_VERSION}: this client cannot pair with the feature-build server" >&2; exit 1; }
+
+# On a released client the assertion above is vacuous, so NOMAD_VERSION_FB_TAG
+# must name this build's PMM_FB_TAG instead. See README.md "Caveats".
+ARG PMM_FB_TAG
+ARG PMM_CLIENT_IMAGE
+ARG NOMAD_VERSION_FB_TAG
+RUN [ -z "${PMM_CLIENT_IMAGE}" ] || [ -z "${NOMAD_VERSION}" ] \
+    || [ "${PMM_FB_TAG}" = "${NOMAD_VERSION_FB_TAG}" ] \
+    || { echo "NOMAD_VERSION=${NOMAD_VERSION} was read from PMM_FB_TAG=${NOMAD_VERSION_FB_TAG}, but this build pins PMM_FB_TAG=${PMM_FB_TAG} and copies its client from ${PMM_CLIENT_IMAGE}, whose Nomad cannot move with the feature build: build sep-mysql on an amd64 engine to read the new client's tools/nomad, then update NOMAD_VERSION and NOMAD_VERSION_FB_TAG together" >&2; exit 1; }
 COPY clone3_probe.py /usr/local/bin/clone3_probe.py
 ENV PATH="/usr/local/percona/pmm/bin:${PATH}"
 
