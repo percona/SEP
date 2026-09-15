@@ -29,6 +29,8 @@ from app.sep.apps.mysql_backups.restore.models import RestoreCreate, SourceTrans
 from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskBackendEnum
 
+_SCHEMA_ID = 42
+
 
 @pytest.mark.asyncio
 async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_schema(
@@ -49,7 +51,7 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
         hostname="restore-host",
         task_name="restore-task",
         service_id=str(service.id),
-        schema_id="42",
+        schema_id=str(_SCHEMA_ID),
         backup_type=BackupType.MYDUMPER,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
@@ -63,7 +65,7 @@ async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_sch
     service_call, schema_call = lookup.await_args_list
     assert service_call.args[2] == service.id
     assert isinstance(service_call.args[2], int)
-    assert schema_call.args[2] == 42
+    assert schema_call.args[2] == _SCHEMA_ID
     assert isinstance(schema_call.args[2], int)
     assert schema_call.kwargs["service_id"] == service.id
 
