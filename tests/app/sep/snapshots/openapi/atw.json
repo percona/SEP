@@ -28,6 +28,16 @@
         "title": "ServiceTypeEnum",
         "type": "string"
       },
+      "SnippetSudoRequirement": {
+        "description": "Name the three elevation states a snippet's metadata distinguishes.",
+        "enum": [
+          "never",
+          "optional",
+          "always"
+        ],
+        "title": "SnippetSudoRequirement",
+        "type": "string"
+      },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
         "enum": [
@@ -261,7 +271,7 @@
         "type": "object"
       },
       "atw__ATWIncidentExecutionResponse": {
-        "description": "Represent one recorded incident execution with live task status and snippet title.\n\nThe task-status fields are ``None`` when the Tasks API could not be reached\nfor that row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param snippet_title: The snippet's current display title, falling back to its\n    filename when its metadata title is missing or blank. ``None`` when the\n    snippet cannot be resolved. Defaults to ``None``.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely -- distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
+        "description": "Represent one recorded incident execution with live task status and snippet title.\n\nThe task-status fields are ``None`` when the Tasks API could not be reached\nfor that row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param snippet_title: The snippet's current display title, falling back to its\n    filename when its metadata title is missing or blank. ``None`` when the\n    snippet cannot be resolved. Defaults to ``None``.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param failure_reason: The upstream failure reason, carried verbatim.\n    ``None`` when the run did not fail or the reason is unknown.\n    Defaults to ``None``.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely, distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
         "properties": {
           "args_withheld": {
             "default": false,
@@ -272,6 +282,17 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
           },
           "finished_at": {
             "anyOf": [
@@ -592,7 +613,7 @@
         "type": "object"
       },
       "atw__ATWSnippetSummary": {
-        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:type name: str\n:param title: The snippet display title.\n:type title: str\n:param description: The snippet free-text description.\n:type description: str",
+        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:param title: The snippet display title.\n:param description: The snippet free-text description.\n:param sudo: Whether the snippet's elevation is never wanted, optional, or\n    mandatory, letting a client warn before dispatching it to a host that\n    cannot elevate. Nullable only so the field is additive on an already\n    released model: every response this version builds populates it, and a\n    ``None`` means the server predates the field.",
         "properties": {
           "description": {
             "title": "Description",
@@ -601,6 +622,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sudo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnippetSudoRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "title": "Title",

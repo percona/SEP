@@ -27,7 +27,7 @@ from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
 import app.tasks.db.seed as seed_module
 from app.core.celery.models import IntervalSchedule
-from app.tasks.config import tasks_settings
+from app.tasks.config import MAX_SCHEDULED_SYNCER_LENGTH, tasks_settings
 from app.tasks.db.seed import (
     _CHECK_STALENESS_TASK,
     _launch_check_shell,
@@ -56,9 +56,8 @@ from app.tasks.models import (
     SYNC_RUNNING_TASKS_TASK_NAME,
     TaskBackendEnum,
 )
+from tests.app.tasks.conftest import MYSQL_SYNCER, PMM_SYNCER
 
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 FIFTEEN_MINUTES = IntervalSchedule(every=15, period=Period.MINUTES)
 
 NOMAD_TEMPLATES_WITH_STALENESS = [
@@ -1278,18 +1277,20 @@ def test_purge_task_history_logs_periodic_task_seeded() -> None:
 class TestInventorySyncSchedule:
     """Test the default inventory-sync schedule entry builder."""
 
-    def test_returns_none_when_interval_unset(self, mocker) -> None:
-        """Assert no entry is built when INVENTORY_SYNC_INTERVAL is unset."""
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", None)
+    def test_returns_none_when_interval_unset(self) -> None:
+        """Assert no entry is built when no interval is configured."""
+        assert (
+            seed_module._inventory_sync_schedule(
+                seed_module.INVENTORY_SYNC_SCHEDULE_NAME, PMM_SYNCER, None
+            )
+            is None
+        )
 
-        assert seed_module._inventory_sync_schedule() is None
-
-    def test_builds_entry_pinned_to_the_configured_syncer(self, mocker) -> None:
+    def test_builds_entry_pinned_to_the_configured_syncer(self) -> None:
         """Assert the entry carries the execute-by-name shape and the syncer."""
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_SYNCER", PMM_SYNCER)
-
-        schedule = seed_module._inventory_sync_schedule()
+        schedule = seed_module._inventory_sync_schedule(
+            seed_module.INVENTORY_SYNC_SCHEDULE_NAME, PMM_SYNCER, FIFTEEN_MINUTES
+        )
 
         assert schedule is not None
         (entry,) = schedule.tasks
@@ -1301,12 +1302,11 @@ class TestInventorySyncSchedule:
         assert kwargs["periodic_task_name"] == seed_module.INVENTORY_SYNC_SCHEDULE_NAME
         assert kwargs["execution_data"]["meta"]["syncer"] == PMM_SYNCER
 
-    def test_builds_sync_all_entry_when_syncer_unset(self, mocker) -> None:
+    def test_builds_sync_all_entry_when_syncer_unset(self) -> None:
         """Assert an unset syncer produces kwargs carrying no execution data."""
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_SYNCER", None)
-
-        schedule = seed_module._inventory_sync_schedule()
+        schedule = seed_module._inventory_sync_schedule(
+            seed_module.INVENTORY_SYNC_SCHEDULE_NAME, None, FIFTEEN_MINUTES
+        )
 
         assert schedule is not None
         (entry,) = schedule.tasks
@@ -1315,14 +1315,27 @@ class TestInventorySyncSchedule:
         assert kwargs["task_name"] == INVENTORY_SYNC_TASK_NAME
         assert "execution_data" not in kwargs
 
-    def test_entry_uses_the_configured_interval(self, mocker) -> None:
-        """Assert the entry is seeded on the configured interval."""
-        mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", FIFTEEN_MINUTES)
-
-        schedule = seed_module._inventory_sync_schedule()
+    def test_entry_uses_the_configured_interval(self) -> None:
+        """Assert the entry is seeded on the interval it was given."""
+        schedule = seed_module._inventory_sync_schedule(
+            seed_module.INVENTORY_SYNC_SCHEDULE_NAME, PMM_SYNCER, FIFTEEN_MINUTES
+        )
 
         assert schedule is not None
         assert schedule.schedule == FIFTEEN_MINUTES
+
+    def test_a_per_syncer_name_is_derived_from_the_full_path(self) -> None:
+        """Assert two syncers sharing a class name get distinct seeded row names.
+
+        A bare-class derivation would collide here, and ``init_periodic_tasks_db``
+        resolves a collision by updating one row rather than erroring.
+        """
+        first = seed_module._inventory_sync_schedule_name("a.b.Syncer")
+        second = seed_module._inventory_sync_schedule_name("c.d.Syncer")
+
+        assert first != second
+        assert first.startswith(seed_module.SYSTEM_PERIODIC_TASK_PREFIX)
+        assert second.startswith(seed_module.SYSTEM_PERIODIC_TASK_PREFIX)
 
 
 @pytest.mark.parametrize(
@@ -1413,3 +1426,27 @@ class TestInventoryCollectionTask:
             "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
         )
         assert task.protected is True
+
+
+class TestInventorySyncScheduleNameBudget:
+    """Test that the settings-side length bound matches the real name and column."""
+
+    def test_the_longest_allowed_syncer_still_fits_the_beat_column(self) -> None:
+        """Pin the configured budget against the derived name and the column width.
+
+        The bound lives in the settings module, which cannot import this one, so
+        nothing but this test holds the two in step. One character over must not
+        fit, or the budget is loose and an accepted configuration fails the seed at
+        startup instead of at load.
+        """
+        limit = PeriodicTask.__table__.columns["name"].type.length
+
+        longest = seed_module._inventory_sync_schedule_name(
+            "a" * MAX_SCHEDULED_SYNCER_LENGTH
+        )
+        over = seed_module._inventory_sync_schedule_name(
+            "a" * (MAX_SCHEDULED_SYNCER_LENGTH + 1)
+        )
+
+        assert len(longest) == limit
+        assert len(over) > limit
