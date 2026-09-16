@@ -65,8 +65,8 @@ _CAN_ELEVATE_ADAPTER = TypeAdapter(bool | None)
 
 
 def _capabilities_by_executor(
-    nodes: list[dict[str, Any]],
-    observations: list[dict[str, Any]],
+    nodes: list[Any],
+    observations: list[Any],
     executor_hosts: dict[str, str],
 ) -> dict[str, bool | None]:
     """Index each node's measured elevation capability by the executor that measured it.
@@ -108,7 +108,7 @@ def _capabilities_by_executor(
         for observation in observations
     }
     capabilities: dict[str, bool | None] = {}
-    unmatched: list[dict[str, Any]] = []
+    unmatched: list[Any] = []
     for node in nodes:
         if node["name"] in executor_hosts:
             if node["id"] in by_node:
@@ -171,7 +171,7 @@ async def list_hosts(
         detail = getattr(exc, "detail", str(exc))
         raise HTTPBadGatewayException(detail=str(detail)) from exc
 
-    nodes: list[dict[str, Any]] = []
+    nodes: list[Any] = []
     try:
         nodes = await fetch_all_dict_items(
             lambda pagination: inventory_api.get(
