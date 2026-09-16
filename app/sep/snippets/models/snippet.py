@@ -471,7 +471,9 @@ class BaseSnippet(BaseModel):
         :rtype: SnippetSudoOption
         """
         try:
-            return run_pydantic_type_validator(SnippetSudoOption, self.meta.get(META_KEY_SUDO))
+            return run_pydantic_type_validator(
+                SnippetSudoOption, self.meta.get(META_KEY_SUDO)
+            )
         except ValidationError:
             return snippets_settings.META.DEFAULT_SUDO_OPTION
 
