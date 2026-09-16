@@ -45,6 +45,14 @@ from tests.app.conftest import postgres_worker_schema
 from tests.app.db_schema import apply_schema
 from tests.app.factories import build_task_history, TaskFactory
 
+#: Syncer names in ``BaseSyncer.get_name()`` form, as the inventory-sync settings and
+#: the schedules seeded from them spell a syncer. Shared so the tasks suite has one
+#: copy: the tasks service never imports the sep syncers, so these cannot be derived
+#: from the classes here.
+PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
+MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+SYSTEM_FACTS_SYNCER = "app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer"
+
 #: The per-task hook-path fields the ``TaskWrite`` allow-list constrains.
 HOOK_PATH_FIELDS = ("alert_detail_builder", "run_result_recorder")
 
