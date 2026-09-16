@@ -27,8 +27,8 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import literal
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, delete, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.core.utils.date_time import make_datetime_utc, utc_now
@@ -312,7 +312,6 @@ async def list_hosts(session: AsyncSession) -> list[OmHost]:
     :param session: The database session.
     :return: The hosts.
     """
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(select(OmHost).order_by(col(OmHost.name)))
     return list(result.all())
 
@@ -329,7 +328,6 @@ async def list_services(
     statement = select(OmService).order_by(col(OmService.name))
     if node_id is not None:
         statement = statement.where(OmService.node_id == node_id)
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(statement)
     return list(result.all())
 
@@ -358,7 +356,6 @@ async def recent_runs(
         statement = statement.where(col(ProbeRun.started_at) >= since)
     if until is not None:
         statement = statement.where(col(ProbeRun.started_at) <= until)
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(statement.limit(limit))
     return list(result.all())
 
@@ -379,7 +376,6 @@ async def running_run(session: AsyncSession) -> ProbeRun | None:
     :param session: The database session.
     :return: The running run, or ``None``.
     """
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         select(ProbeRun)
         .where(ProbeRun.status == ProbeRunStatus.RUNNING)
@@ -399,7 +395,6 @@ async def running_runs(session: AsyncSession) -> list[ProbeRun]:
     :param session: The database session.
     :return: The running runs.
     """
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         select(ProbeRun)
         .where(ProbeRun.status == ProbeRunStatus.RUNNING)
@@ -428,11 +423,10 @@ async def prune_runs(session: AsyncSession, keep: int) -> int:
     survivors = (
         select(ProbeRun.id).order_by(col(ProbeRun.started_at).desc()).limit(keep)
     )
-    # ty-attr-ok: SQLModel's AsyncSession defines exec; ty resolves the name to SQLAlchemy's.
     result = await session.exec(
         delete(ProbeRun).where(  # type: ignore[call-overload]
             col(ProbeRun.id).not_in(survivors),
-            ProbeRun.status != ProbeRunStatus.RUNNING,
+            col(ProbeRun.status) != ProbeRunStatus.RUNNING,
         )
     )
     await session.commit()
