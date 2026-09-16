@@ -18,7 +18,7 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Annotated, Any, cast
 
@@ -308,8 +308,8 @@ def _last_activity_at(
     )
 
 
-def build_incident_responses(
-    incidents: Sequence[AtwIncident],
+def _build_incident_responses(
+    incidents: Iterable[AtwIncident],
     aggregates: Mapping[UUID4, IncidentRunAggregate],
 ) -> list[AtwIncidentResponse]:
     """Render incidents with their run totals attached.
@@ -355,7 +355,7 @@ async def _build_incident_response(
     aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
         session, [incident.id]
     )
-    return build_incident_responses([incident], aggregates)[0]
+    return _build_incident_responses([incident], aggregates)[0]
 
 
 @router.post("/incidents/", status_code=status.HTTP_201_CREATED)
@@ -393,15 +393,8 @@ async def atw_list_incidents(
     aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
         session, [incident.id for incident in page.items]
     )
-    items = build_incident_responses(page.items, aggregates)
-    return PaginatedResponse.from_pagination(
-        # call-shape-dup-ok: all four occurrences in this module predate the change;
-        # it only rewrote what this one passes as `items`, so extracting the wrapper
-        # would pull in three unrelated routes.
-        items,
-        page.total,
-        pagination,
-    )
+    items = _build_incident_responses(page.items, aggregates)
+    return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.get("/incidents/{incident_id}")

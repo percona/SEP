@@ -160,7 +160,11 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
 
     The four outcome columns denormalize what the tasks service knows about the
     run, because status lives behind that service's own database and the incident
-    listing may not issue a per-row HTTP call to read it. ``terminal_status`` carries
+    listing may not issue a per-row HTTP call to read it. Two writers keep them:
+    :func:`app.sep.apps.atw.recorder.record_atw_run`, which the tasks service calls
+    at the terminal transitions it observes, and the ``reconcile_atw_executions``
+    sweep, which fills the rest — so a run the hook missed reads as unresolved for up
+    to one reconcile interval, longer while a backlog drains. ``terminal_status`` carries
     the shared status enum and its CHECK constraint, so the column cannot hold a value
     the aggregate would silently skip. The enum is imported from
     :mod:`app.tasks.task_status`, a leaf module that defines no tables, so naming it
