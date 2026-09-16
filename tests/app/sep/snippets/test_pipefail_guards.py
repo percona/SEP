@@ -35,6 +35,12 @@ guarded also counts: a ``||`` branch ending the substitution, an ``||`` or ``&&`
 list continuing the statement, or the assignment sitting in an ``if``, ``elif``,
 ``while`` or ``until`` condition.
 
+A declaration builtin is the one shape that cannot abort. ``local x=$(a | b)``,
+and the same with ``declare``, ``readonly``, ``export`` or ``typeset``, exits with
+the *builtin's* status, not the substitution's, so ``set -e`` never sees the
+failure. Those lines hide an error rather than propagating one, which is
+``shellcheck``'s SC2155, not this check's contract.
+
 The check classifies no commands. It cannot know that ``printf`` and ``sed`` never
 fail on an in-memory string while ``du`` fails on an unreadable directory, and a
 list of commands "known to fail" is exactly what missed the ``du`` site this check
@@ -68,7 +74,6 @@ PIPEFAIL_SAFE_MARKER_RE = re.compile(r"^\s*#\s*pipefail-safe\b:?(?P<reason>.*)$"
 ASSIGNMENT_RE = re.compile(
     r"^(?P<indent>[ \t]*)"
     r"(?P<condition>(?:(?:if|elif|while|until)[ \t]+)?(?:![ \t]+)?)"
-    r"(?:(?:local|declare|readonly|export|typeset)[ \t]+(?:-\w+[ \t]+)*)?"
     r"[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[\"']?\$\((?!\()",
     re.MULTILINE,
 )
@@ -338,7 +343,7 @@ def _offending_lines(text: str) -> list[int]:
 
 
 class TestDeclaresErrexitAndPipefail:
-    """Only scripts that switch on both options are in scope."""
+    """Scope the check to scripts that switch on both options."""
 
     @pytest.mark.parametrize(
         "options",
@@ -377,18 +382,13 @@ class TestDeclaresErrexitAndPipefail:
 
 
 class TestPipedAssignmentDetection:
-    """Every assignment shape the corpus writes is found, and only those."""
+    """Find every assignment shape the corpus writes, and only those."""
 
     @pytest.mark.parametrize(
         "line",
         [
             "X=$(pgrep -x mongod 2> /dev/null | head -1)",
             'X="$(pgrep -x mongod 2> /dev/null | head -1)"',
-            "local x=$(a | b)",
-            "declare -r X=$(a | b)",
-            "readonly X=$(a | b)",
-            'export X="$(a | b)"',
-            "typeset -i x=$(a | b)",
             "X+=$(a | b)",
             "ARR[0]=$(a | b)",
             "    X=$(a | b)",
@@ -396,8 +396,22 @@ class TestPipedAssignmentDetection:
         ],
     )
     def test_assignment_shapes_are_flagged(self, line):
-        """Flag each declaration form that assigns from a piped substitution."""
+        """Flag each assignment form that takes its value from a piped substitution."""
         assert _offending_lines(_script(line + "\n")) == [3], line
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "local x=$(a | b)",
+            "declare -r X=$(a | b)",
+            "readonly X=$(a | b)",
+            'export X="$(a | b)"',
+            "typeset -i x=$(a | b)",
+        ],
+    )
+    def test_declaration_builtins_are_ignored(self, line):
+        """Leave the shapes whose status is the builtin's, not the substitution's."""
+        assert _offending_lines(_script(line + "\n")) == [], line
 
     def test_multi_line_substitution_is_flagged_at_its_first_line(self):
         """Anchor a body spanning several lines to the line the assignment starts on."""
@@ -462,7 +476,7 @@ class TestPipedAssignmentDetection:
 
 
 class TestGuards:
-    """Whatever bash treats as guarded, the check treats as guarded."""
+    """Treat as guarded whatever bash itself treats as guarded."""
 
     @pytest.mark.parametrize(
         "line",
@@ -526,7 +540,7 @@ class TestGuards:
 
 
 class TestExemptionMarker:
-    """A safe site is silenced by an explicit, reasoned marker, and only that."""
+    """Silence a safe site on an explicit, reasoned marker, and on nothing else."""
 
     def test_marker_with_reason_silences_the_next_line(self):
         """Accept a marker that names why the pipeline cannot fail."""
@@ -594,7 +608,7 @@ class TestExemptionMarker:
 
 
 class TestCalibration:
-    """The exact lines that motivated this check classify the way the check promises."""
+    """Classify the exact lines that motivated this check the way it promises."""
 
     @pytest.mark.parametrize(
         "line",
@@ -625,14 +639,14 @@ class TestCalibration:
 
 
 class TestCorpus:
-    """Every builtin script honours the guard contract."""
+    """Hold every builtin script to the guard contract."""
 
     @pytest.mark.parametrize("filename", SNIPPET_FILENAMES)
     def test_no_unguarded_piped_assignment(self, filename):
         """Reject any unguarded piped assignment or misused marker in a builtin script."""
         if not filename.endswith(".sh"):
             pytest.skip("not a shell script")
-        text = (snippets_settings.SNIPPETS_DIR / filename).read_text()
+        text = (snippets_settings.SNIPPETS_DIR / filename).read_text(encoding="utf-8")
         offences = find_offenders(text)
         assert offences == [], "\n".join(
             f"{filename}:{offence}" for offence in offences

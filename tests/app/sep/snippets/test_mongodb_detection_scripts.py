@@ -57,6 +57,18 @@ WELL_KNOWN_DATA_DIRS = (
 )
 
 
+def _host_configs() -> tuple[Path, ...]:
+    """Return the well-known config files this host actually has.
+
+    The scripts read a config before falling back to well-known paths, so a host
+    carrying one can resolve a log or data directory the test never staged. Every
+    test that asserts on the nothing-found branch has to stand down on such a host.
+
+    :return: The existing paths, empty when the host carries none.
+    """
+    return tuple(path for path in WELL_KNOWN_CONFIG_PATHS if path.exists())
+
+
 def _has_gnu_userland() -> bool:
     """Return whether the tools the scripts need are the GNU ones they were written for.
 
@@ -90,7 +102,7 @@ class ProcessStubs:
 
     def _write(self, name: str, body: str) -> None:
         path = self.bin_dir / name
-        path.write_text(f"#!/usr/bin/env bash\n{body}\n")
+        path.write_text(f"#!/usr/bin/env bash\n{body}\n", encoding="utf-8")
         path.chmod(0o755)
 
     def no_mongod(self) -> None:
@@ -159,7 +171,7 @@ def run_snippet(
 
 
 class TestMongodbConfigFiles:
-    """``mongodb_config_files.sh`` takes no arguments; detection is its only path."""
+    """Exercise the config discovery script, whose only path is detection."""
 
     def test_no_mongod_walks_the_whole_chain(self, stubs, tmp_path):
         """Reach the footer instead of dying at the process step."""
@@ -173,7 +185,7 @@ class TestMongodbConfigFiles:
         assert "=== Done ===" in result.stdout
 
     @pytest.mark.skipif(
-        any(path.exists() for path in WELL_KNOWN_CONFIG_PATHS),
+        any(_host_configs()),
         reason="host has a MongoDB config file at a well-known path",
     )
     def test_no_config_anywhere_names_what_was_not_found(self, stubs, tmp_path):
@@ -194,7 +206,7 @@ class TestMongodbConfigFiles:
     ):
         """Read the config path off the process command line in each spelling mongod accepts."""
         conf = tmp_path / "mongod.conf"
-        conf.write_text("storage:\n  dbPath: /tmp/data\n")
+        conf.write_text("storage:\n  dbPath: /tmp/data\n", encoding="utf-8")
         stubs.running_mongod(f"mongod {flag.format(conf=conf)}")
         result = run_snippet(
             "mongodb_config_files.sh", env=stubs.environment(), cwd=tmp_path
@@ -209,7 +221,7 @@ class TestMongodbConfigFiles:
 
 
 class TestMongodbLogExtractor:
-    """``mongodb_log_extractor.sh`` reads the log path from the process, then the config."""
+    """Exercise the log extractor resolving its log path: process, then config."""
 
     TIME_ARGS = (
         "--time",
@@ -224,12 +236,13 @@ class TestMongodbLogExtractor:
     def _write_log(path: Path) -> None:
         path.write_text(
             "2023-10-27T15:29:00.000+00:00 I CONTROL inside the window\n"
-            "2023-10-27T15:40:00.000+00:00 I CONTROL outside the window\n"
+            "2023-10-27T15:40:00.000+00:00 I CONTROL outside the window\n",
+            encoding="utf-8",
         )
 
     @pytest.mark.skipif(
-        DEFAULT_MONGODB_LOG.exists(),
-        reason="host has a MongoDB log at the default path",
+        DEFAULT_MONGODB_LOG.exists() or any(_host_configs()),
+        reason="host has a MongoDB config file or a log at the default path",
     )
     def test_no_mongod_and_no_config_names_the_option_to_pass(self, stubs, tmp_path):
         """Fail with a message naming the missing log and the option, not with silence."""
@@ -251,7 +264,9 @@ class TestMongodbLogExtractor:
         log = tmp_path / "mongod.log"
         self._write_log(log)
         conf = tmp_path / "mongod.conf"
-        conf.write_text(f"systemLog:\n  destination: file\n  path: {log}\n")
+        conf.write_text(
+            f"systemLog:\n  destination: file\n  path: {log}\n", encoding="utf-8"
+        )
         stubs.running_mongod(f"mongod --config {conf}")
         result = run_snippet(
             "mongodb_log_extractor.sh",
@@ -285,7 +300,7 @@ class TestMongodbLogExtractor:
 
 
 class TestMongodbFtdcCollect:
-    """``mongodb_ftdc_collect.sh`` reads the data directory from the process, then the config."""
+    """Exercise the FTDC collector resolving its data directory: process, then config."""
 
     @staticmethod
     def _stage_data_dir(root: Path) -> Path:
@@ -297,8 +312,8 @@ class TestMongodbFtdcCollect:
         return data_dir
 
     @pytest.mark.skipif(
-        any(path.exists() for path in WELL_KNOWN_DATA_DIRS),
-        reason="host has a MongoDB data directory",
+        any(path.exists() for path in WELL_KNOWN_DATA_DIRS) or any(_host_configs()),
+        reason="host has a MongoDB config file or a data directory",
     )
     def test_no_mongod_and_no_data_dir_names_the_option_to_pass(self, stubs, tmp_path):
         """Fail with a message naming the missing directory and the option, not just the banner."""
