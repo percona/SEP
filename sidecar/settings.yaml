@@ -153,6 +153,12 @@ default:
       # so a PMM that ships this app also needs a build carrying
       # managed/services/om.
       - MODULE_NAME: om_inventory
+      # OM's bootstrap half: drives MongoDB replica-set/sharded-cluster
+      # bootstrap runs dispatched from the PMM Hosts page. Ships in the same
+      # image as om_inventory since both are OM apps; without this entry the
+      # app-restricted sidecar build (SEP_RESTRICT_APPS=1) strips the
+      # om_bootstrap package and pmm-managed's bootstrap dispatch 404s.
+      - MODULE_NAME: om_bootstrap
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
