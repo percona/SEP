@@ -23,7 +23,7 @@ the Tasks and Inventory APIs directly.
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.pagination import fetch_all_dict_items
@@ -131,7 +131,9 @@ async def list_hosts(
     The two Inventory enrichments degrade **independently**. The capability is
     the newer of them, and an Inventory old enough to answer 422 on its route —
     or failing it for any other reason — must not cost the host selector the
-    display names it has always had.
+    display names it has always had. A malformed page fails envelope validation
+    rather than raising a transport error, so that is caught here too: an
+    additive enrichment must not turn a documented degradation into a 500.
 
     The display name and the elevation capability are joined on **different
     keys** — address and executor name respectively — and may resolve to
@@ -175,7 +177,7 @@ async def list_hosts(
             )
         )
         capabilities = _capabilities_by_executor(nodes, observations, executor_hosts)
-    except (HTTPException, TypeError, KeyError, OSError):
+    except (HTTPException, TypeError, KeyError, OSError, ValidationError):
         capabilities = {}
 
     return sorted(

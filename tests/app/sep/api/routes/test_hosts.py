@@ -457,6 +457,41 @@ class TestSepHostsEndpoint:
             },
         ]
 
+    def test_a_malformed_observation_page_degrades_rather_than_500s(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Answer 200 when the observation envelope itself is malformed.
+
+        A bad envelope fails validation rather than raising any of the transport
+        errors, so an upstream serving a wrong shape would turn an additive
+        enrichment into a 500 on a route that is documented to degrade.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+
+        def _answers(path: str, **_kwargs: Any) -> dict[str, Any]:
+            if path == "/nodes/":
+                return {
+                    "items": [
+                        {"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"}
+                    ]
+                }
+            return {"items": "not-a-list", "total": "lots"}
+
+        mock_inventory_api_dep.get.side_effect = _answers
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {
+                "id": "nomad-1",
+                "name": "db-mysql-prod-01",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+        ]
+
     def test_inventory_failure_returns_raw_node_names(
         self,
         test_client: TestClient,
