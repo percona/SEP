@@ -16,12 +16,14 @@
 """Define tests for the app.sep.routes.download_files module."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
-from aioresponses import aioresponses, CallbackResult
+from aioresponses import aioresponses
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.status import (
@@ -53,6 +55,70 @@ async def _mock_failing_file_stream():
     """Yield one chunk then raise, simulating a stream that breaks mid-transfer."""
     yield b"partial-"
     raise RuntimeError("upstream stream broke")
+
+
+async def _mock_rejected_file_stream(
+    status_code: int,
+    *,
+    detail: Any = None,
+    headers: dict[str, str] | None = None,
+) -> AsyncGenerator[bytes, None]:
+    """Raise ``HTTPException`` immediately before yielding any bytes.
+
+    :param status_code: Upstream status carried by the raised ``HTTPException``.
+    :param detail: Optional structured error detail preserved on the response.
+    :param headers: Optional exception headers preserved on the response.
+    :return: Never yields; exists only to satisfy the async-generator protocol.
+    """
+    raise HTTPException(status_code, detail=detail, headers=headers)
+    yield  # pragma: no cover — makes this an async generator
+
+
+async def _mock_transport_failure_file_stream() -> AsyncGenerator[bytes, None]:
+    """Raise a connection-level error before yielding any bytes.
+
+    :return: Never yields; exists only to satisfy the async-generator protocol.
+    """
+    raise OSError("connection refused")
+    yield  # pragma: no cover — makes this an async generator
+
+
+async def _mock_empty_file_stream() -> AsyncGenerator[bytes, None]:
+    """Yield nothing, simulating a genuinely empty upstream file.
+
+    :return: An empty async byte stream.
+    """
+    return
+    yield  # pragma: no cover — makes this an async generator
+
+
+async def _mock_gated_file_stream(
+    priming_chunk: bytes,
+    rest: bytes,
+    release: asyncio.Event,
+) -> AsyncGenerator[bytes, None]:
+    """Yield a priming chunk, then wait for ``release`` before yielding the rest.
+
+    :param priming_chunk: First bytes that let error priming commit the HTTP status.
+    :param rest: Remaining payload yielded after ``release`` is set.
+    :param release: Event that unblocks the rest of the stream.
+    :return: Priming chunk, then ``rest`` after release.
+    """
+    yield priming_chunk
+    await release.wait()
+    yield rest
+
+
+async def _mock_blocked_after_prime_file_stream(
+    priming_chunk: bytes,
+) -> AsyncGenerator[bytes, None]:
+    """Yield a priming chunk then block forever, simulating an in-flight stream.
+
+    :param priming_chunk: First bytes that let error priming commit the HTTP status.
+    :return: Priming chunk only; subsequent pull waits indefinitely.
+    """
+    yield priming_chunk
+    await asyncio.Event().wait()
 
 
 @pytest.fixture
@@ -239,9 +305,9 @@ class TestDownloadTaskHistoryFile:
     ):
         """Assert a stream that breaks mid-transfer delivers the partial download.
 
-        The download headers (200, Content-Disposition) are committed before the
-        first chunk, so a later upstream failure cannot change the status code; the
-        client receives the bytes produced before the break.
+        Error priming commits the download headers (200, Content-Disposition)
+        after the first chunk, so a later upstream failure cannot change the
+        status code; the client receives the bytes produced before the break.
         """
         mock_tasks_client_dep.get.return_value = {
             "backup.sql": {"size": 2048, "is_dir": False}
@@ -257,6 +323,136 @@ class TestDownloadTaskHistoryFile:
             'attachment; filename="backup.sql"'
         )
         assert response.content == b"partial-"
+
+    @pytest.mark.parametrize(
+        "upstream_status",
+        [
+            HTTP_400_BAD_REQUEST,
+            HTTP_500_INTERNAL_SERVER_ERROR,
+        ],
+    )
+    def test_upstream_rejection_before_any_chunk_returns_real_status(
+        self, test_client, mock_tasks_client_dep, task_history_response, upstream_status
+    ):
+        """Assert upstream rejection before any bytes returns the real status, not 200.
+
+        When the upstream rejects the request before yielding any bytes, the
+        caller must receive that status — not a misleading 200 with an empty
+        body. Structured detail and exception headers must survive priming.
+        """
+        detail = {"msg": "upstream rejected", "code": "UPSTREAM_REJECTED"}
+        exception_headers = {"X-Error-Code": "UPSTREAM_REJECTED"}
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            upstream_status, detail=detail, headers=exception_headers
+        )
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == upstream_status
+        assert response.json() == {"detail": detail}
+        assert response.headers["x-error-code"] == "UPSTREAM_REJECTED"
+        assert response.headers["x-accel-buffering"] == "no"
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="backup.sql"'
+        )
+
+    def test_upstream_transport_failure_before_any_chunk_returns_500(
+        self, test_client, mock_tasks_client_dep, task_history_response
+    ):
+        """Assert a pre-first-chunk transport failure does not return a misleading 200.
+
+        Connection-level errors raised before any bytes are primed must surface
+        through the server error path rather than committing an empty 200.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = (
+            _mock_transport_failure_file_stream()
+        )
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.json() == {"detail": "Internal Server Error"}
+
+    def test_upstream_500_is_logged_before_error_response(
+        self, test_client, mock_tasks_client_dep, task_history_response, mocker
+    ):
+        """Assert upstream 500 is logged before the error response is returned.
+
+        FastAPI's ``@app.exception_handler(500)`` only sees non-HTTPException
+        failures, so error priming must log 5xx HTTPExceptions itself before
+        re-raising for ExceptionMiddleware to return the real status.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        log_exception = mocker.patch("app.sep.routes.download_files.logger.exception")
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_500_INTERNAL_SERVER_ERROR
+        log_exception.assert_called_once()
+        assert (
+            log_exception.call_args.args[0]
+            == "Upstream error while priming file download stream:"
+        )
+
+    def test_upstream_400_is_not_logged_as_server_error(
+        self, test_client, mock_tasks_client_dep, task_history_response, mocker
+    ):
+        """Assert client-error upstream rejections are not logged as server errors."""
+        mock_tasks_client_dep.get.return_value = {
+            "backup.sql": {"size": 2048, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_rejected_file_stream(
+            HTTP_400_BAD_REQUEST
+        )
+        log_exception = mocker.patch("app.sep.routes.download_files.logger.exception")
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=backup.sql"
+        )
+
+        assert response.status_code == HTTP_400_BAD_REQUEST
+        log_exception.assert_not_called()
+
+    def test_empty_upstream_file_returns_200_with_empty_body(
+        self, test_client, mock_tasks_client_dep, task_history_response
+    ):
+        """Assert a genuinely empty upstream file returns 200 with an empty body.
+
+        When the upstream fetch succeeds but the file is 0 bytes (the generator
+        raises StopAsyncIteration on the first pull, no HTTPException), the caller
+        must still receive 200 — this is not an error.
+        """
+        mock_tasks_client_dep.get.return_value = {
+            "empty.txt": {"size": 0, "is_dir": False}
+        }
+        mock_tasks_client_dep.stream_chunks.return_value = _mock_empty_file_stream()
+
+        response = test_client.get(
+            f"/files/{task_history_response.id}/download?path=empty.txt"
+        )
+
+        assert response.status_code == HTTP_200_OK
+        assert response.headers["content-disposition"] == (
+            'attachment; filename="empty.txt"'
+        )
+        assert response.content == b""
 
     def test_no_path_streams_without_headers(
         self, test_client, mock_tasks_client_dep, task_history_response
@@ -354,17 +550,18 @@ class TestDownloadThroughTheRealClientDependency:
     async def test_download_survives_a_rebind_mid_transfer(
         self, app_state_tasks_client, task_history_response
     ):
-        """Deliver a full download whose client was retired while the body was in flight."""
+        """Deliver a full download whose client was retired while the body was in flight.
+
+        Error priming commits the HTTP status after the first chunk, so the
+        upstream stays blocked after that priming chunk until the rebind
+        assertion finishes; only then is the rest of the body released.
+        """
         release = asyncio.Event()
 
-        async def held_body(_url, **_kwargs):
-            await release.wait()
-            return CallbackResult(status=HTTP_200_OK, body=b"payload")
+        def gated_chunks(_self, *_a, **_k):
+            return _mock_gated_file_stream(b"pay", b"load", release)
 
-        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
-        with aioresponses() as upstream:
-            upstream.get(url, callback=held_body)
-
+        with patch.object(RemoteAPI, "stream_chunks", gated_chunks):
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
             ) as response:
@@ -394,17 +591,16 @@ class TestDownloadThroughTheRealClientDependency:
         This is what pins the shield around the deferred close: replacing it with
         a bare await leaves the session open here, while the unit-level
         cancellation test passes either way.
+
+        Error priming commits the HTTP status after the first chunk. The upstream
+        then blocks indefinitely so exiting the context after the status is
+        received cancels a still in-flight stream rather than ordinary completion.
         """
-        never_released = asyncio.Event()
 
-        async def held_body(_url, **_kwargs):
-            await never_released.wait()
-            return CallbackResult(status=HTTP_200_OK, body=b"payload")
+        def blocked_chunks(_self, *_a, **_k):
+            return _mock_blocked_after_prime_file_stream(b"payload")
 
-        url = f"{TASKS_ENDPOINT}/history/{task_history_response.id}/file/"
-        with aioresponses() as upstream:
-            upstream.get(url, callback=held_body)
-
+        with patch.object(RemoteAPI, "stream_chunks", blocked_chunks):
             async with asgi_stream(
                 sep_app, f"/files/{task_history_response.id}/download"
             ) as response:
