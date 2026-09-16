@@ -112,9 +112,9 @@ typecheck: venv
 # Report the ty diagnostics a branch adds against BASE_SHA, which reaches the
 # script through the recipe environment rather than being pasted into it.
 # Advisory in CI only in the sense that `ci-success` does not depend on the
-# `typecheck_diff` job: the job still fails and shows red whenever the branch
-# adds a diagnostic. Forces every `warn` rule to `error` before diffing, so it
-# reports what a severity-respecting local check does not.
+# `typecheck_diff` job: the job still fails and shows red when the branch adds a
+# diagnostic in a changed non-test Python file. It forces every `warn` rule to
+# `error` before diffing, so it reports what a severity-respecting local check does not.
 # See docs/development/ty-policy.md under `Enforcement`.
 typecheck-diff: venv
 	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)

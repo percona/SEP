@@ -16,7 +16,7 @@ what a branch adds. Neither target is part of `lint` or pre-commit.
 
 **"Advisory" here means "not wired into `ci-success`", not "quiet".**
 `typecheck_diff` fails its own step and shows a red check on the pull request
-whenever the branch adds a diagnostic; what it does not do is fail the aggregate
+whenever it finds a new diagnostic in the branch's changed non-test Python files; what
 `ci-success` job, whose `needs` list omits it, so it never gates the merge. Read
 a red `typecheck_diff` as a report to act on rather than as a broken build — and
 do not read a green pull request overall as evidence that it is clean.
