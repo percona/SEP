@@ -1095,7 +1095,8 @@ export interface components {
      *     :param os_version: The observed operating system version.
      *     :param installed_packages: Snapshot of installed packages.
      *     :param config: Snapshot of host configuration.
-     *     :param can_elevate: Whether the node can run privileged work, if observed.
+     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+     *         node, if observed.
      *     :param observed_at: When this observation was collected.
      */
     HostSystemObservationResponse: {
@@ -1134,12 +1135,13 @@ export interface components {
      * HostSystemObservationSummaryResponse
      * @description Project a host observation onto the fields a capability lookup needs.
      *
-     *     Deliberately excludes ``installed_packages`` and ``config``: both are JSON blobs
-     *     running to hundreds of rows per node, which is what makes the full response
-     *     unsuitable for a fleet-wide fetch.
+     *     Deliberately excludes ``installed_packages`` and ``config``. The first runs to
+     *     hundreds of rows per node, which is what makes the full response unsuitable for
+     *     a fleet-wide fetch; the second is small but has no consumer here.
      *
      *     :param node_id: The unique identifier of the observed node.
-     *     :param can_elevate: Whether the node can run privileged work, if observed.
+     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+     *         node, if observed.
      *     :param observed_at: When this observation was collected.
      */
     HostSystemObservationSummaryResponse: {
@@ -1161,8 +1163,8 @@ export interface components {
      *     :param os_version: The observed operating system version. Defaults to None.
      *     :param installed_packages: Snapshot of installed packages. Defaults to None.
      *     :param config: Snapshot of host configuration. Defaults to None.
-     *     :param can_elevate: Whether the node can run privileged work. Defaults to
-     *         ``None``.
+     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+     *         node. Defaults to ``None``.
      *     :param observed_at: When this observation was collected.
      */
     HostSystemObservationWrite: {

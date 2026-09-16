@@ -394,8 +394,8 @@ class TestPerformNodeSync:
     ):
         """A node measured unable to elevate is written as ``False``, not dropped.
 
-        The observation builder filters on truthiness, which would read this
-        measurement as never-observed and invert the signal the ticket publishes.
+        Were the observation builder to filter on truthiness, it would read this
+        measurement as never-observed and invert the signal being published.
         """
         mock_syncer._host_facts_cache[created_node.id] = {
             "can_elevate": False,

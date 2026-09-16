@@ -252,6 +252,9 @@ class TasksSettings(BaseYamlAppSettings):
         expensive rather than merely redundant, and nothing downstream notices:
         both rows are well-formed and fire independently.
 
+        Both scalar-facing checks are gated on the interval, since without one the
+        scalar pair seeds nothing and there is no second firing to prevent.
+
         ``UniqueList`` deduplicates whole entries, not syncers, so the same syncer
         at two intervals survives it and then collides on one seeded row name,
         leaving a schedule whose interval depends on configuration order.
@@ -260,9 +263,10 @@ class TasksSettings(BaseYamlAppSettings):
         :raises ValueError: If an entry duplicates the scalar pin, sits beside the
             sync-all default, or repeats a syncer another entry already names.
         """
+        scalar_schedules = self.INVENTORY_SYNC_INTERVAL is not None
         seen: set[str] = set()
         for entry in self.INVENTORY_SYNC_SCHEDULES:
-            if entry.syncer == self.INVENTORY_SYNC_SYNCER:
+            if scalar_schedules and entry.syncer == self.INVENTORY_SYNC_SYNCER:
                 raise ValueError(
                     f"INVENTORY_SYNC_SCHEDULES names {entry.syncer!r}, which "
                     "INVENTORY_SYNC_SYNCER already schedules; drop one of them"
@@ -275,7 +279,7 @@ class TasksSettings(BaseYamlAppSettings):
             seen.add(entry.syncer)
         if (
             self.INVENTORY_SYNC_SCHEDULES
-            and self.INVENTORY_SYNC_INTERVAL is not None
+            and scalar_schedules
             and self.INVENTORY_SYNC_SYNCER is None
         ):
             raise ValueError(

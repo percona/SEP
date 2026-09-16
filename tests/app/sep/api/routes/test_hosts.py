@@ -15,7 +15,8 @@
 
 """Tests for the SEP hosts JSON API route at ``/api/sep/hosts/``."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
+from typing import Any
 
 import pytest
 from fastapi import status
@@ -31,7 +32,10 @@ INVENTORY_CALLS_PER_REQUEST = 2
 MANY_HOSTS = 10
 
 
-def _inventory_answers(nodes, observations=()):
+def _inventory_answers(
+    nodes: Sequence[dict[str, Any]],
+    observations: Sequence[dict[str, Any]] = (),
+) -> Callable[..., dict[str, Any]]:
     """Answer each inventory path the route walks with its own payload.
 
     The route reads two collections, so a single ``return_value`` would hand the
@@ -47,13 +51,13 @@ def _inventory_answers(nodes, observations=()):
         "/nodes/system-observations": {"items": list(observations)},
     }
 
-    def _get(path, **_kwargs):
+    def _get(path: str, **_kwargs: Any) -> dict[str, Any]:
         return payloads[path]
 
     return _get
 
 
-def _observation(node_id, *, can_elevate):
+def _observation(node_id: int, *, can_elevate: bool | None) -> dict[str, Any]:
     """Build one observation summary as the collection route serves it."""
     return {
         "node_id": node_id,
@@ -369,6 +373,89 @@ class TestSepHostsEndpoint:
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is False
+
+    def test_an_unobserved_name_match_does_not_suppress_a_real_measurement(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Publish the sibling row that actually measured the executor.
+
+        Co-location holds for a name match *or* an address match, so both nodes
+        here were probed on executor ``a``. Letting the unobserved name match claim
+        the slot would report never-observed for a host that was measured.
+        """
+        mock_task_api_dep.get.return_value = {"a": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.9", "name": "a"},
+                {"id": 2, "address": "10.0.0.1", "name": "db-1"},
+            ],
+            [_observation(2, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is True
+
+    def test_an_observed_name_match_still_beats_an_observed_address_match(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Keep name precedence when the name-matched node does carry a row.
+
+        Guards the fix above from over-reaching: an observation whose value is
+        ``None`` is still an observation, so it holds the slot rather than
+        deferring to the address match.
+        """
+        mock_task_api_dep.get.return_value = {"a": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.9", "name": "a"},
+                {"id": 2, "address": "10.0.0.1", "name": "db-1"},
+            ],
+            [_observation(1, can_elevate=None), _observation(2, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is None
+
+    def test_a_failing_observation_route_keeps_the_display_names(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Degrade the capability alone when only its route fails.
+
+        An Inventory predating the observation collection answers 422 there while
+        serving ``/nodes/`` normally. The newer enrichment must not cost the host
+        selector the display names it has always had.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+
+        def _answers(path, **_kwargs):
+            if path == "/nodes/":
+                return {
+                    "items": [
+                        {"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"}
+                    ]
+                }
+            raise HTTPBadGatewayException("system-observations unavailable")
+
+        mock_inventory_api_dep.get.side_effect = _answers
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {
+                "id": "nomad-1",
+                "name": "db-mysql-prod-01",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+        ]
 
     def test_inventory_failure_returns_raw_node_names(
         self,

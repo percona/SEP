@@ -549,11 +549,11 @@ def test_profile_schedules_the_system_facts_syncer_daily():
 
 
 def test_the_system_facts_syncer_stays_re_enablable():
-    """Assert the mothball is configuration only, reversible without a deploy.
+    """Assert the profile's short syncer name resolves to the collector class.
 
     ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
-    and ``get_syncers`` imports it from there, so restoring the profile entry
-    through a settings override is the whole re-enable path.
+    and ``get_syncers`` imports it from there, so this is what makes the entry
+    reachable through a settings override as well as through the baked profile.
     """
     resolved = SyncOptions.model_validate({"syncer": "SystemFactsSyncer"})
 

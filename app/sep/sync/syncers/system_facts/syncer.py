@@ -40,10 +40,6 @@ from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 logger = logging.getLogger(__name__)
 
-#: Host-level fact fields; at least one must be set to write a host observation. Shared
-#: with the model's own minimum-content validator so the two cannot drift apart.
-HOST_OBSERVATION_FIELDS = HOST_OBSERVATION_FIELD_NAMES
-
 
 class SystemFactsService(Service):
     """Carry the collected engine version for a service through the sync lifecycle.
@@ -279,7 +275,7 @@ class SystemFactsSyncer(BaseTaskSyncer):
         """
         fields = {
             key: value
-            for key in HOST_OBSERVATION_FIELDS
+            for key in HOST_OBSERVATION_FIELD_NAMES
             if (value := host_facts.get(key)) is not None
         }
         if not fields:

@@ -2976,13 +2976,18 @@ export interface paths {
      * @description Return executor hosts merged with inventory display names.
      *
      *     Call ``tasks_api.get('/hosts/')`` for executor targets and the Inventory
-     *     API for display-name enrichment. The two upstream calls degrade
-     *     differently: Inventory failures cause hosts without a match to keep the
-     *     raw executor node name (the response still returns ``200``), but a
-     *     Tasks-API failure (HTTP or connection error) is re-raised as
+     *     API for display-name and capability enrichment. The Tasks and Inventory
+     *     calls degrade differently: Inventory failures cause hosts without a match
+     *     to keep the raw executor node name (the response still returns ``200``),
+     *     but a Tasks-API failure (HTTP or connection error) is re-raised as
      *     :class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception
      *     handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
      *     the React frontend surfaces through its React Query error slot.
+     *
+     *     The two Inventory enrichments degrade **independently**. The capability is
+     *     the newer of them, and an Inventory old enough to answer 422 on its route —
+     *     or failing it for any other reason — must not cost the host selector the
+     *     display names it has always had.
      *
      *     The display name and the elevation capability are joined on **different
      *     keys** — address and executor name respectively — and may resolve to
@@ -3844,9 +3849,12 @@ export interface components {
      *     :param name: Human-readable label sourced from inventory when available;
      *         falls back to ``id`` if the host has no inventory match.
      *     :param address: The network address reported by the executor.
-     *     :param can_elevate: Whether the host can run privileged work: ``True`` able,
-     *         ``False`` measured unable, ``None`` never observed. ``None`` is
-     *         permanent, not transient, for an executor host with no inventory match.
+     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+     *         host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,
+     *         ``False`` when neither holds, ``None`` when never observed. A ``True``
+     *         does not promise the task user is in sudoers, only that the launch check
+     *         lets the command through. ``None`` is permanent, not transient, for an
+     *         executor host with no inventory match.
      */
     HostResponse: {
       /** Address */

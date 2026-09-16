@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from app.inventory.models import HOST_OBSERVATION_FIELD_NAMES
 from app.sep.sync.syncers.system_facts import payload as payload_module
 from app.sep.sync.syncers.system_facts.payload import (
     _collect_mongodb_version,
@@ -51,6 +52,17 @@ PG_ADDRESS = "10.0.0.5:5432"
 PG_VERSION = "15.4"
 MONGO_ADDRESS = "10.0.0.5:27017"
 MONGO_VERSION = "7.0.2"
+
+
+def _stub_host_collectors(mocker) -> None:
+    """Stub the three host collectors that read the machine the tests run on.
+
+    Each shells out or reads ``/etc/os-release``, so a test exercising only the
+    assembly must not reach them.
+    """
+    mocker.patch(f"{MODULE}.collect_os_version", return_value=None)
+    mocker.patch(f"{MODULE}.collect_installed_packages", return_value=None)
+    mocker.patch(f"{MODULE}.collect_host_config", return_value={})
 
 
 def _write_config(tmp_path: Path, config: dict) -> Path:
@@ -156,6 +168,16 @@ class TestHostFacts:
         assert facts["config"] == {"kernel": "5.15.0"}
         assert "collected_at" in facts
 
+    def test_host_fields_match_the_observation_field_set(self):
+        """Pin the payload's literal field tuple against the model's derived set.
+
+        The payload runs stdlib-only on the target node before any install, so it
+        cannot import the model to derive these names and carries a hand-kept copy
+        instead. A field added on one side only would publish a fact the observation
+        drops, or drop one it publishes; nothing else compares the two.
+        """
+        assert set(payload_module.HOST_FIELDS) == HOST_OBSERVATION_FIELD_NAMES
+
     def test_collect_can_elevate_root_without_sudo(self, mocker):
         """A uid-0 task user can elevate even with no sudo binary on PATH."""
         mocker.patch(f"{MODULE}.os.geteuid", return_value=0)
@@ -190,7 +212,8 @@ class TestHostFacts:
         assert collect_can_elevate() is None
 
     def test_collect_host_facts_keeps_a_measured_false(self, mocker):
-        """A measured ``False`` is a value, so the truthiness guard must not drop it."""
+        """Keep a measured ``False``, which a truthiness guard here would drop."""
+        _stub_host_collectors(mocker)
         mocker.patch(f"{MODULE}.collect_can_elevate", return_value=False)
         assert collect_host_facts()["can_elevate"] is False
 
@@ -200,6 +223,7 @@ class TestHostFacts:
         ``None`` is an absence rather than a value, so it must read downstream as
         never-observed instead of as a measured inability.
         """
+        _stub_host_collectors(mocker)
         mocker.patch(f"{MODULE}.collect_can_elevate", return_value=None)
         facts = collect_host_facts()
         assert "collected_at" in facts
@@ -685,9 +709,9 @@ class TestMain:
     ):
         """A run whose only fact is a measured ``False`` still emits a host document.
 
-        The publication envelope is a second truthiness guard, downstream of the
-        assembly one: were it left as-is, this run would emit ``"host": null`` and
-        the measurement would never reach the syncer.
+        The publication envelope is a second admission point, downstream of the
+        assembly one: were either to test truthiness, this run would emit
+        ``"host": null`` and the measurement would never reach the syncer.
         """
         config = _write_config(tmp_path, {"collect_host": True, "services": []})
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])

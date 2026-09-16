@@ -125,6 +125,22 @@ class TestTasksSettings:
                 INVENTORY_SYNC_SCHEDULES=[{"SYNCER": PMM_SYNCER, "INTERVAL": "1 days"}],
             )
 
+    def test_inventory_sync_schedules_accept_the_scalar_syncer_when_it_seeds_nothing(
+        self,
+    ):
+        """Assert the duplicate check is gated on the scalar pair actually seeding.
+
+        With no interval the scalar pair seeds no schedule, so there is no second
+        firing to prevent and "already schedules" would be a false rejection.
+        """
+        settings = TasksSettings(
+            INVENTORY_SYNC_SYNCER=PMM_SYNCER,
+            INVENTORY_SYNC_SCHEDULES=[{"SYNCER": PMM_SYNCER, "INTERVAL": "1 days"}],
+        )
+        assert [entry.syncer for entry in settings.INVENTORY_SYNC_SCHEDULES] == [
+            PMM_SYNCER
+        ]
+
     def test_inventory_sync_schedules_reject_a_repeated_syncer(self):
         """Assert one syncer at two intervals is refused rather than order-dependent.
 

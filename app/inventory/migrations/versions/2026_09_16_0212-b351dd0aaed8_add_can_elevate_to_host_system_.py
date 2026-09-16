@@ -19,8 +19,9 @@ Revision ID: b351dd0aaed8
 Revises: 168ac77b6775
 Create Date: 2026-09-16 02:12:17.872100
 
-Add ``can_elevate`` to the host system observation, recording whether a node can
-run privileged work.
+Add ``can_elevate`` to the host system observation, recording whether a
+``sudo``-prefixed command can start on the node -- uid 0, or a bare ``sudo`` on
+PATH.
 
 Nullable with no server default: the column is a tri-state, and an existing row
 means "never observed" rather than "unable". A ``False`` here is a measurement,

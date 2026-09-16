@@ -342,8 +342,7 @@ async def test_service_observation_cascade_on_service_delete(
     assert remaining_host.node_id == node.id
 
 
-@pytest.mark.asyncio
-async def test_capability_only_observation_validates() -> None:
+def test_capability_only_observation_validates() -> None:
     """Accept an observation whose only readable fact is the elevation capability.
 
     ``can_elevate`` is measurable on a host where ``/etc/os-release`` is unreadable,
