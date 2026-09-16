@@ -76,8 +76,12 @@ from app.sep.snippets.config import (
 if TYPE_CHECKING:
     from aiofiles.threadpool.text import AsyncTextIOWrapper
 from app.sep.snippets.models.meta import (
+    META_KEY_ALLOW_EXTRA_ARGS,
     META_KEY_DESCRIPTION,
+    META_KEY_PARAMETERS,
+    META_KEY_REQUIRES_PACKAGES,
     META_KEY_SERVICE_TYPE,
+    META_KEY_SUDO,
     META_KEY_TITLE,
     serialize_cli_value,
     SnippetMetaParameter,
@@ -454,7 +458,7 @@ class BaseSnippet(BaseModel):
         :rtype: bool
         """
         return self.meta.get(
-            "allow_extra_args", snippets_settings.META.DEFAULT_ALLOW_EXTRA_ARGS
+            META_KEY_ALLOW_EXTRA_ARGS, snippets_settings.META.DEFAULT_ALLOW_EXTRA_ARGS
         )
 
     @cached_property
@@ -467,7 +471,9 @@ class BaseSnippet(BaseModel):
         :rtype: SnippetSudoOption
         """
         try:
-            return run_pydantic_type_validator(SnippetSudoOption, self.meta.get("sudo"))
+            return run_pydantic_type_validator(
+                SnippetSudoOption, self.meta.get(META_KEY_SUDO)
+            )
         except ValidationError:
             return snippets_settings.META.DEFAULT_SUDO_OPTION
 
@@ -513,7 +519,7 @@ class BaseSnippet(BaseModel):
             of valid parameters and any validation errors encountered.
         :rtype: SnippetMetaParametersValidationResult
         """
-        parameters = self.meta.get("parameters", [])
+        parameters = self.meta.get(META_KEY_PARAMETERS, [])
         return self._get_parameters_from_json(
             json_serializer(parameters, sort_keys=True),
         )
@@ -553,7 +559,7 @@ class BaseSnippet(BaseModel):
         :return: A list of required package names.
         :rtype: list[str]
         """
-        value = self.meta.get("requires_packages")
+        value = self.meta.get(META_KEY_REQUIRES_PACKAGES)
         if not value:
             return []
         if isinstance(value, str):
@@ -602,7 +608,7 @@ class BaseSnippet(BaseModel):
             parameters.
         :rtype: type[BaseSnippetArgs]
         """
-        parameters = self.meta.get("parameters", [])
+        parameters = self.meta.get(META_KEY_PARAMETERS, [])
         logger.debug("Meta Snippet parameters: %s)", parameters)
         return self._get_execution_model(
             json_serializer(parameters, sort_keys=True),

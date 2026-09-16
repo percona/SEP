@@ -13,7 +13,7 @@
 #  - name: binary
 #    type: str
 #    label: Binary name
-#    description: Process name to look up when --pid is not provided. Defaults to mongod.
+#    description: Process name to look up when no process ID is given.
 #    default: mongod
 #  - name: dumper
 #    type: str
@@ -40,7 +40,7 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable
