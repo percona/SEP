@@ -271,7 +271,7 @@
 | app/sep/apps/mysql\_backups/crud.py                                                                                          |       29 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/deps.py                                                                                          |       92 |        0 |       22 |        1 |     99% | 343-\>346 |
 | app/sep/apps/mysql\_backups/form\_backfill.py                                                                                |       67 |        6 |       22 |        6 |     87% |130-\>152, 133-134, 135-\>152, 137-\>152, 139-\>152, 146, 176-177, 187 |
-| app/sep/apps/mysql\_backups/forms.py                                                                                         |      233 |        4 |       22 |        4 |     97% |348, 1333, 1348, 1366 |
+| app/sep/apps/mysql\_backups/forms.py                                                                                         |      235 |        4 |       22 |        4 |     97% |365, 1350, 1365, 1383 |
 | app/sep/apps/mysql\_backups/inventory\_references.py                                                                         |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_07\_29\_1200-f0a1b2c3d4e5\_create\_mysql\_backup\_run\_table.py        |       22 |        6 |        4 |        1 |     65% |40-\>exit, 89-98 |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_08\_06\_1200-b7c8d9e0f1a2\_add\_service\_id\_to\_mysql\_backup\_run.py |       30 |        0 |       12 |        2 |     95% |66-\>exit, 74-\>exit |
@@ -284,7 +284,7 @@
 | app/sep/apps/mysql\_backups/restore/models.py                                                                                |      197 |        2 |       42 |        3 |     98% |316-\>320, 975, 1003 |
 | app/sep/apps/mysql\_backups/restore/spec.py                                                                                  |       35 |        1 |        8 |        1 |     95% |       121 |
 | app/sep/apps/mysql\_backups/restore/views.py                                                                                 |        7 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/spec.py                                                                                          |       32 |        1 |       10 |        1 |     95% |       135 |
+| app/sep/apps/mysql\_backups/spec.py                                                                                          |       36 |        1 |       12 |        1 |     96% |       155 |
 | app/sep/apps/mysql\_backups/views.py                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/nav\_icons.py                                                                                                   |       16 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/report/api\_routes.py                                                                                           |       68 |        2 |       18 |        3 |     94% |80, 86-\>90, 195-\>197, 231 |
@@ -480,7 +480,7 @@
 | app/tasks/routes.py                                                                                                          |      244 |       14 |       48 |        4 |     94% |154-158, 243-\>247, 280, 330-339, 346, 459, 502, 517, 677, 691, 696, 723, 726-\>728 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30128** | **1710** | **7396** |  **660** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30134** | **1710** | **7398** |  **660** | **93%** |           |
 
 
 ## Setup coverage badge
