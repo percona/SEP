@@ -33,12 +33,13 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import monotonic
-from typing import Any
+from typing import Any, TypeVar
 
+from app.core.exceptions import HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.sep.apps.framework.spec import RUN_PYTHON_TASK
 from app.sep.apps.om_inventory import payload as payload_pkg
@@ -57,6 +58,45 @@ REQUIREMENTS = "pymongo>=4.6,<5"
 #: Prefix for this app's Nomad job ids, so a OM run is identifiable in Nomad.
 JOB_ID_PREFIX = "om"
 PROBE_PAYLOAD_PATH = Path(payload_pkg.__file__).parent / "probe.py"
+
+# Bounds _with_capacity_retry both ways: at most this many tries, and -- since the
+# backoff is 1, 2, 4, ... seconds -- at most a handful of seconds of extra wait
+# before it gives up and lets the caller's own failure handling take over.
+_CAPACITY_RETRY_ATTEMPTS = 3
+_CAPACITY_RETRY_BASE_DELAY_SECONDS = 1.0
+
+T = TypeVar("T")
+
+
+async def _with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
+    """Retry ``call`` a bounded number of times on the Tasks API's own 503.
+
+    A sweep dispatches up to ``MAX_CONCURRENT_PROBES`` hosts at once, each making
+    its own requests to the Tasks API -- exactly the burst that can transiently
+    exhaust *that* process's own database connection pool (SEP-2026 sized it at 5
+    connections). A caller here waiting out ``POOL_TIMEOUT`` and getting refused
+    is a queueing accident, not a fact about this host's probe, so it does not
+    belong counted alongside a real dispatch or collection failure.
+
+    Left uncapped this would be indistinguishable from a hang: retrying forever on
+    a pool that stays saturated blocks the semaphore slot this host holds, which
+    is exactly what starves the *other* queued hosts of a turn. Bounded both ways
+    -- a fixed attempt count, and an exponential backoff that is itself bounded by
+    that count -- caps how long one host can hold its slot before this gives up
+    and lets the ordinary failure path record it.
+
+    :param call: Zero-argument async callable to retry.
+    :return: Whatever ``call`` returns, once it stops raising.
+    :raises HTTPServiceUnavailableException: When every attempt is exhausted.
+    """
+    for attempt in range(_CAPACITY_RETRY_ATTEMPTS):
+        try:
+            return await call()
+        except HTTPServiceUnavailableException:
+            if attempt == _CAPACITY_RETRY_ATTEMPTS - 1:
+                raise
+            await asyncio.sleep(_CAPACITY_RETRY_BASE_DELAY_SECONDS * 2**attempt)
+    raise AssertionError("unreachable: the loop above always returns or raises")
 
 
 @dataclass
@@ -210,7 +250,9 @@ async def _wait_for_terminal(tasks_api: RemoteAPI, task_history_id: int) -> str:
     while waited < om_inventory_settings.TASK_TIMEOUT:
         await asyncio.sleep(om_inventory_settings.POLL_INTERVAL)
         waited += om_inventory_settings.POLL_INTERVAL
-        history = await tasks_api.get(f"/history/{task_history_id}")
+        history = await _with_capacity_retry(
+            lambda: tasks_api.get(f"/history/{task_history_id}")
+        )
         if not isinstance(history, dict):
             continue
         status = history["status"]
@@ -321,18 +363,20 @@ async def probe_host(
     # duration, and this number is only ever read as an interval.
     started = monotonic()
     try:
-        created = await tasks_api.post(
-            f"/execute/{RUN_PYTHON_TASK}",
-            json={
-                "meta": {
-                    "target": executor_host,
-                    "config": build_config(entries),
-                    "requirements": REQUIREMENTS,
-                    "_job_id_prefix": JOB_ID_PREFIX,
+        created = await _with_capacity_retry(
+            lambda: tasks_api.post(
+                f"/execute/{RUN_PYTHON_TASK}",
+                json={
+                    "meta": {
+                        "target": executor_host,
+                        "config": build_config(entries),
+                        "requirements": REQUIREMENTS,
+                        "_job_id_prefix": JOB_ID_PREFIX,
+                    },
+                    "payload": f"file://{PROBE_PAYLOAD_PATH}",
+                    "anonymize_mask": 0,
                 },
-                "payload": f"file://{PROBE_PAYLOAD_PATH}",
-                "anonymize_mask": 0,
-            },
+            )
         )
         if not isinstance(created, dict) or "id" not in created:
             result.error = "Tasks API did not return a task history id"
@@ -345,8 +389,11 @@ async def probe_host(
             result.task_history_id,
         )
 
-        status = await _wait_for_terminal(tasks_api, result.task_history_id)
-        stdout, stderr = await _read_stdout(tasks_api, result.task_history_id)
+        history_id = result.task_history_id
+        status = await _wait_for_terminal(tasks_api, history_id)
+        stdout, stderr = await _with_capacity_retry(
+            lambda: _read_stdout(tasks_api, history_id)
+        )
         result.records, result.host_record = parse_ndjson(stdout)
 
         # A FAILED status with parsed records still yields those records: the payload
