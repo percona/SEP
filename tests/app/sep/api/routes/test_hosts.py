@@ -218,6 +218,34 @@ class TestSepHostsEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is False
 
+    def test_an_observation_omitting_the_capability_does_not_drop_display_names(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Read a missing capability as never-observed, not as an inventory outage.
+
+        The observation contract declares ``can_elevate`` optional, so a producer
+        may omit it. A hard subscript here would raise into the shared degradation
+        block and take the display name down with it.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
+            [{"node_id": 7, "observed_at": "2026-09-15T00:00:00Z"}],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {
+                "id": "nomad-1",
+                "name": "db-primary",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+        ]
+
     def test_reports_null_for_a_never_observed_node(
         self,
         test_client: TestClient,

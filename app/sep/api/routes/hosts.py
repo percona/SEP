@@ -74,11 +74,15 @@ def _capabilities_by_executor(
     :param observations: Every host observation summary.
     :param executor_hosts: Executor node name to address, as the Tasks API returns it.
     :return: Executor node name to its measured capability, absent when unmeasured.
-    :raises KeyError: If an upstream row omits a field the join reads, which the
-        caller treats as an inventory outage and degrades on.
+    Reads ``can_elevate`` with ``get``, the one field the observation contract
+    declares optional: a producer omitting it means never-observed for that node,
+    which must not collapse the whole enrichment the caller degrades as one.
+
+    :raises KeyError: If an upstream row omits a *required* identifying field,
+        which the caller treats as an inventory outage and degrades on.
     """
     by_node = {
-        observation["node_id"]: observation["can_elevate"]
+        observation["node_id"]: observation.get("can_elevate")
         for observation in observations
     }
     capabilities: dict[str, bool | None] = {}
