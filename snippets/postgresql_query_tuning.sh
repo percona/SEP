@@ -221,6 +221,7 @@ if [[ -z $EXPLAIN_OPTS_ARG ]]; then
         echo "Error: could not connect to '$DBNAME_ARG' to detect server version. Pass --explain-options to skip detection." >&2
         exit 1
     fi
+    # pipefail-safe: echo and tr cannot fail on an in-memory string
     VER_NUM=$(echo "$VER_NUM" | tr -d '[:space:]')
     if ! [[ $VER_NUM =~ ^[0-9]+$ ]]; then
         echo "Error: unexpected server_version_num value: '$VER_NUM'." >&2

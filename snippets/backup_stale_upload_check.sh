@@ -34,7 +34,7 @@ if [ -d "$BACKUP_LOG_DIR" ]; then
         find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
             -name 's3cmd-*' \
             -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
-            sort -n | tail -n 4 | cut -d' ' -f2-
+            sort -n | tail -n 4 | cut -d' ' -f2- || true
     )
 fi
 if [ -n "$s3cmd_logs" ]; then
@@ -52,7 +52,7 @@ if [ -d "$BACKUP_LOG_DIR" ]; then
         find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
             -name 's3cmd-*-B-*' \
             -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
-            sort -n | tail -n 4 | cut -d' ' -f2-
+            sort -n | tail -n 4 | cut -d' ' -f2- || true
     )
 fi
 if [ -n "$s3cmd_binlog_logs" ]; then

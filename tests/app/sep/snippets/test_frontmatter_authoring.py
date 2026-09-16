@@ -78,8 +78,7 @@ import re
 
 import pytest
 
-from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST, manifest_relative_path
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
     META_KEY_TITLE,
@@ -88,30 +87,7 @@ from app.sep.snippets.models.meta import (
     SUPPORTED_META_KEYS,
 )
 from app.sep.snippets.models.snippet import BaseSnippet
-
-
-def _enumerate_snippets() -> tuple[str, ...]:
-    """Collect every snippet filename the application would ingest.
-
-    Walks the snippets directory as :func:`app.sep.snippets.celery.update_snippets`
-    does, skipping the checksum manifest that shares it. The sync filter that
-    function additionally applies is deliberately not mirrored: a file it would
-    decline to ingest still has front matter an author can get wrong.
-
-    :return: The snippet filenames, relative to the snippets directory.
-    """
-    names: list[str] = []
-    for path in snippets_settings.SNIPPETS_DIR.rglob("*"):
-        if not path.is_file():
-            continue
-        name = manifest_relative_path(path, snippets_settings.SNIPPETS_DIR)
-        if name == BUILTIN_CHECKSUM_MANIFEST:
-            continue
-        names.append(name)
-    return tuple(sorted(names))
-
-
-SNIPPET_FILENAMES = _enumerate_snippets()
+from tests.app.sep.snippets.snippet_corpus import SNIPPET_FILENAMES
 
 KNOWN_PARAMETER_TYPES = frozenset(
     member.name.lower() for member in SnippetMetaParameterType
