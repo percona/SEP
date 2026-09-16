@@ -44,7 +44,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from pydantic import BaseModel, Field, StrictBool, StrictInt, ValidationError
+from pydantic import BaseModel, StrictBool, StrictInt, ValidationError
 
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -53,6 +53,7 @@ from app.core.exceptions import (
 )
 from app.core.requests import as_json_object, RemoteAPI
 from app.core.security import require_internal_token
+from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.atw.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.atw.send import get_tasks_api
 from app.tasks.models import TaskBackendEnum, TaskWrite
@@ -103,7 +104,7 @@ class _RootPolicy(BaseModel):
     :param alert_detail_builder: The root's alert-enrichment hook path, if any.
     """
 
-    owner: str = Field(min_length=1)
+    owner: NonEmptyStr
     anonymize_mask: StrictInt | None
     output_files_path: str | None
     alert_on_fail: StrictBool
@@ -213,7 +214,7 @@ async def _fetch_task(tasks_api: RemoteAPI, name: str) -> dict[str, Any] | None:
 
 
 async def _create_proxy_task(
-    tasks_api: RemoteAPI, root_task_name: str, policy: _RootPolicy
+    tasks_api: RemoteAPI, task_write: TaskWrite
 ) -> dict[str, Any] | None:
     """Create the proxy task, resolving a concurrent creator's win by re-fetching.
 
@@ -223,26 +224,12 @@ async def _create_proxy_task(
     Handling only 409 would turn a live race into a failed dispatch.
 
     :param tasks_api: The authenticated Tasks API client.
-    :param root_task_name: The interpreter task the proxy dispatches through.
-    :param policy: The root's behavioural fields, copied onto the proxy.
+    :param task_write: The proxy payload built from the root's current policy.
     :return: The created or concurrently-created task, or ``None`` if it vanished.
     :raises HTTPException: Propagated for any upstream error status other than the
         ``409`` / ``400`` pair that a concurrent creator produces.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
-    try:
-        task_write = _build_proxy_task_write(root_task_name, policy)
-    except ValidationError:
-        # The payload is assembled from an arbitrary configured root, so it can be
-        # rejected for reasons this module does not enumerate — a root name within
-        # the 255-character limit whose prefixed form is not, or any inherited field
-        # the model refuses. Declining keeps "every degradation dispatches under the
-        # root" true instead of surfacing a 500 from a dispatch that could proceed.
-        logger.exception(
-            "Could not build ATW's proxy task for %s; dispatching unwrapped.",
-            root_task_name,
-        )
-        return None
     try:
         return as_json_object(await tasks_api.post("/", json=task_write.model_dump()))
     except (HTTPConflictException, HTTPBadRequestException):
@@ -254,8 +241,8 @@ async def _create_proxy_task(
 
 
 async def _sync_proxy_task(
-    tasks_api: RemoteAPI, root_task_name: str, policy: _RootPolicy
-) -> dict[str, Any] | None:
+    tasks_api: RemoteAPI, root_task_name: str, task_write: TaskWrite
+) -> dict[str, Any]:
     """Rewrite an existing proxy so it matches the root's current behaviour.
 
     ``PUT /{task_name}`` replaces the task wholesale, and the payload is rebuilt from
@@ -265,19 +252,11 @@ async def _sync_proxy_task(
 
     :param tasks_api: The authenticated Tasks API client.
     :param root_task_name: The interpreter task the proxy dispatches through.
-    :param policy: The root's behavioural fields, copied onto the proxy.
-    :return: The updated task, or ``None`` when the payload could not be built.
+    :param task_write: The proxy payload built from the root's current policy.
+    :return: The updated task.
     :raises HTTPException: Propagated from an upstream error status.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
-    try:
-        task_write = _build_proxy_task_write(root_task_name, policy)
-    except ValidationError:
-        logger.exception(
-            "Could not build ATW's proxy task for %s; dispatching unwrapped.",
-            root_task_name,
-        )
-        return None
     logger.info(
         "Re-syncing ATW proxy task %s to the current behaviour of %s.",
         task_write.name,
@@ -362,10 +341,23 @@ async def _resolve_one(tasks_api: RemoteAPI, root_task_name: str) -> str | None:
     )
     if policy is None:
         return None
-    proxy_name = atw_proxy_task_name(root_task_name)
+    try:
+        task_write = _build_proxy_task_write(root_task_name, policy)
+    except ValidationError:
+        # The payload is assembled from an arbitrary configured root, so it can be
+        # rejected for reasons this module does not enumerate — a root name within
+        # the 255-character limit whose prefixed form is not, or any inherited field
+        # the model refuses. Declining keeps "every degradation dispatches under the
+        # root" true instead of surfacing a 500 from a dispatch that could proceed.
+        logger.exception(
+            "Could not build ATW's proxy task for %s; dispatching unwrapped.",
+            root_task_name,
+        )
+        return None
+    proxy_name = task_write.name
     proxy = await _fetch_task(tasks_api, proxy_name)
     if proxy is None:
-        proxy = await _create_proxy_task(tasks_api, root_task_name, policy)
+        proxy = await _create_proxy_task(tasks_api, task_write)
     elif not _is_expected_proxy(proxy, root_task_name, policy):
         if not _is_atw_owned(proxy):
             logger.error(
@@ -381,7 +373,7 @@ async def _resolve_one(tasks_api: RemoteAPI, root_task_name: str) -> str | None:
         # at a task with a different policy, or the root's own policy edited. Re-sync
         # rather than refuse: refusing would degrade this interpreter permanently,
         # since nothing else ever repairs the row.
-        proxy = await _sync_proxy_task(tasks_api, root_task_name, policy)
+        proxy = await _sync_proxy_task(tasks_api, root_task_name, task_write)
     if proxy is None or not _is_expected_proxy(proxy, root_task_name, policy):
         logger.error(
             "Task %s exists but is not the proxy ATW requires and could not be "
@@ -419,9 +411,9 @@ async def resolve_atw_proxy_tasks(
     :return: The proxy name per root, or ``None`` against a root to dispatch under it
         unchanged.
     :raises HTTPException: Propagated from an upstream error status that is neither a
-        genuine ``404`` nor the create race's ``409`` / ``400``. A dispatch failing
-        because the Tasks API is unreachable should surface, not be silently
-        downgraded to an unwrapped run.
+        genuine ``404`` nor the create race's ``409`` / ``400``. Raising leaves the
+        decision to the caller: the batch route degrades the whole batch to unwrapped
+        dispatch rather than splitting one request across two policies.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     :raises RuntimeError: Propagated from ``require_internal_token`` when no internal
         token is configured.

@@ -481,18 +481,17 @@ class TestRefusesToWrap:
 
 
 class TestTransientFailuresSurface:
-    """Check that an unreachable upstream is raised, not degraded to an unwrapped run."""
+    """Check that an unreachable upstream is raised to the caller, not resolved here."""
 
     @pytest.mark.asyncio
     async def test_transient_upstream_error_propagates(
         self, tasks_api: AsyncMock
     ) -> None:
-        """Ensure a 503 while resolving the proxy surfaces rather than dispatching.
+        """Ensure a 503 while resolving the proxy is raised rather than absorbed.
 
-        Every *validation* outcome degrades to ``None``, so the absence of a
-        degradation here is the contract: a dispatch failing because the Tasks API
-        is unreachable would fail at dispatch anyway, and silently running it
-        unwrapped would lose the recorder with nothing said.
+        Every *validation* outcome degrades to ``None`` per root; an unreachable
+        upstream is not per-root, so it is raised and the caller decides. The batch
+        route catches it and dispatches the whole batch unwrapped.
         """
         tasks_api.get.side_effect = HTTPServiceUnavailableException("try later")
 
