@@ -7,8 +7,8 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
 #    arg_format: --defaults-file=${value}
 # atw:
 #  - GROUP_REPLICATION

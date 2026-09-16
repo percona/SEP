@@ -9,7 +9,7 @@
 #    type: str
 #    label: Config file
 #    description: Path to ProxySQL admin config file
-#    placeholder: /etc/proxysql-admin.cnf
+#    default: /etc/proxysql-admin.cnf
 #  - name: files
 #    type: bool
 #    label: Show files
@@ -28,7 +28,7 @@
 #  - name: runtime
 #    type: bool
 #    label: Runtime data
-#    description: Display runtime-related data (implies --main)
+#    description: Restrict the main-table dump to the runtime_* tables.
 #    default: false
 #  - name: stats
 #    type: bool
@@ -42,7 +42,7 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 # service_type: mysql

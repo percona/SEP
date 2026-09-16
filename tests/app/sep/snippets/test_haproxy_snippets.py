@@ -62,9 +62,9 @@ async def test_haproxy_logs_snippet_parameters():
     assert set(params) == {"time", "minutes", "log-file", "output"}
 
     assert params["time"].required
-    assert params["time"].py_type is SnippetMetaParameterType.STR
+    assert params["time"].py_type is SnippetMetaParameterType.DATETIME
 
-    assert params["minutes"].required
+    assert not params["minutes"].required
     assert params["minutes"].py_type is SnippetMetaParameterType.INT
     assert params["minutes"].ge == 1
 
@@ -95,7 +95,7 @@ async def test_haproxy_logs_snippet_builds_expected_command():
         }
     ).to_args_string()
 
-    assert "--time '2026-06-18 04:00:00'" in args
+    assert "--time 2026-06-18T04:00:00" in args
     assert "--minutes 3" in args
     assert "--log-file /var/log/haproxy.log" in args
     assert "--output stdout" in args

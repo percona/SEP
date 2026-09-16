@@ -8,7 +8,7 @@
 #  - name: basedir
 #    type: str
 #    label: Path to the MySQL base directory
-#    description: Path to the MySQL base directory
+#    description: Where the MySQL installation lives, when it is not on the default search path.
 #    default: ""
 #  - name: output-format
 #    type: str
@@ -18,7 +18,7 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 #    default: false
 # service_type: mysql
 # alerts:

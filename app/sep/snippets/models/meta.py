@@ -16,9 +16,16 @@
 """Define models for snippet metadata in the SEP app."""
 
 __all__ = [
+    "META_KEY_ALERTS",
+    "META_KEY_ALLOW_EXTRA_ARGS",
+    "META_KEY_ATW",
     "META_KEY_DESCRIPTION",
+    "META_KEY_PARAMETERS",
+    "META_KEY_REQUIRES_PACKAGES",
     "META_KEY_SERVICE_TYPE",
+    "META_KEY_SUDO",
     "META_KEY_TITLE",
+    "SUPPORTED_META_KEYS",
     "SnippetMetaParameter",
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
@@ -86,6 +93,39 @@ META_KEY_DESCRIPTION = "description"
 
 META_KEY_SERVICE_TYPE = "service_type"
 """``meta`` JSON key holding a snippet's free-form service type."""
+
+META_KEY_PARAMETERS = "parameters"
+"""``meta`` JSON key holding a snippet's parameter declarations."""
+
+META_KEY_ALLOW_EXTRA_ARGS = "allow_extra_args"
+"""``meta`` JSON key controlling whether free-form extra arguments are accepted."""
+
+META_KEY_SUDO = "sudo"
+"""``meta`` JSON key holding the snippet's sudo-execution policy."""
+
+META_KEY_REQUIRES_PACKAGES = "requires_packages"
+"""``meta`` JSON key holding any prerequisite packages for the snippet."""
+
+META_KEY_ALERTS = "alerts"
+"""``meta`` JSON key tagging snippets with alert-troubleshooting metadata."""
+
+META_KEY_ATW = "atw"
+"""``meta`` JSON key tagging snippets with ATW category metadata."""
+
+SUPPORTED_META_KEYS = frozenset(
+    {
+        META_KEY_ALERTS,
+        META_KEY_ALLOW_EXTRA_ARGS,
+        META_KEY_ATW,
+        META_KEY_DESCRIPTION,
+        META_KEY_PARAMETERS,
+        META_KEY_REQUIRES_PACKAGES,
+        META_KEY_SERVICE_TYPE,
+        META_KEY_SUDO,
+        META_KEY_TITLE,
+    }
+)
+"""All supported top-level snippet front-matter keys."""
 
 
 def _param_choices_enum(choices: list[dict[str, Any]]) -> type[StrEnum]:
