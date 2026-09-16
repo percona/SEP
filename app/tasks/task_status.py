@@ -68,8 +68,8 @@ class TaskHistoryStatusEnum(StrEnum):
     def is_finished(self) -> bool:
         """Check whether this status has an observed run outcome.
 
-        :return: True when output retrieval is meaningful for this status
-            (FAILED, SUCCESS, STOPPED, STALE, or UNLAUNCHABLE); False
+        :return: ``True`` when output retrieval is meaningful for this status
+            (FAILED, SUCCESS, STOPPED, STALE, or UNLAUNCHABLE); ``False``
             otherwise.
         """
         return self in [
@@ -83,7 +83,7 @@ class TaskHistoryStatusEnum(StrEnum):
     def is_terminal(self) -> bool:
         """Check if task execution has reached a terminal state.
 
-        :return: True if task execution will not transition again.
+        :return: ``True`` if task execution will not transition again.
         """
         return self.is_finished() or self == TaskHistoryStatusEnum.LOST
 
@@ -101,7 +101,8 @@ class TaskHistoryStatusEnum(StrEnum):
     def is_active(self) -> bool:
         """Check whether the task status indicates an in-flight execution.
 
-        :return: True if the status is ``PENDING`` or ``RUNNING``; False otherwise.
+        :return: ``True`` if the status is ``PENDING`` or ``RUNNING``;
+            ``False`` otherwise.
         """
         return self in self.active_statuses()
 

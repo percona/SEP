@@ -55,7 +55,11 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
-from app.sep.snippets.config import snippets_settings, SnippetSudoOption
+from app.sep.snippets.config import (
+    DEFAULT_SNIPPETS_TASK,
+    snippets_settings,
+    SnippetSudoOption,
+)
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
@@ -76,7 +80,7 @@ _MINUTES_PARAM = {"name": "minutes", "type": "int", "label": "Minutes"}
 
 _DEFAULT_TASK_ID = 7
 #: The snippet interpreter the seeded snippets dispatch under.
-_ROOT_TASK_NAME = "exec-artifact"
+_ROOT_TASK_NAME = DEFAULT_SNIPPETS_TASK
 #: The proxy ATW dispatches through, wrapping that interpreter root.
 _PROXY_TASK_NAME = "atw__exec-artifact"
 _FIRST_TASK_ID = 11
