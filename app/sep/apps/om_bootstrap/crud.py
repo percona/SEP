@@ -26,8 +26,8 @@ design), so the manager's generic ``save``/``update`` need no override.
 
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
