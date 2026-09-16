@@ -439,7 +439,11 @@ async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOut
         host_results = await probe_all(
             tasks_api,
             mapped,
-            executor_hosts=[host.executor_host for host in hosts if host.has_executor],
+            executor_hosts=[
+                host.executor_host
+                for host in hosts
+                if host.has_executor and host.executor_host
+            ],
         )
 
     outcome = SweepOutcome(total=len(mapped), hosts=hosts, dispatched=set(host_results))
@@ -466,7 +470,7 @@ async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOut
             result.error or "the host has an executor but returned no probe record"
         )
 
-    node_ids = _index_hosts(outcome)
+    node_ids_by_host = _index_hosts(outcome)
 
     for entry in mapped:
         host_result = host_results.get(entry.executor_host or "")
@@ -479,9 +483,11 @@ async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOut
             if record:
                 outcome.answered += 1
 
-        _record_entity(outcome, entry, record, host_result, node_ids, observed_at)
+        _record_entity(
+            outcome, entry, record, host_result, node_ids_by_host, observed_at
+        )
 
-    outcome.nodes = _build_receipt(outcome, mapped, host_results, node_ids)
+    outcome.nodes = _build_receipt(outcome, mapped, host_results, node_ids_by_host)
     return outcome
 
 

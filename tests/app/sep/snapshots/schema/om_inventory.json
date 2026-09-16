@@ -5,8 +5,8 @@
   },
   "display_name": "OpenManager Inventory",
   "forms": [],
-  "item_display_name": "OpenManager Inventory",
-  "item_display_name_plural": "OpenManager Inventory",
+  "item_display_name": "sweep",
+  "item_display_name_plural": "sweeps",
   "list_view": {
     "columns": [
       {

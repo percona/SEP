@@ -71,6 +71,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 from urllib.parse import quote_plus
 
 DEFAULT_AUTH_SOURCE = "admin"
@@ -520,7 +521,7 @@ def collect_database_facts(target, userinfo, auth_source, connect_timeout_ms):
     from pymongo import MongoClient
     from pymongo.errors import PyMongoError
 
-    facts = {}
+    facts: dict[str, Any] = {}
     uri = build_uri(target, userinfo, auth_source, connect_timeout_ms)
     client = None
     try:
