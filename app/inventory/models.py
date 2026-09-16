@@ -998,7 +998,7 @@ class HostSystemObservationBase(SQLModel):
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
-        node -- uid 0, or a bare ``sudo`` on PATH. ``None`` when never observed.
+        node: uid 0, or a bare ``sudo`` on PATH. ``None`` when never observed.
         Defaults to ``None``.
     :param observed_at: When this observation was collected (domain provenance).
     """
