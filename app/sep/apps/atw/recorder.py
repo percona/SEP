@@ -74,7 +74,7 @@ async def record_atw_run(
         await AtwIncidentExecutionManager.update_where(
             sep_session,
             {
-                "terminal_status": history.status.value,
+                "terminal_status": history.status,
                 "finished_at": history.finished_at,
             },
             task_history_id=history.id,

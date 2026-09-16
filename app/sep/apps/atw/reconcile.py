@@ -113,7 +113,7 @@ async def _resolve_outcome(
         return {}
     if not run.status.is_terminal():
         return {}
-    return {"terminal_status": run.status.value, "finished_at": run.finished_at}
+    return {"terminal_status": run.status, "finished_at": run.finished_at}
 
 
 async def _reconcile_one(

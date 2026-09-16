@@ -43,10 +43,11 @@ FAILED_RUN_STATUSES: frozenset[TaskHistoryStatusEnum] = frozenset(
     }
 )
 
-#: ``FAILED_RUN_STATUSES`` as the plain strings the denormalized column stores,
-#: resolved once rather than per query.
-_FAILED_STATUS_VALUES: tuple[str, ...] = tuple(
-    sorted(status.value for status in FAILED_RUN_STATUSES)
+#: ``FAILED_RUN_STATUSES`` in a stable order for the query's ``IN`` clause. The
+#: members are bound through the column's own enum type, so the comparison follows
+#: whatever representation that type stores rather than assuming one.
+_FAILED_STATUS_BINDS: tuple[TaskHistoryStatusEnum, ...] = tuple(
+    sorted(FAILED_RUN_STATUSES)
 )
 
 
@@ -119,7 +120,7 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
                     case(
                         (
                             col(AtwIncidentExecution.terminal_status).in_(
-                                _FAILED_STATUS_VALUES
+                                _FAILED_STATUS_BINDS
                             ),
                             1,
                         )

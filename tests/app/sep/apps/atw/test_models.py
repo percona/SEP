@@ -27,6 +27,7 @@ from app.sep.apps.atw.models import (
     AtwIncidentResponse,
     AtwIncidentWrite,
 )
+from app.tasks.task_status import TaskHistoryStatusEnum
 from tests.app.sep.apps.atw.factories import (
     AtwIncidentExecutionFactory,
     AtwIncidentFactory,
@@ -101,6 +102,48 @@ class TestAtwIncidentResponse:
 
 class TestAtwIncidentExecutionModel:
     """Check the AtwIncidentExecution table model."""
+
+    @pytest.mark.asyncio
+    async def test_terminal_status_rejects_a_value_outside_the_enum(
+        self, session: AsyncSession
+    ) -> None:
+        """Ensure the status column cannot hold a value the aggregate would skip.
+
+        A bare ``str`` column would accept a misspelling and then omit it from the
+        failed count silently, since the aggregate matches only known members. The
+        rejection comes from the column's CHECK constraint, not from Python: SQLAlchemy
+        passes an unrecognized string straight through to the database.
+        """
+        incident = AtwIncidentFactory.build()
+        session.add(incident)
+        await session.commit()
+        execution = AtwIncidentExecutionFactory.build(
+            incident_id=incident.id, task_history_id=1
+        )
+        execution.terminal_status = "teleported"
+        session.add(execution)
+
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_terminal_status_round_trips_as_an_enum_member(
+        self, session: AsyncSession
+    ) -> None:
+        """Ensure a written status comes back as the enum, not a bare string."""
+        incident = AtwIncidentFactory.build()
+        session.add(incident)
+        await session.commit()
+        execution = AtwIncidentExecutionFactory.build(
+            incident_id=incident.id,
+            task_history_id=2,
+            terminal_status=TaskHistoryStatusEnum.UNLAUNCHABLE,
+        )
+        session.add(execution)
+        await session.commit()
+        await session.refresh(execution)
+
+        assert execution.terminal_status is TaskHistoryStatusEnum.UNLAUNCHABLE
 
     @pytest.mark.asyncio
     async def test_duplicate_incident_task_pair_is_rejected(

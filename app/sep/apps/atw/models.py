@@ -21,6 +21,14 @@ so it must stay self-contained — importing only from ``app.core``, ``pydantic`
 packages (that would register foreign tables in ``SQLModel.metadata`` and leak
 them into the ``sep`` autogenerate). The category taxonomy, which depends on
 ``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
+
+:mod:`app.tasks.task_status` is the one exception, and it is admitted on the
+mechanism rather than by name: the restriction exists to keep foreign **tables** out
+of ``SQLModel.metadata``, and that module defines none — it imports only the standard
+library, and ``app/tasks/__init__.py`` is licence header only. It exists so
+``terminal_status`` can carry the real status enum instead of a bare ``str`` whose
+value set nothing constrains. Any other ``app.tasks`` import, or a SQLModel class
+appearing in that module, is the leak this paragraph is about.
 """
 
 from enum import StrEnum
@@ -40,6 +48,7 @@ from app.core.utils.fields import (
     NonEmptyStr,
     UTCDatetime,
 )
+from app.tasks.task_status import TaskHistoryStatusEnum
 
 
 def _default_incident_name() -> str:
@@ -151,9 +160,10 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
 
     The four outcome columns denormalize what the tasks service knows about the
     run, because status lives behind that service's own database and the incident
-    listing may not issue a per-row HTTP call to read it. ``terminal_status`` is a
-    plain ``str`` rather than ``TaskHistoryStatusEnum`` for the import reason this
-    module's own docstring gives; the enum is applied at every read and write site.
+    listing may not issue a per-row HTTP call to read it. ``terminal_status`` carries
+    the shared status enum and its CHECK constraint, so the column cannot hold a value
+    the aggregate would silently skip; the enum lives in ``app.core`` precisely so a
+    table this module defines can name it without reaching into another service.
 
     :param incident_id: Foreign key to the owning :class:`AtwIncident`.
     :param task_history_id: Logical reference to the tasks-service execution row.
@@ -189,7 +199,14 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     )
     task_history_id: int = SQLField(index=True)
     snippet_filename: str
-    terminal_status: str | None = SQLField(default=None, index=True)
+    terminal_status: TaskHistoryStatusEnum | None = SQLField(
+        default=None,
+        sa_column=Column(
+            EnumField(TaskHistoryStatusEnum, native_enum=False, create_constraint=True),
+            nullable=True,
+            index=True,
+        ),
+    )
     finished_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
     )

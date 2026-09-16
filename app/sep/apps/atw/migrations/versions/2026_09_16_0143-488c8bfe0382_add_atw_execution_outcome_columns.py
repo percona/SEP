@@ -30,7 +30,6 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import sqlmodel.sql.sqltypes
 
 
 # revision identifiers, used by Alembic.
@@ -41,6 +40,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 _TABLE = "atw_incident_execution"
 _INDEX = "ix_atw_incident_execution_terminal_status"
+#: Name SQLAlchemy derives for the status enum's CHECK from the model side, so a
+#: database built by this revision and one built from the metadata agree and
+#: autogenerate reports no drift between them.
+_STATUS_CONSTRAINT = "taskhistorystatusenum"
+#: The enum's member *names*, which are what the column stores.
+_STATUS_NAMES = (
+    "FAILED",
+    "PENDING",
+    "RUNNING",
+    "SUCCESS",
+    "STOPPED",
+    "LOST",
+    "STALE",
+    "UNLAUNCHABLE",
+)
 
 
 def _new_columns() -> tuple[sa.Column, ...]:
@@ -52,7 +66,20 @@ def _new_columns() -> tuple[sa.Column, ...]:
     :return: The four outcome columns, in the order they are added.
     """
     return (
-        sa.Column("terminal_status", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column(
+            "terminal_status",
+            # create_constraint is off here and the CHECK is added once, explicitly,
+            # in upgrade(). Leaving it on emits the constraint from the column *and*
+            # again from the table rebuild batch mode performs, which lands two
+            # identically-named CHECKs on SQLite.
+            sa.Enum(
+                *_STATUS_NAMES,
+                name=_STATUS_CONSTRAINT,
+                native_enum=False,
+                create_constraint=False,
+            ),
+            nullable=True,
+        ),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         # The server_default outlives this revision deliberately: migrations run
         # ahead of the code rollout, so a release still on the previous code
@@ -73,9 +100,19 @@ def upgrade() -> None:
     if _TABLE not in inspector.get_table_names():
         return
     existing_columns = {column["name"] for column in inspector.get_columns(_TABLE)}
-    for column in _new_columns():
-        if column.name not in existing_columns:
-            op.add_column(_TABLE, column)
+    pending = [c for c in _new_columns() if c.name not in existing_columns]
+    if pending:
+        # Batch mode, not a bare add_column: SQLite cannot ALTER a table to attach a
+        # CHECK constraint and merely warns that it skipped it, which would leave the
+        # status column unconstrained on the default engine while PostgreSQL got the
+        # constraint. Batch mode recreates the table, so both engines end up with it.
+        with op.batch_alter_table(_TABLE) as batch_op:
+            for column in pending:
+                batch_op.add_column(column)
+            batch_op.create_check_constraint(
+                _STATUS_CONSTRAINT,
+                sa.column("terminal_status").in_(_STATUS_NAMES),
+            )
     existing_indexes = {index["name"] for index in inspector.get_indexes(_TABLE)}
     if _INDEX not in existing_indexes:
         op.create_index(op.f(_INDEX), _TABLE, ["terminal_status"], unique=False)
@@ -90,6 +127,12 @@ def downgrade() -> None:
     if _INDEX in existing_indexes:
         op.drop_index(op.f(_INDEX), table_name=_TABLE)
     existing_columns = {column["name"] for column in inspector.get_columns(_TABLE)}
-    for column in reversed(_new_columns()):
-        if column.name in existing_columns:
-            op.drop_column(_TABLE, column.name)
+    doomed = [c for c in reversed(_new_columns()) if c.name in existing_columns]
+    if doomed:
+        # One batch block for the constraint and the columns: on SQLite each block is
+        # a full table rebuild, and dropping the CHECK first keeps the rebuilt table
+        # from carrying a constraint over a column that no longer exists.
+        with op.batch_alter_table(_TABLE) as batch_op:
+            batch_op.drop_constraint(_STATUS_CONSTRAINT, type_="check")
+            for column in doomed:
+                batch_op.drop_column(column.name)
