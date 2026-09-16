@@ -270,8 +270,8 @@ class SystemFactsSyncer(BaseTaskSyncer):
 
         Avoids writing a half-empty snapshot: at least one observation field must
         have been collected. Admission is on ``is not None`` rather than truthiness
-        because ``can_elevate`` is the first field whose ``False`` is a measurement,
-        and dropping it would read back as never-observed -- the inverse of what was
+        because ``can_elevate`` is the first field whose ``False`` is a measurement.
+        Dropping it would read back as never-observed, the inverse of what was
         measured.
 
         :param host_facts: The host facts emitted by the payload.

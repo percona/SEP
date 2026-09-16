@@ -229,7 +229,7 @@
         "type": "object"
       },
       "HostSystemObservationWrite": {
-        "description": "Define the model for writing host system observation data to the inventory.\n\n:param node_id: The foreign key referencing the node. Defaults to None.\n:param os_version: The observed operating system version. Defaults to None.\n:param installed_packages: Snapshot of installed packages. Defaults to None.\n:param config: Snapshot of host configuration. Defaults to None.\n:param can_elevate: Whether the node can run privileged work. Defaults to None.\n:param observed_at: When this observation was collected.",
+        "description": "Define the model for writing host system observation data to the inventory.\n\n:param node_id: The foreign key referencing the node. Defaults to None.\n:param os_version: The observed operating system version. Defaults to None.\n:param installed_packages: Snapshot of installed packages. Defaults to None.\n:param config: Snapshot of host configuration. Defaults to None.\n:param can_elevate: Whether the node can run privileged work. Defaults to\n    ``None``.\n:param observed_at: When this observation was collected.",
         "properties": {
           "can_elevate": {
             "anyOf": [

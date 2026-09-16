@@ -399,7 +399,7 @@ async def test_later_unable_measurement_replaces_a_stored_able_one(
     session: AsyncSession,
     node: Node,
 ) -> None:
-    """Overwrite a stored ``True`` when a node loses its elevation capability.
+    """Replace a stored ``True`` when a node loses its elevation capability.
 
     ``update`` is a full replace over every column, so the newer measurement wins
     rather than being merged under the older one.

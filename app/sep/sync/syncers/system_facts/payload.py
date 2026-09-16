@@ -257,10 +257,11 @@ def collect_host_config() -> dict[str, Any]:
 def collect_can_elevate() -> bool | None:
     """Collect whether the node can run privileged work.
 
-    True when the task user is uid 0, or when a bare ``sudo`` resolves on PATH --
-    the two conditions under which the launch check lets a ``sudo``-prefixed
-    interpreter through. A measured ``False`` is a value, not an absence, so
-    callers must admit it on ``is not None`` rather than on truthiness.
+    ``True`` when the task user is uid 0, or when a bare ``sudo`` resolves on
+    PATH: the two conditions under which the launch check lets a
+    ``sudo``-prefixed interpreter through. A measured ``False`` is a value,
+    not an absence, so callers must admit it on ``is not None`` rather than
+    on truthiness.
 
     :return: Whether privileged work is possible, or ``None`` on a platform
         without POSIX uids, where the question has no answer.

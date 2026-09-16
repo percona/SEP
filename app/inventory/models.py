@@ -997,8 +997,9 @@ class HostSystemObservationBase(SQLModel):
     :param os_version: The observed operating system version. Defaults to None.
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
-    :param can_elevate: Whether the node can run privileged work: True when able,
-        False when measured unable, None when never observed. Defaults to None.
+    :param can_elevate: Whether the node can run privileged work: ``True`` when
+        able, ``False`` when measured unable, ``None`` when never observed.
+        Defaults to ``None``.
     :param observed_at: When this observation was collected (domain provenance).
     """
 
@@ -1072,7 +1073,8 @@ class HostSystemObservationWrite(HostSystemObservationBase):
     :param os_version: The observed operating system version. Defaults to None.
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
-    :param can_elevate: Whether the node can run privileged work. Defaults to None.
+    :param can_elevate: Whether the node can run privileged work. Defaults to
+        ``None``.
     :param observed_at: When this observation was collected.
     """
 
