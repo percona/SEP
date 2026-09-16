@@ -22,8 +22,8 @@ Create Date: 2026-08-11 12:00:00.000000
 The whole OM schema in one revision: ``om.om_host`` and ``om.om_service`` for what the
 estate *is*, ``om.om_inventory_run`` for what one sweep *did*. Table names carry an
 ``om_`` prefix on top of the schema that already qualifies them, because the schema
-alone does not: the real-MySQL and real-PostgreSQL test lanes translate every
-declared schema token into the same per-worker schema, which collapsed bare
+alone does not: the real-PostgreSQL test lane translates every declared schema
+token into the same per-worker schema, which collapsed bare
 ``service`` onto SEP inventory's own ``service`` (``schema=None``) the first time
 this app's tables were exercised against a real, non-SQLite database — see
 ``app/sep/apps/om_inventory/models.py``'s module comment for the full account.
@@ -76,11 +76,9 @@ def _observed_column() -> sa.Column:
     stores a Python ``None`` as the JSON scalar ``null``, which would make "never
     probed" and "probed, found nothing" the same value in the column.
 
-    The default is the parenthesised expression form, not a bare literal: MySQL 8
-    rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns (error
-    1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL treats the
-    parentheses as ordinary grouping, so the same clause resolves to the identical
-    literal there — one server_default, both dialects.
+    The default is parenthesised rather than bare. On both dialects SEP runs the
+    parentheses are ordinary grouping, so the clause resolves to the same ``{}``
+    literal either way.
 
     :return: The column.
     """
@@ -145,11 +143,9 @@ def upgrade() -> None:
             # PMM's node id. AutoString, not uuid or Text: PMM's ids are usually
             # UUIDs but not always — the PMM server's own node is the literal
             # string ``pmm-server``, in every deployment, so a uuid column would
-            # reject the one node every installation has. Not Text either, because
-            # this is the primary key: MySQL refuses to index a TEXT/BLOB column
-            # without an explicit key length (error 1170), which AutoString already
-            # works around by falling back to VARCHAR(255) on that one dialect
-            # while staying unbounded everywhere else.
+            # reject the one node every installation has. Not Text either: this is
+            # the primary key, and AutoString is what SQLModel gives a str key,
+            # unbounded on both dialects SEP runs.
             sa.Column("node_id", AutoString(), nullable=False),
             sa.Column("name", sa.Text(), nullable=False),
             sa.Column("address", sa.Text(), nullable=True),
@@ -175,8 +171,7 @@ def upgrade() -> None:
             "om_service",
             # AutoString for the same reason as om_host.node_id: both are indexed
             # (this one is the primary key, node_id below carries
-            # ix_om_service_node_id), and MySQL cannot index TEXT/BLOB without an
-            # explicit key length.
+            # ix_om_service_node_id), and both match the keys they reference.
             sa.Column("service_id", AutoString(), nullable=False),
             sa.Column("node_id", AutoString(), nullable=False),
             sa.Column("name", sa.Text(), nullable=True),
@@ -254,9 +249,9 @@ def upgrade() -> None:
                     postgresql.JSONB(astext_type=sa.Text()), "postgresql"
                 ),
                 nullable=False,
-                # Parenthesised expression default, not a bare literal — see
-                # _observed_column's own server_default for why: MySQL 8 rejects a
-                # plain DEFAULT '[]' on JSON columns (error 1101).
+                # Parenthesised rather than bare, like _observed_column's own
+                # server_default: the parentheses are ordinary grouping and resolve
+                # to the same [] default.
                 server_default=sa.text("('[]')"),
             ),
             # NULL means the whole estate. A scoped run stores the node ids it was

@@ -218,7 +218,7 @@ def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> N
     ``create_all`` already sees the schema. Every SQLite engine here is in-memory and
     single-connection, so the attached database lives exactly as long as the main
     one. Non-SQLite binds are left alone — they have real schemas, and the
-    PostgreSQL and MySQL fixtures below route each token into their per-worker one.
+    PostgreSQL fixture below routes each token into its per-worker one.
 
     :param dbapi_connection: The freshly opened DBAPI connection.
     :param _record: The pool's record for it. Unused.
