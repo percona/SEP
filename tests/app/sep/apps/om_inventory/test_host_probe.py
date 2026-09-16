@@ -243,14 +243,14 @@ class TestThePayloadRunsOnOldPython:
     def test_find_unregistered_survives_minification(self) -> None:
         """Return the same answer from ``find_unregistered`` minified as unminified.
 
-        Minifies the *whole file*, not the function alone: ``hoist_literals``
-        shares one hoisted variable for every function's "pid" and "port" string,
-        so a collision between ``find_unregistered``'s own comprehension and
-        another function's use of those literals only exists when they are
-        minified together. A same-file, function-only minification (what this
-        test did originally, and what the review comment that questioned the
-        loop-vs-comprehension rationale here also did) misses exactly this case —
-        it is what let a real ``UnboundLocalError`` reach dispatch once already.
+        Minifies the *whole file*, which is what dispatch does: ``hoist_literals``
+        lifts every function's ``"pid"`` and ``"port"`` into shared module globals,
+        and ``rename_globals`` then reuses those same short names as comprehension
+        iteration variables. The reuse is safe, because a comprehension carries its
+        own scope on every Python that can run this payload — this test is what
+        keeps that true across a minifier upgrade rather than an argument that it
+        is, and it is why the assertions run the minified function rather than
+        inspecting its text.
 
         The renamed top-level name is found by signature (``rename_globals``
         renames it away, unpredictably across minifier versions) rather than by

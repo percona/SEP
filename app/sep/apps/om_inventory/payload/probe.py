@@ -368,15 +368,6 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
         excluded regardless of what the port filter below would otherwise say.
     :return: The processes that matched no target.
     """
-    # Built with explicit loops rather than comprehensions: python-minifier (the Tasks
-    # layer runs this file through it before dispatch, see build_uri's note above)
-    # aliases the set comprehension's loop variable onto the hoisted "pid" literal
-    # this function also reads, and the resulting ``UnboundLocalError`` reaches
-    # every real dispatch. It does not reproduce minifying this function alone —
-    # confirmed twice, independently, on two different pieces of it — only whole
-    # file, where hoist_literals shares "pid" and "port" across every function that
-    # reads them. ``test_find_unregistered_survives_minification`` below minifies
-    # the whole file for exactly that reason. Loops don't trigger the collision.
     registered_ports = set()
     for target in targets:
         port = target.get("port")
