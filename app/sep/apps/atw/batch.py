@@ -221,13 +221,16 @@ class ATWBatchExecuteResponse(BaseModel):
 
 
 class ATWIncidentExecutionResponse(BaseModel):
-    """Represent one recorded incident execution, hydrated with live task status.
+    """Represent one recorded incident execution with live task status and snippet title.
 
-    The hydrated fields are ``None`` when the Tasks API could not be reached for
-    that row; the locally-recorded fields are always present.
+    The task-status fields are ``None`` when the Tasks API could not be reached
+    for that row; the locally-recorded fields are always present.
 
     :param id: The execution row's UUID primary key.
     :param snippet_filename: The executed snippet's filename.
+    :param snippet_title: The snippet's current display title, falling back to its
+        filename when its metadata title is missing or blank. ``None`` when the
+        snippet cannot be resolved. Defaults to ``None``.
     :param task_history_id: The tasks-service execution this row references.
     :param created_at: When the execution was recorded.
     :param task_status: The upstream execution status.
@@ -245,6 +248,7 @@ class ATWIncidentExecutionResponse(BaseModel):
 
     id: UUID4
     snippet_filename: str
+    snippet_title: str | None = None
     task_history_id: int
     created_at: UTCDatetime
     task_status: TaskHistoryStatusEnum | None = None
