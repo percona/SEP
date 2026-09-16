@@ -32,6 +32,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ValidationError
+from sqlmodel import col
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.requests import as_json_object, RemoteAPI
@@ -39,6 +40,7 @@ from app.core.security import require_internal_token
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager
+from app.sep.apps.atw.models import AtwIncidentExecution
 from app.sep.apps.atw.send import get_tasks_api
 from app.sep.db import get_async_session_maker
 from app.tasks.models import TaskHistoryStatusEnum
@@ -151,6 +153,12 @@ async def reconcile_executions(batch_size: int) -> None:
     the unresolved set and a row that is legitimately still running cannot starve
     the rows behind it.
 
+    The batch is claimed before its first upstream request: the selecting session
+    stamps every selected row's attempt cursor. One request may take minutes against
+    a slow tasks service, so a tick can outlive the schedule interval, and without
+    the claim the next tick would re-select the rows this one is still working
+    through and request each of them a second time.
+
     :param batch_size: The most executions this tick may examine.
     :raises RuntimeError: Propagated from ``require_internal_token`` when no internal
         token is configured. Every per-row upstream failure is absorbed and retried,
@@ -161,6 +169,14 @@ async def reconcile_executions(batch_size: int) -> None:
         # Read inside the session that selected them: the loop below runs after it
         # closes, so it must not touch an ORM attribute.
         targets = [(row.id, row.task_history_id) for row in rows]
+        if targets:
+            await AtwIncidentExecutionManager.update_where(
+                session,
+                {"reconcile_attempted_at": utc_now()},
+                col(AtwIncidentExecution.id).in_(
+                    [execution_id for execution_id, _ in targets]
+                ),
+            )
     if not targets:
         return
     client = await get_tasks_api()

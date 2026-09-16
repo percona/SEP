@@ -304,6 +304,37 @@ class TestBatching:
         tasks_api.get.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_an_overlapping_tick_selects_past_the_running_batch(
+        self, session: AsyncSession, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a tick started while an earlier one is mid-batch does not repeat it.
+
+        One upstream request may take minutes against a slow tasks service, so a tick
+        can outlive the schedule interval. The batch is claimed before its first
+        request, so the next tick moves on to the rows behind it instead of issuing a
+        second request for every row the first tick is still working through.
+        """
+        await _seed_execution(
+            session, task_history_id=1, created_at=utc_now() - timedelta(hours=2)
+        )
+        await _seed_execution(
+            session, task_history_id=2, created_at=utc_now() - timedelta(hours=1)
+        )
+        requested: list[str] = []
+
+        async def _slow_get(path: str, **_kwargs: Any) -> dict[str, Any]:
+            requested.append(path)
+            if len(requested) == 1:
+                await reconcile_executions(1)
+            return _upstream_run(TaskHistoryStatusEnum.RUNNING)
+
+        tasks_api.get.side_effect = _slow_get
+
+        await reconcile_executions(1)
+
+        assert requested == ["/history/1", "/history/2"]
+
+    @pytest.mark.asyncio
     async def test_successive_ticks_reach_a_starved_row(
         self, session: AsyncSession, tasks_api: AsyncMock
     ) -> None:
