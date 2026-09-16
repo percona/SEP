@@ -69,6 +69,13 @@ def _root_task(
     } | overrides
 
 
+def _root_task_without(field: str) -> dict[str, Any]:
+    """Build a root payload missing ``field``, as a drifted upstream contract would."""
+    root = _root_task()
+    del root[field]
+    return root
+
+
 def _valid_proxy(**overrides: Any) -> dict[str, Any]:
     """Build the upstream payload of a proxy that passes every validation check."""
     return {
@@ -410,6 +417,34 @@ class TestRefusesToWrap:
         assert await _resolve() is None
         tasks_api.put.assert_not_awaited()
         tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "root",
+        [
+            pytest.param(_root_task_without("owner"), id="owner-missing"),
+            pytest.param(_root_task(owner=""), id="owner-empty"),
+            pytest.param(_root_task(alert_on_fail="false"), id="alert-on-fail-string"),
+            pytest.param(
+                _root_task_without("anonymize_mask"), id="anonymize-mask-missing"
+            ),
+            pytest.param(_root_task(anonymize_mask="6"), id="anonymize-mask-string"),
+        ],
+    )
+    async def test_a_root_whose_policy_cannot_be_read_is_not_wrapped(
+        self, tasks_api: AsyncMock, root: dict[str, Any]
+    ) -> None:
+        """Ensure a drifted root policy declines the wrap instead of defaulting.
+
+        ``owner`` and ``anonymize_mask`` decide the run's PII treatment and
+        ``alert_on_fail`` its alerting, so a missing or malformed value must not be
+        replaced by a default that silently applies a different policy to the proxy.
+        """
+        tasks_api.get.side_effect = _serve({_ROOT_TASK_NAME: root})
+
+        assert await _resolve() is None
+        tasks_api.post.assert_not_awaited()
+        tasks_api.put.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_absent_root_is_not_wrapped(self, tasks_api: AsyncMock) -> None:
