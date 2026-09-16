@@ -42,6 +42,13 @@ from tests.app.sep.apps.mysql_backups.conftest import (
     xtrabackup_payload_tree,
 )
 
+#: Home directory the stubbed ``pwd`` reports, so the constants that derive a path
+#: from it resolve to the same value on every machine.
+STUB_HOME = "/home/backupuser"
+
+#: User the stubbed ``getpass`` reports when the environment names none.
+STUB_USER = "backupuser"
+
 # Module-level constants the extracted symbols read (default args / bodies).
 _CONST_NAMES = frozenset(
     {
@@ -63,6 +70,15 @@ _CONST_NAMES = frozenset(
         "PARTIAL_MAX_AGE_SECONDS",
         "PARTIAL_SUFFIX",
         "REPLACED_SUFFIX",
+        "CURRENT_USER",
+        "CURRENT_USER_HOME_DIR",
+        "BACKUP_TEXTFILE_COLLECTOR_DIR",
+        "LZ4_BIN",
+        "QPRESS_BIN",
+        "ZSTD_BIN",
+        "DEFAULT_LOGGING_DIR",
+        "DEFAULT_LOGGING_STDOUT",
+        "DEFAULT_MYCNF",
     }
 )
 
@@ -80,7 +96,13 @@ def const_nodes(tree: ast.Module) -> list[ast.stmt]:
 
 
 def base_namespace() -> dict:
-    """Return an exec namespace seeded with real modules and a stub ``BackupError``."""
+    """Return an exec namespace seeded with real modules and a stub ``BackupError``.
+
+    ``pwd`` and ``getpass`` are stubbed rather than real: the home-derived constants
+    would otherwise resolve against whoever runs the suite, and ``pwd.getpwnam``
+    raises for a user the passwd database does not carry — which a container can
+    produce — taking every harness test with it.
+    """
     namespace: dict = {
         "os": os,
         "subprocess": subprocess,
@@ -91,6 +113,12 @@ def base_namespace() -> dict:
         "Any": object,
         "suppress": contextlib.suppress,
         "thread_pool": multiprocessing.pool,
+        "pwd": types.SimpleNamespace(
+            getpwnam=lambda _name: types.SimpleNamespace(pw_dir=STUB_HOME)
+        ),
+        "getpass": types.SimpleNamespace(getuser=lambda: STUB_USER),
+        # The mydumper payload imports the function itself.
+        "getuser": lambda: STUB_USER,
     }
     exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
     return namespace
@@ -377,10 +405,64 @@ def payload_instance(
         debug=lambda *_a, **_k: None,
         error=lambda *_a, **_k: None,
     )
-    inst._clean_after_error = lambda: None  # noqa: SLF001
+    # Stand-ins for the collaborators a lifted method calls, skipped for any method
+    # the caller lifted itself: an instance attribute would shadow the real one.
+    stubs = {
+        "_clean_after_error": lambda: None,
+        "_check_config": lambda: None,
+        "get_compression_ext": lambda: "",
+    }
+    for name, stub in stubs.items():
+        if name not in method_names:
+            setattr(inst, name, stub)
     inst.aes_keyfile = "/keys/aes.key"
     inst.enc_aes = True
     inst.enc_gpg = False
     inst.compress = False
-    inst.get_compression_ext = lambda: ""
     return inst, namespace["BackupError"], calls
+
+
+def _config_reader_state() -> dict[str, object]:
+    """Return the state every config-reading payload method expects.
+
+    No ``server_data``, no option files, and compression on, since the checks that
+    read a config are only reachable with it on. One layer over what
+    ``payload_instance`` seeds for the encryption callers, so a caller reads one
+    table rather than two. Rebuilt per call so a test that mutates ``server_data``
+    cannot reach the next one.
+
+    :return: The attribute names and values to seed.
+    """
+    return {
+        "server_data": {},
+        "defaults_cnf_file": None,
+        "defaults_file": None,
+        "compress": True,
+        "xtrabackup_bin_cmd": "xtrabackup",
+        "compression_algorithm": "zstd",
+    }
+
+
+def seeded_instance(
+    method_names: tuple[str, ...], **attributes: object
+) -> tuple[object, type[Exception]]:
+    """Build a payload instance carrying the named methods and the given state.
+
+    Seeds ``_config_reader_state`` so a caller names only what its own assertion
+    turns on. Typed ``object`` rather than a narrower union because the seeded values
+    are genuinely heterogeneous (a dict, paths, a bool, algorithm names) and the
+    instance they land on is a synthetic class with no annotations to match.
+
+    :param method_names: The payload method names to lift into the instance.
+    :param attributes: Instance attributes overriding the seeded defaults.
+    :return: The instance and the payload's own ``BackupError``.
+    """
+    inst, backup_error, _ = payload_instance(
+        method_names,
+        extra_namespace={
+            "supported_compression": load_function("supported_compression")
+        },
+    )
+    for name, value in (_config_reader_state() | attributes).items():
+        setattr(inst, name, value)
+    return inst, backup_error
