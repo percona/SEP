@@ -59,8 +59,8 @@ def _real_package_names() -> frozenset[str]:
     ``tests/app/sep/apps/framework/test_scaffold.py`` render into the real
     ``app/sep/apps/`` and remove it again, so under ``xdist`` a scaffold package
     can exist for one call here and not the next. A test that reads this twice
-    -- once to build its synthetic tree, once to decide what that tree should
-    have reported -- then compares two different trees and fails on a package
+    — once to build its synthetic tree, once to decide what that tree should
+    have reported — then compares two different trees and fails on a package
     name neither it nor this module created.
 
     :return: Every package directory under ``app/sep/apps``.

@@ -66,7 +66,7 @@ class TestParseConfigPath:
         assert parse_config_path(argv) == CONFIG_PATH
 
     def test_absent_when_started_without_one(self) -> None:
-        """A mongod started with flags alone has no config file."""
+        """Return no config path for a mongod started with flags alone."""
         assert parse_config_path("/usr/bin/mongod --port 27017 --dbpath /data") is None
 
 
@@ -74,7 +74,7 @@ class TestParsePort:
     """Assert the port is found on the command line or in the config file."""
 
     def test_prefers_the_command_line(self, tmp_path) -> None:
-        """An explicit ``--port`` is what the process actually did.
+        """Prefer the explicit ``--port`` flag as what the process actually did.
 
         :param tmp_path: pytest's temporary directory.
         """
@@ -91,14 +91,14 @@ class TestParsePort:
         ids=["space", "equals"],
     )
     def test_reads_either_command_line_spelling(self, argv: str) -> None:
-        """``--port N`` and ``--port=N`` are both used.
+        """Read both ``--port N`` and ``--port=N`` spellings from the command line.
 
         :param argv: The command line to read.
         """
         assert parse_port(argv, None) == SHARD_PORT
 
     def test_falls_back_to_the_config_file(self, tmp_path) -> None:
-        """The sandbox starts every node with the port set in its config.
+        """Fall back to the config file's port when argv alone reveals nothing.
 
         An argv-only reading would find nothing on any of them, which would make
         every registered service look unregistered.
@@ -124,7 +124,7 @@ class TestParsePort:
         assert parse_port("/usr/bin/mongod", str(config)) == SHARD_PORT
 
     def test_unreadable_config_is_not_fatal(self) -> None:
-        """The payload must survive a config it cannot open, not abort the host."""
+        """Survive a config file it cannot open, rather than aborting the host."""
         assert parse_port("/usr/bin/mongod", "/nonexistent/mongod.conf") is None
 
 
@@ -150,7 +150,7 @@ class TestFindUnregistered:
     """Assert which running servers are reported as strangers."""
 
     def test_a_registered_service_is_not_reported(self) -> None:
-        """The ordinary case must stay quiet, or the list is noise."""
+        """Stay quiet for a registered service, or the list is noise."""
         found = find_unregistered(
             [process(DEFAULT_PORT)], [{"service": "db00", "port": DEFAULT_PORT}]
         )
@@ -158,7 +158,7 @@ class TestFindUnregistered:
         assert found == []
 
     def test_an_arbiter_with_no_target_is_reported(self) -> None:
-        """The case this exists for: a mongod running where PMM has no service.
+        """Report a mongod when PMM holds no target at all for its host.
 
         The host is dispatched to and has no targets at all, so nothing accounts for
         the process.
@@ -177,7 +177,7 @@ class TestFindUnregistered:
         assert [entry["port"] for entry in found] == [SHARD_PORT]
 
     def test_a_process_with_no_port_is_reported_rather_than_dropped(self) -> None:
-        """An unidentifiable database is still a database.
+        """Report an unidentifiable database rather than dropping it silently.
 
         It cannot be matched to a target, and discarding it silently is exactly the
         dishonesty this list exists to prevent — better a visible entry with a null
@@ -190,7 +190,7 @@ class TestFindUnregistered:
         assert [entry["port"] for entry in found] == [None]
 
     def test_a_target_without_a_port_registers_nothing(self) -> None:
-        """A target carrying no port cannot account for any process.
+        """Register nothing for a target carrying no port.
 
         Treating ``None`` as a wildcard would hide every stranger on the host.
         """
@@ -201,7 +201,7 @@ class TestFindUnregistered:
         assert [entry["port"] for entry in found] == [DEFAULT_PORT]
 
     def test_a_mongos_is_matched_by_port_like_anything_else(self) -> None:
-        """A router is a registered service too; it must not read as a stranger."""
+        """Match a mongos router by port like any other registered service."""
         found = find_unregistered(
             [process(DEFAULT_PORT, program="mongos")],
             [{"service": "mongos00", "port": DEFAULT_PORT}],
@@ -224,7 +224,7 @@ class TestMatchedPidsExcludeADoubleListing:
     """
 
     def test_a_default_port_mongod_is_not_also_a_stranger(self) -> None:
-        """The regression: one running mongod, reported as itself and as a stranger.
+        """Guard against reporting one running mongod as both itself and a stranger.
 
         This is ``main``'s own sequence, minus the I/O: resolve every target's match
         first, then hand the pids that produced to :func:`find_unregistered`.

@@ -64,8 +64,8 @@ def discover_apps(apps_root: Path) -> list[str]:
     """Return the sorted app-slice names found under ``apps_root``.
 
     Any leading underscore disqualifies a directory, not just a dunder. An app's
-    name is public by construction -- it is a ``MODULE_NAME`` in the settings
-    profile and a path segment under ``/api/apps/`` -- so no real app carries
+    name is public by construction — it is a ``MODULE_NAME`` in the settings
+    profile and a path segment under ``/api/apps/`` — so no real app carries
     one, while the ``make startapp`` tests render ``_scaffold_*`` packages into
     this very directory and delete them again. Under ``xdist`` that leaves a
     window in which this walk sees a package that is not an app, and the check

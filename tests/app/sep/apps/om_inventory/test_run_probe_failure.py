@@ -64,7 +64,7 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
     async def test_a_persist_estate_failure_fails_the_run(
         self, session: AsyncSession
     ) -> None:
-        """``persist_estate`` raising leaves the run ``FAILED``, not ``RUNNING``.
+        """Mark the run ``FAILED``, not ``RUNNING``, when ``persist_estate`` raises.
 
         :param session: The database session.
         """
@@ -97,7 +97,7 @@ class TestPersistOrFinaliseFailureMarksTheRunFailed:
     async def test_a_finalise_failure_fails_the_run(
         self, session: AsyncSession
     ) -> None:
-        """``finalise`` raising leaves the run ``FAILED``, not ``RUNNING``.
+        """Mark the run ``FAILED``, not ``RUNNING``, when ``finalise`` raises.
 
         ``persist_estate`` runs for real here (with nothing for it to write, since
         ``CLEAN_OUTCOME`` carries no hosts or services) so this pins the *second*

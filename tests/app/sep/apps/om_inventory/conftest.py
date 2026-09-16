@@ -33,6 +33,9 @@ from app.sep.main import sep_app
 #: The app's mount point, which every route in these tests hangs off.
 BASE = "/api/apps/om_inventory"
 
+#: A host's free data-directory space, as ``collect_install_readiness`` would report it.
+FREE_BYTES = 107374182400
+
 
 @pytest_asyncio.fixture
 async def api(

@@ -81,7 +81,7 @@ class TestParseNdjson:
     """Assert the host record is told apart from the service records."""
 
     def test_splits_the_host_record_from_the_service_records(self) -> None:
-        """``service: null`` is the whole discriminator."""
+        """Split the host record out by ``service: null``, the whole discriminator."""
         records, host_record = parse_ndjson(f"{HOST_LINE}\n{SERVICE_LINE}")
 
         assert list(records) == ["db00"]
@@ -89,7 +89,7 @@ class TestParseNdjson:
         assert host_record["system"]["os_name"] == "Ubuntu 24.04"
 
     def test_a_host_with_no_database_still_reports(self) -> None:
-        """The only line from an empty host is its own, and it must not be dropped.
+        """Report an empty host's own line rather than dropping it.
 
         This is the case the app could not express at all before: no targets meant no
         output, and the payload refused to run.
@@ -109,7 +109,7 @@ class TestParseNdjson:
         assert host_record is not None
 
     def test_no_output_yields_no_host_record(self) -> None:
-        """``None`` is what distinguishes "did not answer" from "has no database"."""
+        """Distinguish "did not answer" from "has no database" by returning ``None``."""
         records, host_record = parse_ndjson("")
 
         assert records == {}
@@ -127,7 +127,7 @@ class TestServiceIdPreventsANameCollision:
     """
 
     def test_two_same_named_services_are_recorded_distinctly(self) -> None:
-        """The full path: ``build_config`` -> the payload's ``probe`` -> ``parse_ndjson``.
+        """Follow ``build_config`` -> ``probe`` -> ``parse_ndjson`` end to end.
 
         Two mapped services share a name (as two shards of the same replica set on
         one host well might) but carry different PMM service ids. Both must survive
@@ -163,7 +163,7 @@ class TestProbeAllTargets:
 
     @pytest.mark.asyncio
     async def test_dispatches_to_a_host_that_serves_no_service(self) -> None:
-        """The empty host is dispatched to, or it can never be described.
+        """Dispatch to the empty host too, or it can never be described.
 
         :return: Nothing.
         """
@@ -241,7 +241,7 @@ class TestThePayloadRunsOnOldPython:
         )
 
     def test_find_unregistered_survives_minification(self) -> None:
-        """``find_unregistered`` returns the same answer minified as it does here.
+        """Return the same answer from ``find_unregistered`` minified as unminified.
 
         Minifies the *whole file*, not the function alone: ``hoist_literals``
         shares one hoisted variable for every function's "pid" and "port" string,

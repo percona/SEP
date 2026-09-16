@@ -34,8 +34,9 @@ it is the one that cannot be added after the fact, because by then the data is g
 
 from contextlib import nullcontext
 from datetime import timedelta
+from typing import Any
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -63,21 +64,48 @@ LATER_DOCUMENT = {"collected_at": "2026-08-17T10:00:00+00:00", "os": "Ubuntu 24.
 TWO_FAILURES = 2
 
 
-async def add_host(session: AsyncSession, **overrides) -> OmHost:
+async def add_host(
+    session: AsyncSession,
+    *,
+    node_id: str = NODE_ID,
+    name: str = "db00",
+    address: str | None = "10.0.0.1",
+    executor_host: str | None = "db00",
+    observed: dict[str, Any] | None = GOOD_DOCUMENT,
+    executor: dict[str, Any] | None = None,
+    error: str | None = None,
+    run_id: UUID | None = None,
+    attempted: bool = True,
+) -> OmHost:
     """Upsert one host with the usual identity and commit.
 
+    Mirrors :func:`upsert_host`'s keyword-only signature so a case varies one field
+    by name and the rest stay at the identity every other case shares.
+
     :param session: The database session.
-    :param overrides: Anything to vary for the case under test.
+    :param node_id: PMM's node id.
+    :param name: The node's registered name.
+    :param address: The node's registered address.
+    :param executor_host: The Nomad client that serves it.
+    :param observed: The probe document to store against the host.
+    :param executor: The executor sub-document to store.
+    :param error: The failure detail for this attempt.
+    :param run_id: The sweep this attempt belongs to.
+    :param attempted: Whether this counts as a probe attempt.
     :return: The stored row.
     """
-    defaults = {
-        "node_id": NODE_ID,
-        "name": "db00",
-        "address": "10.0.0.1",
-        "executor_host": "db00",
-        "observed": GOOD_DOCUMENT,
-    }
-    host = await upsert_host(session, **{**defaults, **overrides})
+    host = await upsert_host(
+        session,
+        node_id=node_id,
+        name=name,
+        address=address,
+        executor_host=executor_host,
+        observed=observed,
+        executor=executor,
+        error=error,
+        run_id=run_id,
+        attempted=attempted,
+    )
     await session.commit()
     return host
 
@@ -87,7 +115,7 @@ class TestHostLifecycle:
 
     @pytest.mark.asyncio
     async def test_first_sight_creates_the_row(self, session: AsyncSession) -> None:
-        """A host is a row from the first time it is seen.
+        """Create the row the first time a host is seen.
 
         :param session: The database session.
         """
@@ -104,7 +132,7 @@ class TestHostLifecycle:
     async def test_failure_keeps_the_last_good_document(
         self, session: AsyncSession
     ) -> None:
-        """A failed probe must not erase what the last good one saw.
+        """Keep the last good document rather than erasing it on failure.
 
         What a host was running when it was last reachable is exactly what is wanted
         while it is not, and the PMM side is built to consume aged facts rather than
@@ -125,7 +153,7 @@ class TestHostLifecycle:
     async def test_failing_since_is_the_first_failure_not_the_latest(
         self, session: AsyncSession
     ) -> None:
-        """``COALESCE`` is the whole trick, and this is what it buys.
+        """Hold ``failing_since`` at the first failure, not the latest, via ``COALESCE``.
 
         Two consecutive failures must leave ``failing_since`` at the first one. Move
         it and the column can never say anything but "about one schedule interval".
@@ -194,7 +222,7 @@ class TestHostLifecycle:
     async def test_identity_is_refreshed_on_every_sight(
         self, session: AsyncSession
     ) -> None:
-        """A renamed or readdressed node must not keep reading as the old one.
+        """Refresh identity so a renamed or readdressed node stops reading as the old one.
 
         :param session: The database session.
         """
@@ -211,7 +239,7 @@ class TestServiceLifecycle:
 
     @pytest.mark.asyncio
     async def test_service_requires_its_host_row(self, session: AsyncSession) -> None:
-        """The foreign key is real, so hosts are written first.
+        """Require the host row to exist first, enforcing the real foreign key.
 
         Not a formality: it is what stops a service row pointing at a host the estate
         view cannot show.
@@ -238,7 +266,7 @@ class TestServiceLifecycle:
     async def test_an_orphaned_service_is_a_row_with_no_attempt(
         self, session: AsyncSession
     ) -> None:
-        """A service PMM knows is a row even when nothing could probe it.
+        """Record a service PMM knows as a row even when nothing could probe it.
 
         Omitting it reports a healthier estate than exists — the PoC measured 17 of
         18 services unreachable in a single run, and a listing showing one would have
@@ -268,7 +296,7 @@ class TestServiceLifecycle:
     async def test_a_failed_attempt_keeps_the_last_known_role(
         self, session: AsyncSession
     ) -> None:
-        """``role`` is only written when a probe determined one.
+        """Write ``role`` only when a probe determined one.
 
         Same reason ``observed`` survives a failure: an unreachable arbiter is still
         an arbiter, and blanking the column would lose that on the first bad sweep.
@@ -360,7 +388,7 @@ class TestRunLinkage:
     async def test_updated_at_moves_even_without_an_attempt(
         self, session: AsyncSession
     ) -> None:
-        """A row that was merely re-seen still changed, and should say so.
+        """Update ``updated_at`` even when a row was merely re-seen, not attempted.
 
         :param session: The database session.
         """
@@ -374,7 +402,7 @@ class TestRunLinkage:
 
 @pytest.mark.asyncio
 async def test_tables_live_in_oms_own_schema(session: AsyncSession) -> None:
-    """The tables are ``om.om_host`` and ``om.om_service``, not SEP's ``service``.
+    """Assert the tables are ``om.om_host`` and ``om.om_service``, not SEP's ``service``.
 
     Two guards, not one, against colliding with SEP inventory's own ``service``
     (``schema=None``): the declared schema, and the ``om_`` prefix on the table name
@@ -406,7 +434,7 @@ class TestExecutorFactsReachTheRow:
     async def test_an_unprobeable_host_still_records_why(
         self, session: AsyncSession
     ) -> None:
-        """A host nothing can run on gets a document saying so, not an empty one.
+        """Record why nothing could run on a host, instead of an empty document.
 
         :param session: The database session.
         """
@@ -488,7 +516,7 @@ class TestTheFailureReasonReachesTheRow:
     async def test_the_dispatch_error_is_stored_verbatim(
         self, session: AsyncSession
     ) -> None:
-        """The whole point: the row says what happened, not that something did.
+        """Store what happened, not merely that something did, in the row.
 
         :param session: The database session.
         """
@@ -524,7 +552,7 @@ class TestTheFailureReasonReachesTheRow:
     async def test_a_host_nobody_probed_records_no_failure(
         self, session: AsyncSession
     ) -> None:
-        """A host with no executor was never attempted, so it has not failed.
+        """Record no failure for a host with no executor, which was never attempted.
 
         This is the rule the error threading must not break: seeing an entity and
         probing it are different, and conflating them makes a one-host refresh mark

@@ -52,7 +52,7 @@ def test_schema_200(regular_user: CasdoorUser) -> None:
 
 
 def test_declares_no_custom_ui() -> None:
-    """``custom_ui`` means "ships a bespoke React UI", which this app does not.
+    """Assert ``custom_ui`` is False, since this app ships no bespoke React UI.
 
     Unlike ``atw``/``topology``, which register one, this app has no ``react_route``
     and no component of its own — ``sidebar=False`` already says there is nothing to

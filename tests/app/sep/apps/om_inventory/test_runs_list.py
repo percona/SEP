@@ -98,7 +98,7 @@ async def test_list_runs_since_excludes_older(
 async def test_list_runs_until_excludes_newer(
     api: AsyncClient, session: AsyncSession
 ) -> None:
-    """An upper bound drops runs that started after it."""
+    """Drop runs that started after the upper bound."""
     kept = await record_run(session, T0)
     await record_run(session, T2)
 
@@ -110,7 +110,7 @@ async def test_list_runs_until_excludes_newer(
 
 @pytest.mark.asyncio
 async def test_list_runs_rejects_until_before_since(api: AsyncClient) -> None:
-    """An inverted window is a validation failure, not an empty page."""
+    """Reject an inverted window as a validation failure, not an empty page."""
     response = await api.get(
         f"{BASE}/runs",
         params={"since": T2.isoformat(), "until": T0.isoformat()},
