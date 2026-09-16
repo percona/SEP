@@ -41,10 +41,18 @@ from app.tasks.models import ANY_OWNER, TaskBackendEnum
 
 _ROOT_TASK_NAME = "exec-artifact"
 _PROXY_NAME = f"{ATW_PROXY_TASK_PREFIX}{_ROOT_TASK_NAME}"
+#: A non-default ``AnonymizeMask``; the type is an int bitmask, not a name list.
+_CUSTOM_ANONYMIZE_MASK = 6
 
 
-def _root_task(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> dict[str, Any]:
-    """Build the upstream payload for the interpreter root ATW would wrap."""
+def _root_task(
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD, **overrides: Any
+) -> dict[str, Any]:
+    """Build the upstream payload for the interpreter root ATW would wrap.
+
+    Carries every behavioural field a real ``TaskResponse`` does, including the ones
+    that default, because the proxy is validated against the root's values.
+    """
     return {
         "name": _ROOT_TASK_NAME,
         "backend": backend.value,
@@ -53,7 +61,9 @@ def _root_task(backend: TaskBackendEnum = TaskBackendEnum.NOMAD) -> dict[str, An
         "run_result_recorder": None,
         "output_files_path": RUN_SCRIPT_OUTPUT_FILES_PATH,
         "anonymize_mask": None,
-    }
+        "alert_on_fail": False,
+        "alert_detail_builder": None,
+    } | overrides
 
 
 def _valid_proxy(**overrides: Any) -> dict[str, Any]:
@@ -66,6 +76,8 @@ def _valid_proxy(**overrides: Any) -> dict[str, Any]:
         "run_result_recorder": RUN_RESULT_RECORDER,
         "output_files_path": RUN_SCRIPT_OUTPUT_FILES_PATH,
         "anonymize_mask": None,
+        "alert_on_fail": False,
+        "alert_detail_builder": None,
     } | overrides
 
 
@@ -155,6 +167,58 @@ class TestCreatesTheProxy:
         assert payload["run_result_recorder"] == RUN_RESULT_RECORDER
         assert payload["output_files_path"] == RUN_SCRIPT_OUTPUT_FILES_PATH
         assert payload["anonymize_mask"] is None
+
+    @pytest.mark.asyncio
+    async def test_custom_root_behaviour_is_copied_onto_the_proxy(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a non-default interpreter's behaviour survives being wrapped.
+
+        ``SnippetInterpreterConfig.task`` is an overridable setting, so the root is
+        not necessarily one of the seeded rows. Anonymization, result reading and
+        dispatch-failure alerting all resolve off the *dispatched* task, so hardcoding
+        the seeded defaults would silently apply the wrong policy to a custom one.
+        """
+        custom = _root_task(
+            owner="pii-restricted",
+            anonymize_mask=_CUSTOM_ANONYMIZE_MASK,
+            output_files_path="custom/output",
+            alert_on_fail=True,
+            alert_detail_builder="app.sep.apps.atw.recorder:record_atw_run",
+        )
+        tasks_api.get.side_effect = _serve({_ROOT_TASK_NAME: custom})
+        tasks_api.post.return_value = _valid_proxy()
+
+        await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+
+        payload = tasks_api.post.await_args.kwargs["json"]
+        assert payload["owner"] == "pii-restricted"
+        assert payload["anonymize_mask"] == _CUSTOM_ANONYMIZE_MASK
+        assert payload["output_files_path"] == "custom/output"
+        assert payload["alert_on_fail"] is True
+        assert payload["alert_detail_builder"] == (
+            "app.sep.apps.atw.recorder:record_atw_run"
+        )
+        assert payload["run_result_recorder"] == RUN_RESULT_RECORDER
+
+    @pytest.mark.asyncio
+    async def test_proxy_left_from_a_different_root_configuration_is_refused(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a proxy carrying the old root's behaviour is not reused.
+
+        Re-pointing an interpreter at a task with a different policy leaves the
+        previous proxy in place under the same name; reusing it would keep applying
+        the superseded owner and mask.
+        """
+        tasks_api.get.side_effect = _serve(
+            {
+                _ROOT_TASK_NAME: _root_task(owner="pii-restricted"),
+                _PROXY_NAME: _valid_proxy(),
+            }
+        )
+
+        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
 
     @pytest.mark.asyncio
     async def test_existing_valid_proxy_is_reused_without_a_second_post(

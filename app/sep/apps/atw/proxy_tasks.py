@@ -45,7 +45,6 @@ from app.core.requests import as_json_object, RemoteAPI
 from app.core.security import require_internal_token
 from app.sep.apps.atw.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.atw.send import get_tasks_api
-from app.tasks.execution.executors.nomad.steps import RUN_SCRIPT_OUTPUT_FILES_PATH
 from app.tasks.models import ANY_OWNER, TaskBackendEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
@@ -73,35 +72,66 @@ def atw_proxy_task_name(root_task_name: str) -> str:
     return f"{ATW_PROXY_TASK_PREFIX}{root_task_name}"
 
 
-def _build_proxy_task_write(root_task_name: str) -> TaskWrite:
+def _inherited_from_root(root: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract the behavioural fields a proxy must reproduce from the root it wraps.
+
+    Every field here is resolved off the **dispatched** task rather than the root:
+    ``prepare_task_history`` reads ``anonymize_mask`` directly and derives the
+    default mask from ``owner``; ``read_run_result`` reads ``output_files_path``;
+    and the dispatch-failure alert reads ``alert_on_fail`` / ``alert_detail_builder``.
+    Wrapping a task therefore substitutes the proxy's values for the root's, so the
+    proxy has to carry the root's own.
+
+    Hardcoding them instead would be correct only for the seeded interpreter roots.
+    ``SnippetInterpreterConfig.task`` is a plain overridable setting, so an operator
+    may point ATW at a task with a different owner, mask or output path — and the
+    substitution is silent: the wrong PII policy applies, or results are read from a
+    path the executor never wrote to.
+
+    ``run_result_recorder`` is deliberately absent: carrying ATW's own is the entire
+    reason the proxy exists.
+
+    :param root: The fetched root task payload.
+    :return: The fields to copy onto the proxy, as a create-and-validate pair.
+    """
+    return {
+        # Defaulted because TaskWrite.owner is non-optional; the seeded roots leave
+        # it at this value anyway.
+        "owner": root.get("owner") or ANY_OWNER,
+        "anonymize_mask": root.get("anonymize_mask"),
+        "output_files_path": root.get("output_files_path"),
+        "alert_on_fail": bool(root.get("alert_on_fail")),
+        "alert_detail_builder": root.get("alert_detail_builder"),
+    }
+
+
+def _build_proxy_task_write(root_task_name: str, root: Mapping[str, Any]) -> TaskWrite:
     """Build the proxy task ATW creates for ``root_task_name``.
 
     The payload is deliberately thin — ``data`` carries only ``task``, with no
     ``meta`` and no ``payload`` key — because ``prepare_task_history`` merges a
-    proxy's own meta *over* the caller's and would otherwise overwrite the run's
-    execution meta with the proxy's.
+    proxy's own meta *over* the caller's and substitutes its own payload for the
+    caller's, either of which would override what the run itself asked for.
 
-    ``owner`` and ``anonymize_mask`` are not cosmetic: ``prepare_task_history``
-    resolves the anonymization mask off the **proxy**, not the root, so both are
-    set to reproduce today's resolution byte-for-byte. ``output_files_path`` is
-    copied across for the same reason — ``read_run_result`` reads it off the
-    dispatched task, and leaving it unset silently disables result reading.
+    Everything else behavioural is copied from the root, so wrapping a task changes
+    where the recorder points and nothing else — see :func:`_inherited_from_root`.
 
     :param root_task_name: The interpreter task the proxy dispatches through.
+    :param root: The fetched root task, whose behavioural fields are copied.
     :return: The create payload for the proxy task.
     """
     return TaskWrite(
         name=atw_proxy_task_name(root_task_name),
-        owner=ANY_OWNER,
         backend=TaskBackendEnum.PROXY,
         data={"task": root_task_name},
         run_result_recorder=RUN_RESULT_RECORDER,
-        output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
-        anonymize_mask=None,
+        **_inherited_from_root(root),
     )
 
 
-def _is_expected_proxy(task: Mapping[str, Any], root_task_name: str) -> bool:
+def _is_expected_proxy(
+    task: Mapping[str, Any], root_task_name: str, root: Mapping[str, Any]
+) -> bool:
     """Check whether an existing task is the proxy this module would have created.
 
     A name collision proves only that *a* task owns the name. ``update_task`` lets
@@ -114,22 +144,28 @@ def _is_expected_proxy(task: Mapping[str, Any], root_task_name: str) -> bool:
     a proxy that acquired a ``payload`` key would substitute it into every
     diagnostics dispatch thereafter.
 
+    The behavioural fields are compared against the **root's** values through the
+    same helper that supplies them at creation, so the two cannot drift: a proxy
+    left behind by an earlier configuration, or reshaped afterwards, fails here
+    rather than silently applying the wrong policy.
+
     :param task: The upstream task payload to validate.
     :param root_task_name: The interpreter task the proxy must dispatch through.
+    :param root: The fetched root task, whose behavioural fields the proxy must
+        reproduce.
     :return: ``True`` when every field matches what ATW requires.
     """
     data = task.get("data")
     if not isinstance(data, dict):
         return False
+    inherited = _inherited_from_root(root)
     return (
         task.get("backend") == TaskBackendEnum.PROXY.value
         and data.get("task") == root_task_name
         and "meta" not in data
         and "payload" not in data
         and task.get("run_result_recorder") == RUN_RESULT_RECORDER
-        and task.get("output_files_path") == RUN_SCRIPT_OUTPUT_FILES_PATH
-        and task.get("owner") == ANY_OWNER
-        and task.get("anonymize_mask") is None
+        and all(task.get(field) == value for field, value in inherited.items())
     )
 
 
@@ -156,7 +192,7 @@ async def _fetch_task(tasks_api: RemoteAPI, name: str) -> dict[str, Any] | None:
 
 
 async def _create_proxy_task(
-    tasks_api: RemoteAPI, root_task_name: str
+    tasks_api: RemoteAPI, root_task_name: str, root: Mapping[str, Any]
 ) -> dict[str, Any] | None:
     """Create the proxy task, resolving a concurrent creator's win by re-fetching.
 
@@ -167,12 +203,13 @@ async def _create_proxy_task(
 
     :param tasks_api: The authenticated Tasks API client.
     :param root_task_name: The interpreter task the proxy dispatches through.
+    :param root: The fetched root task, whose behavioural fields are copied.
     :return: The created or concurrently-created task, or ``None`` if it vanished.
     :raises HTTPException: Propagated for any upstream error status other than the
         ``409`` / ``400`` pair that a concurrent creator produces.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
-    task_write = _build_proxy_task_write(root_task_name)
+    task_write = _build_proxy_task_write(root_task_name, root)
     try:
         return as_json_object(await tasks_api.post("/", json=task_write.model_dump()))
     except (HTTPConflictException, HTTPBadRequestException):
@@ -222,8 +259,8 @@ async def _resolve_atw_proxy_task(root_task_name: str) -> str | None:
         proxy_name = atw_proxy_task_name(root_task_name)
         proxy = await _fetch_task(tasks_api, proxy_name)
         if proxy is None:
-            proxy = await _create_proxy_task(tasks_api, root_task_name)
-        if proxy is None or not _is_expected_proxy(proxy, root_task_name):
+            proxy = await _create_proxy_task(tasks_api, root_task_name, root)
+        if proxy is None or not _is_expected_proxy(proxy, root_task_name, root):
             logger.error(
                 "Task %s exists but is not the proxy ATW requires (backend=%r, "
                 "data=%r, run_result_recorder=%r); dispatching unwrapped so the "
