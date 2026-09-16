@@ -776,7 +776,7 @@ class TestTaskHistory:
     def test_anonymized_entities_none_mask_falls_back_to_task(
         self, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert a None history mask returns the associated task's entities."""
+        """Assert a ``None`` history mask returns the associated task's entities."""
         task_mask = PIIEntity.EMAIL_ADDRESS | PIIEntity.IP_ADDRESS
         task = TaskFactory.build(
             id=1, name="test-task", data={"key": "val"}, anonymize_mask=task_mask
@@ -797,7 +797,7 @@ class TestTaskHistory:
     def test_anonymized_entities_none_mask_follows_task_owner_defaults(
         self, execution_request: TaskExecutionRequest
     ) -> None:
-        """Assert None on both history and task falls through to owner defaults."""
+        """Assert ``None`` on both history and task falls through to owner defaults."""
         default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
         mock_defaults = defaultdict(lambda: default_entities)
         task = TaskFactory.build(

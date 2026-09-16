@@ -4867,68 +4867,31 @@ class TestStreamFile:
         assert chunks == [b""]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("history_mask", "task_mask", "expected_entities"),
+        [
+            (int(PIIEntity.CREDIT_CARD), None, {PIIEntity.CREDIT_CARD}),
+            (None, int(PIIEntity.PERSON), {PIIEntity.PERSON}),
+        ],
+    )
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_stream_file_with_anonymization(self, mock_nomad_cls, mock_anonymize):
-        """Assert stream_file applies anonymization when entities are set."""
-        mock_backend = MagicMock()
-        mock_nomad_cls.return_value = mock_backend
-        mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
-        mock_anonymize.return_value = "REDACTED"
-
-        executor = _build_executor()
-        queue_item = _build_queue_item(
-            tracking={
-                "allocation_id": "alloc-1",
-                "evaluation_id": "eval-1",
-                "job_id": "job-1",
-            }
-        )
-        queue_item.anonymize_mask = 1
-
-        file_content = b"sensitive data"
-        stat_response = AsyncMock()
-        stat_response.raise_for_status = MagicMock()
-        stat_response.json = AsyncMock(
-            return_value={"Size": len(file_content), "IsDir": False}
-        )
-
-        read_response = AsyncMock()
-        read_response.raise_for_status = MagicMock()
-        read_response.read = AsyncMock(return_value=file_content)
-
-        def mock_request(method, path, **kwargs):
-            ctx = AsyncMock()
-            if "stat" in path:
-                ctx.__aenter__ = AsyncMock(return_value=stat_response)
-            else:
-                ctx.__aenter__ = AsyncMock(return_value=read_response)
-            ctx.__aexit__ = AsyncMock(return_value=False)
-            return ctx
-
-        with patch.object(executor, "_request", side_effect=mock_request):
-            chunks = [
-                chunk
-                async for chunk in executor.stream_file(queue_item, "/output/dump.sql")
-            ]
-
-        assert b"".join(chunks) == b"REDACTED"
-        mock_anonymize.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
-    @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_stream_file_anonymizes_when_history_mask_is_none(
-        self, mock_nomad_cls, mock_anonymize
+    async def test_stream_file_with_anonymization(
+        self,
+        mock_nomad_cls,
+        mock_anonymize,
+        history_mask,
+        task_mask,
+        expected_entities,
     ):
-        """Assert stream_file anonymizes via the task mask when history mask is None."""
+        """Assert stream_file anonymizes via history mask, or task mask when history is ``None``."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
         mock_anonymize.return_value = "REDACTED"
 
         task = _build_task()
-        task.anonymize_mask = int(PIIEntity.PERSON)
+        task.anonymize_mask = task_mask
         executor = _build_executor()
         queue_item = _build_queue_item(
             task=task,
@@ -4938,7 +4901,7 @@ class TestStreamFile:
                 "job_id": "job-1",
             },
         )
-        queue_item.anonymize_mask = None
+        queue_item.anonymize_mask = history_mask
 
         file_content = b"sensitive data"
         stat_response = AsyncMock()
@@ -4967,7 +4930,7 @@ class TestStreamFile:
             ]
 
         assert b"".join(chunks) == b"REDACTED"
-        mock_anonymize.assert_called_once_with("sensitive data", {PIIEntity.PERSON})
+        mock_anonymize.assert_called_once_with("sensitive data", expected_entities)
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
