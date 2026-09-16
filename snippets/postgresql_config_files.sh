@@ -15,12 +15,12 @@
 #  - name: auto-config-file
 #    type: str
 #    label: postgresql.auto.conf path
-#    description: Path to postgresql.auto.conf. Defaults to the same directory as --config-file or the detected data_directory.
+#    description: Path to postgresql.auto.conf. Looked for in the detected data directory, then beside the postgresql.conf path, when left empty.
 #    placeholder: /var/lib/postgresql/16/main/postgresql.auto.conf
 #  - name: data-dir
 #    type: str
 #    label: PostgreSQL data directory
-#    description: Override for the PostgreSQL data_directory (used to locate postgresql.auto.conf when --auto-config-file is not given).
+#    description: Where the PostgreSQL data directory lives. Used to find postgresql.auto.conf, and detected from the server when this is left empty.
 #    placeholder: /var/lib/postgresql/16/main
 #  - name: output
 #    type: str
@@ -35,7 +35,7 @@
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # atw:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL

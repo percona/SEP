@@ -3404,6 +3404,19 @@ export interface paths {
     /**
      * Download Task History File
      * @description Stream a task history's archived file as a binary download.
+     *
+     *     Upstream errors raised while priming the stream surface as the real status
+     *     before any response is committed, rather than as a misleading 200 with an
+     *     empty body.
+     *
+     *     :param request: Incoming download request; ``path`` selects the archived
+     *         file.
+     *     :param user: Authenticated viewer whose access token authorizes the stream.
+     *     :param task_history: Task history whose archived file is downloaded.
+     *     :param tasks_client: Tasks API client used to list metadata and stream
+     *         bytes.
+     *     :return: Streaming response of the archived file as
+     *         ``application/octet-stream``.
      */
     get: operations['tasks_download_task_history_file_files__task_history_id__download_get'];
     put?: never;
@@ -5633,13 +5646,16 @@ export interface components {
     };
     /**
      * ATWIncidentExecutionResponse
-     * @description Represent one recorded incident execution, hydrated with live task status.
+     * @description Represent one recorded incident execution with live task status and snippet title.
      *
-     *     The hydrated fields are ``None`` when the Tasks API could not be reached for
-     *     that row; the locally-recorded fields are always present.
+     *     The task-status fields are ``None`` when the Tasks API could not be reached
+     *     for that row; the locally-recorded fields are always present.
      *
      *     :param id: The execution row's UUID primary key.
      *     :param snippet_filename: The executed snippet's filename.
+     *     :param snippet_title: The snippet's current display title, falling back to its
+     *         filename when its metadata title is missing or blank. ``None`` when the
+     *         snippet cannot be resolved. Defaults to ``None``.
      *     :param task_history_id: The tasks-service execution this row references.
      *     :param created_at: When the execution was recorded.
      *     :param task_status: The upstream execution status.
@@ -5678,6 +5694,8 @@ export interface components {
       masked_args?: string | null;
       /** Snippet Filename */
       snippet_filename: string;
+      /** Snippet Title */
+      snippet_title?: string | null;
       /** Started At */
       started_at?: string | null;
       /** Task History Id */
@@ -7806,8 +7824,10 @@ export interface components {
      * @description Represent a labelled group of related fields rendered as one fieldset.
      *
      *     :param title: The section heading displayed above the grouped fields.
-     *     :param description: Optional helper text rendered beneath the section
-     *         heading. Defaults to ``None``.
+     *     :param description: Optional helper text for the section. SEP's
+     *         renderer shows it beneath the section heading, but a renderer may
+     *         omit it, so do not put guidance here that a user must see. Defaults
+     *         to ``None``.
      *     :param fields: The list of fields belonging to this section. May include
      *         :class:`OneOfGroup` containers alongside leaf fields.
      *     :param cardinality_rules: Optional cross-field cardinality constraints
@@ -9545,6 +9565,12 @@ export interface components {
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
      *     markers drive only the ``GET /schema`` widgets, while the conditional,
      *     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
+     *
+     *     ``service_id`` is declared first because ``backup_source`` and ``schema_id``
+     *     cascade from it. Its ``Requires`` gate checks only *presence*, so a Mydumper
+     *     body naming no service is rejected at body validation; deciding the value is
+     *     a resolvable service rather than a typed name or the placeholder stays in
+     *     ``deps.resolve_restore_entities``.
      */
     mysql_backups__RestoreCreate: {
       /**

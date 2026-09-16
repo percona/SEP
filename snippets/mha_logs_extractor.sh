@@ -8,21 +8,21 @@
 # service_type: mysql
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    ge: 1
-#    required: true
+#    default: 30
 #  - name: log-file
 #    type: str
 #    label: Log file path
 #    description: The path to your MHA log file
-#    placeholder: /var/log/mha/manager.log
+#    default: /var/log/mha/manager.log
 #  - name: output
 #    type: str
 #    description: Where to send the output
@@ -30,7 +30,7 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 # ---
@@ -40,10 +40,10 @@
 # This script extracts a portion of the MHA log based on a given time
 # and a specified number of minutes before and after that time.
 #
-# Usage: ./mha_logs_extractor.sh --time "<YYYY-MM-DD HH:MM:SS>" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]
+# Usage: ./mha_logs_extractor.sh --time "<YYYY-MM-DDTHH:MM:SS>" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]
 #
 # Arguments:
-#   --time "<YYYY-MM-DD HH:MM:SS>": The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#   --time "<YYYY-MM-DDTHH:MM:SS>": The central timestamp to focus on (e.g., "2023-10-27T15:30:00").
 #                                   This argument is required.
 #   --minutes <minutes>: The number of minutes before and after the central timestamp to include.
 #                        For example, if you provide 10, the script will show logs from 10 minutes
@@ -61,16 +61,16 @@ DEFAULT_MHA_LOG="/var/log/mha/manager.log"
 
 # Function to display usage information
 usage() {
-    echo "Usage: $0 --time \"<YYYY-MM-DD HH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
-    echo "Example: $0 --time \"2023-10-27 15:30:00\" --minutes 5 --log-file /var/log/mha/manager.log --output file"
-    echo "         $0 --time \"2024-01-01 10:00:00\" --minutes 30"
+    echo "Usage: $0 --time \"<YYYY-MM-DDTHH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
+    echo "Example: $0 --time \"2023-10-27T15:30:00\" --minutes 5 --log-file /var/log/mha/manager.log --output file"
+    echo "         $0 --time \"2024-01-01T10:00:00\" --minutes 30"
     echo ""
     echo "This script extracts a portion of the MHA log."
     echo "It will print log entries from <minutes> before to <minutes> after"
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
+    echo '  --time "<YYYY-MM-DDTHH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the MHA log file. Defaults to /var/log/mha/manager.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' to print to the terminal (default), or 'file' to write the output to a file named by the timestamp."

@@ -93,12 +93,13 @@ from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_SERVICE_TYPE
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = "atw"
+ATW_META_KEY = META_KEY_ATW
 ATW_META_WARNING = (
     f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
 )
@@ -204,7 +205,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
-        root = derive_category_root(snippet.meta.get("service_type"))
+        root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
         tags = []
         if ATW_META_KEY in snippet.meta:
             raw_atw = snippet.meta[ATW_META_KEY]
@@ -647,18 +648,19 @@ def _build_execution_response(
     history: dict[str, Any],
     script: SnippetScript | None,
 ) -> ATWIncidentExecutionResponse:
-    """Merge a recorded execution row with its upstream task-history payload.
+    """Merge a recorded execution with live task history and the snippet title.
 
     :param execution: The locally-recorded execution row.
     :param history: The upstream task-history payload, empty when unavailable.
-    :param script: The resolved snippet whose parameter metadata drives argument
-        masking, or ``None`` when its filename no longer resolves.
+    :param script: The resolved snippet supplying the title and parameter metadata
+        for argument masking, or ``None`` when its filename no longer resolves.
     :return: The combined execution response.
     """
     masked_args, args_withheld = _execution_args(history, script)
     return ATWIncidentExecutionResponse(
         id=execution.id,
         snippet_filename=execution.snippet_filename,
+        snippet_title=None if script is None else script.snippet.title,
         task_history_id=execution.task_history_id,
         created_at=execution.created_at,
         task_status=history.get("status"),
