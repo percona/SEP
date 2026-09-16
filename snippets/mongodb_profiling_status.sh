@@ -2,14 +2,14 @@
 
 # ---
 # title: "MongoDB Profiling Status"
-# description: "Captures the database profiler status from a MongoDB instance via db.getProfilingStatus() — profiling level, slowms threshold, sample rate and filter — for every database, or for a single database with --database."
+# description: "Captures the database profiler status from a MongoDB instance via db.getProfilingStatus() — profiling level, slowms threshold, sample rate and filter — for every database, or for a single named one."
 # allow_extra_args: false
 # sudo: optional
 # parameters:
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the MongoDB instance. Defaults to localhost.
+#    description: Hostname or IP of the MongoDB instance.
 #    default: localhost
 #  - name: port
 #    type: int
