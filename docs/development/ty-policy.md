@@ -14,6 +14,13 @@ runs in CI, in the two layers recorded under *Enforcement*: a blocking
 `typecheck` job over the whole tree, and an advisory `typecheck_diff` job over
 what a branch adds. Neither target is part of `lint` or pre-commit.
 
+**"Advisory" here means "not wired into `ci-success`", not "quiet".**
+`typecheck_diff` fails its own step and shows a red check on the pull request
+whenever the branch adds a diagnostic; what it does not do is fail the aggregate
+`ci-success` job, whose `needs` list omits it, so it never gates the merge. Read
+a red `typecheck_diff` as a report to act on rather than as a broken build — and
+do not read a green pull request overall as evidence that it is clean.
+
 Every measurement below was taken with **ty 0.0.49**, the version pinned in the
 `typecheck` Poetry group, but the numbers fall into two classes that are read
 differently.
@@ -189,10 +196,21 @@ two different programs.
 
 Enforcement runs in **CI**, in two layers. Not pre-commit, and not local-only.
 
-| Layer | Scope | Reads | Job |
-|---|---|---|---|
-| 1 | the whole tree | the exit status of `make typecheck` | hold error severity at zero |
-| 2 | the changed non-test Python files | the diagnostics themselves | detect what the `warn` rules report |
+| Layer | Scope | Reads | Job | Gates the merge? |
+|---|---|---|---|---|
+| 1 | the whole tree | the exit status of `make typecheck` | hold error severity at zero | yes — `typecheck` is reached through `ci-success` |
+| 2 | the changed non-test Python files | the diagnostics themselves | detect what the `warn` rules report | no — `typecheck_diff` is absent from `ci-success`'s `needs`, so it reports red without blocking |
+
+Layer 2 reaches the `warn` rules by re-running `ty` with each of them forced to
+`error` (`--error <rule>`, one per rule), then comparing the resulting set against
+`BASE_SHA`. That forcing is why the same diagnostic prints as `warning` from any
+tool that reads the severity table and as `error` in this job's output — so a
+local check honouring the configured severities can be clean while layer 2 is red
+on the same tree, and reproducing layer 2 means reproducing the forcing:
+
+```bash
+BASE_SHA="$(git merge-base origin/main HEAD)" make typecheck-diff
+```
 
 **Both layers run the pinned binary, never whatever `ty` is first on `PATH`.**
 Layer 1 gets that by invoking `make typecheck`, which runs `${VENV_BIN}/ty` — a
