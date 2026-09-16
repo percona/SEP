@@ -282,7 +282,9 @@ class TestSiblingPayloadsResolveTheSameWay:
             and isinstance(node.targets[0], ast.Name)
             and node.targets[0].id == "DEFAULT_MYCNF"
         )
-        assert "CURRENT_USER_HOME_DIR" in ast.get_source_segment(source, assignment)
+        segment = ast.get_source_segment(source, assignment)
+        assert segment, f"{payload} carries no source for its DEFAULT_MYCNF assignment"
+        assert "CURRENT_USER_HOME_DIR" in segment
 
 
 class TestGuardWiredIntoRun:
