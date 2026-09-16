@@ -166,10 +166,6 @@ async def list_hosts(
         ``OSError`` (e.g. a connection failure).
     """
     try:
-        # The client is a generic JSON one, so its return type is the union of
-        # every shape a route can answer with. This route has always read
-        # ``/hosts/`` as a name-to-address mapping, and a payload that is not one
-        # raises below rather than reaching the response.
         executor_hosts = cast(dict[str, str], await tasks_api.get("/hosts/"))
     except (HTTPException, OSError) as exc:
         detail = getattr(exc, "detail", str(exc))
