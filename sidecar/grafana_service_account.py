@@ -17,9 +17,10 @@
 ``entrypoint.sh`` runs this once, after ``settings-env.sh`` has expanded the
 deployment inputs and before it execs supervisord, and captures stdout. Stdout
 carries the resolved token and nothing else; every diagnostic goes to stderr.
-Printing nothing means there was nothing to resolve: a token already
-configured, a provider other than Grafana, or settings that did not
-resolve. None of those is a failure.
+An already-configured token under either mint-gate name is printed so
+``entrypoint.sh`` can export it, with no Grafana mint. Printing nothing means
+there was genuinely nothing to resolve: a provider other than Grafana, or
+settings that did not resolve. Neither of those is a failure.
 
 Configuration is read from the application's own settings classes rather than
 re-derived, so the endpoint, the TLS setting and the two canonical token names
@@ -432,7 +433,7 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
 
 
 def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
-    """Return the already-configured token under either canonical name, or None.
+    """Return the already-configured token under either canonical name, or ``None``.
 
     ``AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`` wins when both resolve to
     different values. A blank value counts as absent at every layer, which is
@@ -447,7 +448,7 @@ def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
 
 
 def resolve_provider() -> GrafanaSDK | str | None:
-    """Return a Grafana client to mint against, an already-resolved token, or None.
+    """Return a Grafana client to mint against, an already-resolved token, or ``None``.
 
     Distinguishes the two former ``None`` cases: a token already configured under
     either canonical name is returned as that value so ``entrypoint.sh`` can
