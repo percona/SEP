@@ -55,6 +55,8 @@ from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_TITLE
+from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import TaskHistoryStatusEnum
 
 SCHEMA_URL = "/api/apps/atw/execution-schema/"
@@ -128,12 +130,15 @@ def create_snippet(
         approved: bool = True,
         sudo: SnippetSudoOption | None = None,
         allow_extra_args: bool | None = None,
+        title: str | None = None,
     ) -> Snippet:
         target = snippets_dir / filename
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("#!/bin/sh\necho hi\n")
         snippet = Snippet(filename=filename, size=20, md5_digest=_SEEDED_MD5)
         meta = dict(snippet.meta)
+        if title is not None:
+            meta[META_KEY_TITLE] = title
         if parameters is not None:
             meta["parameters"] = parameters
         if sudo is not None:
@@ -1085,7 +1090,7 @@ class TestAtwListIncidentExecutions:
 
 
 class TestAtwIncidentExecutionMaskedArgs:
-    """Check the recorded arguments GET .../executions/ reports for each row.
+    """Check the arguments and snippet titles GET .../executions/ reports per row.
 
     Snippet resolution is deliberately left unstubbed so the real
     ``resolve_snippets`` -> ``get_execution_model`` -> ``mask_snippet_args`` chain
@@ -1151,6 +1156,64 @@ class TestAtwIncidentExecutionMaskedArgs:
         return {item["task_history_id"]: item for item in response.json()["items"]}
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("title", "expected"),
+        [
+            ("MySQL summary", "MySQL summary"),
+            (None, "summary.sh"),
+            ("", "summary.sh"),
+            ("   ", "summary.sh"),
+        ],
+        ids=["display-title", "missing-title", "empty-title", "blank-title"],
+    )
+    async def test_snippet_title(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+        title: str | None,
+        expected: str,
+    ) -> None:
+        """Return the display title or filename fallback for a resolved snippet."""
+        await create_snippet("summary.sh", title=title)
+        await seed_execution("summary.sh")
+        tasks_api.get.return_value = self._history(None)
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["snippet_filename"] == "summary.sh"
+        assert item["snippet_title"] == expected
+
+    @pytest.mark.asyncio
+    async def test_snippet_title_reflects_edits_after_execution(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        session: AsyncSession,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Read the current title even when arguments are withheld after a snippet edit."""
+        snippet = await create_snippet("summary.sh", title="Original title")
+        await seed_execution("summary.sh")
+        snippet.meta = {**snippet.meta, META_KEY_TITLE: "Updated title"}
+        await SnippetManager.save(session, snippet)
+        tasks_api.get.return_value = self._history("--port 3306", md5_checksum="b" * 32)
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["snippet_title"] == "Updated title"
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
+
+    @pytest.mark.asyncio
     async def test_masked_args_are_returned(
         self,
         api_client: TestClient,
@@ -1177,6 +1240,7 @@ class TestAtwIncidentExecutionMaskedArgs:
         item = response.json()["items"][0]
         assert item["args_withheld"] is False
         assert item["masked_args"] == f"--port 27017 --password {SENSITIVE_ARG_MASK}"
+        assert item["snippet_title"] == "mongo-check.sh"
         assert secret not in response.text
 
     @pytest.mark.asyncio
@@ -1226,6 +1290,36 @@ class TestAtwIncidentExecutionMaskedArgs:
         assert item["masked_args"] is None
         assert item["args_withheld"] is True
         assert "s3cr3t" not in response.text
+        assert item["snippet_title"] is None
+        assert item["snippet_filename"] == "deleted-since.sh"
+
+    @pytest.mark.asyncio
+    async def test_args_withheld_when_upstream_could_not_read_them(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+    ) -> None:
+        """Report an undecryptable argument leaf as withheld, not as no arguments.
+
+        The tasks service serialises such a leaf as ``null`` and names it in
+        ``unreadable_request_leaves``; without reading that field the row is
+        indistinguishable from one that recorded no arguments at all.
+        """
+        await create_snippet("mongo-check.sh", parameters=[])
+        await seed_execution("mongo-check.sh")
+        history = self._history(None)
+        history["unreadable_request_leaves"] = [ARGS_LEAF]
+        tasks_api.get.return_value = history
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert item["masked_args"] is None
+        assert item["args_withheld"] is True
 
     @pytest.mark.asyncio
     async def test_execution_without_arguments_reports_the_empty_state(
@@ -1275,6 +1369,8 @@ class TestAtwIncidentExecutionMaskedArgs:
 
         assert response.status_code == status.HTTP_200_OK
         rows = self._rows_by_task_id(response)
+        assert rows[_FIRST_TASK_ID]["snippet_title"] == "mongo-check.sh"
+        assert rows[_SECOND_TASK_ID]["snippet_title"] == "mongo-check.sh"
         assert rows[_FIRST_TASK_ID]["masked_args"] is None
         assert rows[_FIRST_TASK_ID]["args_withheld"] is True
         assert rows[_SECOND_TASK_ID]["masked_args"] == (
@@ -1304,6 +1400,10 @@ class TestAtwIncidentExecutionMaskedArgs:
 
         assert response.status_code == status.HTTP_200_OK
         rows = self._rows_by_task_id(response)
+        assert set(rows) == {_FIRST_TASK_ID, _SECOND_TASK_ID}
+        assert response.json()["total"] == len(rows)
+        assert rows[_FIRST_TASK_ID]["snippet_title"] == "mongo-check.sh"
+        assert rows[_SECOND_TASK_ID]["snippet_title"] is None
         assert rows[_FIRST_TASK_ID]["masked_args"] == f"--password {SENSITIVE_ARG_MASK}"
         assert rows[_SECOND_TASK_ID]["args_withheld"] is True
         assert "s3cr3t" not in response.text
@@ -1417,6 +1517,34 @@ class TestAtwIncidentExecutionMaskedArgs:
 
         assert response.status_code == status.HTTP_200_OK
         rows = self._rows_by_task_id(response)
+        assert [row["args_withheld"] for row in rows.values()] == [True, True]
+        assert [row["snippet_title"] for row in rows.values()] == [None, None]
+        assert "s3cr3t" not in response.text
+
+    @pytest.mark.asyncio
+    async def test_snippet_resolution_failure_still_returns_the_page(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        seed_execution: Callable[..., Awaitable[AtwIncidentExecution]],
+        mocker: MockerFixture,
+    ) -> None:
+        """Return every row with a null title when snippet file lookup fails."""
+        await create_snippet("summary.sh", title="MySQL summary")
+        await seed_execution("summary.sh", task_history_id=_FIRST_TASK_ID)
+        await seed_execution("summary.sh", task_history_id=_SECOND_TASK_ID)
+        tasks_api.get.return_value = self._history("--password s3cr3t")
+        mocker.patch.object(Path, "is_file", autospec=True, side_effect=OSError)
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        rows = self._rows_by_task_id(response)
+        assert set(rows) == {_FIRST_TASK_ID, _SECOND_TASK_ID}
+        assert response.json()["total"] == len(rows)
+        assert [row["snippet_title"] for row in rows.values()] == [None, None]
         assert [row["args_withheld"] for row in rows.values()] == [True, True]
         assert "s3cr3t" not in response.text
 

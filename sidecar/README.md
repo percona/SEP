@@ -21,6 +21,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `supervisord.conf` | Runs `valkey`, four `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `wait_for_api.py` | Run by `supervisord` ahead of the beat command; holds beat until the three APIs answer `/health`, then starts it whatever the outcome. |
 | `wait_for_schema.sh` | Run by `supervisord` ahead of each API command; holds the API until all four schema one-shots have published their sentinel, and fails rather than starting it if they do not. |
+| `clear_sentinels.sh` | Never run by `supervisord`; an operator runs it before a `supervisorctl` re-run of a schema step, to invalidate that step's sentinel. See [Re-running a schema step inside a running container](#re-running-a-schema-step-inside-a-running-container). |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values. |
@@ -544,12 +545,98 @@ lands whenever the store appears.
 An API still inside its gate reports `RUNNING`, so the program-state assertion
 is weaker than it reads for those three — the `/health` probe is what keeps a
 healthy container meaning the APIs answer. `entrypoint.sh` clears the four
-sentinels before any program is spawned, so a restart cannot release a gate on
-the previous run's markers.
+sentinels before any program is spawned, so a *container* restart cannot release
+a gate on the previous run's markers. A `supervisorctl` restart does not re-enter
+it; see below.
 
 `HEALTHCHECK` is configured `--interval=15s --timeout=15s --start-period=150s
 --retries=5`, so a program going down surfaces as an unhealthy container after
 roughly 75-80s.
+
+### Re-running a schema step inside a running container
+
+To re-apply one schema step without restarting the container, clear its sentinel
+first, then restart that one-shot together with the API programs:
+
+```
+docker exec <container> /home/sep/app/clear_sentinels.sh sep
+docker exec <container> supervisorctl -c /home/sep/app/supervisord.conf \
+    restart migrate-sep sep inventory tasks
+```
+
+If the step owns tables Celery reads, **stop the Celery programs before that
+clear** and start them again only once `/tmp/migrate-sep.ok` has reappeared:
+
+```
+docker exec <container> supervisorctl -c /home/sep/app/supervisord.conf \
+    stop celery-worker celery-beat
+# ... the clear and restart above ...
+docker exec <container> supervisorctl -c /home/sep/app/supervisord.conf \
+    start celery-worker celery-beat
+```
+
+**Clear first, then restart.** `supervisorctl` starts the programs it is given
+one at a time in argument order, and each API blocks for its `startsecs` (8s)
+before the next is started — so without clearing, whether a restarted API's gate
+reads the previous run's sentinel depends on argument order and on how quickly
+the one-shot reaches the `rm -f` at the head of its own command. Once the
+sentinel is cleared there is nothing stale left to observe and the order stops
+mattering.
+
+**Name every step you are re-running, in one call** — `clear_sentinels.sh sep
+tasks`, then `restart migrate-sep migrate-tasks sep inventory tasks`. The script
+takes the bare step names the gate takes, not `supervisord` program names:
+`migrate-sep` is refused.
+
+**Continue only if the clear exits 0.** A non-zero exit on an unrecognized name
+has removed nothing at all, so fix the name and re-run. A non-zero exit from `rm`
+is different: it stops at that step, so the steps named before it are already
+cleared while it and every step named after it may still hold a marker. Those
+cleared markers have no re-run coming, and `healthcheck.sh` asserts all four, so
+the container stays unhealthy until they are republished — resolve whatever
+blocked the `rm`, then re-run the clear and restart the one-shots for every step
+it had already cleared, or restart the container, which clears and re-runs all
+four through PID 1.
+
+**Restart the one-shot together with the API programs.** An API restarted
+without its one-shot waits out the 300s gate budget and then cycles, as above; an
+API left unrestarted keeps running and never re-enters its gate, so it goes on
+serving against the schema it started with. The APIs are safe to name in the same
+call as the one-shot precisely because each re-enters `wait_for_schema.sh` and
+holds there until the sentinel is republished.
+
+**Stop Celery before the clear, start it after the sentinel — never name it in
+the restart.** `celery-worker` carries no schema gate at all, and `celery-beat`
+is gated only on the APIs answering, so neither re-checks the schema on its own.
+That cuts both ways. A worker left running consumes tasks against the tables
+throughout the re-run, which is why it is stopped up front rather than merely
+restarted at the end. And naming it in the restart call would start it too early:
+supervisord flips a gated API to `RUNNING` once its `startsecs` (8s) elapses even
+though its shell is still inside the gate, so supervisorctl would reach the
+Celery programs roughly 24 seconds in — while a slow or failed migration is still
+running — and the ungated worker would begin consuming tasks against the
+incomplete schema. Queued tasks are held in the broker while Celery is stopped,
+so nothing is lost; in-flight ones are interrupted by the stop, exactly as they
+would be by a restart.
+
+**The container reports unhealthy until the step republishes its sentinel**,
+because `healthcheck.sh` asserts all four. A re-run taking longer than roughly
+75-80s therefore surfaces as an unhealthy container until it finishes.
+
+**Expected output.** `migrate-sep: ERROR (not running)` from the stop half is
+normal for a one-shot that has already exited, and leaves the command's exit
+status unchanged. The one-shot's own `started` or `ERROR (abnormal termination)`
+line is not its verdict either — a step that exits promptly is reported that way
+whether it succeeded or failed. Nor is `supervisorctl`'s own exit status: the
+start half *does* fault on `ERROR (abnormal termination)`, so the command exits
+non-zero on exactly the line above that you are being told to ignore. Do not gate
+a script on `$?` here. The sentinel is the verdict, exactly as it is for the
+healthcheck.
+
+`-c /home/sep/app/supervisord.conf` is passed explicitly, as `healthcheck.sh`
+does. `docker exec` runs as the image's `sep` user, which owns both the sentinels
+and the `0700` supervisor socket, and needs nothing from PID 1's exported
+environment.
 
 ## Deployment caveat
 

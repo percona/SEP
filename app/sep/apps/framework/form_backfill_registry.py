@@ -21,13 +21,17 @@ declarations, so the backfill orchestrator names no app.
 
 The reconstructor callable an app must supply, and the shared context that
 callable receives, live here so an app package can read the whole contract
-from one module.
+from one module. The owner vocabulary the declarations establish is also what a
+command line selects against, so the ``--owner`` / ``--verbose`` flags every
+form-backfill entry point offers are built from here rather than per CLI.
 """
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from importlib import import_module
 from typing import Any, TYPE_CHECKING
 
@@ -52,7 +56,9 @@ __all__ = [
     "FormBackfillEntry",
     "FormReconstructor",
     "StampRepairer",
+    "add_owner_and_verbose_arguments",
     "collect_form_backfill_entries",
+    "owner_from_cli",
 ]
 
 DECLARATION_ATTR = "FORM_BACKFILL_ENTRIES"
@@ -110,6 +116,8 @@ class FormBackfillEntry:
 
 def collect_form_backfill_entries(
     plugins: Iterable[App] | None = None,
+    *,
+    owners: Iterable[str] | None = None,
 ) -> list[FormBackfillEntry]:
     """Collect backfill entries declared by activated apps, in activation order.
 
@@ -119,6 +127,8 @@ def collect_form_backfill_entries(
 
     :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
+    :param owners: When set, keep only the entries declaring one of these task
+        owners; otherwise every declared entry is returned.
     :return: The merged backfill entries.
     :raises ModuleNotFoundError: If an activated app's package is not installed,
         propagating from either import of it.
@@ -130,6 +140,7 @@ def collect_form_backfill_entries(
     """
     activation = list(plugins if plugins is not None else sep_settings.APPS)
     registry = build_app_registry(activation)
+    owner_filter = set(owners) if owners is not None else None
     entries: list[FormBackfillEntry] = []
     seen_keys: set[str] = set()
     for plugin in activation:
@@ -159,5 +170,60 @@ def collect_form_backfill_entries(
                     f" {entry.app_key!r}.",
                 )
             seen_keys.add(entry.app_key)
-            entries.append(entry)
+            # Filtered after validation, not before: a duplicate or unknown app
+            # key is a declaration error whichever owner the caller asked for.
+            if owner_filter is None or entry.owner in owner_filter:
+                entries.append(entry)
     return entries
+
+
+def owner_from_cli(value: str, valid_owners: frozenset[str]) -> str:
+    """Parse a CLI ``--owner`` value into an in-scope owner string.
+
+    :param value: The owner string (for example ``CHECKSUMS``), case-insensitive.
+    :param valid_owners: The owners declared by the collected backfill entries.
+    :return: The normalized (upper-cased) owner string.
+    :raises argparse.ArgumentTypeError: When ``value`` names no in-scope app owner.
+    """
+    normalized = value.strip().upper()
+    if normalized in valid_owners:
+        return normalized
+    if not valid_owners:
+        raise argparse.ArgumentTypeError(
+            f"unknown owner {value!r}; no activated app declares a form backfill"
+        )
+    valid = ", ".join(sorted(valid_owners))
+    raise argparse.ArgumentTypeError(
+        f"unknown owner {value!r}; expected one of: {valid}"
+    )
+
+
+def add_owner_and_verbose_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    valid_owners: frozenset[str],
+    subject: str,
+) -> None:
+    """Add the ``--owner`` and ``--verbose`` flags every form-backfill CLI shares.
+
+    :param parser: The parser to extend.
+    :param valid_owners: The owners declared by the collected backfill entries.
+    :param subject: What ``--owner`` narrows, for the help text (``"run"``,
+        ``"audit"``).
+    """
+    parser.add_argument(
+        "--owner",
+        action="append",
+        type=partial(owner_from_cli, valid_owners=valid_owners),
+        dest="owners",
+        metavar="OWNER",
+        help=(
+            f"Limit the {subject} to one or more task owners (repeatable). "
+            "Defaults to all in-scope owners."
+        ),
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging.",
+    )

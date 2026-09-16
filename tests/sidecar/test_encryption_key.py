@@ -611,10 +611,25 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
         pytest.param([{"ROUTING_KEY": ciphertext()}], id="nested-in-list"),
         pytest.param({"a": {"b": ciphertext()}}, id="nested-in-mapping"),
         pytest.param([["deep", ciphertext()]], id="nested-in-nested-list"),
+        pytest.param(f"https://user:{ciphertext()}@host:8443/", id="url-password"),
+        pytest.param(
+            [{"endpoint": f"https://user:{ciphertext()}@host:8443/"}],
+            id="url-password-nested-in-list",
+        ),
+        pytest.param(
+            {"PMM": {"endpoint": f"https://user:{ciphertext()}@host:8443/"}},
+            id="url-password-nested-in-mapping",
+        ),
     ],
 )
 def test_ciphertext_is_found_at_every_json_position(value: Any):
-    """Walk the decoded value rather than testing the row, which is a container."""
+    """Walk the decoded value rather than testing the row, which is a container.
+
+    A credential-URL leaf hides its token inside the userinfo segment, so
+    ``is_encrypted`` on the whole string answers ``False`` — a deployment whose
+    only encrypted data is an endpoint password would otherwise clear the mint
+    path and come up green with those overrides silently reverted to YAML.
+    """
     assert helper.contains_ciphertext(value)
 
 
@@ -627,6 +642,9 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
         pytest.param(None, id="null"),
         pytest.param(42, id="number"),
         pytest.param([], id="empty-list"),
+        pytest.param("https://user:hunter2@host:8443/", id="url-plaintext-password"),
+        pytest.param("https://host:8443/", id="url-without-userinfo"),
+        pytest.param("https://user:pw@[bad:ipv6/", id="url-unparseable"),
     ],
 )
 def test_a_value_with_no_token_is_not_read_as_ciphertext(value: Any):

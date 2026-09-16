@@ -19,7 +19,7 @@ from base64 import b64encode
 
 import pytest
 
-from app.core.utils.strings import b64encode_str, slugify
+from app.core.utils.strings import b64encode_str, join_or, slugify
 
 
 @pytest.mark.parametrize(
@@ -53,3 +53,28 @@ def test_b64encode_str():
 
     encoded = b64encode_str("café", encoding="latin-1")
     assert encoded == b64encode("café".encode("latin-1")).decode("latin-1")
+
+
+class TestJoinOr:
+    """Read a list of alternatives back as English prose."""
+
+    @pytest.mark.parametrize(
+        ("values", "expected"),
+        [
+            (["quicklz"], "quicklz"),
+            (["lz4", "quicklz"], "lz4 or quicklz"),
+            (["zstd", "lz4", "quicklz"], "zstd, lz4 or quicklz"),
+        ],
+        ids=["single", "pair", "three"],
+    )
+    def test_joins_alternatives(self, values, expected):
+        """Join the alternatives with commas and a trailing ``or``."""
+        assert join_or(values) == expected
+
+    def test_preserves_the_given_order(self):
+        """Leave the caller's ordering alone, since it carries meaning."""
+        assert join_or(["quicklz", "zstd", "lz4"]) == "quicklz, zstd or lz4"
+
+    def test_accepts_any_sequence(self):
+        """Take a tuple as readily as a list, as the matrix rows are tuples."""
+        assert join_or(("lz4", "quicklz")) == "lz4 or quicklz"

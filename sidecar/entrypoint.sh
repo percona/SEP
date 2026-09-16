@@ -81,8 +81,9 @@ unset grafana_token GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD
 # sentinel only after being spawned -- concurrently with the API programs now
 # gated on it, which could therefore read a previous run's marker. PID 1 runs
 # before supervisord starts anything, so clearing here covers every container
-# start and restart. A `supervisorctl restart` does not re-enter this script and
-# still races; nothing in the documented operation of the image does that.
+# start and restart. A `supervisorctl restart` does not re-enter this script, so
+# re-running a schema step inside a running container clears its sentinel first
+# through clear_sentinels.sh -- the sequence sidecar/README.md documents.
 rm -f /tmp/migrate-sep.ok /tmp/migrate-inventory.ok /tmp/migrate-tasks.ok \
     /tmp/migrate-beat.ok
 

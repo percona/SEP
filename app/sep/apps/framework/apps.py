@@ -501,6 +501,28 @@ class TaskExecutionApp(BaseApp):
             ref.check_connectivity for ref in iter_service_refs(self.create_model)
         )
 
+    @property
+    def offers_scheduling(self) -> bool:
+        """Return whether the schema this app serves declares ``scheduling``.
+
+        A script-source app serves its ``static_schema``; any other app serves the
+        ``schema=`` passthrough when one is set and the schema derived from its
+        views bundle otherwise. Reading the same source keeps the answer equal to
+        the capabilities the UI gates every schedule entry point on.
+
+        :return: ``True`` when the served capabilities declare ``scheduling``.
+        """
+        if self.script_source is not None:
+            static_schema = self.script_source.static_schema
+            capabilities = (
+                static_schema.capabilities if static_schema is not None else None
+            )
+        elif self.app_schema is not None:
+            capabilities = self.app_schema.capabilities
+        else:
+            capabilities = self.views.capabilities
+        return capabilities is not None and capabilities.scheduling
+
     @model_validator(mode="after")
     def _build_api_router(self) -> Self:
         """Validate the definition, bind the task dependency, and build the router.

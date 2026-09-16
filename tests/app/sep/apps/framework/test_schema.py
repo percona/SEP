@@ -3052,7 +3052,11 @@ class TestAppSchemaTaskStatuses:
             display_name="MySQL Backups",
             list_view=_minimal_list_view(),
             task_statuses=[
-                TaskStatusDescriptor(value=TaskHistoryStatusEnum.PENDING, terminal=True)
+                TaskStatusDescriptor(
+                    value=TaskHistoryStatusEnum.PENDING,
+                    terminal=True,
+                    output_available=True,
+                )
             ],
         )
 

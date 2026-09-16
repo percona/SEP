@@ -2,14 +2,14 @@
 
 # ---
 # title: "MongoDB Server Status"
-# description: "Captures db.serverStatus() from a MongoDB instance — connections, opcounters, memory, WiredTiger cache and concurrency tickets, network, replication and metrics — as a single snapshot or a timed series of samples for support diagnostics. Use --sections to narrow the output to selected top-level sections."
+# description: "Captures db.serverStatus() from a MongoDB instance — connections, opcounters, memory, WiredTiger cache and concurrency tickets, network, replication and metrics — as a single snapshot or a timed series of samples for support diagnostics. The output can be narrowed to selected top-level sections."
 # allow_extra_args: false
 # sudo: optional
 # parameters:
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the MongoDB instance. Defaults to localhost.
+#    description: Hostname or IP of the MongoDB instance.
 #    default: localhost
 #  - name: port
 #    type: int
