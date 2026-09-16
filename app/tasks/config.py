@@ -23,9 +23,9 @@ from annotated_types import Gt, Le
 from pydantic import (
     AfterValidator,
     Field,
-    field_validator,
     model_validator,
     PositiveInt,
+    StringConstraints,
 )
 from sqlalchemy_celery_beat.models import Period
 
@@ -112,33 +112,16 @@ class InventorySyncSchedule(BaseLowercaseModel):
 
     :param syncer: The fully qualified syncer this schedule targets, in
         ``BaseSyncer.get_name()`` form. Unlike ``SEP.SYNCERS[].SYNCER`` it is not
-        auto-prefixed, so the two spellings are not interchangeable.
+        auto-prefixed, so the two spellings are not interchangeable. Bounded
+        because a well-formed path is not necessarily a schedulable one: a longer
+        one overflows the seeded row name it derives.
     :param interval: How often this syncer's own seeded schedule fires.
     """
 
-    syncer: SyncerName  # settings-yaml-exempt: see SYNCER in settings.yaml
+    syncer: Annotated[  # settings-yaml-exempt: see SYNCER in settings.yaml
+        SyncerName, StringConstraints(max_length=MAX_SCHEDULED_SYNCER_LENGTH)
+    ]
     interval: IntervalSchedule  # settings-yaml-exempt: see INTERVAL in settings.yaml
-
-    @field_validator("syncer")
-    @classmethod
-    def reject_unschedulable_length(cls, value: str) -> str:
-        """Reject a syncer path too long to name a seeded schedule row.
-
-        A well-formed path is not necessarily a schedulable one: the derived row
-        name carries a fixed prefix, and overflowing the beat column fails the
-        seed at startup rather than at load, where nothing names the key to edit.
-
-        :param value: The configured syncer path.
-        :return: The validated path, unchanged.
-        :raises ValueError: If the path cannot fit a seeded schedule name.
-        """
-        if len(value) > MAX_SCHEDULED_SYNCER_LENGTH:
-            raise ValueError(
-                f"INVENTORY_SYNC_SCHEDULES names a syncer of {len(value)} "
-                f"characters; the seeded schedule name it derives would not fit, "
-                f"so keep it to {MAX_SCHEDULED_SYNCER_LENGTH}"
-            )
-        return value
 
 
 class PreExecutionCheckMode(StrEnum):

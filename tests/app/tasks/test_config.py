@@ -28,13 +28,16 @@ from app.core.settings_override.registry import (
     is_explicit_not_overridable,
     ReloadClassification,
 )
+from app.sep.sync.syncers.mysql.syncer import MySQLSyncer
+from app.sep.sync.syncers.pmm import PMMSyncer
+from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
 from app.tasks.config import (
     MAX_SCHEDULED_SYNCER_LENGTH,
     PreExecutionCheckMode,
     tasks_settings,
     TasksSettings,
 )
-from tests.app.tasks.conftest import PMM_SYNCER, SYSTEM_FACTS_SYNCER
+from tests.app.tasks.conftest import MYSQL_SYNCER, PMM_SYNCER, SYSTEM_FACTS_SYNCER
 
 EXPECTED_UVICORN_PORT = 8002
 EXPECTED_LOG_RETENTION_DAYS = 90
@@ -175,13 +178,17 @@ class TestTasksSettings:
 
         It satisfies the dotted-path check, so without this it would be accepted
         and then overflow the beat row name mid-seed, failing startup on
-        PostgreSQL with nothing naming the key to edit.
+        PostgreSQL. Pins the error's ``loc`` rather than its text, because that
+        is what names the key and the offending entry to whoever has to edit it.
         """
         overlong = "a" * (MAX_SCHEDULED_SYNCER_LENGTH - 1) + ".B"
-        with pytest.raises(ValidationError, match="would not fit"):
+        with pytest.raises(ValidationError) as excinfo:
             TasksSettings(
                 INVENTORY_SYNC_SCHEDULES=[{"SYNCER": overlong, "INTERVAL": "1 days"}]
             )
+        (error,) = excinfo.value.errors()
+        assert error["type"] == "too_long"
+        assert error["loc"] == ("INVENTORY_SYNC_SCHEDULES", 0, "syncer")
 
     def test_inventory_sync_schedules_accept_the_longest_schedulable_syncer(self):
         """Assert the bound admits a path that exactly fills the budget."""
@@ -275,3 +282,20 @@ class TestTasksSettings:
             "app.sep.apps",
             "acme_plugins.hooks",
         )
+
+
+class TestSyncerNameConstants:
+    """Test that the suite's hand-kept syncer paths match the real classes."""
+
+    def test_the_hand_kept_syncer_paths_match_their_classes(self) -> None:
+        """Pin each shared syncer-path constant against the class it names.
+
+        The tasks service never imports the sep syncers, so the constants are a
+        hand-kept copy — but a test can import them, and nothing else compares the
+        two. Settings validate a syncer path's shape and not its existence, so a
+        renamed syncer module would otherwise leave these stale and every
+        assertion using them still green.
+        """
+        assert PMMSyncer.get_name() == PMM_SYNCER
+        assert MySQLSyncer.get_name() == MYSQL_SYNCER
+        assert SystemFactsSyncer.get_name() == SYSTEM_FACTS_SYNCER
