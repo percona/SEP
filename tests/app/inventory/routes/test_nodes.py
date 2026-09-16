@@ -16,6 +16,7 @@
 """Define tests for inventory node routes."""
 
 import pytest
+from sqlalchemy import event
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
@@ -1058,6 +1059,40 @@ class TestListHostSystemObservations:
         assert response.status_code == status.HTTP_200_OK
         item = response.json()["items"][0]
         assert set(item) == {"node_id", "can_elevate", "observed_at"}
+
+    @pytest.mark.asyncio
+    async def test_does_not_fetch_the_json_blobs_from_the_database(
+        self, test_client: TestClient, session: AsyncSession, node: Node
+    ) -> None:
+        """Keep the two blob columns out of the query, not just out of the response.
+
+        ``response_model`` drops them after the database has already transferred
+        and deserialized them, so asserting on the response shape alone would pass
+        while every fleet-wide page still carried each node's full package list.
+        """
+        upsert = test_client.put(
+            f"/nodes/{node.id}/system-observation",
+            json=HostSystemObservationWriteFactory.build().model_dump(mode="json"),
+        )
+        assert upsert.status_code == status.HTTP_200_OK
+
+        statements: list[str] = []
+
+        def _record(conn, cursor, statement, *args) -> None:
+            statements.append(statement)
+
+        bind = session.get_bind()
+        event.listen(bind, "before_cursor_execute", _record)
+        try:
+            response = test_client.get("/nodes/system-observations")
+        finally:
+            event.remove(bind, "before_cursor_execute", _record)
+
+        assert response.status_code == status.HTTP_200_OK
+        selects = [s for s in statements if "hostsystemobservation" in s.lower()]
+        assert selects, "no observation query was captured"
+        assert not any("installed_packages" in s for s in selects)
+        assert not any("config" in s for s in selects)
 
     def test_is_not_shadowed_by_the_node_id_route(
         self, test_client: TestClient

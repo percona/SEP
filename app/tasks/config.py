@@ -20,7 +20,13 @@ from enum import StrEnum
 from typing import Annotated, ClassVar, Self, TYPE_CHECKING
 
 from annotated_types import Gt, Le
-from pydantic import AfterValidator, Field, model_validator, PositiveInt
+from pydantic import (
+    AfterValidator,
+    Field,
+    field_validator,
+    model_validator,
+    PositiveInt,
+)
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
@@ -92,6 +98,14 @@ def _validate_syncer_name(name: str) -> str:
 #: that was pinned on purpose, and a whitespace-only one would fail every firing.
 SyncerName = Annotated[str, AfterValidator(_validate_syncer_name)]
 
+#: The longest syncer path an ``INVENTORY_SYNC_SCHEDULES`` entry may name. Its
+#: seeded row name is the path appended to a fixed prefix, and the celery-beat
+#: ``PeriodicTask.name`` column is bounded, so a longer path passes the dotted-path
+#: check and then fails the insert at startup -- on PostgreSQL only, since SQLite
+#: does not enforce the width. Held against the real prefix and column by
+#: ``tests/app/tasks/db/test_seed.py``.
+MAX_SCHEDULED_SYNCER_LENGTH = 232
+
 
 class InventorySyncSchedule(BaseLowercaseModel):
     """Pair one syncer with the interval its own seeded schedule runs on.
@@ -104,6 +118,27 @@ class InventorySyncSchedule(BaseLowercaseModel):
 
     syncer: SyncerName  # settings-yaml-exempt: see SYNCER in settings.yaml
     interval: IntervalSchedule  # settings-yaml-exempt: see INTERVAL in settings.yaml
+
+    @field_validator("syncer")
+    @classmethod
+    def reject_unschedulable_length(cls, value: str) -> str:
+        """Reject a syncer path too long to name a seeded schedule row.
+
+        A well-formed path is not necessarily a schedulable one: the derived row
+        name carries a fixed prefix, and overflowing the beat column fails the
+        seed at startup rather than at load, where nothing names the key to edit.
+
+        :param value: The configured syncer path.
+        :return: The validated path, unchanged.
+        :raises ValueError: If the path cannot fit a seeded schedule name.
+        """
+        if len(value) > MAX_SCHEDULED_SYNCER_LENGTH:
+            raise ValueError(
+                f"INVENTORY_SYNC_SCHEDULES names a syncer of {len(value)} "
+                f"characters; the seeded schedule name it derives would not fit, "
+                f"so keep it to {MAX_SCHEDULED_SYNCER_LENGTH}"
+            )
+        return value
 
 
 class PreExecutionCheckMode(StrEnum):

@@ -27,7 +27,7 @@ from sqlalchemy_celery_beat.models import Period, PeriodicTask
 
 import app.tasks.db.seed as seed_module
 from app.core.celery.models import IntervalSchedule
-from app.tasks.config import tasks_settings
+from app.tasks.config import MAX_SCHEDULED_SYNCER_LENGTH, tasks_settings
 from app.tasks.db.seed import (
     _CHECK_STALENESS_TASK,
     _launch_check_shell,
@@ -1426,3 +1426,27 @@ class TestInventoryCollectionTask:
             "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
         )
         assert task.protected is True
+
+
+class TestInventorySyncScheduleNameBudget:
+    """Test that the settings-side length bound matches the real name and column."""
+
+    def test_the_longest_allowed_syncer_still_fits_the_beat_column(self) -> None:
+        """Pin the configured budget against the derived name and the column width.
+
+        The bound lives in the settings module, which cannot import this one, so
+        nothing but this test holds the two in step. One character over must not
+        fit, or the budget is loose and an accepted configuration fails the seed at
+        startup instead of at load.
+        """
+        limit = PeriodicTask.__table__.columns["name"].type.length
+
+        longest = seed_module._inventory_sync_schedule_name(
+            "a" * MAX_SCHEDULED_SYNCER_LENGTH
+        )
+        over = seed_module._inventory_sync_schedule_name(
+            "a" * (MAX_SCHEDULED_SYNCER_LENGTH + 1)
+        )
+
+        assert len(longest) == limit
+        assert len(over) > limit

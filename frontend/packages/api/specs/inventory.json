@@ -3441,7 +3441,7 @@
     },
     "/nodes/system-observations": {
       "get": {
-        "description": "List host system observations across every node.\n\nDeclared above ``GET /{node_id}`` for the reason\n:func:`list_node_identity_candidates` gives: FastAPI matches path operations in\ndeclaration order, so the parameterized route would claim this path and answer\n422 rather than 404.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of observation summaries.",
+        "description": "List host system observations across every node.\n\nDeclared above ``GET /{node_id}`` for the reason\n:func:`list_node_identity_candidates` gives: FastAPI matches path operations in\ndeclaration order, so the parameterized route would claim this path and answer\n422 rather than 404.\n\nThe narrow ``response_model`` drops the two JSON blobs only after they have been\nfetched and deserialized, so ``load_only`` keeps them out of the query itself.\nWithout it a fleet-wide page carries every node's full package list, which is\nthe cost this route exists to avoid.\n\n:param session: The async database session.\n:param pagination: Validated offset/limit query parameters.\n:return: A paginated response of observation summaries.",
         "operationId": "nodes_list_host_system_observations_nodes_system_observations_get",
         "parameters": [
           {

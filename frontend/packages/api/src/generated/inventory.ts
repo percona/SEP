@@ -271,6 +271,11 @@ export interface paths {
      *     declaration order, so the parameterized route would claim this path and answer
      *     422 rather than 404.
      *
+     *     The narrow ``response_model`` drops the two JSON blobs only after they have been
+     *     fetched and deserialized, so ``load_only`` keeps them out of the query itself.
+     *     Without it a fleet-wide page carries every node's full package list, which is
+     *     the cost this route exists to avoid.
+     *
      *     :param session: The async database session.
      *     :param pagination: Validated offset/limit query parameters.
      *     :return: A paginated response of observation summaries.

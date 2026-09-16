@@ -28,7 +28,12 @@ from app.core.settings_override.registry import (
     is_explicit_not_overridable,
     ReloadClassification,
 )
-from app.tasks.config import PreExecutionCheckMode, tasks_settings, TasksSettings
+from app.tasks.config import (
+    MAX_SCHEDULED_SYNCER_LENGTH,
+    PreExecutionCheckMode,
+    tasks_settings,
+    TasksSettings,
+)
 from tests.app.tasks.conftest import PMM_SYNCER, SYSTEM_FACTS_SYNCER
 
 EXPECTED_UVICORN_PORT = 8002
@@ -164,6 +169,27 @@ class TestTasksSettings:
                     {"SYNCER": SYSTEM_FACTS_SYNCER, "INTERVAL": "1 days"}
                 ],
             )
+
+    def test_inventory_sync_schedules_reject_an_unschedulable_syncer_length(self):
+        """Assert a path too long to name a seeded row is refused at load.
+
+        It satisfies the dotted-path check, so without this it would be accepted
+        and then overflow the beat row name mid-seed, failing startup on
+        PostgreSQL with nothing naming the key to edit.
+        """
+        overlong = "a" * (MAX_SCHEDULED_SYNCER_LENGTH - 1) + ".B"
+        with pytest.raises(ValidationError, match="would not fit"):
+            TasksSettings(
+                INVENTORY_SYNC_SCHEDULES=[{"SYNCER": overlong, "INTERVAL": "1 days"}]
+            )
+
+    def test_inventory_sync_schedules_accept_the_longest_schedulable_syncer(self):
+        """Assert the bound admits a path that exactly fills the budget."""
+        longest = "a" * (MAX_SCHEDULED_SYNCER_LENGTH - 2) + ".B"
+        settings = TasksSettings(
+            INVENTORY_SYNC_SCHEDULES=[{"SYNCER": longest, "INTERVAL": "1 days"}]
+        )
+        assert settings.INVENTORY_SYNC_SCHEDULES[0].syncer == longest
 
     def test_inventory_sync_schedules_accept_a_distinct_syncer(self):
         """Assert an entry beside a *pinned* default is the supported combination."""
