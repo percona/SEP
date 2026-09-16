@@ -170,7 +170,7 @@ class TestSchemaEndpoint:
         assert body["related_apps"] == [
             {
                 "app_key": "mysql_backups/restore",
-                "label": "Restore",
+                "label": "Restores",
                 "route_segment": "restores",
             },
         ]
