@@ -903,6 +903,12 @@ export interface paths {
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :param body: The batch payload.
      *     :param tasks_api: The authenticated Tasks API client.
+     *     The dispatch guard also catches ``RuntimeError``, which is what a missing
+     *     internal token surfaces as while resolving ATW's proxy task. It is a
+     *     deployment-wide misconfiguration rather than a per-item fault, so every item
+     *     reports it — but reporting it per item is what keeps this route's
+     *     partial-success contract instead of failing the whole batch with a 500.
+     *
      *     :return: One outcome entry per requested item, in request order.
      *     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
      *         failing the whole request before any item is dispatched.

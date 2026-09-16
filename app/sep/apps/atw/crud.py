@@ -98,8 +98,8 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
 
         ``count(case(...))`` counts only the matching rows because the implicit
         ``else_`` is ``NULL`` and ``count`` skips nulls; ``max(coalesce(...))``
-        keeps the three-way comparison out of SQL, since ``GREATEST`` is not
-        portable to SQLite. An incident with no executions produces no row and is
+        keeps the three-way comparison out of SQL, which SQLAlchemy has no portable
+        spelling for. An incident with no executions produces no row and is
         therefore absent from the result — the caller substitutes a zero aggregate,
         which is what lets a run-less incident report its own timestamps.
 
@@ -189,7 +189,10 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
                 func.coalesce(
                     col(AtwIncidentExecution.reconcile_attempted_at),
                     col(AtwIncidentExecution.created_at),
-                ).asc()
+                ).asc(),
+                # utc_now() truncates to whole seconds, so the key above ties
+                # readily; the primary key breaks them into a stable order.
+                col(AtwIncidentExecution.id).asc(),
             )
             .limit(limit)
         )

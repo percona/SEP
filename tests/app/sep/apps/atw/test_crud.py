@@ -46,6 +46,7 @@ _EXPECTED_FAILED_STATUSES = frozenset(
 _THREE_RUNS = 3
 _FOUR_RUNS = 4
 _TWO_FAILED = 2
+_TWO_ROWS = 2
 
 
 async def _save_execution(
@@ -436,7 +437,7 @@ class TestUnresolvedBatch:
 
         rows = await AtwIncidentExecutionManager.unresolved_batch(session, limit=2)
 
-        assert len(rows) == _TWO_FAILED
+        assert len(rows) == _TWO_ROWS
 
     @pytest.mark.asyncio
     async def test_selection_is_least_recently_attempted_first(

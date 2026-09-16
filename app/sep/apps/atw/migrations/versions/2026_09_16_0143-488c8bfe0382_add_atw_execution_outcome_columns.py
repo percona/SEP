@@ -41,12 +41,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 _TABLE = "atw_incident_execution"
 _INDEX = "ix_atw_incident_execution_terminal_status"
-_COLUMN_NAMES = (
-    "terminal_status",
-    "finished_at",
-    "outcome_unrecoverable",
-    "reconcile_attempted_at",
-)
 
 
 def _new_columns() -> tuple[sa.Column, ...]:
@@ -96,6 +90,6 @@ def downgrade() -> None:
     if _INDEX in existing_indexes:
         op.drop_index(op.f(_INDEX), table_name=_TABLE)
     existing_columns = {column["name"] for column in inspector.get_columns(_TABLE)}
-    for name in reversed(_COLUMN_NAMES):
-        if name in existing_columns:
-            op.drop_column(_TABLE, name)
+    for column in reversed(_new_columns()):
+        if column.name in existing_columns:
+            op.drop_column(_TABLE, column.name)

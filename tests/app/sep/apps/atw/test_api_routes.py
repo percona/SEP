@@ -1537,6 +1537,41 @@ class TestAtwIncidentRunAggregates:
         assert payload["run_count"] == _SEEDED_RUN_COUNT
         assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
 
+    @pytest.mark.asyncio
+    async def test_last_activity_tracks_an_edit_made_after_the_last_run(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure editing an incident after its last run moves its last-activity time.
+
+        The incident's own ``updated_at`` is one of the three sources, so an edit is
+        activity even when no run has happened since. The run is seeded well in the
+        past because ``utc_now`` truncates to whole seconds, which would otherwise
+        tie the two timestamps.
+        """
+        long_ago = utc_now() - timedelta(hours=2)
+        incident = await AtwIncidentManager.save(
+            session,
+            AtwIncident(created_by="alice", name="stale-runs", created_at=long_ago),
+        )
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=1,
+                snippet_filename="diag.sh",
+                terminal_status=TaskHistoryStatusEnum.SUCCESS.value,
+                finished_at=long_ago,
+            ),
+        )
+        before = await async_api_client.get(f"{INCIDENTS_BASE}{incident.id}")
+
+        renamed = await async_api_client.patch(
+            f"{INCIDENTS_BASE}{incident.id}", json={"name": "touched"}
+        )
+
+        assert renamed.status_code == status.HTTP_200_OK
+        assert renamed.json()["last_activity_at"] > before.json()["last_activity_at"]
+
     def test_close_serves_aggregates(
         self, api_client: TestClient, incident_with_runs: AtwIncident
     ) -> None:

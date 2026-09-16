@@ -26,7 +26,7 @@ them into the ``sep`` autogenerate). The category taxonomy, which depends on
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, UUID4
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, UUID4
 from sqlalchemy import Column, JSON, UniqueConstraint
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -141,8 +141,8 @@ class AtwIncidentResponse(BaseModel):
     created_at: UTCDatetime
     updated_at: UTCDatetime | None
     closed_at: UTCDatetime | None
-    run_count: int = 0
-    failed_run_count: int = 0
+    run_count: NonNegativeInt = 0
+    failed_run_count: NonNegativeInt = 0
     last_activity_at: UTCDatetime | None = None
 
 

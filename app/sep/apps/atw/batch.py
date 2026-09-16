@@ -372,9 +372,13 @@ async def dispatch_batch_item(
     :return: The dispatched task name, the created task-history id (``None`` when
         the Tasks API returned none), and the resolved snippet filename.
     :raises HTTPException: When the snippet's arguments fail validation, it is not
-        executable, or the Tasks API returns an error status.
+        executable, or the Tasks API returns an error status — from resolving ATW's
+        proxy task as well as from the dispatch itself.
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
+    :raises RuntimeError: Propagated from ``ensure_atw_proxy_task`` when no internal
+        token is configured, so the proxy cannot be resolved as the service
+        principal.
     """
     declared = {
         field.name

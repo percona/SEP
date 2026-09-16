@@ -273,15 +273,20 @@ async def atw_snippet_search(
 def _last_activity_at(
     incident: AtwIncident, last_execution_at: datetime | None
 ) -> datetime:
-    """Resolve an incident's last-activity time across all three of its sources.
+    """Resolve an incident's last-activity time from its own timestamps and its runs.
 
-    Computed in Python rather than SQL because the three-way maximum would need
-    ``GREATEST``, which PostgreSQL has and SQLite does not. Every candidate is
-    normalized first: mixing a naive value in raises ``TypeError`` on comparison,
-    and whether the aggregate's timestamp arrives aware is dialect-dependent.
+    Computed in Python rather than SQL because SQLAlchemy ships no portable
+    construct for a row-wise maximum: PostgreSQL spells it ``GREATEST`` and SQLite
+    spells it as a multi-argument ``max()``. Every candidate is normalized first —
+    mixing a naive value in raises ``TypeError`` on comparison, and whether the
+    aggregate's timestamp arrives timezone-aware is dialect-dependent.
 
     ``created_at`` is always set, so the result is never ``None`` — an incident
     with no runs reports its own last change and the client needs no empty state.
+
+    Delivery attempts are deliberately not a source: ``atw_send_log`` rows are real
+    activity on an incident, but folding a third table into the aggregate is out of
+    scope, so a send does not move this timestamp.
 
     :param incident: The incident whose own timestamps take part.
     :param last_execution_at: The aggregated execution timestamp, when it has runs.
@@ -381,7 +386,14 @@ async def atw_list_incidents(
         session, [incident.id for incident in page.items]
     )
     items = build_incident_responses(page.items, aggregates)
-    return PaginatedResponse.from_pagination(items, page.total, pagination)
+    return PaginatedResponse.from_pagination(
+        # call-shape-dup-ok: all four occurrences in this module predate the change;
+        # it only rewrote what this one passes as `items`, so extracting the wrapper
+        # would pull in three unrelated routes.
+        items,
+        page.total,
+        pagination,
+    )
 
 
 @router.get("/incidents/{incident_id}")
@@ -551,6 +563,12 @@ async def atw_batch_execute(
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :param body: The batch payload.
     :param tasks_api: The authenticated Tasks API client.
+    The dispatch guard also catches ``RuntimeError``, which is what a missing
+    internal token surfaces as while resolving ATW's proxy task. It is a
+    deployment-wide misconfiguration rather than a per-item fault, so every item
+    reports it — but reporting it per item is what keeps this route's
+    partial-success contract instead of failing the whole batch with a 500.
+
     :return: One outcome entry per requested item, in request order.
     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
         failing the whole request before any item is dispatched.
@@ -570,7 +588,7 @@ async def atw_batch_execute(
             continue
         try:
             dispatched = await dispatch_batch_item(body, item, script, tasks_api)
-        except (HTTPException, OSError) as exc:
+        except (HTTPException, OSError, RuntimeError) as exc:
             await session.rollback()
             items.append(
                 ATWBatchExecuteItemResponse(

@@ -57,8 +57,10 @@ ATW_PROXY_TASK_PREFIX = "atw__"
 #: warm cache makes dispatch fail until this expires, then self-heals.
 _PROXY_CACHE_TTL = 300
 
-#: One entry per interpreter root ATW can dispatch under; the set is tiny and
-#: fixed by the snippet interpreter configuration.
+#: One entry per interpreter root ATW can dispatch under. The snippet interpreter
+#: configuration is operator-editable and each entry contributes up to two roots, so
+#: this is sized well above the shipped set rather than derived from it; past it the
+#: LRU thrashes and each dispatch pays its upstream lookups again.
 _PROXY_CACHE_MAXSIZE = 8
 
 
@@ -107,6 +109,11 @@ def _is_expected_proxy(task: Mapping[str, Any], root_task_name: str) -> bool:
     on changes behaviour silently if wrong — so every one is checked rather than
     trusting the name.
 
+    ``meta`` and ``payload`` are both checked for *absence* because
+    ``prepare_task_history`` lets a proxy's own copy of either override the run's:
+    a proxy that acquired a ``payload`` key would substitute it into every
+    diagnostics dispatch thereafter.
+
     :param task: The upstream task payload to validate.
     :param root_task_name: The interpreter task the proxy must dispatch through.
     :return: ``True`` when every field matches what ATW requires.
@@ -118,6 +125,7 @@ def _is_expected_proxy(task: Mapping[str, Any], root_task_name: str) -> bool:
         task.get("backend") == TaskBackendEnum.PROXY.value
         and data.get("task") == root_task_name
         and "meta" not in data
+        and "payload" not in data
         and task.get("run_result_recorder") == RUN_RESULT_RECORDER
         and task.get("output_files_path") == RUN_SCRIPT_OUTPUT_FILES_PATH
         and task.get("owner") == ANY_OWNER

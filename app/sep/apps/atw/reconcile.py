@@ -126,6 +126,11 @@ async def _reconcile_one(
     it — which is what makes each tick a round-robin rather than a re-examination of
     the same head of the queue.
 
+    Each row is written on its own session rather than one shared across the batch:
+    under PostgreSQL a failed statement aborts the whole transaction, so a shared
+    session would turn one bad row into a lost tick. The sessions are cheap — they
+    come from the same engine's pool.
+
     :param tasks_api: The authenticated Tasks API client.
     :param execution_id: The ATW execution row to update.
     :param task_history_id: The upstream history row to read the outcome from.
@@ -153,8 +158,8 @@ async def reconcile_executions(batch_size: int) -> None:
     """
     async with get_async_session_maker()() as session:
         rows = await AtwIncidentExecutionManager.unresolved_batch(session, batch_size)
-        # Snapshotted before any write: update_where commits, which expires the ORM
-        # instances and would make each later row re-SELECT its own columns.
+        # Read inside the session that selected them: the loop below runs after it
+        # closes, so it must not touch an ORM attribute.
         targets = [(row.id, row.task_history_id) for row in rows]
     if not targets:
         return
@@ -162,4 +167,4 @@ async def reconcile_executions(batch_size: int) -> None:
     with client.auth(require_internal_token()) as tasks_api:
         for execution_id, task_history_id in targets:
             await _reconcile_one(tasks_api, execution_id, task_history_id)
-    logger.info("Reconciled %d ATW execution(s).", len(targets))
+    logger.info("Examined %d unresolved ATW execution(s).", len(targets))

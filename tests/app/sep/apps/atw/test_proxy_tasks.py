@@ -26,6 +26,7 @@ from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
     HTTPNotFoundException,
+    HTTPServiceUnavailableException,
 )
 from app.core.requests import RemoteAPI
 from app.sep.apps.atw.proxy_tasks import (
@@ -222,6 +223,10 @@ class TestRefusesToWrap:
                 {"data": {"task": _ROOT_TASK_NAME, "meta": {"target": "elsewhere"}}},
                 id="meta",
             ),
+            pytest.param(
+                {"data": {"task": _ROOT_TASK_NAME, "payload": "file:///etc/passwd"}},
+                id="payload",
+            ),
         ],
     )
     async def test_incompatible_existing_task_refuses_to_wrap(
@@ -253,6 +258,41 @@ class TestRefusesToWrap:
             }
         )
         assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+
+        tasks_api.get.side_effect = _serve(
+            {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
+        )
+
+        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+
+
+class TestTransientFailuresSurface:
+    """Check that an unreachable upstream is raised, not degraded to an unwrapped run."""
+
+    @pytest.mark.asyncio
+    async def test_transient_upstream_error_propagates(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a 503 while resolving the proxy surfaces rather than dispatching.
+
+        Every *validation* outcome degrades to ``None``, so the absence of a
+        degradation here is the contract: a dispatch failing because the Tasks API
+        is unreachable would fail at dispatch anyway, and silently running it
+        unwrapped would lose the recorder with nothing said.
+        """
+        tasks_api.get.side_effect = HTTPServiceUnavailableException("try later")
+
+        with pytest.raises(HTTPServiceUnavailableException):
+            await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+
+    @pytest.mark.asyncio
+    async def test_a_raised_resolution_is_not_memoized(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a transient failure does not pin dispatch broken for the cache TTL."""
+        tasks_api.get.side_effect = HTTPServiceUnavailableException("try later")
+        with pytest.raises(HTTPServiceUnavailableException):
+            await ensure_atw_proxy_task(_ROOT_TASK_NAME)
 
         tasks_api.get.side_effect = _serve(
             {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}

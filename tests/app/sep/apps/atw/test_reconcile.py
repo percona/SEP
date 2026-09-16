@@ -15,7 +15,7 @@
 
 """Tests for the sweep that fills in run outcomes the recorder never observed."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -78,7 +78,7 @@ async def _seed_execution(
     task_history_id: int = _HISTORY_ID,
     outcome_unrecoverable: bool = False,
     terminal_status: TaskHistoryStatusEnum | None = None,
-    created_at: Any = None,
+    created_at: datetime | None = None,
 ) -> AtwIncidentExecution:
     """Seed one execution row the sweep may or may not be expected to pick up."""
     incident = await AtwIncidentManager.save(session, AtwIncident(created_by="alice"))
@@ -118,7 +118,10 @@ class TestResolvesOutcomes:
         [status for status in TaskHistoryStatusEnum if status.is_terminal()],
     )
     async def test_every_terminal_status_reaches_the_row(
-        self, session: AsyncSession, tasks_api: AsyncMock, status_value: Any
+        self,
+        session: AsyncSession,
+        tasks_api: AsyncMock,
+        status_value: TaskHistoryStatusEnum,
     ) -> None:
         """Ensure the sweep records an outcome whatever path drove the run terminal.
 
