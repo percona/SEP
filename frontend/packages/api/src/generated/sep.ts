@@ -2984,14 +2984,17 @@ export interface paths {
      *     handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
      *     the React frontend surfaces through its React Query error slot.
      *
+     *     The display name and the elevation capability are joined on **different
+     *     keys** — address and executor name respectively — and may resolve to
+     *     different inventory nodes. They answer different questions: the display name
+     *     asks what inventory calls this address, the capability asks which executor
+     *     was measured. Collapsing them into one index misattributes the measurement.
+     *
      *     :param tasks_api: The Tasks API client used to fetch executor hosts.
-     *     :type tasks_api: TaskAPI
      *     :param inventory_api: The Inventory API client used to enrich the hosts
-     *         with their display names.
-     *     :type inventory_api: InventoryAPI
+     *         with their display names and measured capabilities.
      *     :return: Sorted list of hosts, each with executor id, friendly name,
-     *         and network address.
-     *     :rtype: list[HostResponse]
+     *         network address, and elevation capability.
      *     :raises HTTPBadGatewayException: If the Tasks API call fails with an
      *         ``HTTPException`` (e.g. an upstream non-2xx response) or an
      *         ``OSError`` (e.g. a connection failure).
@@ -3838,16 +3841,18 @@ export interface components {
      *
      *     :param id: The executor (Nomad / Celery) node name. This is the value
      *         consumed by dispatch payloads as ``executor_host``.
-     *     :type id: str
      *     :param name: Human-readable label sourced from inventory when available;
      *         falls back to ``id`` if the host has no inventory match.
-     *     :type name: str
      *     :param address: The network address reported by the executor.
-     *     :type address: str
+     *     :param can_elevate: Whether the host can run privileged work: ``True`` able,
+     *         ``False`` measured unable, ``None`` never observed. ``None`` is
+     *         permanent, not transient, for an executor host with no inventory match.
      */
     HostResponse: {
       /** Address */
       address: string;
+      /** Can Elevate */
+      can_elevate?: boolean | null;
       /** Id */
       id: string;
       /** Name */
@@ -4611,6 +4616,12 @@ export interface components {
       /** Service Types */
       service_types: string[];
     };
+    /**
+     * SnippetSudoRequirement
+     * @description Name the three elevation states a snippet's metadata distinguishes.
+     * @enum {string}
+     */
+    SnippetSudoRequirement: 'never' | 'optional' | 'always';
     /**
      * SnippetsCapabilitiesResponse
      * @description Represent per-deployment capability flags for the Snippets plugin.
@@ -5786,17 +5797,18 @@ export interface components {
      * @description Represent one snippet entry under an ATW category.
      *
      *     :param name: The snippet filename, used as its API identifier.
-     *     :type name: str
      *     :param title: The snippet display title.
-     *     :type title: str
      *     :param description: The snippet free-text description.
-     *     :type description: str
+     *     :param sudo: Whether the snippet's elevation is never wanted, optional, or
+     *         mandatory, letting a client warn before dispatching it to a host that
+     *         cannot elevate.
      */
     atw__ATWSnippetSummary: {
       /** Description */
       description: string;
       /** Name */
       name: string;
+      sudo: components['schemas']['SnippetSudoRequirement'];
       /** Title */
       title: string;
     };

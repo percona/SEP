@@ -35,6 +35,8 @@ EXPECTED_LOG_RETENTION_DAYS = 90
 EXPECTED_LOG_PURGE_BATCH_SIZE = 10_000
 MAX_LOG_RETENTION_DAYS = 365
 EXPECTED_INVENTORY_SYNC_MINUTES = 15
+PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
+SYSTEM_FACTS_SYNCER = "app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer"
 
 
 class TestTasksSettings:
@@ -110,6 +112,57 @@ class TestTasksSettings:
         for value in ("", "   ", "not a path", "trailing."):
             with pytest.raises(ValidationError):
                 TasksSettings(INVENTORY_SYNC_SYNCER=value)
+
+    def test_inventory_sync_schedules_default_to_empty(self):
+        """Assert a deployment configuring nothing keeps today's single schedule."""
+        assert TasksSettings().INVENTORY_SYNC_SCHEDULES == []
+
+    def test_inventory_sync_schedules_reject_the_scalar_syncer(self):
+        """Assert an entry duplicating the pinned scalar syncer is refused."""
+        with pytest.raises(ValidationError, match="already schedules"):
+            TasksSettings(
+                INVENTORY_SYNC_INTERVAL="15 minutes",
+                INVENTORY_SYNC_SYNCER=PMM_SYNCER,
+                INVENTORY_SYNC_SCHEDULES=[{"SYNCER": PMM_SYNCER, "INTERVAL": "1 days"}],
+            )
+
+    def test_inventory_sync_schedules_reject_a_repeated_syncer(self):
+        """Assert one syncer at two intervals is refused rather than order-dependent.
+
+        ``UniqueList`` compares whole entries, so these two survive it and then
+        collide on a single seeded row name.
+        """
+        with pytest.raises(ValidationError, match="more than once"):
+            TasksSettings(
+                INVENTORY_SYNC_SCHEDULES=[
+                    {"SYNCER": SYSTEM_FACTS_SYNCER, "INTERVAL": "1 days"},
+                    {"SYNCER": SYSTEM_FACTS_SYNCER, "INTERVAL": "2 days"},
+                ],
+            )
+
+    def test_inventory_sync_schedules_reject_the_sync_all_default(self):
+        """Assert an entry beside the sync-all default is refused as double-firing."""
+        with pytest.raises(ValidationError, match="sync-all default"):
+            TasksSettings(
+                INVENTORY_SYNC_INTERVAL="15 minutes",
+                INVENTORY_SYNC_SCHEDULES=[
+                    {"SYNCER": SYSTEM_FACTS_SYNCER, "INTERVAL": "1 days"}
+                ],
+            )
+
+    def test_inventory_sync_schedules_accept_a_distinct_syncer(self):
+        """Assert an entry beside a *pinned* default is the supported combination."""
+        settings = TasksSettings(
+            INVENTORY_SYNC_INTERVAL="15 minutes",
+            INVENTORY_SYNC_SYNCER=PMM_SYNCER,
+            INVENTORY_SYNC_SCHEDULES=[
+                {"SYNCER": SYSTEM_FACTS_SYNCER, "INTERVAL": "1 days"}
+            ],
+        )
+        assert [entry.syncer for entry in settings.INVENTORY_SYNC_SCHEDULES] == [
+            SYSTEM_FACTS_SYNCER
+        ]
+        assert settings.INVENTORY_SYNC_SCHEDULES[0].interval.period == Period.DAYS
 
     def test_log_retention_days_rejects_non_positive(self):
         """Assert LOG_RETENTION_DAYS rejects zero and negative values."""

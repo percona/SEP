@@ -24,6 +24,43 @@ from fastapi.testclient import TestClient
 from app.core.exceptions import HTTPBadGatewayException
 from app.sep.main import sep_app
 
+#: The number of upstream inventory calls the route makes, whatever the host count.
+INVENTORY_CALLS_PER_REQUEST = 2
+
+#: Enough executor hosts that a per-host upstream call would be unmistakable.
+MANY_HOSTS = 10
+
+
+def _inventory_answers(nodes, observations=()):
+    """Answer each inventory path the route walks with its own payload.
+
+    The route reads two collections, so a single ``return_value`` would hand the
+    node list back as the observation list and mask a join defect behind a
+    ``KeyError`` the route degrades on.
+
+    :param nodes: Items for ``GET /nodes/``.
+    :param observations: Items for ``GET /nodes/system-observations``.
+    :return: A side effect resolving each path to its own envelope.
+    """
+    payloads = {
+        "/nodes/": {"items": list(nodes)},
+        "/nodes/system-observations": {"items": list(observations)},
+    }
+
+    def _get(path, **_kwargs):
+        return payloads[path]
+
+    return _get
+
+
+def _observation(node_id, *, can_elevate):
+    """Build one observation summary as the collection route serves it."""
+    return {
+        "node_id": node_id,
+        "can_elevate": can_elevate,
+        "observed_at": "2026-09-15T00:00:00Z",
+    }
+
 
 class TestSepHostsEndpoint:
     """Tests for ``GET /api/sep/hosts/`` happy-path and edge cases."""
@@ -39,17 +76,27 @@ class TestSepHostsEndpoint:
             "nomad-1": "10.0.0.1",
             "nomad-2": "10.0.0.2",
         }
-        mock_inventory_api_dep.get.return_value = {
-            "items": [
-                {"address": "10.0.0.1", "name": "db-mysql-prod-01"},
-                {"address": "10.0.0.2", "name": "db-mysql-prod-02"},
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"},
+                {"id": 2, "address": "10.0.0.2", "name": "db-mysql-prod-02"},
             ]
-        }
+        )
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
-            {"id": "nomad-1", "name": "db-mysql-prod-01", "address": "10.0.0.1"},
-            {"id": "nomad-2", "name": "db-mysql-prod-02", "address": "10.0.0.2"},
+            {
+                "id": "nomad-1",
+                "name": "db-mysql-prod-01",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+            {
+                "id": "nomad-2",
+                "name": "db-mysql-prod-02",
+                "address": "10.0.0.2",
+                "can_elevate": None,
+            },
         ]
 
     def test_falls_back_to_node_name_when_inventory_match_missing(
@@ -63,11 +110,9 @@ class TestSepHostsEndpoint:
             "nomad-1": "10.0.0.1",
             "nomad-2": "10.0.0.2",
         }
-        mock_inventory_api_dep.get.return_value = {
-            "items": [
-                {"address": "10.0.0.1", "name": "db-mysql-prod-01"},
-            ]
-        }
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"}]
+        )
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -84,16 +129,22 @@ class TestSepHostsEndpoint:
     ) -> None:
         """Drop inventory nodes whose address is not present in the executor list."""
         mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
-        mock_inventory_api_dep.get.return_value = {
-            "items": [
-                {"address": "10.0.0.1", "name": "db-mysql-prod-01"},
-                {"address": "10.0.0.99", "name": "ghost-node"},
-            ]
-        }
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"},
+                {"id": 2, "address": "10.0.0.99", "name": "ghost-node"},
+            ],
+            [_observation(2, can_elevate=False)],
+        )
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
-            {"id": "nomad-1", "name": "db-mysql-prod-01", "address": "10.0.0.1"},
+            {
+                "id": "nomad-1",
+                "name": "db-mysql-prod-01",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
         ]
 
     def test_duplicate_inventory_addresses_keep_first_match(
@@ -113,17 +164,183 @@ class TestSepHostsEndpoint:
         test prevents an accidental revert.
         """
         mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
-        mock_inventory_api_dep.get.return_value = {
-            "items": [
-                {"address": "10.0.0.1", "name": "db-primary"},
-                {"address": "10.0.0.1", "name": "db-shadow"},
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.1", "name": "db-primary"},
+                {"id": 2, "address": "10.0.0.1", "name": "db-shadow"},
             ]
-        }
+        )
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
-            {"id": "nomad-1", "name": "db-primary", "address": "10.0.0.1"},
+            {
+                "id": "nomad-1",
+                "name": "db-primary",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
         ]
+
+    def test_reports_a_measured_capability(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Publish an observed ``True`` on the executor that was measured."""
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
+            [_observation(7, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is True
+
+    def test_reports_a_measured_inability(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Publish an observed ``False`` as ``False``, not as never-observed.
+
+        Asserted with ``is False`` rather than a falsy check, which ``None``
+        would satisfy — and ``None`` is the value this whole feature exists to
+        distinguish it from.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
+            [_observation(7, can_elevate=False)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is False
+
+    def test_reports_null_for_a_never_observed_node(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Leave a matched but unmeasured node's capability unknown."""
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}]
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is None
+
+    def test_reports_null_for_an_executor_with_no_inventory_match(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Leave an unmatched executor unknown — permanently, not transiently."""
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 7, "address": "10.0.0.9", "name": "elsewhere"}],
+            [_observation(7, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {
+                "id": "nomad-1",
+                "name": "nomad-1",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+        ]
+
+    def test_issues_no_per_host_upstream_call(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Walk the two upstream collections once each, whatever the host count."""
+        mock_task_api_dep.get.return_value = {
+            f"nomad-{index}": f"10.0.0.{index}" for index in range(MANY_HOSTS)
+        }
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": index, "address": f"10.0.0.{index}", "name": f"db-{index}"}
+                for index in range(MANY_HOSTS)
+            ],
+            [_observation(index, can_elevate=True) for index in range(MANY_HOSTS)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()) == MANY_HOSTS
+        assert mock_inventory_api_dep.get.await_count == INVENTORY_CALLS_PER_REQUEST
+
+    def test_a_name_match_beats_an_address_match(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Publish a measurement on the executor collection actually probed.
+
+        ``get_task_target`` resolves the host to probe by name before address, so
+        a node named ``a`` at ``b``'s address is measured as ``a``. An
+        address-keyed join would publish that measurement on ``b`` and report
+        ``a`` — the host truly measured — as never-observed, inverting both.
+        """
+        mock_task_api_dep.get.return_value = {"a": "10.0.0.1", "b": "10.0.0.2"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 5, "address": "10.0.0.2", "name": "a"}],
+            [_observation(5, can_elevate=False)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        capabilities = {host["id"]: host["can_elevate"] for host in response.json()}
+        assert capabilities["a"] is False
+        assert capabilities["b"] is None
+
+    def test_an_address_match_applies_when_no_name_matches(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Fall back to the address rule, as the collection-side resolver does."""
+        mock_task_api_dep.get.return_value = {"a": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [{"id": 5, "address": "10.0.0.1", "name": "db-1"}],
+            [_observation(5, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is True
+
+    def test_a_name_matched_node_wins_over_an_address_matched_one(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Resolve one executor claimed by two nodes the way collection would.
+
+        Each node contributes to exactly one pass, so the address-matched node
+        cannot overwrite the name-matched one — nor publish its own measurement
+        on a second executor alongside it.
+        """
+        mock_task_api_dep.get.return_value = {"a": "10.0.0.1"}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 5, "address": "10.0.0.9", "name": "a"},
+                {"id": 6, "address": "10.0.0.1", "name": "db-1"},
+            ],
+            [_observation(5, can_elevate=False), _observation(6, can_elevate=True)],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["can_elevate"] is False
 
     def test_inventory_failure_returns_raw_node_names(
         self,
@@ -131,7 +348,11 @@ class TestSepHostsEndpoint:
         mock_task_api_dep,
         mock_inventory_api_dep,
     ) -> None:
-        """Return 200 with the executor addresses when the Inventory API rejects the request."""
+        """Return 200 with the executor addresses when the Inventory API rejects the request.
+
+        Both enrichments degrade together: the display name falls back to the
+        executor name and the capability to never-observed.
+        """
         mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
         mock_inventory_api_dep.get.side_effect = HTTPBadGatewayException(
             "inventory unreachable"
@@ -139,7 +360,12 @@ class TestSepHostsEndpoint:
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
-            {"id": "nomad-1", "name": "nomad-1", "address": "10.0.0.1"},
+            {
+                "id": "nomad-1",
+                "name": "nomad-1",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
         ]
 
     def test_empty_executor_list_returns_empty_response(
@@ -150,7 +376,7 @@ class TestSepHostsEndpoint:
     ) -> None:
         """Return an empty list when the executor reports no hosts."""
         mock_task_api_dep.get.return_value = {}
-        mock_inventory_api_dep.get.return_value = {"items": []}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers([])
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
@@ -169,7 +395,7 @@ class TestSepHostsEndpoint:
         surfaces through React Query's error state.
         """
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
-        mock_inventory_api_dep.get.return_value = {"items": []}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers([])
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "tasks unreachable"}
@@ -182,7 +408,7 @@ class TestSepHostsEndpoint:
     ) -> None:
         """Return ``502`` + ``{"detail": ...}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
-        mock_inventory_api_dep.get.return_value = {"items": []}
+        mock_inventory_api_dep.get.side_effect = _inventory_answers([])
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "connection refused"}

@@ -27,6 +27,7 @@ from app.sep.sync.syncers.system_facts.payload import (
     _collect_postgresql_version,
     _mysql_creds,
     _redact_secrets,
+    collect_can_elevate,
     collect_host_facts,
     collect_installed_packages,
     collect_os_version,
@@ -154,6 +155,49 @@ class TestHostFacts:
         assert facts["installed_packages"] == [{"name": "glibc", "version": "2.35"}]
         assert facts["config"] == {"kernel": "5.15.0"}
         assert "collected_at" in facts
+
+    def test_collect_can_elevate_root_without_sudo(self, mocker):
+        """A uid-0 task user can elevate even with no sudo binary on PATH."""
+        mocker.patch(f"{MODULE}.os.geteuid", return_value=0)
+        mocker.patch(f"{MODULE}.shutil.which", return_value=None)
+        assert collect_can_elevate() is True
+
+    def test_collect_can_elevate_root_with_sudo(self, mocker):
+        """A uid-0 task user with sudo present can elevate."""
+        mocker.patch(f"{MODULE}.os.geteuid", return_value=0)
+        mocker.patch(f"{MODULE}.shutil.which", return_value="/usr/bin/sudo")
+        assert collect_can_elevate() is True
+
+    def test_collect_can_elevate_non_root_with_sudo(self, mocker):
+        """A non-root task user with sudo on PATH can elevate."""
+        mocker.patch(f"{MODULE}.os.geteuid", return_value=1000)
+        mocker.patch(f"{MODULE}.shutil.which", return_value="/usr/bin/sudo")
+        assert collect_can_elevate() is True
+
+    def test_collect_can_elevate_non_root_without_sudo(self, mocker):
+        """A non-root task user with no sudo cannot elevate.
+
+        This is the single row of the launch check's truth table that aborts with
+        ``SEP_UNLAUNCHABLE``, and the only one the collector reports ``False`` for.
+        """
+        mocker.patch(f"{MODULE}.os.geteuid", return_value=1000)
+        mocker.patch(f"{MODULE}.shutil.which", return_value=None)
+        assert collect_can_elevate() is False
+
+    def test_collect_can_elevate_without_posix_uids_returns_none(self, mocker):
+        """A platform with no geteuid has no answer, so the fact is unmeasured."""
+        mocker.patch(f"{MODULE}.os", spec=[])
+        assert collect_can_elevate() is None
+
+    def test_collect_host_facts_keeps_a_measured_false(self, mocker):
+        """A measured ``False`` is a value, so the truthiness guard must not drop it."""
+        mocker.patch(f"{MODULE}.collect_can_elevate", return_value=False)
+        assert collect_host_facts()["can_elevate"] is False
+
+    def test_collect_host_facts_omits_an_unmeasured_can_elevate(self, mocker):
+        """``None`` is an absence, so the key stays out of the collected facts."""
+        mocker.patch(f"{MODULE}.collect_can_elevate", return_value=None)
+        assert "can_elevate" not in collect_host_facts()
 
 
 class TestParseHostPort:
@@ -629,6 +673,43 @@ class TestMain:
 
         out = json.loads(capsys.readouterr().out)
         assert out["host"] is None
+
+    def test_main_publishes_a_capability_only_false(
+        self, tmp_path, monkeypatch, mocker, capsys
+    ):
+        """A run whose only fact is a measured ``False`` still emits a host document.
+
+        The publication envelope is a second truthiness guard, downstream of the
+        assembly one: were it left as-is, this run would emit ``"host": null`` and
+        the measurement would never reach the syncer.
+        """
+        config = _write_config(tmp_path, {"collect_host": True, "services": []})
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+        mocker.patch(
+            f"{MODULE}.collect_host_facts",
+            return_value={"collected_at": "t", "can_elevate": False},
+        )
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["host"]["can_elevate"] is False
+
+    def test_main_publishes_a_capability_only_true(
+        self, tmp_path, monkeypatch, mocker, capsys
+    ):
+        """A capability-only ``True`` publishes through the same envelope."""
+        config = _write_config(tmp_path, {"collect_host": True, "services": []})
+        monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
+        mocker.patch(
+            f"{MODULE}.collect_host_facts",
+            return_value={"collected_at": "t", "can_elevate": True},
+        )
+
+        main()
+
+        out = json.loads(capsys.readouterr().out)
+        assert out["host"]["can_elevate"] is True
 
     def test_main_missing_config_file_yields_empty(self, tmp_path, monkeypatch, capsys):
         """A missing config file degrades to an empty snapshot, not a crash."""

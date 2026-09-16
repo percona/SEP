@@ -90,6 +90,7 @@ from app.sep.apps.framework.api import schema_endpoint
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
+from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
@@ -134,16 +135,17 @@ class ATWSnippetSummary(BaseModel):
     """Represent one snippet entry under an ATW category.
 
     :param name: The snippet filename, used as its API identifier.
-    :type name: str
     :param title: The snippet display title.
-    :type title: str
     :param description: The snippet free-text description.
-    :type description: str
+    :param sudo: Whether the snippet's elevation is never wanted, optional, or
+        mandatory, letting a client warn before dispatching it to a host that
+        cannot elevate.
     """
 
     name: str
     title: str
     description: str
+    sudo: SnippetSudoRequirement
 
 
 class ATWCategoryListing(BaseModel):
@@ -182,12 +184,14 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     """Project a snippet onto the ATW summary shape.
 
     :param snippet: The snippet to project.
-    :return: The snippet's identifying name, display title, and description.
+    :return: The snippet's identifying name, display title, description, and
+        declared elevation requirement.
     """
     return ATWSnippetSummary(
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
+        sudo=snippet.sudo.requirement,
     )
 
 

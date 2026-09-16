@@ -388,6 +388,26 @@ class TestPerformNodeSync:
 
         mock_remote_api.put.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_perform_node_sync_writes_a_measured_inability(
+        self, mock_syncer, created_node, mock_remote_api, mocker
+    ):
+        """A node measured unable to elevate is written as ``False``, not dropped.
+
+        The observation builder filters on truthiness, which would read this
+        measurement as never-observed and invert the signal the ticket publishes.
+        """
+        mock_syncer._host_facts_cache[created_node.id] = {
+            "can_elevate": False,
+            "collected_at": COLLECTED_AT,
+        }
+        mocker.patch.object(SystemFactsSyncer, "sync_service", new_callable=AsyncMock)
+        await mock_syncer.perform_node_sync(created_node, created_node)
+
+        mock_remote_api.put.assert_awaited_once()
+        body = mock_remote_api.put.await_args.kwargs["json"]
+        assert body["can_elevate"] is False
+
 
 class TestFetchService:
     """Test resolving cached service facts."""

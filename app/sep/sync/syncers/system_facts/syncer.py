@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from app.inventory.models import (
+    HOST_OBSERVATION_FIELD_NAMES,
     HostSystemObservationWrite,
     ServiceSystemObservationWrite,
     ServiceTypeEnum,
@@ -39,12 +40,9 @@ from app.sep.sync.models import BaseTaskSyncer, TaskRunResult
 
 logger = logging.getLogger(__name__)
 
-#: Host-level fact fields; at least one must be set to write a host observation. Derived
-#: from the write model so the model stays the single source of truth as fields change.
-HOST_OBSERVATION_FIELDS = frozenset(HostSystemObservationWrite.model_fields) - {
-    "node_id",
-    "observed_at",
-}
+#: Host-level fact fields; at least one must be set to write a host observation. Shared
+#: with the model's own minimum-content validator so the two cannot drift apart.
+HOST_OBSERVATION_FIELDS = HOST_OBSERVATION_FIELD_NAMES
 
 
 class SystemFactsService(Service):
@@ -270,18 +268,19 @@ class SystemFactsSyncer(BaseTaskSyncer):
     ) -> HostSystemObservationWrite | None:
         """Build a host observation, or ``None`` if no usable fact was collected.
 
-        Avoids writing a half-empty snapshot: at least one of ``os_version``,
-        ``installed_packages``, or ``config`` must carry a meaningful value.
+        Avoids writing a half-empty snapshot: at least one observation field must
+        have been collected. Admission is on ``is not None`` rather than truthiness
+        because ``can_elevate`` is the first field whose ``False`` is a measurement,
+        and dropping it would read back as never-observed -- the inverse of what was
+        measured.
 
         :param host_facts: The host facts emitted by the payload.
-        :type host_facts: dict[str, Any]
         :return: A validated host observation, or ``None`` when nothing was collected.
-        :rtype: HostSystemObservationWrite | None
         """
         fields = {
-            key: host_facts.get(key)
+            key: value
             for key in HOST_OBSERVATION_FIELDS
-            if host_facts.get(key)
+            if (value := host_facts.get(key)) is not None
         }
         if not fields:
             return None

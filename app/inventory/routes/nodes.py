@@ -46,6 +46,7 @@ from app.inventory.models import (
     ExternalIdentityAliasResponse,
     HostSystemObservation,
     HostSystemObservationResponse,
+    HostSystemObservationSummaryResponse,
     HostSystemObservationWrite,
     IdentityLinkDecisionWrite,
     Node,
@@ -147,6 +148,30 @@ async def list_node_identity_candidates(
         ],
         total,
         pagination,
+    )
+
+
+@router.get(
+    "/system-observations",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[HostSystemObservationSummaryResponse],
+)
+async def list_host_system_observations(
+    session: SessionDep, pagination: PaginationDep
+) -> PaginatedResponse[HostSystemObservation]:
+    """List host system observations across every node.
+
+    Declared above ``GET /{node_id}`` for the reason
+    :func:`list_node_identity_candidates` gives: FastAPI matches path operations in
+    declaration order, so the parameterized route would claim this path and answer
+    422 rather than 404.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of observation summaries.
+    """
+    return await HostSystemObservationManager.list_paginated(
+        session, pagination=pagination
     )
 
 

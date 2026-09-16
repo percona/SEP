@@ -518,19 +518,34 @@ def test_inventory_activates_without_a_sidebar_entry():
     assert registry.get("inventory").sidebar is False
 
 
-def test_profile_does_not_run_the_system_facts_syncer(
+def test_profile_declares_the_system_facts_syncer(
     embedded_profile_data: dict[str, Any],
 ):
-    """Assert the embedded profile leaves system-facts collection unscheduled.
+    """Assert the embedded profile makes the system-facts collector constructible.
 
-    The observations it wrote were read only by the retired inventory browser
-    page, so the profile runs the two catalog syncers and omits the collector.
+    It was mothballed while nothing read its observations; the host-capability
+    warning is that reader, so the entry is restored.
     """
     declared = [
         entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
     ]
 
-    assert declared == ["PMMSyncer", "MySQLSyncer"]
+    assert declared == ["PMMSyncer", "MySQLSyncer", "SystemFactsSyncer"]
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_schedules_the_system_facts_syncer_daily():
+    """Assert the collector carries a schedule, not merely a ``SYNCERS`` entry.
+
+    A ``SYNCERS`` entry alone leaves it constructible and reachable by an explicit
+    API-triggered sync while never firing on a timer, so verifying only the
+    declaration above yields a green config that collects nothing.
+    """
+    settings = TasksSettings()
+
+    (entry,) = settings.INVENTORY_SYNC_SCHEDULES
+    assert entry.syncer == SystemFactsSyncer.get_name()
+    assert (entry.interval.every, entry.interval.period) == (1, Period.DAYS)
 
 
 def test_the_system_facts_syncer_stays_re_enablable():

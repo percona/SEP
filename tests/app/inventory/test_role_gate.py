@@ -602,3 +602,16 @@ def test_the_service_principal_may_also_decide_an_identity_link(
     )
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+def test_the_observation_collection_requires_a_credential(
+    bearer_client: TestClient,
+) -> None:
+    """Refuse an anonymous fleet-wide read of the observation collection.
+
+    The route publishes one measured fact per node, so it carries
+    ``IsAuthenticatedDep`` like its per-node sibling rather than being open.
+    """
+    response = bearer_client.get("/nodes/system-observations")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED

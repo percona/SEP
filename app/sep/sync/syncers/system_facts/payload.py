@@ -82,8 +82,11 @@ def _redact_secrets(text: str) -> str:
 
 #: Path to the OS release file (module-level so tests can redirect it).
 OS_RELEASE_PATH = Path("/etc/os-release")
-#: Host fact fields that constitute a meaningful host observation.
-HOST_FIELDS = ("os_version", "installed_packages", "config")
+#: Host fact fields that constitute a meaningful host observation. Spelled as a literal
+#: rather than derived from the write model: this module is dispatched to the target node
+#: and runs stdlib-only before ``pip install``, so it cannot import ``app.inventory``. A
+#: future observation field must be added here as well as to the model.
+HOST_FIELDS = ("os_version", "installed_packages", "config", "can_elevate")
 #: Seconds to wait when connecting to a database service.
 DB_CONNECT_TIMEOUT = 10
 #: Seconds to wait for a package-manager query to complete.
@@ -251,6 +254,23 @@ def collect_host_config() -> dict[str, Any]:
     return {key: value for key, value in config.items() if value}
 
 
+def collect_can_elevate() -> bool | None:
+    """Collect whether the node can run privileged work.
+
+    True when the task user is uid 0, or when a bare ``sudo`` resolves on PATH --
+    the two conditions under which the launch check lets a ``sudo``-prefixed
+    interpreter through. A measured ``False`` is a value, not an absence, so
+    callers must admit it on ``is not None`` rather than on truthiness.
+
+    :return: Whether privileged work is possible, or ``None`` on a platform
+        without POSIX uids, where the question has no answer.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is None:
+        return None
+    return geteuid() == 0 or shutil.which("sudo") is not None
+
+
 def collect_host_facts() -> dict[str, Any]:
     """Collect all host-level facts, each best-effort.
 
@@ -264,6 +284,8 @@ def collect_host_facts() -> dict[str, Any]:
         facts["installed_packages"] = packages
     if config := collect_host_config():
         facts["config"] = config
+    if (can_elevate := collect_can_elevate()) is not None:
+        facts["can_elevate"] = can_elevate
     return facts
 
 
@@ -511,7 +533,7 @@ def main() -> None:
 
     if config.get("collect_host"):
         facts = collect_host_facts()
-        if any(facts.get(field) for field in HOST_FIELDS):
+        if any(facts.get(field) is not None for field in HOST_FIELDS):
             result["host"] = facts
 
     services = config.get("services", [])
