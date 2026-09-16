@@ -102,7 +102,11 @@ class InventorySyncSchedule(BaseLowercaseModel):
     :param interval: How often this syncer's own seeded schedule fires.
     """
 
+    # settings-yaml-exempt: shipped as a commented worked example under
+    # INVENTORY_SYNC_SCHEDULES; a live entry would seed a schedule in the default
+    # profile, which must stay byte-identical to a deployment configuring neither key.
     syncer: SyncerName
+    # settings-yaml-exempt: see the note on ``syncer`` above.
     interval: IntervalSchedule
 
 

@@ -56,9 +56,8 @@ from app.tasks.models import (
     SYNC_RUNNING_TASKS_TASK_NAME,
     TaskBackendEnum,
 )
+from tests.app.tasks.conftest import MYSQL_SYNCER, PMM_SYNCER
 
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 FIFTEEN_MINUTES = IntervalSchedule(every=15, period=Period.MINUTES)
 
 NOMAD_TEMPLATES_WITH_STALENESS = [

@@ -44,12 +44,14 @@ from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.tasks.config import InventorySyncSchedule, tasks_settings
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
 from tests.app.db_schema import apply_schema
+from tests.app.tasks.conftest import (
+    MYSQL_SYNCER,
+    PMM_SYNCER,
+    SYSTEM_FACTS_SYNCER,
+)
 
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 FIFTEEN_MINUTES = IntervalScheduleOption(every=15, period=Period.MINUTES)
 ONE_DAY = IntervalScheduleOption(every=1, period=Period.DAYS)
-SYSTEM_FACTS_SYNCER = "app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer"
 OPERATOR_TASK_NAME = "run_inventory-sync_15_minutes"
 
 

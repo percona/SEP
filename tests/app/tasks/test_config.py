@@ -29,14 +29,13 @@ from app.core.settings_override.registry import (
     ReloadClassification,
 )
 from app.tasks.config import PreExecutionCheckMode, tasks_settings, TasksSettings
+from tests.app.tasks.conftest import PMM_SYNCER, SYSTEM_FACTS_SYNCER
 
 EXPECTED_UVICORN_PORT = 8002
 EXPECTED_LOG_RETENTION_DAYS = 90
 EXPECTED_LOG_PURGE_BATCH_SIZE = 10_000
 MAX_LOG_RETENTION_DAYS = 365
 EXPECTED_INVENTORY_SYNC_MINUTES = 15
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-SYSTEM_FACTS_SYNCER = "app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer"
 
 
 class TestTasksSettings:

@@ -344,7 +344,7 @@ async def test_service_observation_cascade_on_service_delete(
 
 @pytest.mark.asyncio
 async def test_capability_only_observation_validates() -> None:
-    """A node whose only readable fact is its elevation capability is observable.
+    """Accept an observation whose only readable fact is the elevation capability.
 
     ``can_elevate`` is measurable on a host where ``/etc/os-release`` is unreadable,
     no package manager resolves and no host config is found, so the minimum-content
@@ -358,7 +358,7 @@ async def test_capability_only_observation_validates() -> None:
 
 
 def test_empty_write_observation_is_rejected() -> None:
-    """An observation carrying no measured fact at all is still refused."""
+    """Refuse an observation carrying no measured fact at all."""
     with pytest.raises(ValidationError) as excinfo:
         HostSystemObservationWrite(observed_at=UPDATED_OBSERVED_AT)
     message = str(excinfo.value)
@@ -367,7 +367,7 @@ def test_empty_write_observation_is_rejected() -> None:
 
 
 def test_empty_response_observation_is_rejected() -> None:
-    """The response model is refused too, despite its auto-populated ``created_at``.
+    """Refuse the response model too, despite its auto-populated ``created_at``.
 
     ``HostSystemObservationResponse`` also inherits ``BaseSQLModel``, so deriving the
     validator's field set from the concrete class would let ``created_at`` satisfy it
@@ -382,7 +382,7 @@ def test_empty_response_observation_is_rejected() -> None:
 async def test_host_observation_postgres_false_is_not_read_back_as_null(
     postgres_session: AsyncSession,
 ) -> None:
-    """A measured ``False`` survives a real PostgreSQL round-trip as ``False``."""
+    """Read a measured ``False`` back as ``False`` after a real PostgreSQL round-trip."""
     node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
     created = await HostSystemObservationManager.create(
         postgres_session,
@@ -399,7 +399,7 @@ async def test_later_unable_measurement_replaces_a_stored_able_one(
     session: AsyncSession,
     node: Node,
 ) -> None:
-    """A node that loses its elevation capability overwrites the stored ``True``.
+    """Overwrite a stored ``True`` when a node loses its elevation capability.
 
     ``update`` is a full replace over every column, so the newer measurement wins
     rather than being merged under the older one.

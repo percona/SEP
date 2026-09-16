@@ -195,9 +195,15 @@ class TestHostFacts:
         assert collect_host_facts()["can_elevate"] is False
 
     def test_collect_host_facts_omits_an_unmeasured_can_elevate(self, mocker):
-        """``None`` is an absence, so the key stays out of the collected facts."""
+        """Omit the key entirely when the capability could not be measured.
+
+        ``None`` is an absence rather than a value, so it must read downstream as
+        never-observed instead of as a measured inability.
+        """
         mocker.patch(f"{MODULE}.collect_can_elevate", return_value=None)
-        assert "can_elevate" not in collect_host_facts()
+        facts = collect_host_facts()
+        assert "collected_at" in facts
+        assert "can_elevate" not in facts
 
 
 class TestParseHostPort:
