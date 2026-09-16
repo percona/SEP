@@ -524,7 +524,7 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         log_path=run.log_path,
         port=run.port,
         bind_ip=run.bind_ip,
-        member_configs=run.member_configs,
+        member_configs=run.member_configs,  # ty: ignore[invalid-argument-type]
     )
     return _strategy_for(install_method), spec
 
