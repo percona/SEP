@@ -76,6 +76,7 @@ _RECLAIM_METHODS = (
     "_scratch_name_parts",
     "_staging_owner_is_alive",
     "_process_started_at",
+    "_run_started_at",
 )
 _FIRST_DUMP = {
     "metadata": "Finished dump at: first\n",
@@ -114,6 +115,19 @@ def _scratch_name(suffix: str, *parts: object) -> str:
 
 
 _DEFAULT_WORK_DIR_NAME = _scratch_name(PARTIAL_SUFFIX, "030000", 4242)
+
+
+def _this_runs_scratch_name(suffix: str) -> str:
+    """Build the name this test process would give a scratch directory right now.
+
+    Stamped off the real clock rather than the frozen ``TODAY``, so the start time
+    the name carries is one this process genuinely postdates: the payload reads the
+    owner's liveness off that field against the pid's real start time.
+
+    :param suffix: The scratch suffix, read off the payload.
+    :return: The directory name.
+    """
+    return f".{real_time.strftime('%Y%m%d.%H%M%S')}.{os.getpid()}{suffix}"
 
 
 def _exited_pid() -> int:
@@ -175,7 +189,13 @@ def _mydumper_instance(
         "datetime": datetime,
         "time": types.SimpleNamespace(
             strftime=lambda fmt, *_args: TODAY.strftime(fmt),
+            strptime=real_time.strptime,
+            mktime=real_time.mktime,
             time=real_time.time,
+            clock_gettime=real_time.clock_gettime,
+            CLOCK_BOOTTIME=getattr(
+                real_time, "CLOCK_BOOTTIME", real_time.CLOCK_MONOTONIC
+            ),
             sleep=lambda _seconds: None,
         ),
         "_is_backup_day_name": _IS_BACKUP_DAY_NAME,
@@ -780,16 +800,146 @@ class TestReclaimInterruptedPublish:
         A second run's reclaim pass can start inside the window ``_publish_backup``
         leaves open between its two renames. Restoring or dropping the first run's
         moved-aside copy while that run is still live races its own recovery path.
+
+        The directory is shaped as ``_publish_backup`` leaves it: the name is the
+        live run's, while the mtime is the previous run's last write, which predates
+        the live run's start. Reading the owner's liveness off the mtime would call
+        the live owner recycled here.
         """
-        aside = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", os.getpid())
+        aside = tmp_path / _this_runs_scratch_name(REPLACED_SUFFIX)
         aside.mkdir()
-        (aside / "metadata").write_text("Finished dump at: live\n")
+        (aside / "metadata").write_text("Finished dump at: previous\n")
+        aged = real_time.time() - OLDER_THAN_ANY_GRACE_PERIOD
+        os.utime(aside, (aged, aged))
         instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
 
         instance._reclaim_interrupted_publish()
 
         assert aside.is_dir()
+        assert not (tmp_path / real_time.strftime("%Y%m%d")).exists()
+
+    def test_reads_a_moved_aside_owners_liveness_off_its_name_not_its_mtime(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert the owner's start is compared against the name's time, not the mtime.
+
+        Pinned rather than read off ``/proc`` so the case holds on a host without
+        it: the owner started after the previous run's last write and within the
+        second its name records, which is the shape a live publication has.
+        """
+        owner_started = real_time.time()
+        aside = tmp_path / _this_runs_scratch_name(REPLACED_SUFFIX)
+        aside.mkdir()
+        (aside / "metadata").write_text("Finished dump at: previous\n")
+        aged = owner_started - OLDER_THAN_ANY_GRACE_PERIOD
+        os.utime(aside, (aged, aged))
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = lambda _pid: owner_started
+
+        instance._reclaim_interrupted_publish()
+
+        assert aside.is_dir()
+        assert not (tmp_path / real_time.strftime("%Y%m%d")).exists()
+
+    @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs procfs")
+    def test_a_process_start_time_is_read_off_the_kernels_record(self) -> None:
+        """Assert the start time comes from ``/proc/<pid>/stat``, not the entry's ctime.
+
+        The entry's timestamps are set when it is first looked up, which for a child
+        nobody has inspected is the moment this test stats it, so a reading taken
+        after a pause has to still land at the spawn, not at the lookup.
+        """
+        instance, _, _ = _mydumper_instance(("_process_started_at",))
+        spawned_at = real_time.time()
+        child = subprocess.Popen(["sleep", "30"])
+        try:
+            real_time.sleep(2)
+            started = instance._process_started_at(child.pid)
+        finally:
+            child.kill()
+            child.wait()
+
+        assert started is not None
+        assert abs(started - spawned_at) < 1
+
+    def test_restores_a_moved_aside_dump_whose_pid_was_reused(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert a moved-aside dump is put back once its owner's pid belongs to another.
+
+        The process that took the pid started after the run named in the directory,
+        so however alive the pid looks, the run that moved the dump aside is gone.
+        """
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", os.getpid())
+        aside.mkdir()
+        (aside / "metadata").write_text("Finished dump at: first\n")
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = (
+            lambda _pid: real_time.time() + OLDER_THAN_ANY_GRACE_PERIOD
+        )
+
+        instance._reclaim_interrupted_publish()
+
+        assert (instance.backup_dir / "metadata").read_text() == (
+            "Finished dump at: first\n"
+        )
+        assert not aside.exists()
+
+    def test_an_owner_that_started_mid_second_is_not_taken_for_a_reused_pid(
+        self, tmp_path: Path
+    ) -> None:
+        """Assert the name's whole-second start time does not undercut a real owner.
+
+        The name truncates the run's start time to the second while a process's
+        start time does not, so an owner that started mid-second postdates its own
+        name by a fraction.
+        """
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", os.getpid())
+        aside.mkdir()
+        (aside / "metadata").write_text("Finished dump at: live\n")
+        named = real_time.mktime(
+            real_time.strptime(f"{TODAY_STR}010000", "%Y%m%d%H%M%S")
+        )
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = lambda _pid: named + 0.5
+
+        instance._reclaim_interrupted_publish()
+
+        assert aside.is_dir()
         assert not instance.backup_dir.exists()
+
+    def test_a_pid_it_cannot_signal_is_still_checked_for_reuse(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Assert a pid held by another user's process is not taken for a live owner.
+
+        ``os.kill`` refuses to signal it, but its start time is readable all the same,
+        and a start after the run named in the directory means the run is gone. Left
+        unread, a crashed publication whose pid landed on a root-owned process would
+        never be restored.
+        """
+
+        def refuse(_pid: int, _sig: int) -> None:
+            raise PermissionError
+
+        monkeypatch.setattr(os, "kill", refuse)
+        aside = tmp_path / _scratch_name(REPLACED_SUFFIX, "010000", os.getpid())
+        aside.mkdir()
+        (aside / "metadata").write_text("Finished dump at: first\n")
+        stale = tmp_path / _scratch_name(PARTIAL_SUFFIX, "010000", os.getpid())
+        stale.mkdir()
+        (stale / "sakila.film.sql").write_text("half a dump\n")
+        instance, _, _ = _dumper(tmp_path, _RECLAIM_METHODS)
+        instance._process_started_at = (
+            lambda _pid: real_time.time() + OLDER_THAN_ANY_GRACE_PERIOD
+        )
+
+        instance._reclaim_interrupted_publish()
+
+        assert (instance.backup_dir / "metadata").read_text() == (
+            "Finished dump at: first\n"
+        )
+        assert not _scratch_names(tmp_path)
 
     def test_never_restores_a_moved_aside_name_that_is_not_a_day(
         self, tmp_path: Path

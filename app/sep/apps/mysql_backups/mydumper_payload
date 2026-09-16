@@ -2268,21 +2268,23 @@ class MyDumper(Backup):
             shutil.rmtree(replaced_dir, ignore_errors=True)
         self.logger.info("OK Backup published to %s.", self.backup_dir)
 
-    def _staging_owner_is_alive(self, name: str, mtime: float) -> bool | None:
-        """Return whether the run that owns a staging directory is still going.
+    def _staging_owner_is_alive(self, name: str, alive_at: float) -> bool | None:
+        """Return whether the run that owns a scratch directory is still going.
 
-        The owning pid is part of the directory name and every staging directory
+        The owning pid is part of the directory name and every scratch directory
         belongs to a process on this host. The directory's own mtime cannot answer
         this on its own: it does not advance while mydumper appends to a chunk file
         it already created, so a slow dump looks abandoned long before it is. But a
         live pid alone is not enough either, since pids get recycled: a process that
-        started *after* this directory was created is a different process holding a
-        pid a killed run left behind, not that run still going. Comparing the pid's
-        own start time against the directory's mtime tells the two apart, since the
-        original owner cannot postdate a directory it went on to create or rename.
+        started *after* the owner is known to have been running is a different
+        process holding a pid a killed run left behind, not that run still going.
+        Comparing the pid's own start time against that moment tells the two apart.
 
-        :param name: The staging directory's name.
-        :param mtime: The directory's own mtime, from the caller's stat.
+        :param name: The scratch directory's name.
+        :param alive_at: A moment the owning run is known to have been alive at: the
+            directory's mtime for a staging directory it wrote into, or its own start
+            time for a dump it moved aside, since a rename leaves the previous run's
+            mtime on the directory.
         :return: Whether the pid in the name is running and owns this directory, or
             None when the name carries no readable pid.
         """
@@ -2294,22 +2296,31 @@ class MyDumper(Backup):
         except ProcessLookupError:
             return False
         except OSError:
-            # The pid exists but is not ours to signal.
-            return True
+            # The pid exists but is not ours to signal; its start time still is.
+            pass
         started = self._process_started_at(int(pid))
-        return started is None or started <= mtime
+        return started is None or started <= alive_at
 
     @staticmethod
     def _process_started_at(pid: int) -> float | None:
         """Return when the process holding a pid started, or None if unreadable.
+
+        Read off field 22 of ``/proc/<pid>/stat``, the kernel's own record, rather
+        than the timestamps of ``/proc/<pid>`` itself: those are set when the entry
+        is first looked up, so a process nobody has inspected reads as having
+        started the moment this check runs.
 
         :param pid: The pid to look up.
         :return: The process's start time as a Unix timestamp, or None on a host
             that does not expose ``/proc`` or when the pid is not ours to inspect.
         """
         try:
-            return Path(f"/proc/{pid}").stat().st_ctime
-        except OSError:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+            # ``comm`` can hold spaces; the fields after it start past its ")".
+            ticks_since_boot = int(stat.rsplit(")", 1)[1].split()[19])
+            booted_at = time.time() - time.clock_gettime(time.CLOCK_BOOTTIME)
+            return booted_at + ticks_since_boot / os.sysconf("SC_CLK_TCK")
+        except (OSError, ValueError, IndexError, AttributeError):
             return None
 
     @staticmethod
@@ -2324,6 +2335,21 @@ class MyDumper(Backup):
             name = name.removesuffix(suffix)
         return name.lstrip(".").split(".")
 
+    @staticmethod
+    def _run_started_at(parts: list[str]) -> float | None:
+        """Return the latest moment the run that named a scratch directory started.
+
+        :param parts: The name's fields, from :meth:`_scratch_name_parts`.
+        :return: The end of the second the run's start time names, since the name
+            truncates that time to the second while process start times do not, or
+            None when the name does not carry a day and a time of day.
+        """
+        try:
+            started = time.strptime("".join(parts[:2]), "%Y%m%d%H%M%S")
+        except ValueError:
+            return None
+        return time.mktime(started) + 1
+
     def _reclaim_scratch_dir(self, scratch_dir: Path) -> None:
         """Restore or discard one leftover scratch directory.
 
@@ -2332,11 +2358,16 @@ class MyDumper(Backup):
         """
         mtime = scratch_dir.stat().st_mtime
         if scratch_dir.name.endswith(REPLACED_SUFFIX):
-            if self._staging_owner_is_alive(scratch_dir.name, mtime):
+            parts = self._scratch_name_parts(scratch_dir.name)
+            # The name is the moving run's, while the mtime is the previous run's:
+            # a rename leaves it alone. Only the name says when the owner was alive.
+            moved_at = self._run_started_at(parts)
+            if moved_at is not None and self._staging_owner_is_alive(
+                scratch_dir.name, moved_at
+            ):
                 return
-            day_name = self._scratch_name_parts(scratch_dir.name)[0]
-            day_dir = self.backup_server_dir / day_name
-            if _is_backup_day_name(day_name) and not day_dir.exists():
+            day_dir = self.backup_server_dir / parts[0]
+            if _is_backup_day_name(parts[0]) and not day_dir.exists():
                 scratch_dir.rename(day_dir)
                 self.logger.info(
                     "Restored %s from an interrupted publication.", day_dir.name
