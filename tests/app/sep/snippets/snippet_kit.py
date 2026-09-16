@@ -13,12 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared helpers for seeding snippet frontmatter in the tests.
+"""Shared helpers for the snippet test suites.
 
 Any suite that mutates a persisted snippet's metadata directly needs the same
 two-step seed: write the metadata to the database, because the routes reload the row
 by filename, and evict the derived reads the in-memory instance already cached. The
 shape is stated here once for all of them.
+
+The corpus-wide suites that read every builtin script also share one walk of the
+snippets directory, so a file the application would ingest is never silently left
+out of one check while another covers it.
 """
 
 from functools import cached_property
@@ -26,8 +30,34 @@ from typing import Any
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST, manifest_relative_path
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
+
+
+def enumerate_snippets() -> tuple[str, ...]:
+    """Collect every snippet filename the application would ingest.
+
+    Walks the snippets directory as :func:`app.sep.snippets.celery.update_snippets`
+    does, skipping the checksum manifest that shares it. The sync filter that
+    function additionally applies is deliberately not mirrored: a file it would
+    decline to ingest still has content an author can get wrong.
+
+    :return: The snippet filenames, relative to the snippets directory, sorted.
+    """
+    names: list[str] = []
+    for path in snippets_settings.SNIPPETS_DIR.rglob("*"):
+        if not path.is_file():
+            continue
+        name = manifest_relative_path(path, snippets_settings.SNIPPETS_DIR)
+        if name == BUILTIN_CHECKSUM_MANIFEST:
+            continue
+        names.append(name)
+    return tuple(sorted(names))
+
+
+SNIPPET_FILENAMES = enumerate_snippets()
 
 
 def drop_cached_reads(snippet: Snippet) -> None:

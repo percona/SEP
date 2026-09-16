@@ -45,7 +45,7 @@ if [ -d "$BACKUP_LOG_DIR" ]; then
         find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
             \( -name 'xtrabackup-*' -o -name 'mydumper-*' \) \
             -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
-            sort -n | tail -n 4 | cut -d' ' -f2-
+            sort -n | tail -n 4 | cut -d' ' -f2- || true
     )
 fi
 if [ -n "$detailed_logs" ]; then
@@ -93,7 +93,7 @@ if [ -d "$BACKUP_LOG_DIR" ]; then
         find "$BACKUP_LOG_DIR" -maxdepth 1 -type f \
             -name 'binlog_puller*' \
             -printf '%T@ %TY-%Tm-%Td %TH:%TM %s %p\n' 2> /dev/null |
-            sort -n | tail -n 4 | cut -d' ' -f2-
+            sort -n | tail -n 4 | cut -d' ' -f2- || true
     )
 fi
 if [ -n "$binlog_puller_logs" ]; then
