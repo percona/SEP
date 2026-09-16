@@ -1078,7 +1078,9 @@ class TestListHostSystemObservations:
 
         statements: list[str] = []
 
-        def _record(conn, cursor, statement, *args) -> None:
+        def _record(
+            conn: object, cursor: object, statement: str, *args: object
+        ) -> None:
             statements.append(statement)
 
         bind = session.get_bind()
