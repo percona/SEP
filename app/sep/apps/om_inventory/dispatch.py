@@ -39,7 +39,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, TypeVar
 
-from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.sep.apps.framework.spec import RUN_PYTHON_TASK
 from app.sep.apps.om_inventory import payload as payload_pkg
@@ -65,35 +65,74 @@ PROBE_PAYLOAD_PATH = Path(payload_pkg.__file__).parent / "probe.py"
 _CAPACITY_RETRY_ATTEMPTS = 3
 _CAPACITY_RETRY_BASE_DELAY_SECONDS = 1.0
 
+#: Substring `_dispatch_queue_item` (app/tasks/celery.py) puts in a 409's detail
+#: when its own dispatch-lock row collided. Matched rather than the bare status
+#: code so a 409 for an unrelated reason (e.g. "Queue item is not in a pending
+#: state") still fails immediately instead of being retried into a longer hang.
+_DISPATCH_LOCK_CONFLICT_MARKER = "DispatchLock"
+
 T = TypeVar("T")
 
 
+def _is_pool_capacity_error(err: Exception) -> bool:
+    """Return whether ``err`` is the Tasks API's own connection-pool refusal.
+
+    :param err: The exception a retried call raised.
+    :return: Whether it is worth retrying.
+    """
+    return isinstance(err, HTTPServiceUnavailableException)
+
+
+def _is_dispatch_lock_race(err: Exception) -> bool:
+    """Return whether ``err`` is a same-content dispatch racing its own lock row.
+
+    ``_dispatch_queue_item`` computes its lock name as a hash of exactly
+    ``{task_id, task, target, payload, meta}`` and deletes the row in a
+    ``finally`` right after dispatching -- the lock's whole lifetime is one
+    dispatch call, not this probe's. So a collision here means another request
+    with byte-identical content (this same host, dispatched again before the
+    first attempt's ``finally`` ran) is racing this one, not that a long-running
+    duplicate is genuinely still in flight. Waiting a moment and asking again
+    is correct, not a way of hiding a real conflict.
+
+    :param err: The exception a retried call raised.
+    :return: Whether it is worth retrying.
+    """
+    return isinstance(
+        err, HTTPConflictException
+    ) and _DISPATCH_LOCK_CONFLICT_MARKER in str(err.detail)
+
+
 async def _with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
-    """Retry ``call`` a bounded number of times on the Tasks API's own 503.
+    """Retry ``call`` a bounded number of times on a known-transient refusal.
 
     A sweep dispatches up to ``MAX_CONCURRENT_PROBES`` hosts at once, each making
     its own requests to the Tasks API -- exactly the burst that can transiently
-    exhaust *that* process's own database connection pool (SEP-2026 sized it at 5
-    connections). A caller here waiting out ``POOL_TIMEOUT`` and getting refused
-    is a queueing accident, not a fact about this host's probe, so it does not
-    belong counted alongside a real dispatch or collection failure.
+    exhaust that process's own database connection pool (SEP-2026 sized it at 5
+    connections, surfaced as a 503) or race two byte-identical dispatches against
+    the same dispatch-lock row (surfaced as a 409, see
+    :func:`_is_dispatch_lock_race`). Either is a queueing accident, not a fact
+    about this host's probe, so neither belongs counted alongside a real dispatch
+    or collection failure.
 
-    Left uncapped this would be indistinguishable from a hang: retrying forever on
-    a pool that stays saturated blocks the semaphore slot this host holds, which
-    is exactly what starves the *other* queued hosts of a turn. Bounded both ways
-    -- a fixed attempt count, and an exponential backoff that is itself bounded by
-    that count -- caps how long one host can hold its slot before this gives up
-    and lets the ordinary failure path record it.
+    Left uncapped this would be indistinguishable from a hang: retrying forever
+    on a pool that stays saturated blocks the semaphore slot this host holds,
+    which is exactly what starves the *other* queued hosts of a turn. Bounded
+    both ways -- a fixed attempt count, and an exponential backoff that is itself
+    bounded by that count -- caps how long one host can hold its slot before this
+    gives up and lets the ordinary failure path record it.
 
     :param call: Zero-argument async callable to retry.
     :return: Whatever ``call`` returns, once it stops raising.
-    :raises HTTPServiceUnavailableException: When every attempt is exhausted.
+    :raises Exception: Whatever ``call`` last raised, once every attempt is spent,
+        or immediately for any exception neither predicate recognises.
     """
     for attempt in range(_CAPACITY_RETRY_ATTEMPTS):
         try:
             return await call()
-        except HTTPServiceUnavailableException:
-            if attempt == _CAPACITY_RETRY_ATTEMPTS - 1:
+        except Exception as err:
+            transient = _is_pool_capacity_error(err) or _is_dispatch_lock_race(err)
+            if not transient or attempt == _CAPACITY_RETRY_ATTEMPTS - 1:
                 raise
             await asyncio.sleep(_CAPACITY_RETRY_BASE_DELAY_SECONDS * 2**attempt)
     raise AssertionError("unreachable: the loop above always returns or raises")

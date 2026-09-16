@@ -13,15 +13,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test that a transient Tasks API 503 does not fail a host's probe outright.
+"""Test that a transient Tasks API refusal does not fail a host's probe outright.
 
 A sweep dispatches up to ``MAX_CONCURRENT_PROBES`` hosts at once, each making its
 own requests to the Tasks API -- exactly the burst that can transiently exhaust
-that process's own database connection pool (SEP-2026 sized it at 5 connections).
-``_with_capacity_retry`` absorbs that queueing accident with a bounded retry
+that process's own database connection pool (SEP-2026 sized it at 5 connections,
+surfaced as a 503) or race two byte-identical dispatches against the same
+dispatch-lock row (surfaced as a 409 -- the lock's whole lifetime is one dispatch
+call, per ``_dispatch_queue_item``'s own ``finally``, not this probe's).
+``_with_capacity_retry`` absorbs either queueing accident with a bounded retry
 instead of letting it count as a dispatch or collection failure, and stays
-bounded both in attempt count and in total added wait so a pool that stays
-saturated still gives up and lets the ordinary failure path record it.
+bounded both in attempt count and in total added wait so a refusal that does not
+clear still gives up and lets the ordinary failure path record it.
 """
 
 from typing import Any
@@ -29,7 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.core.exceptions import HTTPServiceUnavailableException
+from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.sep.apps.om_inventory.dispatch import (
     _CAPACITY_RETRY_ATTEMPTS,
     _with_capacity_retry,
@@ -110,7 +113,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_a_different_error_is_not_retried(self) -> None:
-        """Only the capacity signal is absorbed -- everything else fails fast."""
+        """Only a recognised transient signal is absorbed -- everything else fails fast."""
         calls = 0
 
         async def broken() -> str:
@@ -123,9 +126,80 @@ class TestWithCapacityRetry:
 
         assert calls == 1
 
+    @pytest.mark.asyncio
+    async def test_a_dispatch_lock_race_clears_on_retry(self) -> None:
+        """The same-content dispatch-lock collision is retried, not just the 503."""
+        calls = 0
 
-class TestProbeHostAbsorbsATransient503:
+        async def flaky() -> str:
+            nonlocal calls
+            calls += 1
+            if calls < _CAPACITY_RETRY_ATTEMPTS:
+                raise HTTPConflictException(
+                    "409: DispatchLock with the same name already exists."
+                )
+            return "ok"
+
+        assert await _with_capacity_retry(flaky) == "ok"
+        assert calls == _CAPACITY_RETRY_ATTEMPTS
+
+    @pytest.mark.asyncio
+    async def test_an_unrelated_409_is_not_retried(self) -> None:
+        """A conflict that is not the dispatch lock still fails on the first try.
+
+        ``_dispatch_queue_item`` also raises 409 for "Queue item is not in a
+        pending state" -- a real conflict, not a queueing accident, and nothing
+        a retry would resolve.
+        """
+        calls = 0
+
+        async def rejected() -> str:
+            nonlocal calls
+            calls += 1
+            raise HTTPConflictException("Queue item is not in a pending state.")
+
+        with pytest.raises(HTTPConflictException):
+            await _with_capacity_retry(rejected)
+
+        assert calls == 1
+
+
+class TestProbeHostAbsorbsATransientRefusal:
     """The end-to-end shape: a host's probe survives a queueing accident."""
+
+    @pytest.mark.asyncio
+    async def test_a_dispatch_lock_race_still_succeeds(self) -> None:
+        """A same-content lock collision on the dispatch is not this host's failure."""
+        post_calls = 0
+
+        async def post(_path: str, **_: Any) -> dict[str, Any]:
+            nonlocal post_calls
+            post_calls += 1
+            if post_calls == 1:
+                raise HTTPConflictException(
+                    "409: DispatchLock with the same name already exists."
+                )
+            return {"id": HISTORY_ID}
+
+        async def get(_path: str, **_: Any) -> dict[str, Any]:
+            return {"id": HISTORY_ID, "status": "success"}
+
+        api = MagicMock()
+        api.post = AsyncMock(side_effect=post)
+        api.get = AsyncMock(side_effect=get)
+
+        async def stream(*_a: Any, **_kw: Any) -> Any:
+            return
+            yield  # pragma: no cover - makes this an async generator
+
+        api.stream = stream
+
+        result = await probe_host(api, HOST, entries())
+
+        one_retry = 2
+        assert post_calls == one_retry
+        assert result.error is None
+        assert result.task_history_id == HISTORY_ID
 
     @pytest.mark.asyncio
     async def test_a_dispatch_that_clears_on_retry_still_succeeds(self) -> None:
