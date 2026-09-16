@@ -13,9 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ``scripts/sync_labeler_apps.py`` CLI."""
+"""Tests for the ``scripts/sync_labeler_apps.py`` CLI.
 
-import subprocess
+Capture the repository app block during collection, before parallel scaffold
+tests create and remove temporary app packages in the source tree.
+"""
+
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,10 @@ import pytest
 from tests.scripts import load_script
 
 sync_labeler_apps = load_script("sync_labeler_apps")
+_REPOSITORY_APP_BLOCK = sync_labeler_apps.render_app_block(
+    sync_labeler_apps.REPO_ROOT.joinpath(*sync_labeler_apps.APPS_SUBDIR),
+    sync_labeler_apps.REPO_ROOT,
+)
 
 _EXISTING_RULES = """\
 python:
@@ -305,34 +312,7 @@ def test_main_reports_error_cleanly(tmp_path, capsys):
     assert "Traceback" not in err
 
 
-def test_committed_labeler_matches_disk(tmp_path: Path):
-    """Confirm the committed labeler matches the tracked app surfaces."""
-    repo = tmp_path / "repo"
-    paths = subprocess.check_output(
-        [
-            "git",
-            "ls-files",
-            "-z",
-            "--",
-            "app/sep/apps",
-            "frontend/packages/apps",
-            "tests/app/sep/apps",
-            "frontend/packages/e2e/tests",
-        ],
-        cwd=sync_labeler_apps.REPO_ROOT,
-    )
-    for path in paths.decode().split("\0"):
-        if path:
-            target = repo / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.touch()
-
-    labeler = _write_labeler(
-        repo, sync_labeler_apps.DEFAULT_LABELER.read_text(encoding="utf-8")
-    )
-    assert (
-        sync_labeler_apps.main(
-            ["--check", "--labeler", str(labeler), "--repo-root", str(repo)]
-        )
-        == 0
-    )
+def test_committed_labeler_matches_disk():
+    """Confirm the committed labeler matches the app surfaces at collection."""
+    labeler = sync_labeler_apps.DEFAULT_LABELER.read_text(encoding="utf-8")
+    assert labeler == sync_labeler_apps.render_labeler(labeler, _REPOSITORY_APP_BLOCK)
