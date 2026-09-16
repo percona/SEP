@@ -1293,6 +1293,43 @@ class TestTaskHistoryResponseDisplayName:
         req = TaskExecutionRequest(task="backup-task", target="node-1")
         assert self._history(normal_task, req).display_name == "backup-task"
 
+    def test_proxy_over_a_generic_executor_is_classified_by_its_root(self) -> None:
+        """Assert a proxy wrapping a generic executor still derives a per-run label.
+
+        History binds to the dispatched task, so an app that wraps ``exec-artifact``
+        to attach its own hooks would otherwise collapse every one of its runs onto
+        the wrapper's single name.
+        """
+        proxy = TaskFactory.build(
+            id=4,
+            name="atw__exec-artifact",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "exec-artifact"},
+        )
+        req = TaskExecutionRequest(
+            task="atw__exec-artifact",
+            target="node-1",
+            meta={"_snippet_filename": "snippets/collect.sh"},
+        )
+
+        assert self._history(proxy, req).display_name == "snippets/collect.sh on node-1"
+
+    def test_proxy_over_a_named_task_still_reports_its_own_name(self) -> None:
+        """Assert the classification change leaves the framework's proxies untouched.
+
+        Those wrap a non-generic task and carry the meaningful per-service name, so
+        that name is what should be displayed.
+        """
+        proxy = TaskFactory.build(
+            id=5,
+            name="mysql-backup-svc-a",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "mysql-backup"},
+        )
+        req = TaskExecutionRequest(task="mysql-backup-svc-a", target="node-1")
+
+        assert self._history(proxy, req).display_name == "mysql-backup-svc-a"
+
     def test_generic_executor_uses_underscore_snippet_filename_from_meta(
         self, run_python_task: Task
     ) -> None:

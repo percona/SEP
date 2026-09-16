@@ -4114,6 +4114,13 @@ export interface components {
        *     carries one, and the target from the execution request. Falls back to
        *     ``"<task> on <target>"`` when no filename is available.
        *
+       *     A ``PROXY`` task is classified by the root it names, not by its own name,
+       *     because history binds to the *dispatched* task: an app wrapping a generic
+       *     executor to attach its own hooks would otherwise collapse every one of its
+       *     runs onto the wrapper's single name. Only the classification uses the root —
+       *     a proxy over a non-generic task still reports its own name, which is the
+       *     meaningful one for the per-service proxies the framework builds.
+       *
        *     :return: The display label for the task history entry.
        */
       readonly display_name: string;

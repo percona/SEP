@@ -43,6 +43,8 @@ _ROOT_TASK_NAME = "exec-artifact"
 _PROXY_NAME = f"{ATW_PROXY_TASK_PREFIX}{_ROOT_TASK_NAME}"
 #: A non-default ``AnonymizeMask``; the type is an int bitmask, not a name list.
 _CUSTOM_ANONYMIZE_MASK = 6
+#: ``TaskBase.name``'s own ``max_length``, so a root at the limit cannot be prefixed.
+_MAX_TASK_NAME_LENGTH = 255
 
 
 def _root_task(
@@ -263,6 +265,43 @@ class TestRefusesToWrap:
         )
 
         assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_root_with_its_own_recorder_is_not_wrapped(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure an existing root recorder is not displaced by ATW's.
+
+        ``maybe_record_run`` resolves exactly one recorder and does not chain, so
+        wrapping would silently stop whatever the root's own recorder records.
+        Declining costs ATW only the hook — the sweep still supplies its outcome.
+        """
+        tasks_api.get.side_effect = _serve(
+            {
+                _ROOT_TASK_NAME: _root_task(
+                    run_result_recorder="app.sep.apps.mysql_backups.recorder:record_backup_run"
+                )
+            }
+        )
+
+        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_root_name_too_long_to_prefix_is_not_wrapped(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a root name that cannot take the prefix degrades instead of 500ing.
+
+        ``Task.name`` permits 255 characters, so a root at the limit has no valid
+        prefixed form; building the payload raises and the batch route would surface
+        it as a 500 rather than dispatching.
+        """
+        long_name = "x" * _MAX_TASK_NAME_LENGTH
+        tasks_api.get.side_effect = _serve({long_name: _root_task()})
+
+        assert await ensure_atw_proxy_task(long_name) is None
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio

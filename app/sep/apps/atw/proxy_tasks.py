@@ -35,6 +35,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from async_lru import alru_cache
+from pydantic import ValidationError
 
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -209,7 +210,19 @@ async def _create_proxy_task(
         ``409`` / ``400`` pair that a concurrent creator produces.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
-    task_write = _build_proxy_task_write(root_task_name, root)
+    try:
+        task_write = _build_proxy_task_write(root_task_name, root)
+    except ValidationError:
+        # The payload is assembled from an arbitrary configured root, so it can be
+        # rejected for reasons this module does not enumerate — a root name within
+        # the 255-character limit whose prefixed form is not, or any inherited field
+        # the model refuses. Declining keeps "every degradation dispatches under the
+        # root" true instead of surfacing a 500 from a dispatch that could proceed.
+        logger.exception(
+            "Could not build ATW's proxy task for %s; dispatching unwrapped.",
+            root_task_name,
+        )
+        return None
     try:
         return as_json_object(await tasks_api.post("/", json=task_write.model_dump()))
     except (HTTPConflictException, HTTPBadRequestException):
@@ -254,6 +267,18 @@ async def _resolve_atw_proxy_task(root_task_name: str) -> str | None:
                 "Interpreter task %s is itself a PROXY; dispatching unwrapped to "
                 "avoid a two-hop chain.",
                 root_task_name,
+            )
+            return None
+        if root.get("run_result_recorder"):
+            # maybe_record_run resolves exactly one recorder with no chaining, so
+            # wrapping would substitute ATW's for the root's and silently stop
+            # whatever that one records.
+            logger.warning(
+                "Interpreter task %s already declares a run-result recorder (%r); "
+                "dispatching unwrapped rather than displacing it, and letting the "
+                "reconciliation sweep supply ATW's outcome.",
+                root_task_name,
+                root.get("run_result_recorder"),
             )
             return None
         proxy_name = atw_proxy_task_name(root_task_name)
