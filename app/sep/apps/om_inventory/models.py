@@ -94,7 +94,7 @@ def _observed_document_type() -> Any:
     return JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql")
 
 
-class ProbeRunStatus(StrEnum):
+class ProbeRunStatus(StrEnum):  # rst-literal-ok: "None answered" is the English word
     """Enumerate the states of one probe sweep.
 
     ``PARTIAL`` is the common steady state, not an alarm: the probe reaches only
@@ -490,8 +490,8 @@ class ProbeRunResponse(BaseModel):
 
     run_id: UUID
     status: str
-    started_at: datetime
-    finished_at: datetime | None = None
+    started_at: UTCDatetime
+    finished_at: UTCDatetime | None = None
     counts: ProbeCounts
     scope: list[str] | None = None
     error: str | None = None
@@ -587,7 +587,7 @@ class ProbeRunAccepted(BaseModel):
 
     run_id: UUID
     status: str
-    started_at: datetime
+    started_at: UTCDatetime
     scope: list[str] | None = None
 
 
@@ -658,10 +658,10 @@ class HostResponse(BaseModel):
     address: str | None = None
     executor_host: str | None = None
     observed: dict[str, Any] = Field(default_factory=dict)
-    first_seen_at: datetime
-    last_attempt_at: datetime | None = None
-    last_success_at: datetime | None = None
-    failing_since: datetime | None = None
+    first_seen_at: UTCDatetime
+    last_attempt_at: UTCDatetime | None = None
+    last_success_at: UTCDatetime | None = None
+    failing_since: UTCDatetime | None = None
     consecutive_failures: int = 0
     last_error: str | None = None
     services: list[ServiceResponse] = Field(default_factory=list)
