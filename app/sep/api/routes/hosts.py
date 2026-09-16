@@ -82,7 +82,7 @@ def _capabilities_by_executor(
         for observation in observations
     }
     capabilities: dict[str, bool | None] = {}
-    unmatched = []
+    unmatched: list[dict[str, Any]] = []
     for node in nodes:
         if node["name"] in executor_hosts:
             capabilities.setdefault(node["name"], by_node.get(node["id"]))
@@ -153,7 +153,7 @@ async def list_hosts(
         capabilities = _capabilities_by_executor(nodes, observations, executor_hosts)
     except (HTTPException, TypeError, KeyError, OSError):
         display_names = {}
-        capabilities = {}
+        capabilities: dict[str, bool | None] = {}
 
     return sorted(
         [
