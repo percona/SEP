@@ -127,16 +127,6 @@ def encryption_format_for_passes(*, aes256: bool, gpg: bool) -> EncryptionFormat
     return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
 
 
-# Every engine reaches every format: GPG encrypts the finished directory, and
-# AES-256 is either XtraBackup's inline/xbcrypt path or the same post-run
-# xbcrypt pass on Mydumper and Binlog.
-ALLOWED_ENCRYPTION_FORMATS = {
-    BackupType.MYDUMPER: list(EncryptionFormat),
-    BackupType.XTRABACKUP: list(EncryptionFormat),
-    BackupType.BINLOG: list(EncryptionFormat),
-}
-
-
 class UploadProvider(EnumFieldMixin, StrEnum):
     """Upload providers."""
 
@@ -1203,26 +1193,6 @@ class BackupCreate(TaskFormModel):
             raise ValueError(
                 "S3 auxiliary fields set but 'S3' is not in the upload list."
             )
-        return self
-
-    @model_validator(mode="after")
-    def validate_encryption_format(self) -> Self:
-        """Validate the encryption format against the selected backup type.
-
-        Expressed as a validator rather than a conditional ``Choices`` set because
-        the DSL's option list is static and shared across backup types.
-
-        :return: The validated instance.
-        :raises ValueError: If the format is not valid for the backup type.
-        """
-        allowed_formats = ALLOWED_ENCRYPTION_FORMATS.get(self.backup_type, [])
-        if self.encryption_format not in allowed_formats:
-            raise ValueError(
-                f"Invalid encryption_format {self.encryption_format.value!r} for "
-                f"{self.backup_type.name} backup. Options are "
-                f"{[fmt.value for fmt in allowed_formats]}"
-            )
-
         return self
 
     @model_validator(mode="after")
