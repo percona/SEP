@@ -370,10 +370,15 @@ def test_empty_response_observation_is_rejected() -> None:
 
     ``HostSystemObservationResponse`` also inherits ``BaseSQLModel``, so deriving the
     validator's field set from the concrete class would let ``created_at`` satisfy it
-    and retire the invariant silently.
+    and retire the invariant silently. Supplies ``id`` and ``node_id`` because both
+    are required here: omitting them fails on the missing fields before the
+    content validator runs, which passes whether the validator exists or not.
     """
-    with pytest.raises(ValidationError):
-        HostSystemObservationResponse(observed_at=UPDATED_OBSERVED_AT)
+    with pytest.raises(ValidationError) as excinfo:
+        HostSystemObservationResponse(id=1, node_id=1, observed_at=UPDATED_OBSERVED_AT)
+    message = str(excinfo.value)
+    assert "can_elevate" in message
+    assert "os_version" in message
 
 
 @pytest.mark.postgres

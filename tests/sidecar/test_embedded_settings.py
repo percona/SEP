@@ -523,8 +523,9 @@ def test_profile_declares_the_system_facts_syncer(
 ):
     """Assert the embedded profile makes the system-facts collector constructible.
 
-    It was mothballed while nothing read its observations; the host-capability
-    warning is that reader, so the entry is restored.
+    A syncer absent from ``SYNCERS`` cannot be constructed at all, so this entry is
+    the precondition for every other route to the host-capability fact — the seeded
+    schedule below included.
     """
     declared = [
         entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
@@ -548,7 +549,7 @@ def test_profile_schedules_the_system_facts_syncer_daily():
     assert (entry.interval.every, entry.interval.period) == (1, Period.DAYS)
 
 
-def test_the_system_facts_syncer_stays_re_enablable():
+def test_the_short_syncer_name_resolves_to_the_collector():
     """Assert the profile's short syncer name resolves to the collector class.
 
     ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``

@@ -179,25 +179,25 @@ class TestHostFacts:
         assert set(payload_module.HOST_FIELDS) == HOST_OBSERVATION_FIELD_NAMES
 
     def test_collect_can_elevate_root_without_sudo(self, mocker):
-        """A uid-0 task user can elevate even with no sudo binary on PATH."""
+        """Report a uid-0 task user as able even with no sudo binary on PATH."""
         mocker.patch(f"{MODULE}.os.geteuid", return_value=0)
         mocker.patch(f"{MODULE}.shutil.which", return_value=None)
         assert collect_can_elevate() is True
 
     def test_collect_can_elevate_root_with_sudo(self, mocker):
-        """A uid-0 task user with sudo present can elevate."""
+        """Report a uid-0 task user with sudo present as able."""
         mocker.patch(f"{MODULE}.os.geteuid", return_value=0)
         mocker.patch(f"{MODULE}.shutil.which", return_value="/usr/bin/sudo")
         assert collect_can_elevate() is True
 
     def test_collect_can_elevate_non_root_with_sudo(self, mocker):
-        """A non-root task user with sudo on PATH can elevate."""
+        """Report a non-root task user with sudo on PATH as able."""
         mocker.patch(f"{MODULE}.os.geteuid", return_value=1000)
         mocker.patch(f"{MODULE}.shutil.which", return_value="/usr/bin/sudo")
         assert collect_can_elevate() is True
 
     def test_collect_can_elevate_non_root_without_sudo(self, mocker):
-        """A non-root task user with no sudo cannot elevate.
+        """Report a non-root task user with no sudo as unable.
 
         This is the single row of the launch check's truth table that aborts with
         ``SEP_UNLAUNCHABLE``, and the only one the collector reports ``False`` for.
@@ -207,7 +207,7 @@ class TestHostFacts:
         assert collect_can_elevate() is False
 
     def test_collect_can_elevate_without_posix_uids_returns_none(self, mocker):
-        """A platform with no geteuid has no answer, so the fact is unmeasured."""
+        """Leave the fact unmeasured on a platform with no geteuid to answer."""
         mocker.patch(f"{MODULE}.os", spec=[])
         assert collect_can_elevate() is None
 
@@ -707,7 +707,7 @@ class TestMain:
     def test_main_publishes_a_capability_only_false(
         self, tmp_path, monkeypatch, mocker, capsys
     ):
-        """A run whose only fact is a measured ``False`` still emits a host document.
+        """Emit a host document for a run whose only fact is a measured ``False``.
 
         The publication envelope is a second admission point, downstream of the
         assembly one: were either to test truthiness, this run would emit
@@ -728,7 +728,7 @@ class TestMain:
     def test_main_publishes_a_capability_only_true(
         self, tmp_path, monkeypatch, mocker, capsys
     ):
-        """A capability-only ``True`` publishes through the same envelope."""
+        """Publish a capability-only ``True`` through the same envelope."""
         config = _write_config(tmp_path, {"collect_host": True, "services": []})
         monkeypatch.setattr("sys.argv", ["payload", "-c", str(config)])
         mocker.patch(

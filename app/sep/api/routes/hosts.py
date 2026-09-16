@@ -23,7 +23,7 @@ the Tasks and Inventory APIs directly.
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.pagination import fetch_all_dict_items
@@ -56,6 +56,14 @@ class HostResponse(BaseModel):
     can_elevate: bool | None = None
 
 
+#: Validator for the capability value read off an upstream observation row. An
+#: upstream page's ``items`` is ``list[Any]``, so without it a non-boolean reaches
+#: ``HostResponse`` outside the degradation ``try`` and answers 500 — the one
+#: inventory failure this route would not absorb. Lax mode, so it accepts exactly
+#: what ``HostResponse`` itself would have coerced.
+_CAN_ELEVATE_ADAPTER = TypeAdapter(bool | None)
+
+
 def _capabilities_by_executor(
     nodes: list[dict[str, Any]],
     observations: list[dict[str, Any]],
@@ -79,18 +87,24 @@ def _capabilities_by_executor(
 
     Reads ``can_elevate`` with ``get``, the one field the observation contract
     declares optional: a row omitting it was observed without a usable answer,
-    which stays distinct from carrying no observation at all.
+    which stays distinct from carrying no observation at all. What the row carries
+    is validated here rather than left to the response model, because the response
+    is built outside the caller's degradation ``try`` — a malformed value would
+    answer 500 there instead of falling back to never-observed.
 
     :param nodes: Every inventory node row.
     :param observations: Every host observation summary.
     :param executor_hosts: Executor node name to address, as the Tasks API returns it.
     :return: Executor node name to its measured capability, absent when unmeasured.
     :raises KeyError: If an upstream row omits a required identifying field.
-    :raises TypeError: If an upstream row is not a mapping. The caller treats this
-        and the ``KeyError`` alike as an inventory outage and degrades on them.
+    :raises TypeError: If an upstream row is not a mapping.
+    :raises ValidationError: If an upstream row carries a non-boolean capability.
+        The caller treats all three alike as an inventory outage and degrades on them.
     """
     by_node = {
-        observation["node_id"]: observation.get("can_elevate")
+        observation["node_id"]: _CAN_ELEVATE_ADAPTER.validate_python(
+            observation.get("can_elevate")
+        )
         for observation in observations
     }
     capabilities: dict[str, bool | None] = {}

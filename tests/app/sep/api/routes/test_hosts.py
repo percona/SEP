@@ -492,6 +492,41 @@ class TestSepHostsEndpoint:
             },
         ]
 
+    def test_a_non_boolean_capability_degrades_rather_than_500s(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Answer 200 with every capability null when an observation row is junk.
+
+        A non-boolean ``can_elevate`` fails validation the same way a malformed
+        envelope does, so one bad row degrades the whole capability enrichment
+        rather than reaching ``HostResponse`` and raising a 500.
+        """
+        mock_task_api_dep.get.return_value = {
+            "nomad-1": "10.0.0.1",
+            "nomad-2": "10.0.0.2",
+        }
+        mock_inventory_api_dep.get.side_effect = _inventory_answers(
+            [
+                {"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"},
+                {"id": 2, "address": "10.0.0.2", "name": "db-mysql-prod-02"},
+            ],
+            [
+                {
+                    "node_id": 1,
+                    "can_elevate": "not-a-boolean",
+                    "observed_at": "2026-09-15T00:00:00Z",
+                }
+            ],
+        )
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert {host["id"] for host in payload} == {"nomad-1", "nomad-2"}
+        assert all(host["can_elevate"] is None for host in payload)
+
     def test_a_malformed_node_page_degrades_rather_than_500s(
         self,
         test_client: TestClient,

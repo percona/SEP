@@ -101,7 +101,7 @@ SyncerName = Annotated[str, AfterValidator(_validate_syncer_name)]
 #: The longest syncer path an ``INVENTORY_SYNC_SCHEDULES`` entry may name. Its
 #: seeded row name is the path appended to a fixed prefix, and the celery-beat
 #: ``PeriodicTask.name`` column is bounded, so a longer path passes the dotted-path
-#: check and then fails the insert at startup -- on PostgreSQL only, since SQLite
+#: check and then fails the insert at startup — on PostgreSQL only, since SQLite
 #: does not enforce the width. Held against the real prefix and column by
 #: ``tests/app/tasks/db/test_seed.py``.
 MAX_SCHEDULED_SYNCER_LENGTH = 232

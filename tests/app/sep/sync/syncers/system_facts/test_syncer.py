@@ -392,7 +392,7 @@ class TestPerformNodeSync:
     async def test_perform_node_sync_writes_a_measured_inability(
         self, mock_syncer, created_node, mock_remote_api, mocker
     ):
-        """A node measured unable to elevate is written as ``False``, not dropped.
+        """Write a node measured unable to elevate as ``False``, not dropped.
 
         Were the observation builder to filter on truthiness, it would read this
         measurement as never-observed and invert the signal being published.

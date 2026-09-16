@@ -139,13 +139,15 @@ class ATWSnippetSummary(BaseModel):
     :param description: The snippet free-text description.
     :param sudo: Whether the snippet's elevation is never wanted, optional, or
         mandatory, letting a client warn before dispatching it to a host that
-        cannot elevate.
+        cannot elevate. Nullable only so the field is additive on an already
+        released model: every response this version builds populates it, and a
+        ``None`` means the server predates the field.
     """
 
     name: str
     title: str
     description: str
-    sudo: SnippetSudoRequirement
+    sudo: SnippetSudoRequirement | None = None
 
 
 class ATWCategoryListing(BaseModel):
