@@ -524,6 +524,7 @@ class TestSepHostsEndpoint:
         response = test_client.get("/api/sep/hosts/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
+        assert payload
         assert {host["id"] for host in payload} == {"nomad-1", "nomad-2"}
         assert all(host["can_elevate"] is None for host in payload)
 
