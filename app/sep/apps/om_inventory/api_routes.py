@@ -280,7 +280,10 @@ async def list_estate_hosts(
 
     if executor is None:
         page = await OmHostManager.list_paginated(
-            session, *clauses, pagination=pagination, order_by=[col(OmHost.name)]
+            session,
+            *clauses,
+            pagination=pagination,
+            order_by=[col(OmHost.name), col(OmHost.node_id)],
         )
         hosts, total = page.items, page.total
     else:
@@ -290,7 +293,7 @@ async def list_estate_hosts(
         # those two when given, rather than always reading the whole table: this
         # filter is the rare, deliberate query, not the default estate browse.
         candidates = await OmHostManager.list(
-            session, *clauses, order_by=[col(OmHost.name)]
+            session, *clauses, order_by=[col(OmHost.name), col(OmHost.node_id)]
         )
         matching = [host for host in candidates if _executor_usable(host) is executor]
         total = len(matching)
@@ -365,7 +368,10 @@ async def list_estate_services(
             else col(OmService.failing_since).is_(None)
         )
     page = await OmServiceManager.list_paginated(
-        session, *clauses, pagination=pagination, order_by=[col(OmService.name)]
+        session,
+        *clauses,
+        pagination=pagination,
+        order_by=[col(OmService.name), col(OmService.service_id)],
     )
     return page.map_items(_service_response)
 

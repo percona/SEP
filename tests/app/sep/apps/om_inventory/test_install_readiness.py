@@ -65,7 +65,7 @@ class TestDataDirFreeBytes:
     """Report free space on the filesystem an install would land on."""
 
     def test_the_free_byte_count_is_reported(self) -> None:
-        """The ordinary case: root's filesystem answers."""
+        """The ordinary case: the data directory's filesystem answers."""
         usage = type("Usage", (), {"free": FREE_BYTES})()
         with (
             patch("shutil.which", return_value=None),
@@ -74,7 +74,7 @@ class TestDataDirFreeBytes:
             facts = collect_install_readiness()
 
         assert facts["data_dir_free_bytes"] == FREE_BYTES
-        assert disk_usage.call_args.args == ("/",)
+        assert disk_usage.call_args.args == ("/var/lib",)
 
     def test_an_unreadable_filesystem_is_none_not_an_exception(self) -> None:
         """A permission or mount failure must not cost the rest of the host record."""
