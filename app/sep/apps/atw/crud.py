@@ -21,8 +21,8 @@ from datetime import datetime
 
 from pydantic import UUID4
 from sqlalchemy import case, func
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
 from app.core.utils.date_time import make_datetime_utc

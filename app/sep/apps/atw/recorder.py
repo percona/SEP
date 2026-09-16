@@ -29,7 +29,7 @@ documents as unobserved, and every row predating the proxy, are filled by
 import logging
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager
 from app.sep.db import get_async_session_maker
