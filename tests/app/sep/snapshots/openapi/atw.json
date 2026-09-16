@@ -28,6 +28,16 @@
         "title": "ServiceTypeEnum",
         "type": "string"
       },
+      "SnippetSudoRequirement": {
+        "description": "Name the three elevation states a snippet's metadata distinguishes.",
+        "enum": [
+          "never",
+          "optional",
+          "always"
+        ],
+        "title": "SnippetSudoRequirement",
+        "type": "string"
+      },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
         "enum": [
@@ -603,7 +613,7 @@
         "type": "object"
       },
       "atw__ATWSnippetSummary": {
-        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:type name: str\n:param title: The snippet display title.\n:type title: str\n:param description: The snippet free-text description.\n:type description: str",
+        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:param title: The snippet display title.\n:param description: The snippet free-text description.\n:param sudo: Whether the snippet's elevation is never wanted, optional, or\n    mandatory, letting a client warn before dispatching it to a host that\n    cannot elevate. Nullable only so the field is additive on an already\n    released model: every response this version builds populates it, and a\n    ``None`` means the server predates the field.",
         "properties": {
           "description": {
             "title": "Description",
@@ -612,6 +622,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sudo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnippetSudoRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "title": "Title",

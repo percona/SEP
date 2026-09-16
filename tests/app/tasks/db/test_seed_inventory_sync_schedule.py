@@ -41,13 +41,17 @@ from app.core.celery.models import IntervalSchedule as IntervalScheduleOption
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
-from app.tasks.config import tasks_settings
+from app.tasks.config import InventorySyncSchedule, tasks_settings
 from app.tasks.models import INVENTORY_SYNC_TASK_NAME
 from tests.app.db_schema import apply_schema
+from tests.app.tasks.conftest import (
+    MYSQL_SYNCER,
+    PMM_SYNCER,
+    SYSTEM_FACTS_SYNCER,
+)
 
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 FIFTEEN_MINUTES = IntervalScheduleOption(every=15, period=Period.MINUTES)
+ONE_DAY = IntervalScheduleOption(every=1, period=Period.DAYS)
 OPERATOR_TASK_NAME = "run_inventory-sync_15_minutes"
 
 
@@ -295,7 +299,12 @@ async def test_unreadable_beat_store_skips_a_first_time_default(
         side_effect=SQLAlchemyError("beat store unreadable"),
     )
 
-    assert await seed_module._default_inventory_sync_schedule() is None
+    assert (
+        await seed_module._seeded_inventory_sync_schedule(
+            seed_module.INVENTORY_SYNC_SCHEDULE_NAME, PMM_SYNCER, FIFTEEN_MINUTES
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -433,3 +442,178 @@ async def test_upgrading_an_install_that_never_dispatched_stays_unmarked(
     (row,) = await _seeded_rows(beat_maker)
     assert row.start_time is None
     assert row.last_run_at is None
+
+
+@pytest.fixture(name="with_system_facts_schedule")
+def with_system_facts_schedule_fixture(configured, mocker) -> str:
+    """Add a daily SystemFacts schedule beside the PMM-pinned scalar default."""
+    mocker.patch.object(
+        tasks_settings,
+        "INVENTORY_SYNC_SCHEDULES",
+        [InventorySyncSchedule(syncer=SYSTEM_FACTS_SYNCER, interval=ONE_DAY)],
+    )
+    return seed_module._inventory_sync_schedule_name(SYSTEM_FACTS_SYNCER)
+
+
+async def _rows_named(
+    beat_maker: async_sessionmaker[AsyncSession], name: str
+) -> list[PeriodicTask]:
+    """Return the beat rows carrying ``name``."""
+    async with beat_maker() as session:
+        return await BasePeriodicTaskManager.list(session, name=name)
+
+
+@pytest.mark.asyncio
+async def test_each_entry_seeds_its_own_schedule(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert a configured entry seeds a second row beside the scalar default."""
+    await seed_module.seed_system_periodic_tasks()
+
+    (scalar,) = await _seeded_rows(beat_maker)
+    (entry,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert scalar.name != entry.name
+    assert json.loads(entry.kwargs)["execution_data"]["meta"]["syncer"] == (
+        SYSTEM_FACTS_SYNCER
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_scalar_defaults_seeded_name_is_unchanged(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert the historical row name survives, so an upgrade keeps its schedule.
+
+    A changed name would leave the existing row unmatched, and the orphan cleanup
+    would delete it — with ``due_on_first_seed`` firing a sync on the re-create.
+    """
+    await seed_module.seed_system_periodic_tasks()
+
+    (scalar,) = await _seeded_rows(beat_maker)
+    assert scalar.name == seed_module.INVENTORY_SYNC_SCHEDULE_NAME
+
+
+@pytest.mark.asyncio
+async def test_a_per_entry_row_is_stable_across_seeds(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert re-seeding updates the entry's row rather than re-creating it."""
+    await seed_module.seed_system_periodic_tasks()
+    (first,) = await _rows_named(beat_maker, with_system_facts_schedule)
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (second,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert second.id == first.id
+
+
+@pytest.mark.asyncio
+async def test_an_entry_carries_its_own_interval(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert the entry runs daily while the scalar default stays at 15 minutes."""
+    await seed_module.seed_system_periodic_tasks()
+
+    (scalar,) = await _seeded_rows(beat_maker)
+    (entry,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert (entry.schedule_model.every, entry.schedule_model.period) == (
+        1,
+        Period.DAYS,
+    )
+    assert (scalar.schedule_model.every, scalar.schedule_model.period) == (
+        15,
+        Period.MINUTES,
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_operator_row_suppresses_only_the_entry_it_covers(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert coverage is decided per schedule, not once for all of them."""
+    async with beat_maker() as session:
+        await _insert_operator_row(session, _operator_kwargs(SYSTEM_FACTS_SYNCER))
+
+    await seed_module.seed_system_periodic_tasks()
+
+    assert await _rows_named(beat_maker, with_system_facts_schedule) == []
+    assert len(await _seeded_rows(beat_maker)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_store_failure_withholds_a_first_time_entry(
+    with_system_facts_schedule, beat_maker, mocker
+) -> None:
+    """Assert an unreadable store neither double-schedules nor un-schedules.
+
+    A first-time entry is withheld; a row this seeder already owns is re-seeded,
+    which is what keeps the orphan cleanup from deleting it.
+    """
+    await seed_module.seed_system_periodic_tasks()
+    (owned,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    mocker.patch.object(
+        seed_module.PeriodicTaskManager,
+        "list_by_task_names",
+        autospec=True,
+        side_effect=SQLAlchemyError("beat store unreadable"),
+    )
+
+    assert (
+        await seed_module._seeded_inventory_sync_schedule(
+            with_system_facts_schedule, SYSTEM_FACTS_SYNCER, ONE_DAY
+        )
+    ) is not None
+    assert (
+        await seed_module._seeded_inventory_sync_schedule(
+            seed_module._inventory_sync_schedule_name(MYSQL_SYNCER),
+            MYSQL_SYNCER,
+            ONE_DAY,
+        )
+        is None
+    )
+    assert owned.name == with_system_facts_schedule
+
+
+@pytest.mark.asyncio
+async def test_removing_an_entry_orphan_cleans_only_its_row(
+    with_system_facts_schedule, beat_maker, mocker
+) -> None:
+    """Assert dropping an entry stops its collection without touching the scalar."""
+    await seed_module.seed_system_periodic_tasks()
+    assert len(await _rows_named(beat_maker, with_system_facts_schedule)) == 1
+
+    mocker.patch.object(tasks_settings, "INVENTORY_SYNC_SCHEDULES", [])
+    await seed_module.seed_system_periodic_tasks()
+
+    assert await _rows_named(beat_maker, with_system_facts_schedule) == []
+    assert len(await _seeded_rows(beat_maker)) == 1
+
+
+@pytest.mark.asyncio
+async def test_two_syncers_sharing_a_class_name_both_schedule(
+    configured, beat_maker, mocker
+) -> None:
+    """Assert a shared class name across modules yields two distinct rows.
+
+    The derivation uses the full dotted path, so this legal configuration keeps
+    both schedules instead of silently collapsing to one.
+    """
+    mocker.patch.object(
+        tasks_settings,
+        "INVENTORY_SYNC_SCHEDULES",
+        [
+            InventorySyncSchedule(syncer="a.b.Syncer", interval=ONE_DAY),
+            InventorySyncSchedule(syncer="c.d.Syncer", interval=ONE_DAY),
+        ],
+    )
+
+    await seed_module.seed_system_periodic_tasks()
+
+    first = await _rows_named(
+        beat_maker, seed_module._inventory_sync_schedule_name("a.b.Syncer")
+    )
+    second = await _rows_named(
+        beat_maker, seed_module._inventory_sync_schedule_name("c.d.Syncer")
+    )
+    assert len(first) == 1
+    assert len(second) == 1

@@ -430,7 +430,7 @@
   "related_apps": [
     {
       "app_key": "backup_mongo/restore",
-      "label": "Restore",
+      "label": "Restores",
       "route_segment": "restores"
     }
   ],

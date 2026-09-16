@@ -853,8 +853,29 @@ SYSTEM_PERIODIC_TASK_PREFIX = "tasks__"
 INVENTORY_SYNC_SCHEDULE_NAME = f"{SYSTEM_PERIODIC_TASK_PREFIX}inventory_sync"
 
 
-def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
-    """Build the default inventory-sync schedule, or ``None`` when unconfigured.
+def _inventory_sync_schedule_name(syncer: str) -> str:
+    """Derive the seeded row name for a per-syncer inventory-sync schedule.
+
+    Built from the **full** qualified syncer name rather than its bare class, which
+    would collide for two syncers sharing a class name across modules — legal
+    configuration that ``init_periodic_tasks_db`` resolves by silently updating one
+    row rather than erroring, leaving fewer schedules than the configuration
+    promises and letting order decide the winner.
+
+    Retains ``SYSTEM_PERIODIC_TASK_PREFIX`` by construction, which is what scopes
+    the orphan cleanup to rows this seeder owns.
+
+    :param syncer: The fully qualified syncer the schedule targets.
+    :return: A name that is deterministic, stable across boots, and unique per
+        syncer identity.
+    """
+    return f"{INVENTORY_SYNC_SCHEDULE_NAME}__{syncer}"
+
+
+def _inventory_sync_schedule(
+    name: str, syncer: str | None, interval: IntervalSchedule | None
+) -> SystemPeriodicTaskSchedule | None:
+    """Build one inventory-sync schedule, or ``None`` when unconfigured.
 
     ``inventory-sync`` is a ``Task`` row rather than a Celery function, so the
     entry uses the same indirection an operator-created schedule uses: it points
@@ -870,23 +891,24 @@ def _inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
     since a schedule switched on for the first time should collect inventory now
     rather than one interval from now.
 
+    :param name: The seeded row name this schedule owns.
+    :param syncer: The syncer to pin, or ``None`` to run every configured one.
+    :param interval: How often the schedule fires, or ``None`` to seed nothing.
     :return: The schedule to append to the seeded set, or ``None`` when
-        ``INVENTORY_SYNC_INTERVAL`` is unset.
+        ``interval`` is unset.
     """
-    interval = tasks_settings.INVENTORY_SYNC_INTERVAL
     if interval is None:
         return None
-    syncer = tasks_settings.INVENTORY_SYNC_SYNCER
     kwargs = {
         "task_name": INVENTORY_SYNC_TASK_NAME,
-        "periodic_task_name": INVENTORY_SYNC_SCHEDULE_NAME,
+        "periodic_task_name": name,
         **({"execution_data": {"meta": {"syncer": syncer}}} if syncer else {}),
     }
     return SystemPeriodicTaskSchedule(
         schedule=interval,
         tasks=[
             SystemPeriodicTaskData(
-                name=INVENTORY_SYNC_SCHEDULE_NAME,
+                name=name,
                 task_name="app.tasks.celery.execute_task_by_name",
                 extra_kwargs={"kwargs": json.dumps(kwargs)},
                 due_on_first_seed=True,
@@ -927,7 +949,9 @@ def _schedule_covers_syncer(row: PeriodicTask, syncer: str | None) -> bool:
     return syncer is None or existing == syncer
 
 
-async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | None:
+async def _seeded_inventory_sync_schedule(
+    name: str, syncer: str | None, interval: IntervalSchedule | None
+) -> SystemPeriodicTaskSchedule | None:
     """Return the schedule to seed, or ``None`` when unset or already covered.
 
     An operator's manually attached interval stays authoritative, so the default
@@ -948,20 +972,22 @@ async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | Non
     store fails both queries and then fails ``init_periodic_tasks_db`` too,
     which uses the same store, so nothing is deleted there either.
 
+    Each schedule answers the ownership question for its own ``name``, so one
+    schedule's first-time status never decides another's.
+
+    :param name: The seeded row name this schedule owns.
+    :param syncer: The syncer to pin, or ``None`` to run every configured one.
+    :param interval: How often the schedule fires, or ``None`` to seed nothing.
     :return: The schedule to seed, or ``None``.
     """
-    if (schedule := _inventory_sync_schedule()) is None:
+    if (schedule := _inventory_sync_schedule(name, syncer, interval)) is None:
         return None
-    syncer = tasks_settings.INVENTORY_SYNC_SYNCER
     session_maker = get_celery_beat_session_maker()
     already_seeded = False
     try:
         async with session_maker() as session:
             already_seeded = (
-                await PeriodicTaskManager.first(
-                    session, name=INVENTORY_SYNC_SCHEDULE_NAME
-                )
-                is not None
+                await PeriodicTaskManager.first(session, name=name) is not None
             )
             rows = await PeriodicTaskManager.list_by_task_names(
                 session, INVENTORY_SYNC_TASK_NAME
@@ -989,16 +1015,37 @@ async def _default_inventory_sync_schedule() -> SystemPeriodicTaskSchedule | Non
 
 
 async def seed_system_periodic_tasks() -> None:
-    """Seed the tasks-service periodic tasks, including the conditional default.
+    """Seed the tasks-service periodic tasks, including the conditional defaults.
 
     Build a fresh list per call: ``init_tasks_db`` runs on every lifespan start,
     and appending to the module-level set would accumulate duplicates.
 
+    The scalar pair keeps its historical row name unchanged, so an install
+    upgrading into the per-syncer schedules recognises its existing row as owned
+    rather than orphaning and re-creating it — which ``due_on_first_seed`` would
+    turn into a sync on every boot.
+
     :raises SQLAlchemyError: When the celery-beat store cannot be written.
     """
     periodic_tasks = list(SYSTEM_PERIODIC_TASKS)
-    if (inventory_sync := await _default_inventory_sync_schedule()) is not None:
-        periodic_tasks.append(inventory_sync)
+    configured = [
+        (
+            INVENTORY_SYNC_SCHEDULE_NAME,
+            tasks_settings.INVENTORY_SYNC_SYNCER,
+            tasks_settings.INVENTORY_SYNC_INTERVAL,
+        ),
+        *(
+            (_inventory_sync_schedule_name(entry.syncer), entry.syncer, entry.interval)
+            for entry in tasks_settings.INVENTORY_SYNC_SCHEDULES
+        ),
+    ]
+    for name, syncer, interval in configured:
+        if (
+            inventory_sync := await _seeded_inventory_sync_schedule(
+                name, syncer, interval
+            )
+        ) is not None:
+            periodic_tasks.append(inventory_sync)
     await init_periodic_tasks_db(periodic_tasks, SYSTEM_PERIODIC_TASK_PREFIX)
 
 

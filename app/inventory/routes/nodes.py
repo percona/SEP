@@ -18,6 +18,7 @@
 import logging
 
 from fastapi import APIRouter, status
+from sqlalchemy.orm import load_only
 from sqlmodel import col
 
 from app.api.deps import CurrentUserID, IsAuthenticatedDep, IsServicePrincipalDep
@@ -46,6 +47,7 @@ from app.inventory.models import (
     ExternalIdentityAliasResponse,
     HostSystemObservation,
     HostSystemObservationResponse,
+    HostSystemObservationSummaryResponse,
     HostSystemObservationWrite,
     IdentityLinkDecisionWrite,
     Node,
@@ -147,6 +149,47 @@ async def list_node_identity_candidates(
         ],
         total,
         pagination,
+    )
+
+
+@router.get(
+    "/system-observations",
+    dependencies=[IsAuthenticatedDep],
+    response_model=PaginatedResponse[HostSystemObservationSummaryResponse],
+)
+async def list_host_system_observations(
+    session: SessionDep, pagination: PaginationDep
+) -> PaginatedResponse[HostSystemObservation]:
+    """List host system observations across every node.
+
+    Declared above ``GET /{node_id}`` for the reason
+    :func:`list_node_identity_candidates` gives: FastAPI matches path operations in
+    declaration order, so the parameterized route would claim this path and answer
+    422 rather than 404.
+
+    The narrow ``response_model`` drops the two JSON blobs only after they have been
+    fetched and deserialized, so ``load_only`` keeps them out of the query itself.
+    Without it a fleet-wide page carries every node's full package list, which is
+    the cost this route exists to avoid.
+
+    :param session: The async database session.
+    :param pagination: Validated offset/limit query parameters.
+    :return: A paginated response of observation summaries.
+    """
+    return await HostSystemObservationManager.list_paginated(
+        session,
+        pagination=pagination,
+        query_options=[
+            # SQLModel annotates its columns as the Python types they carry, while
+            # `load_only` is typed for SQLAlchemy's descriptors. `col()` does not
+            # bridge it either — it yields `Mapped[T]`, which is broader than the
+            # `QueryableAttribute` the stub asks for.
+            load_only(
+                HostSystemObservation.node_id,  # ty: ignore[invalid-argument-type]
+                HostSystemObservation.can_elevate,  # ty: ignore[invalid-argument-type]
+                HostSystemObservation.observed_at,  # ty: ignore[invalid-argument-type]
+            )
+        ],
     )
 
 

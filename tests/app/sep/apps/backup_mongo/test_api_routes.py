@@ -181,6 +181,18 @@ class TestBackupMongoAppSchemaEndpoint:
             "-incremental",
         ]
 
+    def test_schema_declares_restore_related_app(self, test_client):
+        """Link the backups schema to the separately registered restore app."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        assert response.json()["related_apps"] == [
+            {
+                "app_key": "backup_mongo/restore",
+                "label": "Restores",
+                "route_segment": "restores",
+            },
+        ]
+
     def test_schema_storage_fields_use_forbidden_gates(self, test_client):
         """Storage sub-fields hide via forbidden gates keyed on storage_type."""
         response = test_client.get(f"{API_BASE}/schema")
