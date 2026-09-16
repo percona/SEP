@@ -180,10 +180,14 @@ async def list_host_system_observations(
         session,
         pagination=pagination,
         query_options=[
+            # SQLModel annotates its columns as the Python types they carry, while
+            # `load_only` is typed for SQLAlchemy's descriptors. `col()` does not
+            # bridge it either — it yields `Mapped[T]`, which is broader than the
+            # `QueryableAttribute` the stub asks for.
             load_only(
-                HostSystemObservation.node_id,
-                HostSystemObservation.can_elevate,
-                HostSystemObservation.observed_at,
+                HostSystemObservation.node_id,  # ty: ignore[invalid-argument-type]
+                HostSystemObservation.can_elevate,  # ty: ignore[invalid-argument-type]
+                HostSystemObservation.observed_at,  # ty: ignore[invalid-argument-type]
             )
         ],
     )

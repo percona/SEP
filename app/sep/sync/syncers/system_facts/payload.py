@@ -280,7 +280,7 @@ def collect_host_facts() -> dict[str, Any]:
     :return: A mapping always carrying ``collected_at`` plus any gathered host fields.
     :rtype: dict[str, Any]
     """
-    facts = {"collected_at": _now_iso()}
+    facts: dict[str, Any] = {"collected_at": _now_iso()}
     if os_version := collect_os_version():
         facts["os_version"] = os_version
     if packages := collect_installed_packages():
