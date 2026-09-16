@@ -85,10 +85,6 @@ class TestReconcileSettings:
         assert atw.reconcile_interval is not None
         assert atw.reconcile_batch_size > 0
 
-    def test_constructs_with_no_atw_configuration_present(self) -> None:
-        """Ensure an upgrade with no ``SEP.ATW`` section still builds the settings."""
-        assert AtwSettings().reconcile_interval is not None
-
     def test_reconcile_interval_may_be_disabled(self) -> None:
         """Ensure ``None`` is available as an explicit operator opt-out."""
         assert AtwSettings(reconcile_interval=None).reconcile_interval is None

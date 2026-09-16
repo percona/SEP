@@ -82,7 +82,7 @@ _DEFAULT_TASK_ID = 7
 #: The snippet interpreter the seeded snippets dispatch under.
 _ROOT_TASK_NAME = DEFAULT_SNIPPETS_TASK
 #: The proxy ATW dispatches through, wrapping that interpreter root.
-_PROXY_TASK_NAME = "atw__exec-artifact"
+_PROXY_TASK_NAME = atw_proxy_task_name(_ROOT_TASK_NAME)
 _FIRST_TASK_ID = 11
 _SECOND_TASK_ID = 12
 _DUPLICATE_TASK_IDS = (21, 22)
@@ -180,10 +180,10 @@ def tasks_api() -> Iterator[AsyncMock]:
 def atw_proxy_task(mocker: MockerFixture) -> AsyncMock:
     """Resolve ATW's proxy tasks without reaching the Tasks API.
 
-    ``resolve_atw_proxy_tasks`` builds its own service-principal client, so it
-    honours the ``tasks_api`` dependency override these tests install. Patching it
-    at the route keeps them about batching; resolution itself is covered by
-    ``test_proxy_tasks``.
+    ``resolve_atw_proxy_tasks`` builds its own service-principal client, so the
+    ``tasks_api`` dependency override these tests install does not reach it.
+    Patching it at the route keeps them about batching; resolution itself is covered
+    by ``test_proxy_tasks``.
     """
 
     async def _resolve(root_task_names: Iterable[str]) -> dict[str, str | None]:
@@ -628,7 +628,7 @@ class TestAtwBatchExecute:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert tasks_api.post.await_args.args[0] != f"/execute/{_PROXY_TASK_NAME}"
+        assert tasks_api.post.await_args.args[0] == f"/execute/{_ROOT_TASK_NAME}"
         assert response.json()["items"][0]["task_history_id"] == _DEFAULT_TASK_ID
 
     @pytest.mark.asyncio

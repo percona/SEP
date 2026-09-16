@@ -395,9 +395,7 @@ class TestAggregateByIncident:
             session, [incident.id]
         )
 
-        last_execution_at = aggregates[incident.id].last_execution_at
-        assert last_execution_at is not None
-        assert last_execution_at.tzinfo is not None
+        assert aggregates[incident.id].last_execution_at == dispatched
 
 
 class TestUnresolvedBatch:

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
@@ -1602,13 +1603,24 @@ class TestAtwIncidentRunAggregates:
         api_client: TestClient,
         incident_with_runs: AtwIncident,
         mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
-        """Ensure rendering a page costs no task-history call, however many runs."""
+        """Ensure rendering a page costs no task-history call, however many runs.
+
+        The list route requests no Tasks API dependency, so the overridden client
+        alone could not see a call made through a client built outside dependency
+        injection; the transport-level spies cover that path too.
+        """
+        transport_get = mocker.spy(RemoteAPI, "get")
+        transport_post = mocker.spy(RemoteAPI, "post")
+
         response = api_client.get(INCIDENTS_BASE)
 
         assert response.status_code == status.HTTP_200_OK
         mock_task_api_dep.get.assert_not_called()
         mock_task_api_dep.post.assert_not_called()
+        transport_get.assert_not_called()
+        transport_post.assert_not_called()
 
     def test_list_page_issues_one_aggregate_query(
         self,
