@@ -2984,12 +2984,13 @@ export interface paths {
      *     handler emits a ``502`` JSON body ``{"detail": "<upstream detail>"}`` that
      *     the React frontend surfaces through its React Query error slot.
      *
-     *     The two Inventory enrichments degrade **independently**. The capability is
-     *     the newer of them, and an Inventory old enough to answer 422 on its route —
-     *     or failing it for any other reason — must not cost the host selector the
-     *     display names it has always had. A malformed page fails envelope validation
-     *     rather than raising a transport error, so that is caught here too: an
-     *     additive enrichment must not turn a documented degradation into a 500.
+     *     The two Inventory enrichments degrade **independently**, and on the same
+     *     terms. The capability is the newer of them, and an Inventory old enough to
+     *     answer 422 on its route — or failing it for any other reason — must not cost
+     *     the host selector the display names it has always had. Both blocks also
+     *     admit a malformed page, which fails envelope validation rather than raising
+     *     a transport error: every way an Inventory read can fail leaves this route
+     *     answering ``200`` with whatever it still resolved.
      *
      *     The display name and the elevation capability are joined on **different
      *     keys** — address and executor name respectively — and may resolve to

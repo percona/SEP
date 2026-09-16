@@ -492,6 +492,37 @@ class TestSepHostsEndpoint:
             },
         ]
 
+    def test_a_malformed_node_page_degrades_rather_than_500s(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+    ) -> None:
+        """Answer 200 when the node envelope itself is malformed.
+
+        The display-name lookup degrades on the same terms as the capability one:
+        every way an Inventory read can fail leaves this route serving the raw
+        executor names rather than a 500.
+        """
+        mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
+
+        def _answers(path: str, **_kwargs: Any) -> dict[str, Any]:
+            if path == "/nodes/":
+                return {"items": "not-a-list", "total": "lots"}
+            return {"items": []}
+
+        mock_inventory_api_dep.get.side_effect = _answers
+        response = test_client.get("/api/sep/hosts/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == [
+            {
+                "id": "nomad-1",
+                "name": "nomad-1",
+                "address": "10.0.0.1",
+                "can_elevate": None,
+            },
+        ]
+
     def test_inventory_failure_returns_raw_node_names(
         self,
         test_client: TestClient,
