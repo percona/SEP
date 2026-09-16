@@ -111,7 +111,7 @@ class OmInventorySettings(BaseYamlSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "OM_INVENTORY"]
 
-    ENABLED: bool = hot_field(default=False)
+    ENABLED: bool = hot_field(default=False)  # ty: ignore[invalid-assignment]
     SCHEDULE: IntervalSchedule | None = hot_field(  # ty: ignore[invalid-assignment]
         IntervalSchedule(every=10, period=Period.MINUTES)
     )
