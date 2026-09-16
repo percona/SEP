@@ -1319,9 +1319,9 @@ class TestTaskHistoryResponseDisplayName:
     def test_framework_proxy_carrying_its_own_payload_keeps_its_name(self) -> None:
         """Assert a proxy that fixes its own payload is labelled by its own name.
 
-        The framework's task apps wrap ``run-python`` -- a generic executor -- but
-        carry the payload themselves, so every run of one is the same configured job
-        and its per-service name is the meaningful label. Classifying it by its root
+        The framework's task apps wrap ``run-python``, a generic executor, but carry
+        the payload themselves, so every run of one is the same configured job and
+        its per-service name is the meaningful label. Classifying it by its root
         would relabel every backup or restore run as ``<dir>/<script> on <target>``.
         """
         write = build_run_python_task(
