@@ -34,7 +34,8 @@ anonymization mask, output path, alert hooks — because those are resolved off 
 dispatched task. That is why nothing here is memoized: a cache keyed on the root's
 name would keep dispatching under a superseded policy for as long as it stayed warm,
 and for the mask that means the wrong PII treatment. The root is read on every
-resolution, and a proxy that no longer matches it is rewritten rather than refused.
+resolution, and an ATW-owned proxy that no longer matches it is rewritten rather
+than refused; a task at the proxy name that ATW does not own is never rewritten.
 Resolution happens once per distinct root per batch, so the reads scale with the
 interpreters a request touches, not with its items.
 """
@@ -168,6 +169,22 @@ def _is_expected_proxy(
     )
 
 
+def _is_atw_owned(task: Mapping[str, Any]) -> bool:
+    """Check whether a task found at the proxy name is one ATW may rewrite.
+
+    The proxy prefix is not reserved, the tasks service's update route checks no
+    ownership, and a ``PUT`` replaces a task wholesale — so treating a name collision
+    as licence to re-sync would let ATW overwrite someone else's task, backend and
+    data included. ATW's own ``run_result_recorder`` is the ownership marker: it is
+    the one field only ATW sets, and carrying it is the reason the proxy exists. A
+    task without it is left alone and the dispatch runs under the root unchanged.
+
+    :param task: The upstream task payload found at the proxy name.
+    :return: ``True`` when the task carries ATW's recorder.
+    """
+    return task.get("run_result_recorder") == RUN_RESULT_RECORDER
+
+
 async def _fetch_task(tasks_api: RemoteAPI, name: str) -> dict[str, Any] | None:
     """Fetch one task by name, mapping a genuine absence to ``None``.
 
@@ -238,7 +255,8 @@ async def _sync_proxy_task(
 
     ``PUT /{task_name}`` replaces the task wholesale, and the payload is rebuilt from
     the root, so this both repairs a proxy left over from an earlier interpreter
-    configuration and picks up a policy edit on the root itself.
+    configuration and picks up a policy edit on the root itself. It is only ever
+    called for a task carrying ATW's recorder — see :func:`_is_atw_owned`.
 
     :param tasks_api: The authenticated Tasks API client.
     :param root_task_name: The interpreter task the proxy dispatches through.
@@ -315,6 +333,16 @@ async def _resolve_one(tasks_api: RemoteAPI, root_task_name: str) -> str | None:
     if proxy is None:
         proxy = await _create_proxy_task(tasks_api, root_task_name, root)
     elif not _is_expected_proxy(proxy, root_task_name, root):
+        if not _is_atw_owned(proxy):
+            logger.error(
+                "Task %s exists but does not carry ATW's run-result recorder, so it is "
+                "not ATW's to rewrite (backend=%r, run_result_recorder=%r); dispatching "
+                "unwrapped so the sweep supplies the outcome instead.",
+                proxy_name,
+                proxy.get("backend"),
+                proxy.get("run_result_recorder"),
+            )
+            return None
         # The proxy exists but no longer matches the root — an interpreter re-pointed
         # at a task with a different policy, or the root's own policy edited. Re-sync
         # rather than refuse: refusing would degrade this interpreter permanently,

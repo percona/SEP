@@ -251,7 +251,6 @@ class TestCreatesTheProxy:
     @pytest.mark.parametrize(
         "overrides",
         [
-            pytest.param({"run_result_recorder": "other.module:hook"}, id="recorder"),
             pytest.param({"data": {"task": "some-other-root"}}, id="root"),
             pytest.param({"backend": TaskBackendEnum.NOMAD.value}, id="backend"),
             pytest.param({"owner": "someone-else"}, id="owner"),
@@ -378,6 +377,38 @@ class TestRefusesToWrap:
         tasks_api.get.side_effect = _serve({long_name: _root_task()})
 
         assert await _resolve(long_name) is None
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "occupant",
+        [
+            pytest.param(
+                _valid_proxy(run_result_recorder="other.module:hook"),
+                id="another-recorder",
+            ),
+            pytest.param(_valid_proxy(run_result_recorder=None), id="no-recorder"),
+            pytest.param(
+                _root_task(name=_PROXY_NAME, data={"job": "unrelated"}),
+                id="unrelated-task",
+            ),
+        ],
+    )
+    async def test_a_task_atw_does_not_own_is_never_rewritten(
+        self, tasks_api: AsyncMock, occupant: dict[str, Any]
+    ) -> None:
+        """Ensure a name collision with someone else's task is not repaired over it.
+
+        The proxy prefix is not reserved and a ``PUT`` replaces a task wholesale, so
+        only a row carrying ATW's own recorder is ATW's to rewrite. Anything else at
+        that name is left untouched and the dispatch runs under the root.
+        """
+        tasks_api.get.side_effect = _serve(
+            {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: occupant}
+        )
+
+        assert await _resolve() is None
+        tasks_api.put.assert_not_awaited()
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
