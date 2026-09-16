@@ -58,6 +58,7 @@ from app.sep.snippets.models import Snippet
 from app.sep.snippets.models.meta import META_KEY_TITLE
 from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import TaskHistoryStatusEnum
+from tests.app.factories import TaskHistoryResponseFactory
 
 SCHEMA_URL = "/api/apps/atw/execution-schema/"
 INCIDENTS_BASE = "/api/apps/atw/incidents/"
@@ -967,6 +968,47 @@ class TestAtwListIncidentExecutions:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("executions")
+    @pytest.mark.parametrize(
+        ("task_status", "failure_reason"),
+        [
+            (TaskHistoryStatusEnum.FAILED, "Diagnostic collection failed."),
+            (TaskHistoryStatusEnum.FAILED, "x" * 499 + "."),
+            (TaskHistoryStatusEnum.FAILED, ""),
+            (TaskHistoryStatusEnum.FAILED, None),
+            (TaskHistoryStatusEnum.SUCCESS, None),
+        ],
+        ids=["failed", "long-reason", "blank-reason", "unknown-reason", "successful"],
+    )
+    async def test_failure_reason_is_carried_verbatim(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        task_status: TaskHistoryStatusEnum,
+        failure_reason: str | None,
+    ) -> None:
+        """Carry the upstream reason unchanged through the paginated route."""
+        tasks_api.get.return_value = TaskHistoryResponseFactory.build(
+            status=task_status, failure_reason=failure_reason
+        ).model_dump(mode="json")
+
+        response = api_client.get(
+            executions_url(incident.id), params={"limit": 1, "offset": 1}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["total"] == _SEEDED_EXECUTION_COUNT
+        assert payload["limit"] == 1
+        assert payload["offset"] == 1
+        assert len(payload["items"]) == 1
+        item = payload["items"][0]
+        assert item["task_status"] == task_status.value
+        assert item["failure_reason"] == failure_reason
+        tasks_api.get.assert_awaited_once_with(f"/history/{item['task_history_id']}")
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("executions")
     async def test_rows_are_hydrated_with_upstream_status(
         self,
         api_client: TestClient,
@@ -990,6 +1032,7 @@ class TestAtwListIncidentExecutions:
         assert item["task_status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert item["has_logs"] is True
         assert item["started_at"] is not None
+        assert item["failure_reason"] is None
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("executions")
@@ -1012,7 +1055,9 @@ class TestAtwListIncidentExecutions:
         assert degraded["task_status"] is None
         assert degraded["has_logs"] is None
         assert degraded["task_history_id"] is not None
+        assert degraded["failure_reason"] is None
         assert hydrated["task_status"] == TaskHistoryStatusEnum.RUNNING.value
+        assert hydrated["failure_reason"] is None
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("executions")
@@ -1032,7 +1077,9 @@ class TestAtwListIncidentExecutions:
 
         degraded, hydrated = response.json()["items"]
         assert degraded["task_status"] is None
+        assert degraded["failure_reason"] is None
         assert hydrated["task_status"] == TaskHistoryStatusEnum.PENDING.value
+        assert hydrated["failure_reason"] is None
 
     @pytest.mark.asyncio
     async def test_incident_without_executions_returns_empty_page(

@@ -663,6 +663,7 @@ def _build_execution_response(
         task_history_id=execution.task_history_id,
         created_at=execution.created_at,
         task_status=history.get("status"),
+        failure_reason=history.get("failure_reason"),
         started_at=history.get("started_at"),
         finished_at=history.get("finished_at"),
         has_logs=history.get("has_logs"),
