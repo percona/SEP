@@ -22,7 +22,7 @@ so the suite points ``script_source.get_async_session_maker`` at the in-memory
 test session (mirroring ``tests/app/sep/apps/snippets/conftest.py``).
 """
 
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -39,11 +39,15 @@ from starlette.datastructures import URL
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPServiceUnavailableException,
+)
 from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.apps.atw.proxy_tasks import atw_proxy_task_name
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -71,7 +75,9 @@ _DEFAULTS_FILE_PARAM = {
 _MINUTES_PARAM = {"name": "minutes", "type": "int", "label": "Minutes"}
 
 _DEFAULT_TASK_ID = 7
-#: The proxy ATW dispatches through, wrapping the default snippet interpreter root.
+#: The snippet interpreter the seeded snippets dispatch under.
+_ROOT_TASK_NAME = "exec-artifact"
+#: The proxy ATW dispatches through, wrapping that interpreter root.
 _PROXY_TASK_NAME = "atw__exec-artifact"
 _FIRST_TASK_ID = 11
 _SECOND_TASK_ID = 12
@@ -168,16 +174,20 @@ def tasks_api() -> Iterator[AsyncMock]:
 
 @pytest.fixture(autouse=True)
 def atw_proxy_task(mocker: MockerFixture) -> AsyncMock:
-    """Resolve ATW's proxy task without reaching the Tasks API.
+    """Resolve ATW's proxy tasks without reaching the Tasks API.
 
-    ``ensure_atw_proxy_task`` builds its own service-principal client and memoizes
-    process-wide, so it honours neither the ``tasks_api`` dependency override nor a
-    per-test reset. Patching it at the dispatch site keeps these tests about
-    batching; proxy resolution itself is covered by ``test_proxy_tasks``.
+    ``resolve_atw_proxy_tasks`` builds its own service-principal client, so it
+    honours the ``tasks_api`` dependency override these tests install. Patching it
+    at the route keeps them about batching; resolution itself is covered by
+    ``test_proxy_tasks``.
     """
+
+    async def _resolve(root_task_names: Iterable[str]) -> dict[str, str | None]:
+        return {name: atw_proxy_task_name(name) for name in root_task_names}
+
     return mocker.patch(
-        "app.sep.apps.atw.batch.ensure_atw_proxy_task",
-        new=AsyncMock(return_value=_PROXY_TASK_NAME),
+        "app.sep.apps.atw.api_routes.resolve_atw_proxy_tasks",
+        new=AsyncMock(side_effect=_resolve),
     )
 
 
@@ -552,6 +562,42 @@ class TestAtwBatchExecute:
         assert response.json()["items"][0]["task_name"] == _PROXY_TASK_NAME
 
     @pytest.mark.asyncio
+    async def test_unreachable_tasks_api_degrades_the_whole_batch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        atw_proxy_task: AsyncMock,
+    ) -> None:
+        """Dispatch every item unwrapped when resolution itself fails.
+
+        Resolution runs once for the whole batch, so its failure is never
+        item-specific. Surfacing it would fail a request whose dispatches may well
+        succeed; the sweep supplies the outcomes the recorder would have.
+        """
+        await create_snippet("a.sh", parameters=[])
+        await create_snippet("b.sh", parameters=[])
+        tasks_api.post.side_effect = [{"id": _FIRST_TASK_ID}, {"id": _SECOND_TASK_ID}]
+        atw_proxy_task.side_effect = HTTPServiceUnavailableException("try later")
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [
+                    {"snippet_filename": "a.sh"},
+                    {"snippet_filename": "b.sh"},
+                ],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        dispatched = [call.args[0] for call in tasks_api.post.await_args_list]
+        assert dispatched == [f"/execute/{_ROOT_TASK_NAME}"] * 2
+        assert [item["error"] for item in response.json()["items"]] == [None, None]
+
+    @pytest.mark.asyncio
     async def test_unresolvable_proxy_dispatches_under_the_root_unchanged(
         self,
         api_client: TestClient,
@@ -566,7 +612,8 @@ class TestAtwBatchExecute:
         the dispatch or wrapping a task whose behaviour is unknown.
         """
         await create_snippet("a.sh", parameters=[])
-        atw_proxy_task.return_value = None
+        atw_proxy_task.side_effect = None
+        atw_proxy_task.return_value = {}
 
         response = api_client.post(
             executions_url(incident.id),

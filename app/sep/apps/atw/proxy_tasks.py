@@ -28,13 +28,21 @@ Every degradation here returns ``None``, meaning "dispatch under the root
 unchanged". Correctness then falls back to the reconciliation sweep, which is
 strictly better than refusing to dispatch or wrapping a task whose behaviour is
 unknown.
+
+A proxy is a **materialized copy** of the root's behavioural policy — owner,
+anonymization mask, output path, alert hooks — because those are resolved off the
+dispatched task. That is why nothing here is memoized: a cache keyed on the root's
+name would keep dispatching under a superseded policy for as long as it stayed warm,
+and for the mask that means the wrong PII treatment. The root is read on every
+resolution, and a proxy that no longer matches it is rewritten rather than refused.
+Resolution happens once per distinct root per batch, so the reads scale with the
+interpreters a request touches, not with its items.
 """
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
-from async_lru import alru_cache
 from pydantic import ValidationError
 
 from app.core.exceptions import (
@@ -52,16 +60,6 @@ logger = logging.getLogger(__name__)
 
 #: Prefix distinguishing ATW's proxy from the interpreter root it wraps.
 ATW_PROXY_TASK_PREFIX = "atw__"
-
-#: How long a validated resolution is memoized. A proxy deleted out from under a
-#: warm cache makes dispatch fail until this expires, then self-heals.
-_PROXY_CACHE_TTL = 300
-
-#: One entry per interpreter root ATW can dispatch under. The snippet interpreter
-#: configuration is operator-editable and each entry contributes up to two roots, so
-#: this is sized well above the shipped set rather than derived from it; past it the
-#: LRU thrashes and each dispatch pays its upstream lookups again.
-_PROXY_CACHE_MAXSIZE = 8
 
 
 def atw_proxy_task_name(root_task_name: str) -> str:
@@ -233,94 +231,131 @@ async def _create_proxy_task(
         return await _fetch_task(tasks_api, task_write.name)
 
 
-@alru_cache(maxsize=_PROXY_CACHE_MAXSIZE, ttl=_PROXY_CACHE_TTL)
-async def _resolve_atw_proxy_task(root_task_name: str) -> str | None:
-    """Fetch, validate, or create ATW's proxy for one interpreter root.
+async def _sync_proxy_task(
+    tasks_api: RemoteAPI, root_task_name: str, root: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Rewrite an existing proxy so it matches the root's current behaviour.
 
-    Takes only the root task name so the memoization key stays hashable and
-    process-wide; the client is built here rather than passed in, because a
-    request-scoped ``RemoteAPI`` would defeat the cache and is unavailable to a
-    worker.
+    ``PUT /{task_name}`` replaces the task wholesale, and the payload is rebuilt from
+    the root, so this both repairs a proxy left over from an earlier interpreter
+    configuration and picks up a policy edit on the root itself.
 
+    :param tasks_api: The authenticated Tasks API client.
+    :param root_task_name: The interpreter task the proxy dispatches through.
+    :param root: The fetched root task, whose behavioural fields are copied.
+    :return: The updated task, or ``None`` when the payload could not be built.
+    :raises HTTPException: Propagated from an upstream error status.
+    :raises OSError: Propagated from the Tasks API when the transport itself fails.
+    """
+    try:
+        task_write = _build_proxy_task_write(root_task_name, root)
+    except ValidationError:
+        logger.exception(
+            "Could not build ATW's proxy task for %s; dispatching unwrapped.",
+            root_task_name,
+        )
+        return None
+    logger.info(
+        "Re-syncing ATW proxy task %s to the current behaviour of %s.",
+        task_write.name,
+        root_task_name,
+    )
+    return as_json_object(
+        await tasks_api.put(f"/{task_write.name}", json=task_write.model_dump())
+    )
+
+
+async def _resolve_one(tasks_api: RemoteAPI, root_task_name: str) -> str | None:
+    """Fetch, validate, re-sync or create ATW's proxy for one interpreter root.
+
+    The root is read on every resolution rather than cached. The proxy is a
+    *materialized copy* of the root's behavioural policy, so any window in which the
+    root is not read is a window in which a superseded policy keeps being applied —
+    and for ``anonymize_mask`` that means the wrong PII treatment. Reading it is the
+    only way to know, so it is read.
+
+    :param tasks_api: The authenticated Tasks API client.
     :param root_task_name: The interpreter task to dispatch through.
     :return: The proxy task name, or ``None`` to dispatch under the root unchanged.
     :raises HTTPException: Propagated from an upstream error status that is neither a
         genuine ``404`` nor the create race's ``409`` / ``400``.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
-    :raises RuntimeError: Propagated from ``require_internal_token`` when no internal
-        token is configured.
     """
-    client = await get_tasks_api()
-    with client.auth(require_internal_token()) as tasks_api:
-        root = await _fetch_task(tasks_api, root_task_name)
-        if root is None:
-            logger.warning(
-                "Interpreter task %s does not exist upstream; dispatching unwrapped.",
-                root_task_name,
-            )
-            return None
-        if root.get("backend") == TaskBackendEnum.PROXY.value:
-            # get_root_task resolves exactly one hop, so a proxy-of-a-proxy still
-            # reaches get_executor as PROXY and raises "Unsupported backend",
-            # breaking every dispatch under this interpreter.
-            logger.warning(
-                "Interpreter task %s is itself a PROXY; dispatching unwrapped to "
-                "avoid a two-hop chain.",
-                root_task_name,
-            )
-            return None
-        if root.get("run_result_recorder"):
-            # maybe_record_run resolves exactly one recorder with no chaining, so
-            # wrapping would substitute ATW's for the root's and silently stop
-            # whatever that one records.
-            logger.warning(
-                "Interpreter task %s already declares a run-result recorder (%r); "
-                "dispatching unwrapped rather than displacing it, and letting the "
-                "reconciliation sweep supply ATW's outcome.",
-                root_task_name,
-                root.get("run_result_recorder"),
-            )
-            return None
-        proxy_name = atw_proxy_task_name(root_task_name)
-        proxy = await _fetch_task(tasks_api, proxy_name)
-        if proxy is None:
-            proxy = await _create_proxy_task(tasks_api, root_task_name, root)
-        if proxy is None or not _is_expected_proxy(proxy, root_task_name, root):
-            logger.error(
-                "Task %s exists but is not the proxy ATW requires (backend=%r, "
-                "data=%r, run_result_recorder=%r); dispatching unwrapped so the "
-                "reconciliation sweep supplies the outcome instead.",
-                proxy_name,
-                None if proxy is None else proxy.get("backend"),
-                None if proxy is None else proxy.get("data"),
-                None if proxy is None else proxy.get("run_result_recorder"),
-            )
-            return None
-        return proxy_name
+    root = await _fetch_task(tasks_api, root_task_name)
+    if root is None:
+        logger.warning(
+            "Interpreter task %s does not exist upstream; dispatching unwrapped.",
+            root_task_name,
+        )
+        return None
+    if root.get("backend") == TaskBackendEnum.PROXY.value:
+        # get_root_task resolves exactly one hop, so a proxy-of-a-proxy still
+        # reaches get_executor as PROXY and raises "Unsupported backend",
+        # breaking every dispatch under this interpreter.
+        logger.warning(
+            "Interpreter task %s is itself a PROXY; dispatching unwrapped to "
+            "avoid a two-hop chain.",
+            root_task_name,
+        )
+        return None
+    if root.get("run_result_recorder"):
+        # maybe_record_run resolves exactly one recorder with no chaining, so
+        # wrapping would substitute ATW's for the root's and silently stop
+        # whatever that one records.
+        logger.warning(
+            "Interpreter task %s already declares a run-result recorder (%r); "
+            "dispatching unwrapped rather than displacing it, and letting the "
+            "reconciliation sweep supply ATW's outcome.",
+            root_task_name,
+            root.get("run_result_recorder"),
+        )
+        return None
+    proxy_name = atw_proxy_task_name(root_task_name)
+    proxy = await _fetch_task(tasks_api, proxy_name)
+    if proxy is None:
+        proxy = await _create_proxy_task(tasks_api, root_task_name, root)
+    elif not _is_expected_proxy(proxy, root_task_name, root):
+        # The proxy exists but no longer matches the root — an interpreter re-pointed
+        # at a task with a different policy, or the root's own policy edited. Re-sync
+        # rather than refuse: refusing would degrade this interpreter permanently,
+        # since nothing else ever repairs the row.
+        proxy = await _sync_proxy_task(tasks_api, root_task_name, root)
+    if proxy is None or not _is_expected_proxy(proxy, root_task_name, root):
+        logger.error(
+            "Task %s exists but is not the proxy ATW requires and could not be "
+            "reconciled to it (backend=%r, data=%r, run_result_recorder=%r); "
+            "dispatching unwrapped so the sweep supplies the outcome instead.",
+            proxy_name,
+            None if proxy is None else proxy.get("backend"),
+            None if proxy is None else proxy.get("data"),
+            None if proxy is None else proxy.get("run_result_recorder"),
+        )
+        return None
+    return proxy_name
 
 
-def clear_atw_proxy_task_cache() -> None:
-    """Reset the memoized proxy resolutions.
+async def resolve_atw_proxy_tasks(
+    root_task_names: Iterable[str],
+) -> dict[str, str | None]:
+    """Resolve the proxy to dispatch through for each distinct interpreter root.
 
-    Provide a single public entry point for tests to wipe the ``alru_cache`` on
-    :func:`_resolve_atw_proxy_task`, which is process-wide and would otherwise carry
-    one test's resolution into the next. Production code does not need this — the
-    cache honors its own TTL, and a degraded resolution is evicted as it is returned.
+    Resolved once per root for a whole batch rather than once per item: the roots in
+    a batch are the handful its snippets' interpreters name, so a twenty-item request
+    costs the same upstream traffic as a one-item request.
 
-    :return: ``None``.
-    """
-    _resolve_atw_proxy_task.cache_clear()
+    Nothing is memoized across calls. The proxy copies the root's behavioural policy,
+    so a cache keyed on the root's *name* would keep applying a superseded
+    ``anonymize_mask`` for as long as it stayed warm; reading the root each time is
+    what makes the policy live, and the reads are per request, not per run.
 
+    The client is built here and authenticates as the service principal, so creating
+    or repairing a proxy does not depend on the caller's own task permissions and the
+    function works identically from a worker.
 
-async def ensure_atw_proxy_task(root_task_name: str) -> str | None:
-    """Return the ATW proxy task to dispatch ``root_task_name`` through.
-
-    Only a validated resolution stays memoized: a degraded answer is evicted
-    before returning, so a poisoned or half-created row is re-examined on the next
-    dispatch rather than pinned for the cache TTL.
-
-    :param root_task_name: The interpreter task the snippet would dispatch under.
-    :return: The proxy task name, or ``None`` to dispatch under the root unchanged.
+    :param root_task_names: The interpreter tasks the batch's snippets would dispatch
+        under; duplicates are resolved once.
+    :return: The proxy name per root, or ``None`` against a root to dispatch under it
+        unchanged.
     :raises HTTPException: Propagated from an upstream error status that is neither a
         genuine ``404`` nor the create race's ``409`` / ``400``. A dispatch failing
         because the Tasks API is unreachable should surface, not be silently
@@ -329,7 +364,9 @@ async def ensure_atw_proxy_task(root_task_name: str) -> str | None:
     :raises RuntimeError: Propagated from ``require_internal_token`` when no internal
         token is configured.
     """
-    proxy_name = await _resolve_atw_proxy_task(root_task_name)
-    if proxy_name is None:
-        _resolve_atw_proxy_task.cache_invalidate(root_task_name)
-    return proxy_name
+    client = await get_tasks_api()
+    with client.auth(require_internal_token()) as tasks_api:
+        return {
+            root_task_name: await _resolve_one(tasks_api, root_task_name)
+            for root_task_name in dict.fromkeys(root_task_names)
+        }

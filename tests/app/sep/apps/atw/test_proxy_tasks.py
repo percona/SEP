@@ -15,7 +15,7 @@
 
 """Tests for resolving the ATW-owned PROXY task that carries ATW's recorder."""
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -32,8 +32,7 @@ from app.core.requests import RemoteAPI
 from app.sep.apps.atw.proxy_tasks import (
     atw_proxy_task_name,
     ATW_PROXY_TASK_PREFIX,
-    clear_atw_proxy_task_cache,
-    ensure_atw_proxy_task,
+    resolve_atw_proxy_tasks,
 )
 from app.sep.apps.atw.recorder import RUN_RESULT_RECORDER
 from app.tasks.execution.executors.nomad.steps import RUN_SCRIPT_OUTPUT_FILES_PATH
@@ -45,6 +44,8 @@ _PROXY_NAME = f"{ATW_PROXY_TASK_PREFIX}{_ROOT_TASK_NAME}"
 _CUSTOM_ANONYMIZE_MASK = 6
 #: ``TaskBase.name``'s own ``max_length``, so a root at the limit cannot be prefixed.
 _MAX_TASK_NAME_LENGTH = 255
+#: Upstream reads one root resolution costs: the root itself, then its proxy.
+_READS_PER_ROOT = 2
 
 
 def _root_task(
@@ -83,20 +84,17 @@ def _valid_proxy(**overrides: Any) -> dict[str, Any]:
     } | overrides
 
 
-@pytest.fixture(autouse=True)
-def _clear_proxy_cache() -> Iterator[None]:
-    """Drop the process-wide memoization so each test resolves from scratch."""
-    clear_atw_proxy_task_cache()
-    yield
-    clear_atw_proxy_task_cache()
+async def _resolve(root_task_name: str = _ROOT_TASK_NAME) -> str | None:
+    """Resolve one root through the batch-level entry point."""
+    return (await resolve_atw_proxy_tasks([root_task_name]))[root_task_name]
 
 
 @pytest.fixture
 def tasks_api(mocker: MockerFixture) -> AsyncMock:
     """Replace the service-principal client this module builds with a mock.
 
-    ``ensure_atw_proxy_task`` constructs its own client precisely so it works from a
-    worker, so there is no dependency override to lean on here.
+    The module builds its own client so proxy creation runs as the service principal
+    and works from a worker, so there is no dependency override to lean on here.
     """
     api = AsyncMock(spec=RemoteAPI)
     client = MagicMock()
@@ -132,7 +130,7 @@ class TestProxyTaskName:
 
 
 class TestCreatesTheProxy:
-    """Check the create path and the exact payload it posts."""
+    """Check the create and re-sync paths, and the exact payload each one sends."""
 
     @pytest.mark.asyncio
     async def test_creates_proxy_when_absent(self, tasks_api: AsyncMock) -> None:
@@ -140,7 +138,7 @@ class TestCreatesTheProxy:
         tasks_api.get.side_effect = _serve({_ROOT_TASK_NAME: _root_task()})
         tasks_api.post.return_value = _valid_proxy()
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+        assert await _resolve() == _PROXY_NAME
         assert tasks_api.post.await_count == 1
 
     @pytest.mark.asyncio
@@ -157,7 +155,7 @@ class TestCreatesTheProxy:
         tasks_api.get.side_effect = _serve({_ROOT_TASK_NAME: _root_task()})
         tasks_api.post.return_value = _valid_proxy()
 
-        await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+        await _resolve()
 
         payload = tasks_api.post.await_args.kwargs["json"]
         assert payload["name"] == _PROXY_NAME
@@ -191,7 +189,7 @@ class TestCreatesTheProxy:
         tasks_api.get.side_effect = _serve({_ROOT_TASK_NAME: custom})
         tasks_api.post.return_value = _valid_proxy()
 
-        await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+        await _resolve()
 
         payload = tasks_api.post.await_args.kwargs["json"]
         assert payload["owner"] == "pii-restricted"
@@ -204,23 +202,98 @@ class TestCreatesTheProxy:
         assert payload["run_result_recorder"] == RUN_RESULT_RECORDER
 
     @pytest.mark.asyncio
-    async def test_proxy_left_from_a_different_root_configuration_is_refused(
+    async def test_a_proxy_whose_policy_drifted_is_resynced(
         self, tasks_api: AsyncMock
     ) -> None:
-        """Ensure a proxy carrying the old root's behaviour is not reused.
+        """Ensure a proxy carrying superseded behaviour is rewritten, not reused.
 
-        Re-pointing an interpreter at a task with a different policy leaves the
-        previous proxy in place under the same name; reusing it would keep applying
-        the superseded owner and mask.
+        Editing a wrapped root's policy — or re-pointing an interpreter at a task with
+        a different one — leaves the previous proxy in place under the same name.
+        Reusing it would keep applying the superseded owner and mask, and refusing it
+        would degrade that interpreter permanently, because nothing else repairs the
+        row. So it is re-synced in place.
+        """
+        tightened = _root_task(owner="pii-restricted")
+        tasks_api.get.side_effect = _serve(
+            {_ROOT_TASK_NAME: tightened, _PROXY_NAME: _valid_proxy()}
+        )
+        tasks_api.put.return_value = _valid_proxy(owner="pii-restricted")
+
+        assert await _resolve() == _PROXY_NAME
+        assert tasks_api.put.await_args.args[0] == f"/{_PROXY_NAME}"
+        assert tasks_api.put.await_args.kwargs["json"]["owner"] == "pii-restricted"
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_policy_edit_on_the_root_is_picked_up_immediately(
+        self, tasks_api: AsyncMock
+    ) -> None:
+        """Ensure a tightened mask applies to the very next dispatch, not eventually.
+
+        The root is read on every resolution precisely so there is no window in which
+        a superseded PII policy keeps being applied.
+        """
+        served = {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
+        tasks_api.get.side_effect = _serve(served)
+        assert await _resolve() == _PROXY_NAME
+        tasks_api.put.assert_not_awaited()
+
+        served[_ROOT_TASK_NAME] = _root_task(anonymize_mask=_CUSTOM_ANONYMIZE_MASK)
+        tasks_api.put.return_value = _valid_proxy(anonymize_mask=_CUSTOM_ANONYMIZE_MASK)
+
+        assert await _resolve() == _PROXY_NAME
+        assert (
+            tasks_api.put.await_args.kwargs["json"]["anonymize_mask"]
+            == _CUSTOM_ANONYMIZE_MASK
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"run_result_recorder": "other.module:hook"}, id="recorder"),
+            pytest.param({"data": {"task": "some-other-root"}}, id="root"),
+            pytest.param({"backend": TaskBackendEnum.NOMAD.value}, id="backend"),
+            pytest.param({"owner": "someone-else"}, id="owner"),
+            pytest.param({"output_files_path": None}, id="output_files_path"),
+            pytest.param(
+                {"anonymize_mask": _CUSTOM_ANONYMIZE_MASK}, id="anonymize_mask"
+            ),
+            pytest.param({"alert_on_fail": True}, id="alert_on_fail"),
+            pytest.param(
+                {"alert_detail_builder": "other.module:detail"},
+                id="alert_detail_builder",
+            ),
+            pytest.param(
+                {"data": {"task": _ROOT_TASK_NAME, "meta": {"target": "elsewhere"}}},
+                id="meta",
+            ),
+            pytest.param(
+                {"data": {"task": _ROOT_TASK_NAME, "payload": "file:///etc/passwd"}},
+                id="payload",
+            ),
+        ],
+    )
+    async def test_every_field_the_design_depends_on_is_validated(
+        self, tasks_api: AsyncMock, overrides: dict[str, Any]
+    ) -> None:
+        """Ensure a name collision is not taken as proof the right proxy exists.
+
+        ``update_task`` can reshape any task after creation and each of these fields
+        changes behaviour silently, so every one is checked. The re-sync is the
+        observable consequence: a field that went unvalidated would leave the drifted
+        proxy in place and send no ``PUT`` at all.
         """
         tasks_api.get.side_effect = _serve(
             {
-                _ROOT_TASK_NAME: _root_task(owner="pii-restricted"),
-                _PROXY_NAME: _valid_proxy(),
+                _ROOT_TASK_NAME: _root_task(),
+                _PROXY_NAME: _valid_proxy(**overrides),
             }
         )
+        tasks_api.put.return_value = _valid_proxy()
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        assert await _resolve() == _PROXY_NAME
+        assert tasks_api.put.await_count == 1
 
     @pytest.mark.asyncio
     async def test_existing_valid_proxy_is_reused_without_a_second_post(
@@ -231,23 +304,26 @@ class TestCreatesTheProxy:
             {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
         )
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+        assert await _resolve() == _PROXY_NAME
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_resolution_is_memoized_across_calls(
+    async def test_a_batch_resolves_each_distinct_root_once(
         self, tasks_api: AsyncMock
     ) -> None:
-        """Ensure a validated resolution is cached, so dispatch is not per-run traffic."""
+        """Ensure repeated roots in one batch cost one resolution, not one per item.
+
+        This is what keeps reading the root on every resolution affordable: the traffic
+        scales with the interpreters a request touches, not with its items.
+        """
         tasks_api.get.side_effect = _serve(
             {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
         )
 
-        await ensure_atw_proxy_task(_ROOT_TASK_NAME)
-        first_call_count = tasks_api.get.await_count
-        await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+        resolved = await resolve_atw_proxy_tasks([_ROOT_TASK_NAME] * 20)
 
-        assert tasks_api.get.await_count == first_call_count
+        assert resolved == {_ROOT_TASK_NAME: _PROXY_NAME}
+        assert tasks_api.get.await_count == _READS_PER_ROOT
 
 
 class TestRefusesToWrap:
@@ -264,7 +340,7 @@ class TestRefusesToWrap:
             {_ROOT_TASK_NAME: _root_task(backend=TaskBackendEnum.PROXY)}
         )
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        assert await _resolve() is None
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -285,7 +361,7 @@ class TestRefusesToWrap:
             }
         )
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        assert await _resolve() is None
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -301,7 +377,7 @@ class TestRefusesToWrap:
         long_name = "x" * _MAX_TASK_NAME_LENGTH
         tasks_api.get.side_effect = _serve({long_name: _root_task()})
 
-        assert await ensure_atw_proxy_task(long_name) is None
+        assert await _resolve(long_name) is None
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -309,64 +385,33 @@ class TestRefusesToWrap:
         """Ensure a root that does not exist upstream is not given a proxy."""
         tasks_api.get.side_effect = _serve({})
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        assert await _resolve() is None
         tasks_api.post.assert_not_awaited()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "overrides",
-        [
-            pytest.param({"run_result_recorder": "other.module:hook"}, id="recorder"),
-            pytest.param({"data": {"task": "some-other-root"}}, id="root"),
-            pytest.param({"backend": TaskBackendEnum.NOMAD.value}, id="backend"),
-            pytest.param({"owner": "someone-else"}, id="owner"),
-            pytest.param({"output_files_path": None}, id="output_files_path"),
-            pytest.param({"anonymize_mask": {"entities": []}}, id="anonymize_mask"),
-            pytest.param(
-                {"data": {"task": _ROOT_TASK_NAME, "meta": {"target": "elsewhere"}}},
-                id="meta",
-            ),
-            pytest.param(
-                {"data": {"task": _ROOT_TASK_NAME, "payload": "file:///etc/passwd"}},
-                id="payload",
-            ),
-        ],
-    )
-    async def test_incompatible_existing_task_refuses_to_wrap(
-        self, tasks_api: AsyncMock, overrides: dict[str, Any]
+    async def test_an_unrepairable_row_does_not_persist_across_resolutions(
+        self, tasks_api: AsyncMock
     ) -> None:
-        """Ensure a name collision is not taken as proof the right proxy exists.
+        """Ensure a degraded answer is not carried into the next dispatch.
 
-        ``update_task`` can reshape any task after creation, and each of these fields
-        changes behaviour silently, so every one is validated.
+        A proxy whose re-sync also fails to satisfy validation degrades that dispatch,
+        but the next one re-examines the row from scratch rather than inheriting the
+        verdict.
         """
         tasks_api.get.side_effect = _serve(
             {
                 _ROOT_TASK_NAME: _root_task(),
-                _PROXY_NAME: _valid_proxy(**overrides),
+                _PROXY_NAME: _valid_proxy(backend=TaskBackendEnum.NOMAD.value),
             }
         )
-
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
-
-    @pytest.mark.asyncio
-    async def test_degraded_resolution_is_not_memoized(
-        self, tasks_api: AsyncMock
-    ) -> None:
-        """Ensure a poisoned row is re-examined next dispatch, not pinned for the TTL."""
-        tasks_api.get.side_effect = _serve(
-            {
-                _ROOT_TASK_NAME: _root_task(),
-                _PROXY_NAME: _valid_proxy(run_result_recorder=None),
-            }
-        )
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        tasks_api.put.return_value = _valid_proxy(backend=TaskBackendEnum.NOMAD.value)
+        assert await _resolve() is None
 
         tasks_api.get.side_effect = _serve(
             {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
         )
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+        assert await _resolve() == _PROXY_NAME
 
 
 class TestTransientFailuresSurface:
@@ -386,22 +431,26 @@ class TestTransientFailuresSurface:
         tasks_api.get.side_effect = HTTPServiceUnavailableException("try later")
 
         with pytest.raises(HTTPServiceUnavailableException):
-            await ensure_atw_proxy_task(_ROOT_TASK_NAME)
+            await _resolve()
 
     @pytest.mark.asyncio
-    async def test_a_raised_resolution_is_not_memoized(
+    async def test_one_unreachable_root_fails_the_whole_batch(
         self, tasks_api: AsyncMock
     ) -> None:
-        """Ensure a transient failure does not pin dispatch broken for the cache TTL."""
-        tasks_api.get.side_effect = HTTPServiceUnavailableException("try later")
+        """Ensure a batch does not half-resolve when one root's read fails.
+
+        The batch route degrades every item to an unwrapped dispatch when resolution
+        raises, so raising keeps one request under one policy instead of splitting it
+        by which reads happened to land.
+        """
+        tasks_api.get.side_effect = [
+            _root_task(),
+            _valid_proxy(),
+            HTTPServiceUnavailableException("try later"),
+        ]
+
         with pytest.raises(HTTPServiceUnavailableException):
-            await ensure_atw_proxy_task(_ROOT_TASK_NAME)
-
-        tasks_api.get.side_effect = _serve(
-            {_ROOT_TASK_NAME: _root_task(), _PROXY_NAME: _valid_proxy()}
-        )
-
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+            await resolve_atw_proxy_tasks([_ROOT_TASK_NAME, "exec-python-artifact"])
 
 
 class TestCreateRace:
@@ -433,7 +482,7 @@ class TestCreateRace:
 
         tasks_api.post.side_effect = _post
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) == _PROXY_NAME
+        assert await _resolve() == _PROXY_NAME
 
     @pytest.mark.asyncio
     async def test_race_winner_is_still_validated(self, tasks_api: AsyncMock) -> None:
@@ -447,4 +496,4 @@ class TestCreateRace:
 
         tasks_api.post.side_effect = _post
 
-        assert await ensure_atw_proxy_task(_ROOT_TASK_NAME) is None
+        assert await _resolve() is None

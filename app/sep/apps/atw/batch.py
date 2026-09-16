@@ -37,7 +37,6 @@ from app.core.utils.fields import (
     NonEmptyStr,
     UTCDatetime,
 )
-from app.sep.apps.atw.proxy_tasks import ensure_atw_proxy_task
 from app.sep.apps.field_names import (
     EXECUTOR_HOST_FIELD_NAME,
     EXTRA_ARGS_FIELD_NAME,
@@ -354,6 +353,8 @@ async def dispatch_batch_item(
     item: ATWBatchExecuteItemWrite,
     script: SnippetScript,
     tasks_api: RemoteAPI,
+    *,
+    execution_task_name: str | None = None,
 ) -> ScriptExecutionResponse:
     """Narrow the shared args to one already-resolved batch item and dispatch it.
 
@@ -369,16 +370,15 @@ async def dispatch_batch_item(
     :param item: The item naming its own argument overrides.
     :param script: The snippet resolved for ``item.snippet_filename``.
     :param tasks_api: The authenticated Tasks API client.
+    :param execution_task_name: ATW's proxy for this snippet's interpreter, resolved
+        once per batch by the caller. ``None`` dispatches under the interpreter
+        unchanged, which is the documented degradation when the proxy cannot be used.
     :return: The dispatched task name, the created task-history id (``None`` when
         the Tasks API returned none), and the resolved snippet filename.
     :raises HTTPException: When the snippet's arguments fail validation, it is not
-        executable, or the Tasks API returns an error status — from resolving ATW's
-        proxy task as well as from the dispatch itself.
+        executable, or the Tasks API returns an error status.
     :raises OSError: Propagated from ``execute_script`` when the Tasks API
         transport itself fails.
-    :raises RuntimeError: Propagated from ``ensure_atw_proxy_task`` when no internal
-        token is configured, so the proxy cannot be resolved as the service
-        principal.
     """
     declared = {
         field.name
@@ -392,7 +392,7 @@ async def dispatch_batch_item(
         script,
         ScriptExecuteWrite(executor_host=body.executor_host, sudo=body.sudo, args=args),
         tasks_api,
-        execution_task_name=await ensure_atw_proxy_task(script.execution_task_name),
+        execution_task_name=execution_task_name,
     )
 
 

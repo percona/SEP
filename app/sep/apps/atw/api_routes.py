@@ -87,6 +87,7 @@ from app.sep.apps.atw.models import (
     AtwSendLogResponse,
     AtwSendStatusEnum,
 )
+from app.sep.apps.atw.proxy_tasks import resolve_atw_proxy_tasks
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.bundle_upload.factory import get_delivery_executor
@@ -559,22 +560,36 @@ async def atw_batch_execute(
     nothing itself. ``incident.id`` is read once up front because both a commit and
     a rollback expire the instance, and re-reading it would trigger a lazy load.
 
+    ATW's proxy is resolved once per distinct interpreter before the loop, so a batch
+    of twenty items costs the same upstream traffic as one item. That resolution has
+    its own guard: it cannot fail for one item and not another, so a failure degrades
+    the whole batch to unwrapped dispatch instead of failing a request whose
+    dispatches may still succeed.
+
     :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :param body: The batch payload.
     :param tasks_api: The authenticated Tasks API client.
-    The dispatch guard also catches ``RuntimeError``, which is what a missing
-    internal token surfaces as while resolving ATW's proxy task. It is a
-    deployment-wide misconfiguration rather than a per-item fault, so every item
-    reports it — but reporting it per item is what keeps this route's
-    partial-success contract instead of failing the whole batch with a 500.
-
     :return: One outcome entry per requested item, in request order.
     :raises HTTPBadRequestException: When any filename is unsafe or malformed,
         failing the whole request before any item is dispatched.
     """
     incident_id = incident.id
     resolved = await resolve_snippets([item.snippet_filename for item in body.items])
+    try:
+        proxies = await resolve_atw_proxy_tasks(
+            script.execution_task_name for script in resolved.values()
+        )
+    except (HTTPException, OSError, RuntimeError):
+        # Resolution failure is never item-specific — it affects every item the same
+        # way — so it degrades the whole batch to unwrapped dispatch rather than
+        # failing a request whose dispatches may well succeed. Outcomes then come
+        # from the reconciliation sweep instead of the recorder.
+        logger.warning(
+            "Could not resolve ATW's proxy tasks; dispatching this batch unwrapped.",
+            exc_info=True,
+        )
+        proxies = {}
     items = []
     for item in body.items:
         script = resolved.get(item.snippet_filename)
@@ -587,8 +602,14 @@ async def atw_batch_execute(
             )
             continue
         try:
-            dispatched = await dispatch_batch_item(body, item, script, tasks_api)
-        except (HTTPException, OSError, RuntimeError) as exc:
+            dispatched = await dispatch_batch_item(
+                body,
+                item,
+                script,
+                tasks_api,
+                execution_task_name=proxies.get(script.execution_task_name),
+            )
+        except (HTTPException, OSError) as exc:
             await session.rollback()
             items.append(
                 ATWBatchExecuteItemResponse(
