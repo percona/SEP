@@ -20,6 +20,7 @@ import pathlib
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
 from httpx import ASGITransport, AsyncClient, Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -59,6 +60,22 @@ XTRABACKUP_INCREMENTAL_CYCLES = (
     "6",
     "7",
 )
+
+
+@pytest.fixture
+def readable_cnf(tmp_path: pathlib.Path) -> pathlib.Path:
+    """Return a readable MySQL option file, the state the payload's guard accepts.
+
+    Shared rather than written per test: several modules need a usable option file
+    only so that some other failure is the one raised, and a copy per module is a
+    copy of the guard's precondition.
+
+    :param tmp_path: The test's temporary directory, holding the option file.
+    :return: The path to the written option file.
+    """
+    cnf = tmp_path / "my.cnf"
+    cnf.write_text("[client]\n")
+    return cnf
 
 
 def xtrabackup_payload_tree() -> ast.Module:

@@ -7,8 +7,8 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to the defaults-file
-#    description: Path to MySQL defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
 #  - name: query
 #    type: str
 #    label: Query to tune
@@ -27,7 +27,7 @@
 #  - name: profile
 #    type: bool
 #    label: Profile the query
-#    description: If enabled, the query will be run and additional profiling information will be collected. Not allowed for DML queries. CTE profiled only if option --force is set.
+#    description: Run the query and collect profiling information as well. Not allowed for DML queries; a CTE is profiled only when "Force profiling" is on.
 #    default: false
 #  - name: force
 #    type: bool
@@ -42,7 +42,7 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 #    default: false
 # service_type: mysql
 # alerts:

@@ -123,6 +123,11 @@ jobs:
               - 'sidecar/Containerfile.sidecar'
               - 'Makefile'
               - 'frontend/packages/api/specs/**'
+              # The snippet front-matter authoring rules are enforced by a
+              # pytest module, and the shell filter below drives only
+              # shellcheck/shfmt, so a snippet-only change would otherwise
+              # skip the tier that checks it.
+              - 'snippets/**'
               - '.github/labeler.yml'
               - '.github/workflows/ci.yml'
               # A skipped job counts as green in ci-success, so omitting the

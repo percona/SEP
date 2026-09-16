@@ -2,7 +2,7 @@
 
 # ---
 # title: PostgreSQL Query Tuning (EXPLAIN ANALYZE)
-# description: Wraps a user-supplied query in BEGIN/EXPLAIN (ANALYZE, ...)/ROLLBACK and runs it via psql -X -f. Selects EXPLAIN modifiers based on the detected PostgreSQL version (BUFFERS/SETTINGS/WAL/MEMORY/SERIALIZE). Writes the formatted explain output to a file for sharing with Percona support, with optional PII masking.
+# description: Wraps a user-supplied query in BEGIN/EXPLAIN (ANALYZE, ...)/ROLLBACK and runs it against the target database. Selects EXPLAIN modifiers based on the detected PostgreSQL version (BUFFERS/SETTINGS/WAL/MEMORY/SERIALIZE). Writes the formatted explain output to a file for sharing with Percona support, with optional PII masking.
 # allow_extra_args: false
 # sudo: optional
 # service_type: postgresql
@@ -10,33 +10,30 @@
 #  - name: dbname
 #    type: str
 #    label: Database name
-#    description: PostgreSQL database to connect to (psql -d).
+#    description: The PostgreSQL database the query runs against.
 #    required: true
 #  - name: query
 #    type: str
 #    label: SQL statement
-#    description: The SQL statement to analyze. Mutually exclusive with --query-file. A trailing semicolon is stripped if present.
+#    description: The SQL statement to analyze. Give this or "SQL statement file", not both. A trailing semicolon is stripped if present.
 #    placeholder: SELECT * FROM orders WHERE customer_id = 42
 #  - name: query-file
 #    type: str
 #    label: SQL statement file
-#    description: Path to a file containing the SQL statement to analyze. Mutually exclusive with --query.
+#    description: Path to a file holding the SQL statement to analyze. Give this or "SQL statement", not both.
 #    placeholder: /tmp/query.sql
 #  - name: host
 #    type: str
 #    label: Host
-#    description: PostgreSQL host (psql -h). Omit to use libpq defaults.
-#    placeholder: 127.0.0.1
+#    description: Host running PostgreSQL. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: port
 #    type: int
 #    label: Port
-#    description: PostgreSQL port (psql -p). Omit to use libpq defaults.
-#    placeholder: 5432
+#    description: Port PostgreSQL listens on. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: user
 #    type: str
 #    label: User
-#    description: PostgreSQL user (psql -U). Omit to use libpq defaults.
-#    placeholder: postgres
+#    description: PostgreSQL account to connect as. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: output-file
 #    type: str
 #    label: Output file path

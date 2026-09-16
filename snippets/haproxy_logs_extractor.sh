@@ -8,21 +8,21 @@
 # service_type: haproxy
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    ge: 1
-#    required: true
+#    default: 30
 #  - name: log-file
 #    type: str
 #    label: Log file path
 #    description: The path to your HAProxy log file
-#    placeholder: /var/log/haproxy.log
+#    default: /var/log/haproxy.log
 #  - name: output
 #    type: str
 #    description: Where to send the output
@@ -30,7 +30,7 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 # ---
@@ -39,7 +39,7 @@
 #
 # Extracts HAProxy log entries around a given timestamp.
 #
-# Usage: ./haproxy_logs_extractor.sh --time "<YYYY-MM-DD HH:MM:SS>" --minutes <minutes> [--log-file <path>] [--output <file|stdout>]
+# Usage: ./haproxy_logs_extractor.sh --time "<YYYY-MM-DDTHH:MM:SS>" --minutes <minutes> [--log-file <path>] [--output <file|stdout>]
 #
 # Timestamp formats handled automatically:
 #   ISO 8601  (rsyslog):      2023-10-27T15:30:00.123456+00:00 hostname haproxy[pid]: ...
@@ -60,16 +60,16 @@ DEFAULT_HAPROXY_LOG="/var/log/haproxy.log"
 # --- Script Functions ---
 
 usage() {
-    echo "Usage: $0 --time \"<YYYY-MM-DD HH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
-    echo "Example: $0 --time \"2023-10-27 15:30:00\" --minutes 5 --log-file /var/log/haproxy.log --output file"
-    echo "         $0 --time \"2024-01-01 10:00:00\" --minutes 30"
+    echo "Usage: $0 --time \"<YYYY-MM-DDTHH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
+    echo "Example: $0 --time \"2023-10-27T15:30:00\" --minutes 5 --log-file /var/log/haproxy.log --output file"
+    echo "         $0 --time \"2024-01-01T10:00:00\" --minutes 30"
     echo ""
     echo "This script extracts a portion of the HAProxy log."
     echo "It will print log entries from <minutes> before to <minutes> after"
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
+    echo '  --time "<YYYY-MM-DDTHH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the HAProxy log file. Defaults to /var/log/haproxy.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' (default) or 'file'."

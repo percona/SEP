@@ -29,6 +29,8 @@ from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupCreate,
     BackupTaskResponse,
+    CompressionAlgorithm,
+    resolve_xtrabackup_compression,
     XTRABACKUP_BIN_DEFAULT,
 )
 from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
@@ -365,6 +367,26 @@ class TestXtrabackupBinaryCompressionMatrix:
     def test_default_binary_has_a_row(self):
         """Give the defaulted binary a row: blank forms are gated against it."""
         assert XTRABACKUP_BIN_DEFAULT in ALLOWED_XTRABACKUP_BIN_COMPRESSIONS
+
+    @pytest.mark.parametrize(
+        ("binary", "expected"),
+        [
+            (None, CompressionAlgorithm.ZSTD),
+            (XtraBackupTool.XTRABACKUP, CompressionAlgorithm.ZSTD),
+            (XtraBackupTool.INNOBACKUPEX, CompressionAlgorithm.QUICKLZ),
+            (XtraBackupTool.MARIADB_BACKUP, CompressionAlgorithm.QUICKLZ),
+        ],
+    )
+    def test_blank_algorithm_resolves_to_a_runnable_one(
+        self, binary: XtraBackupTool | None, expected: CompressionAlgorithm
+    ) -> None:
+        """Resolve a blank algorithm to one the binary can run, zstd where it can.
+
+        The only place the algorithm names are typed out: the payload and dispatch
+        tests derive their expectations from this resolver, so this table is what
+        stops both sides from agreeing on a wrong answer.
+        """
+        assert resolve_xtrabackup_compression(binary) == expected
 
     def test_default_binary_matches_the_payload(self):
         """Pin the form's blank-field resolution to the payload's own default."""

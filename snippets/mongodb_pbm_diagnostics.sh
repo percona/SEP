@@ -15,7 +15,7 @@
 #  - name: log-entries
 #    type: int
 #    label: PBM log entries
-#    description: Number of recent PBM event-log entries to collect (pbm logs --tail).
+#    description: How many of the most recent PBM event-log entries to collect.
 #    default: 10000
 #    ge: 1
 #    le: 1000000
