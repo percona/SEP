@@ -33,6 +33,8 @@ from app.sep.apps.mysql_backups.forms import (
     BackupConfigAll,
     BackupConfigServer,
     BackupCreate,
+    CompressionAlgorithm,
+    resolve_xtrabackup_compression,
     UploadProvider,
 )
 from app.sep.apps.mysql_backups.models import BackupType
@@ -54,6 +56,24 @@ def _xtrabackup_payload_name(upload: list[UploadProvider]) -> str:
     """
     selected = set(upload)
     return variant_name(tuple(p.value for p in UploadProvider if p in selected))
+
+
+def _compression_override(form: BackupCreate) -> dict[str, CompressionAlgorithm]:
+    """Return the compression key a blank XtraBackup algorithm needs, else nothing.
+
+    ``exclude_none`` drops a blank algorithm from the dispatched config, leaving the
+    payload to default it alone — off the backup type, which cannot know which
+    binary runs. Resolving it here keeps the dispatched config and the gated form
+    telling one story.
+
+    :param form: The submitted create form.
+    :return: A single-key mapping to merge into the config, or an empty one.
+    """
+    if form.backup_type != BackupType.XTRABACKUP or form.compression_algorithm:
+        return {}
+    return {
+        "compression_algorithm": resolve_xtrabackup_compression(form.xtrabackup_bin_cmd)
+    }
 
 
 def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPythonSpec:
@@ -87,7 +107,7 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
             "encryption_recipient",
             "alias",
         },
-    )
+    ) | _compression_override(form)
 
     server_config = {
         "alias": form.alias or service.node.address,

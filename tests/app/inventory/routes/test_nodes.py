@@ -16,12 +16,14 @@
 """Define tests for inventory node routes."""
 
 import pytest
+from sqlalchemy import event
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import (
+    HOST_OBSERVATION_FIELD_NAMES,
     HostSystemObservation,
     Node,
     Schema,
@@ -46,6 +48,7 @@ from tests.app.inventory.conftest import (
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
 LIST_QUERY_MATCH_TOTAL = 2
+OBSERVED_NODE_COUNT = 2
 
 # Pinned verbatim rather than imported from app.inventory.constants: the wording is
 # part of the API contract, so an edit to the constant must fail the test.
@@ -1005,6 +1008,107 @@ class TestRetrieveHostSystemObservation:
         assert after.json()["os_version"] == payload.os_version
 
 
+class TestListHostSystemObservations:
+    """Test GET /nodes/system-observations endpoint."""
+
+    def test_lists_observations_across_nodes(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Return one item per observed node, leaving unobserved nodes out."""
+        second = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+        second_id = second.json()["id"]
+        third = test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        assert third.status_code == status.HTTP_201_CREATED
+
+        for node_id, can_elevate in ((node.id, True), (second_id, False)):
+            upsert = test_client.put(
+                f"/nodes/{node_id}/system-observation",
+                json=HostSystemObservationWriteFactory.build(
+                    can_elevate=can_elevate
+                ).model_dump(mode="json"),
+            )
+            assert upsert.status_code == status.HTTP_200_OK
+
+        response = test_client.get("/nodes/system-observations")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == OBSERVED_NODE_COUNT
+        by_node = {item["node_id"]: item["can_elevate"] for item in body["items"]}
+        assert by_node == {node.id: True, second_id: False}
+
+    def test_omits_the_json_blob_fields(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Keep the two per-node JSON blobs out of a fleet-wide fetch."""
+        payload = HostSystemObservationWriteFactory.build()
+        assert payload.installed_packages
+        upsert = test_client.put(
+            f"/nodes/{node.id}/system-observation",
+            json=payload.model_dump(mode="json"),
+        )
+        assert upsert.status_code == status.HTTP_200_OK
+
+        response = test_client.get("/nodes/system-observations")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert set(item) == {"node_id", "can_elevate", "observed_at"}
+
+    @pytest.mark.asyncio
+    async def test_does_not_fetch_the_json_blobs_from_the_database(
+        self, test_client: TestClient, session: AsyncSession, node: Node
+    ) -> None:
+        """Keep the two blob columns out of the query, not just out of the response.
+
+        ``response_model`` drops them after the database has already transferred
+        and deserialized them, so asserting on the response shape alone would pass
+        while every fleet-wide page still carried each node's full package list.
+        """
+        upsert = test_client.put(
+            f"/nodes/{node.id}/system-observation",
+            json=HostSystemObservationWriteFactory.build().model_dump(mode="json"),
+        )
+        assert upsert.status_code == status.HTTP_200_OK
+
+        statements: list[str] = []
+
+        def _record(
+            conn: object, cursor: object, statement: str, *args: object
+        ) -> None:
+            statements.append(statement)
+
+        bind = session.get_bind()
+        event.listen(bind, "before_cursor_execute", _record)
+        try:
+            response = test_client.get("/nodes/system-observations")
+        finally:
+            event.remove(bind, "before_cursor_execute", _record)
+
+        assert response.status_code == status.HTTP_200_OK
+        selects = [s for s in statements if "hostsystemobservation" in s.lower()]
+        assert selects, "no observation query was captured"
+        assert not any("installed_packages" in s for s in selects)
+        assert not any("config" in s for s in selects)
+
+    def test_is_not_shadowed_by_the_node_id_route(
+        self, test_client: TestClient
+    ) -> None:
+        """Answer the literal path rather than parsing it as a node identifier.
+
+        ``GET /{node_id}`` would claim this path if it were declared first, and
+        answer 422 on the unparseable identifier instead of serving the list.
+        """
+        response = test_client.get("/nodes/system-observations")
+
+        assert response.status_code == status.HTTP_200_OK
+
+
 class TestUpsertHostSystemObservation:
     """Test PUT /nodes/{node_id}/system-observation endpoint."""
 
@@ -1093,12 +1197,15 @@ class TestUpsertHostSystemObservation:
     def test_upsert_422_when_all_observation_fields_are_none(
         self, test_client: TestClient, node: Node
     ) -> None:
-        """Return 422 when os_version, installed_packages, and config are all None."""
+        """Return 422 when every observation field is None.
+
+        The field set is read off the model rather than restated, so a new
+        observation field is covered here the moment it is declared.
+        """
         base = HostSystemObservationWriteFactory.build()
         data = base.model_dump(mode="json")
-        data["os_version"] = None
-        data["installed_packages"] = None
-        data["config"] = None
+        for field_name in HOST_OBSERVATION_FIELD_NAMES:
+            data[field_name] = None
         response = test_client.put(f"/nodes/{node.id}/system-observation", json=data)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 

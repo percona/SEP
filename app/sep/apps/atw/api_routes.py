@@ -93,15 +93,17 @@ from app.sep.apps.framework.api import schema_endpoint
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
+from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_SERVICE_TYPE
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = "atw"
+ATW_META_KEY = META_KEY_ATW
 ATW_META_WARNING = (
     f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
 )
@@ -137,16 +139,19 @@ class ATWSnippetSummary(BaseModel):
     """Represent one snippet entry under an ATW category.
 
     :param name: The snippet filename, used as its API identifier.
-    :type name: str
     :param title: The snippet display title.
-    :type title: str
     :param description: The snippet free-text description.
-    :type description: str
+    :param sudo: Whether the snippet's elevation is never wanted, optional, or
+        mandatory, letting a client warn before dispatching it to a host that
+        cannot elevate. Nullable only so the field is additive on an already
+        released model: every response this version builds populates it, and a
+        ``None`` means the server predates the field.
     """
 
     name: str
     title: str
     description: str
+    sudo: SnippetSudoRequirement | None = None
 
 
 class ATWCategoryListing(BaseModel):
@@ -185,12 +190,14 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     """Project a snippet onto the ATW summary shape.
 
     :param snippet: The snippet to project.
-    :return: The snippet's identifying name, display title, and description.
+    :return: The snippet's identifying name, display title, description, and
+        declared elevation requirement.
     """
     return ATWSnippetSummary(
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
+        sudo=snippet.sudo.requirement,
     )
 
 
@@ -207,7 +214,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
-        root = derive_category_root(snippet.meta.get("service_type"))
+        root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
         tags = []
         if ATW_META_KEY in snippet.meta:
             raw_atw = snippet.meta[ATW_META_KEY]

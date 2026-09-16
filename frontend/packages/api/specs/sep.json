@@ -497,11 +497,22 @@
         "type": "object"
       },
       "HostResponse": {
-        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:type id: str\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:type name: str\n:param address: The network address reported by the executor.\n:type address: str",
+        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:param address: The network address reported by the executor.\n:param can_elevate: Whether a ``sudo``-prefixed command can start on this\n    host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,\n    ``False`` when neither holds, ``None`` when never observed. A ``True``\n    does not promise the task user is in sudoers, only that the launch check\n    lets the command through. ``None`` is permanent, not transient, for an\n    executor host with no inventory match.",
         "properties": {
           "address": {
             "title": "Address",
             "type": "string"
+          },
+          "can_elevate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Elevate"
           },
           "id": {
             "title": "Id",
@@ -1836,6 +1847,16 @@
         ],
         "title": "SnippetServiceTypesResponse",
         "type": "object"
+      },
+      "SnippetSudoRequirement": {
+        "description": "Name the three elevation states a snippet's metadata distinguishes.",
+        "enum": [
+          "never",
+          "optional",
+          "always"
+        ],
+        "title": "SnippetSudoRequirement",
+        "type": "string"
       },
       "SnippetsCapabilitiesResponse": {
         "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.apps.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
@@ -3906,7 +3927,7 @@
         "type": "object"
       },
       "atw__ATWSnippetSummary": {
-        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:type name: str\n:param title: The snippet display title.\n:type title: str\n:param description: The snippet free-text description.\n:type description: str",
+        "description": "Represent one snippet entry under an ATW category.\n\n:param name: The snippet filename, used as its API identifier.\n:param title: The snippet display title.\n:param description: The snippet free-text description.\n:param sudo: Whether the snippet's elevation is never wanted, optional, or\n    mandatory, letting a client warn before dispatching it to a host that\n    cannot elevate. Nullable only so the field is additive on an already\n    released model: every response this version builds populates it, and a\n    ``None`` means the server predates the field.",
         "properties": {
           "description": {
             "title": "Description",
@@ -3915,6 +3936,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "sudo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SnippetSudoRequirement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": {
             "title": "Title",
@@ -21155,7 +21186,7 @@
     },
     "/api/sep/hosts/": {
       "get": {
-        "description": "Return executor hosts merged with inventory display names.\n\nCall ``tasks_api.get('/hosts/')`` for executor targets and the Inventory\nAPI for display-name enrichment. The two upstream calls degrade\ndifferently: Inventory failures cause hosts without a match to keep the\nraw executor node name (the response still returns ``200``), but a\nTasks-API failure (HTTP or connection error) is re-raised as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through its React Query error slot.\n\n:param tasks_api: The Tasks API client used to fetch executor hosts.\n:type tasks_api: TaskAPI\n:param inventory_api: The Inventory API client used to enrich the hosts\n    with their display names.\n:type inventory_api: InventoryAPI\n:return: Sorted list of hosts, each with executor id, friendly name,\n    and network address.\n:rtype: list[HostResponse]\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
+        "description": "Return executor hosts merged with inventory display names.\n\nCall ``tasks_api.get('/hosts/')`` for executor targets and the Inventory\nAPI for display-name and capability enrichment. The Tasks and Inventory\ncalls degrade differently: Inventory failures cause hosts without a match\nto keep the raw executor node name (the response still returns ``200``),\nbut a Tasks-API failure (HTTP or connection error) is re-raised as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through its React Query error slot.\n\nThe two Inventory enrichments degrade **independently**, and on the same\nterms. The capability is the newer of them, and an Inventory old enough to\nanswer 422 on its route — or failing it for any other reason — must not cost\nthe host selector the display names it has always had. Both blocks also\nadmit a malformed page, which fails envelope validation rather than raising\na transport error: every way an Inventory read can fail leaves this route\nanswering ``200`` with whatever it still resolved.\n\nThe display name and the elevation capability are joined on **different\nkeys** — address and executor name respectively — and may resolve to\ndifferent inventory nodes. They answer different questions: the display name\nasks what inventory calls this address, the capability asks which executor\nwas measured. Collapsing them into one index misattributes the measurement.\n\n:param tasks_api: The Tasks API client used to fetch executor hosts.\n:param inventory_api: The Inventory API client used to enrich the hosts\n    with their display names and measured capabilities.\n:return: Sorted list of hosts, each with executor id, friendly name,\n    network address, and elevation capability.\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
         "operationId": "sep_list_hosts_api_sep_hosts__get",
         "responses": {
           "200": {

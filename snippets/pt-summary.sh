@@ -8,16 +8,16 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to the defaults-file
-#    description: Path to the defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
 #  - name: save-samples
 #    type: bool
 #    label: Save samples
-#    description: Save samples
+#    description: Keep the collected sample files on disk instead of discarding them.
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 # atw:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - OVERALL_SLOWNESS

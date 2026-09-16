@@ -1052,7 +1052,7 @@
               }
             ]
           },
-          "message": "'compression_algorithm' must be lz4 or zstd when the backup binary is 'xtrabackup', which is what a blank binary selects."
+          "message": "'compression_algorithm' must be zstd or lz4 when the backup binary is 'xtrabackup', which is what a blank binary selects."
         },
         {
           "error_fields": [
@@ -1207,7 +1207,7 @@
               "value": "quicklz"
             }
           ],
-          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type and, for XtraBackup, on the selected backup binary — xtrabackup takes lz4 or zstd; innobackupex takes quicklz; mariadb-backup takes quicklz. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
+          "description": "Algorithm used when compression is enabled; the available choices depend on the backup type and, for XtraBackup, on the selected backup binary — xtrabackup takes zstd or lz4; innobackupex takes quicklz; mariadb-backup takes quicklz. A Binlog backup always uses gzip unless 'Binlog compress command' replaces it.",
           "label": "Compression algorithm",
           "name": "compression_algorithm",
           "required": false,
@@ -1585,7 +1585,7 @@
   "related_apps": [
     {
       "app_key": "mysql_backups/restore",
-      "label": "Restore",
+      "label": "Restores",
       "route_segment": "restores"
     }
   ],

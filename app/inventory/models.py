@@ -997,6 +997,9 @@ class HostSystemObservationBase(SQLModel):
     :param os_version: The observed operating system version. Defaults to None.
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
+    :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+        node: uid 0, or a bare ``sudo`` on PATH. ``None`` when never observed.
+        Defaults to ``None``.
     :param observed_at: When this observation was collected (domain provenance).
     """
 
@@ -1015,28 +1018,34 @@ class HostSystemObservationBase(SQLModel):
         default=None,
         sa_column=Column(JSON),
     )
+    can_elevate: bool | None = None
     observed_at: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
 
     @model_validator(mode="after")
     def validate_at_least_one_observation_field(self) -> Self:
-        """Ensure that at least one of os_version, installed_packages, or config is set.
-
-        Validates that at least one of ``os_version``, ``installed_packages``, or
-        ``config`` is provided.
+        """Ensure at least one observed fact is set.
 
         :return: The validated instance.
-        :raises ValueError: If ``os_version``, ``installed_packages``, and ``config``
-            are all unset.
+        :raises ValueError: If every observation field is unset.
         """
-        if (
-            self.os_version is None
-            and self.installed_packages is None
-            and self.config is None
-        ):
+        if all(getattr(self, name) is None for name in HOST_OBSERVATION_FIELD_NAMES):
             raise ValueError(
-                "At least one of os_version, installed_packages, or config must be set",
+                f"At least one of {', '.join(sorted(HOST_OBSERVATION_FIELD_NAMES))} "
+                "must be set",
             )
         return self
+
+
+#: Fields on a host observation that record a fact rather than identify or date one.
+#: Derived from the declaring base so the model stays the single source of truth as
+#: fields change. It must NOT be derived from a concrete subclass: the table and
+#: response models also inherit ``BaseSQLModel``'s ``id`` / ``created_at`` /
+#: ``updated_at``, and an always-populated ``created_at`` would satisfy the validator
+#: for an otherwise empty observation.
+HOST_OBSERVATION_FIELD_NAMES = frozenset(HostSystemObservationBase.model_fields) - {
+    "node_id",
+    "observed_at",
+}
 
 
 class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True):
@@ -1052,6 +1061,8 @@ class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True)
     :param os_version: The observed operating system version, if set.
     :param installed_packages: Snapshot of installed packages, if set.
     :param config: Snapshot of host configuration, if set.
+    :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+        node, if observed.
     :param observed_at: When this observation was collected.
     """
 
@@ -1060,13 +1071,12 @@ class HostSystemObservationWrite(HostSystemObservationBase):
     """Define the model for writing host system observation data to the inventory.
 
     :param node_id: The foreign key referencing the node. Defaults to None.
-    :type node_id: int | None
     :param os_version: The observed operating system version. Defaults to None.
-    :type os_version: str | None
     :param installed_packages: Snapshot of installed packages. Defaults to None.
     :param config: Snapshot of host configuration. Defaults to None.
+    :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+        node. Defaults to ``None``.
     :param observed_at: When this observation was collected.
-    :type observed_at: UTCDatetime
     """
 
     node_id: int | None = SQLField(
@@ -1134,20 +1144,34 @@ class HostSystemObservationResponse(BaseSQLModel, HostSystemObservationBase):
     """Define the response model for host system observation data.
 
     :param id: The primary key of the observation record.
-    :type id: int | None
     :param created_at: When the record was created.
-    :type created_at: UTCDatetime
     :param updated_at: When the record was last updated.
-    :type updated_at: UTCDatetime | None
     :param node_id: The unique identifier of the observed node.
-    :type node_id: int
     :param os_version: The observed operating system version.
-    :type os_version: str | None
     :param installed_packages: Snapshot of installed packages.
     :param config: Snapshot of host configuration.
+    :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+        node, if observed.
     :param observed_at: When this observation was collected.
-    :type observed_at: UTCDatetime
     """
+
+
+class HostSystemObservationSummaryResponse(SQLModel):
+    """Project a host observation onto the fields a capability lookup needs.
+
+    Deliberately excludes ``installed_packages`` and ``config``. The first runs to
+    hundreds of rows per node, which is what makes the full response unsuitable for
+    a fleet-wide fetch; the second is small but has no consumer here.
+
+    :param node_id: The unique identifier of the observed node.
+    :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+        node, if observed.
+    :param observed_at: When this observation was collected.
+    """
+
+    node_id: int
+    can_elevate: bool | None = None
+    observed_at: UTCDatetime
 
 
 class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBase):

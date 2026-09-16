@@ -47,6 +47,7 @@ from app.sep.apps.atw.models import (
     AtwIncidentResponse,
 )
 from app.sep.deps import BEARER_REQUIRED_DETAIL
+from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
@@ -61,11 +62,13 @@ def _mock_atw_snippet(
     description: str = "",
     atw: list[str],
     service_type: str | None = "mysql",
+    sudo: SnippetSudoOption = SnippetSudoOption.NEVER,
 ) -> Mock:
     snippet = Mock()
     snippet.filename = filename
     snippet.title = title
     snippet.description = description
+    snippet.sudo = sudo
     meta: dict[str, Any] = {"atw": atw}
     if service_type is not None:
         meta["service_type"] = service_type
@@ -166,7 +169,61 @@ class TestAtwListEndpoint:
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         summary = overall["snippets"][0]
         assert summary["name"] == "diag/slow-query.sh"
-        assert set(summary.keys()) == {"name", "title", "description"}
+        assert set(summary.keys()) == {"name", "title", "description", "sudo"}
+
+    def test_atw_list_reports_the_declared_sudo_requirement(
+        self, test_client: TestClient
+    ) -> None:
+        """Publish a mandatory-elevation snippet as ``always`` on the category listing.
+
+        The category browser is how the collect pane reaches scripts, so this path
+        needs its own assertion rather than inheriting the search route's.
+        """
+        snippet = _mock_atw_snippet(
+            filename="diag/dmesg.sh",
+            atw=["OVERALL_SLOWNESS"],
+            sudo=SnippetSudoOption.ALWAYS,
+        )
+
+        with patch(
+            "app.sep.apps.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["snippets"][0]["sudo"] == "always"
+
+    @pytest.mark.parametrize(
+        ("option", "expected"),
+        [
+            (SnippetSudoOption.NEVER, "never"),
+            (SnippetSudoOption.OPTIONAL, "optional"),
+            (SnippetSudoOption.ALWAYS, "always"),
+            (SnippetSudoOption.OPTIONAL_DEFAULT_TRUE, "optional"),
+        ],
+        ids=["never", "optional", "always", "optional_default_true"],
+    )
+    def test_atw_list_distinguishes_the_three_states(
+        self, test_client: TestClient, option: SnippetSudoOption, expected: str
+    ) -> None:
+        """Collapse the four declared options onto exactly three wire values.
+
+        ``OPTIONAL_DEFAULT_TRUE`` reports ``optional`` rather than a fourth value:
+        the default-checked nuance is carried by ``sudo_default``, not here.
+        """
+        snippet = _mock_atw_snippet(
+            filename="diag/x.sh", atw=["OVERALL_SLOWNESS"], sudo=option
+        )
+
+        with patch(
+            "app.sep.apps.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["snippets"][0]["sudo"] == expected
 
     def test_atw_list_real_snippet_row_meta_shape(
         self, test_client: TestClient
@@ -756,8 +813,75 @@ class TestAtwSnippetSearch:
 
         assert response.status_code == status.HTTP_200_OK
         item = response.json()["items"][0]
-        assert set(item) == {"name", "title", "description"}
-        assert item == {"name": "ops/x.sh", "title": "Summary", "description": "d"}
+        assert set(item) == {"name", "title", "description", "sudo"}
+        assert item == {
+            "name": "ops/x.sh",
+            "title": "Summary",
+            "description": "d",
+            "sudo": "never",
+        }
+
+    @pytest.mark.asyncio
+    async def test_search_reports_the_declared_sudo_requirement(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Publish a mandatory-elevation snippet as ``always`` on the search route."""
+        await _persist_snippet(
+            session,
+            filename="ops/elevated.sh",
+            meta={"title": "Elevated", "description": "d", "sudo": "always"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "elevated"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "always"
+
+    @pytest.mark.asyncio
+    async def test_search_reports_a_boolean_sudo_declaration_as_always(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Resolve ``sudo: true`` to ``always``, as the option parser already does.
+
+        YAML hands Python ``True``, which equals the ``ALWAYS`` member's value of
+        ``1`` — so this spelling is mandatory elevation and must warn like one.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/bool-sudo.sh",
+            meta={"title": "Bool", "description": "d", "sudo": True},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "bool"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "always"
+
+    @pytest.mark.asyncio
+    async def test_search_reports_a_malformed_sudo_declaration_as_the_default(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to the configured default when the declaration is garbage.
+
+        ``Snippet.sudo`` swallows the ``ValidationError``, so the summary inherits
+        the configured default rather than surfacing an error.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/garbage-sudo.sh",
+            meta={"title": "Garbage", "description": "d", "sudo": "not-an-option"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "garbage"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "never"
 
     @pytest.mark.asyncio
     async def test_title_falls_back_to_filename_when_key_absent(
