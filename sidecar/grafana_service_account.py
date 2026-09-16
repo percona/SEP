@@ -438,13 +438,19 @@ def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
     ``AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`` wins when both resolve to
     different values. A blank value counts as absent at every layer, which is
     why the profile's baked empty token does not read as a configured one.
+    Strip is used only to detect blank input; the original non-blank value is
+    returned so export matches what the operator configured.
 
     :param service_account_token: The resolved Grafana service-account token.
     :param pmm_api_key: The resolved ``PMM.API_KEY``.
     :return: The non-blank token to export, or ``None`` when neither name
         carries one.
     """
-    return service_account_token.strip() or pmm_api_key.strip() or None
+    if service_account_token.strip():
+        return service_account_token
+    if pmm_api_key.strip():
+        return pmm_api_key
+    return None
 
 
 def resolve_provider() -> GrafanaSDK | str | None:
