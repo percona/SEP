@@ -13,13 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the HOT-classification registry."""
+"""Test settings-override classification, resolution, and PATCH preservation."""
 
 from string import Template
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretStr
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
@@ -43,12 +43,15 @@ from app.core.settings_override.registry import (
     MaterializerPurpose,
     nested_overridable_field_names,
     override_rows_for_key,
+    preserve_credential_urls_in_model_payload,
     preserve_patch_credential_url_value,
+    preserve_secrets_in_model_payload,
     ReloadClassification,
     resolve_nested_field_metadata,
     SECRET_STR_MASK,
     unwrap_secrets_for_storage,
 )
+from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
@@ -200,6 +203,60 @@ def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
     assert preserved["endpoint"] == current["endpoint"]
 
 
+class _CredentialUrlModel(BaseModel):
+    """Represent a model with an optional credential-bearing endpoint."""
+
+    endpoint: CredentialHttpUrl | None = HttpUrl.build(
+        scheme="https",
+        username="test-user",
+        host="service.test",
+        password="synthetic-test-value",
+    )
+
+
+def test_preserve_credential_urls_with_none_current_leaf() -> None:
+    """Leave a masked URL unchanged when no live password exists to restore."""
+    current = _CredentialUrlModel(endpoint=None)
+    incoming = _CredentialUrlModel().model_dump(mode="json")
+
+    preserved = preserve_credential_urls_in_model_payload(
+        _CredentialUrlModel, current, incoming
+    )
+
+    assert preserved == incoming
+    assert preserved is not incoming
+
+
+def test_preserve_patch_credential_url_value_recurses_into_nested_model() -> None:
+    """Restore a nested URL password while retaining an outer-field PATCH."""
+
+    class _ConnectionGroup(BaseModel):
+        connection: _CredentialUrlModel
+        label: str
+
+    class _ConnectionSettings(BaseModel):
+        group: _ConnectionGroup
+
+    current = _ConnectionGroup(
+        connection=_CredentialUrlModel(),
+        label="original",
+    )
+    incoming = current.model_dump(mode="json")
+    incoming["label"] = "updated"
+
+    preserved = preserve_patch_credential_url_value(
+        _ConnectionSettings.model_fields["group"], current, incoming
+    )
+
+    assert preserved == {
+        "connection": {"endpoint": str(current.connection.endpoint)},
+        "label": "updated",
+    }
+    assert incoming["connection"]["endpoint"] == redact_credential_url(
+        str(current.connection.endpoint)
+    )
+
+
 class _SecretLeafModel(BaseModel):
     """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
 
@@ -227,6 +284,131 @@ class _DictSecretSettings(BaseModel):
     secrets: dict[str, SecretStr] = hot_field(
         {"api_key": SecretStr("stored-dict-secret"), "token": SecretStr("keep-me")}
     )
+
+
+def test_preserve_secrets_in_model_payload_with_secret_dict() -> None:
+    """Restore masked dictionary values without replacing an explicit new secret."""
+    current = _DictSecretSettings()
+    incoming = current.model_dump(mode="json")
+    incoming["secrets"]["token"] = "replacement-token"
+
+    preserved = preserve_secrets_in_model_payload(
+        _DictSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "secrets": {
+            "api_key": current.secrets["api_key"].get_secret_value(),
+            "token": "replacement-token",
+        }
+    }
+    assert incoming["secrets"]["api_key"] == SECRET_STR_MASK
+
+
+def test_preserve_secrets_in_model_payload_with_secret_list() -> None:
+    """Restore masked list elements by position and keep explicitly replaced secrets."""
+
+    class _ListOfSecretsSettings(BaseModel):
+        tokens: list[SecretStr]
+
+    current = _ListOfSecretsSettings(
+        tokens=[SecretStr("keep-first"), SecretStr("replace-second")]
+    )
+    incoming = current.model_dump(mode="json")
+    incoming["tokens"][1] = "new-second"
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListOfSecretsSettings, current, incoming
+    )
+
+    assert preserved == {"tokens": ["keep-first", "new-second"]}
+    assert incoming["tokens"][0] == SECRET_STR_MASK
+
+
+@pytest.mark.parametrize(
+    "order", [(2, 0, 1), (0, 2, 1)], ids=["last-first", "first-then-last"]
+)
+def test_preserve_secrets_in_model_payload_matches_reordered_models(
+    order: tuple[int, ...],
+) -> None:
+    """Pair homogeneous model items by their public values rather than PATCH position."""
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_SecretLeafModel]
+
+    current = _ListSecretSettings(
+        items=[
+            _SecretLeafModel(api_key=SecretStr("secret-a"), label="a"),
+            _SecretLeafModel(api_key=SecretStr("secret-b"), label="b"),
+            _SecretLeafModel(api_key=SecretStr("secret-c"), label="c"),
+        ]
+    )
+    incoming = {
+        "items": [current.items[index].model_dump(mode="json") for index in order]
+    }
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "items": [
+            {
+                "api_key": current.items[index].api_key.get_secret_value(),
+                "label": current.items[index].label,
+            }
+            for index in order
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("order", "expected_secrets"),
+    [
+        ((1,), ["secret-b", "secret-a", "secret-c"]),
+        ((2, 0), ["secret-c", "secret-a", "secret-b"]),
+    ],
+    ids=["field-overlap-then-position", "sole-unused-item"],
+)
+def test_preserve_secrets_in_model_payload_with_unrecognized_discriminator(
+    order: tuple[int, ...], expected_secrets: list[str]
+) -> None:
+    """Restore masks through fallback matching without reusing a stored item."""
+
+    class _ProviderSecretLeaf(_SecretLeafModel):
+        provider: str = "external"
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_ProviderSecretLeaf]
+
+    current = _ListSecretSettings(
+        items=[
+            _ProviderSecretLeaf(api_key=SecretStr("secret-a"), label="a"),
+            _ProviderSecretLeaf(api_key=SecretStr("secret-b"), label="b"),
+            _ProviderSecretLeaf(api_key=SecretStr("secret-c"), label="c"),
+        ]
+    )
+    incoming_items = [
+        current.items[index].model_dump(mode="json", exclude={"provider"})
+        for index in order
+    ]
+    # This discriminator matches no class name; omit labels to force fallback pairing.
+    fallback = current.items[0].model_dump(mode="json", exclude={"label"})
+    incoming_items.extend(fallback.copy() for _ in range(4 - len(incoming_items)))
+    incoming = {"items": incoming_items}
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "items": [
+            {**item, "api_key": secret}
+            for item, secret in zip(
+                incoming_items, [*expected_secrets, SECRET_STR_MASK], strict=True
+            )
+        ]
+    }
 
 
 def test_preserve_patch_secret_value_for_top_level_field() -> None:
