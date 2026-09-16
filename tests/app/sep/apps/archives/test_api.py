@@ -29,6 +29,7 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.archives import app as archives_app
 from app.sep.apps.archives.models import ArchivesCreate
@@ -71,8 +72,14 @@ def _create_body(**overrides: Any) -> dict[str, Any]:
 @pytest.fixture
 def client(regular_user: CasdoorUser) -> Iterator[TestClient]:
     """Return an authenticated contract client with a seeded archive task."""
-    tasks_api = MockTaskAPI()
-    tasks_api.seed_task(_SEEDED, owner="ARCHIVER")
+    actor = str(SERVICE_PRINCIPAL_ID)
+    tasks_api = MockTaskAPI(created_by=actor)
+    tasks_api.seed_task(
+        _SEEDED,
+        owner="ARCHIVER",
+        created_by=actor,
+        last_updated_by=actor,
+    )
     yield from shared_contract_client(
         archives_app,
         user=regular_user,
@@ -124,13 +131,17 @@ class TestArchivesApiReads:
         """List the archive tasks owned by the archiver."""
         response = client.get(f"{_BASE}/")
         assert response.status_code == status.HTTP_200_OK
-        assert any(item["name"] == _SEEDED for item in response.json()["items"])
+        item = next(
+            item for item in response.json()["items"] if item["name"] == _SEEDED
+        )
+        assert item["created_by"] == "Service account"
 
     def test_detail_returns_task(self, client: Any) -> None:
         """Return a single archive task by name."""
         response = client.get(f"{_BASE}/{_SEEDED}")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == _SEEDED
+        assert response.json()["created_by"] == "Service account"
 
     def test_detail_unknown_returns_404(self, client: Any) -> None:
         """Return 404 for an unknown task name."""
@@ -145,6 +156,7 @@ class TestArchivesApiCreate:
         response = client.post(f"{_BASE}/", json=_create_body())
         assert response.status_code == status.HTTP_201_CREATED
         assert "connectivity_warning" in response.json()
+        assert response.json()["created_by"] == "Service account"
 
     def test_create_query_source(self, client: Any) -> None:
         """Create an archive task from a query source branch."""
@@ -197,6 +209,7 @@ class TestArchivesApiUpdateDelete:
             f"{_BASE}/{_SEEDED}", json=_create_body(task_name=_SEEDED)
         )
         assert response.status_code == status.HTTP_200_OK
+        assert response.json()["last_updated_by"] == "Service account"
 
     def test_delete_returns_204(self, client: Any) -> None:
         """Delete an existing archive task."""
