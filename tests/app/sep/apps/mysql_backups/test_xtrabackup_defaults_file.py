@@ -41,7 +41,7 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
     STUB_HOME,
 )
 
-_PREFLIGHT = ("_preflight",)
+_CHECK_CONFIG = ("_check_config",)
 
 
 class TestDefaultMycnfResolution:
@@ -75,11 +75,11 @@ class TestDefaultsFileGuard:
     def test_readable_file_passes(self, readable_cnf: pathlib.Path) -> None:
         """Assert a readable option file is accepted."""
         inst, _ = seeded_instance(
-            _PREFLIGHT,
+            _CHECK_CONFIG,
             server_data={"DEFAULTS_FILE": str(readable_cnf)},
             defaults_cnf_file=str(readable_cnf),
         )
-        assert inst._preflight() is None
+        assert inst._check_config() is None
 
     def test_explicit_unreadable_file_names_the_field(
         self, tmp_path: pathlib.Path
@@ -87,12 +87,12 @@ class TestDefaultsFileGuard:
         """Assert an explicit missing path names both the path and the field that set it."""
         missing = str(tmp_path / "absent.cnf")
         inst, backup_error = seeded_instance(
-            _PREFLIGHT,
+            _CHECK_CONFIG,
             server_data={"DEFAULTS_FILE": missing},
             defaults_cnf_file=missing,
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert str(excinfo.value) == (
             f"cannot read defaults file {missing} from DEFAULTS_FILE"
         )
@@ -106,9 +106,9 @@ class TestDefaultsFileGuard:
         never chose.
         """
         missing = str(tmp_path / "absent.cnf")
-        inst, backup_error = seeded_instance(_PREFLIGHT, defaults_cnf_file=missing)
+        inst, backup_error = seeded_instance(_CHECK_CONFIG, defaults_cnf_file=missing)
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert str(excinfo.value) == (
             f"cannot read defaults file {missing} from DEFAULTS_FILE default"
         )
@@ -118,10 +118,10 @@ class TestDefaultsFileGuard:
     ) -> None:
         """Assert the message points at the file rather than at the credentials."""
         inst, backup_error = seeded_instance(
-            _PREFLIGHT, defaults_cnf_file=str(tmp_path / "absent.cnf")
+            _CHECK_CONFIG, defaults_cnf_file=str(tmp_path / "absent.cnf")
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         message = str(excinfo.value).lower()
         assert "defaults file" in message
         assert "auth" not in message
@@ -130,26 +130,33 @@ class TestDefaultsFileGuard:
     def test_directory_is_rejected(self, tmp_path: pathlib.Path) -> None:
         """Assert a directory fails as a file problem rather than later as a bad login."""
         inst, backup_error = seeded_instance(
-            _PREFLIGHT, defaults_cnf_file=str(tmp_path)
+            _CHECK_CONFIG, defaults_cnf_file=str(tmp_path)
         )
         with pytest.raises(backup_error):
-            inst._preflight()
+            inst._check_config()
 
     def test_blank_path_is_rejected(self) -> None:
-        """Assert a hand-authored empty ``DEFAULTS_FILE`` fails here, not on login."""
+        """Assert a hand-authored empty ``DEFAULTS_FILE`` fails here, not on login.
+
+        The message is pinned because a blank leaves nothing to name beside the
+        field: the key is the only thing that points an operator at the config they
+        wrote, and the field carries a default, so a blank is a choice of nothing
+        rather than an absent key.
+        """
         inst, backup_error = seeded_instance(
-            _PREFLIGHT, server_data={"DEFAULTS_FILE": ""}, defaults_cnf_file=""
+            _CHECK_CONFIG, server_data={"DEFAULTS_FILE": ""}, defaults_cnf_file=""
         )
-        with pytest.raises(backup_error):
-            inst._preflight()
+        with pytest.raises(backup_error) as excinfo:
+            inst._check_config()
+        assert str(excinfo.value) == "cannot read defaults file  from DEFAULTS_FILE"
 
     def test_dangling_symlink_is_rejected(self, tmp_path: pathlib.Path) -> None:
         """Assert a link whose target is gone fails as an unreadable file."""
         link = tmp_path / "my.cnf"
         link.symlink_to(tmp_path / "absent.cnf")
-        inst, backup_error = seeded_instance(_PREFLIGHT, defaults_cnf_file=str(link))
+        inst, backup_error = seeded_instance(_CHECK_CONFIG, defaults_cnf_file=str(link))
         with pytest.raises(backup_error):
-            inst._preflight()
+            inst._check_config()
 
     @pytest.mark.skipif(
         os.geteuid() == 0, reason="root bypasses the permission bits being asserted"
@@ -160,10 +167,10 @@ class TestDefaultsFileGuard:
         """Assert a file the account cannot read fails, not only a missing one."""
         readable_cnf.chmod(0o000)
         inst, backup_error = seeded_instance(
-            _PREFLIGHT, defaults_cnf_file=str(readable_cnf)
+            _CHECK_CONFIG, defaults_cnf_file=str(readable_cnf)
         )
         with pytest.raises(backup_error):
-            inst._preflight()
+            inst._check_config()
 
 
 class TestBinaryDefaultsFileGuard:
@@ -179,13 +186,13 @@ class TestBinaryDefaultsFileGuard:
         """Assert the binary's unreadable option file fails naming its own key."""
         missing = str(tmp_path / "absent.cnf")
         inst, backup_error = seeded_instance(
-            _PREFLIGHT,
+            _CHECK_CONFIG,
             server_data={"XTRABACKUP_DEFAULTS_FILE": missing},
             defaults_cnf_file=str(readable_cnf),
             defaults_file=missing,
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert str(excinfo.value) == (
             f"cannot read defaults file {missing} from XTRABACKUP_DEFAULTS_FILE"
         )
@@ -197,9 +204,9 @@ class TestBinaryDefaultsFileGuard:
         second-guess.
         """
         inst, _ = seeded_instance(
-            _PREFLIGHT, defaults_cnf_file=str(readable_cnf), defaults_file=None
+            _CHECK_CONFIG, defaults_cnf_file=str(readable_cnf), defaults_file=None
         )
-        assert inst._preflight() is None
+        assert inst._check_config() is None
 
     def test_client_file_is_reported_before_the_binary_file(
         self, tmp_path: pathlib.Path
@@ -210,34 +217,69 @@ class TestBinaryDefaultsFileGuard:
         operator cannot diagnose from the backup log.
         """
         inst, backup_error = seeded_instance(
-            _PREFLIGHT,
+            _CHECK_CONFIG,
             defaults_cnf_file=str(tmp_path / "client.cnf"),
             defaults_file=str(tmp_path / "binary.cnf"),
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert "client.cnf" in str(excinfo.value)
 
 
-class TestCompressionCheckedInTheSamePreflight:
+class TestBlankBinaryFileReadsAsUnset:
+    """Assert a blank ``XTRABACKUP_DEFAULTS_FILE`` is normalised where it is read.
+
+    ``_run_backup_cmd`` omits ``--defaults-file`` for a blank value, so a guard that
+    rejected one would fail a config the backup would otherwise run. The
+    normalisation sits at the read site rather than in the guard, whose loop body is
+    shared with ``DEFAULTS_FILE``, where a blank stays rejected on purpose.
+
+    Asserted against the source: the initializer calls ``super().__init__``, which
+    the synthetic-instance harness cannot drive.
+    """
+
+    def test_the_read_site_normalises_a_blank_to_none(self) -> None:
+        """Assert the binary's option file is read with a fallback to ``None``."""
+        assignments = [
+            node
+            for owner in ast.walk(xtrabackup_payload_tree())
+            if isinstance(owner, ast.ClassDef) and owner.name == "Xtrabackup"
+            for node in ast.walk(owner)
+            if isinstance(node, ast.Assign)
+            and isinstance(node.targets[0], ast.Attribute)
+            and node.targets[0].attr == "defaults_file"
+        ]
+        assert len(assignments) == 1, "Xtrabackup no longer reads its own option file"
+        value = assignments[0].value
+        assert isinstance(value, ast.BoolOp), (
+            "XTRABACKUP_DEFAULTS_FILE is read without a fallback, so a blank reaches "
+            "the guard as a path it cannot name and the command builder skips"
+        )
+        assert isinstance(value.op, ast.Or)
+        fallback = value.values[-1]
+        assert isinstance(fallback, ast.Constant)
+        assert fallback.value is None
+
+
+class TestCompressionCheckedInTheSameGuard:
     """Assert the pairing check shares the guard's call site, so neither can be skipped.
 
     Both answer one question — is this config runnable on this host — and both
     used to be reachable only from places that lost the message.
     """
 
-    def test_unsupported_pairing_fails_the_preflight(
+    def test_unsupported_pairing_fails_the_config_check(
         self, readable_cnf: pathlib.Path
     ) -> None:
         """Assert a pairing the binary cannot run fails before the host is touched."""
         inst, backup_error = seeded_instance(
-            _PREFLIGHT,
+            _CHECK_CONFIG,
             defaults_cnf_file=str(readable_cnf),
             xtrabackup_bin_cmd="innobackupex",
             compression_algorithm="zstd",
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert "innobackupex" in str(excinfo.value)
 
 
@@ -273,7 +315,15 @@ class TestSiblingPayloadsResolveTheSameWay:
         ids=lambda path: str(path.relative_to(XTRABACKUP_PAYLOAD_PATH.parent)),
     )
     def test_default_never_rests_on_home_alone(self, payload: pathlib.Path) -> None:
-        """Assert the default path falls back to the account's own home directory."""
+        """Assert the default path falls back to the account's own home directory.
+
+        Where ``HOME`` is read at all, the operands are asserted in order as well as
+        present: an inversion that reads the account home first and falls back to
+        ``HOME`` carries both names, so a token check alone passes for it while every
+        host that sets ``HOME`` stops resolving the path it resolves today. The
+        payloads that never read ``HOME`` cannot invert, and are asserted only for
+        the account home they always use.
+        """
         source = payload.read_text()
         assignment = next(
             node
@@ -285,6 +335,11 @@ class TestSiblingPayloadsResolveTheSameWay:
         segment = ast.get_source_segment(source, assignment)
         assert segment, f"{payload} carries no source for its DEFAULT_MYCNF assignment"
         assert "CURRENT_USER_HOME_DIR" in segment
+        if "environ" in segment:
+            assert segment.index("environ") < segment.index("CURRENT_USER_HOME_DIR"), (
+                f"{payload} reads the account home before HOME, so a host that sets "
+                "HOME no longer resolves the path it resolves today"
+            )
 
 
 class TestGuardWiredIntoRun:
@@ -317,7 +372,7 @@ class TestGuardWiredIntoRun:
             and isinstance(node.func.value, ast.Name)
             and node.func.value.id == "self"
         ]
-        assert called[:1] == ["_preflight"]
+        assert called[:1] == ["_check_config"]
 
     def test_the_guard_is_not_raised_from_construction(self) -> None:
         """Assert no ``__init__`` calls the guard, where its message would be lost.
@@ -339,7 +394,7 @@ class TestGuardWiredIntoRun:
             if any(
                 isinstance(call, ast.Call)
                 and isinstance(call.func, ast.Attribute)
-                and call.func.attr == "_preflight"
+                and call.func.attr == "_check_config"
                 for call in ast.walk(node)
             )
         ]

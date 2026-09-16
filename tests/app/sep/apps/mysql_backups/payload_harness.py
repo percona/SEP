@@ -333,7 +333,7 @@ def payload_instance(
     # the caller lifted itself: an instance attribute would shadow the real one.
     stubs = {
         "_clean_after_error": lambda: None,
-        "_preflight": lambda: None,
+        "_check_config": lambda: None,
         "get_compression_ext": lambda: "",
     }
     for name, stub in stubs.items():

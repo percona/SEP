@@ -83,10 +83,10 @@ def _initialized(**server_data: object) -> object:
     return instance
 
 
-def _preflight_for(
+def _check_config_for(
     cnf: pathlib.Path, **attributes: object
 ) -> tuple[object, type[Exception]]:
-    """Return a preflight-carrying instance pointed at a readable option file.
+    """Return a guard-carrying instance pointed at a readable option file.
 
     The pairing check shares its call site with the defaults-file guard, so the
     file has to be readable for a compression failure to be the one raised.
@@ -96,7 +96,7 @@ def _preflight_for(
         because the seeded state mixes booleans and names.
     :return: The instance and the payload's own ``BackupError``.
     """
-    return seeded_instance(("_preflight",), defaults_cnf_file=str(cnf), **attributes)
+    return seeded_instance(("_check_config",), defaults_cnf_file=str(cnf), **attributes)
 
 
 class TestBlankAlgorithmResolvesPerBinary:
@@ -126,11 +126,13 @@ class TestBlankAlgorithmResolvesPerBinary:
 
         ``_run_backup_cmd`` maps anything it does not recognize onto innobackupex, so
         the algorithm list follows the same mapping or validation and execution
-        disagree. Typed out rather than derived: no enum member exists for a name
-        the form cannot produce.
+        disagree. Only the binary name is typed out, because no enum member exists
+        for a name the form cannot produce.
         """
         instance = _initialized(XTRABACKUP_BIN_CMD=_UNKNOWN_BINARY)
-        assert instance.compression_algorithm == "quicklz"
+        assert instance.compression_algorithm == resolve_xtrabackup_compression(
+            XtraBackupTool.INNOBACKUPEX
+        )
 
     def test_explicit_algorithm_is_untouched(self) -> None:
         """Assert an algorithm the config names is never overridden by the default."""
@@ -178,10 +180,10 @@ class TestUnsupportedAlgorithmRejected:
         self, readable_cnf: pathlib.Path, binary: str, algorithm: str
     ) -> None:
         """Assert every pairing the matrix allows is accepted."""
-        inst, _ = _preflight_for(
+        inst, _ = _check_config_for(
             readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
         )
-        assert inst._preflight() is None
+        assert inst._check_config() is None
 
     @pytest.mark.parametrize(
         ("binary", "algorithm"),
@@ -195,11 +197,11 @@ class TestUnsupportedAlgorithmRejected:
         self, readable_cnf: pathlib.Path, binary: str, algorithm: str
     ) -> None:
         """Assert the failure names the binary, not the backup type it was keyed on."""
-        inst, backup_error = _preflight_for(
+        inst, backup_error = _check_config_for(
             readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm=algorithm
         )
         with pytest.raises(backup_error) as excinfo:
-            inst._preflight()
+            inst._check_config()
         assert binary in str(excinfo.value)
 
     @pytest.mark.parametrize("binary", _BINARIES)
@@ -211,21 +213,21 @@ class TestUnsupportedAlgorithmRejected:
         No xtrabackup binary compresses with gzip, which is why the extension and
         tool tables no longer carry a row for it.
         """
-        inst, backup_error = _preflight_for(
+        inst, backup_error = _check_config_for(
             readable_cnf, xtrabackup_bin_cmd=binary, compression_algorithm="gzip"
         )
         with pytest.raises(backup_error):
-            inst._preflight()
+            inst._check_config()
 
     def test_compression_off_skips_the_check(self, readable_cnf: pathlib.Path) -> None:
         """Assert the check stays inert when nothing will be compressed."""
-        inst, _ = _preflight_for(
+        inst, _ = _check_config_for(
             readable_cnf,
             compress=False,
             xtrabackup_bin_cmd="innobackupex",
             compression_algorithm="zstd",
         )
-        assert inst._preflight() is None
+        assert inst._check_config() is None
 
 
 class TestPayloadMatrixMatchesForm:

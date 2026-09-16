@@ -2038,7 +2038,9 @@ class Xtrabackup(Backup):
         self.builtin_kill = server_data.get('XTRABACKUP_KILL_QUERIES', True)
         self.builtin_kill_timeout = server_data.get('XTRABACKUP_KILL_QUERIES_TIMEOUT', 10)
         self.builtin_kill_type = server_data.get('XTRABACKUP_KILL_QUERY_TYPE', 'select')  # select | all
-        self.defaults_file = server_data.get('XTRABACKUP_DEFAULTS_FILE')
+        # Normalised here rather than in the guard: a blank value carries no path
+        # to name, and _run_backup_cmd already omits --defaults-file for one.
+        self.defaults_file = server_data.get('XTRABACKUP_DEFAULTS_FILE') or None
         self.incremental_method = server_data.get('XTRABACKUP_INCREMENTAL_METHOD')  # less_space | fast_restore
         self.incremental_cycle = server_data.get('XTRABACKUP_INCREMENTAL_CYCLE', 'weekly')
         self.max_copies = server_data.get('XTRABACKUP_COPIES', 2)
@@ -2098,7 +2100,7 @@ class Xtrabackup(Backup):
         if self.xtrabackup_desync_pxc:
             self._pxc_desync(new_status=0)
 
-    def _preflight(self) -> None:
+    def _check_config(self) -> None:
         """Reject config that cannot work here, before the host is touched.
 
         PyMySQL ignores an option file it cannot read and connects with no
@@ -2140,7 +2142,7 @@ class Xtrabackup(Backup):
     def run(self):
         """Start backup for individual server."""
         start_time = time.time()
-        self._preflight()
+        self._check_config()
 
         # Check running conditions
         if self.only_if_running_replica:
