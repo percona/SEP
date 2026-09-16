@@ -2188,7 +2188,8 @@ export interface paths {
      *     after every action it grows.
      *
      *     The scope is node ids, which is what PMM already holds, so its trigger passes them
-     *     through untranslated (§5.3's payoff).
+     *     through untranslated — the payoff for keying these tables on PMM's own ids rather
+     *     than minting OM ones.
      *
      *     Conflict is judged **per host**, not globally. A refresh of one host has no reason
      *     to be blocked by a refresh of another, and blocking it would make the scoped

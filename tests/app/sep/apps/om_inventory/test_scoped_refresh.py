@@ -26,8 +26,8 @@ flight. Keep that and a scoped refresh is useless exactly when the estate is bus
 because the ten-minute schedule is often mid-sweep. Two runs collide only when they
 would touch the same host — and a full refresh touches all of them.
 
-**Nothing outside the scope is written.** This is where §5.4's "only a run that
-attempted an entity touches its timestamps" stops being a principle and starts being
+**Nothing outside the scope is written.** This is where "only a run that attempted
+an entity touches its timestamps" stops being a principle and starts being
 load-bearing: get it wrong and refreshing one host marks the rest of the estate
 failed, which is worse than not having the feature.
 """

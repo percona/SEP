@@ -29,6 +29,8 @@ knows about returns on the next sweep — and the tests say so, because a reader
 mistakes it for suppression will use it that way exactly once.
 """
 
+from datetime import datetime
+
 import pytest
 import pytest_asyncio
 from fastapi import status
@@ -104,6 +106,32 @@ class TestHosts:
             SERVICE_ID
         ]
         assert hosts[NODE_EMPTY]["services"] == []
+
+    @pytest.mark.asyncio
+    async def test_a_host_and_its_nested_service_both_carry_an_offset(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Serialize every estate timestamp as aware UTC, host and nested service alike.
+
+        The two projections are separate models reading the same columns, so one can
+        carry ``UTCDatetime`` while the other keeps a bare ``datetime`` and nothing
+        fails anywhere. The divergence only shows on a dialect whose driver hands back
+        naive values — the SQLite these tests run on, and the one ``settings.yaml``
+        ships — which is why a sweep against PostgreSQL cannot stand in for this.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts")
+
+        assert response.status_code == status.HTTP_200_OK
+        host = next(
+            item for item in response.json()["items"] if item["node_id"] == NODE_WITH_DB
+        )
+
+        assert datetime.fromisoformat(host["first_seen_at"]).tzinfo is not None
+        nested = host["services"][0]
+        assert datetime.fromisoformat(nested["first_seen_at"]).tzinfo is not None
 
     @pytest.mark.asyncio
     async def test_has_service_false_finds_the_hosts_with_no_database(

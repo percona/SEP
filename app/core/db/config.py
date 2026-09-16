@@ -127,12 +127,11 @@ class DatabaseOptions(BaseModel):
         """Force every schema-translate value to the bind's default schema off PostgreSQL.
 
         A SQLAlchemy schema backed by a real, separate namespace is a PostgreSQL
-        concept here: SQLite has none, and MySQL's "schema" is a database, so
-        honouring a token there would scatter tables into a second database
-        nothing provisions. Values are cleared to ``None`` rather than the map
-        being dropped, so a caller's tables — which name their token
-        unconditionally — keep resolving to the default schema instead of
-        reaching the database as a literal, undefined identifier.
+        concept here: SQLite has none, so honouring a token off PostgreSQL would
+        emit a qualifier no such database can resolve. Values are cleared to
+        ``None`` rather than the map being dropped, so a caller's tables — which
+        name their token unconditionally — keep resolving to the default schema
+        instead of reaching the database as a literal, undefined identifier.
 
         :return: The validated options.
         """

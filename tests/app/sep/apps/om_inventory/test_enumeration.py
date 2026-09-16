@@ -340,8 +340,8 @@ class TestInventoryHost:
     ) -> None:
         """Split the three ways a host is unprobeable into three different rows.
 
-        This is the whole point of §11's split. "Nothing can run here" was one
-        outcome and is now three: never onboarded, onboarded and down, onboarded and
+        This is the whole point of the split. "Nothing can run here" is one outcome
+        split into three: never onboarded, onboarded and down, onboarded and
         broken. They need different people to fix them, so collapsing them sends the
         reader to the wrong place two times in three.
 

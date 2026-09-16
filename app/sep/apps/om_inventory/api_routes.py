@@ -288,8 +288,8 @@ async def list_estate_hosts(
         hosts, total = page.items, page.total
     else:
         # executor reads observed.executor, a JSON sub-document — not something
-        # worth a dialect-specific path expression for SQLite, MySQL and
-        # PostgreSQL each, unlike has_service and failing above. Still bounded by
+        # worth a dialect-specific path expression for SQLite and PostgreSQL
+        # each, unlike has_service and failing above. Still bounded by
         # those two when given, rather than always reading the whole table: this
         # filter is the rare, deliberate query, not the default estate browse.
         candidates = await OmHostManager.list(
@@ -514,7 +514,8 @@ async def trigger_probe(
     after every action it grows.
 
     The scope is node ids, which is what PMM already holds, so its trigger passes them
-    through untranslated (§5.3's payoff).
+    through untranslated — the payoff for keying these tables on PMM's own ids rather
+    than minting OM ones.
 
     Conflict is judged **per host**, not globally. A refresh of one host has no reason
     to be blocked by a refresh of another, and blocking it would make the scoped

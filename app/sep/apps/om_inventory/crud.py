@@ -15,11 +15,12 @@
 
 """Define reads and writes for the OpenManager Inventory tables.
 
-The entity upserts here are where §5.4's freshness lifecycle actually lives, and
-they are written attribute by attribute on purpose. Nothing in these tables is
-user-writable *yet*; the moment one field is — an assigned name, a label, a
-suppression flag — a blanket "update every column" upsert wipes it on the next
-sweep, and the test that catches that has to exist before the field does, not after.
+The entity upserts here are where the freshness lifecycle ``ObservedEntity``
+describes actually lives, and they are written attribute by attribute on purpose.
+Nothing in these tables is user-writable *yet*; the moment one field is — an
+assigned name, a label, a suppression flag — a blanket "update every column" upsert
+wipes it on the next sweep, and the test that catches that has to exist before the
+field does, not after.
 """
 
 from datetime import datetime, timedelta
@@ -79,7 +80,7 @@ def has_service_clause() -> Any:
     runs on, unlike the ``executor`` filter this deliberately does not join:
     :func:`~app.sep.apps.om_inventory.api_routes._executor_usable` reads
     ``observed.executor``, and pushing *that* into SQL would mean a dialect-specific
-    JSON path expression for SQLite, MySQL and PostgreSQL each.
+    JSON path expression for SQLite and PostgreSQL each.
 
     :return: A boolean SQL expression, true for a host with at least one service row.
     """

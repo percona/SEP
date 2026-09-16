@@ -406,9 +406,9 @@ async def test_tables_live_in_oms_own_schema(session: AsyncSession) -> None:
 
     Two guards, not one, against colliding with SEP inventory's own ``service``
     (``schema=None``): the declared schema, and the ``om_`` prefix on the table name
-    itself. The schema alone was once considered enough — but the real-MySQL and
-    real-PostgreSQL test lanes translate every declared schema token into the same
-    per-worker schema for teardown simplicity, which collapses ``om_schema.service``
+    itself. The schema alone does not carry it: the real-PostgreSQL test lane
+    translates every declared schema token into the same per-worker schema for
+    teardown simplicity, which collapses ``om_schema.service``
     onto the bare, schema-less ``service`` the moment both are exercised against a
     real database. The prefix is what still holds when the schema does not.
 
