@@ -9,7 +9,7 @@
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the mongos router. Defaults to localhost.
+#    description: Hostname or IP of the mongos router.
 #    default: localhost
 #  - name: port
 #    type: int
