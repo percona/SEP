@@ -78,7 +78,7 @@ app = TaskExecutionApp(
     related_apps=(
         RelatedApp(
             app_key="mysql_backups/restore",
-            label="Restore",
+            label="Restores",
             route_segment="restores",
         ),
     ),

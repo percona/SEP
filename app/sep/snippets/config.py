@@ -64,6 +64,14 @@ from app.core.utils.fields import (
 DEFAULT_SNIPPETS_TASK = "exec-artifact"
 
 
+class SnippetSudoRequirement(StrEnum):
+    """Name the three elevation states a snippet's metadata distinguishes."""
+
+    NEVER = "never"
+    OPTIONAL = "optional"
+    ALWAYS = "always"
+
+
 class SnippetSudoOption(EnumFieldMixin, Enum):
     """Enumerate options for executing a snippet with sudo."""
 
@@ -93,6 +101,22 @@ class SnippetSudoOption(EnumFieldMixin, Enum):
         :rtype: bool
         """
         return self == SnippetSudoOption.OPTIONAL_DEFAULT_TRUE
+
+    @property
+    def requirement(self) -> SnippetSudoRequirement:
+        """Return the declared elevation state as its wire vocabulary.
+
+        Collapses the enum's four members onto three states: both optional variants
+        report ``OPTIONAL``, the default-checked nuance being carried separately by
+        :attr:`sudo_default` for a consumer that needs it.
+
+        :return: The wire name for this option's elevation state.
+        """
+        if self == SnippetSudoOption.ALWAYS:
+            return SnippetSudoRequirement.ALWAYS
+        if self.is_optional:
+            return SnippetSudoRequirement.OPTIONAL
+        return SnippetSudoRequirement.NEVER
 
 
 class SnippetFilterType(EnumFieldMixin, StrEnum):
