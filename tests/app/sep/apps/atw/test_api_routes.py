@@ -17,7 +17,6 @@
 
 import logging
 import re
-from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
@@ -33,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
@@ -48,8 +46,7 @@ from app.sep.apps.atw.models import (
     AtwIncidentExecution,
     AtwIncidentResponse,
 )
-from app.sep.deps import BEARER_REQUIRED_DETAIL, get_tasks_api
-from app.sep.main import sep_app
+from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
@@ -1149,20 +1146,6 @@ async def incident_with_unresolved_run(session: AsyncSession) -> AtwIncident:
     return incident
 
 
-@pytest.fixture
-def tasks_api_spy() -> Iterator[AsyncMock]:
-    """Replace the Tasks API dependency with a spy that records any call.
-
-    Distinct from ``test_batch_api``'s ``tasks_api`` fixture, which primes a
-    dispatch response: this one exists so a route asserted to issue *no* upstream
-    request fails loudly rather than silently reaching a real client.
-    """
-    mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
-    yield mock
-    sep_app.dependency_overrides.pop(get_tasks_api, None)
-
-
 @pytest_asyncio.fixture
 async def incident_with_executions(session: AsyncSession) -> AtwIncident:
     """Seed one incident owning two execution rows."""
@@ -1494,14 +1477,14 @@ class TestAtwIncidentRunAggregates:
         self,
         api_client: TestClient,
         incident_with_runs: AtwIncident,
-        tasks_api_spy: AsyncMock,
+        mock_task_api_dep: AsyncMock,
     ) -> None:
         """Ensure rendering a page costs no task-history call, however many runs."""
         response = api_client.get(INCIDENTS_BASE)
 
         assert response.status_code == status.HTTP_200_OK
-        tasks_api_spy.get.assert_not_called()
-        tasks_api_spy.post.assert_not_called()
+        mock_task_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
 
     def test_list_page_issues_one_aggregate_query(
         self,

@@ -21,7 +21,7 @@ import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
-from app.sep.apps.atw.app import _atw_periodic_tasks
+from app.sep.apps.atw.app import atw_periodic_tasks
 from app.sep.apps.atw.config import atw_settings, AtwSettings
 
 
@@ -99,7 +99,7 @@ class TestAtwPeriodicTaskContributions:
 
     def test_both_sweeps_are_scheduled_by_default(self) -> None:
         """Ensure the shipped defaults register the purge and the reconcile."""
-        names = {task.name for task in _atw_periodic_tasks()}
+        names = {task.name for task in atw_periodic_tasks()}
 
         assert names == {"sep__purge_atw_bundles", "sep__reconcile_atw_executions"}
 
@@ -109,7 +109,7 @@ class TestAtwPeriodicTaskContributions:
         """Ensure the two guards are independent, not one shared switch."""
         mocker.patch.object(atw_settings, "reconcile_interval", None)
 
-        names = {task.name for task in _atw_periodic_tasks()}
+        names = {task.name for task in atw_periodic_tasks()}
 
         assert names == {"sep__purge_atw_bundles"}
 
@@ -119,7 +119,7 @@ class TestAtwPeriodicTaskContributions:
         """Ensure switching off housekeeping does not silently stop reconciliation."""
         mocker.patch.object(atw_settings, "cleanup_interval", None)
 
-        names = {task.name for task in _atw_periodic_tasks()}
+        names = {task.name for task in atw_periodic_tasks()}
 
         assert names == {"sep__reconcile_atw_executions"}
 
@@ -128,4 +128,4 @@ class TestAtwPeriodicTaskContributions:
         mocker.patch.object(atw_settings, "cleanup_interval", None)
         mocker.patch.object(atw_settings, "reconcile_interval", None)
 
-        assert _atw_periodic_tasks() == []
+        assert atw_periodic_tasks() == []

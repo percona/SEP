@@ -50,7 +50,7 @@ _FAILED_STATUS_VALUES: tuple[str, ...] = tuple(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IncidentRunAggregate:
     """Carry one incident's run totals as a single grouped-query row.
 
@@ -153,7 +153,13 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
 
     @classmethod
     async def unresolved_batch(
-        cls, session: AsyncSession, limit: int
+        cls,
+        session: AsyncSession,
+        limit: int,
+        # pagination-ok: the caller's batch size bounds the result directly, and this
+        # feeds a worker sweep rather than a paginated response — there is no offset
+        # for a caller to walk, because each tick re-selects from the live unresolved
+        # set after the previous tick moved its attempt cursor.
     ) -> list[AtwIncidentExecution]:
         """Select a bounded batch of executions whose outcome is still unknown.
 

@@ -61,7 +61,7 @@ def purge_atw_bundles() -> None:
 @owned_by("atw")
 @celery.task
 def reconcile_atw_executions() -> None:
-    """Fill in run outcomes the ``run_result_recorder`` hook never observed.
+    """Resolve run outcomes the ``run_result_recorder`` hook never observed.
 
     Kept separate from ``purge_atw_bundles`` because it is not housekeeping: the
     purge bounds leftovers, while this is the only mechanism that makes the failed

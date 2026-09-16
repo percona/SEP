@@ -34,7 +34,7 @@ from app.sep.apps.framework.base import AppPeriodicTask, BaseApp
 from app.sep.apps.nav_icons import NavIcon
 
 
-def _atw_periodic_tasks() -> list[AppPeriodicTask]:
+def atw_periodic_tasks() -> list[AppPeriodicTask]:
     """Contribute the bundle-purge and outcome-reconcile sweeps that are configured.
 
     Either interval may be ``None`` to unregister its own sweep, so this is kept as
@@ -79,6 +79,6 @@ app = BaseApp(
     nav_icon=NavIcon.SUPPORT_AGENT,
     api_router=api_router,
     schema=atw_schema,
-    periodic_task_schedules=_atw_periodic_tasks,
+    periodic_task_schedules=atw_periodic_tasks,
     uses_task_data=True,
 )

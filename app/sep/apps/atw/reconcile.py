@@ -140,7 +140,7 @@ async def _reconcile_one(
 
 
 async def reconcile_executions(batch_size: int) -> None:
-    """Reconcile one bounded batch of executions with no recorded outcome.
+    """Resolve one bounded batch of executions with no recorded outcome.
 
     Selection is least-recently-attempted first, so each tick is a round-robin over
     the unresolved set and a row that is legitimately still running cannot starve
