@@ -62,7 +62,7 @@ from textwrap import dedent
 import pytest
 
 from app.sep.snippets.config import snippets_settings
-from tests.app.sep.snippets.snippet_kit import SNIPPET_FILENAMES
+from tests.app.sep.snippets.snippet_corpus import SHELL_SNIPPET_FILENAMES
 
 ERREXIT_RE = re.compile(
     r"^[ \t]*set[ \t]+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o[ \t]+errexit\b)", re.MULTILINE
@@ -164,6 +164,26 @@ def _skip_arithmetic(text: str, pos: int) -> int:
     return len(text)
 
 
+def _skip_expansion(text: str, index: int) -> int | None:
+    """Return the index past an escape or expansion, whether or not it is quoted.
+
+    These are the constructs a ``|`` or ``)`` can hide behind at every level of the
+    walk: inside double quotes a ``$(`` still opens a substitution, so both walkers
+    have to consume it the same way.
+
+    :param text: The script source.
+    :param index: The index to inspect.
+    :return: The index just past the construct, or ``None`` when none starts here.
+    """
+    if text[index] == "\\":
+        return index + 2
+    if text.startswith("$((", index):
+        return _skip_arithmetic(text, index)
+    if text.startswith("$(", index):
+        return _consume_substitution(text, index + 2)[0]
+    return None
+
+
 def _skip_opaque(text: str, index: int) -> int | None:
     """Return the index past a construct that hides its content from the parser.
 
@@ -175,17 +195,13 @@ def _skip_opaque(text: str, index: int) -> int | None:
     :param index: The index to inspect.
     :return: The index just past the construct, or ``None`` when none starts here.
     """
-    if text[index] == "\\":
-        return index + 2
+    if (skipped := _skip_expansion(text, index)) is not None:
+        return skipped
     if text[index] == "'":
         closing = text.find("'", index + 1)
         return len(text) if closing < 0 else closing + 1
     if text[index] == '"':
         return _skip_double_quoted(text, index + 1)
-    if text.startswith("$((", index):
-        return _skip_arithmetic(text, index)
-    if text.startswith("$(", index):
-        return _consume_substitution(text, index + 2)[0]
     return None
 
 
@@ -226,7 +242,8 @@ def _skip_double_quoted(text: str, pos: int) -> int:
     """Return the index just past the ``"`` closing the string opened before ``pos``.
 
     A substitution inside the string is consumed whole so a ``)`` in it cannot be
-    mistaken for the closing parenthesis of the substitution being walked.
+    mistaken for the closing parenthesis of the substitution being walked. A ``'``
+    is not: inside double quotes it is an ordinary character.
 
     :param text: The script source.
     :param pos: The index just past the opening ``"``.
@@ -234,14 +251,10 @@ def _skip_double_quoted(text: str, pos: int) -> int:
     """
     index = pos
     while index < len(text):
-        if text[index] == "\\":
-            index += 2
+        if (skipped := _skip_expansion(text, index)) is not None:
+            index = skipped
         elif text[index] == '"':
             return index + 1
-        elif text.startswith("$((", index):
-            index = _skip_arithmetic(text, index)
-        elif text.startswith("$(", index):
-            index = _consume_substitution(text, index + 2)[0]
         else:
             index += 1
     return len(text)
@@ -641,11 +654,13 @@ class TestCalibration:
 class TestCorpus:
     """Hold every builtin script to the guard contract."""
 
-    @pytest.mark.parametrize("filename", SNIPPET_FILENAMES)
+    def test_the_corpus_is_not_empty(self):
+        """Fail loudly rather than pass by covering no script at all."""
+        assert SHELL_SNIPPET_FILENAMES, "no shell snippets found to check"
+
+    @pytest.mark.parametrize("filename", SHELL_SNIPPET_FILENAMES)
     def test_no_unguarded_piped_assignment(self, filename):
         """Reject any unguarded piped assignment or misused marker in a builtin script."""
-        if not filename.endswith(".sh"):
-            pytest.skip("not a shell script")
         text = (snippets_settings.SNIPPETS_DIR / filename).read_text(encoding="utf-8")
         offences = find_offenders(text)
         assert offences == [], "\n".join(

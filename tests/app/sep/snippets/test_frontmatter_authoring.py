@@ -87,7 +87,7 @@ from app.sep.snippets.models.meta import (
     SUPPORTED_META_KEYS,
 )
 from app.sep.snippets.models.snippet import BaseSnippet
-from tests.app.sep.snippets.snippet_kit import SNIPPET_FILENAMES
+from tests.app.sep.snippets.snippet_corpus import SNIPPET_FILENAMES
 
 KNOWN_PARAMETER_TYPES = frozenset(
     member.name.lower() for member in SnippetMetaParameterType
