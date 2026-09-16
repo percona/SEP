@@ -53,6 +53,15 @@ class AtwSettings(BaseYamlSettings):
     :param stale_send_after: How long a send may sit in a non-terminal status
         before the sweep concludes its worker is gone and fails it. Must comfortably
         exceed the slowest legitimate send, or a healthy upload is failed mid-flight.
+    :param reconcile_interval: Cadence of the ``reconcile_atw_executions`` sweep that
+        fills in run outcomes the recorder hook never observed. ``None`` unregisters
+        the sweep entirely — which leaves historical executions and the hook's three
+        unobserved terminal paths permanently uncounted, so it is an explicit
+        operator opt-out rather than a sensible default.
+    :param reconcile_batch_size: The most executions one reconcile tick examines.
+        Bounds the upstream traffic per tick; every unresolved row is still reached
+        within ``ceil(unresolved / batch_size)`` ticks, because selection is
+        least-recently-attempted first.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "ATW"]
@@ -62,6 +71,10 @@ class AtwSettings(BaseYamlSettings):
         every=15, period=Period.MINUTES
     )
     stale_send_after: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
+    reconcile_interval: IntervalSchedule | None = IntervalSchedule(
+        every=10, period=Period.MINUTES
+    )
+    reconcile_batch_size: PositiveInt = 100
 
 
 atw_settings: AtwSettings = AtwSettings()

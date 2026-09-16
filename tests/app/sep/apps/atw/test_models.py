@@ -85,6 +85,19 @@ class TestAtwIncidentResponse:
             "closed_at",
         }
 
+    def test_run_aggregates_are_published_but_not_required(self) -> None:
+        """Ensure the run-aggregate fields are additive to the shipped contract.
+
+        Defaulted fields appear in ``properties`` but not in ``required``, so a client
+        generated against the payload before these fields existed still validates a
+        response that carries them.
+        """
+        schema = AtwIncidentResponse.model_json_schema()
+        aggregate_fields = {"run_count", "failed_run_count", "last_activity_at"}
+
+        assert aggregate_fields <= set(schema["properties"])
+        assert aggregate_fields.isdisjoint(schema["required"])
+
 
 class TestAtwIncidentExecutionModel:
     """Check the AtwIncidentExecution table model."""

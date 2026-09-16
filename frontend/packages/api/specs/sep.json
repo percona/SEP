@@ -3993,7 +3993,7 @@
         "type": "object"
       },
       "atw__AtwIncidentResponse": {
-        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.",
+        "description": "Represent a persisted diagnostic incident.\n\nEvery stored field is always present, so — unlike returning the\n:class:`AtwIncident` table model directly — the generated client types them as\nrequired rather than optional.\n\nThe three run-aggregate fields are defaulted instead, which keeps them out of\nthe published ``required`` set so a client generated against the previous\npayload still validates a response carrying them. Every route populates all\nthree, ``last_activity_at`` included, so the defaults are never served on a\nreal response; the generated client types that one as optional anyway, because\na nullable field emits no schema default to mark it required.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.\n:param run_count: How many snippet executions are grouped under the incident.\n:param failed_run_count: How many of those runs reached a failed outcome. A\n    run whose outcome is not yet known counts towards neither.\n:param last_activity_at: The most recent of the incident's own timestamps and\n    its executions' dispatch or completion times.",
         "properties": {
           "case_ref": {
             "anyOf": [
@@ -4027,15 +4027,37 @@
             "title": "Created By",
             "type": "string"
           },
+          "failed_run_count": {
+            "default": 0,
+            "title": "Failed Run Count",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid4",
             "title": "Id",
             "type": "string"
           },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
           "name": {
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "run_count": {
+            "default": 0,
+            "title": "Run Count",
+            "type": "integer"
           },
           "updated_at": {
             "anyOf": [
@@ -16389,7 +16411,7 @@
     },
     "/api/apps/atw/incidents/": {
       "get": {
-        "description": "List diagnostic incidents, newest first.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
+        "description": "List diagnostic incidents, newest first, with each one's run totals.\n\nThe totals come from one grouped query over the whole page, so rendering it\nissues no per-row task-history request however many runs an incident holds.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
         "operationId": "atw_atw_list_incidents_api_apps_atw_incidents__get",
         "parameters": [
           {
@@ -16521,7 +16543,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve a single diagnostic incident by id.\n\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The matching incident.",
+        "description": "Retrieve a single diagnostic incident by id.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The matching incident.",
         "operationId": "atw_atw_get_incident_api_apps_atw_incidents__incident_id__get",
         "parameters": [
           {

@@ -37,6 +37,7 @@ from app.core.utils.fields import (
     NonEmptyStr,
     UTCDatetime,
 )
+from app.sep.apps.atw.proxy_tasks import ensure_atw_proxy_task
 from app.sep.apps.field_names import (
     EXECUTOR_HOST_FIELD_NAME,
     EXTRA_ARGS_FIELD_NAME,
@@ -387,6 +388,7 @@ async def dispatch_batch_item(
         script,
         ScriptExecuteWrite(executor_host=body.executor_host, sudo=body.sudo, args=args),
         tasks_api,
+        execution_task_name=await ensure_atw_proxy_task(script.execution_task_name),
     )
 
 

@@ -71,6 +71,8 @@ _DEFAULTS_FILE_PARAM = {
 _MINUTES_PARAM = {"name": "minutes", "type": "int", "label": "Minutes"}
 
 _DEFAULT_TASK_ID = 7
+#: The proxy ATW dispatches through, wrapping the default snippet interpreter root.
+_PROXY_TASK_NAME = "atw__exec-artifact"
 _FIRST_TASK_ID = 11
 _SECOND_TASK_ID = 12
 _DUPLICATE_TASK_IDS = (21, 22)
@@ -162,6 +164,21 @@ def tasks_api() -> Iterator[AsyncMock]:
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides.pop(get_tasks_api, None)
+
+
+@pytest.fixture(autouse=True)
+def atw_proxy_task(mocker: MockerFixture) -> AsyncMock:
+    """Resolve ATW's proxy task without reaching the Tasks API.
+
+    ``ensure_atw_proxy_task`` builds its own service-principal client and memoizes
+    process-wide, so it honours neither the ``tasks_api`` dependency override nor a
+    per-test reset. Patching it at the dispatch site keeps these tests about
+    batching; proxy resolution itself is covered by ``test_proxy_tasks``.
+    """
+    return mocker.patch(
+        "app.sep.apps.atw.batch.ensure_atw_proxy_task",
+        new=AsyncMock(return_value=_PROXY_TASK_NAME),
+    )
 
 
 @pytest_asyncio.fixture
@@ -510,6 +527,58 @@ class TestAtwBatchExecute:
             _FIRST_TASK_ID,
             _SECOND_TASK_ID,
         ]
+
+    @pytest.mark.asyncio
+    async def test_dispatches_through_the_atw_proxy_task(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Dispatch under ATW's proxy, which is what carries ATW's run recorder."""
+        await create_snippet("a.sh", parameters=[])
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert tasks_api.post.await_args.args[0] == f"/execute/{_PROXY_TASK_NAME}"
+        assert response.json()["items"][0]["task_name"] == _PROXY_TASK_NAME
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_proxy_dispatches_under_the_root_unchanged(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        atw_proxy_task: AsyncMock,
+    ) -> None:
+        """Degrade to the interpreter root when the proxy cannot be resolved.
+
+        The sweep then supplies the outcome, which is strictly better than failing
+        the dispatch or wrapping a task whose behaviour is unknown.
+        """
+        await create_snippet("a.sh", parameters=[])
+        atw_proxy_task.return_value = None
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert tasks_api.post.await_args.args[0] != f"/execute/{_PROXY_TASK_NAME}"
+        assert response.json()["items"][0]["task_history_id"] == _DEFAULT_TASK_ID
 
     @pytest.mark.asyncio
     async def test_closed_incident_returns_409_before_dispatch(
@@ -964,6 +1033,39 @@ class TestAtwListIncidentExecutions:
             )
             for task_history_id in _SEEDED_TASK_IDS
         ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("executions")
+    async def test_execution_payload_keys_are_unchanged(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Keep this payload's key set fixed despite the new columns on the table.
+
+        The four denormalized outcome columns are internal bookkeeping. Leaking them
+        onto this listing would widen a shipped contract for no consumer, so the key
+        set is pinned rather than left to whatever the model happens to expose.
+        """
+        tasks_api.get.return_value = {"status": TaskHistoryStatusEnum.SUCCESS.value}
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.json()["items"][0]) == {
+            "id",
+            "snippet_filename",
+            "snippet_title",
+            "task_history_id",
+            "created_at",
+            "task_status",
+            "started_at",
+            "finished_at",
+            "has_logs",
+            "masked_args",
+            "args_withheld",
+        }
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("executions")

@@ -15,8 +15,54 @@
 
 """Define database operations for ATW incidents and their executions."""
 
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+from pydantic import UUID4
+from sqlalchemy import case, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col, select
+
 from app.core.db.crud import BaseSQLModelChildManager, BaseSQLModelManager
+from app.core.utils.date_time import make_datetime_utc
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution, AtwSendLog
+from app.tasks.models import TaskHistoryStatusEnum
+
+#: The run outcomes the incident payload's failed count includes. ``STOPPED`` is an
+#: operator's own choice rather than a fault, and ``PENDING``/``RUNNING`` have not
+#: finished. ``UNLAUNCHABLE`` *is* included, against its own docstring's framing:
+#: it separates an environment fault from a script fault, not a failure from a
+#: success, and it is the common outcome for the sudo-requiring builtins.
+FAILED_RUN_STATUSES: frozenset[TaskHistoryStatusEnum] = frozenset(
+    {
+        TaskHistoryStatusEnum.FAILED,
+        TaskHistoryStatusEnum.LOST,
+        TaskHistoryStatusEnum.STALE,
+        TaskHistoryStatusEnum.UNLAUNCHABLE,
+    }
+)
+
+#: ``FAILED_RUN_STATUSES`` as the plain strings the denormalized column stores,
+#: resolved once rather than per query.
+_FAILED_STATUS_VALUES: tuple[str, ...] = tuple(
+    sorted(status.value for status in FAILED_RUN_STATUSES)
+)
+
+
+@dataclass(frozen=True)
+class IncidentRunAggregate:
+    """Carry one incident's run totals as a single grouped-query row.
+
+    :param run_count: How many executions are grouped under the incident.
+    :param failed_run_count: How many of them recorded a failed outcome.
+    :param last_execution_at: The latest of those executions' completion times,
+        falling back to dispatch time for a run that has not finished.
+    """
+
+    run_count: int
+    failed_run_count: int
+    last_execution_at: datetime | None
 
 
 class AtwIncidentManager(BaseSQLModelManager):
@@ -39,6 +85,110 @@ class AtwIncidentExecutionManager(BaseSQLModelChildManager):
     Model = AtwIncidentExecution
     ParentManager = AtwIncidentManager
     connected_by = "incident_id"
+
+    @classmethod
+    async def aggregate_by_incident(
+        cls, session: AsyncSession, incident_ids: Sequence[UUID4]
+    ) -> dict[UUID4, IncidentRunAggregate]:
+        """Summarize run totals for a whole page of incidents in one query.
+
+        Issues a single ``GROUP BY incident_id`` statement rather than a per-row
+        lookup, and reads only SEP-side columns, so rendering a page costs no
+        upstream task-history request however many runs an incident holds.
+
+        ``count(case(...))`` counts only the matching rows because the implicit
+        ``else_`` is ``NULL`` and ``count`` skips nulls; ``max(coalesce(...))``
+        keeps the three-way comparison out of SQL, since ``GREATEST`` is not
+        portable to SQLite. An incident with no executions produces no row and is
+        therefore absent from the result — the caller substitutes a zero aggregate,
+        which is what lets a run-less incident report its own timestamps.
+
+        :param session: The database session.
+        :param incident_ids: The incidents to summarize; an empty sequence
+            short-circuits without emitting SQL.
+        :return: One aggregate per incident that has at least one execution, keyed
+            by incident id.
+        """
+        if not incident_ids:
+            return {}
+        query = (
+            select(
+                col(AtwIncidentExecution.incident_id),
+                func.count().label("run_count"),
+                func.count(
+                    case(
+                        (
+                            col(AtwIncidentExecution.terminal_status).in_(
+                                _FAILED_STATUS_VALUES
+                            ),
+                            1,
+                        )
+                    )
+                ).label("failed_run_count"),
+                func.max(
+                    func.coalesce(
+                        col(AtwIncidentExecution.finished_at),
+                        col(AtwIncidentExecution.created_at),
+                    )
+                ).label("last_execution_at"),
+            )
+            .where(col(AtwIncidentExecution.incident_id).in_(incident_ids))
+            .group_by(col(AtwIncidentExecution.incident_id))
+        )
+        rows = await cls._exec(session, query)
+        return {
+            incident_id: IncidentRunAggregate(
+                run_count=run_count,
+                failed_run_count=failed_run_count,
+                # Normalized because whether the type decorator applies to a
+                # function's return is dialect-dependent, and a naive value would
+                # raise only later, when the route compares it against the
+                # incident's own aware timestamps.
+                last_execution_at=None
+                if last_execution_at is None
+                else make_datetime_utc(last_execution_at),
+            )
+            for incident_id, run_count, failed_run_count, last_execution_at in rows
+        }
+
+    @classmethod
+    async def unresolved_batch(
+        cls, session: AsyncSession, limit: int
+    ) -> list[AtwIncidentExecution]:
+        """Select a bounded batch of executions whose outcome is still unknown.
+
+        Ordered least-recently-attempted first, **not** oldest-first: a row that is
+        legitimately still running, or whose upstream keeps answering 503, stays
+        eligible forever, and under oldest-first it re-occupies a batch slot on
+        every tick so nothing behind it is ever examined. Ordering by the sweep's
+        own attempt cursor makes each tick a round-robin, so every row is reached
+        within ``ceil(unresolved / limit)`` ticks.
+
+        ``coalesce`` supplies the ordering key for a row the sweep has not touched
+        yet, which sorts it by its dispatch time and so naturally ahead of rows
+        already attempted after it. That avoids needing a nulls-first ordering term,
+        which the project ships no primitive for.
+
+        :param session: The database session.
+        :param limit: The most rows one tick may examine.
+        :return: The selected executions, least-recently-attempted first.
+        """
+        query = (
+            select(AtwIncidentExecution)
+            .where(
+                col(AtwIncidentExecution.terminal_status).is_(None),
+                col(AtwIncidentExecution.outcome_unrecoverable).is_(False),
+            )
+            .order_by(
+                func.coalesce(
+                    col(AtwIncidentExecution.reconcile_attempted_at),
+                    col(AtwIncidentExecution.created_at),
+                ).asc()
+            )
+            .limit(limit)
+        )
+        rows = await cls._exec(session, query)
+        return list(rows.all())
 
 
 class AtwSendLogManager(BaseSQLModelChildManager):

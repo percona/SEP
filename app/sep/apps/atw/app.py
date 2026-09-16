@@ -35,23 +35,36 @@ from app.sep.apps.nav_icons import NavIcon
 
 
 def _atw_periodic_tasks() -> list[AppPeriodicTask]:
-    """Contribute the bundle-purge sweep while cleanup is configured.
+    """Contribute the bundle-purge and outcome-reconcile sweeps that are configured.
 
-    ``cleanup_interval`` may be ``None`` to unregister the sweep entirely, so this
-    is kept as a callable: the contribution is variable-length (0 or 1) and a plain
-    list literal would commit to a fixed set at ``BaseApp(...)`` construction.
+    Either interval may be ``None`` to unregister its own sweep, so this is kept as
+    a callable: the contribution is variable-length (0 to 2) and a plain list literal
+    would commit to a fixed set at ``BaseApp(...)`` construction. The two are guarded
+    independently — disabling the purge must not silently stop reconciliation, which
+    is the only thing keeping the incident list's failed count honest.
 
-    :return: The purge contrib, or an empty list when cleanup is disabled.
+    :return: One contrib per configured sweep, or an empty list when both are off.
     """
-    if atw_settings.cleanup_interval is None:
-        return []
-    return [
-        AppPeriodicTask(
-            name="sep__purge_atw_bundles",
-            task="purge_atw_bundles",
-            schedule=lambda: cast(IntervalSchedule, atw_settings.cleanup_interval),
-        ),
-    ]
+    contributions: list[AppPeriodicTask] = []
+    if atw_settings.cleanup_interval is not None:
+        contributions.append(
+            AppPeriodicTask(
+                name="sep__purge_atw_bundles",
+                task="purge_atw_bundles",
+                schedule=lambda: cast(IntervalSchedule, atw_settings.cleanup_interval),
+            )
+        )
+    if atw_settings.reconcile_interval is not None:
+        contributions.append(
+            AppPeriodicTask(
+                name="sep__reconcile_atw_executions",
+                task="reconcile_atw_executions",
+                schedule=lambda: cast(
+                    IntervalSchedule, atw_settings.reconcile_interval
+                ),
+            )
+        )
+    return contributions
 
 
 app = BaseApp(

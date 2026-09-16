@@ -506,6 +506,53 @@ class TestExecuteScript:
         assert result.snippet_filename == script.filename
 
     @pytest.mark.asyncio
+    async def test_default_dispatches_under_the_scripts_own_task(self) -> None:
+        """Leave a caller that passes no override dispatching under the script's task.
+
+        This is what keeps an app-owned proxy — and therefore that app's
+        ``run_result_recorder`` — off every run another feature dispatches.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.return_value = {"id": _CREATED_TASK_ID}
+        script = _StubScript()
+
+        await execute_script(
+            self._source([]),
+            script,
+            ScriptExecuteWrite(executor_host="host1", args={"minutes": 5}),
+            tasks_api,
+        )
+
+        assert (
+            tasks_api.post.await_args.args[0]
+            == f"/execute/{script.execution_task_name}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_execution_task_name_override_redirects_the_dispatch(self) -> None:
+        """Dispatch under an explicit override, reporting it as the task name.
+
+        One dispatch implementation serves both callers: an app wrapping the
+        interpreter root in its own proxy passes the proxy here rather than
+        re-implementing the validate/build-meta/post sequence.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post.return_value = {"id": _CREATED_TASK_ID}
+        script = _StubScript()
+
+        result = await execute_script(
+            self._source([]),
+            script,
+            ScriptExecuteWrite(executor_host="host1", args={"minutes": 5}),
+            tasks_api,
+            execution_task_name="app__proxy-task",
+        )
+
+        assert tasks_api.post.await_args.args[0] == "/execute/app__proxy-task"
+        assert result.task_name == "app__proxy-task"
+        assert result.snippet_filename == script.filename
+
+    @pytest.mark.asyncio
     async def test_meta_hook_receives_the_coerced_args(self) -> None:
         """Send the meta hook the execution model's coerced dump, not the raw args."""
         tasks_api = AsyncMock(spec=RemoteAPI)

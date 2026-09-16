@@ -27,6 +27,7 @@ from uuid import UUID
 from app.celery import celery
 from app.sep.app_drain import owned_by
 from app.sep.apps.atw.config import atw_settings
+from app.sep.apps.atw.reconcile import reconcile_executions
 from app.sep.apps.atw.send import fail_stale_sends, purge_expired_bundles, run_send
 
 logger = logging.getLogger(__name__)
@@ -55,3 +56,18 @@ def purge_atw_bundles() -> None:
     if removed:
         logger.info("Purged %d expired diagnostics bundle(s)", removed)
     celery.loop.run_until_complete(fail_stale_sends(atw_settings.stale_send_after))
+
+
+@owned_by("atw")
+@celery.task
+def reconcile_atw_executions() -> None:
+    """Fill in run outcomes the ``run_result_recorder`` hook never observed.
+
+    Kept separate from ``purge_atw_bundles`` because it is not housekeeping: the
+    purge bounds leftovers, while this is the only mechanism that makes the failed
+    count correct for historical runs and for the three terminal transitions the
+    hook is documented not to see.
+    """
+    celery.loop.run_until_complete(
+        reconcile_executions(atw_settings.reconcile_batch_size)
+    )

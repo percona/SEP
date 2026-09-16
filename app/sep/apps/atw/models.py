@@ -107,9 +107,16 @@ class AtwIncidentUpdate(SQLModel):
 class AtwIncidentResponse(BaseModel):
     """Represent a persisted diagnostic incident.
 
-    Every field is always present on a stored incident, so — unlike returning
-    the :class:`AtwIncident` table model directly — the generated client types
-    them as required rather than optional.
+    Every stored field is always present, so — unlike returning the
+    :class:`AtwIncident` table model directly — the generated client types them as
+    required rather than optional.
+
+    The three run-aggregate fields are defaulted instead, which keeps them out of
+    the published ``required`` set so a client generated against the previous
+    payload still validates a response carrying them. Every route populates all
+    three, ``last_activity_at`` included, so the defaults are never served on a
+    real response; the generated client types that one as optional anyway, because
+    a nullable field emits no schema default to mark it required.
 
     :param id: The incident's UUID primary key.
     :param name: Human-readable incident label.
@@ -118,6 +125,11 @@ class AtwIncidentResponse(BaseModel):
     :param created_at: When the incident was created.
     :param updated_at: When the incident was last updated, if ever.
     :param closed_at: When the incident was closed, if ever; ``None`` means open.
+    :param run_count: How many snippet executions are grouped under the incident.
+    :param failed_run_count: How many of those runs reached a failed outcome. A
+        run whose outcome is not yet known counts towards neither.
+    :param last_activity_at: The most recent of the incident's own timestamps and
+        its executions' dispatch or completion times.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -129,14 +141,36 @@ class AtwIncidentResponse(BaseModel):
     created_at: UTCDatetime
     updated_at: UTCDatetime | None
     closed_at: UTCDatetime | None
+    run_count: int = 0
+    failed_run_count: int = 0
+    last_activity_at: UTCDatetime | None = None
 
 
 class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     """Link one diagnostic snippet execution to its incident grouping.
 
+    The four outcome columns denormalize what the tasks service knows about the
+    run, because status lives behind that service's own database and the incident
+    listing may not issue a per-row HTTP call to read it. ``terminal_status`` is a
+    plain ``str`` rather than ``TaskHistoryStatusEnum`` for the import reason this
+    module's own docstring gives; the enum is applied at every read and write site.
+
     :param incident_id: Foreign key to the owning :class:`AtwIncident`.
     :param task_history_id: Logical reference to the tasks-service execution row.
     :param snippet_filename: Filename of the executed diagnostic snippet.
+    :param terminal_status: The ``TaskHistoryStatusEnum`` value the run finished
+        with, or ``None`` while its outcome is still unknown.
+    :param finished_at: When the run finished, as the tasks service recorded it.
+        Kept separate from the row's own ``updated_at`` so the reconciliation
+        sweep's bookkeeping writes cannot move the incident's last-activity time.
+    :param outcome_unrecoverable: Whether the upstream history row no longer
+        resolves, so no outcome will ever be recorded and the sweep must stop
+        re-querying it. Distinguishing this from ``terminal_status IS NULL`` is
+        why the outcome needs two columns rather than one.
+    :param reconcile_attempted_at: When the sweep last examined this row,
+        whatever the outcome. Its selection orders by this so a row that is
+        legitimately still running cannot re-occupy a batch slot forever and
+        starve the rows behind it.
     :param incident: The incident this execution belongs to.
     """
 
@@ -155,6 +189,14 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     )
     task_history_id: int = SQLField(index=True)
     snippet_filename: str
+    terminal_status: str | None = SQLField(default=None, index=True)
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    outcome_unrecoverable: bool = SQLField(default=False, nullable=False)
+    reconcile_attempted_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
     incident: AtwIncident = Relationship(back_populates="executions")
 
 

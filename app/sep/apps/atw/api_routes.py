@@ -19,6 +19,7 @@ import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -33,7 +34,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.core.utils.date_time import utc_now
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.core.utils.fields import StrippedNonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
@@ -61,6 +62,7 @@ from app.sep.apps.atw.crud import (
     AtwIncidentExecutionManager,
     AtwIncidentManager,
     AtwSendLogManager,
+    IncidentRunAggregate,
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
@@ -268,6 +270,81 @@ async def atw_snippet_search(
     return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
+def _last_activity_at(
+    incident: AtwIncident, last_execution_at: datetime | None
+) -> datetime:
+    """Resolve an incident's last-activity time across all three of its sources.
+
+    Computed in Python rather than SQL because the three-way maximum would need
+    ``GREATEST``, which PostgreSQL has and SQLite does not. Every candidate is
+    normalized first: mixing a naive value in raises ``TypeError`` on comparison,
+    and whether the aggregate's timestamp arrives aware is dialect-dependent.
+
+    ``created_at`` is always set, so the result is never ``None`` — an incident
+    with no runs reports its own last change and the client needs no empty state.
+
+    :param incident: The incident whose own timestamps take part.
+    :param last_execution_at: The aggregated execution timestamp, when it has runs.
+    :return: The latest of the incident's creation, update, and execution times.
+    """
+    candidates = (incident.created_at, incident.updated_at, last_execution_at)
+    return max(
+        make_datetime_utc(candidate)
+        for candidate in candidates
+        if candidate is not None
+    )
+
+
+def build_incident_responses(
+    incidents: Sequence[AtwIncident],
+    aggregates: Mapping[UUID4, IncidentRunAggregate],
+) -> list[AtwIncidentResponse]:
+    """Render incidents with their run totals attached.
+
+    Shared by all six routes that return :class:`AtwIncidentResponse`, so none of
+    them serves a defaulted ``0`` for an incident that actually has runs. An
+    incident absent from ``aggregates`` has no executions and is zeroed here.
+
+    :param incidents: The incidents to render, in the order to return them.
+    :param aggregates: Run totals keyed by incident id, as produced by
+        :meth:`AtwIncidentExecutionManager.aggregate_by_incident`.
+    :return: One response per incident, in the given order.
+    """
+    responses: list[AtwIncidentResponse] = []
+    for incident in incidents:
+        aggregate = aggregates.get(incident.id)
+        responses.append(
+            AtwIncidentResponse.model_validate(incident).model_copy(
+                update={
+                    "run_count": 0 if aggregate is None else aggregate.run_count,
+                    "failed_run_count": (
+                        0 if aggregate is None else aggregate.failed_run_count
+                    ),
+                    "last_activity_at": _last_activity_at(
+                        incident,
+                        None if aggregate is None else aggregate.last_execution_at,
+                    ),
+                }
+            )
+        )
+    return responses
+
+
+async def _build_incident_response(
+    session: SessionDep, incident: AtwIncident
+) -> AtwIncidentResponse:
+    """Render one incident with its run totals, fetching them for that id alone.
+
+    :param session: The database session.
+    :param incident: The incident to render.
+    :return: The incident's response, carrying true run totals.
+    """
+    aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
+        session, [incident.id]
+    )
+    return build_incident_responses([incident], aggregates)[0]
+
+
 @router.post("/incidents/", status_code=status.HTTP_201_CREATED)
 async def atw_create_incident(
     session: SessionDep,
@@ -283,32 +360,41 @@ async def atw_create_incident(
     """
     incident = AtwIncident(**body.model_dump(), created_by=current_user.username)
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.get("/incidents/")
 async def atw_list_incidents(
     session: SessionDep, pagination: PaginationDep
 ) -> PaginatedResponse[AtwIncidentResponse]:
-    """List diagnostic incidents, newest first.
+    """List diagnostic incidents, newest first, with each one's run totals.
+
+    The totals come from one grouped query over the whole page, so rendering it
+    issues no per-row task-history request however many runs an incident holds.
 
     :param session: The database session.
     :param pagination: The offset/limit window for the page.
     :return: A paginated page of incidents, newest first.
     """
     page = await AtwIncidentManager.list_paginated(session, pagination=pagination)
-    items = [AtwIncidentResponse.model_validate(incident) for incident in page.items]
+    aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
+        session, [incident.id for incident in page.items]
+    )
+    items = build_incident_responses(page.items, aggregates)
     return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.get("/incidents/{incident_id}")
-async def atw_get_incident(incident: AtwIncidentDep) -> AtwIncidentResponse:
+async def atw_get_incident(
+    session: SessionDep, incident: AtwIncidentDep
+) -> AtwIncidentResponse:
     """Retrieve a single diagnostic incident by id.
 
+    :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :return: The matching incident.
     """
-    return AtwIncidentResponse.model_validate(incident)
+    return await _build_incident_response(session, incident)
 
 
 @router.patch("/incidents/{incident_id}")
@@ -323,7 +409,7 @@ async def atw_update_incident(
     :return: The updated incident.
     """
     updated = await AtwIncidentManager.update(session, incident, body)
-    return AtwIncidentResponse.model_validate(updated)
+    return await _build_incident_response(session, updated)
 
 
 @router.delete(
@@ -352,7 +438,7 @@ async def atw_close_incident(
     """
     incident.closed_at = utc_now()
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.post("/incidents/{incident_id}/reopen/")
@@ -368,7 +454,7 @@ async def atw_reopen_incident(
     """
     incident.closed_at = None
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.get("/execution-schema/")

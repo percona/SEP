@@ -328,6 +328,12 @@ default:
     #       period: minutes
     #     stale_send_after: 3600           # seconds a send may stall before it is failed;
     #                                      # must exceed the slowest legitimate send
+    #     reconcile_interval:              # cadence of the run-outcome reconcile sweep;
+    #       every: 10                      # `null` unregisters it, which leaves the
+    #       period: minutes                # incident list's failed count blind to
+    #                                      # historical runs and to the terminal paths
+    #                                      # the run-result hook never observes
+    #     reconcile_batch_size: 100        # executions examined per reconcile tick
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, postgresql
       USER: null
