@@ -15,6 +15,7 @@
 
 """Tests for the ``scripts/sync_labeler_apps.py`` CLI."""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -304,6 +305,34 @@ def test_main_reports_error_cleanly(tmp_path, capsys):
     assert "Traceback" not in err
 
 
-def test_committed_labeler_matches_disk():
-    """Confirm the committed ``.github/labeler.yml`` matches the walk."""
-    assert sync_labeler_apps.main(["--check"]) == 0
+def test_committed_labeler_matches_disk(tmp_path: Path):
+    """Confirm the committed labeler matches the tracked app surfaces."""
+    repo = tmp_path / "repo"
+    paths = subprocess.check_output(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--",
+            "app/sep/apps",
+            "frontend/packages/apps",
+            "tests/app/sep/apps",
+            "frontend/packages/e2e/tests",
+        ],
+        cwd=sync_labeler_apps.REPO_ROOT,
+    )
+    for path in paths.decode().split("\0"):
+        if path:
+            target = repo / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.touch()
+
+    labeler = _write_labeler(
+        repo, sync_labeler_apps.DEFAULT_LABELER.read_text(encoding="utf-8")
+    )
+    assert (
+        sync_labeler_apps.main(
+            ["--check", "--labeler", str(labeler), "--repo-root", str(repo)]
+        )
+        == 0
+    )
