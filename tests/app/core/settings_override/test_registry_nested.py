@@ -21,7 +21,8 @@ from datetime import timedelta
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic import BaseModel, Field, SecretStr, ValidationError
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.api.routes import _settings_response_from_field
@@ -40,6 +41,7 @@ from app.core.settings_override.registry import (
     nested_overridable_field_names,
     NESTED_VALUE_MISSING,
     not_overridable_field,
+    override_provenance_for_rows,
     ReloadClassification,
     rendered_leaf_keys,
     resolve_nested_field,
@@ -48,6 +50,10 @@ from app.core.settings_override.registry import (
 )
 from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import TasksSettings
+from tests.app.core.settings_override.conftest import (
+    insert_override_row,
+    TASKS_SETTINGS_TOKEN,
+)
 
 
 class _Leaf(BaseModel):
@@ -113,6 +119,26 @@ def test_resolve_field_in_model_lowercase_fallback() -> None:
 def test_resolve_field_in_model_missing_segment() -> None:
     """An unknown segment returns ``None``."""
     assert _resolve_field_in_model(CookieOptions, "NOPE") is None
+
+
+@pytest.mark.parametrize("segment", ["External", "Incoming", "Outgoing"])
+def test_resolve_field_in_model_alias_only_match(segment: str) -> None:
+    """Resolve each alias kind independently of the canonical attribute name."""
+
+    class _AliasedModel(BaseModel):
+        value: int = Field(
+            default=1,
+            alias="external",
+            validation_alias="incoming",
+            serialization_alias="outgoing",
+        )
+
+    resolved = _resolve_field_in_model(_AliasedModel, segment)
+
+    assert resolved is not None
+    canonical, field = resolved
+    assert canonical == "value"
+    assert field is _AliasedModel.model_fields["value"]
 
 
 def test_resolve_nested_field_single_level() -> None:
@@ -327,6 +353,33 @@ def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
     assert locked_leaf.reload is ReloadClassification.NOT_OVERRIDABLE
 
 
+def test_resolve_nested_field_metadata_unknown_leaf_returns_none() -> None:
+    """Return no metadata for an unresolvable nested key."""
+    assert resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__BOGUS") is None
+
+
+@pytest.mark.asyncio
+async def test_override_provenance_for_nested_row_includes_all_prefixes(
+    session: AsyncSession,
+) -> None:
+    """Report the stored key and every canonical ancestor of a nested override."""
+    row = await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key="security_headers__STRICT_TRANSPORT_SECURITY__MAX_AGE",
+        value=3600,
+    )
+
+    provenance = override_provenance_for_rows(TasksSettings, [row])
+
+    assert set(provenance) == {
+        row.key,
+        "SECURITY_HEADERS",
+        "SECURITY_HEADERS__strict_transport_security",
+        "SECURITY_HEADERS__strict_transport_security__max_age",
+    }
+
+
 class _SecretLeafModel(BaseModel):
     """Represent a submodel with a required ``SecretStr`` leaf for resolver tests."""
 
@@ -356,6 +409,44 @@ class _OptionalIntermediateParent(BaseModel):
     """Represent the top-level parent for optional-intermediate resolver tests."""
 
     NESTED: _OptionalIntermediate = nested_overridable_field(_OptionalIntermediate())
+
+
+def test_resolve_nested_value_unknown_leaf_raises_keyerror() -> None:
+    """Reject a key that cannot resolve to a nested field."""
+    proxy = OverridableSettingsProxy(
+        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
+    )
+
+    with pytest.raises(KeyError, match="NESTED__BOGUS"):
+        resolve_nested_value(
+            settings_cls=_OptionalIntermediateParent,
+            proxy=proxy,
+            key="NESTED__BOGUS",
+        )
+
+
+@pytest.mark.parametrize(
+    ("inner_key", "leaf_key"),
+    [("INNER", "DEEP"), ("inner", "deep")],
+    ids=["exact-mapping-keys", "case-insensitive-mapping-keys"],
+)
+def test_resolve_nested_value_continues_through_mapping(
+    inner_key: str, leaf_key: str
+) -> None:
+    """Traverse a mapping intermediate and read its child using canonical names."""
+    proxy = OverridableSettingsProxy(
+        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
+    )
+    proxy._set_snapshot({"NESTED": {inner_key: {leaf_key: 42}}})
+
+    field, value = resolve_nested_value(
+        settings_cls=_OptionalIntermediateParent,
+        proxy=proxy,
+        key="NESTED__INNER__DEEP",
+    )
+
+    assert value == 42
+    assert field is _OptionalInner.model_fields["DEEP"]
 
 
 def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None:
