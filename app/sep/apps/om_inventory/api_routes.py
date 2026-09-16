@@ -578,7 +578,7 @@ async def get_config(session: SessionDep) -> list[SettingResponse]:
             session=session,
             setting_class=OmInventorySettings.__name__,
             settings_cls=OmInventorySettings,
-            proxy=om_inventory_settings,
+            proxy=om_inventory_settings,  # ty: ignore[invalid-argument-type]
         )
     )
 
@@ -621,7 +621,7 @@ async def patch_config(
         session=session,
         setting_class=OmInventorySettings.__name__,
         settings_cls=OmInventorySettings,
-        proxy=om_inventory_settings,
+        proxy=om_inventory_settings,  # ty: ignore[invalid-argument-type]
         body=body,
         actor=actor.username,
     )
@@ -650,6 +650,6 @@ async def delete_config_override(
         session=session,
         setting_class=OmInventorySettings.__name__,
         settings_cls=OmInventorySettings,
-        proxy=om_inventory_settings,
+        proxy=om_inventory_settings,  # ty: ignore[invalid-argument-type]
         key=key,
     )

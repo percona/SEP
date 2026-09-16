@@ -36,6 +36,9 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
 from app.core.utils.fields import StrHttpUrl, TimedeltaSeconds
 
+#: A ``TimedeltaSeconds`` that must be greater than zero.
+_PositiveSeconds = Annotated[TimedeltaSeconds, Gt(timedelta(0))]
+
 
 class OmInventorySettings(BaseYamlSettings):
     """Configure the on-host probe.
@@ -113,11 +116,13 @@ class OmInventorySettings(BaseYamlSettings):
     RUN_RETENTION: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
         50, advanced=True
     )
-    STALE_RUN_AFTER: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = hot_field(
+    STALE_RUN_AFTER: _PositiveSeconds = hot_field(  # ty: ignore[invalid-assignment]
         timedelta(minutes=30), advanced=True
     )
 
 
-om_inventory_settings: OmInventorySettings = OverridableSettingsProxy(
-    OmInventorySettings, setting_class=OmInventorySettings.__name__
+om_inventory_settings: OmInventorySettings = (  # ty: ignore[invalid-assignment]
+    OverridableSettingsProxy(
+        OmInventorySettings, setting_class=OmInventorySettings.__name__
+    )
 )
