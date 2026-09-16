@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination.models import Pagination

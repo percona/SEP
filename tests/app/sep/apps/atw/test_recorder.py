@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution

@@ -34,7 +34,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
 from app.api.deps import require_minimum_role_for_unsafe_methods

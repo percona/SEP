@@ -28,7 +28,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT

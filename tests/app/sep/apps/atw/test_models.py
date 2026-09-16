@@ -20,7 +20,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.atw.models import (
     AtwIncident,
