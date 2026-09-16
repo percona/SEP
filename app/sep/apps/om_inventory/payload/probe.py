@@ -803,18 +803,21 @@ def collect_install_readiness():
             (name for binary, name in _PACKAGE_MANAGERS if shutil.which(binary)),
             None,
         ),
-        "data_dir_free_bytes": _free_bytes("/"),
+        "data_dir_free_bytes": _free_bytes("/var/lib"),
     }
 
 
 def _free_bytes(path):
     """Return the free byte count on the filesystem holding ``path``, or ``None``.
 
-    Measured at ``/`` rather than a database's own data directory: this runs before
-    an install decision is made, when no mongod has been installed yet to have a
-    ``dbPath`` of its own to measure. A coarser number now is what makes "is there
-    room to install here at all" answerable for a bare host; a per-database number
-    is a question for after an install decision, not before one.
+    Measured at ``/var/lib`` rather than a database's own data directory: this runs
+    before an install decision is made, when no mongod has been installed yet to
+    have a ``dbPath`` of its own to measure. ``/var/lib`` is where both package
+    families put that default anyway — ``/var/lib/mongo`` from the RPMs,
+    ``/var/lib/mongodb`` from the debs — and it exists on a bare host, so it names
+    the filesystem an install would land on without needing one. Measuring ``/``
+    instead would describe a different disk on any host that keeps ``/var`` on its
+    own filesystem.
 
     :param path: The path whose filesystem to measure.
     :return: The free byte count, or ``None`` if it could not be read.
