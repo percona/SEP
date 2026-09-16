@@ -60,7 +60,7 @@ class TestMapService:
     """Cover resolving one service against the available executor hosts."""
 
     def test_matches_by_node_name(self) -> None:
-        """A node whose name is an executor host resolves to it."""
+        """Resolve a node by name when the name matches an executor host."""
         mapped = map_service(
             make_service(node_name="host-a"), {"host-a": "10.0.0.9", "host-b": "x"}
         )
@@ -80,7 +80,7 @@ class TestMapService:
         assert mapped.resolution is NodeResolution.NAME
 
     def test_falls_back_to_address(self) -> None:
-        """A node whose name matches nothing resolves by its address."""
+        """Fall back to a node's address when its name matches nothing."""
         mapped = map_service(
             make_service(node_name="unknown", node_address="10.0.0.1"),
             {"host-b": "10.0.0.1"},
@@ -101,7 +101,7 @@ class TestMapService:
     def test_unmatched_is_orphaned_never_a_fallback_host(
         self, node_name: str | None, node_address: str | None
     ) -> None:
-        """An unmatched service is orphaned rather than sent to an arbitrary host.
+        """Mark an unmatched service orphaned, never sent to an arbitrary host.
 
         This is the regression guard. ``get_task_target`` would return the first
         available host here; doing that would probe the wrong machine and report its
@@ -118,7 +118,7 @@ class TestMapService:
         assert not mapped.is_resolved
 
     def test_no_executors_at_all_orphans_rather_than_raising(self) -> None:
-        """An empty executor list orphans every service instead of raising."""
+        """Mark every service orphaned when no executors exist, instead of raising."""
         mapped = map_service(make_service(), {})
 
         assert mapped.resolution is NodeResolution.ORPHANED
@@ -146,7 +146,7 @@ class TestMapServices:
         assert sum(entry.is_resolved for entry in mapped) == EXPECTED_RESOLVED
 
     def test_orphaned_services_are_still_reported(self) -> None:
-        """A wholly stale inventory yields rows, not an empty result.
+        """Yield rows for a wholly stale inventory instead of an empty result.
 
         An inventory listing routinely outlives the executors that served it — in
         the workspace sandbox this was 16 of 25 services — so orphaned entries must

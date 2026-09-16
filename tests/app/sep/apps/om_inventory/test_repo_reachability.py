@@ -65,7 +65,7 @@ class TestReachable:
     """Reach a repository that answers with what it should."""
 
     def test_a_real_key_is_reachable(self) -> None:
-        """The ordinary case: the key comes back and the host can install."""
+        """Report the ordinary case: the key comes back and the host can install."""
         with patch(
             "urllib.request.urlopen", return_value=_response(KEY_BODY)
         ) as urlopen:
@@ -78,7 +78,7 @@ class TestReachable:
         assert urlopen.call_args.kwargs["timeout"] > 0
 
     def test_latency_is_reported_even_on_success(self) -> None:
-        """A slow-but-working repository is worth seeing before it becomes a failure."""
+        """Report latency for a slow-but-working repository before it fails."""
         with patch("urllib.request.urlopen", return_value=_response(KEY_BODY)):
             facts = collect_repo_facts({})
 
@@ -133,7 +133,7 @@ class TestFailuresCheaperChecksMiss:
         assert "certificate verify failed" in facts["error"]
 
     def test_a_timeout_is_a_result_not_an_exception(self) -> None:
-        """A hung repository must produce a row, not lose the whole host record."""
+        """Produce a row for a hung repository instead of losing the host record."""
         with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
             facts = collect_repo_facts({})
 
@@ -164,7 +164,7 @@ class TestTheProxyIsReported:
         assert facts["proxy"] == PROXY
 
     def test_no_proxy_is_reported_as_none_not_omitted(self, monkeypatch) -> None:
-        """A direct connection has to be stated, or a failure has no context.
+        """State a direct connection as no proxy rather than omitting it.
 
         :param monkeypatch: The environment patcher.
         """
@@ -193,7 +193,7 @@ class TestTheProxyCredentialsAreNotReported:
     """
 
     def test_credentials_are_replaced_and_the_host_is_kept(self, monkeypatch) -> None:
-        """The whole point: still explainable, no longer a secret.
+        """Redact the proxy credential while keeping the host explainable.
 
         :param monkeypatch: The environment patcher.
         """
@@ -230,7 +230,7 @@ class TestTheProxyCredentialsAreNotReported:
     def test_the_shapes_a_proxy_variable_is_written_in(
         self, monkeypatch, configured: str, expected: str
     ) -> None:
-        """A value with no credentials must come through untouched.
+        """Pass a value with no credentials through untouched.
 
         The scheme is optional in these variables and a password may carry an encoded
         ``@``, so the host is whatever follows the *last* one.
@@ -265,7 +265,7 @@ class TestConfiguration:
         assert urlopen.call_args.args[0].full_url == mirror
 
     def test_the_timeout_is_configurable(self) -> None:
-        """A slow mirror on a fast link is a different budget from the public one."""
+        """Configure the timeout separately from the public repository's budget."""
         with patch(
             "urllib.request.urlopen", return_value=_response(KEY_BODY)
         ) as urlopen:

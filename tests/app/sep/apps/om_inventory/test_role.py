@@ -66,24 +66,24 @@ def record(
 
 
 def test_an_arbiter_is_not_classified_as_a_plain_mongod() -> None:
-    """The case the module docstring warns about: an arbiter *is* a mongod process."""
+    """Classify an arbiter as arbiter even though it is itself a mongod process."""
     assert classify_role(record(is_arbiter=True)) == "arbiter"
 
 
 def test_a_router_is_mongos_by_its_own_program() -> None:
-    """The ordinary case: the process itself says mongos."""
+    """Classify a router as mongos when its own process says so."""
     assert classify_role(record(program="mongos", argv="/usr/bin/mongos")) == "mongos"
 
 
 def test_a_router_is_mongos_by_hello_when_the_program_cannot_say() -> None:
-    """``hello.msg`` catches a mongos whose process facts came back empty."""
+    """Catch a mongos via ``hello.msg`` when its process facts came back empty."""
     assert (
         classify_role(record(msg="isdbgrid", program=None, running=False)) == "mongos"
     )
 
 
 def test_a_config_server_is_read_from_get_cmd_line_opts() -> None:
-    """The shape a real config server has: the role is in the file, not in argv.
+    """Read a config server's role from ``getCmdLineOpts`` rather than argv.
 
     Measured against this workspace's sharded sandbox, where every config server
     runs as ``mongod --config /etc/mongod-node.conf`` and reports
@@ -102,7 +102,7 @@ def test_a_config_server_is_read_from_get_cmd_line_opts() -> None:
 
 
 def test_a_config_server_started_with_the_flag_is_still_config() -> None:
-    """The fallback, for a record whose database facts never came back."""
+    """Fall back to argv's ``--configsvr`` flag when database facts never came back."""
     assert (
         classify_role(
             record(argv="/usr/bin/mongod --configsvr --config /etc/mongod.conf")
@@ -112,12 +112,12 @@ def test_a_config_server_started_with_the_flag_is_still_config() -> None:
 
 
 def test_a_shard_member_is_not_a_config_server() -> None:
-    """``clusterRole`` is set on a shardsvr too - only ``configsvr`` is the role."""
+    """Treat a shardsvr's ``clusterRole`` as mongod, not as a config server."""
     assert classify_role(record(cluster_role="shardsvr")) == "mongod"
 
 
 def test_an_ordinary_member_is_mongod() -> None:
-    """The default: a running server process that is none of the above."""
+    """Classify a running server process as mongod when none of the above match."""
     assert classify_role(record()) == "mongod"
 
 

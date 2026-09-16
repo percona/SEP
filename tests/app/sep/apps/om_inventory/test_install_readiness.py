@@ -23,15 +23,14 @@ about, so both facts have to survive a host answering neither.
 from unittest.mock import patch
 
 from app.sep.apps.om_inventory.payload.probe import collect_install_readiness
-
-FREE_BYTES = 107374182400
+from tests.app.sep.apps.om_inventory.conftest import FREE_BYTES
 
 
 class TestPackageManagerDetection:
     """Identify which package manager, if any, this host installs through."""
 
     def test_the_first_match_wins(self) -> None:
-        """A host reporting more than one tool is described by the one tried first."""
+        """Describe a host reporting more than one tool by the one tried first."""
         with patch(
             "shutil.which", side_effect=lambda binary: binary in {"apt-get", "yum"}
         ):
@@ -40,21 +39,21 @@ class TestPackageManagerDetection:
         assert facts["package_manager"] == "apt"
 
     def test_dnf_is_preferred_over_the_yum_symlink(self) -> None:
-        """RHEL8+ symlinks ``yum`` to ``dnf`` — report the tool that is actually there."""
+        """Report the tool actually present when RHEL8+ symlinks ``yum`` to ``dnf``."""
         with patch("shutil.which", side_effect=lambda binary: binary in {"dnf", "yum"}):
             facts = collect_install_readiness()
 
         assert facts["package_manager"] == "dnf"
 
     def test_zypper_is_recognised(self) -> None:
-        """SUSE hosts are not left unclassified for using the fourth tool checked."""
+        """Recognise zypper rather than leaving SUSE hosts unclassified."""
         with patch("shutil.which", side_effect=lambda binary: binary == "zypper"):
             facts = collect_install_readiness()
 
         assert facts["package_manager"] == "zypper"
 
     def test_none_of_the_four_is_reported_as_none(self) -> None:
-        """An unrecognised host reports absence, not a wrong guess."""
+        """Report an unrecognised host as absent, not with a wrong guess."""
         with patch("shutil.which", return_value=None):
             facts = collect_install_readiness()
 
@@ -65,7 +64,7 @@ class TestDataDirFreeBytes:
     """Report free space on the filesystem an install would land on."""
 
     def test_the_free_byte_count_is_reported(self) -> None:
-        """The ordinary case: the data directory's filesystem answers."""
+        """Report the ordinary case, where the data directory's filesystem answers."""
         usage = type("Usage", (), {"free": FREE_BYTES})()
         with (
             patch("shutil.which", return_value=None),
@@ -77,7 +76,7 @@ class TestDataDirFreeBytes:
         assert disk_usage.call_args.args == ("/var/lib",)
 
     def test_an_unreadable_filesystem_is_none_not_an_exception(self) -> None:
-        """A permission or mount failure must not cost the rest of the host record."""
+        """Keep the rest of the host record when a permission or mount failure hits."""
         with (
             patch("shutil.which", return_value=None),
             patch("shutil.disk_usage", side_effect=OSError("permission denied")),
