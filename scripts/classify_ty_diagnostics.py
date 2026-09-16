@@ -281,8 +281,9 @@ GROUPS: tuple[Group, ...] = (
         "unresolved-import",
         r"^Cannot resolve imported module `",
         "the module does not exist at check time: golden apps are scaffolded by "
-        "the test run, and the system-facts payload runs on the host",
+        "the test run, and the payloads run on the host they are dispatched to",
         paths="tests/app/sep/apps/framework/golden/ "
+        "app/sep/apps/om_inventory/payload/probe.py "
         "app/sep/sync/syncers/system_facts/payload.py",
     ),
     _group(

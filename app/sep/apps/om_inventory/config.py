@@ -87,20 +87,32 @@ class OmInventorySettings(BaseYamlSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "OM_INVENTORY"]
 
-    SCHEDULE: IntervalSchedule | None = hot_field(
+    SCHEDULE: IntervalSchedule | None = hot_field(  # ty: ignore[invalid-assignment]
         IntervalSchedule(every=10, period=Period.MINUTES)
     )
-    PROBE_DATABASE: bool = hot_field(default=True)
-    REPO_URL: StrHttpUrl = hot_field(
+    PROBE_DATABASE: bool = hot_field(default=True)  # ty: ignore[invalid-assignment]
+    REPO_URL: StrHttpUrl = hot_field(  # ty: ignore[invalid-assignment]
         "https://repo.percona.com/percona/yum/PERCONA-PACKAGING-KEY", advanced=True
     )
-    REPO_TIMEOUT: PositiveInt = hot_field(8, advanced=True)
+    REPO_TIMEOUT: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        8, advanced=True
+    )
     CREDENTIALS_PATH: str | None = None
-    CONNECT_TIMEOUT: PositiveInt = hot_field(5, advanced=True)
-    TASK_TIMEOUT: PositiveInt = hot_field(180, advanced=True)
-    POLL_INTERVAL: PositiveInt = hot_field(3, advanced=True)
-    MAX_CONCURRENT_PROBES: PositiveInt = hot_field(8, advanced=True)
-    RUN_RETENTION: PositiveInt = hot_field(50, advanced=True)
+    CONNECT_TIMEOUT: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        5, advanced=True
+    )
+    TASK_TIMEOUT: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        180, advanced=True
+    )
+    POLL_INTERVAL: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        3, advanced=True
+    )
+    MAX_CONCURRENT_PROBES: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        8, advanced=True
+    )
+    RUN_RETENTION: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
+        50, advanced=True
+    )
     STALE_RUN_AFTER: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = hot_field(
         timedelta(minutes=30), advanced=True
     )
