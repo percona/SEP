@@ -162,8 +162,10 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     run, because status lives behind that service's own database and the incident
     listing may not issue a per-row HTTP call to read it. ``terminal_status`` carries
     the shared status enum and its CHECK constraint, so the column cannot hold a value
-    the aggregate would silently skip; the enum lives in ``app.core`` precisely so a
-    table this module defines can name it without reaching into another service.
+    the aggregate would silently skip. The enum is imported from
+    :mod:`app.tasks.task_status`, a leaf module that defines no tables, so naming it
+    here registers nothing of the tasks service's in ``SQLModel.metadata`` — the
+    module docstring states why that import is admitted.
 
     :param incident_id: Foreign key to the owning :class:`AtwIncident`.
     :param task_history_id: Logical reference to the tasks-service execution row.
