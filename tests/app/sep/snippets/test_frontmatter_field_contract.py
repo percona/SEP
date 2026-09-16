@@ -37,7 +37,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.framework.schema import IntegerField
-from app.sep.snippets.models.meta import SnippetMetaParameterType
+from app.sep.snippets.models.meta import SnippetMetaParameter, SnippetMetaParameterType
 from app.sep.snippets.models.snippet import BaseSnippet, EXECUTOR_HOSTS_INPUT_NAME
 from app.sep.snippets.schema import build_snippet_schema
 from tests.app.sep.form_schema_utils import form_field_types
@@ -64,7 +64,7 @@ LOG_EXTRACTORS = (
 MINUTES_DEFAULT = 30
 
 
-def _parameters(snippet: BaseSnippet) -> dict:
+def _parameters(snippet: BaseSnippet) -> dict[str, SnippetMetaParameter]:
     """Return a snippet's validated parameters, keyed by name.
 
     :param snippet: The snippet whose parameters to collect.

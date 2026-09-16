@@ -85,6 +85,7 @@ from app.sep.snippets.models.meta import (
     META_KEY_TITLE,
     SnippetMetaParameter,
     SnippetMetaParameterType,
+    SUPPORTED_META_KEYS,
 )
 from app.sep.snippets.models.snippet import BaseSnippet
 
@@ -111,23 +112,6 @@ def _enumerate_snippets() -> tuple[str, ...]:
 
 
 SNIPPET_FILENAMES = _enumerate_snippets()
-
-# ``alerts`` and ``atw`` are read outside the snippets package, by the
-# alert-troubleshooting and ATW apps; a set derived by grepping that package
-# alone would reject the 98 valid declarations of them.
-KNOWN_META_KEYS = frozenset(
-    {
-        "alerts",
-        "allow_extra_args",
-        "atw",
-        "description",
-        "parameters",
-        "requires_packages",
-        "service_type",
-        "sudo",
-        "title",
-    }
-)
 
 KNOWN_PARAMETER_TYPES = frozenset(
     member.name.lower() for member in SnippetMetaParameterType
@@ -199,7 +183,7 @@ def _user_facing_texts(parameter: SnippetMetaParameter) -> list[tuple[str, str]]
     return texts
 
 
-def _raw_parameters(snippet: BaseSnippet) -> list[dict]:
+def _raw_parameters(snippet: BaseSnippet) -> list[dict[str, object]]:
     """Read the parameter declarations as YAML parsed them.
 
     Rules about a key the parameter model discards, or rewrites during
@@ -319,7 +303,7 @@ async def test_top_level_keys_are_read_by_the_application(filename):
     """Verify every top-level key is one the application reads (R7)."""
     snippet = await _load(filename)
 
-    unknown = sorted(set(snippet.meta) - KNOWN_META_KEYS)
+    unknown = sorted(set(snippet.meta) - SUPPORTED_META_KEYS)
     assert unknown == [], f"{filename} declares unread front-matter keys {unknown}"
 
 
