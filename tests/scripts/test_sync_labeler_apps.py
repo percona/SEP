@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ``scripts/sync_labeler_apps.py`` CLI."""
+"""Tests for the ``scripts/sync_labeler_apps.py`` CLI.
+
+Capture the repository app block during collection, before parallel scaffold
+tests create and remove temporary app packages in the source tree.
+"""
 
 from pathlib import Path
 
@@ -22,6 +26,10 @@ import pytest
 from tests.scripts import load_script
 
 sync_labeler_apps = load_script("sync_labeler_apps")
+_REPOSITORY_APP_BLOCK = sync_labeler_apps.render_app_block(
+    sync_labeler_apps.REPO_ROOT.joinpath(*sync_labeler_apps.APPS_SUBDIR),
+    sync_labeler_apps.REPO_ROOT,
+)
 
 _EXISTING_RULES = """\
 python:
@@ -305,5 +313,6 @@ def test_main_reports_error_cleanly(tmp_path, capsys):
 
 
 def test_committed_labeler_matches_disk():
-    """Confirm the committed ``.github/labeler.yml`` matches the walk."""
-    assert sync_labeler_apps.main(["--check"]) == 0
+    """Confirm the committed labeler matches the app surfaces at collection."""
+    labeler = sync_labeler_apps.DEFAULT_LABELER.read_text(encoding="utf-8")
+    assert labeler == sync_labeler_apps.render_labeler(labeler, _REPOSITORY_APP_BLOCK)
