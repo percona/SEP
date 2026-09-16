@@ -1641,7 +1641,7 @@
         "properties": {
           "duration": {
             "additionalProperties": true,
-            "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.\n:rtype: dict[str, Any]",
+            "description": "Return the task duration summary.\n\n:return: A dictionary summarizing average, last, and total task durations.",
             "readOnly": true,
             "title": "Duration",
             "type": "object"
@@ -1660,7 +1660,7 @@
                 "type": "null"
               }
             ],
-            "description": "Return the last finished task timestamp.\n\n:return: The timestamp of the last task finished, or None if not available.\n:rtype: str | None",
+            "description": "Return the last finished task timestamp.\n\n:return: The timestamp of the last task finished, or None if not available.",
             "readOnly": true,
             "title": "Last Finished At"
           },

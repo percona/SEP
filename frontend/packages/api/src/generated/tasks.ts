@@ -1738,7 +1738,6 @@ export interface components {
        * @description Return the task duration summary.
        *
        *     :return: A dictionary summarizing average, last, and total task durations.
-       *     :rtype: dict[str, Any]
        */
       readonly duration: {
         [key: string]: unknown;
@@ -1753,7 +1752,6 @@ export interface components {
        * @description Return the last finished task timestamp.
        *
        *     :return: The timestamp of the last task finished, or None if not available.
-       *     :rtype: str | None
        */
       readonly last_finished_at: string | null;
       /**
