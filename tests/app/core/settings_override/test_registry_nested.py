@@ -437,7 +437,8 @@ def test_resolve_nested_value_continues_through_mapping(
     proxy = OverridableSettingsProxy(
         _OptionalIntermediateParent, setting_class=SEPSettings.__name__
     )
-    proxy._set_snapshot({"NESTED": {inner_key: {leaf_key: 42}}})
+    expected_value = 42
+    proxy._set_snapshot({"NESTED": {inner_key: {leaf_key: expected_value}}})
 
     field, value = resolve_nested_value(
         settings_cls=_OptionalIntermediateParent,
@@ -445,7 +446,7 @@ def test_resolve_nested_value_continues_through_mapping(
         key="NESTED__INNER__DEEP",
     )
 
-    assert value == 42
+    assert value == expected_value
     assert field is _OptionalInner.model_fields["DEEP"]
 
 
