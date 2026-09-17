@@ -58,21 +58,9 @@ default:
       # just "SCHEDULE" matches nothing (confirmed: it stays
       # SETTING_RELOAD_NOT_OVERRIDABLE with only that entry).
       #
-      # ENABLED was left out of an earlier version of this list on the theory that
-      # pmm-managed owns it via a separate, ungated path (Service.SyncInventoryEnabled,
-      # managed/services/om/service.go) - that theory was wrong. patchConfig (SEP's
-      # own sep_client.go) calls the exact same PATCH /config endpoint this ALLOWED_KEYS
-      # list gates, authenticated or not: apply_class_overrides's app-owned "narrower"
-      # endpoint (app/core/settings_override/api/routes.py) only widens *who* may call
-      # it (any authenticated caller, not just a SEP admin) - is_hot_reloadable's
-      # policy gate still runs with include_policy_gate's default of True, so an
-      # excluded key is refused for every caller, PMM's own service principal
-      # included. Confirmed the hard way: pmm-managed's PATCH ENABLED=true got the
-      # identical 422 "Setting cannot be overridden from the API" a UI-driven one
-      # would, so the periodic estate sweep could never turn on regardless of which
-      # side asked - not just when an operator tried it directly, which was the
-      # narrower bug this entry's absence was meant to prevent in the first place.
-      - OmInventorySettings.ENABLED
+      # ENABLED is not listed here: this branch doesn't declare that field at all
+      # (it's added by PMM-15326-om-switch-gate, stacked on top of this branch),
+      # so the entry belongs on that branch's own settings.yaml, not this one.
       - OmInventorySettings.SCHEDULE__every
       - OmInventorySettings.SCHEDULE__period
       - OmInventorySettings.PROBE_DATABASE
