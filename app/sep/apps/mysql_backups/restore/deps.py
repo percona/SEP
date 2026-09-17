@@ -30,7 +30,11 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.mysql_backups.restore.models import (
+    repair_source_declaration,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -186,38 +190,39 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
 
 
 def _declared_source_override(task: Task) -> dict[str, Any]:
-    """Return a ``data`` override declaring the source of a stamp that predates it.
+    """Return a ``data`` override declaring the source of a stamp that describes it poorly.
 
     The edit form seeds each field from the served stamp and falls back to the
     schema default where the stamp has no value, so a stamp written before the
     source controls existed would seed ``source_transport`` to ``local``. The
     gates then hide the SSH and object-store fields, and a hidden field is
     dropped from the submission entirely, so saving that form would discard
-    credentials the restore still needs. Declaring the inferred source here means
-    the form opens on the transport the stored values imply and keeps them
-    visible.
+    credentials the restore still needs. The same holds for an AES-256 key file a
+    stamp names without declaring the format that reveals it. Repairing the stamp
+    here means the form opens on the source its stored values imply and keeps
+    every one of them visible.
 
-    Re-validating through :class:`RestoreCreate` rather than calling the
-    normalizer directly keeps the served stamp exactly what a subsequent ``PUT``
-    would accept. It is tolerant of a stamp that cannot be validated at all,
-    because this builder also serves the list route, where one unparseable task
-    must not take out the whole page.
+    Re-validating through :class:`RestoreCreate` rather than serving the repair
+    directly keeps the served stamp exactly what a subsequent ``PUT`` would
+    accept. It is tolerant of a stamp that cannot be validated at all, because
+    this builder also serves the list route, where one unparseable task must not
+    take out the whole page.
 
     :param task: The restore task being serialized.
     :return: A single-key ``data`` override, or an empty mapping when the stamp
-        already declares a source, is absent, or does not validate.
+        already describes its source, is absent, or does not validate.
     """
     data = task.data
     if not data:
         return {}
     stored_form = data.get(RESERVED_FORM_KEY)
-    if (
-        not isinstance(stored_form, dict)
-        or stored_form.get("source_transport") is not None
-    ):
+    if not isinstance(stored_form, dict):
+        return {}
+    repaired = repair_source_declaration(stored_form)
+    if repaired is None:
         return {}
     try:
-        declared = RestoreCreate.model_validate(stored_form).model_dump(mode="json")
+        declared = RestoreCreate.model_validate(repaired).model_dump(mode="json")
     except ValidationError:
         return {}
     return {"data": {**data, RESERVED_FORM_KEY: declared}}
