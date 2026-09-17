@@ -76,12 +76,25 @@ PMM_MONITORING_USER_ROLES = [
 
 
 def _psmdb_channel(mongodb_version: str) -> str:
-    """Turn ``"8.0"`` into the ``percona-release`` channel name ``"psmdb-80"``.
+    """Turn ``"8.0"`` (or ``"8.0.4"``) into the channel name ``"psmdb-80"``.
 
-    :param mongodb_version: A dotted version, e.g. ``"8.0"``.
+    Uses only the first two dot-separated components: PMM's own
+    ``TriggerHostBootstrapRequest.mongodb_version`` field docs a full patch
+    version as a valid example (``"7.0.8"``) and pmm-managed passes it through
+    unchanged (``managed/services/om/inventory.go``), so this has to accept
+    one - naively stripping every dot from ``"7.0.14"`` produced the
+    nonexistent channel ``"psmdb-7014"`` instead of ``"psmdb-70"`` (confirmed
+    against a live ``percona-release enable``: "Specified repository does not
+    exist"). PSMDB does not ship parallel repos per patch version, matching
+    the request field's own "only the major version selects the install
+    source" comment.
+
+    :param mongodb_version: A dotted version - major.minor (``"8.0"``) or
+        major.minor.patch (``"8.0.4"``).
     :return: The channel name ``percona-release setup`` expects.
     """
-    return f"psmdb-{mongodb_version.replace('.', '')}"
+    major_minor = ".".join(mongodb_version.split(".")[:2])
+    return f"psmdb-{major_minor.replace('.', '')}"
 
 
 def _mongod_config(spec: BootstrapSpec, *, with_auth: bool) -> str:
