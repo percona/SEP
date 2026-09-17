@@ -147,6 +147,15 @@ default:
       - MODULE_NAME: inventory
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
+      # app/sep/main.py's sep_overrides_lifespan unconditionally imports
+      # app.sep.apps.alerts.config.AlertsSettings to wire the settings-override
+      # refresher, regardless of whether alerts is activated. restrict_apps.py's
+      # INFRASTRUCTURE_PACKAGES exemption (framework, shared) does not cover it,
+      # so an image built without this entry strips the package and the "sep"
+      # program crashes at startup with ModuleNotFoundError - confirmed against
+      # this image (SEP_RESTRICT_APPS=1), and the same gap exists in main's own
+      # sidecar/settings.yaml, which also omits alerts.
+      - MODULE_NAME: alerts
       # OM's on-host half. It sweeps the MongoDB estate over Nomad for the facts
       # no metric carries and serves them at /api/apps/om_inventory/services,
       # which pmm-managed pulls. The topology and health half is in pmm-managed,
