@@ -127,6 +127,29 @@ class TestBuildStep:
         assert "dnf install" in command
         assert "psmdb-80" in command
 
+    def test_configure_repository_accepts_a_full_patch_version(self) -> None:
+        """Only major.minor selects the channel, exactly like the request field's own
+        "only the major version selects the install source" comment
+        (TriggerHostBootstrapRequest.mongodb_version) promises - a full patch
+        version like "7.0.14" must not leak into the channel name. Confirmed
+        against a live host: this used to produce the nonexistent channel
+        "psmdb-7014" and configure_repository failed with "Specified
+        repository does not exist".
+        """
+        spec = BootstrapSpec(
+            install_method=InstallMethod.PACKAGES,
+            os=OperatingSystem.ROCKY,
+            mongodb_version="7.0.14",
+            replica_set_name="rs-test",
+        )
+        action = PackagesInstallStrategy().build_step(
+            "configure_repository", "node00", spec
+        )
+
+        command = " ".join(action.command)
+        assert "psmdb-70" in command
+        assert "psmdb-7014" not in command
+
     def test_install_package_uses_apt_get_on_ubuntu(self) -> None:
         """Ubuntu's package install goes through apt-get, not dnf."""
         action = PackagesInstallStrategy().build_step(
