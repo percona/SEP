@@ -2120,6 +2120,7 @@ class TestSepOverridesLifespanWiring:
                 ("AlertsSettings", "BACKUP_INTERVAL"),
                 ("InventoryAppSettings", "COLLECTION_INTERVAL"),
                 (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
+                ("OmInventorySettings", "ENABLED"),
                 ("OmInventorySettings", "SCHEDULE"),
             }
         finally:
