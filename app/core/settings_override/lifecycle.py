@@ -281,7 +281,7 @@ async def _fire_callback(
         await callback(change)
     except Exception:
         logger.exception(
-            "Rebind callback for %s.%s failed; its rebind was not applied",
+            "Rebind callback for %s.%s failed; the rebind may be incomplete",
             setting_class,
             key,
         )
