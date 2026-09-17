@@ -74,15 +74,22 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 12
-
-#: The inventory-sync cadence the baked profile provisions.
-EMBEDDED_INVENTORY_SYNC_MINUTES = 15
-"""How many entries the embedded override allowlist ships.
+ALLOWLIST_SIZE = 24
+"""How many entries the embedded override allowlist ships: 12 pre-existing
+entries plus the 12 OmInventorySettings fields this profile allows
+overriding (ENABLED, SCHEDULE's two __-delimited leaves, PROBE_DATABASE,
+REPO_URL, REPO_TIMEOUT, CONNECT_TIMEOUT, TASK_TIMEOUT, POLL_INTERVAL,
+MAX_CONCURRENT_PROBES, RUN_RETENTION, STALE_RUN_AFTER) - confirmed missing by
+testing the deployed image's Settings tab (which had nothing to show without
+them) and, separately, pmm-managed's own sync PATCH for ENABLED specifically
+(which got the identical 422 an operator would).
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.
 """
+
+#: The inventory-sync cadence the baked profile provisions.
+EMBEDDED_INVENTORY_SYNC_MINUTES = 15
 
 UNCOMPARABLE_FIELDS = frozenset({"FASTAPI_ENV"})
 """Fields a dump comparison cannot use.

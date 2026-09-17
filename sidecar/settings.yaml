@@ -45,19 +45,29 @@ default:
       - AnonymizerSettings.DEFAULT_ENTITIES
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
-      # ENABLED is deliberately absent: pmm-managed owns it (Service.SyncInventoryEnabled,
-      # managed/services/om/service.go), toggled by PMM's own OpenManager on/off switch,
-      # not by an operator editing this app directly. CREDENTIALS_PATH is also absent -
-      # its own docstring says it stays YAML/env-only, since it names a file read off
-      # the *monitored* host, not a setting of SEP's own behavior. Every other
-      # OmInventorySettings field is product behaviour (cadence, timeouts, retention),
-      # the same category the entries above already cover for other apps - confirmed
-      # missing by testing: without these, GET /v1/om/inventory/config reports every
-      # field SETTING_RELOAD_NOT_OVERRIDABLE and the Settings tab has nothing to show.
+      # CREDENTIALS_PATH is deliberately absent - its own docstring says it stays
+      # YAML/env-only, since it names a file read off the *monitored* host, not a
+      # setting of SEP's own behavior. Every other OmInventorySettings field is
+      # product behaviour (cadence, timeouts, retention), the same category the
+      # entries above already cover for other apps - confirmed missing by
+      # testing: without these, GET /v1/om/inventory/config reports every field
+      # SETTING_RELOAD_NOT_OVERRIDABLE and the Settings tab has nothing to show.
       # SCHEDULE is a nested IntervalSchedule submodel, so the canonical override
       # key is the __-delimited leaf path, not the parent field name - naming
       # just "SCHEDULE" here matches nothing (confirmed: it stayed
       # SETTING_RELOAD_NOT_OVERRIDABLE with only that entry).
+      #
+      # ENABLED was left out on the theory that pmm-managed owns it via a separate,
+      # ungated path (Service.SyncInventoryEnabled, managed/services/om/service.go) -
+      # that theory was wrong. patchConfig (SEP's own sep_client.go) PATCHes the
+      # exact same /config endpoint this list gates: apply_class_overrides's
+      # app-owned "narrower" endpoint only widens *who* may call it (any
+      # authenticated caller, not just a SEP admin), not whether ALLOWED_KEYS still
+      # applies - is_hot_reloadable's policy gate runs regardless of caller
+      # identity. Confirmed the hard way: PATCHing ENABLED=true with PMM's own
+      # internal service token got the identical 422 an operator's UI edit would,
+      # so the periodic estate sweep could never turn on through any path.
+      - OmInventorySettings.ENABLED
       - OmInventorySettings.SCHEDULE__every
       - OmInventorySettings.SCHEDULE__period
       - OmInventorySettings.PROBE_DATABASE
