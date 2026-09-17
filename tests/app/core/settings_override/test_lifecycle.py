@@ -1064,9 +1064,7 @@ class TestFireBootCallbacks:
         ) -> None:
             if settings_cls is TasksSettings:
                 await asyncio.Event().wait()
-            proxy._set_snapshot(  # ty: ignore[unresolved-attribute]
-                {"CONNECTIVITY_CHECK_DEFAULT": override_value}
-            )
+            proxy._set_snapshot({"CONNECTIVITY_CHECK_DEFAULT": override_value})
 
         monkeypatch.setattr(
             "app.core.settings_override.lifecycle.publish_snapshot",
