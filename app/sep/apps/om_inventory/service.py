@@ -407,9 +407,9 @@ async def sweep(observed_at: str, node_ids: list[str] | None = None) -> SweepOut
     A scope narrows *everything downstream of enumeration*, not the enumeration
     itself: hosts are still listed from inventory, because that is how a scoped id is
     recognised as a host at all, and then everything outside the scope is dropped
-    before a single dispatch is made. Nothing outside it is written, which is what
-    makes §5.4's rule real — an entity this run did not attempt keeps every timestamp
-    it had, so refreshing one host cannot make the rest of the estate look failed.
+    before a single dispatch is made. Nothing outside it is written: an entity this
+    run did not attempt keeps every timestamp it had, so refreshing one host cannot
+    make the rest of the estate look failed.
 
     :param observed_at: When the sweep began, ISO 8601, stamped on every fact.
     :param node_ids: The hosts to refresh, or ``None`` for the whole estate.
@@ -895,10 +895,9 @@ async def run_probe(
         outcome = await sweep(observed_at, node_ids)
         # The estate goes in before the run reaches a terminal status, so a reader
         # that sees a finished run always finds the rows that run produced. Covered
-        # by the same try as the sweep itself: a raise here or in ``finalise`` left
-        # the run ``RUNNING`` forever before this widened, since only ``sweep`` was
-        # inside the failure path and nothing downstream of it could mark the run
-        # failed.
+        # by the same try as the sweep itself: a raise here or in ``finalise`` has to
+        # reach the failure path too, or nothing downstream of ``sweep`` can mark the
+        # run failed and it stays ``RUNNING`` forever.
         await persist_estate(outcome, run_id)
         async with session_maker() as session:
             await finalise(session, run_id, outcome)

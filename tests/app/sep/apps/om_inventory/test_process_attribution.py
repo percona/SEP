@@ -126,7 +126,7 @@ class TestMatchProcess:
     """Assert which process a target is attributed."""
 
     def test_the_only_server_on_the_host_is_the_target_s(self) -> None:
-        """A lone mongod is attributed without a port match, and has to be.
+        """Resolve the lone mongod to the target without needing a port match.
 
         A mongod started as ``mongod --config /etc/mongod.conf`` with no ``port:``
         in the file listens on 27017 and says so nowhere the payload can read. That
@@ -138,7 +138,7 @@ class TestMatchProcess:
         assert match_process([only], MEMBER_PORT) is only
 
     def test_several_servers_are_matched_by_port(self) -> None:
-        """The whole point: each target gets the process on its own port."""
+        """Match each target to the process on its own port."""
         member, shard = process(MEMBER_PORT), process(SHARD_PORT, pid=SHARD_PID)
 
         assert match_process([member, shard], SHARD_PORT) is shard
@@ -175,7 +175,7 @@ class TestProcessFacts:
         assert facts["config_path"] == f"/etc/mongod-{SHARD_PORT}.conf"
 
     def test_no_process_is_not_running_with_nothing_else_claimed(self) -> None:
-        """``running: false`` with null fields, not fields borrowed from elsewhere."""
+        """Report ``running: false`` with null fields, not values borrowed from elsewhere."""
         facts = process_facts(None)
 
         assert facts["running"] is False
@@ -193,7 +193,7 @@ class TestTheRecordsOfAMultiMongodHost:
     """Assert two services on one host do not report each other's process."""
 
     def test_each_service_reports_its_own_process(self) -> None:
-        """The regression this exists for: shared argv, config path and uptime."""
+        """Separate each service's process facts, fixing the regression that shared them."""
         processes = [
             process(MEMBER_PORT),
             process(SHARD_PORT, pid=SHARD_PID, uptime=SHARD_UPTIME),
@@ -210,7 +210,7 @@ class TestTheRecordsOfAMultiMongodHost:
         assert member["process"]["argv"] != shard["process"]["argv"]
 
     def test_a_router_beside_a_member_reports_the_mongos_binary(self) -> None:
-        """A mongos taking a mongod's version is a category error, not a skew.
+        """Assign the router its own mongos binary, not the mongod version beside it.
 
         And it is the case most likely to be read as an urgent upgrade: the router
         would report whatever mongod happened to be installed beside it.
@@ -226,7 +226,7 @@ class TestTheRecordsOfAMultiMongodHost:
         assert router["binary_version"] == MONGOS_VERSION
 
     def test_a_service_whose_process_is_gone_says_so(self) -> None:
-        """A stopped mongod beside a running one must not inherit its facts."""
+        """Keep a stopped mongod from inheriting facts from the running one beside it."""
         processes = [process(MEMBER_PORT)]
         processes.append(process(SHARD_PORT, pid=SHARD_PID))
 
@@ -247,7 +247,7 @@ class TestTheRecordsOfAMultiMongodHost:
         assert stopped["binary_version"] == DEFAULT_VERSION
 
     def test_the_single_mongod_host_is_unchanged(self) -> None:
-        """The common case must keep working, port on the command line or not."""
+        """Keep the common single-mongod case working, port on the command line or not."""
         record = probed("rs-node00", MEMBER_PORT, [process(None)])
 
         assert record["process"]["running"] is True
@@ -259,7 +259,7 @@ class TestBinaryVersionIsAskedOncePerProgram:
     """Assert a host running six mongods forks ``mongod --version`` once."""
 
     def test_a_cached_program_is_not_asked_again(self) -> None:
-        """The cache is the point: the version belongs to the binary, not the service."""
+        """Cache the version by binary, not by service, and skip asking again."""
         cache = {"mongod": MONGOD_VERSION}
 
         assert binary_version("mongod", cache) == MONGOD_VERSION
@@ -293,7 +293,7 @@ class TestBinaryVersionIsAskedOncePerProgram:
     ids=["member", "shard", "arbiter"],
 )
 def test_the_port_reaches_the_record_whatever_the_process_says(port: int) -> None:
-    """The target's own port stays on the record, matched or not.
+    """Keep the target's own port on the record whether or not a process matched.
 
     It is what a reader joins the record back to PMM's service with, so it can never
     be taken from the process that happened to match.

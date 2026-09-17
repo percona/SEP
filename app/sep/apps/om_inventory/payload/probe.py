@@ -368,15 +368,6 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
         excluded regardless of what the port filter below would otherwise say.
     :return: The processes that matched no target.
     """
-    # Built with explicit loops rather than comprehensions: python-minifier (the Tasks
-    # layer runs this file through it before dispatch, see build_uri's note above)
-    # aliases the set comprehension's loop variable onto the hoisted "pid" literal
-    # this function also reads, and the resulting ``UnboundLocalError`` reaches
-    # every real dispatch. It does not reproduce minifying this function alone —
-    # confirmed twice, independently, on two different pieces of it — only whole
-    # file, where hoist_literals shares "pid" and "port" across every function that
-    # reads them. ``test_find_unregistered_survives_minification`` below minifies
-    # the whole file for exactly that reason. Loops don't trigger the collision.
     registered_ports = set()
     for target in targets:
         port = target.get("port")
@@ -803,18 +794,21 @@ def collect_install_readiness():
             (name for binary, name in _PACKAGE_MANAGERS if shutil.which(binary)),
             None,
         ),
-        "data_dir_free_bytes": _free_bytes("/"),
+        "data_dir_free_bytes": _free_bytes("/var/lib"),
     }
 
 
 def _free_bytes(path):
     """Return the free byte count on the filesystem holding ``path``, or ``None``.
 
-    Measured at ``/`` rather than a database's own data directory: this runs before
-    an install decision is made, when no mongod has been installed yet to have a
-    ``dbPath`` of its own to measure. A coarser number now is what makes "is there
-    room to install here at all" answerable for a bare host; a per-database number
-    is a question for after an install decision, not before one.
+    Measured at ``/var/lib`` rather than a database's own data directory: this runs
+    before an install decision is made, when no mongod has been installed yet to
+    have a ``dbPath`` of its own to measure. ``/var/lib`` is where both package
+    families put that default anyway — ``/var/lib/mongo`` from the RPMs,
+    ``/var/lib/mongodb`` from the debs — and it exists on a bare host, so it names
+    the filesystem an install would land on without needing one. Measuring ``/``
+    instead would describe a different disk on any host that keeps ``/var`` on its
+    own filesystem.
 
     :param path: The path whose filesystem to measure.
     :return: The free byte count, or ``None`` if it could not be read.

@@ -43,7 +43,6 @@ the schema below is a bare string rather than
 and ``sqlalchemy_celery_beat`` makes the same trade with ``celery_schema``.
 """
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
@@ -70,9 +69,9 @@ OM_SCHEMA = "om_schema"
 # ``om.om_service`` would be a different table from SEP inventory's bare ``service``
 # even without the prefix wherever schemas are real: on PostgreSQL in production, and
 # on SQLite once the root conftest gives each connection a real ``om`` schema via
-# ``ATTACH``. But the real-MySQL and real-PostgreSQL test lanes translate *every*
-# declared schema token — ``om_schema`` included — into the same single per-worker
-# schema for teardown simplicity, which collapses ``om_schema.service`` onto
+# ``ATTACH``. But the real-PostgreSQL test lane translates *every* declared schema
+# token — ``om_schema`` included — into the same single per-worker schema for
+# teardown simplicity, which collapses ``om_schema.service`` onto
 # ``None.service`` and makes them the same physical table. That is not hypothetical
 # either: it produced a ``CREATE TABLE`` emitted twice for one name, the second call
 # failing as a duplicate, the first time this app's tables were ever exercised against
@@ -87,14 +86,14 @@ def _observed_document_type() -> Any:
     two models — SQLAlchemy binds a Column to exactly one Table — which is why the
     freshness mixin below declares types rather than columns.
 
-    :return: ``JSONB`` on PostgreSQL, plain ``JSON`` on every other dialect — which
-        includes MySQL, not only SQLite: ``JSON`` is the correct default to carve a
-        variant *out of*, since PostgreSQL is the odd one with a dedicated binary type.
+    :return: ``JSONB`` on PostgreSQL, plain ``JSON`` everywhere else: ``JSON`` is the
+        correct default to carve a variant *out of*, since PostgreSQL is the odd one
+        with a dedicated binary type.
     """
     return JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql")
 
 
-class ProbeRunStatus(StrEnum):
+class ProbeRunStatus(StrEnum):  # rst-literal-ok: "None answered" is the English word
     """Enumerate the states of one probe sweep.
 
     ``PARTIAL`` is the common steady state, not an alarm: the probe reaches only
@@ -178,11 +177,9 @@ class ObservedEntity(SQLModel):
         default_factory=dict,
         sa_type=_observed_document_type(),
         nullable=False,
-        # The parenthesised expression-default form, not a bare literal: MySQL 8
-        # rejects a plain ``DEFAULT '{}'`` on JSON/BLOB/TEXT/GEOMETRY columns
-        # (error 1101), but accepts ``DEFAULT ('{}')`` since 8.0.13. PostgreSQL
-        # treats the parentheses as ordinary grouping, so the same clause resolves
-        # to the identical literal there — one server_default, both dialects.
+        # Parenthesised rather than bare: on both dialects SEP runs the parentheses
+        # are ordinary grouping, so this resolves to the same ``{}`` default either
+        # way and there is nothing to gain by unwrapping it.
         sa_column_kwargs={"server_default": text("('{}')")},
     )
     first_seen_at: UTCDatetime = SQLField(
@@ -216,12 +213,10 @@ class OmHost(ObservedEntity, table=True):
     Plain ``str``, not ``uuid``: PMM's ids are usually UUIDs but not always. The PMM
     server's own node is the literal string ``pmm-server`` in every deployment, and a
     ``uuid`` column would reject the one node every installation has. Left as SQLModel's
-    inferred ``AutoString`` rather than pinned to ``sa_type=Text``, since this column is
-    a primary key: MySQL refuses to index a ``TEXT``/``BLOB`` column without an explicit
-    key length (error 1170), which ``AutoString`` already works around by falling back
-    to ``VARCHAR(255)`` on that one dialect while staying unbounded everywhere else —
-    the same type :attr:`app.inventory.models.NodeBase.external_id` uses for the same
-    reason.
+    inferred ``AutoString`` rather than pinned to ``sa_type=Text``: it is what SQLModel
+    gives a ``str`` primary key, it stays unbounded on both dialects SEP runs, and it is
+    the same type :attr:`app.inventory.models.NodeBase.external_id` carries for its own
+    external identifier.
 
     The consequence to accept openly is that if PMM re-registers a node under a new
     id, OM gets a second row and the old one stays — there is no host retention, only
@@ -238,7 +233,7 @@ class OmHost(ObservedEntity, table=True):
     is genuinely taken — and that table is also named plain ``service`` with no
     schema of its own (``schema=None``), which OM's ``service`` would collide with
     the moment anything collapses schemas into one physical namespace, as the
-    real-MySQL/real-PostgreSQL test lanes deliberately do for worker isolation.
+    real-PostgreSQL test lane deliberately does for worker isolation.
     Prefixing both avoids the class collision and the table collision the same
     way. The pair is kept symmetrical.
 
@@ -313,7 +308,7 @@ class OmService(ObservedEntity, table=True):
             # Qualified with the symbolic schema: the FK target is resolved against
             # the *declared* name, and the connection translates both sides together.
             # AutoString, not Text: this column carries ix_om_service_node_id, and
-            # MySQL refuses to index TEXT/BLOB without an explicit key length.
+            # matches the AutoString primary key it references on om_host.
             ForeignKey(f"{OM_SCHEMA}.om_host.node_id", ondelete="CASCADE"),
             nullable=False,
         )
@@ -407,16 +402,16 @@ class ProbeRun(BaseUUIDSQLModel, table=True):
     # A run reads its nodes all at once or not at all, and a per-node table would
     # need its own retention story on top of the run's. ``JSON`` is the base type
     # here, not ``postgresql.JSONB``: PostgreSQL is the dialect that gets a variant
-    # carved out of it, not the default every other dialect (MySQL included) is
-    # made to carve SQLite out of.
+    # carved out of it, rather than the default every other dialect is made to
+    # carve SQLite out of.
     nodes: list[dict[str, Any]] = SQLField(
         default_factory=list,
         sa_column=Column(
             JSON().with_variant(postgresql.JSONB(astext_type=Text()), "postgresql"),
             nullable=False,
-            # Parenthesised expression default, not a bare literal — see
-            # ObservedEntity.observed's own server_default for why: MySQL 8 rejects
-            # a plain DEFAULT '[]' on JSON columns (error 1101).
+            # Parenthesised rather than bare, like ObservedEntity.observed's own
+            # server_default: the parentheses are ordinary grouping and resolve to
+            # the same [] default.
             server_default=text("('[]')"),
         ),
     )
@@ -490,8 +485,8 @@ class ProbeRunResponse(BaseModel):
 
     run_id: UUID
     status: str
-    started_at: datetime
-    finished_at: datetime | None = None
+    started_at: UTCDatetime
+    finished_at: UTCDatetime | None = None
     counts: ProbeCounts
     scope: list[str] | None = None
     error: str | None = None
@@ -587,7 +582,7 @@ class ProbeRunAccepted(BaseModel):
 
     run_id: UUID
     status: str
-    started_at: datetime
+    started_at: UTCDatetime
     scope: list[str] | None = None
 
 
@@ -621,10 +616,10 @@ class ServiceResponse(BaseModel):
     port: int | None = None
     role: str | None = None
     observed: dict[str, Any] = Field(default_factory=dict)
-    first_seen_at: datetime
-    last_attempt_at: datetime | None = None
-    last_success_at: datetime | None = None
-    failing_since: datetime | None = None
+    first_seen_at: UTCDatetime
+    last_attempt_at: UTCDatetime | None = None
+    last_success_at: UTCDatetime | None = None
+    failing_since: UTCDatetime | None = None
     consecutive_failures: int = 0
     last_error: str | None = None
 
@@ -658,10 +653,10 @@ class HostResponse(BaseModel):
     address: str | None = None
     executor_host: str | None = None
     observed: dict[str, Any] = Field(default_factory=dict)
-    first_seen_at: datetime
-    last_attempt_at: datetime | None = None
-    last_success_at: datetime | None = None
-    failing_since: datetime | None = None
+    first_seen_at: UTCDatetime
+    last_attempt_at: UTCDatetime | None = None
+    last_success_at: UTCDatetime | None = None
+    failing_since: UTCDatetime | None = None
     consecutive_failures: int = 0
     last_error: str | None = None
     services: list[ServiceResponse] = Field(default_factory=list)

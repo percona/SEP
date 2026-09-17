@@ -285,14 +285,10 @@ def test_pool_field_bounds_rejected_at_config_load(field_kwargs):
         DatabaseOptions(NAME="test.db", **field_kwargs)
 
 
-@pytest.mark.parametrize(
-    "engine",
-    [pytest.param(AsyncDatabaseEngine.SQLITE, id="sqlite")],
-)
-def test_schema_translate_map_values_cleared_off_postgresql(engine):
+def test_schema_translate_map_values_cleared_off_postgresql():
     """Keep the declared tokens off PostgreSQL, but null every target schema."""
     db_options = DatabaseOptions(
-        ENGINE=engine,
+        ENGINE=AsyncDatabaseEngine.SQLITE,
         NAME="testdb",
         HOST="localhost",
         SCHEMA_TRANSLATE_MAP={"om_schema": "om", "beat_schema": "celery"},

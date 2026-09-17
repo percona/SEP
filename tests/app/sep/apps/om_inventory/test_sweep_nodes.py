@@ -34,6 +34,7 @@ from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import ExecutorState, MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
 from app.sep.apps.om_inventory.service import enumerate_estate, STARTUP_RETRIES, sweep
+from tests.app.sep.apps.om_inventory.conftest import FREE_BYTES
 
 OBSERVED_AT = "2026-08-12T12:00:00+00:00"
 
@@ -50,8 +51,6 @@ SHARED_HOST_SECONDS = 8.25
 TASK_HISTORY_ID = 4711
 #: One refused connection then an answer: the cold start this workspace measured.
 RETRIED_ONCE = 2
-#: A host's free root-filesystem space, as ``collect_install_readiness`` would report it.
-FREE_BYTES = 107374182400
 
 #: A probe record shaped like the payload's NDJSON, trimmed to the fields asserted.
 RECORD: dict[str, Any] = {
@@ -206,7 +205,7 @@ async def test_records_the_host_it_probed_and_the_services_on_it() -> None:
 
 @pytest.mark.asyncio
 async def test_an_answering_service_s_role_is_classified() -> None:
-    """The role a sweep read off the record reaches the outcome, keyed by PMM's id."""
+    """Classify an answering service's role from the record, keyed by PMM's id."""
     record = {**RECORD, "process": {**RECORD["process"], "running": True}}
     outcome = await run_sweep(
         [mapped("svc-a", "node00", NodeResolution.NAME)],
@@ -222,7 +221,7 @@ async def test_an_answering_service_s_role_is_classified() -> None:
 
 @pytest.mark.asyncio
 async def test_a_host_with_no_database_is_in_the_receipt() -> None:
-    """The case the flat service list could not show at all.
+    """Include a host with no database, which a flat service list could not show.
 
     A machine carrying a PMM client and no database is what OM most exists to
     describe, and a service-oriented receipt omitted it however many times it was
@@ -249,7 +248,7 @@ async def test_a_host_with_no_database_is_in_the_receipt() -> None:
 
 @pytest.mark.asyncio
 async def test_a_dispatched_host_s_receipt_carries_its_task_history_id() -> None:
-    """The pointer F8's follow-up needs to stop an abandoned run's allocations.
+    """Carry the task history id a follow-up needs to stop an abandoned run's allocations.
 
     The receipt stays outcomes-only, but the task history id is how a reader still
     reaches the raw output of an attempt the receipt itself does not keep.
@@ -342,7 +341,7 @@ async def test_a_service_pmm_does_not_know_is_still_listed() -> None:
 
 @pytest.mark.asyncio
 async def test_a_failed_host_s_error_is_kept_for_its_estate_row() -> None:
-    """The dispatch's own error has to survive as far as ``om.host.last_error``.
+    """Carry the dispatch's own error as far as ``om.host.last_error``.
 
     It reached the receipt and stopped there: the estate row was written with a
     hardcoded "returned no probe record" for a timeout, a 409, a payload crash and a
@@ -368,7 +367,7 @@ async def test_a_failed_host_s_error_is_kept_for_its_estate_row() -> None:
 
 @pytest.mark.asyncio
 async def test_a_host_that_answered_nothing_at_all_still_says_something() -> None:
-    """A dispatch that succeeded and printed no host line has no error of its own.
+    """State the absence as a finding instead of leaving a null error.
 
     That absence *is* the finding, so it needs wording rather than a null: the queue
     item ran, the payload said nothing, and nobody can act on an empty column.
@@ -402,7 +401,7 @@ async def test_a_host_that_answered_carries_no_error() -> None:
 
 @pytest.mark.asyncio
 async def test_the_host_document_carries_the_installed_binary() -> None:
-    """The install decision is about a machine, and it has no service row.
+    """Carry the installed binary version on the host document, not a service row.
 
     A host carrying a PMM client and no database is the case OM exists for. The
     payload collects its installed version and used to have it dropped here, because
@@ -446,7 +445,7 @@ async def test_the_host_document_carries_the_installed_binary() -> None:
 
 @pytest.mark.asyncio
 async def test_one_dispatch_is_timed_once_not_per_service() -> None:
-    """A host's duration belongs to the host, and is reported there once.
+    """Report a host's duration once on the host, not per service.
 
     It used to be copied onto every service the host served, which read as several
     measurements of several things when it was one measurement of one dispatch.
@@ -490,7 +489,7 @@ class TestTheColdStartRace:
 
     @pytest.mark.asyncio
     async def test_a_refused_connection_is_waited_out(self) -> None:
-        """The first attempt fails, the next one answers, the run is none the wiser."""
+        """Wait out a refused connection so the run never notices the retry."""
         base = "app.sep.apps.om_inventory.service"
         services = AsyncMock(
             side_effect=[

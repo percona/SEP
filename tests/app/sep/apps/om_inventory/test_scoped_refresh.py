@@ -26,8 +26,8 @@ flight. Keep that and a scoped refresh is useless exactly when the estate is bus
 because the ten-minute schedule is often mid-sweep. Two runs collide only when they
 would touch the same host — and a full refresh touches all of them.
 
-**Nothing outside the scope is written.** This is where §5.4's "only a run that
-attempted an entity touches its timestamps" stops being a principle and starts being
+**Nothing outside the scope is written.** This is where "only a run that attempted
+an entity touches its timestamps" stops being a principle and starts being
 load-bearing: get it wrong and refreshing one host marks the rest of the estate
 failed, which is worse than not having the feature.
 """
@@ -154,7 +154,7 @@ class TestNarrowToScope:
         assert [m.service.name for m in scoped_mapped] == ["db00"]
 
     def test_an_unknown_id_narrows_to_nothing_rather_than_everything(self) -> None:
-        """The dangerous failure is a scope that silently means "all".
+        """Narrow to nothing, not everything, when the scope id no longer matches any host.
 
         The endpoint rejects an unknown id before this runs, so reaching here means
         the estate changed underneath the request — and refreshing nothing is the
@@ -174,7 +174,7 @@ class TestTerminalStatus:
     """Assert what counts as a successful run now that hosts can be probed alone."""
 
     def test_a_host_with_no_database_that_answered_is_a_success(self) -> None:
-        """The case that made this wrong: a scoped refresh of a pmm-client host.
+        """Report success when a pmm-client host answers but resolves no services.
 
         It resolves no services, because there are none, and judging on services
         alone reported ``FAILED`` for a run that did exactly what it was asked.
@@ -196,14 +196,14 @@ class TestTerminalStatus:
         assert terminal_status(outcome) is ProbeRunStatus.PARTIAL
 
     def test_reaching_nothing_at_all_is_a_failure(self) -> None:
-        """No host answered and no service resolved: OM's own plumbing is down.
+        """Fail when no host answers and no service resolves.
 
         That is the condition the probe exists to surface, so it must stay loud.
         """
         assert terminal_status(SweepOutcome()) is ProbeRunStatus.FAILED
 
     def test_orphans_alone_do_not_fail_a_run(self) -> None:
-        """A service with no executor is an estate fact, not a sweep failure."""
+        """Treat an orphaned service as an estate fact, not a sweep failure."""
         outcome = SweepOutcome(
             orphaned=3,
             dispatched={"a"},
@@ -249,7 +249,7 @@ class TestTriggerScope:
     async def test_no_body_means_the_whole_estate(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """The scheduled sweep and a bare POST take the same path.
+        """Take the same path as the scheduled sweep when the POST body is empty.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -277,7 +277,7 @@ class TestTriggerScope:
     async def test_a_full_estate_run_is_sql_null_not_json_null(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """A full sweep has to store SQL NULL, or `scope IS NULL` finds no full sweeps.
+        """Store SQL NULL for a full sweep's scope, not the JSON null literal.
 
         SQLAlchemy's JSON types store a Python ``None`` as the JSON scalar ``null``
         unless told otherwise, and the Python side reads back ``None`` either way —
@@ -320,7 +320,7 @@ class TestConflict:
     async def test_two_different_hosts_do_not_conflict(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """The whole point: refreshing one host must not wait on another.
+        """Allow refreshing one host while a different host's run is in flight.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -335,7 +335,7 @@ class TestConflict:
     async def test_the_same_host_conflicts(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """Two runs probing one host at once is the case worth refusing.
+        """Refuse two runs that probe the same host at once.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -350,7 +350,7 @@ class TestConflict:
     async def test_a_full_refresh_conflicts_with_a_scoped_one(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """A run over everything overlaps every scope by definition.
+        """Treat a full refresh as conflicting with an existing scoped run.
 
         :param api: The authenticated client.
         :param two_hosts: The populated session.
@@ -380,7 +380,7 @@ class TestConflict:
     async def test_an_abandoned_run_is_reaped_rather_than_blocking_forever(
         self, api: AsyncClient, two_hosts: AsyncSession
     ) -> None:
-        """A crashed worker leaves a RUNNING row nothing else will ever advance.
+        """Reap an abandoned run instead of letting it block refreshes forever.
 
         Without the reaper that row wedges the app permanently, which is a bug this
         app has already had once.
@@ -416,7 +416,7 @@ class TestHostCounters:
     async def test_a_host_only_refresh_reports_what_it_reached(
         self, session: AsyncSession
     ) -> None:
-        """A host with no database produces non-zero counters.
+        """Produce non-zero host counters even though the host has no database.
 
         :param session: The database session.
         """
@@ -456,7 +456,7 @@ class TestHostCounters:
     async def test_a_host_with_no_executor_counts_but_is_not_probeable(
         self, session: AsyncSession
     ) -> None:
-        """``total`` and ``probeable`` differ, which is the point of having both.
+        """Count a host with no executor as total but not as probeable.
 
         The gap between them is the estate nothing can be run on - a fact about
         onboarding rather than a failure of the sweep, and one a single "hosts" count
@@ -516,7 +516,7 @@ class TestTheScheduleRespectsSingleFlight:
     async def test_a_second_full_sweep_is_skipped_not_run(
         self, session: AsyncSession
     ) -> None:
-        """The whole estate overlaps the whole estate.
+        """Flag a second full sweep as a conflict with the one already running.
 
         :param session: The database session.
         """
@@ -531,7 +531,7 @@ class TestTheScheduleRespectsSingleFlight:
 
     @pytest.mark.asyncio
     async def test_a_run_does_not_refuse_itself(self, session: AsyncSession) -> None:
-        """The trigger endpoint creates the row before dispatching.
+        """Exclude a run's own id so it does not conflict with itself.
 
         Without excluding its own id the task would find that row, conclude a sweep
         was already in flight, and skip every run started through the API - which is
@@ -551,7 +551,7 @@ class TestTheScheduleRespectsSingleFlight:
     async def test_disjoint_scopes_do_not_block_each_other(
         self, session: AsyncSession
     ) -> None:
-        """Two one-host refreshes of different hosts are not a conflict.
+        """Allow disjoint one-host scopes to run without conflicting.
 
         Single-flight is per host precisely so a ten-minute schedule does not refuse
         the refresh someone wants.
@@ -570,7 +570,7 @@ class TestTheScheduleRespectsSingleFlight:
     async def test_an_abandoned_run_is_reaped_rather_than_honoured(
         self, session: AsyncSession
     ) -> None:
-        """A crashed worker must not wedge the app permanently.
+        """Reap an abandoned run rather than honour it as still in flight.
 
         :param session: The database session.
         """
@@ -621,7 +621,7 @@ class TestTwoRunsRacingForTheSameHosts:
 
     @pytest.mark.asyncio
     async def test_the_older_run_proceeds(self, session: AsyncSession) -> None:
-        """The one that claimed the hosts first is not blocked by the newcomer.
+        """Let the older run proceed without yielding to the newcomer.
 
         :param session: The database session.
         """
@@ -661,7 +661,7 @@ class TestTwoRunsRacingForTheSameHosts:
     async def test_rows_created_in_the_same_tick_are_still_ordered(
         self, session: AsyncSession
     ) -> None:
-        """Two rows can share a timestamp, and a tie must not let both proceed.
+        """Break a tie between same-timestamp rows so only one proceeds.
 
         Which of the two wins does not matter; that they cannot both win does. The id
         is the tie-break because both sides can read it.
@@ -688,7 +688,7 @@ class TestTwoRunsRacingForTheSameHosts:
     async def test_a_run_still_yields_to_one_already_dispatching(
         self, session: AsyncSession
     ) -> None:
-        """The guard the race fix must not undo.
+        """Keep the newer run yielding to one already dispatching.
 
         A sweep 30 seconds into dispatching owns its hosts; a scheduled run arriving
         on top of it enqueues the same job for the same host, the Tasks layer refuses
@@ -713,7 +713,7 @@ class TestTwoRunsRacingForTheSameHosts:
     async def test_the_endpoint_still_refuses_a_request_outright(
         self, session: AsyncSession
     ) -> None:
-        """No ``exclude``, no tie-break: a caller gets a 409 it can act on.
+        """Refuse the request outright with no exclude and no tie-break.
 
         The endpoint checks before creating a row, so it has nothing to compare with
         and nothing to gain from comparing: telling the caller the hosts are held is a
@@ -745,7 +745,7 @@ class TestPruningKeepsWhatIsStillRunning:
     async def test_a_running_row_survives_however_many_are_newer(
         self, session: AsyncSession
     ) -> None:
-        """The in-flight run is the oldest and must still be there at the end.
+        """Keep the oldest running row even though newer rows exist.
 
         :param session: The database session.
         """

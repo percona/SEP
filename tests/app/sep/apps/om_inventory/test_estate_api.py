@@ -29,6 +29,8 @@ knows about returns on the next sweep — and the tests say so, because a reader
 mistakes it for suppression will use it that way exactly once.
 """
 
+from datetime import datetime
+
 import pytest
 import pytest_asyncio
 from fastapi import status
@@ -90,7 +92,7 @@ class TestHosts:
     async def test_lists_every_host_with_its_services_nested(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """A host carries its services, so a consumer needs one request.
+        """Nest each host's services in the listing, so one request suffices.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -106,10 +108,36 @@ class TestHosts:
         assert hosts[NODE_EMPTY]["services"] == []
 
     @pytest.mark.asyncio
+    async def test_a_host_and_its_nested_service_both_carry_an_offset(
+        self, api: AsyncClient, estate: AsyncSession
+    ) -> None:
+        """Serialize every estate timestamp as aware UTC, host and nested service alike.
+
+        The two projections are separate models reading the same columns, so one can
+        carry ``UTCDatetime`` while the other keeps a bare ``datetime`` and nothing
+        fails anywhere. The divergence only shows on a dialect whose driver hands back
+        naive values — the SQLite these tests run on, and the one ``settings.yaml``
+        ships — which is why a sweep against PostgreSQL cannot stand in for this.
+
+        :param api: The authenticated client.
+        :param estate: The populated session.
+        """
+        response = await api.get(f"{BASE}/hosts")
+
+        assert response.status_code == status.HTTP_200_OK
+        host = next(
+            item for item in response.json()["items"] if item["node_id"] == NODE_WITH_DB
+        )
+
+        assert datetime.fromisoformat(host["first_seen_at"]).tzinfo is not None
+        nested = host["services"][0]
+        assert datetime.fromisoformat(nested["first_seen_at"]).tzinfo is not None
+
+    @pytest.mark.asyncio
     async def test_has_service_false_finds_the_hosts_with_no_database(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """The question the host table exists to answer.
+        """Filter to hosts with no database via ``has_service=false``.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -122,7 +150,7 @@ class TestHosts:
     async def test_has_service_true_is_the_ordinary_estate_view(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """The same list, inverted — which is why it is a filter, not an endpoint.
+        """Invert the filter to return only hosts that do have a database.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -135,7 +163,7 @@ class TestHosts:
     async def test_executor_true_excludes_a_registered_but_down_agent(
         self, api: AsyncClient, session: AsyncSession
     ) -> None:
-        """``?executor=`` means *usable*, not merely matched.
+        """Treat ``?executor=`` as *usable*, not merely matched.
 
         A host whose agent is registered but unreachable, or reachable with an
         unhealthy driver, has ``executor_host`` set — matching is against every known
@@ -171,7 +199,7 @@ class TestHosts:
     async def test_failing_true_finds_the_host_with_no_recent_success(
         self, api: AsyncClient, session: AsyncSession
     ) -> None:
-        """``?failing=`` is a column predicate, pushed into the query like the rest.
+        """Push ``?failing=`` into the query as a column predicate, like the rest.
 
         :param api: The authenticated client.
         :param session: The database session.
@@ -204,7 +232,7 @@ class TestHosts:
     async def test_total_counts_every_matching_host_not_only_the_page(
         self, api: AsyncClient, session: AsyncSession
     ) -> None:
-        """A caller must be able to tell "the whole estate" from "this page of it".
+        """Let a caller tell "the whole estate" from "this page of it".
 
         :param api: The authenticated client.
         :param session: The database session.
@@ -234,7 +262,7 @@ class TestHosts:
     async def test_one_host_by_pmms_node_id(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """The path is the id every consumer already holds.
+        """Use the node id every consumer already holds as the path.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -278,7 +306,7 @@ class TestServices:
     async def test_filters_by_host(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """``?node_id=`` is why there is no ``/hosts/{id}/services`` collection.
+        """Replace a ``/hosts/{id}/services`` collection with ``?node_id=``.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -305,7 +333,7 @@ class TestServices:
     async def test_failing_true_finds_the_service_with_no_recent_success(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """``?failing=`` is a column predicate, pushed into the query like ``node_id``.
+        """Push ``?failing=`` into the query as a column predicate, like ``node_id``.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -335,7 +363,7 @@ class TestDelete:
     async def test_deleting_a_host_takes_its_services_with_it(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """The cascade is the database's, so no service can outlive its host.
+        """Delegate the cascade to the database, so no service outlives its host.
 
         :param api: The authenticated client.
         :param estate: The populated session.
@@ -352,7 +380,7 @@ class TestDelete:
     async def test_deleting_a_service_leaves_its_host(
         self, api: AsyncClient, estate: AsyncSession
     ) -> None:
-        """A stale service is not a reason to forget the machine it ran on.
+        """Keep the host when only a stale service on it is deleted.
 
         :param api: The authenticated client.
         :param estate: The populated session.

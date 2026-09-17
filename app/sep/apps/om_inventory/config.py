@@ -68,7 +68,7 @@ class OmInventorySettings(BaseYamlSettings):
         unregisters the periodic job regardless of ``ENABLED``, leaving the trigger
         endpoint as the only way facts are refreshed.
     :param PROBE_DATABASE: Whether the payload connects to mongod and runs database
-        commands. False collects process and OS facts only, which needs no credentials
+        commands. ``False`` collects process and OS facts only, which needs no credentials
         — and still yields ``installed_version``, the field this app exists for.
     :param CREDENTIALS_PATH: Node-side file holding the MongoDB URI to take credentials
         from. ``None`` falls back to ``~/.mongodb_uri``, the same file the PBM payloads

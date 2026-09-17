@@ -73,7 +73,7 @@ class TestWhyThisEndpointExists:
     """Assert the premise: the settings router is closed to PMM's principal."""
 
     def test_the_sep_token_principal_is_not_an_admin(self) -> None:
-        """``--sep-token`` cannot reach ``/api/sep/admin/settings``.
+        """Confirm ``--sep-token`` cannot reach ``/api/sep/admin/settings``.
 
         Not a statement about the current deployment's configuration — the service
         principal is constructed in code with no ``is_admin`` argument, so this holds
@@ -95,7 +95,7 @@ class TestTheAppIsActuallyWiredIn:
     """
 
     def test_the_declaration_is_reachable_from_the_package(self) -> None:
-        """``APP_OWNED_SETTINGS_CLASSES`` must be re-exported from ``__init__``.
+        """Require ``APP_OWNED_SETTINGS_CLASSES`` to be re-exported from ``__init__``.
 
         The collector does ``getattr(import_module(plugin.module_name), ...)`` against
         the app *package*, so a declaration that only exists in
@@ -109,7 +109,7 @@ class TestTheAppIsActuallyWiredIn:
 
     @pytest.mark.asyncio
     async def test_a_schedule_change_re_seeds_the_beat_row(self) -> None:
-        """``SCHEDULE`` must be wired to the beat re-seed callback.
+        """Wire ``SCHEDULE`` to the beat re-seed callback.
 
         The proxy holding a new interval is not the same thing as beat running on it:
         beat reads ``celery_periodictask``, which only changes when
@@ -152,7 +152,7 @@ class TestGetConfig:
     async def test_the_schedule_is_listed_as_leaves_not_as_one_object(
         self, api: AsyncClient
     ) -> None:
-        """``SCHEDULE`` arrives split into ``SCHEDULE__every`` / ``SCHEDULE__period``.
+        """Split ``SCHEDULE`` into ``SCHEDULE__every`` and ``SCHEDULE__period`` leaves.
 
         The LIST projection expands any nested-model field into its leaves, so a
         caller reading ``/config`` never sees a key literally named ``SCHEDULE`` —
@@ -174,7 +174,7 @@ class TestGetConfig:
     async def test_credentials_path_is_redacted_for_this_routes_audience(
         self, api: AsyncClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``CREDENTIALS_PATH`` reads as ``None`` here no matter what is deployed.
+        """Redact ``CREDENTIALS_PATH`` to ``None`` here no matter what is deployed.
 
         This route carries no ``@require_minimum_role``, so its only gate is
         ``IsApiAuthenticated`` — any signed-in SEP user, not only admins. The same
@@ -203,7 +203,7 @@ class TestPatchConfig:
     async def test_a_schedule_change_takes_effect_on_the_proxy(
         self, api: AsyncClient
     ) -> None:
-        """A PATCH is visible through the settings proxy without a restart.
+        """Apply a PATCH to the settings proxy immediately, without a restart.
 
         The point of the whole registration: the running process reads the new value
         immediately, because the handler republishes the snapshot inline rather than
@@ -222,7 +222,7 @@ class TestPatchConfig:
     async def test_a_single_schedule_leaf_can_be_changed_on_its_own(
         self, api: AsyncClient
     ) -> None:
-        """The leaf spelling GET returns is also accepted by PATCH.
+        """Accept the leaf spelling GET returns as a PATCH key too.
 
         Both forms work, and the asymmetry runs the other way: only the whole-object
         form can express ``null``. A UI driven off the GET key set therefore needs the
@@ -242,7 +242,7 @@ class TestPatchConfig:
     async def test_a_null_schedule_unregisters_the_sweep(
         self, api: AsyncClient
     ) -> None:
-        """``SCHEDULE: null`` is a legitimate value, not a missing one.
+        """Treat ``SCHEDULE: null`` as a legitimate value, not a missing one.
 
         It is how an operator says "trigger only", and a nullable union is exactly the
         shape a coercion layer is most likely to mishandle — so it is asserted rather
@@ -259,7 +259,7 @@ class TestPatchConfig:
     async def test_a_change_is_persisted_as_an_override_row(
         self, api: AsyncClient, session: AsyncSession
     ) -> None:
-        """The change survives the process, which is what makes it configuration.
+        """Persist a change as an override row that survives the process.
 
         :param api: The authenticated client.
         :param session: The database session.
@@ -277,7 +277,7 @@ class TestPatchConfig:
     async def test_a_bad_value_is_refused_by_the_field_constraint(
         self, api: AsyncClient
     ) -> None:
-        """``PositiveInt`` is enforced on the way in, not at the next sweep.
+        """Enforce ``PositiveInt`` on the way in, not at the next sweep.
 
         A zero here would make ``MAX_CONCURRENT_PROBES`` a semaphore that never admits
         anyone, and the sweep would hang rather than fail.
@@ -296,7 +296,7 @@ class TestPatchConfig:
     async def test_repo_url_is_restricted_to_http_and_https(
         self, api: AsyncClient
     ) -> None:
-        """A ``file:`` URL is refused, not handed to ``urllib.request`` as-is.
+        """Refuse a ``file:`` URL rather than handing it to ``urllib.request`` as-is.
 
         ``REPO_URL`` is fetched by the payload to prove a host can reach Percona's
         repository. A plain ``str`` would accept any scheme ``urllib.request``
@@ -327,7 +327,7 @@ class TestPatchConfig:
 
     @pytest.mark.asyncio
     async def test_credentials_path_is_not_settable(self, api: AsyncClient) -> None:
-        """A cold field is refused, not silently ignored.
+        """Reject a write to a cold field rather than silently ignoring it.
 
         ``CREDENTIALS_PATH`` names a file read on every database host and handed to a
         driver as a URI. Overridable, it would widen "configure this app" into "read a
@@ -383,7 +383,7 @@ class TestPatchConfig:
 
     @pytest.mark.asyncio
     async def test_an_unknown_key_is_refused(self, api: AsyncClient) -> None:
-        """A typo does not become a stored row nobody reads.
+        """Refuse an unknown key rather than storing it as a row nobody reads.
 
         :param api: The authenticated client.
         """

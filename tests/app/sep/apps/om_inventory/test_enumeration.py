@@ -128,7 +128,7 @@ class TestScope:
     """Assert which nodes become rows and which are left out."""
 
     def test_host_with_an_executor_and_no_database_is_in_scope(self) -> None:
-        """The empty host is the point of the host table, not an edge case.
+        """Treat the empty host as the point of the host table, not an edge case.
 
         A service-driven enumeration cannot produce this row at all: there is no
         service to derive it from. Losing it would mean OM could never answer "where
@@ -169,7 +169,7 @@ class TestScope:
         assert hosts == []
 
     def test_node_without_a_pmm_id_is_skipped(self) -> None:
-        """An unkeyable node cannot be a row.
+        """Skip a node with no PMM id rather than inventing a row for it.
 
         PMM's node id is the primary key and the id the trigger passes; a row without
         one could not be joined, refreshed or targeted. The usual cause is an
@@ -188,7 +188,7 @@ class TestUnusableExecutors:
     """Assert a broken executor keeps its host in the estate rather than dropping it."""
 
     def test_a_host_whose_executor_is_down_stays_in_scope(self) -> None:
-        """A machine does not leave the estate because its Nomad agent stopped.
+        """Keep a machine in the estate even though its Nomad agent stopped.
 
         Scope is decided on whether an executor *matched*, not on whether it works.
         Deciding it on usability would make a host disappear from the inventory at
@@ -237,7 +237,7 @@ class TestExecutorMatching:
         assert hosts[0].resolution is NodeResolution.NAME
 
     def test_falls_back_to_address(self) -> None:
-        """A Nomad client registered under a different name still serves the host."""
+        """Fall back to matching by address when a Nomad client uses a different name."""
         hosts = build_hosts(
             [node("db00", "10.0.0.1")], [], executors({"nomad-client-7": "10.0.0.1"})
         )
@@ -246,7 +246,7 @@ class TestExecutorMatching:
         assert hosts[0].resolution is NodeResolution.ADDRESS
 
     def test_never_falls_back_to_an_arbitrary_host(self) -> None:
-        """An unmatched node is orphaned, not assigned to whatever is available.
+        """Leave an unmatched node orphaned instead of assigning it to whatever is available.
 
         ``BaseTaskSyncer.get_task_target`` does fall back with strict matching off,
         which here would mean probing one machine and recording the answers against
@@ -285,7 +285,7 @@ class TestInventoryHost:
         ids=["usable", "unreachable", "driver-unhealthy", "no-executor"],
     )
     def test_has_executor(self, state: ExecutorState | None, *, expected: bool) -> None:
-        """``has_executor`` decides whether a probe is dispatched, so it means usable.
+        """Gate probe dispatch on has_executor, which means usable, not merely matched.
 
         A matched-but-unusable executor answering ``True`` here would produce a
         dispatch that waits out its timeout instead of a row saying why the host
@@ -338,10 +338,10 @@ class TestInventoryHost:
         reachable: bool,
         driver_healthy: bool,
     ) -> None:
-        """The three ways a host is unprobeable are three different rows.
+        """Split the three ways a host is unprobeable into three different rows.
 
-        This is the whole point of §11's split. "Nothing can run here" was one
-        outcome and is now three: never onboarded, onboarded and down, onboarded and
+        This is the whole point of the split. "Nothing can run here" is one outcome
+        split into three: never onboarded, onboarded and down, onboarded and
         broken. They need different people to fix them, so collapsing them sends the
         reader to the wrong place two times in three.
 
@@ -367,7 +367,7 @@ class TestInventoryHost:
         }
 
     def test_executor_document_carries_the_backend_reason(self) -> None:
-        """The reason travels with the row, so the estate view is self-explanatory."""
+        """Carry the backend reason with the row so the estate view is self-explanatory."""
         host = InventoryHost(
             node_id="id",
             name="db00",
@@ -401,7 +401,7 @@ class TestDuplicateRegistrations:
 
     @pytest.mark.asyncio
     async def test_the_usable_registration_wins_whatever_the_order(self) -> None:
-        """A live registration beats a stale one, listed before it or after it."""
+        """Select the live registration over a stale one regardless of listing order."""
         for entries in (
             [_state("node00", reachable=False), _state("node00", reachable=True)],
             [_state("node00", reachable=True), _state("node00", reachable=False)],
@@ -415,7 +415,7 @@ class TestDuplicateRegistrations:
 
     @pytest.mark.asyncio
     async def test_all_unusable_still_reports_one(self) -> None:
-        """A genuinely down host keeps a row, or the split loses the case it exists for."""
+        """Keep a row for a genuinely down host, or the split loses its own case."""
         api = MagicMock()
         api.get = AsyncMock(
             return_value=[
