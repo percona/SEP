@@ -8,9 +8,9 @@
 # service_type: postgresql
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
@@ -21,7 +21,7 @@
 #  - name: log-file
 #    type: str
 #    label: Log file path
-#    description: The path to your PostgreSQL log file.
+#    description: The path to your PostgreSQL log file. Detected from the running server when left empty.
 #    placeholder: /var/log/postgresql/postgresql-16-main.log
 #  - name: output
 #    type: str
@@ -30,13 +30,13 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # atw:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
@@ -59,12 +59,12 @@ DBNAME_ARG="${PGDATABASE:-postgres}"
 usage() {
     local -i exit_code="${1:-0}"
     cat << EOS
-Usage: $(basename "$0") --time "<YYYY-MM-DD HH:MM:SS>" [--minutes <N>] [OPTIONS]
+Usage: $(basename "$0") --time "<YYYY-MM-DDTHH:MM:SS>" [--minutes <N>] [OPTIONS]
 
 Extract PostgreSQL log entries around a given timestamp.
 
 Options:
-  --time "<YYYY-MM-DD HH:MM:SS>"  Central timestamp (required).
+  --time "<YYYY-MM-DDTHH:MM:SS>"  Central timestamp (required).
   --minutes N                      Minutes before/after to include (default: ${DEFAULT_MINUTES}).
   --log-file <path>                PostgreSQL log file (auto-detected if not provided).
   --output <stdout|file>           Output destination (default: stdout).

@@ -17,6 +17,7 @@
 
 from collections.abc import Iterator
 from unittest.mock import AsyncMock
+from urllib.parse import urlparse
 
 import pytest
 from fastapi import status
@@ -428,10 +429,15 @@ class TestTasksSettingsNestedOverrides:
         session: AsyncSession,
     ) -> None:
         """Assert deleting a nested override removes its row and returns 204."""
-        admin_test_client.patch(
+        patched = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__TIMEOUT": 30},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        assert await SettingsOverrideManager.list(
+            session, setting_class=TASKS_SETTINGS_TOKEN
+        )
+
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/NOMAD__TIMEOUT"
         )
@@ -576,10 +582,20 @@ class TestTasksSettingsNestedOverrides:
         session: AsyncSession,
     ) -> None:
         """Assert mixed-case spellings of the same nested key map to a single override row."""
-        admin_test_client.patch(
+        patched = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"security_headers__x_frame_options_deny": False},
         )
+        assert patched.status_code == status.HTTP_200_OK
+        assert (
+            len(
+                await SettingsOverrideManager.list(
+                    session, setting_class=TASKS_SETTINGS_TOKEN
+                )
+            )
+            == 1
+        )
+
         # An uppercase DELETE removes the row created by the lowercase PATCH.
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/SECURITY_HEADERS__X_FRAME_OPTIONS_DENY"
@@ -787,6 +803,69 @@ class TestTasksSettingsCredentialUrlWriteback:
             assert "****" not in endpoint
         finally:
             tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlAtRest:
+    """Verify the Tasks write path encrypts ``NOMAD__endpoint``'s embedded password.
+
+    The Tasks service has its own settings router, so SEP-side coverage proves
+    nothing about this wiring. ``NomadExecutor.endpoint`` is also the inherited
+    non-``Optional`` case whose ``Annotated`` Pydantic hoists onto ``FieldInfo``
+    and which the route coerces to a :class:`pydantic_core.Url` — the two
+    properties that make a classifier reading ``.annotation``, or a leaf branch
+    guarded on ``isinstance(value, str)``, silently skip it.
+    """
+
+    _FULL_URL = "http://nomad-user:nomad-secret@nomad.internal:4646/v1"
+    _PASSWORD = "nomad-secret"
+    _PORT = 4646
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot(self) -> Iterator[None]:
+        """Clear override snapshots after each test."""
+        yield
+        tasks_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+
+    async def test_patch_encrypts_the_password_and_keeps_the_endpoint_readable(
+        self, admin_test_client: TestClient, session: AsyncSession
+    ) -> None:
+        """Store the password as ciphertext with scheme, user, host and port intact."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__ENDPOINT": self._FULL_URL},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=TASKS_SETTINGS_TOKEN, key="NOMAD__endpoint"
+        )
+        assert len(rows) == 1, "the PATCH must have persisted exactly one row"
+        parsed = urlparse(rows[0].value)
+        assert is_encrypted(parsed.password)
+        assert decrypt(parsed.password) == self._PASSWORD
+        assert parsed.username == "nomad-user"
+        assert parsed.hostname == "nomad.internal"
+        assert parsed.port == self._PORT
+
+    async def test_the_effective_endpoint_still_resolves_to_the_real_credential(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Restore the password on the read path so the executor gets a usable URL.
+
+        Encrypting at rest is only safe if the snapshot the executor reads is
+        the plaintext one; a decrypt that failed here would leave the rebuilt
+        executor authenticating with a Fernet token.
+        """
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD__ENDPOINT": self._FULL_URL},
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        password = urlparse(_nomad_endpoint_value()).password
+        assert password == self._PASSWORD
+        assert not is_encrypted(password)
 
 
 @pytest.mark.asyncio

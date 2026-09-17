@@ -45,7 +45,8 @@ function renderShell(
     field?: Partial<ControllerRenderProps>;
     required?: boolean;
     error?: FieldError;
-    description?: string;
+    tooltip?: string;
+    inline?: string;
   } = {},
 ) {
   return render(
@@ -55,7 +56,8 @@ function renderShell(
       label="Fruit"
       required={opts.required}
       error={opts.error}
-      description={opts.description}
+      tooltip={opts.tooltip}
+      inline={opts.inline}
       renderValue={(value) =>
         value === undefined || value === null || value === ''
           ? 'Select…'
@@ -96,16 +98,16 @@ describe('SchemaSelectShell', () => {
     expect(screen.getByText('Fruit is required')).toBeInTheDocument();
   });
 
-  it('shows the description as helper text when there is no error', () => {
-    renderShell({ description: 'Pick one' });
+  it('shows inline help as helper text when there is no error', () => {
+    renderShell({ inline: 'Pick one' });
 
     expect(screen.getByTestId('select-input-fruit')).toHaveAttribute('aria-invalid', 'false');
     expect(screen.getByText('Pick one')).toBeInTheDocument();
   });
 
-  it('shows an info-icon tooltip when description is set', async () => {
+  it('shows an info-icon tooltip when tooltip help is set', async () => {
     const user = userEvent.setup();
-    renderShell({ description: 'Pick one' });
+    renderShell({ tooltip: 'Pick one' });
 
     const help = screen.getByLabelText('Help for Fruit');
     expect(help).toHaveAttribute('data-help-for', 'Fruit');
@@ -119,9 +121,9 @@ describe('SchemaSelectShell', () => {
     expect(screen.queryByLabelText('Help for Fruit')).not.toBeInTheDocument();
   });
 
-  it('keeps the info icon when an error replaces the helper text', () => {
+  it('keeps the info icon when an error takes the helper-text slot', () => {
     renderShell({
-      description: 'Pick one',
+      tooltip: 'Pick one',
       error: { type: 'required', message: 'Fruit is required' },
     });
 

@@ -45,6 +45,7 @@ default:
       - AnonymizerSettings.DEFAULT_ENTITIES
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
+      - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
 
   AUTH:
     PROVIDER:
@@ -74,8 +75,17 @@ default:
     # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
+    # Each prefork child builds its own engines, so this bounds the worker's share
+    # of the connection budget recorded above the DATABASE block. Celery's default
+    # is one child per CPU the container sees, which is every core on the host.
+    WORKER_CONCURRENCY: 4
     BEAT_ENGINE_OPTIONS:
       POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
+      # No sizing keys. celery-beat runs as its own program here, never forked, so
+      # its scheduler engine is a NullPool: MAX_OVERFLOW raises TypeError at beat
+      # startup, and POOL_SIZE and POOL_TIMEOUT are dropped. The engines these
+      # options do size (one each in sep and tasks, one per worker child that runs
+      # inventory collection) therefore stay at SQLAlchemy's 5 + 10.
 
   # One database for all three services: PMM_ENABLE_SEP provisions exactly the
   # `sep` role and `sep` database, so this is defined once and aliased below.
@@ -84,12 +94,35 @@ default:
   # The alias is one object, so a second profile block must not override a single
   # service's DATABASE keys: the profile merge is in-place and would move all three.
   # test_profile_carries_a_single_default_block keeps this file to one block.
+
+  # Connection budget. PMM gives the `sep` role no connection limit; the cap is
+  # PostgreSQL's server-wide max_connections of 2000, which every PMM new enough
+  # to provision the `sep` role sets, shared with pmm-managed (50) and Grafana
+  # (100). SEP holds itself to 10% of it. Worst case with every pool full, where
+  # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
+  #   sep          2 x 5 + celery-DB 15                    25
+  #   inventory    1 x 5                                    5
+  #   tasks        2 x 5 + celery-DB 15                    25
+  #   worker       parent 2 x 5, plus 4 children x 25     110
+  #   beat         2 x 5 + NullPool scheduler              11
+  #   sync locks   one held per configured syncer           2
+  #                                                total  178 of 200
+  # Both sep and beat reach a service-DB engine they do not own: sep imports the
+  # tasks one through periodic_tasks, and beat loads the worker's task modules
+  # because celery beat runs init_worker() before starting the scheduler.
+  # Not in the total: the four schema one-shots add 4 at boot, and every sync
+  # claim that arrives while another holds the lock briefly opens one more.
+  # Each worker child above WORKER_CONCURRENCY: 4 costs another 25, so a fifth
+  # child (203) would not fit and 4 is the most the 10% policy allows.
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server
     NAME: sep
     PORT: 5432
     USER: sep
+    POOL_SIZE: 3
+    MAX_OVERFLOW: 2
+    POOL_TIMEOUT: 10.0
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -216,6 +249,10 @@ default:
           - performance_schema
           - mysql
           - information_schema
+      # Collects the host elevation capability the diagnostics form warns on. This
+      # entry only makes the syncer constructible; its cadence is the separate
+      # INVENTORY_SYNC_SCHEDULES entry below, and both halves are required.
+      - SYNCER: SystemFactsSyncer
     INVENTORY:
       # PMM re-emits its whole inventory on every sync, so a tombstone here is a
       # genuine removal rather than a gap in a partial feed. Collect daily; the
@@ -233,6 +270,7 @@ default:
     DATABASE: *shared_database
     UVICORN_HOST: 0.0.0.0
     UVICORN_PORT: 9002
+    # PENDING_ALLOCATION_TIMEOUT_SECONDS: 3600  # Max seconds a RUNNING row may wait for an allocation to produce TaskStates before escalating to LOST
     NOMAD:
       # Credential-free so this file validates standalone; the credentialed form
       # arrives as the canonical Nomad endpoint variable.
@@ -244,5 +282,12 @@ default:
       SSL_KEYFILE: null
     INVENTORY_SYNC_INTERVAL: 15 minutes
     INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
+    # Daily rather than PMM's 15 minutes: a node's uid and sudo availability change
+    # at provisioning time, not during operation, and each run costs a per-node venv
+    # build plus a four-driver pip install. The full get_name() form is required
+    # here; the SYNCERS entry above takes the short auto-prefixed one.
+    INVENTORY_SYNC_SCHEDULES:
+      - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
+        INTERVAL: 1 days
     SSL_CERTFILE: null
     SSL_KEYFILE: null

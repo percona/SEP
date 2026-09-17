@@ -28,6 +28,7 @@ from app.core.utils.fields import NonEmptyStr
 from app.sep.deps import SessionDep
 from app.sep.models import AlertServiceType
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models.meta import META_KEY_ALERTS, META_KEY_SERVICE_TYPE
 from app.sep.snippets.models.snippet import Snippet
 
 logger = logging.getLogger(__name__)
@@ -144,7 +145,7 @@ def _parse_service_type(snippet: Snippet) -> AlertServiceType | None:
     :return: The parsed service type, or ``None`` for unrecognized values.
     :rtype: AlertServiceType | None
     """
-    raw = snippet.meta.get("service_type")
+    raw = snippet.meta.get(META_KEY_SERVICE_TYPE)
     if raw is None:
         return AlertServiceType.GENERIC
     try:
@@ -230,7 +231,7 @@ def _get_normalized_alerts(snippet: Snippet) -> list[AlertInfo]:
     :return: A list of normalized alert entries, excluding invalid ones.
     :rtype: list[AlertInfo]
     """
-    alerts_raw = snippet.meta.get("alerts", [])
+    alerts_raw = snippet.meta.get(META_KEY_ALERTS, [])
     if isinstance(alerts_raw, str | dict):
         alerts_raw = [alerts_raw]
     return [

@@ -18,6 +18,7 @@
 from datetime import datetime, UTC
 
 import pytest
+from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
@@ -28,9 +29,15 @@ from app.inventory.crud import (
     ServiceManager,
     ServiceSystemObservationManager,
 )
-from app.inventory.models import Node, Service
+from app.inventory.models import (
+    HostSystemObservationResponse,
+    HostSystemObservationWrite,
+    Node,
+    Service,
+)
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
+    NodeWriteFactory,
     ServiceSystemObservationWriteFactory,
     ServiceWriteFactory,
 )
@@ -103,6 +110,69 @@ async def test_service_observation_create_roundtrip(
     assert fetched.service_id == service.id
     assert fetched.db_engine_version == write.db_engine_version
     _assert_observed_at_equal(fetched.observed_at, write.observed_at)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_host_observation_postgres_timestamp_roundtrip(
+    postgres_session: AsyncSession,
+) -> None:
+    """Assert host observation timestamps round-trip on PostgreSQL for create and update."""
+    node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    created = await HostSystemObservationManager.create(
+        postgres_session,
+        HostSystemObservationWriteFactory.build(observed_at=created_at),
+        node_id=node.id,
+    )
+    fetched = await HostSystemObservationManager.get(postgres_session, id=created.id)
+    assert fetched is not None
+    _assert_observed_at_equal(fetched.observed_at, created_at)
+
+    updated_at = datetime(2026, 6, 2, 15, 30, tzinfo=UTC)
+    updated = await HostSystemObservationManager.update(
+        postgres_session,
+        fetched,
+        HostSystemObservationWriteFactory.build(observed_at=updated_at),
+        node_id=node.id,
+    )
+    refreshed = await HostSystemObservationManager.get(postgres_session, id=updated.id)
+    assert refreshed is not None
+    _assert_observed_at_equal(refreshed.observed_at, updated_at)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_service_observation_postgres_timestamp_roundtrip(
+    postgres_session: AsyncSession,
+) -> None:
+    """Assert service observation timestamps round-trip on PostgreSQL for create and update."""
+    node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
+    service = await ServiceManager.create(
+        postgres_session, ServiceWriteFactory.build(), node_id=node.id
+    )
+    created_at = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
+    created = await ServiceSystemObservationManager.create(
+        postgres_session,
+        ServiceSystemObservationWriteFactory.build(observed_at=created_at),
+        service_id=service.id,
+    )
+    fetched = await ServiceSystemObservationManager.get(postgres_session, id=created.id)
+    assert fetched is not None
+    _assert_observed_at_equal(fetched.observed_at, created_at)
+
+    updated_at = datetime(2026, 6, 2, 15, 30, tzinfo=UTC)
+    updated = await ServiceSystemObservationManager.update(
+        postgres_session,
+        fetched,
+        ServiceSystemObservationWriteFactory.build(observed_at=updated_at),
+        service_id=service.id,
+    )
+    refreshed = await ServiceSystemObservationManager.get(
+        postgres_session, id=updated.id
+    )
+    assert refreshed is not None
+    _assert_observed_at_equal(refreshed.observed_at, updated_at)
 
 
 @pytest.mark.asyncio
@@ -270,3 +340,85 @@ async def test_service_observation_cascade_on_service_delete(
     )
     assert remaining_host is not None
     assert remaining_host.node_id == node.id
+
+
+def test_capability_only_observation_validates() -> None:
+    """Accept an observation whose only readable fact is the elevation capability.
+
+    ``can_elevate`` is measurable on a host where ``/etc/os-release`` is unreadable,
+    no package manager resolves and no host config is found, so the minimum-content
+    validator has to count it as content.
+    """
+    write = HostSystemObservationWrite(
+        can_elevate=False,
+        observed_at=UPDATED_OBSERVED_AT,
+    )
+    assert write.can_elevate is False
+
+
+def test_empty_write_observation_is_rejected() -> None:
+    """Refuse an observation carrying no measured fact at all."""
+    with pytest.raises(ValidationError) as excinfo:
+        HostSystemObservationWrite(observed_at=UPDATED_OBSERVED_AT)
+    message = str(excinfo.value)
+    assert "can_elevate" in message
+    assert "os_version" in message
+
+
+def test_empty_response_observation_is_rejected() -> None:
+    """Refuse the response model too, despite its auto-populated ``created_at``.
+
+    ``HostSystemObservationResponse`` also inherits ``BaseSQLModel``, so deriving the
+    validator's field set from the concrete class would let ``created_at`` satisfy it
+    and retire the invariant silently. Supplies ``id`` and ``node_id`` because both
+    are required here: omitting them fails on the missing fields before the
+    content validator runs, which passes whether the validator exists or not.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        HostSystemObservationResponse(id=1, node_id=1, observed_at=UPDATED_OBSERVED_AT)
+    message = str(excinfo.value)
+    assert "can_elevate" in message
+    assert "os_version" in message
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_host_observation_postgres_false_is_not_read_back_as_null(
+    postgres_session: AsyncSession,
+) -> None:
+    """Read a measured ``False`` back as ``False`` after a real PostgreSQL round-trip."""
+    node = await NodeManager.create(postgres_session, NodeWriteFactory.build())
+    created = await HostSystemObservationManager.create(
+        postgres_session,
+        HostSystemObservationWriteFactory.build(can_elevate=False),
+        node_id=node.id,
+    )
+    fetched = await HostSystemObservationManager.get(postgres_session, id=created.id)
+    assert fetched is not None
+    assert fetched.can_elevate is False
+
+
+@pytest.mark.asyncio
+async def test_later_unable_measurement_replaces_a_stored_able_one(
+    session: AsyncSession,
+    node: Node,
+) -> None:
+    """Replace a stored ``True`` when a node loses its elevation capability.
+
+    ``update`` is a full replace over every column, so the newer measurement wins
+    rather than being merged under the older one.
+    """
+    created = await HostSystemObservationManager.create(
+        session,
+        HostSystemObservationWriteFactory.build(can_elevate=True),
+        node_id=node.id,
+    )
+    updated = await HostSystemObservationManager.update(
+        session,
+        created,
+        HostSystemObservationWriteFactory.build(can_elevate=False),
+        node_id=node.id,
+    )
+    refreshed = await HostSystemObservationManager.get(session, id=updated.id)
+    assert refreshed is not None
+    assert refreshed.can_elevate is False

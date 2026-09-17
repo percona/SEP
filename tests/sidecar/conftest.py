@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Provide shared fixtures for the side-car image's baked configuration."""
 
+import re
 from configparser import RawConfigParser
 from pathlib import Path
 from typing import Any
@@ -24,11 +25,20 @@ import yaml
 from app import BASE_DIR
 
 SIDECAR_DIR = BASE_DIR / "sidecar"
+CONTAINERFILE = SIDECAR_DIR / "Containerfile.sidecar"
 EMBEDDED_PROFILE = SIDECAR_DIR / "settings.yaml"
+ENTRYPOINT = SIDECAR_DIR / "entrypoint.sh"
+GATE = SIDECAR_DIR / "wait_for_schema.sh"
 SETTINGS_ENV_HELPER = SIDECAR_DIR / "settings-env.sh"
 SUPERVISORD_CONF = SIDECAR_DIR / "supervisord.conf"
 SCHEMA_STEP_PREFIX = "migrate-"
 """Program-name prefix marking a supervisord one-shot that creates schema."""
+
+SENTINEL_PREFIX = "/tmp/migrate-"
+"""The prefix every shipped sentinel path is built from."""
+
+BUDGET_ASSIGNMENT = re.compile(r"^readonly WAIT_BUDGET_SECONDS=\d+$", re.MULTILINE)
+"""The gate's budget constant, which a case needing a different wait rewrites."""
 
 ALLOWLIST_KEY = ("SETTINGS_OVERRIDE", "ALLOWED_KEYS")
 """The nested profile path carrying the override allowlist.
@@ -82,6 +92,10 @@ def schema_steps() -> tuple[str, ...]:
         for name in supervisord_programs()
         if name.startswith(SCHEMA_STEP_PREFIX)
     )
+
+
+SCHEMA_STEPS = schema_steps()
+"""Every schema step the program table declares, in its order."""
 
 
 SUITE_ENV_OVERRIDES = (

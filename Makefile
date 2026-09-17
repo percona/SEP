@@ -111,7 +111,11 @@ typecheck: venv
 
 # Report the ty diagnostics a branch adds against BASE_SHA, which reaches the
 # script through the recipe environment rather than being pasted into it.
-# Advisory in CI. See docs/development/ty-policy.md under `Enforcement`.
+# Advisory in CI only in the sense that `ci-success` does not depend on the
+# `typecheck_diff` job: the job still fails and shows red when the branch adds a
+# diagnostic in a changed non-test Python file. It forces every `warn` rule to
+# `error` before diffing, so it reports what a severity-respecting local check does not.
+# See docs/development/ty-policy.md under `Enforcement`.
 typecheck-diff: venv
 	@"${VENV_BIN}"/python -m scripts.check_ty_diff $(if $(PER_FILE),--per-file,)
 
@@ -136,6 +140,10 @@ dev-frontend:
 # One-time legacy data['_form'] backfill for framework-migrated task apps.
 backfill-legacy-forms: venv
 	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
+
+# Read-only counterpart: reports the saved stamps a create form now rejects.
+form-audit: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_audit $(AUDIT_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -189,6 +197,7 @@ migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations
 	@for app in $(APPS); do \
 		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
 	done
+	@"${VENV_BIN}"/python -m app.core.celery.bootstrap
 
 checkmigrations: migrate
 	@"${VENV_BIN}"/python -m scripts.check_alembic_revision_tree
@@ -398,4 +407,4 @@ lint-pipelines:
 	done; \
 	if [ "$${failures}" -ne 0 ]; then exit 1; fi
 
-.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check
+.PHONY: venv build pack builder image format ruff typecheck typecheck-diff lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms form-audit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations mergemigrations test regen-specs regen-pbm-payloads regen-pbm-payloads-check regen-xtrabackup-variants regen-xtrabackup-variants-check smoke-xtrabackup-variants check-nomad-payload-size check-sidecar-purge release-prep release-rc release-stable trigger-jenkins lint-pipelines encryption-key changelog-add changelog-check changelog-list startapp startapp-check

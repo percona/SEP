@@ -18,6 +18,7 @@
 __all__ = [
     "b64decode_str",
     "b64encode_str",
+    "join_or",
     "shorten_text",
     "slugify",
     "to_uppercase",
@@ -26,6 +27,7 @@ __all__ = [
 import re
 import unicodedata
 from base64 import b64decode, b64encode
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import NonNegativeInt, PositiveInt, validate_call
@@ -71,6 +73,17 @@ def shorten_text(
         + ellipsis
         + text[text_length - keep_last_chars :]
     )
+
+
+def join_or(values: Sequence[str]) -> str:
+    """Return ``values`` as an English alternatives list.
+
+    :param values: The non-empty alternatives, in the order they should read.
+    :return: The alternatives joined with commas and a trailing ``or``.
+    """
+    if len(values) == 1:
+        return values[0]
+    return f"{', '.join(values[:-1])} or {values[-1]}"
 
 
 def to_uppercase(name: str) -> str:

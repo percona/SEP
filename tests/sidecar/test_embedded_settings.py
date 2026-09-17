@@ -84,7 +84,17 @@ past, so the block is matched by its container instead.
 SHARED_DATABASE_NAME = "sep"
 """The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
 
-ALLOWLIST_SIZE = 12
+EMBEDDED_WORKER_CONCURRENCY = 4
+"""Prefork children the baked profile pins the side-car's Celery worker to.
+
+The profile's connection-budget arithmetic multiplies each child's engine
+ceilings by this, so an unpinned worker (one child per host CPU) would void it.
+"""
+
+EMBEDDED_POOL_SIZING = {"POOL_SIZE": 3, "MAX_OVERFLOW": 2, "POOL_TIMEOUT": 10.0}
+"""The pool keys the profile writes into its shared database block."""
+
+ALLOWLIST_SIZE = 13
 
 #: The inventory-sync cadence the baked profile provisions.
 EMBEDDED_INVENTORY_SYNC_MINUTES = 15
@@ -270,10 +280,41 @@ def test_profile_seeds_a_pmm_pinned_inventory_sync_schedule():
     assert PMMSyncer.get_name() == settings.INVENTORY_SYNC_SYNCER
 
 
+def test_profile_writes_pool_sizing_into_the_shared_database(
+    embedded_profile_data: dict[str, Any],
+):
+    """Set pool sizing in the profile, not by inheriting class defaults.
+
+    Resolved settings cannot tell the two apart, so the parsed file is read: a
+    later change to ``DatabaseOptions`` defaults must not move the side-car's
+    budget silently.
+
+    :param embedded_profile_data: The parsed baked profile.
+    """
+    shared = embedded_profile_data["default"]["DATABASE"]
+
+    assert {
+        key: shared.get(key) for key in EMBEDDED_POOL_SIZING
+    } == EMBEDDED_POOL_SIZING
+
+
 @pytest.mark.usefixtures("embedded_profile_cwd")
-def test_embedded_profile_enables_beat_pool_pre_ping():
-    """Assert the baked profile enables Celery beat/worker pool pre-ping."""
-    assert Settings().CELERY.beat_engine_options.pool_pre_ping is True
+def test_profile_pins_worker_concurrency():
+    """Pin the prefork concurrency the connection budget assumes."""
+    assert Settings().CELERY.worker_concurrency == EMBEDDED_WORKER_CONCURRENCY
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_embedded_profile_sets_only_beat_pool_pre_ping():
+    """Leave beat engine sizing unset, since the side-car's beat is not forked.
+
+    One options dict feeds beat's scheduler engine as well as the celery-DB
+    engines, and the scheduler is a ``NullPool`` here: ``max_overflow`` would
+    crash beat at startup.
+    """
+    assert Settings().CELERY.beat_engine_options.model_dump(exclude_none=True) == {
+        "pool_pre_ping": True
+    }
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -349,6 +390,29 @@ def test_all_services_resolve_the_same_database_connection():
         5432,
         "sep",
     )
+
+
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_every_service_resolves_the_same_pool_sizing():
+    """Assert all three services resolve one pool sizing, whatever supplies it.
+
+    Resolved settings cannot tell a profile value from a class default, so the
+    sibling test reading the raw profile is what pins where the values come
+    from. This one asserts only that the three services agree and that the
+    sizing reaches the engine kwargs.
+    """
+    expected = {key.lower(): value for key, value in EMBEDDED_POOL_SIZING.items()}
+
+    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+        database = settings_cls().DATABASE
+        resolved = {
+            "POOL_SIZE": database.POOL_SIZE,
+            "MAX_OVERFLOW": database.MAX_OVERFLOW,
+            "POOL_TIMEOUT": database.POOL_TIMEOUT,
+        }
+
+        assert resolved == EMBEDDED_POOL_SIZING
+        assert database.pool_engine_kwargs == {"pool_pre_ping": True, **expected}
 
 
 def test_global_database_password_reaches_every_service(embedded_profile_cwd: Path):
@@ -454,27 +518,43 @@ def test_inventory_activates_without_a_sidebar_entry():
     assert registry.get("inventory").sidebar is False
 
 
-def test_profile_does_not_run_the_system_facts_syncer(
+def test_profile_declares_the_system_facts_syncer(
     embedded_profile_data: dict[str, Any],
 ):
-    """Assert the embedded profile leaves system-facts collection unscheduled.
+    """Assert the embedded profile makes the system-facts collector constructible.
 
-    The observations it wrote were read only by the retired inventory browser
-    page, so the profile runs the two catalog syncers and omits the collector.
+    A syncer absent from ``SYNCERS`` cannot be constructed at all, so this entry is
+    the precondition for every other route to the host-capability fact — the seeded
+    schedule below included.
     """
     declared = [
         entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
     ]
 
-    assert declared == ["PMMSyncer", "MySQLSyncer"]
+    assert declared == ["PMMSyncer", "MySQLSyncer", "SystemFactsSyncer"]
 
 
-def test_the_system_facts_syncer_stays_re_enablable():
-    """Assert the mothball is configuration only, reversible without a deploy.
+@pytest.mark.usefixtures("embedded_profile_cwd")
+def test_profile_schedules_the_system_facts_syncer_daily():
+    """Assert the collector carries a schedule, not merely a ``SYNCERS`` entry.
+
+    A ``SYNCERS`` entry alone leaves it constructible and reachable by an explicit
+    API-triggered sync while never firing on a timer, so verifying only the
+    declaration above yields a green config that collects nothing.
+    """
+    settings = TasksSettings()
+
+    (entry,) = settings.INVENTORY_SYNC_SCHEDULES
+    assert entry.syncer == SystemFactsSyncer.get_name()
+    assert (entry.interval.every, entry.interval.period) == (1, Period.DAYS)
+
+
+def test_the_short_syncer_name_resolves_to_the_collector():
+    """Assert the profile's short syncer name resolves to the collector class.
 
     ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
-    and ``get_syncers`` imports it from there, so restoring the profile entry
-    through a settings override is the whole re-enable path.
+    and ``get_syncers`` imports it from there, so this is what makes the entry
+    reachable through a settings override as well as through the baked profile.
     """
     resolved = SyncOptions.model_validate({"syncer": "SystemFactsSyncer"})
 

@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 from app.core.utils.path import resolve_payload_reference
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.mysql_backups.payload_variants import (
     CANONICAL_PAYLOAD_NAME,
     selections,
@@ -29,7 +29,6 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreConfigAll,
     RestoreCreate,
     SourceTransport,
-    XtraBackupTool,
 )
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
@@ -52,6 +51,9 @@ def _form(
         hostname="restore-host",
         task_name="restore-task",
         backup_type=backup_type,
+        # A Mydumper restore has to name an inventory service; the other two
+        # methods legitimately leave the destination unset.
+        service_id="7" if backup_type == BackupType.MYDUMPER else None,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
         xtrabackup_bin_cmd=xtrabackup_bin_cmd,
@@ -134,6 +136,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.LOCAL,
@@ -142,6 +145,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="db01:/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.SSH,

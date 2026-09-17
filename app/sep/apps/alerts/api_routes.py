@@ -351,8 +351,11 @@ async def alerts_api_push(
     """Push selected alert templates to PMM as rules.
 
     Mirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.
-    Preserve the conflict-retry path: on ``create_rule`` collision call
-    :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
+    When the template is already present in PMM, report ``success`` if
+    ``create_rule`` recreates a missing rule, ``skipped`` on a rule-title
+    collision, and ``error`` for any other failure. When the template is not
+    present, preserve the conflict-retry path: on ``create_rule`` collision
+    call :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
     retry once.
 
     :param payload: Push request body listing template names to push.
@@ -388,11 +391,25 @@ async def alerts_api_push(
                     for_duration=DEFAULT_FOR_DURATION,
                     group=alerts_settings.ALERT_FOLDER_NAME,
                 )
-            except (HTTPException, OSError):
-                logger.debug("Rule already exists for %s", name, exc_info=True)
+            except (HTTPException, OSError) as exc:
+                detail = str(getattr(exc, "detail", exc))
+                if "conflicts with existing" in detail:
+                    logger.debug("Rule already exists for %s", name, exc_info=True)
+                    results.append(
+                        PushItemResult(
+                            name=name,
+                            status="skipped",
+                            message="Already present in PMM",
+                        )
+                    )
+                else:
+                    results.append(
+                        PushItemResult(name=name, status="error", message=detail)
+                    )
+                continue
             results.append(
                 PushItemResult(
-                    name=name, status="skipped", message="Already present in PMM"
+                    name=name, status="success", message="Pushed successfully"
                 )
             )
             continue

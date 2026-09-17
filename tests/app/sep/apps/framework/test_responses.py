@@ -171,11 +171,11 @@ class TestBuildTaskListResponses:
 
         by_name = {r.name: r for r in result}
         assert by_name["task-a"].last_executed_at == datetime.fromisoformat(
-            "2026-07-07T09:00:00"
+            "2026-07-07T09:00:00+00:00"
         )
         assert by_name["task-b"].status == TaskHistoryStatusEnum.RUNNING
         assert by_name["task-b"].last_executed_at == datetime.fromisoformat(
-            "2026-07-06T12:00:00"
+            "2026-07-06T12:00:00+00:00"
         )
         assert by_name["task-c"].status is None
         assert by_name["task-c"].last_executed_at is None

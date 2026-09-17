@@ -34,6 +34,7 @@ from app.sep.apps.framework.form_dsl import (
     Forbidden,
     FormLayout,
     FormRules,
+    HelpPlacement,
     Hidden,
     HostRef,
     Option,
@@ -1314,3 +1315,205 @@ class TestDeriveAppSchemaItemDisplayNames:
 
         assert schema.item_display_name == "MySQL Backups"
         assert schema.item_display_name_plural == "MySQL Backups"
+
+
+# ── Section grouping and parent toggles ──────────────────────────────────────
+
+
+class _AdvancedLayoutModel(AppFormModel):
+    lead: Annotated[str, Ui(label="Lead", section="Task")] = ""
+    general: Annotated[str, Ui(label="General", section="General")] = ""
+    upload: Annotated[str, Ui(label="Upload", section="Upload")] = ""
+
+
+_ADVANCED_LAYOUT = FormLayout(
+    sections=(
+        SectionLayout(key="Task", title="Task"),
+        SectionLayout(key="General", title="General", advanced=True),
+        SectionLayout(key="Upload", title="Upload", advanced=True),
+    )
+)
+
+
+class _ParentedModel(AppFormModel):
+    kill: Annotated[bool, Ui(label="Kill", section="s")] = False
+    timeout: Annotated[
+        int | EmptyStrToNone,
+        Ui(label="Timeout", section="s", parent="kill"),
+    ] = None
+
+
+_PARENTED_LAYOUT = FormLayout(sections=(SectionLayout(key="s", title="S"),))
+
+#: An arbitrary in-range value for the parented model's timeout field.
+_PARENTED_TIMEOUT = 30
+
+
+def _one_section_layout() -> FormLayout:
+    return FormLayout(sections=(SectionLayout(key="s", title="S"),))
+
+
+class TestAdvancedSection:
+    """Cover SectionLayout.advanced reaching the wire."""
+
+    def test_advanced_copied_onto_the_derived_section(self) -> None:
+        """Mark the sections the layout declares advanced, and no others."""
+        sections = derive_form_sections(_AdvancedLayoutModel, _ADVANCED_LAYOUT)
+        assert [(s.title, s.advanced) for s in sections] == [
+            ("Task", False),
+            ("General", True),
+            ("Upload", True),
+        ]
+
+    def test_ordinary_section_defaults_to_not_advanced(self) -> None:
+        """Leave the flag false so an unmarked section renders as it always did."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        assert sections[0].advanced is False
+
+    def test_advanced_sections_need_not_be_adjacent(self) -> None:
+        """Accept advanced sections split by an ordinary one.
+
+        The renderer collects them wherever they appear rather than requiring a
+        run, so nothing here depends on field declaration order — which is what
+        a heading-based grouping did require.
+        """
+
+        class _Model(AppFormModel):
+            first: Annotated[str, Ui(label="First", section="a")] = ""
+            middle: Annotated[str, Ui(label="Middle", section="b")] = ""
+            last: Annotated[str, Ui(label="Last", section="c")] = ""
+
+        layout = FormLayout(
+            sections=(
+                SectionLayout(key="a", title="A", advanced=True),
+                SectionLayout(key="b", title="B"),
+                SectionLayout(key="c", title="C", advanced=True),
+            )
+        )
+        assert [s.advanced for s in derive_form_sections(_Model, layout)] == [
+            True,
+            False,
+            True,
+        ]
+
+
+class TestHelpPlacement:
+    """Cover Ui(help_placement=...) reaching the wire."""
+
+    def test_placement_copied_onto_the_derived_field(self) -> None:
+        """Carry an explicit placement through to the field."""
+
+        class _Model(AppFormModel):
+            a: Annotated[
+                str,
+                Ui(label="A", section="s", description="x", help_placement="inline"),
+            ] = ""
+            b: Annotated[
+                str,
+                Ui(
+                    label="B",
+                    section="s",
+                    description="y",
+                    help_placement=HelpPlacement.TOOLTIP,
+                ),
+            ] = ""
+
+        fields = derive_form_sections(_Model, _one_section_layout())[0].fields
+        assert [f.help_placement for f in fields] == [
+            HelpPlacement.INLINE,
+            HelpPlacement.TOOLTIP,
+        ]
+
+    def test_unset_leaves_the_renderer_to_decide(self) -> None:
+        """Leave it unset so a route excluding nulls keeps it off the wire."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        assert all(f.help_placement is None for f in sections[0].fields)
+
+    def test_unknown_placement_rejected(self) -> None:
+        """Reject a value the renderer has no rule for."""
+        with pytest.raises(ValueError, match="is not one of"):
+            Ui(label="x", section="s", help_placement="popover")
+
+
+class TestParentToggle:
+    """Cover Ui(parent=...) reaching the wire and its conformance rules."""
+
+    def test_parent_copied_onto_the_derived_field(self) -> None:
+        """Copy the pointer onto the field and leave unparented fields unset."""
+        sections = derive_form_sections(_ParentedModel, _PARENTED_LAYOUT)
+        by_name = {f.name: f for f in sections[0].fields}
+        assert by_name["timeout"].parent == "kill"
+        assert by_name["kill"].parent is None
+
+    def test_blank_parent_rejected(self) -> None:
+        """Reject a pointer that names nothing."""
+        with pytest.raises(ValueError, match="must name the sibling bool field"):
+            Ui(label="x", section="s", parent="  ")
+
+    def test_non_bool_parent_rejected(self) -> None:
+        """Reject a pointer at a field the renderer could not render as a toggle."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[str, Ui(label="Kill", section="s")] = ""
+            timeout: Annotated[
+                int | EmptyStrToNone,
+                Ui(label="Timeout", section="s", parent="kill"),
+            ] = None
+
+        with pytest.raises(ValueError, match="is not a bool field declared directly"):
+            derive_form_sections(_Model, _one_section_layout())
+
+    def test_cross_section_parent_rejected(self) -> None:
+        """Reject a pointer the renderer could not nest under, being elsewhere."""
+
+        class _Model(AppFormModel):
+            kill: Annotated[bool, Ui(label="Kill", section="a")] = False
+            timeout: Annotated[
+                int | EmptyStrToNone,
+                Ui(label="Timeout", section="b", parent="kill"),
+            ] = None
+
+        layout = FormLayout(
+            sections=(
+                SectionLayout(key="a", title="A"),
+                SectionLayout(key="b", title="B"),
+            )
+        )
+        with pytest.raises(ValueError, match="is not a bool field declared directly"):
+            derive_form_sections(_Model, layout)
+
+    def test_chained_parent_rejected(self) -> None:
+        """Reject a chain, whose cyclic form leaves both toggles inert."""
+
+        class _Model(AppFormModel):
+            a: Annotated[bool, Ui(label="A", section="s")] = False
+            b: Annotated[
+                bool,
+                Ui(label="B", section="s", parent="a"),
+            ] = False
+            c: Annotated[
+                int | EmptyStrToNone,
+                Ui(label="C", section="s", parent="b"),
+            ] = None
+
+        with pytest.raises(ValueError, match="is itself parented"):
+            derive_form_sections(_Model, _one_section_layout())
+
+    def test_parent_does_not_change_what_the_server_accepts(self) -> None:
+        """Accept a parented field whose toggle is off.
+
+        The pointer is presentation: it tells the renderer where to draw the
+        field and when to grey it out, and nothing more. A field that should
+        also be rejected in that state says so with its own ``Forbidden``,
+        which is a per-field validation decision rather than something the
+        pointer implies.
+        """
+        assert (
+            _ParentedModel(kill=False, timeout=_PARENTED_TIMEOUT).timeout
+            == _PARENTED_TIMEOUT
+        )
+        assert (
+            _ParentedModel(kill=True, timeout=_PARENTED_TIMEOUT).timeout
+            == _PARENTED_TIMEOUT
+        )
+        assert _ParentedModel(kill=False).timeout is None

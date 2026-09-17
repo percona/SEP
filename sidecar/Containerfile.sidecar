@@ -106,6 +106,9 @@ COPY --chown=0:1001 --chmod=550 ./sidecar/entrypoint.sh ./entrypoint.sh
 # Invoked directly by each API program's command rather than through an
 # interpreter, hence 550 where the python helpers below are 440
 COPY --chown=0:1001 --chmod=550 ./sidecar/wait_for_schema.sh ./wait_for_schema.sh
+# Run directly by an operator through `docker exec`, never by supervisord, hence
+# 550 like the gate above
+COPY --chown=0:1001 --chmod=550 ./sidecar/clear_sentinels.sh ./clear_sentinels.sh
 # Sourced by entrypoint.sh, never executed, hence 440 rather than 550
 COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 # Run through the interpreter and never executed directly -- encryption_key.py and

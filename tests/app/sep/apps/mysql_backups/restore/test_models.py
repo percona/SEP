@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
 from app.sep.apps.framework.schema import ChoiceField, RemoteChoiceField
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import (
     normalize_source_declaration,
     RestoreConfigServer,
@@ -38,6 +38,7 @@ def _minimal_restore_create_body(**overrides: object) -> dict:
         "task_name": "restore-1",
         "hostname": "executor-1",
         "backup_type": BackupType.MYDUMPER,
+        "service_id": "7",
         "backup_source": "/var/backups/latest",
     }
     body.update(overrides)
@@ -58,6 +59,97 @@ def test_backup_source_is_remote_choice_cascading_on_service_id() -> None:
     assert backup_source.allow_custom is True
     assert "service_id" in fields_by_section["Task"]
     assert "service_id" not in fields_by_section["Mydumper"]
+
+
+def test_service_id_leads_the_backup_specific_task_fields() -> None:
+    """Open the Task section with the field ``backup_source`` cascades from.
+
+    ``backup_source`` and ``schema_id`` both depend on ``service_id``, so asking
+    for the restore method first leaves an operator discovering the dependency by
+    finding Backup Source empty. The two inherited identity fields keep the lead.
+    """
+    sections = derive_form_sections(RestoreCreate, restore_views.layout)
+    task_fields = [
+        field.name
+        for section in sections
+        if section.title == "Task"
+        for field in section.fields
+    ]
+
+    assert task_fields[:4] == ["task_name", "hostname", "service_id", "backup_type"]
+
+
+def test_service_id_is_gated_required_on_mydumper_only() -> None:
+    """Derive a requires gate matching Mydumper, keeping the field optional at rest.
+
+    An XtraBackup or Binlog restore legitimately names no destination service, so
+    the field stays ``required: false`` and the renderer flips it while the gate's
+    predicate matches.
+    """
+    sections = derive_form_sections(RestoreCreate, restore_views.layout)
+    service_id = next(
+        field
+        for section in sections
+        if section.title == "Task"
+        for field in section.fields
+        if field.name == "service_id"
+    )
+
+    assert service_id.required is False
+    assert [
+        gate.model_dump(mode="json", exclude_none=True)
+        for gate in service_id.requires or ()
+    ] == [
+        {
+            "when": {"equals": {"backup_type": BackupType.MYDUMPER.value}},
+            "message": (
+                "Destination Database Service is required for a Mydumper restore."
+            ),
+        }
+    ]
+
+
+@pytest.mark.parametrize("service_id", [None, ""], ids=["absent", "cleared"])
+def test_mydumper_restore_rejects_a_missing_destination_service(
+    service_id: str | None,
+) -> None:
+    """Reject a Mydumper restore that names no destination service, by its label."""
+    with pytest.raises(
+        ValidationError,
+        match="Destination Database Service is required for a Mydumper restore",
+    ):
+        RestoreCreate.model_validate(
+            _minimal_restore_create_body(service_id=service_id)
+        )
+
+
+@pytest.mark.parametrize("backup_type", [BackupType.XTRABACKUP, BackupType.BINLOG])
+def test_non_mydumper_restore_validates_without_a_destination_service(
+    backup_type: BackupType,
+) -> None:
+    """Accept an XtraBackup or Binlog restore that records no destination service."""
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(backup_type=backup_type, service_id=None)
+    )
+
+    assert model.service_id is None
+
+
+@pytest.mark.parametrize(
+    "service_id", ["prod-mysql-01", UNKNOWN_SERVICE_SENTINEL], ids=["name", "sentinel"]
+)
+def test_mydumper_gate_reads_presence_not_validity(service_id: str) -> None:
+    """Pass a typed name or the unknown-service placeholder through the gate.
+
+    The gate only asks whether the field is filled; deciding that a Mydumper
+    restore needs a real inventory service stays with
+    ``deps.resolve_restore_entities``, which still rejects both of these.
+    """
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(service_id=service_id)
+    )
+
+    assert model.service_id == service_id
 
 
 def test_restore_create_coerces_int_reference_ids_to_str() -> None:
@@ -279,6 +371,7 @@ def _legacy_stamp(**overrides: object) -> dict:
         "task_name": "restore-1",
         "hostname": "executor-1",
         "backup_type": BackupType.MYDUMPER.value,
+        "service_id": "7",
         "backup_source": "/var/backups/latest",
         "ssh_user": legacy_default("ssh_user"),
         "ssh_port": legacy_default("ssh_port"),

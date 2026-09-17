@@ -10,7 +10,7 @@
 #  - name: dest
 #    type: str
 #    label: Destination directory
-#    description: Directory where FTDC files are copied for offline analysis. Defaults to /tmp/mongodb-ftdc.
+#    description: Directory where FTDC files are copied for offline analysis.
 #    default: /tmp/mongodb-ftdc
 #    pattern: ^/[A-Za-z0-9._/-]+$
 #  - name: data-dir

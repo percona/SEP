@@ -39,7 +39,9 @@ from app.core.settings_override.constants import (
 )
 from app.core.settings_override.models import setting_class_token
 from app.core.settings_override.secret_storage import (
+    decrypt_credential_url_leaves,
     decrypt_secret_leaves,
+    reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
 )
 
@@ -206,6 +208,48 @@ def downgrade_decrypt_secret_override_values(
     if bind is None:
         return
     _rewrite_secret_leaves(bind, settings_classes, decrypt_secret_leaves)
+
+
+def upgrade_encrypt_credential_url_override_values(
+    settings_classes: Iterable[type[BaseYamlSettings]],
+) -> None:
+    """Encrypt every not-yet-encrypted credential-URL password in ``settingoverride``.
+
+    Idempotent in the same two directions as
+    :func:`upgrade_encrypt_secret_override_values`, and narrower: a
+    :class:`~pydantic.SecretStr` leaf an earlier revision encrypted is left
+    untouched, so this revision and its downgrade are exact inverses of each
+    other.
+
+    Only the userinfo password is rewritten, so the endpoint an operator reads
+    out of a raw dump stays legible.
+
+    :param settings_classes: The settings classes this track can resolve.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    _rewrite_secret_leaves(bind, settings_classes, reencrypt_credential_url_leaves)
+
+
+def downgrade_decrypt_credential_url_override_values(
+    settings_classes: Iterable[type[BaseYamlSettings]],
+) -> None:
+    """Restore every encrypted credential-URL password to plaintext.
+
+    Scoped deliberately: the broad
+    :func:`downgrade_decrypt_secret_override_values` would also decrypt the
+    :class:`~pydantic.SecretStr` leaves an earlier revision encrypted, and
+    Alembic will not re-run that revision to put them back — so those leaves
+    would stay in the clear while the release being rolled back to still reads
+    them as ciphertext.
+
+    :param settings_classes: The settings classes this track can resolve.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    _rewrite_secret_leaves(bind, settings_classes, decrypt_credential_url_leaves)
 
 
 def _settingoverride_value_table() -> sa.TableClause:

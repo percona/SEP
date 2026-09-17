@@ -62,6 +62,7 @@ from app.core.config import BaseYamlSettings
 from app.core.db.config import DatabaseOptions
 from app.core.encryption import is_encrypted
 from app.core.settings_override.models import SettingOverride
+from app.core.utils.fields import credential_url_password
 
 DEFAULT_STATE_DIR = Path("/home/sep/state")
 PERSISTED_FILENAME = "ENCRYPTION_KEY"
@@ -414,6 +415,23 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
         )
 
 
+def _has_encrypted_url_password(value: str) -> bool:
+    """Return whether ``value`` is a URL whose embedded password is a Fernet token.
+
+    A URL that cannot be parsed answers ``False`` rather than propagating: the
+    caller has already tested the whole string, and a value malformed enough to
+    defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
+
+    :param value: One string leaf of a stored override value.
+    :return: Whether its userinfo password is structurally ciphertext.
+    """
+    try:
+        password = credential_url_password(value)
+    except ValueError:
+        return False
+    return password is not None and is_encrypted(password)
+
+
 def contains_ciphertext(value: Any) -> bool:
     """Return whether any string leaf of ``value`` is structurally a Fernet token.
 
@@ -421,6 +439,13 @@ def contains_ciphertext(value: Any) -> bool:
     provider's routing key inside a list, a delivery input's API key inside a
     nested mapping. Testing the row's own value therefore finds nothing on
     exactly the rows that matter.
+
+    A credential-bearing URL hides its token one level deeper still, inside the
+    leaf's userinfo segment: ``is_encrypted`` answers ``False`` for the whole
+    ``https://user:<token>@host/`` string, because the string is not a Fernet
+    token. A string leaf is therefore tested twice — as itself, and as its
+    parsed password — or a deployment whose only encrypted data is an endpoint
+    password reads as holding none and clears the mint path.
 
     Deciding structurally is safe in this direction, and only this one. The
     write path must not (``secret_storage.encrypt_secret_leaves``: a credential
@@ -433,7 +458,7 @@ def contains_ciphertext(value: Any) -> bool:
     :return: Whether a Fernet token appears anywhere within it.
     """
     if isinstance(value, str):
-        return is_encrypted(value)
+        return is_encrypted(value) or _has_encrypted_url_password(value)
     if isinstance(value, dict):
         return any(contains_ciphertext(leaf) for leaf in value.values())
     if isinstance(value, list):

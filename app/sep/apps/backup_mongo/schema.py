@@ -104,7 +104,7 @@ backup_mongo_schema = derive_app_schema(
     related_apps=[
         RelatedApp(
             app_key="backup_mongo/restore",
-            label="Restore",
+            label="Restores",
             route_segment="restores",
         ),
     ],

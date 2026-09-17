@@ -90,14 +90,17 @@ from app.sep.apps.framework.api import schema_endpoint
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
+from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_SERVICE_TYPE
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
+from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = "atw"
+ATW_META_KEY = META_KEY_ATW
 ATW_META_WARNING = (
     f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
 )
@@ -133,16 +136,19 @@ class ATWSnippetSummary(BaseModel):
     """Represent one snippet entry under an ATW category.
 
     :param name: The snippet filename, used as its API identifier.
-    :type name: str
     :param title: The snippet display title.
-    :type title: str
     :param description: The snippet free-text description.
-    :type description: str
+    :param sudo: Whether the snippet's elevation is never wanted, optional, or
+        mandatory, letting a client warn before dispatching it to a host that
+        cannot elevate. Nullable only so the field is additive on an already
+        released model: every response this version builds populates it, and a
+        ``None`` means the server predates the field.
     """
 
     name: str
     title: str
     description: str
+    sudo: SnippetSudoRequirement | None = None
 
 
 class ATWCategoryListing(BaseModel):
@@ -181,12 +187,14 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     """Project a snippet onto the ATW summary shape.
 
     :param snippet: The snippet to project.
-    :return: The snippet's identifying name, display title, and description.
+    :return: The snippet's identifying name, display title, description, and
+        declared elevation requirement.
     """
     return ATWSnippetSummary(
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
+        sudo=snippet.sudo.requirement,
     )
 
 
@@ -203,7 +211,7 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
-        root = derive_category_root(snippet.meta.get("service_type"))
+        root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
         tags = []
         if ATW_META_KEY in snippet.meta:
             raw_atw = snippet.meta[ATW_META_KEY]
@@ -571,6 +579,22 @@ def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return meta if isinstance(meta, Mapping) else None
 
 
+def _args_unreadable_upstream(history: Mapping[str, Any]) -> bool:
+    """Return whether the tasks service could not read an execution's arguments.
+
+    Read off the documented ``unreadable_request_leaves`` field rather than
+    inferred from the value: the service serialises a leaf it could not decrypt
+    as ``null``, which is exactly what an execution recording no arguments also
+    looks like. The field is shape-checked because ``history`` is unvalidated on
+    this side, matching :func:`_execution_meta`.
+
+    :param history: The upstream task-history payload.
+    :return: Whether the recorded arguments are unreadable upstream.
+    """
+    unreadable = history.get("unreadable_request_leaves")
+    return isinstance(unreadable, list) and ARGS_LEAF in unreadable
+
+
 def _execution_args(
     history: dict[str, Any], script: SnippetScript | None
 ) -> tuple[str | None, bool]:
@@ -597,13 +621,19 @@ def _execution_args(
     separate arm: they arrive as the ``ValueError`` and ``TypeError`` they
     respectively subclass.
 
+    A row the tasks service stored encrypted and could not read back also
+    withholds. It is recognised from the documented ``unreadable_request_leaves``
+    field, never by inspecting the value: the service already serialises such a
+    leaf as ``null``, which is otherwise indistinguishable from an execution that
+    recorded no arguments.
+
     :param history: The upstream task-history payload, empty when unavailable.
     :param script: The resolved snippet, or ``None`` when its filename no longer
         resolves and the parameter metadata masking needs is unavailable.
     :return: The masked argument string paired with the withheld flag; a ``None``
         string and a false flag mean the execution recorded no arguments.
     """
-    if not history:
+    if not history or _args_unreadable_upstream(history):
         return None, True
     if (meta := _execution_meta(history)) is None:
         return None, True
@@ -624,21 +654,23 @@ def _build_execution_response(
     history: dict[str, Any],
     script: SnippetScript | None,
 ) -> ATWIncidentExecutionResponse:
-    """Merge a recorded execution row with its upstream task-history payload.
+    """Merge a recorded execution with live task history and the snippet title.
 
     :param execution: The locally-recorded execution row.
     :param history: The upstream task-history payload, empty when unavailable.
-    :param script: The resolved snippet whose parameter metadata drives argument
-        masking, or ``None`` when its filename no longer resolves.
+    :param script: The resolved snippet supplying the title and parameter metadata
+        for argument masking, or ``None`` when its filename no longer resolves.
     :return: The combined execution response.
     """
     masked_args, args_withheld = _execution_args(history, script)
     return ATWIncidentExecutionResponse(
         id=execution.id,
         snippet_filename=execution.snippet_filename,
+        snippet_title=None if script is None else script.snippet.title,
         task_history_id=execution.task_history_id,
         created_at=execution.created_at,
         task_status=history.get("status"),
+        failure_reason=history.get("failure_reason"),
         started_at=history.get("started_at"),
         finished_at=history.get("finished_at"),
         has_logs=history.get("has_logs"),
@@ -703,8 +735,11 @@ async def atw_case_search(
         async with asyncio.timeout(CASE_SEARCH_TIMEOUT_SECONDS):
             async with get_delivery_executor(plan) as executor:
                 matches = await executor.search_cases(term)
-    except Exception:  # noqa: BLE001 -- degraded, never surfaced to the dialog
-        logger.warning("Diagnostics case search failed.", exc_info=True)
+    except Exception as error:  # noqa: BLE001 -- degraded, never surfaced to the dialog
+        # ``RemoteAPI.request`` maps an upstream error body's ``detail`` onto
+        # the exception it raises, so rendering the exception would log a value
+        # the receiver supplied.
+        logger.warning("Diagnostics case search failed (%s).", type(error).__name__)
         return AtwCaseSearchResponse(available=False, matches=[])
     return AtwCaseSearchResponse(
         available=True,
