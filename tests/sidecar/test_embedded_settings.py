@@ -94,15 +94,14 @@ ceilings by this, so an unpinned worker (one child per host CPU) would void it.
 EMBEDDED_POOL_SIZING = {"POOL_SIZE": 3, "MAX_OVERFLOW": 2, "POOL_TIMEOUT": 10.0}
 """The pool keys the profile writes into its shared database block."""
 
-ALLOWLIST_SIZE = 24
-"""13 pre-existing entries plus the 11 OmInventorySettings fields this branch
-allows overriding (SCHEDULE's two __-delimited leaves, PROBE_DATABASE,
-REPO_URL, REPO_TIMEOUT, CONNECT_TIMEOUT, TASK_TIMEOUT, POLL_INTERVAL,
-MAX_CONCURRENT_PROBES, RUN_RETENTION, STALE_RUN_AFTER) - confirmed missing by
-testing the deployed image's Settings tab (which had nothing to show without
-them). ENABLED is not one of them: this branch doesn't declare that field
-(PMM-15326-om-switch-gate adds it, stacked on top), so its allowlist entry
-belongs there instead.
+ALLOWLIST_SIZE = 25
+"""13 pre-existing entries plus the 12 OmInventorySettings fields this profile
+allows overriding (ENABLED, SCHEDULE's two __-delimited leaves,
+PROBE_DATABASE, REPO_URL, REPO_TIMEOUT, CONNECT_TIMEOUT, TASK_TIMEOUT,
+POLL_INTERVAL, MAX_CONCURRENT_PROBES, RUN_RETENTION, STALE_RUN_AFTER) -
+confirmed missing by testing the deployed image's Settings tab (which had
+nothing to show without them) and, separately, pmm-managed's own sync PATCH
+(which got the identical 422 an operator would without ENABLED specifically).
 """
 
 #: The inventory-sync cadence the baked profile provisions.
