@@ -54,7 +54,12 @@ default:
       # the same category the entries above already cover for other apps - confirmed
       # missing by testing: without these, GET /v1/om/inventory/config reports every
       # field SETTING_RELOAD_NOT_OVERRIDABLE and the Settings tab has nothing to show.
-      - OmInventorySettings.SCHEDULE
+      # SCHEDULE is a nested IntervalSchedule submodel, so the canonical override
+      # key is the __-delimited leaf path, not the parent field name - naming
+      # just "SCHEDULE" here matches nothing (confirmed: it stayed
+      # SETTING_RELOAD_NOT_OVERRIDABLE with only that entry).
+      - OmInventorySettings.SCHEDULE__every
+      - OmInventorySettings.SCHEDULE__period
       - OmInventorySettings.PROBE_DATABASE
       - OmInventorySettings.REPO_URL
       - OmInventorySettings.REPO_TIMEOUT
