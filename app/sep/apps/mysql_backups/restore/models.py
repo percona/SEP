@@ -459,34 +459,51 @@ def _aligned_aes_declaration(data: dict[str, Any]) -> dict[str, Any]:
     """Return the body with its stored key file and its declared format in agreement.
 
     Only a *declared* format needs this; an inferred one already follows the
-    body's own fields. An XtraBackup body keeps its key file and gains the format
-    that reveals it, because the edit form drops a field its gates hide and
-    stripping the key would break the restore. Any other engine loses the key file
-    instead: no payload but XtraBackup's decrypts, and declaring an AES-256 format
-    there would name an encryption that engine cannot write.
+    body's own fields. An AES-256 pass is real for exactly one shape — an
+    XtraBackup body holding a key file — so the declaration is rebuilt from that
+    fact rather than trusted, in either direction:
+
+    - An XtraBackup body holding a key file gains the format that reveals it. The
+      edit form drops a field its gates hide, so a narrower declaration would
+      strip the key the next save needs.
+    - A body whose declaration claims an AES-256 pass it cannot run loses it,
+      along with a key file no payload would reach: an engine other than
+      XtraBackup decrypts nothing, and an AES-256 format naming no key file has
+      nothing to decrypt with. Both shapes predate the rules and the key-file
+      gate, and leaving either intact would fail the re-validation the read paths
+      perform and leave the form unopenable.
+
+    The GPG pass is carried across untouched, read from the declaration as well as
+    the password file: that file is optional under a GPG declaration, so the
+    declaration is the only place a file-less GPG pass is recorded.
 
     :param data: The body being repaired.
     :return: The body with the key file and the format in agreement.
     """
     declared = data.get("source_encryption")
-    if not data.get(_AES_KEYFILE_FIELD) or declared in (
-        EncryptionFormat.AES256,
-        EncryptionFormat.DUAL,
-    ):
+    declares_aes = declared in (EncryptionFormat.AES256, EncryptionFormat.DUAL)
+    key_file = data.get(_AES_KEYFILE_FIELD)
+    if not key_file and not declares_aes:
         return data
-    if data.get("backup_type") != BackupType.XTRABACKUP:
+
+    aes256 = bool(key_file) and data.get("backup_type") == BackupType.XTRABACKUP
+    aligned = {
+        **data,
+        "source_encryption": encryption_format_for_passes(
+            aes256=aes256,
+            gpg=declared in (EncryptionFormat.GPG, EncryptionFormat.DUAL)
+            or bool(data.get("gpg_password_file")),
+        ),
+    }
+    if aes256:
+        return aligned
+    if key_file:
         _log.info(
             "Dropped %r from a restore stamp: %r cannot read it",
             _AES_KEYFILE_FIELD,
             data.get("backup_type"),
         )
-        return {key: value for key, value in data.items() if key != _AES_KEYFILE_FIELD}
-    return {
-        **data,
-        "source_encryption": encryption_format_for_passes(
-            aes256=True, gpg=bool(data.get("gpg_password_file"))
-        ),
-    }
+    return {key: value for key, value in aligned.items() if key != _AES_KEYFILE_FIELD}
 
 
 def repair_source_declaration(stamp: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -528,12 +545,19 @@ class RestoreCreate(TaskFormModel):
 
     The transport and decryption fields are the exception, and they pay that
     price deliberately: ``source_transport`` and ``source_encryption`` declare
-    where the backup lives and how it was encrypted, and the five fields those
+    where the backup lives and how it was encrypted, and the six fields those
     declarations govern are gated on them. Because a field-level ``Forbidden``
     rejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /
     ``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still
     declares them and ``build_restore_spec`` applies them from there, so the
-    emitted config is unchanged.
+    emitted config is unchanged. ``xtrabackup_aes256_keyfile`` is the sixth and
+    the only one also carrying a ``Requires``, since an AES-256 format with no
+    key file has nothing to decrypt with.
+
+    Which formats each engine can write is a form rule rather than a field gate:
+    the served schema carries it, so the renderer rejects an impossible pairing
+    before it is submitted, and a mismatch is reported alongside the key file the
+    format asks for instead of being masked by it.
 
     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``

@@ -817,11 +817,20 @@ class TestRepairSourceDeclaration:
     @pytest.mark.parametrize(
         ("declared", "extra", "expected"),
         [
-            (EncryptionFormat.NONE, {}, EncryptionFormat.AES256),
-            (
+            pytest.param(
+                EncryptionFormat.NONE, {}, EncryptionFormat.AES256, id="undeclared"
+            ),
+            pytest.param(
                 EncryptionFormat.GPG,
                 {"gpg_password_file": _GPG_PASSWORD_FILE},
                 EncryptionFormat.DUAL,
+                id="gpg-declared-with-its-password-file",
+            ),
+            pytest.param(
+                EncryptionFormat.GPG,
+                {},
+                EncryptionFormat.DUAL,
+                id="gpg-declared-without-a-password-file",
             ),
         ],
     )
@@ -831,7 +840,12 @@ class TestRepairSourceDeclaration:
         extra: dict,
         expected: EncryptionFormat,
     ) -> None:
-        """Widen the declaration to the passes the stamp's own files imply."""
+        """Widen the declaration to every pass the stamp implies, not only its files.
+
+        The password file is optional under a GPG declaration, so the declaration
+        itself is what says a GPG pass ran; reading only the file would repair a
+        GPG stamp to ``aes256`` and lose that pass on the next save.
+        """
         repaired = repair_source_declaration(
             _declared_stamp(
                 backup_type=BackupType.XTRABACKUP.value,
@@ -844,6 +858,72 @@ class TestRepairSourceDeclaration:
         assert repaired is not None
         assert repaired["source_encryption"] == expected
         assert repaired["xtrabackup_aes256_keyfile"] == _AES_KEYFILE
+
+    @pytest.mark.parametrize(
+        ("backup_type", "declared", "extra", "expected"),
+        [
+            pytest.param(
+                BackupType.MYDUMPER,
+                EncryptionFormat.AES256,
+                {"xtrabackup_aes256_keyfile": _AES_KEYFILE},
+                EncryptionFormat.NONE,
+                id="mydumper-aes-holding-a-key-file",
+            ),
+            pytest.param(
+                BackupType.BINLOG,
+                EncryptionFormat.DUAL,
+                {
+                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
+                    "gpg_password_file": _GPG_PASSWORD_FILE,
+                },
+                EncryptionFormat.GPG,
+                id="binlog-dual-holding-a-key-file",
+            ),
+            pytest.param(
+                BackupType.MYDUMPER,
+                EncryptionFormat.AES256,
+                {},
+                EncryptionFormat.NONE,
+                id="mydumper-aes-holding-nothing",
+            ),
+            pytest.param(
+                BackupType.XTRABACKUP,
+                EncryptionFormat.DUAL,
+                {"gpg_password_file": _GPG_PASSWORD_FILE},
+                EncryptionFormat.GPG,
+                id="xtrabackup-dual-holding-no-key-file",
+            ),
+        ],
+    )
+    def test_narrows_a_declaration_no_stored_value_can_back(
+        self,
+        backup_type: BackupType,
+        declared: EncryptionFormat,
+        extra: dict,
+        expected: EncryptionFormat,
+    ) -> None:
+        """Drop the AES-256 pass from a declaration the stamp cannot support.
+
+        Both shapes were accepted before the engine/format rules and the key-file
+        gate existed: an AES-256 format on an engine that cannot write one, and an
+        AES-256 format naming no key. Serving either unrepaired would fail the
+        re-validation the read paths perform and leave the edit form unopenable,
+        so the pass the stamp cannot back is dropped and the surviving GPG pass —
+        declared or filed — is kept.
+        """
+        repaired = repair_source_declaration(
+            _declared_stamp(
+                backup_type=backup_type.value,
+                source_encryption=declared.value,
+                **extra,
+            )
+        )
+
+        assert repaired is not None
+        assert repaired["source_encryption"] == expected
+        assert "xtrabackup_aes256_keyfile" not in repaired
+        assert repaired.get("gpg_password_file") == extra.get("gpg_password_file")
+        RestoreCreate.model_validate(repaired)
 
     def test_drops_a_key_file_the_stamped_engine_cannot_read(
         self, caplog: pytest.LogCaptureFixture
