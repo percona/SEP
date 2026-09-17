@@ -46,6 +46,30 @@ default:
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
       - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
+      # ENABLED is deliberately absent: pmm-managed owns it (Service.SyncInventoryEnabled,
+      # managed/services/om/service.go), toggled by PMM's own OpenManager on/off switch,
+      # not by an operator editing this app directly. CREDENTIALS_PATH is also absent -
+      # its own docstring says it stays YAML/env-only, since it names a file read off
+      # the *monitored* host, not a setting of SEP's own behavior. Every other
+      # OmInventorySettings field is product behaviour (cadence, timeouts, retention),
+      # the same category the entries above already cover for other apps - confirmed
+      # missing by testing: without these, GET /v1/om/inventory/config reports every
+      # field SETTING_RELOAD_NOT_OVERRIDABLE and the Settings tab has nothing to show.
+      # SCHEDULE is a nested IntervalSchedule submodel, so the canonical override
+      # key is the __-delimited leaf path, not the parent field name - naming
+      # just "SCHEDULE" matches nothing (confirmed: it stays
+      # SETTING_RELOAD_NOT_OVERRIDABLE with only that entry).
+      - OmInventorySettings.SCHEDULE__every
+      - OmInventorySettings.SCHEDULE__period
+      - OmInventorySettings.PROBE_DATABASE
+      - OmInventorySettings.REPO_URL
+      - OmInventorySettings.REPO_TIMEOUT
+      - OmInventorySettings.CONNECT_TIMEOUT
+      - OmInventorySettings.TASK_TIMEOUT
+      - OmInventorySettings.POLL_INTERVAL
+      - OmInventorySettings.MAX_CONCURRENT_PROBES
+      - OmInventorySettings.RUN_RETENTION
+      - OmInventorySettings.STALE_RUN_AFTER
 
   AUTH:
     PROVIDER:
