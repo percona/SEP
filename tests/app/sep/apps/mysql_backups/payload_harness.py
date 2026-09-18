@@ -112,8 +112,15 @@ def base_namespace() -> dict:
     ``pwd`` and ``getpass`` are stubbed rather than real: the home-derived constants
     would otherwise resolve against whoever runs the suite, and ``pwd.getpwnam``
     raises for a user the passwd database does not carry — which a container can
-    produce — taking every harness test with it.
+    produce — taking every harness test with it. Bare ``getuser`` is seeded too:
+    Mydumper/Binlog write ``from getpass import getuser`` and the AST harness
+    never runs that import, so ``CURRENT_USER = ... or getuser()`` needs the name
+    in this namespace (XtraBackup calls ``getpass.getuser()`` instead).
     """
+
+    def getuser() -> str:
+        return STUB_USER
+
     namespace: dict = {
         "os": os,
         "subprocess": subprocess,
@@ -125,7 +132,8 @@ def base_namespace() -> dict:
         "pwd": types.SimpleNamespace(
             getpwnam=lambda _name: types.SimpleNamespace(pw_dir=STUB_HOME)
         ),
-        "getpass": types.SimpleNamespace(getuser=lambda: STUB_USER),
+        "getpass": types.SimpleNamespace(getuser=getuser),
+        "getuser": getuser,
     }
     exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
     return namespace
