@@ -16,6 +16,7 @@
 """Test masked-secret and credential-URL preservation on the PATCH write path."""
 
 import typing
+from types import GenericAlias
 
 import pytest
 from pydantic import BaseModel, HttpUrl, SecretStr
@@ -120,7 +121,12 @@ class TestSecretValuedDictPayloads:
         self,
     ) -> None:
         """Skip restoration for a mapping annotation that is not a key/value pair."""
-        field_info = FieldInfo.from_annotation(dict[str, SecretStr, str])  # type: ignore[misc]
+        # Built at runtime: a three-argument ``dict[...]`` written literally is a
+        # static type error, and the point of the test is the arity the resolver
+        # has to survive, not the annotation being well-formed.
+        field_info = FieldInfo.from_annotation(
+            GenericAlias(dict, (str, SecretStr, str))
+        )
 
         preserved = preserve_patch_secret_value(
             field_info, {"first": SecretStr("stored")}, {"first": SECRET_STR_MASK}

@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "NESTED_VALUE_MISSING",
     "REMOTE_API_TLS_MARKERS",
     "SECRET_STR_MASK",
     "FieldMarkerKey",
@@ -72,7 +71,6 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,

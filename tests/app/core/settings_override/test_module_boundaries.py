@@ -15,12 +15,14 @@
 
 """Test how the settings-override substrate is split across its modules."""
 
+import pkgutil
 import subprocess
 import sys
 from types import ModuleType
 
 import pytest
 
+import app.core.settings_override as package
 from app.core.settings_override import (
     constants,
     registry,
@@ -32,7 +34,44 @@ from app.core.settings_override import (
 #: resolution module. Anything else means the layering has started to rot.
 REGISTRY_BACK_IMPORTS = frozenset({"resolve_nested_segments"})
 
+#: Imports the resolution module first, then calls the one function whose
+#: registry import is deferred, so the deferred import runs while resolution is
+#: the module that owns the interpreter's entry point.
+DEFERRED_IMPORT_PROBE = """
+import app.core.settings_override.resolution as resolution
+from pydantic import BaseModel
+
+from app.core.settings_override.registry import hot_field, nested_overridable_field
+
+
+class Leaf(BaseModel):
+    depth: int = hot_field(1)
+
+
+class Root(BaseModel):
+    leaf: Leaf = nested_overridable_field(Leaf())
+
+
+metadata = resolution.resolve_nested_field_metadata(Root, "leaf__depth")
+assert metadata is not None, "nested key did not resolve"
+assert metadata.key == "leaf__depth", metadata.key
+"""
+
 NEW_MODULES = (resolution, secret_preservation)
+
+
+def _package_module_names() -> list[str]:
+    """Return every importable module in the settings-override package.
+
+    :return: Dotted module names, the package itself included.
+    """
+    return [
+        package.__name__,
+        *sorted(
+            info.name
+            for info in pkgutil.walk_packages(package.__path__, f"{package.__name__}.")
+        ),
+    ]
 
 
 def _defines(module: ModuleType, name: str) -> bool:
@@ -101,11 +140,16 @@ class TestExportLists:
 
     @pytest.mark.parametrize(
         "module",
-        [registry, *NEW_MODULES],
-        ids=["registry", "resolution", "secret-preservation"],
+        [package, registry, *NEW_MODULES],
+        ids=["package", "registry", "resolution", "secret-preservation"],
     )
     def test_every_export_resolves(self, module: ModuleType) -> None:
         """Assert each exported name exists on its module.
+
+        The package is checked alongside the three modules because its
+        ``__init__`` re-export list is what consumers outside the package
+        import from, and a symbol that moves between modules can be dropped
+        from it without any module-level import failing.
 
         :param module: The module whose ``__all__`` to check.
         :return: ``None``.
@@ -124,27 +168,40 @@ class TestExportLists:
 class TestImportCycles:
     """Cover importing each module first in a fresh interpreter."""
 
-    @pytest.mark.parametrize(
-        "module_name",
-        [
-            "app.core.settings_override",
-            "app.core.settings_override.registry",
-            "app.core.settings_override.resolution",
-            "app.core.settings_override.secret_preservation",
-        ],
-    )
+    @pytest.mark.parametrize("module_name", _package_module_names())
     def test_module_imports_standalone(self, module_name: str) -> None:
         """Assert the module imports with nothing else imported first.
 
         The registry and resolution modules import each other, so the entry
         point decides which one is left partially initialized: only a fresh
-        interpreter per entry point can catch that.
+        interpreter per entry point can catch that. Every module in the package
+        is an entry point in production — the API routes and the cache reach
+        the pair before anything else does — and the list is discovered rather
+        than written down so a module added later cannot opt out.
 
         :param module_name: The module to import as the interpreter's first act.
         :return: ``None``.
         """
         result = subprocess.run(
             [sys.executable, "-c", f"import {module_name}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+
+    def test_the_deferred_registry_import_resolves_when_it_runs(self) -> None:
+        """Assert the cycle-breaking import still resolves at call time.
+
+        Importing a module only proves the deferred import was not hoisted back
+        to module scope. The import inside ``resolve_nested_field_metadata``
+        does not run until the function is called, so a name the registry stops
+        exporting would surface on the first LIST request instead of at
+        startup — after every import test has already passed.
+        """
+        result = subprocess.run(
+            [sys.executable, "-c", DEFERRED_IMPORT_PROBE],
             capture_output=True,
             text=True,
             check=False,
@@ -160,10 +217,22 @@ class TestSharedSentinel:
         """Assert the sentinel stays a single object across its re-exports.
 
         Callers compare it with ``is``, so a duplicated ``object()`` would make
-        a missing nested segment read as a present value.
+        a missing nested segment read as a present value. The package re-export
+        is included because that is the path most consumers take.
         """
         assert (
             constants.NESTED_VALUE_MISSING
-            is registry.NESTED_VALUE_MISSING
             is resolution.NESTED_VALUE_MISSING
+            is package.NESTED_VALUE_MISSING
         )
+
+    def test_the_registry_no_longer_relays_the_sentinel(self) -> None:
+        """Assert readers reach the sentinel through the module that owns it.
+
+        The sentinel was moved to a leaf module precisely so no reader has to
+        import it from a module that may still be initializing; a relay left on
+        the registry would hand that hazard back to every consumer that keeps
+        using it.
+        """
+        assert "NESTED_VALUE_MISSING" not in vars(registry)
+        assert "NESTED_VALUE_MISSING" not in registry.__all__

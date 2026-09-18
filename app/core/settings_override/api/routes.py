@@ -51,6 +51,7 @@ from app.core.settings_override.api.models import (
     SettingsListResponse,
     SettingsPatch,
 )
+from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.lifecycle import (
     fire_change_callbacks,
     publish_snapshot,
@@ -69,7 +70,6 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     iter_class_fields,
     materialize_override_value,
-    NESTED_VALUE_MISSING,
     ReloadClassification,
     rendered_leaf_keys,
     unwrap_secrets_for_storage,

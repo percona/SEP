@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the nested-override helpers in the classification registry."""
+"""Test how ``__``-delimited override keys resolve against nested models."""
 
 import functools
 from collections.abc import Callable

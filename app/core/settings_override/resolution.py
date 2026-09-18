@@ -154,7 +154,7 @@ def resolve_nested_field(
 
 
 def _mapping_segment_or_default(
-    mapping: Mapping[str, Any], segment: str, default: Any
+    mapping: Mapping[Any, Any], segment: str, default: Any
 ) -> Any:
     """Read ``segment`` from ``mapping`` (case-insensitive) or return ``default``."""
     if segment in mapping:
