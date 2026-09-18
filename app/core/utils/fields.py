@@ -502,16 +502,30 @@ def dsn_safe(value: str) -> str:
     return value
 
 
+NON_WHITESPACE_PATTERN = r"\S"
+"""Match a value carrying at least one non-whitespace character."""
+
 StrippedNonEmptyStr = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, pattern=r"\S")
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, pattern=NON_WHITESPACE_PATTERN
+    ),
 ]
 """Define a string field that strips surrounding whitespace and must not be empty.
 
 ``strip_whitespace=True`` is a validation-time transform that never reaches the
 published JSON Schema, so ``min_length`` alone would let a client accept a
-whitespace-only value the server then rejects. ``pattern=r"\\S"`` states that
-same contract in the schema. It is deliberately unanchored: ``strip_whitespace``
-trims only the edges, so a value with interior whitespace stays valid.
+whitespace-only value the server then rejects. ``NON_WHITESPACE_PATTERN`` states
+that same contract in the schema. It is deliberately unanchored:
+``strip_whitespace`` trims only the edges, so a value with interior whitespace
+stays valid.
+
+``min_length`` stays alongside the pattern so a blank value keeps raising the
+``string_too_short`` error it always has; the pattern adds a second, independent
+reason to reject it rather than replacing the first. The published pattern also
+reaches past the schema: the SPA's ``validationMapper.ts`` matches this exact
+string to choose its whitespace-specific message, so editing the literal here
+silently reverts that message to the generic pattern-mismatch text.
 """
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]

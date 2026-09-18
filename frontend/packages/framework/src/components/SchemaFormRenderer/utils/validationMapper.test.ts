@@ -26,6 +26,16 @@ const multiServiceField: AppField = {
   service_types: ['mysql'],
 };
 
+const stringField = (pattern: string): AppField => ({
+  type: 'string',
+  name: 'backup_dir',
+  label: 'Backup directory',
+  pattern,
+});
+
+const patternRuleFor = (pattern: string) =>
+  buildValidationRules(stringField(pattern)).pattern as { value: RegExp; message: string };
+
 describe('coerceFormValues — multi reference fields', () => {
   it('normalizes an untouched empty-string multi field to an empty array', () => {
     // An optional multi field seeds as '' when left untouched; it must submit [].
@@ -40,28 +50,18 @@ describe('coerceFormValues — multi reference fields', () => {
   });
 });
 
-const stringField = (pattern: string): AppField => ({
-  type: 'string',
-  name: 'backup_dir',
-  label: 'Backup directory',
-  pattern,
-});
-
 describe('buildValidationRules — patterned string fields', () => {
   it('names the whitespace-only case for the non-whitespace pattern', () => {
-    const rules = buildValidationRules(stringField('\\S'));
+    const { value, message } = patternRuleFor('\\S');
 
-    expect(rules.pattern).toBeDefined();
-    const { value, message } = rules.pattern as { value: RegExp; message: string };
     expect(value.test('   ')).toBe(false);
     expect(value.test('/var/my backups')).toBe(true);
     expect(message).toBe('Backup directory cannot be only whitespace');
   });
 
   it('keeps the generic message for every other pattern', () => {
-    const rules = buildValidationRules(stringField('^\\d+$'));
-
-    const { message } = rules.pattern as { value: RegExp; message: string };
-    expect(message).toBe('Backup directory does not match the required format');
+    expect(patternRuleFor('^\\d+$').message).toBe(
+      'Backup directory does not match the required format',
+    );
   });
 });

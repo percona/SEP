@@ -19,9 +19,10 @@ import type { RegisterOptions } from 'react-hook-form';
 import type { AppField } from '../types';
 import { getAtPath, setAtPath } from './fieldPath';
 
-// The schema pattern every backend `StrippedNonEmptyStr` field publishes. It
-// only rules out a whitespace-only entry, so the generic format message would
-// misdescribe what the user has to change.
+// The schema pattern every backend `StrippedNonEmptyStr` field publishes, named
+// `NON_WHITESPACE_PATTERN` in app/core/utils/fields.py — the source of truth this
+// copy has to track. It only rules out a whitespace-only entry, so the generic
+// format message would misdescribe what the user has to change.
 const NON_WHITESPACE_PATTERN = '\\S';
 
 export function buildValidationRules(field: AppField): RegisterOptions {
