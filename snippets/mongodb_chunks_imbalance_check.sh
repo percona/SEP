@@ -5,6 +5,7 @@
 # description: "This script checks shard balancer state and chunk distribution to diagnose uneven data distribution across shards."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBChunksImbalance

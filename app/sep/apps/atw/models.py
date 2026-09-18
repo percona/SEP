@@ -21,12 +21,20 @@ so it must stay self-contained — importing only from ``app.core``, ``pydantic`
 packages (that would register foreign tables in ``SQLModel.metadata`` and leak
 them into the ``sep`` autogenerate). The category taxonomy, which depends on
 ``app.inventory``, lives in :mod:`app.sep.apps.atw.categories`.
+
+:mod:`app.tasks.task_status` is the one exception, and it is admitted on the
+mechanism rather than by name: the restriction exists to keep foreign **tables** out
+of ``SQLModel.metadata``, and that module defines none — it imports only the standard
+library, and ``app/tasks/__init__.py`` is licence header only. It exists so
+``terminal_status`` can carry the real status enum instead of a bare ``str`` whose
+value set nothing constrains. Any other ``app.tasks`` import, or a SQLModel class
+appearing in that module, is the leak this paragraph is about.
 """
 
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, UUID4
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, UUID4
 from sqlalchemy import Column, JSON, UniqueConstraint
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
@@ -40,6 +48,7 @@ from app.core.utils.fields import (
     NonEmptyStr,
     UTCDatetime,
 )
+from app.tasks.task_status import TaskHistoryStatusEnum
 
 
 def _default_incident_name() -> str:
@@ -107,9 +116,16 @@ class AtwIncidentUpdate(SQLModel):
 class AtwIncidentResponse(BaseModel):
     """Represent a persisted diagnostic incident.
 
-    Every field is always present on a stored incident, so — unlike returning
-    the :class:`AtwIncident` table model directly — the generated client types
-    them as required rather than optional.
+    Every stored field is always present, so — unlike returning the
+    :class:`AtwIncident` table model directly — the generated client types them as
+    required rather than optional.
+
+    The three run-aggregate fields are defaulted instead, which keeps them out of
+    the published ``required`` set so a client generated against the previous
+    payload still validates a response carrying them. Every route populates all
+    three, ``last_activity_at`` included, so the defaults are never served on a
+    real response; the generated client types that one as optional anyway, because
+    a nullable field emits no schema default to mark it required.
 
     :param id: The incident's UUID primary key.
     :param name: Human-readable incident label.
@@ -118,6 +134,11 @@ class AtwIncidentResponse(BaseModel):
     :param created_at: When the incident was created.
     :param updated_at: When the incident was last updated, if ever.
     :param closed_at: When the incident was closed, if ever; ``None`` means open.
+    :param run_count: How many snippet executions are grouped under the incident.
+    :param failed_run_count: How many of those runs reached a failed outcome. A
+        run whose outcome is not yet known counts towards neither.
+    :param last_activity_at: The most recent of the incident's own timestamps and
+        its executions' dispatch or completion times.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -129,14 +150,43 @@ class AtwIncidentResponse(BaseModel):
     created_at: UTCDatetime
     updated_at: UTCDatetime | None
     closed_at: UTCDatetime | None
+    run_count: NonNegativeInt = 0
+    failed_run_count: NonNegativeInt = 0
+    last_activity_at: UTCDatetime | None = None
 
 
 class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     """Link one diagnostic snippet execution to its incident grouping.
 
+    The four outcome columns denormalize what the tasks service knows about the
+    run, because status lives behind that service's own database and the incident
+    listing may not issue a per-row HTTP call to read it. Two writers keep them:
+    :func:`app.sep.apps.atw.recorder.record_atw_run`, which the tasks service calls
+    at the terminal transitions it observes, and the ``reconcile_atw_executions``
+    sweep, which fills the rest — so a run the hook missed reads as unresolved for up
+    to one reconcile interval, longer while a backlog drains. ``terminal_status`` carries
+    the shared status enum and its CHECK constraint, so the column cannot hold a value
+    the aggregate would silently skip. The enum is imported from
+    :mod:`app.tasks.task_status`, a leaf module that defines no tables, so naming it
+    here registers nothing of the tasks service's in ``SQLModel.metadata`` — the
+    module docstring states why that import is admitted.
+
     :param incident_id: Foreign key to the owning :class:`AtwIncident`.
     :param task_history_id: Logical reference to the tasks-service execution row.
     :param snippet_filename: Filename of the executed diagnostic snippet.
+    :param terminal_status: The ``TaskHistoryStatusEnum`` value the run finished
+        with, or ``None`` while its outcome is still unknown.
+    :param finished_at: When the run finished, as the tasks service recorded it.
+        Kept separate from the row's own ``updated_at`` so the reconciliation
+        sweep's bookkeeping writes cannot move the incident's last-activity time.
+    :param outcome_unrecoverable: Whether the upstream history row no longer
+        resolves, so no outcome will ever be recorded and the sweep must stop
+        re-querying it. Distinguishing this from ``terminal_status IS NULL`` is
+        why the outcome needs two columns rather than one.
+    :param reconcile_attempted_at: When the sweep last examined this row,
+        whatever the outcome. Its selection orders by this so a row that is
+        legitimately still running cannot re-occupy a batch slot forever and
+        starve the rows behind it.
     :param incident: The incident this execution belongs to.
     """
 
@@ -155,6 +205,21 @@ class AtwIncidentExecution(BaseUUIDSQLModel, table=True):
     )
     task_history_id: int = SQLField(index=True)
     snippet_filename: str
+    terminal_status: TaskHistoryStatusEnum | None = SQLField(
+        default=None,
+        sa_column=Column(
+            EnumField(TaskHistoryStatusEnum, native_enum=False, create_constraint=True),
+            nullable=True,
+            index=True,
+        ),
+    )
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    outcome_unrecoverable: bool = SQLField(default=False, nullable=False)
+    reconcile_attempted_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
     incident: AtwIncident = Relationship(back_populates="executions")
 
 

@@ -38,7 +38,7 @@
 #    label: Target database
 #    description: The PostgreSQL database this script connects to.
 #    default: postgres
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # alerts:

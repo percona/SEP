@@ -5,6 +5,7 @@
 # description: "This script checks global lock queues and identifies long-running or unindexed queries causing queue buildup."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBReadWriteQueueHigh

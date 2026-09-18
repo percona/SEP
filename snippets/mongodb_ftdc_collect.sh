@@ -5,6 +5,11 @@
 # description: Locates the MongoDB Full-Time Diagnostic Data Capture (FTDC) directory, lists its files, and optionally copies them to a destination for offline analysis.
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
 # service_type: mongodb
 # parameters:
 #  - name: dest

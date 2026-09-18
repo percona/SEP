@@ -933,7 +933,7 @@
         "type": "object"
       },
       "SepTaskHistoryResponse": {
-        "description": "Represent a task-history row as SEP serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task, or\n    ``None`` when none was recorded.",
+        "description": "Represent a task-history row as SEP serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task: the\n    provider's username when resolvable, a system label for\n    system-initiated work, otherwise the stored identifier. ``None`` when\n    none was recorded.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -952,7 +952,7 @@
             "type": "string"
           },
           "display_name": {
-            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\n:return: The display label for the task history entry.",
+            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\nA ``PROXY`` task that leaves the payload to each dispatch is classified by the\nroot it names, not by its own name, because history binds to the\n*dispatched* task: an app wrapping a generic executor to attach its own hooks\nwould otherwise collapse every one of its runs onto the wrapper's single\nname. A proxy carrying its own ``payload`` is left alone, because\n``prepare_task_history`` substitutes that payload into every run: it is a\nconfigured job, and its own name is the meaningful label. That is the shape\nof every proxy the framework builds over ``run-python``. Only the\nclassification uses the root — a proxy over a non-generic task still reports\nits own name.\n\n:return: The display label for the task history entry.",
             "readOnly": true,
             "title": "Display Name",
             "type": "string"
@@ -1079,7 +1079,7 @@
         "type": "object"
       },
       "SepTaskResponse": {
-        "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator, or ``None`` when\n    none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, or ``None`` when none was recorded.",
+        "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
         "properties": {
           "alert_detail_builder": {
             "anyOf": [
@@ -4037,7 +4037,7 @@
         "type": "object"
       },
       "atw__AtwIncidentResponse": {
-        "description": "Represent a persisted diagnostic incident.\n\nEvery field is always present on a stored incident, so — unlike returning\nthe :class:`AtwIncident` table model directly — the generated client types\nthem as required rather than optional.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.",
+        "description": "Represent a persisted diagnostic incident.\n\nEvery stored field is always present, so — unlike returning the\n:class:`AtwIncident` table model directly — the generated client types them as\nrequired rather than optional.\n\nThe three run-aggregate fields are defaulted instead, which keeps them out of\nthe published ``required`` set so a client generated against the previous\npayload still validates a response carrying them. Every route populates all\nthree, ``last_activity_at`` included, so the defaults are never served on a\nreal response; the generated client types that one as optional anyway, because\na nullable field emits no schema default to mark it required.\n\n:param id: The incident's UUID primary key.\n:param name: Human-readable incident label.\n:param case_ref: Support-case reference, if set.\n:param created_by: Username of the support engineer who created the incident.\n:param created_at: When the incident was created.\n:param updated_at: When the incident was last updated, if ever.\n:param closed_at: When the incident was closed, if ever; ``None`` means open.\n:param run_count: How many snippet executions are grouped under the incident.\n:param failed_run_count: How many of those runs reached a failed outcome. A\n    run whose outcome is not yet known counts towards neither.\n:param last_activity_at: The most recent of the incident's own timestamps and\n    its executions' dispatch or completion times.",
         "properties": {
           "case_ref": {
             "anyOf": [
@@ -4071,15 +4071,39 @@
             "title": "Created By",
             "type": "string"
           },
+          "failed_run_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Failed Run Count",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid4",
             "title": "Id",
             "type": "string"
           },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
           "name": {
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "run_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Run Count",
+            "type": "integer"
           },
           "updated_at": {
             "anyOf": [
@@ -7072,7 +7096,7 @@
         "type": "object"
       },
       "framework__BaseTaskResponse": {
-        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity, the resolved execution status, the stored configuration,\nand the audit/anonymization metadata. A standard app whose response has no\napp-specific fields uses this model directly; an app with extras subclasses\nit. The model is parametrized by the task ``owner``, which drives the\n``anonymized_entities`` default-entity lookup but is excluded from the\nserialized detail/list payload (as is ``service_type``).\n\n:param name: The task name.\n:param owner: The task-category owner (for example ``BACKUPS``). Kept\n    as a model attribute for ``anonymized_entities`` and server-side\n    filtering; excluded from the serialized detail/list payload.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type. Excluded from the\n    serialized detail/list payload.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity, the resolved execution status, the stored configuration,\nand the audit/anonymization metadata. A standard app whose response has no\napp-specific fields uses this model directly; an app with extras subclasses\nit. The model is parametrized by the task ``owner``, which drives the\n``anonymized_entities`` default-entity lookup but is excluded from the\nserialized detail/list payload (as is ``service_type``).\n\n:param name: The task name.\n:param owner: The task-category owner (for example ``BACKUPS``). Kept\n    as a model attribute for ``anonymized_entities`` and server-side\n    filtering; excluded from the serialized detail/list payload.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type. Excluded from the\n    serialized detail/list payload.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (system\n    label or provider username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (system label or provider username when resolvable, otherwise the\n    stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -16460,7 +16484,7 @@
     },
     "/api/apps/atw/incidents/": {
       "get": {
-        "description": "List diagnostic incidents, newest first.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
+        "description": "List diagnostic incidents, newest first, with each one's run totals.\n\nThe totals come from one grouped query over the whole page, so rendering it\nissues no per-row task-history request however many runs an incident holds.\n\n:param session: The database session.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of incidents, newest first.",
         "operationId": "atw_atw_list_incidents_api_apps_atw_incidents__get",
         "parameters": [
           {
@@ -16592,7 +16616,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve a single diagnostic incident by id.\n\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The matching incident.",
+        "description": "Retrieve a single diagnostic incident by id.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:return: The matching incident.",
         "operationId": "atw_atw_get_incident_api_apps_atw_incidents__incident_id__get",
         "parameters": [
           {
@@ -16797,7 +16821,7 @@
         ]
       },
       "post": {
-        "description": "Execute several snippets against one incident, reporting each item separately.\n\nA malformed selection fails the whole request up front: ``resolve_snippets``\nruns the traversal guard over every filename before dispatch, so an unsafe\nfilename raises before any item runs. Past that guard, one failing item never\nblocks the rest: each is dispatched and recorded inside its own guard, and the\nresponse always carries an entry per requested item — an unresolved filename\nbecomes that item's error. A failed attempt produces no task-history row to\nreference, so it is reported here rather than persisted.\n\nThe row-write guard rolls the shared session back before the loop continues,\nor one failed write would leave the transaction aborted and doom every later\nitem on PostgreSQL; the dispatch guard rolls back defensively, having written\nnothing itself. ``incident.id`` is read once up front because both a commit and\na rollback expire the instance, and re-reading it would trigger a lazy load.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The batch payload.\n:param tasks_api: The authenticated Tasks API client.\n:return: One outcome entry per requested item, in request order.\n:raises HTTPBadRequestException: When any filename is unsafe or malformed,\n    failing the whole request before any item is dispatched.",
+        "description": "Execute several snippets against one incident, reporting each item separately.\n\nA malformed selection fails the whole request up front: ``resolve_snippets``\nruns the traversal guard over every filename before dispatch, so an unsafe\nfilename raises before any item runs. Past that guard, one failing item never\nblocks the rest: each is dispatched and recorded inside its own guard, and the\nresponse always carries an entry per requested item — an unresolved filename\nbecomes that item's error. A failed attempt produces no task-history row to\nreference, so it is reported here rather than persisted.\n\nThe row-write guard rolls the shared session back before the loop continues,\nor one failed write would leave the transaction aborted and doom every later\nitem on PostgreSQL; the dispatch guard rolls back defensively, having written\nnothing itself. ``incident.id`` is read once up front because both a commit and\na rollback expire the instance, and re-reading it would trigger a lazy load.\n\nATW's proxy is resolved once per distinct interpreter before the loop, so a batch\nof twenty items costs the same upstream traffic as one item. That resolution has\nits own guard: it cannot fail for one item and not another, so a failure degrades\nthe whole batch to unwrapped dispatch instead of failing a request whose\ndispatches may still succeed.\n\n:param session: The database session.\n:param incident: The incident resolved from the ``incident_id`` path parameter.\n:param body: The batch payload.\n:param tasks_api: The authenticated Tasks API client.\n:return: One outcome entry per requested item, in request order.\n:raises HTTPBadRequestException: When any filename is unsafe or malformed,\n    failing the whole request before any item is dispatched.",
         "operationId": "atw_atw_batch_execute_api_apps_atw_incidents__incident_id__executions__post",
         "parameters": [
           {
@@ -17090,7 +17114,7 @@
     },
     "/api/apps/atw/snippets/": {
       "get": {
-        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The ``atw`` metadata tag\nis a presentation filter on the category listing and is deliberately not\napplied here, so search reaches snippets that listing never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
+        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The\n``diagnostic_categories`` metadata key is a presentation filter on the category\nlisting and is deliberately not applied here, so search reaches snippets that\nlisting never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
         "operationId": "atw_atw_snippet_search_api_apps_atw_snippets__get",
         "parameters": [
           {

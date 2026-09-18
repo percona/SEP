@@ -765,7 +765,10 @@ export interface paths {
     };
     /**
      * Atw List Incidents
-     * @description List diagnostic incidents, newest first.
+     * @description List diagnostic incidents, newest first, with each one's run totals.
+     *
+     *     The totals come from one grouped query over the whole page, so rendering it
+     *     issues no per-row task-history request however many runs an incident holds.
      *
      *     :param session: The database session.
      *     :param pagination: The offset/limit window for the page.
@@ -800,6 +803,7 @@ export interface paths {
      * Atw Get Incident
      * @description Retrieve a single diagnostic incident by id.
      *
+     *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
      *     :return: The matching incident.
      */
@@ -894,6 +898,12 @@ export interface paths {
      *     item on PostgreSQL; the dispatch guard rolls back defensively, having written
      *     nothing itself. ``incident.id`` is read once up front because both a commit and
      *     a rollback expire the instance, and re-reading it would trigger a lazy load.
+     *
+     *     ATW's proxy is resolved once per distinct interpreter before the loop, so a batch
+     *     of twenty items costs the same upstream traffic as one item. That resolution has
+     *     its own guard: it cannot fail for one item and not another, so a failure degrades
+     *     the whole batch to unwrapped dispatch instead of failing a request whose
+     *     dispatches may still succeed.
      *
      *     :param session: The database session.
      *     :param incident: The incident resolved from the ``incident_id`` path parameter.
@@ -1039,9 +1049,10 @@ export interface paths {
      * @description Search approved snippets by free text, independent of the ATW taxonomy.
      *
      *     Served from ATW's own router over the snippets library, so the capability does
-     *     not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
-     *     is a presentation filter on the category listing and is deliberately not
-     *     applied here, so search reaches snippets that listing never exposes.
+     *     not depend on the Snippet Manager app being activated. The
+     *     ``diagnostic_categories`` metadata key is a presentation filter on the category
+     *     listing and is deliberately not applied here, so search reaches snippets that
+     *     listing never exposes.
      *
      *     :param session: The database session.
      *     :param list_query: The vetted sort and search selections, pinned to approved.
@@ -4097,8 +4108,10 @@ export interface components {
      * @description Represent a task-history row as SEP serves it, with actors resolved.
      *
      *     :param task: The task this execution belongs to, carrying resolved actors.
-     *     :param executed_by: Display name for the actor that ran the task, or
-     *         ``None`` when none was recorded.
+     *     :param executed_by: Display name for the actor that ran the task: the
+     *         provider's username when resolvable, a system label for
+     *         system-initiated work, otherwise the stored identifier. ``None`` when
+     *         none was recorded.
      */
     SepTaskHistoryResponse: {
       /** Anonymize Mask */
@@ -4119,6 +4132,17 @@ export interface components {
        *     ``file://`` payload basename, the source directory from whichever of those
        *     carries one, and the target from the execution request. Falls back to
        *     ``"<task> on <target>"`` when no filename is available.
+       *
+       *     A ``PROXY`` task that leaves the payload to each dispatch is classified by the
+       *     root it names, not by its own name, because history binds to the
+       *     *dispatched* task: an app wrapping a generic executor to attach its own hooks
+       *     would otherwise collapse every one of its runs onto the wrapper's single
+       *     name. A proxy carrying its own ``payload`` is left alone, because
+       *     ``prepare_task_history`` substitutes that payload into every run: it is a
+       *     configured job, and its own name is the meaningful label. That is the shape
+       *     of every proxy the framework builds over ``run-python``. Only the
+       *     classification uses the root — a proxy over a non-generic task still reports
+       *     its own name.
        *
        *     :return: The display label for the task history entry.
        */
@@ -4170,10 +4194,12 @@ export interface components {
      *     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
      *     actor fields carry.
      *
-     *     :param created_by: Display name for the task's creator, or ``None`` when
-     *         none was recorded.
+     *     :param created_by: Display name for the task's creator: the provider's
+     *         username when resolvable, a system label for system-initiated work,
+     *         otherwise the stored identifier. ``None`` when none was recorded.
      *     :param last_updated_by: Display name for the user who last modified the
-     *         task, or ``None`` when none was recorded.
+     *         task, resolved on the same terms as ``created_by``. ``None`` when none
+     *         was recorded.
      */
     SepTaskResponse: {
       /** Alert Detail Builder */
@@ -5883,9 +5909,16 @@ export interface components {
      * AtwIncidentResponse
      * @description Represent a persisted diagnostic incident.
      *
-     *     Every field is always present on a stored incident, so — unlike returning
-     *     the :class:`AtwIncident` table model directly — the generated client types
-     *     them as required rather than optional.
+     *     Every stored field is always present, so — unlike returning the
+     *     :class:`AtwIncident` table model directly — the generated client types them as
+     *     required rather than optional.
+     *
+     *     The three run-aggregate fields are defaulted instead, which keeps them out of
+     *     the published ``required`` set so a client generated against the previous
+     *     payload still validates a response carrying them. Every route populates all
+     *     three, ``last_activity_at`` included, so the defaults are never served on a
+     *     real response; the generated client types that one as optional anyway, because
+     *     a nullable field emits no schema default to mark it required.
      *
      *     :param id: The incident's UUID primary key.
      *     :param name: Human-readable incident label.
@@ -5894,6 +5927,11 @@ export interface components {
      *     :param created_at: When the incident was created.
      *     :param updated_at: When the incident was last updated, if ever.
      *     :param closed_at: When the incident was closed, if ever; ``None`` means open.
+     *     :param run_count: How many snippet executions are grouped under the incident.
+     *     :param failed_run_count: How many of those runs reached a failed outcome. A
+     *         run whose outcome is not yet known counts towards neither.
+     *     :param last_activity_at: The most recent of the incident's own timestamps and
+     *         its executions' dispatch or completion times.
      */
     atw__AtwIncidentResponse: {
       /** Case Ref */
@@ -5908,12 +5946,24 @@ export interface components {
       /** Created By */
       created_by: string;
       /**
+       * Failed Run Count
+       * @default 0
+       */
+      failed_run_count: number;
+      /**
        * Id
        * Format: uuid4
        */
       id: string;
+      /** Last Activity At */
+      last_activity_at?: string | null;
       /** Name */
       name: string;
+      /**
+       * Run Count
+       * @default 0
+       */
+      run_count: number;
       /** Updated At */
       updated_at: string | null;
     };
@@ -7165,10 +7215,11 @@ export interface components {
      *         back to the owner's configured defaults.
      *     :param created_at: The timestamp when the task was first created.
      *     :param updated_at: The timestamp of the last modification to the task.
-     *     :param created_by: Display name for the user who initiated the task (Casdoor
-     *         username when resolvable, otherwise the stored user id).
+     *     :param created_by: Display name for the user who initiated the task (system
+     *         label or provider username when resolvable, otherwise the stored user id).
      *     :param last_updated_by: Display name for the user who last modified the task
-     *         record (Casdoor username when resolvable, otherwise the stored user id).
+     *         record (system label or provider username when resolvable, otherwise the
+     *         stored user id).
      *     :param connectivity_warning: A warning surfaced when the post-creation
      *         database connectivity check fails. ``None`` when the check passes, is
      *         opted out, or the task meta lacks the connectivity keys.

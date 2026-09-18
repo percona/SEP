@@ -9,7 +9,7 @@
 #    type: str
 #    label: MySQL defaults file
 #    description: MySQL option file the client reads for connection settings.
-# atw:
+# diagnostic_categories:
 #  - NATIVE_ASYNC_REPLICATION
 # service_type: mysql
 # alerts:

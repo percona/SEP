@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB tcmalloc heap memory usage and provides diagnostics for high heap consumption."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighHeapUsage

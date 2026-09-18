@@ -5,6 +5,7 @@
 # description: "This script checks WiredTiger cache miss ratio and identifies unindexed queries causing excessive disk reads."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighCacheMissRatio
