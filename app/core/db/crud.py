@@ -1162,9 +1162,9 @@ class BaseSQLModelManager(BaseManager):
     ) -> T:
         """Save a model instance to the database.
 
-        This method overrides `BaseManager.save()` to check for duplicate errors for
-        each unique key of the Model, whether it is declared as a unique index or as
-        a ``UniqueConstraint``.
+        This method overrides ``BaseManager.save()`` to check for duplicate errors
+        for each unique key of the Model, whether it is declared as a unique index
+        or as a ``UniqueConstraint``.
 
         The duplicate lookup runs with autoflush suppressed: it matches against rows
         already written to the database and never flushes ``instance``'s own pending
