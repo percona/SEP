@@ -76,7 +76,7 @@
 | app/core/utils/cli\_args.py                                                                                                  |       12 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/date\_time.py                                                                                                 |        8 |        0 |        2 |        0 |    100% |           |
 | app/core/utils/dict.py                                                                                                       |       29 |        4 |       12 |        0 |     85% |   165-168 |
-| app/core/utils/fields.py                                                                                                     |      257 |        7 |       36 |        5 |     96% |175, 247-248, 394, 398, 632, 764 |
+| app/core/utils/fields.py                                                                                                     |      259 |        7 |       36 |        5 |     96% |175, 247-248, 394, 398, 647, 779 |
 | app/core/utils/imports.py                                                                                                    |       28 |        0 |        8 |        0 |    100% |           |
 | app/core/utils/iterators.py                                                                                                  |       18 |        0 |        6 |        0 |    100% |           |
 | app/core/utils/json\_pointer.py                                                                                              |       41 |        0 |       22 |        0 |    100% |           |
@@ -486,7 +486,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30512** | **1707** | **7484** |  **645** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30514** | **1707** | **7484** |  **645** | **93%** |           |
 
 
 ## Setup coverage badge
