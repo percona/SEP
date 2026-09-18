@@ -17,7 +17,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.sql import ColumnExpressionArgument
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -25,13 +25,35 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import NullsLastOrdering
 from app.core.pagination import PaginatedResponse, Pagination
-from app.sep.apps.mysql_backups.models import CatalogServiceKey, MysqlBackupRun
+from app.sep.apps.mysql_backups.models import (
+    CatalogServiceKey,
+    CataloguedSourceTransport,
+    MysqlBackupRun,
+)
 
 _NEWEST_RUN_FIRST = (
     NullsLastOrdering(col(MysqlBackupRun.finished_at), descending=True),
     col(MysqlBackupRun.created_at).desc(),
     col(MysqlBackupRun.id).desc(),
 )
+
+
+def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
+    """Return the SQL expression mirroring :func:`preferred_backup_source`.
+
+    Prefer a non-blank trimmed ``upload_destination``, else a non-blank trimmed
+    ``location``. Kept here so the catalog lookup keys on the same string
+    :func:`~app.sep.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
+    offers a restore form.
+
+    :return: The preferred-source column expression.
+    """
+    upload = col(MysqlBackupRun.upload_destination)
+    location = col(MysqlBackupRun.location)
+    return case(
+        (and_(upload.is_not(None), func.trim(upload) != ""), func.trim(upload)),
+        (and_(location.is_not(None), func.trim(location) != ""), func.trim(location)),
+    )
 
 
 class MysqlBackupRunManager(BaseSQLModelManager):
@@ -155,3 +177,57 @@ class MysqlBackupRunManager(BaseSQLModelManager):
             order_by=list(_NEWEST_RUN_FIRST),
             pagination=pagination,
         )
+
+    @classmethod
+    async def newest_for_backup_source(
+        cls,
+        session: AsyncSession,
+        key: CatalogServiceKey,
+        backup_source: str,
+    ) -> MysqlBackupRun | None:
+        """Return the newest run whose catalog-computed source matches ``backup_source``.
+
+        Scoped by :meth:`_service_predicate` and ordered like
+        :meth:`list_for_service`. The match key is the preferred source
+        (``upload_destination`` when set, else ``location``), the same string
+        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source` /
+        restore-form choices use — never a raw field equality. Only the single
+        newest match is considered; older matching rows are ignored.
+
+        :param session: The database session to query on.
+        :param key: The service the records are selected for.
+        :param backup_source: The restore body's ``backup_source`` to match.
+        :return: The newest matching catalog row, or ``None`` when none match.
+        """
+        if not backup_source:
+            return None
+        matches = await cls.list(
+            session,
+            cls._service_predicate(key),
+            _preferred_backup_source_expr() == backup_source,
+            order_by=list(_NEWEST_RUN_FIRST),
+            limit=1,
+        )
+        return matches[0] if matches else None
+
+    @classmethod
+    async def catalogued_source_transport(
+        cls,
+        session: AsyncSession,
+        key: CatalogServiceKey,
+        backup_source: str,
+    ) -> CataloguedSourceTransport | None:
+        """Return the recorded object-store transport for a matching run, if any.
+
+        Looks up :meth:`newest_for_backup_source` and returns that row's
+        ``source_transport`` when set (S3/GCS). A miss, a location-only run, or a
+        row written before the column existed all yield ``None`` so the caller
+        falls back to inference.
+
+        :param session: The database session to query on.
+        :param key: The service the records are selected for.
+        :param backup_source: The restore body's ``backup_source`` to match.
+        :return: The catalogued transport, or ``None`` when unavailable.
+        """
+        run = await cls.newest_for_backup_source(session, key, backup_source)
+        return run.source_transport if run is not None else None
