@@ -40,6 +40,7 @@ from app.sep.apps.meta_keys import SERVICE_ID_META_KEY, SERVICE_NAME_META_KEY
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
     BackupType,
+    catalogued_transport_from_upload,
     extract_backup_type_marker,
     MysqlBackupRun,
 )
@@ -127,7 +128,9 @@ async def record_backup_run(
     concurrent second call cannot create a duplicate). For a success worth
     recording, writes one row filling only the fields the run actually reported;
     a ``None`` or partial ``result`` leaves ``location``/``size_bytes``/
-    ``upload_destination`` empty rather than failing.
+    ``upload_destination``/``source_transport`` empty rather than failing.
+    ``source_transport`` is derived from a successful ``upload_destination``
+    (``s3`` / ``gcs`` only); a location-only run leaves it ``None``.
 
     The ``mysql_backup_run`` table is owned by the **sep** database, but the
     recorder seam opens and passes a *tasks*-database session — the two are
@@ -158,6 +161,9 @@ async def record_backup_run(
     meta = task_data.get("meta") if isinstance(task_data, dict) else None
     meta = meta if isinstance(meta, dict) else {}
     reported = result if isinstance(result, dict) else {}
+    upload_destination = _coerce(
+        reported.get("upload_destination"), str, "upload_destination"
+    )
 
     record = MysqlBackupRun(
         task_history_id=history.id,
@@ -168,9 +174,8 @@ async def record_backup_run(
         hostname=_coerce(meta.get("target"), str, "target"),
         backup_type=backup_type,
         location=_coerce(reported.get("backup_dir"), str, "backup_dir"),
-        upload_destination=_coerce(
-            reported.get("upload_destination"), str, "upload_destination"
-        ),
+        upload_destination=upload_destination,
+        source_transport=catalogued_transport_from_upload(upload_destination),
         size_bytes=_coerce(reported.get("size_bytes"), int, "size_bytes"),
         started_at=history.started_at,
         finished_at=history.finished_at,
