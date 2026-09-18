@@ -26,6 +26,7 @@ from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.encryption import marked_ciphertext
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
@@ -918,6 +919,7 @@ class TestTasksSettingsNomadApiKey:
             session, setting_class=TASKS_SETTINGS_TOKEN, key="NOMAD__api_key"
         )
         assert is_stored_ciphertext(rows[0].value)
+        assert marked_ciphertext(rows[0].value) is not None
         assert stored_plaintext(rows[0].value) == self._API_KEY
 
         executor = normalize_nomad_config_value(tasks_settings.NOMAD)

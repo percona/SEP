@@ -30,8 +30,8 @@ format instead of guessing it from the bytes. Only
 :mod:`app.core.settings_override.secret_storage` writes the envelope today, and
 :func:`encrypt` deliberately does not: marking inside the primitive would change
 what every other at-rest consumer stores. A consumer that may see a marked value
-must test the envelope *before* the structural check, which reports ``False`` for
-every marked value.
+asks :func:`is_stored_ciphertext`, which orders the two discriminators correctly;
+:func:`is_encrypted` alone reports ``False`` for every marked value.
 """
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "decrypt",
     "encrypt",
     "is_encrypted",
+    "is_stored_ciphertext",
     "mark_ciphertext",
     "marked_ciphertext",
 ]
@@ -213,3 +214,22 @@ def marked_ciphertext(value: str) -> str | None:
         return None
     token = value.removeprefix(_CIPHERTEXT_V1_PREFIX)
     return token if is_encrypted(token) else None
+
+
+def is_stored_ciphertext(value: str) -> bool:
+    """Return whether ``value`` holds ciphertext under either at-rest envelope.
+
+    The discriminator every consumer of a stored value wants, and the reason it
+    is here rather than spelled out per caller: the envelope has to be tested
+    *before* the structural check, because a marked value is invisible to it —
+    the marker's ``.`` is outside the base64 alphabet, so :func:`is_encrypted`
+    rejects the whole string. A consumer testing only the shape reads a store
+    holding nothing but marked values as holding no ciphertext at all.
+
+    Ordering the two correctly is the entire content of that rule, so a second
+    envelope version changes this function rather than every caller.
+
+    :param value: The stored value to classify.
+    :return: Whether it holds ciphertext under either envelope.
+    """
+    return marked_ciphertext(value) is not None or is_encrypted(value)

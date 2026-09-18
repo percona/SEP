@@ -36,6 +36,7 @@ from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import PMMSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.encryption import marked_ciphertext
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
@@ -2470,6 +2471,29 @@ class TestSepSettingsSecretsEncryptedAtRest:
         assert is_stored_ciphertext(rows[0].value["api_key"])
         assert stored_plaintext(rows[0].value["api_key"]) == PMM_API_KEY
         assert rows[0].value["endpoint"] == endpoint
+
+    async def test_whole_object_patch_marks_what_it_stores(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Stamp the envelope marker on the column a real PATCH writes.
+
+        The rest of this class asserts through the envelope-agnostic accessors,
+        which by design pass for a marked *and* an unmarked value — so nothing
+        else at the route level notices if the write path stops marking. This is
+        the one assertion here that does.
+        """
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={
+                "PMM": {"endpoint": "https://pmm.example.com", "api_key": PMM_API_KEY}
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SETTINGS_TOKEN, key="PMM"
+        )
+        assert marked_ciphertext(rows[0].value["api_key"]) is not None
 
     async def test_whole_object_patch_still_masks_the_secret_in_the_response(
         self, api_admin_client: TestClient

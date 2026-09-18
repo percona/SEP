@@ -82,6 +82,7 @@ from app.core.encryption import (
     decrypt,
     encrypt,
     is_encrypted,
+    is_stored_ciphertext,
     mark_ciphertext,
     marked_ciphertext,
 )
@@ -326,13 +327,26 @@ def _reencrypt_leaf(leaf: str) -> str:
     :param leaf: The stored leaf being rewritten.
     :return: The leaf unchanged, or marked ciphertext.
     """
-    if marked_ciphertext(leaf) is not None or is_encrypted(leaf):
+    if is_stored_ciphertext(leaf):
         return leaf
     return _encrypt_leaf(leaf)
 
 
 def _decrypt_leaf(leaf: str) -> str:
     """Return the plaintext behind ``leaf``, or ``leaf`` when it is not ciphertext.
+
+    A value carrying the marker over a *damaged* payload is returned as-is
+    rather than raised on, and that is a deliberate choice with a cost worth
+    naming: the marker is evidence the writer stored ciphertext there, so
+    passing it through hands the caller a ``sep.enc.v1.``-prefixed string as if
+    it were the credential. Raising instead would drop the row with a warning,
+    which :mod:`app.core.settings_override.cache` already handles.
+
+    Passing through is kept because it matches the unmarked path exactly — a
+    corrupt bare token is returned untouched too — so no stored value changes
+    behaviour on the day the envelope ships, which is the property the whole
+    change is built around. Nothing in this module can produce the shape: it
+    needs a value that was marked and then damaged in the column.
 
     :param leaf: The stored leaf being read.
     :return: The plaintext, or the leaf unchanged.

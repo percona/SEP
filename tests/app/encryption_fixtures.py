@@ -21,10 +21,13 @@ decrypt attempt could: a plaintext it accepts, and ciphertext it accepts that
 the configured key cannot read. Every consumer of the encryption primitive has
 the same pair of cases, so they live here rather than being copied per suite.
 
-The two accessors beside them read a leaf back out of storage without the
+:func:`stored_plaintext` beside them reads a leaf back out of storage without the
 calling test having to know which envelope carried it — the marked one
 :mod:`app.core.settings_override.secret_storage` writes today, or the bare token
 a row predating it still holds.
+:func:`~app.core.encryption.is_stored_ciphertext` is re-exported here rather than
+reimplemented, so a suite importing it gets the production discriminator and not
+a test-local copy that could disagree with it.
 """
 
 __all__ = [
@@ -38,7 +41,7 @@ import base64
 
 from cryptography.fernet import Fernet
 
-from app.core.encryption import decrypt, is_encrypted, marked_ciphertext
+from app.core.encryption import decrypt, is_stored_ciphertext, marked_ciphertext
 
 #: A plaintext credential ``is_encrypted`` misreads as a Fernet token, because it
 #: satisfies every structural test one can pass without being decryptable: the
@@ -80,12 +83,3 @@ def stored_plaintext(value: str) -> str:
         ``ENCRYPTION_KEY`` cannot decrypt.
     """
     return decrypt(marked_ciphertext(value) or value)
-
-
-def is_stored_ciphertext(value: str) -> bool:
-    """Return whether a stored leaf holds ciphertext under either envelope.
-
-    :param value: The leaf as the column holds it.
-    :return: Whether it holds ciphertext.
-    """
-    return marked_ciphertext(value) is not None or is_encrypted(value)

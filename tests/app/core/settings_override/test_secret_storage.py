@@ -1117,6 +1117,10 @@ class TestUnmarkSecretLeaves:
     def test_strips_the_marker_and_leaves_the_ciphertext(self) -> None:
         """Return a bare token a release predating the envelope reads correctly."""
         stored = encrypt_secret_leaves(Settings, PMM_KEY, pmm_payload())
+        assert marked_ciphertext(stored["api_key"]) is not None, (
+            "the seed must be marked, or the unmark below is a no-op and this "
+            "test passes even with marking removed from the write path"
+        )
 
         unmarked = unmark_secret_leaves(Settings, PMM_KEY, stored)
 
@@ -1133,6 +1137,8 @@ class TestUnmarkSecretLeaves:
         stored = encrypt_secret_leaves(
             Settings, PMM_KEY, pmm_payload_with_credential_endpoint()
         )
+        assert marked_ciphertext(stored["api_key"]) is not None
+        assert marked_ciphertext(url_password(stored["endpoint"])) is not None
 
         unmarked = unmark_secret_leaves(Settings, PMM_KEY, stored)
 

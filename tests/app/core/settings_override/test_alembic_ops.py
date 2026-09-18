@@ -426,6 +426,67 @@ def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
     assert needs_migrating <= covered
 
 
+def test_unmark_migrations_cover_every_secret_bearing_class() -> None:
+    """Assert the rollback revisions' class lists reach every class that can hold a secret.
+
+    The third hand-written family, and the one where an omission is worst. A
+    class missing from the *encrypt* tuples leaves its rows in the clear, which
+    the two checks above catch. A class missing from the tuples here is reached
+    by the write path — so its rows are encrypted *and marked* — and then
+    skipped by the rollback, leaving a marked value for a release predating the
+    envelope. That release's structural check answers ``False`` for a marked
+    value, so it reads the ciphertext as the plaintext credential and presents
+    it to a remote.
+
+    Before the envelope the same omission was benign: a class missing from a
+    decrypt-downgrade tuple merely stayed encrypted, and the older release
+    decrypted it correctly. Marking is what turned it into a disclosure, which
+    is why this family needs its own check rather than inheriting confidence
+    from the two above.
+    """
+    revisions = sorted(
+        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
+    )
+    assert len(revisions) == len(_TRACKS), "one rollback revision per track"
+    covered = {
+        settings_cls
+        for revision in revisions
+        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
+    }
+    needs_migrating = {
+        settings_cls for settings_cls, _key in _secret_bearing_overridable_fields()
+    }
+
+    assert needs_migrating, "the check is vacuous if no class can hold a secret"
+    assert needs_migrating <= covered
+
+
+def test_unmark_migrations_cover_every_encrypting_class() -> None:
+    """Assert the rollback reaches every class the write path can mark.
+
+    Stronger than the secret-bearing check above and deliberately so: the marker
+    is applied by :func:`encrypt_secret_leaves`, which covers credential-URL
+    leaves as well as ``SecretStr`` ones. A class whose only credential is an
+    endpoint password is marked by the write path and must therefore be
+    unmarked by the rollback, even though it holds no secret-typed field.
+    """
+    revisions = sorted(
+        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
+    )
+    covered = {
+        settings_cls
+        for revision in revisions
+        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
+    }
+    needs_migrating = {
+        settings_cls
+        for settings_cls, _key in _credential_url_bearing_overridable_fields()
+    }
+
+    assert needs_migrating, "the check is vacuous if no class can hold a credential URL"
+    assert needs_migrating <= covered
+
+
 def test_secret_bearing_overridable_fields_are_pinned() -> None:
     """Assert no overridable field turned secret-typed without its own data migration.
 
@@ -703,6 +764,13 @@ class TestDowngradeUnmarkSecretOverrideValues:
         """
         _seed(engine, _SECRET_ROWS + _CREDENTIAL_URL_ROWS)
         _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        seeded = _stored(engine)
+        assert (
+            marked_ciphertext(seeded[(SETTINGS_TOKEN, "PMM")]["api_key"]) is not None
+        ), (
+            "the upgrade must mark, or the unmark below is a no-op and this test "
+            "passes even with marking removed from the write path"
+        )
 
         _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
 
