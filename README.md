@@ -472,7 +472,7 @@
 | app/tasks/migrations/versions/2026\_09\_07\_1500-c4b8e1f7a2d9\_add\_taskhistory\_failure\_reason.py                          |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_09\_1930-f3b71c0d9a45\_encrypt\_execution\_request\_leaves.py                        |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_14\_2243-b5e17f6b3bc7\_encrypt\_credential\_url\_setting\_overrides.py               |       12 |        0 |        0 |        0 |    100% |           |
-| app/tasks/models.py                                                                                                          |      391 |        4 |       80 |        6 |     98% |452, 750-\>753, 757, 774-\>787, 1379-\>1381, 1391-\>1393, 1416-1417 |
+| app/tasks/models.py                                                                                                          |      391 |        4 |       80 |        6 |     98% |452, 750-\>753, 757, 774-\>787, 1387-\>1389, 1399-\>1401, 1424-1425 |
 | app/tasks/periodic/crud.py                                                                                                   |       31 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                                 |      124 |        4 |       26 |        4 |     95% |299, 346, 360, 407 |
