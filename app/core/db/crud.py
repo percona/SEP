@@ -17,6 +17,7 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from itertools import chain
 from typing import Any, Generic, Literal, NamedTuple, overload, TypeVar
 
 from pydantic import BaseModel
@@ -29,6 +30,7 @@ from sqlalchemy import (
     inspect,
     ScalarResult,
     Select,
+    UniqueConstraint,
 )
 from sqlalchemy.engine import TupleResult
 from sqlalchemy.exc import DatabaseError, NoResultFound
@@ -1160,8 +1162,9 @@ class BaseSQLModelManager(BaseManager):
     ) -> T:
         """Save a model instance to the database.
 
-        This method overrides `BaseManager.save()` to check for duplicate errors for
-        each unique index of the Model.
+        This method overrides ``BaseManager.save()`` to check for duplicate errors
+        for each unique key of the Model, whether it is declared as a unique index
+        or as a ``UniqueConstraint``.
 
         The duplicate lookup runs with autoflush suppressed: it matches against rows
         already written to the database and never flushes ``instance``'s own pending
@@ -1178,25 +1181,35 @@ class BaseSQLModelManager(BaseManager):
             entry database error.
         :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
         """
+        local_table = inspect(cls.Model).local_table
+        unique_column_sets = chain(
+            (index.columns for index in local_table.indexes if index.unique),
+            (
+                constraint.columns
+                for constraint in local_table.constraints
+                if isinstance(constraint, UniqueConstraint)
+            ),
+        )
         # On the update path the write autoflush would perform here is the
         # colliding one, so without the suppression IntegrityError escapes
         # from inside first() -- ahead of both the duplicate check and
         # save()'s DatabaseError handling, as a 500 rather than the 409 below.
         with session.no_autoflush:
-            for index in inspect(cls.Model).local_table.indexes:
-                if index.unique:
-                    equal_filters = {
-                        column.name: getattr(instance, column.name, None)
-                        for column in index.columns
-                    }
-                    if all(equal_filters.values()):
-                        duplicate = await cls.first(
-                            session, col(cls.Model.id) != instance.id, **equal_filters
+            for unique_columns in unique_column_sets:
+                equal_filters = {
+                    column.name: getattr(instance, column.name, None)
+                    for column in unique_columns
+                }
+                # Presence, not truthiness: a legitimate 0, "" or False is a
+                # filled key member, and skipping it would miss the collision.
+                if all(value is not None for value in equal_filters.values()):
+                    duplicate = await cls.first(
+                        session, col(cls.Model.id) != instance.id, **equal_filters
+                    )
+                    if duplicate is not None:
+                        raise HTTPConflictException(
+                            f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
                         )
-                        if duplicate is not None:
-                            raise HTTPConflictException(
-                                f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
-                            )
         return await super().save(
             session, instance, flag_modified_fields=flag_modified_fields
         )

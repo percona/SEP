@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event, Index
+from sqlalchemy import event, Index, UniqueConstraint
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import col, Relationship, SQLModel
 from sqlmodel import Field as SQLField
@@ -46,8 +46,8 @@ INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
 # first() is invoked twice on the conflict path: existence check, then refetch.
 CONFLICT_PATH_FIRST_CALLS = 2
-# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a truthy sentinel, so the save
-# precheck's all() guard does not skip the index it takes part in.
+# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a non-NULL sentinel, so the save
+# precheck's presence guard does not skip the index it takes part in.
 ACTIVE_DISCRIMINATOR = -1
 # The precheck may only read; any of these reaching the driver means a write escaped.
 WRITE_STATEMENT_PREFIXES = ("UPDATE", "INSERT", "DELETE")
@@ -187,6 +187,38 @@ class CompositeUniqueManager(BaseSQLModelManager):
     Model = CompositeUniqueModel
 
 
+class ConstraintUniqueModel(BaseSQLModel, table=True):
+    """Model a unique key declared as a constraint, as ``taskhistory_log`` does.
+
+    :param external_id: The identifier the origin system assigns.
+    :param source: The origin system the row came from.
+    :param start_offset: The offset the chunk starts at, legitimately ``0`` for the
+        first chunk of a stream.
+    :param label: A value outside every unique key.
+    """
+
+    __tablename__ = "test_constraint_unique"
+    __table_args__ = (
+        UniqueConstraint("external_id", name="uq_test_constraint_unique_external_id"),
+        UniqueConstraint(
+            "source",
+            "start_offset",
+            name="uq_test_constraint_unique_source_offset",
+        ),
+    )
+
+    external_id: str
+    source: str
+    start_offset: int = 0
+    label: str = "default"
+
+
+class ConstraintUniqueManager(BaseSQLModelManager):
+    """Manage the constraint-unique test model."""
+
+    Model = ConstraintUniqueModel
+
+
 @pytest_asyncio.fixture(name="session")
 async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     """Create an isolated async database session for CRUD pagination tests."""
@@ -265,6 +297,29 @@ async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
     """
     await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
     return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+
+
+async def _two_constraint_rows(
+    session: AsyncSession,
+    *,
+    claimed_offset: int = 1,
+) -> ConstraintUniqueModel:
+    """Persist two rows whose unique keys are constraint-declared.
+
+    :param session: The session the rows are persisted through.
+    :param claimed_offset: The ``start_offset`` the first row claims on ``pmm``.
+    :return: The second row, leaving the first row's keys claimed.
+    """
+    await ConstraintUniqueManager.save(
+        session,
+        ConstraintUniqueModel(
+            external_id="ext-a", source="pmm", start_offset=claimed_offset
+        ),
+    )
+    return await ConstraintUniqueManager.save(
+        session,
+        ConstraintUniqueModel(external_id="ext-b", source="other", start_offset=5),
+    )
 
 
 class TestBaseSQLModelManagerPagination:
@@ -1138,7 +1193,7 @@ class TestDMLWhereGuards:
 
 
 class TestSaveDuplicatePrecheck:
-    """Test ``BaseSQLModelManager.save``'s unique-index duplicate precheck."""
+    """Test ``BaseSQLModelManager.save``'s unique-key duplicate precheck."""
 
     @pytest.mark.asyncio
     async def test_update_colliding_with_committed_row_raises_conflict(
@@ -1213,6 +1268,119 @@ class TestSaveDuplicatePrecheck:
             match="CompositeUniqueModel with the same external_id, source",
         ):
             await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_index_collision_on_falsy_key_member_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the presence test reaches the index path, not only constraints."""
+        await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-a", source="pmm", discriminator=0),
+        )
+        row = await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-b", source="pmm", discriminator=0),
+        )
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="CompositeUniqueModel with the same external_id, source",
+        ):
+            await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_constraint_update_collision_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a collision on a constraint-declared unique key raises a conflict."""
+        row = await _two_constraint_rows(session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_composite_constraint_update_collision_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert every column of a composite constraint must match to conflict."""
+        row = await _two_constraint_rows(session)
+        row.source = "pmm"
+
+        # Only the leading column matches so far, so the key is still free.
+        saved = await ConstraintUniqueManager.save(session, row)
+        assert saved.source == "pmm"
+
+        saved.start_offset = 1
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same source, start_offset",
+        ):
+            await ConstraintUniqueManager.save(session, saved)
+
+    @pytest.mark.asyncio
+    async def test_constraint_collision_on_falsy_key_member_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a present-but-falsy key column is not read as a missing one."""
+        row = await _two_constraint_rows(session, claimed_offset=0)
+        row.source = "pmm"
+        row.start_offset = 0
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same source, start_offset",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_constraint_conflict_emits_no_write(
+        self,
+        session: AsyncSession,
+        emitted_sql: list[str],
+    ) -> None:
+        """Assert the constraint path rejects the update before any write is sent."""
+        row = await _two_constraint_rows(session)
+        emitted_sql.clear()
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+        assert not [
+            statement
+            for statement in emitted_sql
+            if statement.lstrip().upper().startswith(WRITE_STATEMENT_PREFIXES)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_constraint_update_to_free_value_succeeds(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert an update to an unclaimed constraint-declared key is persisted."""
+        row = await _two_constraint_rows(session)
+        row.external_id = "ext-c"
+
+        saved = await ConstraintUniqueManager.save(session, row)
+
+        assert saved.external_id == "ext-c"
+        assert (
+            await ConstraintUniqueManager.first(session, external_id="ext-c")
+            is not None
+        )
 
     @pytest.mark.asyncio
     async def test_update_to_free_unique_value_succeeds(
@@ -1362,4 +1530,38 @@ class TestSaveDuplicatePrecheckPostgres:
             )
             assert (
                 await UniqueKeyManager.first(postgres_session, key="beta") is not None
+            )
+
+    @pytest.mark.asyncio
+    async def test_constraint_collision_raises_conflict_before_any_write(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Reject a constraint-declared retarget without aborting the transaction.
+
+        The constraint branch reaches the same autoflush-suppressed lookup the index
+        branch does, so the reads below are what show the suppression still holds for
+        a key the precheck learned about from ``local_table.constraints``.
+        """
+        row = await _two_constraint_rows(postgres_session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(postgres_session, row)
+
+        with postgres_session.no_autoflush:
+            assert (
+                await ConstraintUniqueManager.first(
+                    postgres_session, external_id="ext-a"
+                )
+                is not None
+            )
+            assert (
+                await ConstraintUniqueManager.first(
+                    postgres_session, external_id="ext-b"
+                )
+                is not None
             )

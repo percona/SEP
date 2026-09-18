@@ -189,19 +189,18 @@ class TestRetirementKeyUniqueness:
 
     Uniqueness is enforced twice: by the database index, and by the Python
     duplicate check ``BaseSQLModelManager.save`` rebuilds from the model's unique
-    indexes. The Python half is guarded by ``all(equal_filters.values())``, so it
-    only keeps running while the discriminator stays truthy — which is why these
-    tests distinguish ``HTTPConflictException`` (Python check) from the
-    ``HTTPBadRequestException`` a bare index violation would produce.
+    keys. The Python half only keeps running while every key column is non-NULL —
+    which is why these tests distinguish ``HTTPConflictException`` (Python check)
+    from the ``HTTPBadRequestException`` a bare index violation would produce.
     """
 
     @pytest.mark.asyncio
     async def test_active_service_carries_the_active_sentinel(
         self, service: Service
     ) -> None:
-        """Keep the discriminator truthy on an active row."""
+        """Keep the discriminator outside the autoincrement range on an active row."""
         assert service.retirement_key == ACTIVE_RETIREMENT_KEY
-        assert ACTIVE_RETIREMENT_KEY
+        assert ACTIVE_RETIREMENT_KEY < 1
 
     @pytest.mark.asyncio
     async def test_two_active_services_on_one_port_are_both_admitted(
