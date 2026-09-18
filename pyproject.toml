@@ -281,7 +281,8 @@ unresolved-attribute = "ignore"
 include = [
     "tests/app/core/settings_override/api/test_registry_helpers.py",
     "tests/app/core/settings_override/test_registry.py",
-    "tests/app/core/settings_override/test_registry_nested.py",
+    "tests/app/core/settings_override/test_resolution.py",
+    "tests/app/core/settings_override/test_secret_preservation.py",
     "tests/app/sep/test_settings_override_worker.py",
 ]
 [tool.ty.overrides.rules]

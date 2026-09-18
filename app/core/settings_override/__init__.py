@@ -55,6 +55,7 @@ __all__ = [
 ]
 
 from app.core.settings_override.cache import build_snapshot
+from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     fire_change_callbacks,
@@ -91,8 +92,7 @@ from app.core.settings_override.registry import (
     MaterializerPurpose,
     nested_overridable_field,
     nested_overridable_field_names,
-    NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field
