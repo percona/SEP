@@ -43,13 +43,13 @@ def warn(prefix: str, message: str) -> None:
 
 
 def positive_timeout(
-    env_var: str, default: float, warn: Callable[[str], None]
+    env_var: str, default: float, report: Callable[[str], None]
 ) -> float:
     """Return a finite positive timeout, defaulting silently when unset or blank.
 
     :param env_var: The environment variable holding the timeout.
     :param default: The fallback bound in seconds.
-    :param warn: The diagnostic writer for invalid nonblank values.
+    :param report: The diagnostic writer for invalid nonblank values.
     :return: The bound in seconds.
     """
     raw = (os.environ.get(env_var) or "").strip()
@@ -60,7 +60,7 @@ def positive_timeout(
     except ValueError:
         seconds = 0.0
     if not math.isfinite(seconds) or seconds <= 0:
-        warn(
+        report(
             f"{env_var}={raw!r} is not a finite positive "
             f"number of seconds; waiting {default:g}s instead."
         )
