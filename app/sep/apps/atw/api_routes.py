@@ -231,7 +231,7 @@ def _validated_category_tags(
         None,
     )
     if invalid is None:
-        return raw_categories
+        return cast("list[str]", raw_categories)
     logger.warning(
         ATW_META_ELEMENT_WARNING,
         key,
