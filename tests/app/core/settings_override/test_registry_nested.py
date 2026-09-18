@@ -18,7 +18,8 @@
 import functools
 from collections.abc import Callable
 from datetime import timedelta
-from typing import ClassVar
+from types import SimpleNamespace
+from typing import cast, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field, SecretStr, ValidationError
@@ -632,3 +633,42 @@ def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
     assert dict(rendered_leaf_keys(SEPSettings, "SESSION_REFRESH")) == dict(
         iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH")
     )
+
+
+class TestNestedValueTraversalGaps:
+    """Cover chains the snapshot cannot walk to the end."""
+
+    def test_missing_attribute_segment_returns_sentinel(self) -> None:
+        """Return the sentinel when an intermediate object lacks the next segment."""
+        proxy = cast(
+            "OverridableSettingsProxy",
+            SimpleNamespace(NESTED=SimpleNamespace()),
+        )
+
+        _, value = resolve_nested_value(
+            settings_cls=_OptionalIntermediateParent,
+            proxy=proxy,
+            key="NESTED__INNER__DEEP",
+        )
+
+        assert value is NESTED_VALUE_MISSING
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_nested_row_reports_only_its_stored_key(
+        self, session: AsyncSession
+    ) -> None:
+        """Report no ancestor keys for a nested row that no longer resolves.
+
+        A row whose field was renamed or removed still has to report itself, so
+        an admin can see and delete it, without inventing parent keys.
+        """
+        row = await insert_override_row(
+            session,
+            setting_class=TASKS_SETTINGS_TOKEN,
+            key="GONE__missing_leaf",
+            value=1,
+        )
+
+        provenance = override_provenance_for_rows(TasksSettings, [row])
+
+        assert set(provenance) == {row.key}

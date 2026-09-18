@@ -19,7 +19,7 @@ from string import Template
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, HttpUrl, SecretStr
+from pydantic import BaseModel, HttpUrl, SecretBytes, SecretStr
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import AlertSettings
@@ -1162,3 +1162,17 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
         key=_TOP_LEVEL,
     )
     assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}
+
+
+class TestUnwrapSecretsForStorage:
+    """Cover the storage shapes the JSON override column has to accept."""
+
+    def test_secret_bytes_are_decoded_for_json_storage(self) -> None:
+        """Decode ``SecretBytes`` so the JSON column can hold the plaintext."""
+        assert unwrap_secrets_for_storage(SecretBytes(b"raw-bytes")) == "raw-bytes"
+
+    def test_collection_members_are_unwrapped_elementwise(self) -> None:
+        """Unwrap every secret inside a list or tuple, keeping plain members."""
+        assert unwrap_secrets_for_storage(
+            [SecretStr("first"), "plain", (SecretBytes(b"second"),)]
+        ) == ["first", "plain", ["second"]]

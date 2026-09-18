@@ -219,6 +219,14 @@ class TestChainGate:
         """Assert the default only locks explicitly marked chains."""
         assert chain_is_locked(Settings, "PMM__endpoint") is False
 
+    def test_unresolvable_key_is_not_locked(self) -> None:
+        """Assert an unresolvable key is reported open, not locked.
+
+        The caller surfaces the resolution failure itself; reporting it as
+        locked here would turn a 404 into a 422.
+        """
+        assert chain_is_locked(Settings, "GONE__missing_leaf") is False
+
     def test_leaf_metadata_reports_the_gated_classification(
         self, restrict: Callable[..., None]
     ) -> None:
