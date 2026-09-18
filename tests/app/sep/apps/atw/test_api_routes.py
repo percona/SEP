@@ -18,6 +18,7 @@
 import logging
 import re
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID, uuid4
@@ -30,6 +31,7 @@ from httpx import AsyncClient
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app import BASE_DIR
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.requests import RemoteAPI
@@ -52,8 +54,10 @@ from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_DIAGNOSTIC_CATEGORIES
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
+_REPO_SNIPPETS_DIR = BASE_DIR / "snippets"
 
 
 def _mock_atw_snippet(
@@ -61,19 +65,18 @@ def _mock_atw_snippet(
     filename: str,
     title: str = "Title",
     description: str = "",
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str | None = "mysql",
     sudo: SnippetSudoOption = SnippetSudoOption.NEVER,
 ) -> Mock:
-    snippet = Mock()
+    snippet = Mock(spec=Snippet)
     snippet.filename = filename
     snippet.title = title
     snippet.description = description
     snippet.sudo = sudo
-    meta: dict[str, Any] = {"atw": atw}
+    snippet.meta = {"diagnostic_categories": diagnostic_categories}
     if service_type is not None:
-        meta["service_type"] = service_type
-    snippet.meta = meta
+        snippet.meta["service_type"] = service_type
     return snippet
 
 
@@ -81,7 +84,7 @@ async def _persist_atw_snippet(
     session: AsyncSession,
     *,
     filename: str,
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str = "mysql",
     approved: bool,
 ) -> Snippet:
@@ -89,7 +92,8 @@ async def _persist_atw_snippet(
 
     :param session: The database session.
     :param filename: The snippet's filename.
-    :param atw: The ATW category tags to record under ``meta["atw"]``.
+    :param diagnostic_categories: The category tags to record under
+        ``meta["diagnostic_categories"]``.
     :param service_type: The service type to record under ``meta["service_type"]``.
     :param approved: Whether the persisted snippet should carry an ``approved_at``.
     :return: The persisted ``Snippet`` row.
@@ -103,9 +107,44 @@ async def _persist_atw_snippet(
             "title": f"Title for {filename}",
             "description": "desc",
             "service_type": service_type,
-            "atw": atw,
+            "diagnostic_categories": diagnostic_categories,
         },
     )
+    return await SnippetManager.create(session, snippet)
+
+
+async def _persist_corpus_snippet(
+    session: AsyncSession,
+    snippets_dir: Path,
+    *,
+    filename: str,
+    approved: bool = True,
+) -> Snippet:
+    """Persist a real repository snippet after parsing its on-disk frontmatter.
+
+    :param session: The database session.
+    :param snippets_dir: The temporary directory aliased as ``Snippet.BASE_DIR``.
+    :param filename: The repository snippet filename to copy and persist.
+    :param approved: Whether the persisted snippet should carry an ``approved_at``.
+    :return: The persisted ``Snippet`` row.
+    :raises ValueError: When ``filename`` resolves outside the source or target
+        snippets directories.
+    """
+    source_root = _REPO_SNIPPETS_DIR.resolve()
+    target_root = snippets_dir.resolve()
+    source = (source_root / filename).resolve()
+    target = (target_root / filename).resolve()
+    if not source.is_relative_to(source_root):
+        raise ValueError(f"snippet path escapes repository snippets dir: {filename}")
+    if not source.is_file():
+        raise ValueError(f"snippet path is not a repository snippet file: {filename}")
+    if not target.is_relative_to(target_root):
+        raise ValueError(f"snippet path escapes test snippets dir: {filename}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
+    snippet = await Snippet.from_path(filename, update_meta=True)
+    if approved:
+        snippet.approve("Seeded as approved", "seed-user")
     return await SnippetManager.create(session, snippet)
 
 
@@ -119,7 +158,8 @@ async def _persist_snippet(
     """Persist a real ``Snippet`` row carrying caller-supplied frontmatter.
 
     Unlike :func:`_persist_atw_snippet` the metadata is not shaped for the category
-    browser, so a row can omit the ``atw`` tag or declare a degenerate title.
+    browser, so a row can omit ``diagnostic_categories`` or declare a degenerate
+    title.
 
     :param session: The database session.
     :param filename: The snippet's filename.
@@ -146,7 +186,7 @@ class TestAtwListEndpoint:
             filename="diag/slow-query.sh",
             title="Slow Query Diagnostics",
             description="Collects slow-query and processlist data.",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -182,7 +222,7 @@ class TestAtwListEndpoint:
         """
         snippet = _mock_atw_snippet(
             filename="diag/dmesg.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             sudo=SnippetSudoOption.ALWAYS,
         )
 
@@ -214,7 +254,9 @@ class TestAtwListEndpoint:
         the default-checked nuance is carried by ``sudo_default``, not here.
         """
         snippet = _mock_atw_snippet(
-            filename="diag/x.sh", atw=["OVERALL_SLOWNESS"], sudo=option
+            filename="diag/x.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            sudo=option,
         )
 
         with patch(
@@ -238,7 +280,7 @@ class TestAtwListEndpoint:
                 "title": "Slow Query Diagnostics",
                 "description": "Collects slow-query and processlist data.",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -268,12 +310,12 @@ class TestAtwListEndpoint:
         """Ensure mysql and mongodb snippets produce separate ``category_root`` rows."""
         mysql_snippet = _mock_atw_snippet(
             filename="mysql/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
         mongo_snippet = _mock_atw_snippet(
             filename="mongo/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mongodb",
         )
 
@@ -303,7 +345,7 @@ class TestAtwListEndpoint:
         """Ensure ``service_type: generic`` snippets surface under the Generic root."""
         snippet = _mock_atw_snippet(
             filename="generic/disk.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="generic",
         )
 
@@ -324,7 +366,7 @@ class TestAtwListEndpoint:
         """Ensure missing ``service_type`` meta buckets under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="no-service-type.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type=None,
         )
 
@@ -347,7 +389,7 @@ class TestAtwListEndpoint:
         """Ensure unknown ``service_type`` values bucket under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="unknown/engine.sh",
-            atw=["GALERA"],
+            diagnostic_categories=["GALERA"],
             service_type="clickhouse",
         )
 
@@ -369,7 +411,7 @@ class TestAtwListEndpoint:
         """Ensure empty (root, category) cells are omitted from the listing."""
         snippet = _mock_atw_snippet(
             filename="mysql/only.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -389,15 +431,15 @@ class TestAtwListEndpoint:
             if category.name != "OVERALL_SLOWNESS":
                 assert (mysql_root, category.name) not in populated
 
-    def test_atw_list_non_list_atw_meta_not_substring_matched(
+    def test_atw_list_non_list_diagnostic_categories_not_substring_matched(
         self, test_client: TestClient
     ) -> None:
-        """Ignore ``meta["atw"]`` when it is not a list (avoids ``str`` substring ``in``)."""
+        """Ignore a non-list category tag (avoids ``str`` substring ``in``)."""
         snippet = Mock()
         snippet.filename = "bad-meta.sh"
         snippet.title = "Bad meta"
         snippet.description = ""
-        snippet.meta = {"atw": "noise OVERALL_SLOWNESS noise"}
+        snippet.meta = {"diagnostic_categories": "noise OVERALL_SLOWNESS noise"}
 
         with (
             patch.object(atw_api_routes.logger, "warning") as warn_mock,
@@ -411,9 +453,38 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
         warn_mock.assert_called_once_with(
-            "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+            "Ignoring meta[%r] for snippet %s: expected list, got %s",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
             "bad-meta.sh",
             "str",
+        )
+
+    def test_atw_list_non_string_diagnostic_categories_item_is_ignored(
+        self, test_client: TestClient
+    ) -> None:
+        """Ignore a category list containing a non-string member."""
+        snippet = Mock()
+        snippet.filename = "bad-item.sh"
+        snippet.title = "Bad item"
+        snippet.description = ""
+        snippet.meta = {"diagnostic_categories": ["OVERALL_SLOWNESS", 1]}
+
+        with (
+            patch.object(atw_api_routes.logger, "warning") as warn_mock,
+            patch(
+                "app.sep.apps.atw.api_routes.SnippetManager.list",
+                new=AsyncMock(return_value=[snippet]),
+            ),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        warn_mock.assert_called_once_with(
+            "Ignoring meta[%r] for snippet %s: expected list[str], got %s element",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
+            "bad-item.sh",
+            "int",
         )
 
     def test_atw_list_requires_authentication(
@@ -444,7 +515,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="unapproved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=False,
         )
 
@@ -461,7 +532,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="approved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=True,
         )
 
@@ -474,15 +545,98 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
 
     @pytest.mark.asyncio
+    async def test_legacy_atw_meta_is_still_honoured(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Read the legacy ``atw`` metadata key until existing rows are resynced."""
+        await _persist_snippet(
+            session,
+            filename="legacy.sh",
+            meta={
+                "title": "Legacy",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert (
+            payload[0]["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
+        )
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "legacy.sh"
+
+    @pytest.mark.asyncio
+    async def test_diagnostic_categories_override_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Prefer ``diagnostic_categories`` when both metadata keys are present."""
+        await _persist_snippet(
+            session,
+            filename="dual-key.sh",
+            meta={
+                "title": "Dual key",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "dual-key.sh"
+
+    @pytest.mark.asyncio
+    async def test_malformed_diagnostic_categories_fall_back_to_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to the legacy key when the current one is malformed."""
+        await _persist_snippet(
+            session,
+            filename="fallback.sh",
+            meta={
+                "title": "Fallback",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS", 1],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "GALERA"
+        assert payload[0]["snippets"][0]["name"] == "fallback.sh"
+
+    @pytest.mark.asyncio
     async def test_all_unapproved_category_produces_no_row(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
         """Ensure a category whose snippets are all unapproved is omitted entirely."""
         await _persist_atw_snippet(
-            session, filename="a.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="a.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
         await _persist_atw_snippet(
-            session, filename="b.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="b.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -496,10 +650,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure a category's count and membership exclude only the unapproved row."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -518,7 +678,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="multi-tag.sh",
-            atw=["OVERALL_SLOWNESS", "GALERA"],
+            diagnostic_categories=["OVERALL_SLOWNESS", "GALERA"],
             approved=False,
         )
 
@@ -533,10 +693,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure the filter is applied per-row, not just within a shared cell."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["GALERA"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["GALERA"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -548,14 +714,14 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
 
     @pytest.mark.asyncio
-    async def test_approved_snippet_with_non_list_atw_meta_is_still_ignored(
+    async def test_approved_snippet_with_non_list_diagnostic_categories_is_still_ignored(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Ensure approval does not bypass the ``meta["atw"]`` list-shape check."""
+        """Ensure approval does not bypass the category list-shape check."""
         snippet = await _persist_atw_snippet(
-            session, filename="bad-meta.sh", atw=[], approved=True
+            session, filename="bad-meta.sh", diagnostic_categories=[], approved=True
         )
-        snippet.meta["atw"] = "OVERALL_SLOWNESS"
+        snippet.meta["diagnostic_categories"] = "OVERALL_SLOWNESS"
         await SnippetManager.save(session, snippet)
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -569,7 +735,10 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure revoking a previously-approved snippet drops it on the next call."""
         snippet = await _persist_atw_snippet(
-            session, filename="revoked.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="revoked.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
 
         first = await async_api_client.get("/api/apps/atw/")
@@ -593,6 +762,47 @@ class TestAtwListApprovalFilter:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    @pytest.mark.asyncio
+    async def test_real_corpus_scripts_drive_roots_and_categories(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        snippets_dir: Path,
+    ) -> None:
+        """Load real snippet files and expose their declared ATW roots and cells."""
+        snippets = [
+            await _persist_corpus_snippet(session, snippets_dir, filename=filename)
+            for filename in (
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+                "haproxy_config_files.sh",
+                "haproxy_logs_extractor.sh",
+            )
+        ]
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        cells = {
+            (entry["category_root"], entry["category"]): {
+                snippet["name"] for snippet in entry["snippets"]
+            }
+            for entry in payload
+        }
+        assert {entry["category_root"] for entry in payload} == {
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.HAPROXY],
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.PROXYSQL],
+        }
+        for snippet in snippets:
+            expected_root = CATEGORY_ROOT_LABELS[snippet.service_type]
+            declared = snippet.meta[META_KEY_DIAGNOSTIC_CATEGORIES]
+            assert declared, (
+                f"{snippet.filename} should declare categories for this test"
+            )
+            for category in declared:
+                assert snippet.filename in cells[(expected_root, category)]
+
 
 class TestAtwListTitleFallback:
     """Observe the library's blank-title fallback through the category listing.
@@ -614,7 +824,7 @@ class TestAtwListTitleFallback:
                 "title": "",
                 "description": "d",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -639,7 +849,7 @@ class TestAtwListTitleFallback:
                 "title": "   ",
                 "description": "  ",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -725,7 +935,7 @@ class TestAtwSnippetSearch:
     async def test_reaches_a_snippet_outside_the_atw_taxonomy(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Return a snippet carrying no ``atw`` tag, which the listing never exposes."""
+        """Return a snippet carrying no category metadata, which the listing never exposes."""
         await _persist_snippet(
             session,
             filename="ops/pt-summary.sh",
@@ -1123,21 +1333,26 @@ class TestAtwSnippetSearch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.asyncio
-    async def test_malformed_atw_meta_does_not_affect_search(
+    async def test_malformed_diagnostic_categories_do_not_affect_search(
         self,
         async_api_client: AsyncClient,
         session: AsyncSession,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Return a snippet whose ``atw`` tag is malformed, warning about nothing.
+        """Return a snippet whose category tag is malformed, warning about nothing.
 
-        Search never reads ``ATW_META_KEY``, unlike the category listing, so a
-        non-list tag is neither a filter nor a diagnostic here.
+        Search never reads ``META_KEY_DIAGNOSTIC_CATEGORIES``, unlike the
+        category listing, so a non-list tag is neither a filter nor a
+        diagnostic here.
         """
         await _persist_snippet(
             session,
             filename="ops/bad-meta.sh",
-            meta={"title": "Galera", "description": "d", "atw": "OVERALL_SLOWNESS"},
+            meta={
+                "title": "Galera",
+                "description": "d",
+                "diagnostic_categories": "OVERALL_SLOWNESS",
+            },
         )
 
         with caplog.at_level(logging.WARNING, logger=atw_api_routes.__name__):

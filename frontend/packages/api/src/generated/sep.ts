@@ -1049,9 +1049,10 @@ export interface paths {
      * @description Search approved snippets by free text, independent of the ATW taxonomy.
      *
      *     Served from ATW's own router over the snippets library, so the capability does
-     *     not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
-     *     is a presentation filter on the category listing and is deliberately not
-     *     applied here, so search reaches snippets that listing never exposes.
+     *     not depend on the Snippet Manager app being activated. The
+     *     ``diagnostic_categories`` metadata key is a presentation filter on the category
+     *     listing and is deliberately not applied here, so search reaches snippets that
+     *     listing never exposes.
      *
      *     :param session: The database session.
      *     :param list_query: The vetted sort and search selections, pinned to approved.
@@ -4107,8 +4108,10 @@ export interface components {
      * @description Represent a task-history row as SEP serves it, with actors resolved.
      *
      *     :param task: The task this execution belongs to, carrying resolved actors.
-     *     :param executed_by: Display name for the actor that ran the task, or
-     *         ``None`` when none was recorded.
+     *     :param executed_by: Display name for the actor that ran the task: the
+     *         provider's username when resolvable, a system label for
+     *         system-initiated work, otherwise the stored identifier. ``None`` when
+     *         none was recorded.
      */
     SepTaskHistoryResponse: {
       /** Anonymize Mask */
@@ -4191,10 +4194,12 @@ export interface components {
      *     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
      *     actor fields carry.
      *
-     *     :param created_by: Display name for the task's creator, or ``None`` when
-     *         none was recorded.
+     *     :param created_by: Display name for the task's creator: the provider's
+     *         username when resolvable, a system label for system-initiated work,
+     *         otherwise the stored identifier. ``None`` when none was recorded.
      *     :param last_updated_by: Display name for the user who last modified the
-     *         task, or ``None`` when none was recorded.
+     *         task, resolved on the same terms as ``created_by``. ``None`` when none
+     *         was recorded.
      */
     SepTaskResponse: {
       /** Alert Detail Builder */
@@ -7210,10 +7215,11 @@ export interface components {
      *         back to the owner's configured defaults.
      *     :param created_at: The timestamp when the task was first created.
      *     :param updated_at: The timestamp of the last modification to the task.
-     *     :param created_by: Display name for the user who initiated the task (Casdoor
-     *         username when resolvable, otherwise the stored user id).
+     *     :param created_by: Display name for the user who initiated the task (system
+     *         label or provider username when resolvable, otherwise the stored user id).
      *     :param last_updated_by: Display name for the user who last modified the task
-     *         record (Casdoor username when resolvable, otherwise the stored user id).
+     *         record (system label or provider username when resolvable, otherwise the
+     *         stored user id).
      *     :param connectivity_warning: A warning surfaced when the post-creation
      *         database connectivity check fails. ``None`` when the check passes, is
      *         opted out, or the task meta lacks the connectivity keys.

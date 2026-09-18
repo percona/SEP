@@ -97,15 +97,19 @@ from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
-from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_SERVICE_TYPE
+from app.sep.snippets.models.meta import (
+    META_KEY_ATW,
+    META_KEY_DIAGNOSTIC_CATEGORIES,
+    META_KEY_SERVICE_TYPE,
+)
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = META_KEY_ATW
-ATW_META_WARNING = (
-    f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
+ATW_META_WARNING = "Ignoring meta[%r] for snippet %s: expected list, got %s"
+ATW_META_ELEMENT_WARNING = (
+    "Ignoring meta[%r] for snippet %s: expected list[str], got %s element"
 )
 ATW_ARG_MASKING_WARNING = (
     "Withholding recorded arguments for snippet %s: masking them failed"
@@ -116,6 +120,7 @@ ATW_SNIPPET_RESOLUTION_WARNING = (
 )
 NO_TASK_ID_ERROR = "Dispatched, but the Tasks API returned no task id; not recorded."
 UNRECORDED_EXECUTION_ERROR = "Dispatched, but the execution row could not be recorded"
+_MISSING_META = object()
 
 #: How long a case search may take before the field falls back to free text.
 #: Deliberately far below the delivery probe's 15s and the intra-cluster 5s:
@@ -201,6 +206,44 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     )
 
 
+def _validated_category_tags(
+    key: str, raw_categories: object, filename: str
+) -> list[str] | None:
+    """Validate one category declaration and log why malformed data is ignored.
+
+    :param key: The metadata key being read.
+    :param raw_categories: The declared metadata value to validate.
+    :param filename: The snippet filename used in warning logs.
+    :return: The validated category list, or ``None`` when the declaration is
+        malformed and the caller should try another key.
+    """
+    if not isinstance(raw_categories, list):
+        logger.warning(
+            ATW_META_WARNING,
+            key,
+            filename,
+            type(raw_categories).__name__,
+        )
+        return None
+    invalid = next(
+        (
+            type(category).__name__
+            for category in raw_categories
+            if not isinstance(category, str)
+        ),
+        None,
+    )
+    if invalid is None:
+        return cast("list[str]", raw_categories)
+    logger.warning(
+        ATW_META_ELEMENT_WARNING,
+        key,
+        filename,
+        invalid,
+    )
+    return None
+
+
 @router.get("/")
 async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     """List ATW-tagged snippets grouped by category.
@@ -215,17 +258,15 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
-        tags = []
-        if ATW_META_KEY in snippet.meta:
-            raw_atw = snippet.meta[ATW_META_KEY]
-            if isinstance(raw_atw, list):
-                tags = raw_atw
-            else:
-                logger.warning(
-                    ATW_META_WARNING,
-                    snippet.filename,
-                    type(raw_atw).__name__,
-                )
+        tags: list[str] = []
+        for key in (META_KEY_DIAGNOSTIC_CATEGORIES, META_KEY_ATW):
+            raw_categories = snippet.meta.get(key, _MISSING_META)
+            if raw_categories is _MISSING_META:
+                continue
+            validated = _validated_category_tags(key, raw_categories, snippet.filename)
+            if validated is not None:
+                tags = validated
+                break
         for tag in dict.fromkeys(tags):
             snippets_by_cell[(root, tag)].append(snippet)
 
@@ -260,9 +301,10 @@ async def atw_snippet_search(
     """Search approved snippets by free text, independent of the ATW taxonomy.
 
     Served from ATW's own router over the snippets library, so the capability does
-    not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
-    is a presentation filter on the category listing and is deliberately not
-    applied here, so search reaches snippets that listing never exposes.
+    not depend on the Snippet Manager app being activated. The
+    ``diagnostic_categories`` metadata key is a presentation filter on the category
+    listing and is deliberately not applied here, so search reaches snippets that
+    listing never exposes.
 
     :param session: The database session.
     :param list_query: The vetted sort and search selections, pinned to approved.

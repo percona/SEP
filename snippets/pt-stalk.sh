@@ -34,7 +34,7 @@
 #    type: bool
 #    label: Show help message
 #    description: Print the script's usage text instead of running it.
-# atw:
+# diagnostic_categories:
 #  - OVERALL_SLOWNESS
 #  - NOT_RESPONDING
 #  - WRITES_ARE_BLOCKED

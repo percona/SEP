@@ -44,6 +44,10 @@
 #    placeholder: e.g. /home/user/folder/; file.zip
 #    positional: true
 #    required: true
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - OVERALL_SLOWNESS
+#  - WRITES_ARE_BLOCKED
 # service_type: generic
 # alerts:
 #   - HighDiskUsage

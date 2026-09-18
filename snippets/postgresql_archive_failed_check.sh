@@ -5,6 +5,7 @@
 # description: "This script checks WAL archiving configuration, archiver status, and logs to diagnose archive failures."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname

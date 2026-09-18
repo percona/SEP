@@ -22,6 +22,7 @@ regression in the declarative arg assembly surfaces here rather than in producti
 
 from fastapi import status
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.checksums.app import app as checksums_app
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
@@ -40,9 +41,51 @@ from tests.app.sep.apps.framework.kit import (
 _DSN_PREFIX = f"h={SYNTH_SERVICE_HOST},P={SYNTH_SERVICE_PORT},"
 
 
+def test_derived_list_resolves_service_principal(regular_user: CasdoorUser) -> None:
+    """Assert the derived list renders the service-principal label."""
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(
+        "chk-system",
+        owner=checksums_app.owner,
+        created_by=str(SERVICE_PRINCIPAL_ID),
+    )
+    client = build_contract_client(
+        checksums_app,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+
+    response = client.get(f"{app_base_url(checksums_app)}/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["items"][0]["created_by"] == "Service account"
+
+
+def test_derived_detail_resolves_service_principal(regular_user: CasdoorUser) -> None:
+    """Assert the derived detail renders the service-principal label."""
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(
+        "chk-system",
+        owner=checksums_app.owner,
+        created_by=str(SERVICE_PRINCIPAL_ID),
+    )
+    client = build_contract_client(
+        checksums_app,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+
+    response = client.get(f"{app_base_url(checksums_app)}/chk-system")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["created_by"] == "Service account"
+
+
 def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
     """Assert ``POST /api/apps/checksums/`` assembles the byte-exact args string."""
-    tasks_api = MockTaskAPI()
+    tasks_api = MockTaskAPI(created_by=str(SERVICE_PRINCIPAL_ID))
     client = build_contract_client(
         checksums_app,
         user=regular_user,
@@ -62,6 +105,7 @@ def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
     )
 
     assert response.status_code == status.HTTP_201_CREATED
+    assert response.json()["created_by"] == "Service account"
     meta = tasks_api.last_create_payload["data"]["meta"]
     assert meta["command"] == "pt-table-checksum"
     assert (
@@ -134,7 +178,11 @@ def test_derived_create_accepts_legacy_comma_separated_targets(
 def test_derived_update_assembles_exact_args(regular_user: CasdoorUser) -> None:
     """Assert ``PUT /api/apps/checksums/{task_name}`` reuses the arg assembly."""
     tasks_api = MockTaskAPI()
-    tasks_api.seed_task("chk-update", owner=checksums_app.owner)
+    tasks_api.seed_task(
+        "chk-update",
+        owner=checksums_app.owner,
+        last_updated_by=str(SERVICE_PRINCIPAL_ID),
+    )
     client = build_contract_client(
         checksums_app,
         user=regular_user,
@@ -154,6 +202,7 @@ def test_derived_update_assembles_exact_args(regular_user: CasdoorUser) -> None:
     )
 
     assert response.status_code == status.HTTP_200_OK
+    assert response.json()["last_updated_by"] == "Service account"
     assert (
         response.json()["data"]["meta"]["args"]
         == f"{_DSN_PREFIX} --recursion-method=hosts --tables=db.t1"

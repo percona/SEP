@@ -49,7 +49,7 @@
 #    label: Masquerade PII
 #    description: Redact IPv4 / IPv6 / email-like values in the captured explain output. Indentation is preserved so plan alignment stays usable.
 #    default: false
-# atw:
+# diagnostic_categories:
 #  - QUERY_TUNING_OPTIMIZATION
 # ---
 
