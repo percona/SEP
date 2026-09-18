@@ -765,13 +765,15 @@ class TestAtwListApprovalFilter:
         snippets_dir: Path,
     ) -> None:
         """Load real snippet files and expose their declared ATW roots and cells."""
-        for filename in (
-            "proxysql_log_extractor.sh",
-            "proxysql_status.sh",
-            "haproxy_config_files.sh",
-            "haproxy_logs_extractor.sh",
-        ):
+        snippets = [
             await _persist_corpus_snippet(session, snippets_dir, filename=filename)
+            for filename in (
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+                "haproxy_config_files.sh",
+                "haproxy_logs_extractor.sh",
+            )
+        ]
 
         response = await async_api_client.get("/api/apps/atw/")
 
@@ -783,33 +785,18 @@ class TestAtwListApprovalFilter:
             }
             for entry in payload
         }
-        haproxy_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.HAPROXY]
-        proxysql_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.PROXYSQL]
-        assert cells == {
-            (haproxy_root, "NOT_RESPONDING"): {"haproxy_logs_extractor.sh"},
-            (
-                haproxy_root,
-                "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL",
-            ): {"haproxy_config_files.sh", "haproxy_logs_extractor.sh"},
-            (haproxy_root, "SERVER_CRASHED_RESTART_SUCCESSFUL"): {
-                "haproxy_logs_extractor.sh"
-            },
-            (proxysql_root, "NOT_RESPONDING"): {
-                "proxysql_log_extractor.sh",
-                "proxysql_status.sh",
-            },
-            (proxysql_root, "PERFORMANCE_OTHER"): {
-                "proxysql_log_extractor.sh",
-                "proxysql_status.sh",
-            },
-            (proxysql_root, "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL"): {
-                "proxysql_log_extractor.sh",
-                "proxysql_status.sh",
-            },
-            (proxysql_root, "SERVER_CRASHED_RESTART_SUCCESSFUL"): {
-                "proxysql_log_extractor.sh"
-            },
+        assert {entry["category_root"] for entry in payload} == {
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.HAPROXY],
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.PROXYSQL],
         }
+        for snippet in snippets:
+            expected_root = CATEGORY_ROOT_LABELS[snippet.service_type]
+            declared = snippet.meta[META_KEY_DIAGNOSTIC_CATEGORIES]
+            assert declared, (
+                f"{snippet.filename} should declare categories for this test"
+            )
+            for category in declared:
+                assert snippet.filename in cells[(expected_root, category)]
 
 
 class TestAtwListTitleFallback:

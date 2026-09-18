@@ -203,24 +203,6 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     )
 
 
-def _category_tags(snippet: Snippet) -> list[str]:
-    """Return the snippet's categories from the current key or the legacy fallback.
-
-    :param snippet: The snippet whose metadata should be read.
-    :return: The declared category names from ``diagnostic_categories`` or,
-        when that declaration is absent or malformed, the legacy ``atw`` key.
-        Return an empty list when neither key yields a valid ``list[str]``.
-    """
-    for key in (META_KEY_DIAGNOSTIC_CATEGORIES, META_KEY_ATW):
-        raw_categories = snippet.meta.get(key, _MISSING_META)
-        if raw_categories is _MISSING_META:
-            continue
-        validated = _validated_category_tags(key, raw_categories, snippet.filename)
-        if validated is not None:
-            return validated
-    return []
-
-
 def _validated_category_tags(
     key: str, raw_categories: object, filename: str
 ) -> list[str] | None:
@@ -273,7 +255,16 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
-        for tag in dict.fromkeys(_category_tags(snippet)):
+        tags: list[str] = []
+        for key in (META_KEY_DIAGNOSTIC_CATEGORIES, META_KEY_ATW):
+            raw_categories = snippet.meta.get(key, _MISSING_META)
+            if raw_categories is _MISSING_META:
+                continue
+            validated = _validated_category_tags(key, raw_categories, snippet.filename)
+            if validated is not None:
+                tags = validated
+                break
+        for tag in dict.fromkeys(tags):
             snippets_by_cell[(root, tag)].append(snippet)
 
     grouped = []
