@@ -33,6 +33,15 @@ and this script are both ``github-actions[bot]``, a maintainer is a ``User`` —
 and deliberately inexact in one direction, since automation authenticating with
 a user-owned token would earn a permanent label.
 
+The ``label-gate`` job in ``.github/workflows/ci.yml`` recomputes the same
+predicate in its own run via ``--print-eligibility`` rather than reading the label
+written here. The two workflows are triggered by the same pull-request event and
+run concurrently, so the label may not exist yet when the gate evaluates; and a
+label applied here authenticates with ``GITHUB_TOKEN``, which GitHub bars from
+triggering the CI re-run that would refresh a stale verdict. Computing it where it
+is consumed removes that handoff. The label stays as the reviewer-facing record and
+as the hand-applied bypass for a pull request the predicate does not cover.
+
 Invoked from ``.github/workflows/labels.yaml`` after a sparse checkout of the
 default branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
 Uses stdlib ``urllib`` so the workflow step needs no Poetry install.
@@ -601,13 +610,21 @@ def main(argv: list[str] | None = None) -> int:
         default="GITHUB_TOKEN",
         help="environment variable holding the GitHub API token (default: GITHUB_TOKEN)",
     )
+    parser.add_argument(
+        "--print-eligibility",
+        action="store_true",
+        help=(
+            "print 'true' or 'false' for the automatic 'qa not required' predicate "
+            "and exit, adding and removing no label"
+        ),
+    )
     args = parser.parse_args(argv)
 
     token = os.environ.get(args.token_env)
     if not token:
         print(f"{args.token_env} is not set", file=sys.stderr)
         return 1
-    if not args.labeler.is_file():
+    if not args.print_eligibility and not args.labeler.is_file():
         print(f"{args.labeler}: file not found", file=sys.stderr)
         return 1
     if not args.head_ref:
@@ -621,6 +638,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         files = client.list_pr_files(args.owner, args.repo, args.pr_number)
+        if args.print_eligibility:
+            print("true" if qa_not_required_eligible(files, args.head_ref) else "false")
+            return 0
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
         )

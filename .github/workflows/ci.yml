@@ -25,12 +25,18 @@ jobs:
   label-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve whether the base branch is protected
-        id: base_protection
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Resolve the merge verdict from the state the PR has now
+        id: verdict
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           if [ -z "$PR_NUMBER" ]; then
@@ -38,9 +44,16 @@ jobs:
             echo "protected=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # github.event replays the original event on a re-run; resolve the base the PR has now.
-          if ! base_ref="$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')" \
-              || [ -z "$base_ref" ]; then
+          # github.event replays the original event on a re-run, and freezes the
+          # label set at trigger time in every case: read both from the API.
+          if ! pr="$(gh api "repos/$REPO/pulls/$PR_NUMBER")"; then
+            echo "::error::Could not read pull request #$PR_NUMBER."
+            exit 1
+          fi
+          base_ref="$(jq -r '.base.ref' <<<"$pr")"
+          head_ref="$(jq -r '.head.ref' <<<"$pr")"
+          labels="$(jq -r '.labels[].name' <<<"$pr")"
+          if [ -z "$base_ref" ] || [ "$base_ref" = "null" ]; then
             echo "::error::Could not resolve the base branch of pull request #$PR_NUMBER."
             exit 1
           fi
@@ -50,33 +63,54 @@ jobs:
             echo "::error::Could not determine whether '$base_ref' is protected."
             exit 1
           fi
-          if grep -Fxq -- "$base_ref" <<<"$branches"; then
-            echo "Base branch '$base_ref' is protected; the label gate applies."
-            echo "protected=true" >> "$GITHUB_OUTPUT"
-          else
+          if ! grep -Fxq -- "$base_ref" <<<"$branches"; then
             echo "Base branch '$base_ref' is not protected; the label gate is off."
             echo "protected=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "Base branch '$base_ref' is protected; the label gate applies."
+          echo "protected=true" >> "$GITHUB_OUTPUT"
+
+          for blocking in 'do not merge' 'qa in progress' 'qa failed'; do
+            if grep -Fxq -- "$blocking" <<<"$labels"; then
+              echo "blocking=$blocking" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          if grep -Fxq -- 'qa passed' <<<"$labels" \
+              || grep -Fxq -- 'qa not required' <<<"$labels"; then
+            echo "Merge approved by label."
+            echo "approved=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # `qa not required` is a pure function of the diff that the Labels
+          # workflow computes in a run this same event starts in parallel, and its
+          # write authenticates with GITHUB_TOKEN, which GitHub bars from triggering
+          # the re-run that would refresh a verdict taken before the label landed.
+          # Recomputing the predicate here consumes it where it is decided.
+          if ! approved="$(python3 scripts/sync_pr_labels.py \
+              --owner "$OWNER" \
+              --repo "$REPO_NAME" \
+              --pr-number "$PR_NUMBER" \
+              --head-ref "$head_ref" \
+              --print-eligibility)"; then
+            echo "::error::Could not compute automatic 'qa not required' eligibility."
+            exit 1
+          fi
+          echo "Automatic 'qa not required' eligibility: $approved"
+          echo "approved=$approved" >> "$GITHUB_OUTPUT"
 
       - name: Block merge on disqualifying labels
-        if: >-
-          steps.base_protection.outputs.protected == 'true' &&
-          (
-            contains(github.event.pull_request.labels.*.name, 'do not merge') ||
-            contains(github.event.pull_request.labels.*.name, 'qa in progress') ||
-            contains(github.event.pull_request.labels.*.name, 'qa failed')
-          )
+        if: steps.verdict.outputs.blocking != ''
         run: |
-          echo "::error::PR is blocked by label. Remove 'do not merge', 'qa in progress', or 'qa failed' to proceed."
+          echo "::error::PR is blocked by the '${{ steps.verdict.outputs.blocking }}' label. Remove 'do not merge', 'qa in progress', or 'qa failed' to proceed."
           exit 1
 
       - name: Require QA approval label
         if: >-
-          steps.base_protection.outputs.protected == 'true' &&
-          (
-            !contains(github.event.pull_request.labels.*.name, 'qa passed') &&
-            !contains(github.event.pull_request.labels.*.name, 'qa not required')
-          )
+          steps.verdict.outputs.protected == 'true' &&
+          steps.verdict.outputs.approved != 'true'
         run: |
           echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
           exit 1
