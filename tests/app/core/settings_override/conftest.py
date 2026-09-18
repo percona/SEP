@@ -21,7 +21,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
@@ -29,6 +29,7 @@ from sqlmodel.pool import StaticPool
 from app.core.alerts.config import AlertSettings
 from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.lifecycle import RefreshCallback, SnapshotChange
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.utils import json_serializer
@@ -80,6 +81,47 @@ async def insert_override_row(
     return await SettingsOverrideManager.create(session, SettingOverride(**kwargs))
 
 
+async def seed_connectivity_override(
+    session_maker: async_sessionmaker, *, value: bool
+) -> None:
+    """Insert a ``SEPSettings.CONNECTIVITY_CHECK_DEFAULT`` override row.
+
+    :param session_maker: Async session maker bound to the override store.
+    :param value: The overridden boolean to persist.
+    """
+    async with session_maker() as session:
+        await insert_override_row(
+            session,
+            setting_class=SEP_SETTINGS_TOKEN,
+            key="CONNECTIVITY_CHECK_DEFAULT",
+            value=value,
+        )
+
+
+async def clear_connectivity_override(session_maker: async_sessionmaker) -> None:
+    """Delete the ``SEPSettings.CONNECTIVITY_CHECK_DEFAULT`` override row.
+
+    :param session_maker: Async session maker bound to the override store.
+    """
+    async with session_maker() as session:
+        await SettingsOverrideManager.delete_where(
+            session, setting_class=SEP_SETTINGS_TOKEN, key="CONNECTIVITY_CHECK_DEFAULT"
+        )
+
+
+def recording_callback(fired: list[SnapshotChange]) -> RefreshCallback:
+    """Build a rebind callback that appends every change it receives to ``fired``.
+
+    :param fired: The list each received :class:`SnapshotChange` is appended to.
+    :return: An async callback matching :data:`RefreshCallback`.
+    """
+
+    async def _callback(change: SnapshotChange) -> None:
+        fired.append(change)
+
+    return _callback
+
+
 class HangingSession:
     """Stand in for an async session whose enter hangs until cancelled."""
 
@@ -110,6 +152,7 @@ def recording_bounded_seed(
         session_maker_factory: object,
         proxies: object,
         seed_timeout: float | None,
+        callbacks: object = None,
     ) -> tuple[bool, asyncio.Task | None]:
         recorded["seed_timeout"] = seed_timeout
         return True, None
