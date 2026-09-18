@@ -330,10 +330,11 @@ async def restore_response_context(
     """Prefetch catalogued transports for undeclared stamps on the request loop.
 
     Bound once per list/detail/create build as the builders' ``context``. Runs on
-    the request event loop against the shared sep session maker — one session for
-    the whole page — so the sync builder never pays a per-row
-    thread+loop+NullPool spin-up. Lookups that fail are recorded as ``None`` so
-    the builder falls through to inference without re-querying.
+    the request event loop against the shared sep session maker — one session and
+    one batched SELECT for the whole page — so the sync builder never pays a
+    per-row thread+loop+NullPool spin-up. A session/query failure is recorded as
+    ``None`` for every pending key so the builder falls through to inference
+    without re-querying.
 
     :param tasks: The page (list) or singleton (detail/create) being rendered.
     :return: A map from :func:`_transport_cache_key` to catalogued transport.
@@ -357,32 +358,17 @@ async def restore_response_context(
     if not pending:
         return {}
 
-    results: dict[tuple[int | None, str, str], CataloguedSourceTransport | None] = {}
     try:
         async with get_async_session_maker()() as session:
-            for cache_key, service_key in pending.items():
-                _service_id, _service_name, backup_source = cache_key
-                try:
-                    results[
-                        cache_key
-                    ] = await MysqlBackupRunManager.catalogued_source_transport(
-                        session, service_key, backup_source
-                    )
-                except Exception:  # noqa: BLE001 — one miss must not take out the page
-                    _log.warning(
-                        "Catalog source_transport lookup failed for "
-                        "backup_source=%r; falling back to inference",
-                        backup_source,
-                        exc_info=True,
-                    )
-                    results[cache_key] = None
-    except Exception:  # noqa: BLE001 — session open failure must not take out the page
+            return await MysqlBackupRunManager.catalogued_source_transports(
+                session, pending
+            )
+    except Exception:  # noqa: BLE001 — session/query failure must not take out the page
         _log.warning(
             "Catalog source_transport session failed; falling back to inference",
             exc_info=True,
         )
         return dict.fromkeys(pending, None)
-    return results
 
 
 def catalogued_transport_for_stamp(

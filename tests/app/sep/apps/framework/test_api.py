@@ -22,6 +22,7 @@ execute-route factory.
 
 import functools
 import inspect
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -1320,11 +1321,19 @@ def _make_tasks_api(
             create_error=create_error,
         )
 
+    async def _put(path: str, json: dict | None = None) -> dict:
+        base = detail_task if detail_task is not None else (created_task or {})
+        merged = {**base, **(json or {})}
+        if "name" not in merged:
+            merged["name"] = path.lstrip("/")
+        return merged
+
     async def _delete(path: str) -> None:
         return None
 
     api.get.side_effect = _get
     api.post.side_effect = _post
+    api.put.side_effect = _put
     api.delete.side_effect = _delete
     return api
 
@@ -2494,6 +2503,17 @@ async def _context_provider() -> dict[str, str]:
     return {_CONTEXT_USER_ID: "Alice"}
 
 
+async def _tasks_required_context_provider(*, tasks: Sequence[Task]) -> dict[str, str]:
+    """Require ``tasks=`` — a zero-arg call raises ``TypeError``.
+
+    Encodes the first task's name into the mapped value so create/detail/update
+    assertions prove the route handed the singleton through, not an empty page.
+    """
+    if not tasks:
+        return {_CONTEXT_USER_ID: "bound:empty"}
+    return {_CONTEXT_USER_ID: f"bound:{tasks[0].name}"}
+
+
 def _build_context_response(
     task: Task,
     *,
@@ -2758,6 +2778,25 @@ class TestDeriveCrudRoutesDetailBuilder:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["resolved_by"] == "Alice"
 
+    def test_detail_passes_task_to_tasks_required_provider(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert detail binds a provider that requires ``tasks=`` with the singleton."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict_created_by("t1", _CONTEXT_USER_ID),
+            history_items=[{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        )
+        router = _crud_router(
+            response_builder=_build_context_response,
+            context_provider=_tasks_required_context_provider,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["resolved_by"] == "bound:t1"
+
 
 class TestDeriveCrudRoutesPartialBuilder:
     """Cover builders wrapped in :func:`functools.partial`."""
@@ -2827,6 +2866,44 @@ class TestDeriveCrudRoutesCreateContext:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["resolved_by"] == "Alice"
+
+    def test_create_passes_task_to_tasks_required_provider(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert create binds a provider that requires ``tasks=`` with the new task."""
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_created_by("new-task", _CONTEXT_USER_ID)
+        )
+        router = _crud_router(
+            response_builder=_build_context_response,
+            context_provider=_tasks_required_context_provider,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["resolved_by"] == "bound:new-task"
+
+    def test_update_passes_task_to_tasks_required_provider(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert derived update binds a provider that requires ``tasks=``."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict_created_by("t1", _CONTEXT_USER_ID),
+            history_items=[{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        )
+        router = _crud_router(
+            response_builder=_build_context_response,
+            context_provider=_tasks_required_context_provider,
+            update_enabled=True,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.put(f"{_CRUD_BASE_URL}/t1", json={"name": "t1"})
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["resolved_by"] == "bound:t1"
 
     def test_contextless_builder_with_provider_rejected_at_registration(self) -> None:
         """Assert a context-less builder with a provider fails fast at registration."""

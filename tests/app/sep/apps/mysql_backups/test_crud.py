@@ -586,3 +586,83 @@ class TestNewestForBackupSource:
             )
             is None
         )
+
+
+class TestCataloguedSourceTransports:
+    """Cover the batched preferred-source transport prefetch for restore list."""
+
+    @pytest.mark.asyncio
+    async def test_empty_lookups_return_empty(self, session) -> None:
+        """Short-circuit without a query when the page needs no catalog hits."""
+        assert (
+            await MysqlBackupRunManager.catalogued_source_transports(session, {}) == {}
+        )
+
+    @pytest.mark.asyncio
+    async def test_batches_distinct_keys_in_one_pass(self, session) -> None:
+        """Return each key's newest transport without a per-key SELECT."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 3, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=3,
+            service_name="svc-b",
+            service_id=8,
+            upload_destination="gs://bucket/b",
+            source_transport=CataloguedSourceTransport.GCS,
+            finished_at=datetime(2026, 7, 29, 2, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=4,
+            service_name="svc-a",
+            service_id=7,
+            location="/data/local-only",
+            finished_at=datetime(2026, 7, 29, 4, 0, tzinfo=UTC),
+        )
+
+        key_a = _key("svc-a", 7)
+        key_b = _key("svc-b", 8)
+        lookups = {
+            (7, "svc-a", "s3://bucket/a"): key_a,
+            (8, "svc-b", "gs://bucket/b"): key_b,
+            (7, "svc-a", "/data/local-only"): key_a,
+            (7, "svc-a", "s3://missing"): key_a,
+        }
+
+        results = await MysqlBackupRunManager.catalogued_source_transports(
+            session, lookups
+        )
+
+        assert results[(7, "svc-a", "s3://bucket/a")] == CataloguedSourceTransport.S3
+        assert results[(8, "svc-b", "gs://bucket/b")] == CataloguedSourceTransport.GCS
+        assert results[(7, "svc-a", "/data/local-only")] is None
+        assert results[(7, "svc-a", "s3://missing")] is None
+
+    @pytest.mark.asyncio
+    async def test_blank_backup_source_maps_to_none_without_matching(
+        self, session
+    ) -> None:
+        """Treat an empty ``backup_source`` as a miss the same way the single lookup does."""
+        key = _key("svc-a", 7)
+        results = await MysqlBackupRunManager.catalogued_source_transports(
+            session, {(7, "svc-a", ""): key}
+        )
+
+        assert results == {(7, "svc-a", ""): None}
