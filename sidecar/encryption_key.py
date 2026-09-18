@@ -60,7 +60,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import BaseYamlSettings
 from app.core.db.config import DatabaseOptions
-from app.core.encryption import is_encrypted
+from app.core.encryption import is_encrypted, marked_ciphertext
 from app.core.settings_override.models import SettingOverride
 from app.core.utils.fields import credential_url_password
 
@@ -429,7 +429,23 @@ def _has_encrypted_url_password(value: str) -> bool:
         password = credential_url_password(value)
     except ValueError:
         return False
-    return password is not None and is_encrypted(password)
+    return password is not None and _is_stored_ciphertext(password)
+
+
+def _is_stored_ciphertext(value: str) -> bool:
+    """Return whether ``value`` is ciphertext under either at-rest envelope.
+
+    The marked envelope answers first because its values are invisible to the
+    structural check: a marker puts a character outside the base64 alphabet at
+    the front, so ``is_encrypted`` rejects the whole string. Testing only the
+    structural shape would read a database holding nothing but post-envelope
+    rows as free of ciphertext, and this probe's caller mints a fresh key on
+    that answer.
+
+    :param value: One string leaf of a stored override value.
+    :return: Whether it holds ciphertext.
+    """
+    return marked_ciphertext(value) is not None or is_encrypted(value)
 
 
 def contains_ciphertext(value: Any) -> bool:
@@ -447,18 +463,27 @@ def contains_ciphertext(value: Any) -> bool:
     parsed password — or a deployment whose only encrypted data is an endpoint
     password reads as holding none and clears the mint path.
 
-    Deciding structurally is safe in this direction, and only this one. The
-    write path must not (``secret_storage.encrypt_secret_leaves``: a credential
-    that happens to be base64 would be misread as ciphertext and stored in the
-    clear), but here a false positive merely refuses to mint, which is loud and
-    an operator resolves by supplying the key. A false negative is the
-    dangerous direction, and it has none that reading annotations would avoid.
+    The decision is no longer purely structural, and the envelope has to be
+    tested first. A leaf ``secret_storage`` wrote carries a marker whose first
+    character is outside the base64 alphabet, so the structural check answers
+    ``False`` for it. Leaving the marker untested is therefore the false
+    negative named below as the dangerous direction, in its widest form: a
+    deployment whose overrides were all written after the envelope shipped holds
+    nothing this could recognise, so it reads as fresh and the caller mints over
+    every row.
+
+    Structure still decides for a value the envelope declines, and is safe in
+    this direction and only this one. The write path must not
+    (``secret_storage.encrypt_secret_leaves``: a credential that happens to be
+    base64 would be misread as ciphertext and stored in the clear), but here a
+    false positive merely refuses to mint, which is loud and an operator
+    resolves by supplying the key.
 
     :param value: The decoded stored value, at any depth.
     :return: Whether a Fernet token appears anywhere within it.
     """
     if isinstance(value, str):
-        return is_encrypted(value) or _has_encrypted_url_password(value)
+        return _is_stored_ciphertext(value) or _has_encrypted_url_password(value)
     if isinstance(value, dict):
         return any(contains_ciphertext(leaf) for leaf in value.values())
     if isinstance(value, list):

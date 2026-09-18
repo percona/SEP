@@ -30,7 +30,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.config import Settings
-from app.core.encryption import encrypt
+from app.core.encryption import encrypt, mark_ciphertext
 from app.core.settings_override import cache
 from app.core.settings_override.cache import (
     _build_nested_update,
@@ -831,6 +831,31 @@ async def test_secret_leaf_decrypted_before_materialization(
         setting_class=SETTINGS_TOKEN,
         key="PMM",
         value={"endpoint": PMM_ENDPOINT, "api_key": encrypt(PMM_API_KEY)},
+    )
+    snapshot = await build_snapshot(session, Settings)
+    assert snapshot["PMM"].api_key.get_secret_value() == PMM_API_KEY
+    assert snapshot["PMM"].endpoint == PMM_ENDPOINT
+
+
+@pytest.mark.asyncio
+async def test_marked_secret_leaf_decrypted_before_materialization(
+    session: AsyncSession,
+) -> None:
+    """A secret leaf carrying the envelope marker is decrypted like any other.
+
+    The sibling of the unmarked case above, and both have to keep passing: the
+    two shapes coexist for the life of every deployment upgraded into the
+    envelope, because nothing re-marks a row written before it. A snapshot that
+    read only one would silently fall back to the YAML value for the other.
+    """
+    await insert_override_row(
+        session,
+        setting_class=SETTINGS_TOKEN,
+        key="PMM",
+        value={
+            "endpoint": PMM_ENDPOINT,
+            "api_key": mark_ciphertext(encrypt(PMM_API_KEY)),
+        },
     )
     snapshot = await build_snapshot(session, Settings)
     assert snapshot["PMM"].api_key.get_secret_value() == PMM_API_KEY

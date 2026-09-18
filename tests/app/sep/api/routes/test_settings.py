@@ -36,7 +36,6 @@ from app.core.alerts.config import alert_settings
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import PMMSettings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.encryption import decrypt, is_encrypted
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.api import routes as settings_routes
@@ -78,6 +77,7 @@ from tests.app.core.settings_override.conftest import (
     SNIPPETS_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
+from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 from tests.app.sep.conftest import REDUCED_ACTIVATION
 
 REDUCED_SETTINGS_PREFIX = "/settings"
@@ -115,7 +115,7 @@ def _decrypted_secrets(stored: dict[str, str]) -> dict[str, str]:
     :param stored: The ``secrets`` mapping as the override row holds it.
     :return: The same secret names mapped to their decrypted values.
     """
-    return {name: decrypt(value) for name, value in stored.items()}
+    return {name: stored_plaintext(value) for name, value in stored.items()}
 
 
 def _renamed_skeleton() -> dict[str, Any]:
@@ -1102,7 +1102,7 @@ class TestSepSettingsPatch:
             key=_DELIVERY_INPUTS_KEY,
         )
         stored_endpoint = rows[0].value["endpoint"]
-        assert decrypt(urlparse(stored_endpoint).password) == "sn-secret"
+        assert stored_plaintext(urlparse(stored_endpoint).password) == "sn-secret"
         assert "****" not in stored_endpoint
 
     @pytest.mark.usefixtures("delivery_skeleton")
@@ -1825,7 +1825,7 @@ class TestSepSettingsAlertSettings:
                 override_session, setting_class=ALERT_SETTINGS_TOKEN
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
-            assert decrypt(providers_row.value[0]["routing_key"]) == secret
+            assert stored_plaintext(providers_row.value[0]["routing_key"]) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
             alert_settings._set_snapshot({})
@@ -1884,7 +1884,7 @@ class TestSepSettingsAlertSettings:
             )
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
             by_endpoint = {
-                entry["api_endpoint"]: decrypt(entry["routing_key"])
+                entry["api_endpoint"]: stored_plaintext(entry["routing_key"])
                 for entry in providers_row.value
             }
             assert by_endpoint[endpoint_a] == secret_a
@@ -2164,7 +2164,7 @@ class TestGlobalSettingsClass:
             )
             assert len(rows) == 1
             assert rows[0].key == "PMM__api_key"
-            assert decrypt(rows[0].value) == secret
+            assert stored_plaintext(rows[0].value) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
 
@@ -2191,7 +2191,7 @@ class TestGlobalSettingsClass:
                 override_session, setting_class=SETTINGS_TOKEN
             )
             assert len(rows) == 1
-            assert decrypt(rows[0].value) == secret
+            assert stored_plaintext(rows[0].value) == secret
         finally:
             api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
 
@@ -2342,8 +2342,8 @@ class TestSepSettingsSecretsEncryptedAtRest:
         )
         assert len(rows) == 1, "the PATCH must have persisted exactly one row"
         parsed = urlparse(rows[0].value)
-        assert is_encrypted(parsed.password)
-        assert decrypt(parsed.password) == self._CREDENTIAL_PASSWORD
+        assert is_stored_ciphertext(parsed.password)
+        assert stored_plaintext(parsed.password) == self._CREDENTIAL_PASSWORD
         assert parsed.username == "inv-user"
         assert parsed.hostname == "inventory.internal"
         assert str(sep_settings.INVENTORY_ENDPOINT).rstrip("/") == (
@@ -2366,7 +2366,10 @@ class TestSepSettingsSecretsEncryptedAtRest:
             override_session, setting_class=SETTINGS_TOKEN, key="PMM__endpoint"
         )
         assert len(rows) == 1, "the PATCH must have persisted exactly one row"
-        assert decrypt(urlparse(rows[0].value).password) == self._CREDENTIAL_PASSWORD
+        assert (
+            stored_plaintext(urlparse(rows[0].value).password)
+            == self._CREDENTIAL_PASSWORD
+        )
         assert str(settings.PMM.endpoint).rstrip("/") == self._CREDENTIAL_URL
 
     async def test_whole_object_patch_encrypts_both_leaf_kinds(
@@ -2384,10 +2387,10 @@ class TestSepSettingsSecretsEncryptedAtRest:
         )
         assert len(rows) == 1, "the PATCH must have persisted exactly one row"
         stored = rows[0].value
-        assert decrypt(urlparse(stored["endpoint"]).password) == (
+        assert stored_plaintext(urlparse(stored["endpoint"]).password) == (
             self._CREDENTIAL_PASSWORD
         )
-        assert decrypt(stored["api_key"]) == PMM_API_KEY
+        assert stored_plaintext(stored["api_key"]) == PMM_API_KEY
 
     async def test_masked_resubmit_over_encrypted_storage_round_trips(
         self, api_admin_client: TestClient, override_session: AsyncSession
@@ -2420,7 +2423,10 @@ class TestSepSettingsSecretsEncryptedAtRest:
             key="INVENTORY_ENDPOINT",
         )
         assert len(rows) == 1, "the resubmit must leave exactly one row"
-        assert decrypt(urlparse(rows[0].value).password) == self._CREDENTIAL_PASSWORD
+        assert (
+            stored_plaintext(urlparse(rows[0].value).password)
+            == self._CREDENTIAL_PASSWORD
+        )
 
     async def test_credential_url_read_surface_is_unchanged_by_encryption(
         self, api_admin_client: TestClient
@@ -2461,8 +2467,8 @@ class TestSepSettingsSecretsEncryptedAtRest:
         rows = await SettingsOverrideManager.list(
             override_session, setting_class=SETTINGS_TOKEN, key="PMM"
         )
-        assert is_encrypted(rows[0].value["api_key"])
-        assert decrypt(rows[0].value["api_key"]) == PMM_API_KEY
+        assert is_stored_ciphertext(rows[0].value["api_key"])
+        assert stored_plaintext(rows[0].value["api_key"]) == PMM_API_KEY
         assert rows[0].value["endpoint"] == endpoint
 
     async def test_whole_object_patch_still_masks_the_secret_in_the_response(
@@ -2500,8 +2506,8 @@ class TestSepSettingsSecretsEncryptedAtRest:
         rows = await SettingsOverrideManager.list(
             override_session, setting_class=SETTINGS_TOKEN, key="PMM__api_key"
         )
-        assert is_encrypted(rows[0].value)
-        assert decrypt(rows[0].value) == PMM_API_KEY
+        assert is_stored_ciphertext(rows[0].value)
+        assert stored_plaintext(rows[0].value) == PMM_API_KEY
 
     async def test_materializer_backed_provider_patch_encrypts_routing_key(
         self, api_admin_client: TestClient, override_session: AsyncSession
@@ -2531,8 +2537,8 @@ class TestSepSettingsSecretsEncryptedAtRest:
             override_session, setting_class=ALERT_SETTINGS_TOKEN, key="PROVIDERS"
         )
         entry = rows[0].value[0]
-        assert is_encrypted(entry["routing_key"])
-        assert decrypt(entry["routing_key"]) == ROUTING_KEY
+        assert is_stored_ciphertext(entry["routing_key"])
+        assert stored_plaintext(entry["routing_key"]) == ROUTING_KEY
         assert entry["PROVIDER"] == "pagerduty"
         assert entry["api_endpoint"] == endpoint
         provider = next(iter(alert_settings.PROVIDERS))
@@ -2563,8 +2569,8 @@ class TestSepSettingsSecretsEncryptedAtRest:
         stored = rows[0].value["secrets"]
         assert sorted(stored) == sorted(_DELIVERY_INPUTS_SECRETS)
         for name, plaintext in _DELIVERY_INPUTS_SECRETS.items():
-            assert is_encrypted(stored[name])
-            assert decrypt(stored[name]) == plaintext
+            assert is_stored_ciphertext(stored[name])
+            assert stored_plaintext(stored[name]) == plaintext
         assert rows[0].value["endpoint"] == endpoint
 
     async def test_non_secret_field_is_stored_unencrypted(
@@ -2600,7 +2606,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
             override_session, setting_class=SETTINGS_TOKEN, key="PMM__api_key"
         )
         assert len(rows) == 1
-        assert decrypt(rows[0].value) == PMM_API_KEY
+        assert stored_plaintext(rows[0].value) == PMM_API_KEY
 
 
 @pytest.mark.asyncio

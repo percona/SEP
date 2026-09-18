@@ -26,7 +26,6 @@ from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user, require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.encryption import decrypt, is_encrypted
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import (
@@ -42,6 +41,7 @@ from tests.app.core.settings_override.conftest import (
     ANONYMIZER_SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
+from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 
 
 def _nomad_endpoint_value() -> str:
@@ -842,8 +842,8 @@ class TestTasksSettingsCredentialUrlAtRest:
         )
         assert len(rows) == 1, "the PATCH must have persisted exactly one row"
         parsed = urlparse(rows[0].value)
-        assert is_encrypted(parsed.password)
-        assert decrypt(parsed.password) == self._PASSWORD
+        assert is_stored_ciphertext(parsed.password)
+        assert stored_plaintext(parsed.password) == self._PASSWORD
         assert parsed.username == "nomad-user"
         assert parsed.hostname == "nomad.internal"
         assert parsed.port == self._PORT
@@ -865,7 +865,7 @@ class TestTasksSettingsCredentialUrlAtRest:
 
         password = urlparse(_nomad_endpoint_value()).password
         assert password == self._PASSWORD
-        assert not is_encrypted(password)
+        assert not is_stored_ciphertext(password)
 
 
 @pytest.mark.asyncio
@@ -917,8 +917,8 @@ class TestTasksSettingsNomadApiKey:
         rows = await SettingsOverrideManager.list(
             session, setting_class=TASKS_SETTINGS_TOKEN, key="NOMAD__api_key"
         )
-        assert is_encrypted(rows[0].value)
-        assert decrypt(rows[0].value) == self._API_KEY
+        assert is_stored_ciphertext(rows[0].value)
+        assert stored_plaintext(rows[0].value) == self._API_KEY
 
         executor = normalize_nomad_config_value(tasks_settings.NOMAD)
         assert executor.api_key is not None
