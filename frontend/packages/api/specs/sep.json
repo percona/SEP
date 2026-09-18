@@ -933,7 +933,7 @@
         "type": "object"
       },
       "SepTaskHistoryResponse": {
-        "description": "Represent a task-history row as SEP serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task, or\n    ``None`` when none was recorded.",
+        "description": "Represent a task-history row as SEP serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task: the\n    provider's username when resolvable, a system label for\n    system-initiated work, otherwise the stored identifier. ``None`` when\n    none was recorded.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -1079,7 +1079,7 @@
         "type": "object"
       },
       "SepTaskResponse": {
-        "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator, or ``None`` when\n    none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, or ``None`` when none was recorded.",
+        "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
         "properties": {
           "alert_detail_builder": {
             "anyOf": [

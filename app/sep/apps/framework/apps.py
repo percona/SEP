@@ -370,9 +370,10 @@ class TaskExecutionApp(BaseApp):
     :param response_builder: A sync list/detail builder override injecting the
         per-plugin response extras; replaces the framework default builder. When
         ``None`` (default) the framework builds a default list/detail builder
-        that stamps ``service_type`` and remaps the ``created_by`` /
-        ``last_updated_by`` user-ids to usernames through the bound response
-        context. Defaults to ``None``.
+        that stamps ``service_type`` and resolves the ``created_by`` /
+        ``last_updated_by`` user ids to system labels or provider usernames
+        through the bound response context, falling back to the raw id when
+        neither resolves it. Defaults to ``None``.
     :param detail_response_builder: A sync detail-only builder override; when
         ``None`` the detail route falls back to ``response_builder`` and the list
         model. When set, the create route renders like detail too unless an
@@ -1372,7 +1373,8 @@ class TaskExecutionApp(BaseApp):
         """Return the plugin's ``response_builder`` override, or a default builder.
 
         Use the supplied ``response_builder`` verbatim when set; otherwise build
-        the framework default builder (stamp ``service_type`` + remap usernames)
+        the framework default builder (stamp ``service_type`` and resolve actor
+        ids to system labels or provider usernames, falling back to the raw id)
         over ``response_model``.
 
         :return: A ``(task, *, status, context) -> response_model`` builder whose
