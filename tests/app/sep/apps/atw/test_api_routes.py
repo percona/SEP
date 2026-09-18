@@ -133,6 +133,8 @@ async def _persist_corpus_snippet(
     target = (target_root / filename).resolve()
     if not source.is_relative_to(source_root):
         raise ValueError(f"snippet path escapes repository snippets dir: {filename}")
+    if not source.is_file():
+        raise ValueError(f"snippet path is not a repository snippet file: {filename}")
     if not target.is_relative_to(target_root):
         raise ValueError(f"snippet path escapes test snippets dir: {filename}")
     target.parent.mkdir(parents=True, exist_ok=True)
