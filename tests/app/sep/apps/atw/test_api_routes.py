@@ -28,11 +28,13 @@ import pytest_asyncio
 from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from pytest_mock import MockerFixture
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app import BASE_DIR
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
@@ -52,6 +54,7 @@ from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_DIAGNOSTIC_CATEGORIES
+from app.tasks.models import TaskHistoryStatusEnum
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
 _REPO_SNIPPETS_DIR = BASE_DIR / "snippets"
@@ -1436,6 +1439,53 @@ async def seeded_incident(session: AsyncSession) -> AtwIncident:
     )
 
 
+_SEEDED_RUN_COUNT = 3
+_SEEDED_FAILED_COUNT = 2
+#: The statuses ``incident_with_runs`` records, two of which count as failed.
+_SEEDED_RUN_STATUSES = (
+    TaskHistoryStatusEnum.FAILED,
+    TaskHistoryStatusEnum.STALE,
+    TaskHistoryStatusEnum.SUCCESS,
+)
+
+
+@pytest_asyncio.fixture
+async def incident_with_runs(session: AsyncSession) -> AtwIncident:
+    """Seed one incident carrying three resolved runs, two of them failures."""
+    incident = await AtwIncidentManager.save(
+        session, AtwIncident(created_by="alice", name="with-runs")
+    )
+    for task_history_id, run_status in enumerate(_SEEDED_RUN_STATUSES, start=1):
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=task_history_id,
+                snippet_filename="diag.sh",
+                terminal_status=run_status.value,
+                finished_at=utc_now(),
+            ),
+        )
+    return incident
+
+
+@pytest_asyncio.fixture
+async def incident_with_unresolved_run(session: AsyncSession) -> AtwIncident:
+    """Seed one incident whose single run has no recorded outcome yet."""
+    incident = await AtwIncidentManager.save(
+        session, AtwIncident(created_by="alice", name="in-flight")
+    )
+    await AtwIncidentExecutionManager.save(
+        session,
+        AtwIncidentExecution(
+            incident_id=incident.id,
+            task_history_id=1,
+            snippet_filename="diag.sh",
+        ),
+    )
+    return incident
+
+
 @pytest_asyncio.fixture
 async def incident_with_executions(session: AsyncSession) -> AtwIncident:
     """Seed one incident owning two execution rows."""
@@ -1746,3 +1796,184 @@ class TestAtwIncidentCloseReopen:
         assert isinstance(result, AtwIncidentResponse)
         assert result.closed_at is None
         assert result.id == seeded_incident.id
+
+
+class TestAtwIncidentRunAggregates:
+    """Check the run counts and last-activity timestamp all six routes serve."""
+
+    def test_list_serves_run_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure the listing carries per-row run totals and a last-activity time."""
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["items"][0]
+        assert row["run_count"] == _SEEDED_RUN_COUNT
+        assert row["failed_run_count"] == _SEEDED_FAILED_COUNT
+        assert row["last_activity_at"] is not None
+
+    def test_list_issues_no_upstream_request(
+        self,
+        api_client: TestClient,
+        incident_with_runs: AtwIncident,
+        mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """Ensure rendering a page costs no task-history call, however many runs.
+
+        The list route requests no Tasks API dependency, so the overridden client
+        alone could not see a call made through a client built outside dependency
+        injection; the transport-level spies cover that path too.
+        """
+        transport_get = mocker.spy(RemoteAPI, "get")
+        transport_post = mocker.spy(RemoteAPI, "post")
+
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
+        transport_get.assert_not_called()
+        transport_post.assert_not_called()
+
+    def test_list_page_issues_one_aggregate_query(
+        self,
+        api_client: TestClient,
+        incident_with_runs: AtwIncident,
+        seeded_incidents: list[AtwIncident],
+        mocker: MockerFixture,
+    ) -> None:
+        """Ensure a multi-incident page is summarized by one grouped query."""
+        spy = mocker.spy(AtwIncidentExecutionManager, "aggregate_by_incident")
+
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()["items"]) > 1
+        assert spy.call_count == 1
+
+    def test_detail_serves_run_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure the detail route serves the same totals as the listing row."""
+        response = api_client.get(f"{INCIDENTS_BASE}{incident_with_runs.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    def test_create_serves_zeroed_aggregates(self, api_client: TestClient) -> None:
+        """Ensure a fresh incident reports no runs and its own creation time."""
+        response = api_client.post(INCIDENTS_BASE, json={"name": "brand new"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert payload["run_count"] == 0
+        assert payload["failed_run_count"] == 0
+        assert payload["last_activity_at"] == payload["created_at"]
+
+    def test_patch_preserves_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure renaming an incident does not blank its run totals."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{incident_with_runs.id}", json={"name": "renamed"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["name"] == "renamed"
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    @pytest.mark.asyncio
+    async def test_last_activity_tracks_an_edit_made_after_the_last_run(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure editing an incident after its last run moves its last-activity time.
+
+        The incident's own ``updated_at`` is one of the three sources, so an edit is
+        activity even when no run has happened since. The run is seeded well in the
+        past because ``utc_now`` truncates to whole seconds, which would otherwise
+        tie the two timestamps.
+        """
+        long_ago = utc_now() - timedelta(hours=2)
+        incident = await AtwIncidentManager.save(
+            session,
+            AtwIncident(created_by="alice", name="stale-runs", created_at=long_ago),
+        )
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=1,
+                snippet_filename="diag.sh",
+                terminal_status=TaskHistoryStatusEnum.SUCCESS.value,
+                finished_at=long_ago,
+            ),
+        )
+        before = await async_api_client.get(f"{INCIDENTS_BASE}{incident.id}")
+
+        renamed = await async_api_client.patch(
+            f"{INCIDENTS_BASE}{incident.id}", json={"name": "touched"}
+        )
+
+        assert renamed.status_code == status.HTTP_200_OK
+        assert renamed.json()["last_activity_at"] > before.json()["last_activity_at"]
+
+    def test_close_serves_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure closing an incident still reports its run totals."""
+        response = api_client.post(f"{INCIDENTS_BASE}{incident_with_runs.id}/close/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["closed_at"] is not None
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    @pytest.mark.asyncio
+    async def test_reopen_serves_aggregates(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        incident_with_runs: AtwIncident,
+    ) -> None:
+        """Ensure reopening an incident still reports its run totals."""
+        incident_with_runs.closed_at = utc_now()
+        await AtwIncidentManager.save(session, incident_with_runs)
+
+        response = await async_api_client.post(
+            f"{INCIDENTS_BASE}{incident_with_runs.id}/reopen/"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["closed_at"] is None
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+
+    def test_run_less_incident_reports_its_own_timestamps(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure last activity is never null, so the client needs no empty state."""
+        response = api_client.get(f"{INCIDENTS_BASE}{seeded_incident.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == 0
+        assert payload["last_activity_at"] is not None
+
+    def test_unresolved_runs_are_counted_but_not_failed(
+        self, api_client: TestClient, incident_with_unresolved_run: AtwIncident
+    ) -> None:
+        """Ensure a still-running run raises run_count without implying a failure."""
+        response = api_client.get(f"{INCIDENTS_BASE}{incident_with_unresolved_run.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == 1
+        assert payload["failed_run_count"] == 0
+        assert payload["last_activity_at"] is not None
