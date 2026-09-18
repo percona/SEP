@@ -53,8 +53,8 @@ from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
-from app.tasks.models import TaskHistoryStatusEnum
 from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_DIAGNOSTIC_CATEGORIES
+from app.tasks.models import TaskHistoryStatusEnum
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
 _REPO_SNIPPETS_DIR = BASE_DIR / "snippets"
