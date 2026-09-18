@@ -21,10 +21,10 @@ from typing import Any
 
 from app.sep.apps.mysql_backups.restore.models import RestoreConfigAll
 
-RESTORE_PAYLOAD_PATH = (
-    pathlib.Path(__file__).parents[6]
-    / "app/sep/apps/mysql_backups/restore/xtrabackup_payload"
-)
+_RESTORE_DIR = pathlib.Path(__file__).parents[6] / "app/sep/apps/mysql_backups/restore"
+RESTORE_PAYLOAD_PATH = _RESTORE_DIR / "xtrabackup_payload"
+RESTORE_MYDUMPER_PAYLOAD_PATH = _RESTORE_DIR / "mydumper_payload"
+RESTORE_BINLOG_PAYLOAD_PATH = _RESTORE_DIR / "binlog_payload"
 
 
 def legacy_default(field_name: str) -> Any:
@@ -45,3 +45,13 @@ def restore_payload_tree() -> ast.Module:
     in this directory's test modules do not each re-derive it independently.
     """
     return ast.parse(RESTORE_PAYLOAD_PATH.read_text())
+
+
+def restore_mydumper_payload_tree() -> ast.Module:
+    """Parse and return the mydumper restore payload's AST, fresh on every call."""
+    return ast.parse(RESTORE_MYDUMPER_PAYLOAD_PATH.read_text())
+
+
+def restore_binlog_payload_tree() -> ast.Module:
+    """Parse and return the binlog restore payload's AST, fresh on every call."""
+    return ast.parse(RESTORE_BINLOG_PAYLOAD_PATH.read_text())

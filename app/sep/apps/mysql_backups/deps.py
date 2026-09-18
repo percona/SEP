@@ -57,7 +57,7 @@ _NEWEST_HISTORY_FIRST = "-created_at"
 
 
 def _infer_encryption_format(
-    backup_type: str | None, all_servers: dict[str, Any]
+    _backup_type: str | None, all_servers: dict[str, Any]
 ) -> EncryptionFormat:
     """Return the encryption format a task stored before the selector was running.
 
@@ -69,17 +69,13 @@ def _infer_encryption_format(
     config, which never reaches this function: every config SEP itself writes names
     ``ENCRYPT`` explicitly, an invariant its own contract test pins.
 
-    A key file left on a Mydumper or Binlog task is ignored: AES-256 is
-    XtraBackup-only, so inferring it would produce a format that backup type
-    rejects and a form that could never validate.
-
-    :param backup_type: The stored ``BACKUP_TYPE``, if any.
+    :param _backup_type: The stored ``BACKUP_TYPE``, if any. Retained for call-site
+        compatibility; every engine that can carry a key file may infer AES-256.
     :param all_servers: The stored ``ALL_SERVERS`` config block.
     :return: The inferred format.
     """
     return encryption_format_for_passes(
-        aes256=backup_type == BackupType.XTRABACKUP
-        and bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
+        aes256=bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
         gpg=bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT")),
     )
 

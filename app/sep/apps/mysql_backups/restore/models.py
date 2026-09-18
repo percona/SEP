@@ -265,18 +265,21 @@ _SSH_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.SSH)
 # ``gs_copy``'s ``gcloud storage rsync``, which never consults ``s3_tool``.
 _S3_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.S3)
 _SRC_ENCRYPTION = F("source_encryption")
-_GPG_SOURCE_ONLY = Forbidden(
-    when=not_(
-        any_(
-            _SRC_ENCRYPTION == EncryptionFormat.GPG,
-            _SRC_ENCRYPTION == EncryptionFormat.DUAL,
-        )
-    )
+_SRC_HAS_AES = any_(
+    _SRC_ENCRYPTION == EncryptionFormat.AES256,
+    _SRC_ENCRYPTION == EncryptionFormat.DUAL,
 )
+_SRC_HAS_GPG = any_(
+    _SRC_ENCRYPTION == EncryptionFormat.GPG,
+    _SRC_ENCRYPTION == EncryptionFormat.DUAL,
+)
+_GPG_SOURCE_ONLY = Forbidden(when=not_(_SRC_HAS_GPG))
+_AES_SOURCE_ONLY = Forbidden(when=not_(_SRC_HAS_AES))
 
 _SSH_SOURCE_FIELDS = ("ssh_user", "ssh_port", "ssh_key")
 _S3_SOURCE_FIELDS = ("s3_tool",)
 _GPG_SOURCE_FIELDS = ("gpg_password_file",)
+_AES_SOURCE_FIELDS = ("xtrabackup_aes256_keyfile",)
 _OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.GCS}
 
 
@@ -363,13 +366,14 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
             forbidden_fields.update(dict.fromkeys(_S3_SOURCE_FIELDS, transport))
     if not encryption_declared:
         encryption = encryption_format_for_passes(
-            aes256=normalized.get("backup_type") == BackupType.XTRABACKUP
-            and bool(normalized.get("xtrabackup_aes256_keyfile")),
+            aes256=bool(normalized.get("xtrabackup_aes256_keyfile")),
             gpg=bool(normalized.get("gpg_password_file")),
         )
         normalized["source_encryption"] = encryption
         if encryption not in (EncryptionFormat.GPG, EncryptionFormat.DUAL):
             forbidden_fields.update(dict.fromkeys(_GPG_SOURCE_FIELDS, encryption))
+        if encryption not in (EncryptionFormat.AES256, EncryptionFormat.DUAL):
+            forbidden_fields.update(dict.fromkeys(_AES_SOURCE_FIELDS, encryption))
 
     for field_name, declaration in forbidden_fields.items():
         normalized.pop(field_name, None)
@@ -492,8 +496,8 @@ class RestoreCreate(TaskFormModel):
             (
                 (EncryptionFormat.NONE, "No encryption"),
                 (EncryptionFormat.GPG, "GPG"),
-                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
-                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+                (EncryptionFormat.AES256, "AES-256"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG"),
             )
         ),
         Ui(
@@ -501,7 +505,8 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             description=(
                 "Which encryption the backup being restored was written with. "
-                "The GPG formats reveal the password file used to decrypt it."
+                "The GPG formats reveal the password file used to decrypt it; the "
+                "AES-256 formats reveal the key file."
             ),
         ),
     ] = EncryptionFormat.NONE
@@ -725,17 +730,6 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ] = None
-    xtrabackup_aes256_keyfile: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="XtraBackup AES-256 keyfile",
-            section="XtraBackup",
-            description=(
-                "AES-256 key file the backup was encrypted with, needed to decrypt it "
-                "before the prepare"
-            ),
-        ),
-    ] = None
     slave_from_master: Annotated[
         bool,
         Ui(
@@ -953,6 +947,25 @@ class RestoreCreate(TaskFormModel):
             description=(
                 "Path on the target host to the file holding the passphrase for a "
                 "GPG-encrypted backup"
+            ),
+        ),
+    ] = None
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Requires(
+            when=_SRC_HAS_AES,
+            message=(
+                "'xtrabackup_aes256_keyfile' is required when 'source_encryption' "
+                "includes AES-256."
+            ),
+        ),
+        _AES_SOURCE_ONLY,
+        Ui(
+            label="AES-256 key file",
+            section="General",
+            description=(
+                "Path on the target host to the AES-256 key file the backup was "
+                "encrypted with, needed to decrypt .xbcrypt files before restore"
             ),
         ),
     ] = None

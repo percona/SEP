@@ -257,7 +257,7 @@ def test_source_controls_are_always_visible_task_choices() -> None:
 
 
 def test_only_the_transport_and_decryption_fields_are_gated() -> None:
-    """Gate exactly the five fields a source declaration governs, and nothing else.
+    """Gate exactly the six fields a source declaration governs, and nothing else.
 
     The predicates themselves are pinned on the served schema in
     ``test_schema_gates_transport_and_decryption_fields``; what matters here is
@@ -272,6 +272,7 @@ def test_only_the_transport_and_decryption_fields_are_gated() -> None:
         "ssh_key",
         "s3_tool",
         "gpg_password_file",
+        "xtrabackup_aes256_keyfile",
     }
 
 
@@ -321,6 +322,38 @@ def test_declared_encryption_rejects_gpg_password_file() -> None:
                 gpg_password_file="/etc/gpg.pass",
             )
         )
+
+
+def test_declared_encryption_rejects_aes_keyfile() -> None:
+    """Reject an AES-256 key file on a restore declaring no AES pass."""
+    with pytest.raises(
+        ValidationError, match="'xtrabackup_aes256_keyfile' must not be set"
+    ):
+        RestoreCreate.model_validate(
+            _minimal_restore_create_body(
+                source_encryption=EncryptionFormat.NONE,
+                xtrabackup_aes256_keyfile="/etc/aes.key",
+            )
+        )
+
+
+def test_aes256_requires_the_key_file() -> None:
+    """Reject ``aes256`` without a key file."""
+    with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+        RestoreCreate.model_validate(
+            _minimal_restore_create_body(source_encryption=EncryptionFormat.AES256)
+        )
+
+
+def test_aes256_with_the_key_file_ok() -> None:
+    """Accept ``aes256`` with a key file for any backup type."""
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(
+            source_encryption=EncryptionFormat.AES256,
+            xtrabackup_aes256_keyfile="/etc/aes.key",
+        )
+    )
+    assert model.xtrabackup_aes256_keyfile == "/etc/aes.key"
 
 
 def test_empty_s3_tool_does_not_trip_its_gate() -> None:
@@ -447,6 +480,20 @@ def test_normalize_source_declaration_infers_and_strips(
         ),
         (
             {
+                "backup_type": BackupType.MYDUMPER.value,
+                "xtrabackup_aes256_keyfile": "/etc/aes.key",
+            },
+            EncryptionFormat.AES256,
+        ),
+        (
+            {
+                "backup_type": BackupType.BINLOG.value,
+                "xtrabackup_aes256_keyfile": "/etc/aes.key",
+            },
+            EncryptionFormat.AES256,
+        ),
+        (
+            {
                 "backup_type": BackupType.XTRABACKUP.value,
                 "xtrabackup_aes256_keyfile": "/etc/aes.key",
                 "gpg_password_file": "/etc/gpg.pass",
@@ -466,6 +513,10 @@ def test_normalize_source_declaration_infers_encryption(
         assert normalized["gpg_password_file"] == "/etc/gpg.pass"
     else:
         assert "gpg_password_file" not in normalized
+    if expected_encryption in (EncryptionFormat.AES256, EncryptionFormat.DUAL):
+        assert normalized["xtrabackup_aes256_keyfile"] == "/etc/aes.key"
+    else:
+        assert "xtrabackup_aes256_keyfile" not in normalized
 
 
 def test_normalize_source_declaration_infers_only_the_missing_half() -> None:

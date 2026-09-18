@@ -614,3 +614,29 @@ class TestRestoreContract(DerivedRouterContractTests):
                 }
             }
         ]
+        assert fields["xtrabackup_aes256_keyfile"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_encryption": "aes256"}},
+                            {"equals": {"source_encryption": "dual"}},
+                        ]
+                    }
+                }
+            }
+        ]
+        assert fields["xtrabackup_aes256_keyfile"]["requires"] == [
+            {
+                "when": {
+                    "any": [
+                        {"equals": {"source_encryption": "aes256"}},
+                        {"equals": {"source_encryption": "dual"}},
+                    ]
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' is required when "
+                    "'source_encryption' includes AES-256."
+                ),
+            }
+        ]
