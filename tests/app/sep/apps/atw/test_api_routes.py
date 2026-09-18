@@ -446,6 +446,34 @@ class TestAtwListEndpoint:
             "str",
         )
 
+    def test_atw_list_non_string_diagnostic_categories_item_is_ignored(
+        self, test_client: TestClient
+    ) -> None:
+        """Ignore a category list containing a non-string member."""
+        snippet = Mock()
+        snippet.filename = "bad-item.sh"
+        snippet.title = "Bad item"
+        snippet.description = ""
+        snippet.meta = {"diagnostic_categories": ["OVERALL_SLOWNESS", 1]}
+
+        with (
+            patch.object(atw_api_routes.logger, "warning") as warn_mock,
+            patch(
+                "app.sep.apps.atw.api_routes.SnippetManager.list",
+                new=AsyncMock(return_value=[snippet]),
+            ),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        warn_mock.assert_called_once_with(
+            "Ignoring meta[%r] for snippet %s: expected list[str], got %s element",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
+            "bad-item.sh",
+            "int",
+        )
+
     def test_atw_list_requires_authentication(
         self, unauthenticated_client: TestClient
     ) -> None:

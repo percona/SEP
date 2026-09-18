@@ -105,6 +105,9 @@ from app.tasks.execution_request_secrets import ARGS_LEAF
 logger = logging.getLogger(__name__)
 
 ATW_META_WARNING = "Ignoring meta[%r] for snippet %s: expected list, got %s"
+ATW_META_ELEMENT_WARNING = (
+    "Ignoring meta[%r] for snippet %s: expected list[str], got %s element"
+)
 ATW_ARG_MASKING_WARNING = (
     "Withholding recorded arguments for snippet %s: masking them failed"
 )
@@ -212,7 +215,23 @@ def _category_tags(snippet: Snippet) -> list[str]:
         if raw_categories is _MISSING_META:
             continue
         if isinstance(raw_categories, list):
-            return raw_categories
+            invalid = next(
+                (
+                    type(category).__name__
+                    for category in raw_categories
+                    if not isinstance(category, str)
+                ),
+                None,
+            )
+            if invalid is None:
+                return raw_categories
+            logger.warning(
+                ATW_META_ELEMENT_WARNING,
+                key,
+                snippet.filename,
+                invalid,
+            )
+            return []
         logger.warning(
             ATW_META_WARNING,
             key,
