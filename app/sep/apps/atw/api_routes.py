@@ -207,8 +207,9 @@ def _category_tags(snippet: Snippet) -> list[str]:
     """Return the snippet's diagnostic categories, preferring the current key.
 
     :param snippet: The snippet whose metadata should be read.
-    :return: The declared category names, or an empty list when neither key is
-        present or the declared value is not a list.
+    :return: The declared category names from ``diagnostic_categories`` or,
+        when that declaration is absent or malformed, the legacy ``atw`` key.
+        Return an empty list when neither key yields a valid ``list[str]``.
     """
     for key in (META_KEY_DIAGNOSTIC_CATEGORIES, META_KEY_ATW):
         raw_categories = snippet.meta.get(key, _MISSING_META)
