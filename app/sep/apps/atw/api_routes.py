@@ -204,7 +204,7 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
 
 
 def _category_tags(snippet: Snippet) -> list[str]:
-    """Return the snippet's diagnostic categories, preferring the current key.
+    """Return the snippet's categories from the current key or the legacy fallback.
 
     :param snippet: The snippet whose metadata should be read.
     :return: The declared category names from ``diagnostic_categories`` or,
