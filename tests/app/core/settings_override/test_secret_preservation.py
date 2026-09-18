@@ -17,14 +17,26 @@
 
 import typing
 
-from pydantic import BaseModel, SecretStr
+import pytest
+from pydantic import BaseModel, HttpUrl, SecretStr
 from pydantic.fields import FieldInfo
 
+from app.core.alerts.config import AlertSettings
+from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.settings_override.registry import (
-    preserve_patch_secret_value,
-    preserve_secrets_in_model_payload,
+    dump_field_value,
+    hot_field,
     SECRET_STR_MASK,
 )
+from app.core.settings_override.secret_preservation import (
+    preserve_credential_urls_in_model_payload,
+    preserve_patch_credential_url_value,
+    preserve_patch_secret_value,
+    preserve_secrets_in_model_payload,
+)
+from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
+from app.sep.config import SEPSettings
+from app.tasks.config import TasksSettings
 
 
 class _SecretLeaf(BaseModel):
@@ -245,3 +257,412 @@ class TestStoredValueReads:
         )
 
         assert preserved == {"api_key": SECRET_STR_MASK}
+
+
+def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
+    """Assert scalar credential URL PATCH values restore the stored password when redacted."""
+    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    current = "http://inv-user:inv-secret@inventory.internal:8080"
+    incoming = "http://inv-user:****@inventory.internal:8080"
+    assert preserve_patch_credential_url_value(field, current, incoming) == current
+
+
+def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
+    """Assert whole-object materializer PATCH payloads preserve nested endpoint passwords."""
+    field = TasksSettings.model_fields["NOMAD"]
+    current = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["endpoint"] == current["endpoint"]
+
+
+class _CredentialUrlModel(BaseModel):
+    """Represent a model with an optional credential-bearing endpoint."""
+
+    endpoint: CredentialHttpUrl | None = HttpUrl.build(
+        scheme="https",
+        username="test-user",
+        host="service.test",
+        password="synthetic-test-value",
+    )
+
+
+def test_preserve_credential_urls_with_none_current_leaf() -> None:
+    """Leave a masked URL unchanged when no live password exists to restore."""
+    current = _CredentialUrlModel(endpoint=None)
+    incoming = _CredentialUrlModel().model_dump(mode="json")
+
+    preserved = preserve_credential_urls_in_model_payload(
+        _CredentialUrlModel, current, incoming
+    )
+
+    assert preserved == incoming
+    assert preserved is not incoming
+
+
+def test_preserve_patch_credential_url_value_recurses_into_nested_model() -> None:
+    """Restore a nested URL password while retaining an outer-field PATCH."""
+
+    class _ConnectionGroup(BaseModel):
+        connection: _CredentialUrlModel
+        label: str
+
+    class _ConnectionSettings(BaseModel):
+        group: _ConnectionGroup
+
+    current = _ConnectionGroup(
+        connection=_CredentialUrlModel(),
+        label="original",
+    )
+    incoming = current.model_dump(mode="json")
+    incoming["label"] = "updated"
+
+    preserved = preserve_patch_credential_url_value(
+        _ConnectionSettings.model_fields["group"], current, incoming
+    )
+
+    assert preserved == {
+        "connection": {"endpoint": str(current.connection.endpoint)},
+        "label": "updated",
+    }
+    assert incoming["connection"]["endpoint"] == redact_credential_url(
+        str(current.connection.endpoint)
+    )
+
+
+class _SecretLeafModel(BaseModel):
+    """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
+
+    api_key: SecretStr
+    label: str = "ok"
+
+
+class _TopLevelSecretSettings(BaseModel):
+    """Fixture settings class with a top-level SecretStr field."""
+
+    TOKEN: SecretStr = hot_field(SecretStr("stored-top-secret"))
+
+
+class _NestedSecretSettings(BaseModel):
+    """Fixture settings class with a nested model that holds a SecretStr."""
+
+    GROUP: _SecretLeafModel = hot_field(
+        _SecretLeafModel(api_key=SecretStr("stored-nested-secret"))
+    )
+
+
+class _DictSecretSettings(BaseModel):
+    """Fixture settings class with a ``dict[str, SecretStr]`` field."""
+
+    secrets: dict[str, SecretStr] = hot_field(
+        {"api_key": SecretStr("stored-dict-secret"), "token": SecretStr("keep-me")}
+    )
+
+
+def test_preserve_secrets_in_model_payload_with_secret_dict() -> None:
+    """Restore masked dictionary values without replacing an explicit new secret."""
+    current = _DictSecretSettings()
+    incoming = current.model_dump(mode="json")
+    incoming["secrets"]["token"] = "replacement-token"
+
+    preserved = preserve_secrets_in_model_payload(
+        _DictSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "secrets": {
+            "api_key": current.secrets["api_key"].get_secret_value(),
+            "token": "replacement-token",
+        }
+    }
+    assert incoming["secrets"]["api_key"] == SECRET_STR_MASK
+
+
+def test_preserve_secrets_in_model_payload_with_secret_list() -> None:
+    """Restore masked list elements by position and keep explicitly replaced secrets."""
+
+    class _ListOfSecretsSettings(BaseModel):
+        tokens: list[SecretStr]
+
+    current = _ListOfSecretsSettings(
+        tokens=[SecretStr("keep-first"), SecretStr("replace-second")]
+    )
+    incoming = current.model_dump(mode="json")
+    incoming["tokens"][1] = "new-second"
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListOfSecretsSettings, current, incoming
+    )
+
+    assert preserved == {"tokens": ["keep-first", "new-second"]}
+    assert incoming["tokens"][0] == SECRET_STR_MASK
+
+
+@pytest.mark.parametrize(
+    "order", [(2, 0, 1), (0, 2, 1)], ids=["last-first", "first-then-last"]
+)
+def test_preserve_secrets_in_model_payload_matches_reordered_models(
+    order: tuple[int, ...],
+) -> None:
+    """Pair homogeneous model items by their public values rather than PATCH position."""
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_SecretLeafModel]
+
+    current = _ListSecretSettings(
+        items=[
+            _SecretLeafModel(api_key=SecretStr("secret-a"), label="a"),
+            _SecretLeafModel(api_key=SecretStr("secret-b"), label="b"),
+            _SecretLeafModel(api_key=SecretStr("secret-c"), label="c"),
+        ]
+    )
+    incoming = {
+        "items": [current.items[index].model_dump(mode="json") for index in order]
+    }
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "items": [
+            {
+                "api_key": current.items[index].api_key.get_secret_value(),
+                "label": current.items[index].label,
+            }
+            for index in order
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    ("order", "expected_secrets"),
+    [
+        ((1,), ["secret-b", "secret-a", "secret-c"]),
+        ((2, 0), ["secret-c", "secret-a", "secret-b"]),
+    ],
+    ids=["field-overlap-then-position", "sole-unused-item"],
+)
+def test_preserve_secrets_in_model_payload_with_unrecognized_discriminator(
+    order: tuple[int, ...], expected_secrets: list[str]
+) -> None:
+    """Restore masks through fallback matching without reusing a stored item."""
+
+    class _ProviderSecretLeaf(_SecretLeafModel):
+        provider: str = "external"
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_ProviderSecretLeaf]
+
+    current = _ListSecretSettings(
+        items=[
+            _ProviderSecretLeaf(api_key=SecretStr("secret-a"), label="a"),
+            _ProviderSecretLeaf(api_key=SecretStr("secret-b"), label="b"),
+            _ProviderSecretLeaf(api_key=SecretStr("secret-c"), label="c"),
+        ]
+    )
+    incoming_items = [
+        current.items[index].model_dump(mode="json", exclude={"provider"})
+        for index in order
+    ]
+    # This discriminator matches no class name; omit labels to force fallback pairing.
+    fallback = current.items[0].model_dump(mode="json", exclude={"label"})
+    incoming_items.extend(fallback.copy() for _ in range(4 - len(incoming_items)))
+    incoming = {"items": incoming_items}
+
+    preserved = preserve_secrets_in_model_payload(
+        _ListSecretSettings, current, incoming
+    )
+
+    assert preserved == {
+        "items": [
+            {**item, "api_key": secret}
+            for item, secret in zip(
+                incoming_items, [*expected_secrets, SECRET_STR_MASK], strict=True
+            )
+        ]
+    }
+
+
+def test_preserve_patch_secret_value_for_top_level_field() -> None:
+    """Assert a masked top-level SecretStr PATCH restores the stored secret."""
+    field = _TopLevelSecretSettings.model_fields["TOKEN"]
+    current = SecretStr("stored-top-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
+        == "stored-top-secret"
+    )
+
+
+def test_preserve_patch_secret_value_for_nested_leaf() -> None:
+    """Assert a masked SecretStr on a nested model's leaf FieldInfo restores the stored secret."""
+    field = _SecretLeafModel.model_fields["api_key"]
+    current = SecretStr("stored-nested-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
+        == "stored-nested-secret"
+    )
+
+
+def test_preserve_patch_secret_value_overwrites_with_real_value() -> None:
+    """Assert a non-mask SecretStr PATCH keeps the newly submitted value."""
+    field = _TopLevelSecretSettings.model_fields["TOKEN"]
+    current = SecretStr("stored-top-secret")
+    assert (
+        preserve_patch_credential_url_value(field, current, "brand-new-secret")
+        == "brand-new-secret"
+    )
+
+
+def test_preserve_patch_secret_value_for_nested_model_payload() -> None:
+    """Assert a whole-object nested-model PATCH restores masked SecretStr leaves."""
+    field = _NestedSecretSettings.model_fields["GROUP"]
+    current = _SecretLeafModel(api_key=SecretStr("stored-nested-secret"), label="ok")
+    incoming = {"api_key": SECRET_STR_MASK, "label": "ok"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["api_key"] == "stored-nested-secret"
+    assert preserved["label"] == "ok"
+
+
+def test_preserve_patch_secret_value_for_dict_of_secrets() -> None:
+    """Assert masked values inside ``dict[str, SecretStr]`` are restored per key."""
+    field = _DictSecretSettings.model_fields["secrets"]
+    current = {
+        "api_key": SecretStr("stored-dict-secret"),
+        "token": SecretStr("keep-me"),
+    }
+    incoming = {"api_key": SECRET_STR_MASK, "token": "replacement-token"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["api_key"] == "stored-dict-secret"
+    assert preserved["token"] == "replacement-token"
+
+
+def test_preserve_patch_secret_value_for_polymorphic_provider_set() -> None:
+    """Assert masked subclass secrets in ``set[BaseAlertProvider]`` are restored."""
+    field = AlertSettings.model_fields["PROVIDERS"]
+    current = {PagerDutyEventsAlertProvider(routing_key=SecretStr("real-routing-key"))}
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events.pagerduty.com/v2/",
+        }
+    ]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved[0]["routing_key"] == "real-routing-key"
+    assert preserved[0]["PROVIDER"] == "pagerduty"
+
+
+def test_preserve_patch_secret_value_for_two_pagerduty_providers() -> None:
+    """Assert two same-type PROVIDERS restore by identity, not hash set order.
+
+    Distinct ``api_endpoint`` values identify each entry when both routing keys
+    are masked. Incoming order deliberately disagrees with sorted set order so
+    positional pairing alone would swap secrets.
+    """
+    field = AlertSettings.model_fields["PROVIDERS"]
+    first = PagerDutyEventsAlertProvider(
+        routing_key=SecretStr("routing-key-a"),
+        api_endpoint="https://events-a.example/v2/",
+    )
+    second = PagerDutyEventsAlertProvider(
+        routing_key=SecretStr("routing-key-b"),
+        api_endpoint="https://events-b.example/v2/",
+    )
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events-b.example/v2/",
+        },
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": "https://events-a.example/v2/",
+        },
+    ]
+    preserved = preserve_patch_credential_url_value(field, {first, second}, incoming)
+    assert preserved[0]["routing_key"] == "routing-key-b"
+    assert preserved[0]["api_endpoint"] == "https://events-b.example/v2/"
+    assert preserved[1]["routing_key"] == "routing-key-a"
+    assert preserved[1]["api_endpoint"] == "https://events-a.example/v2/"
+
+
+def test_preserve_patch_secret_value_for_two_pagerduty_providers_same_endpoint() -> (
+    None
+):
+    """Assert identical non-secret fields still restore via stable set order.
+
+    When both entries share ``api_endpoint`` and both secrets are masked, GET
+    dump order (stable sort by routing key) is the only identity signal.
+    """
+    field = AlertSettings.model_fields["PROVIDERS"]
+    first = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-a"))
+    second = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-b"))
+    dumped = dump_field_value(field, {second, first})
+    assert dumped[0]["routing_key"] == SECRET_STR_MASK
+    assert dumped[1]["routing_key"] == SECRET_STR_MASK
+    incoming = [
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": dumped[0]["api_endpoint"],
+        },
+        {
+            "PROVIDER": "pagerduty",
+            "routing_key": SECRET_STR_MASK,
+            "api_endpoint": dumped[1]["api_endpoint"],
+        },
+    ]
+    preserved = preserve_patch_credential_url_value(field, {second, first}, incoming)
+    assert preserved[0]["routing_key"] == "routing-key-a"
+    assert preserved[1]["routing_key"] == "routing-key-b"
+
+
+def test_preserve_patch_secret_value_for_list_of_models() -> None:
+    """Assert masked secrets inside ``list[Model]`` whole-object PATCHes are restored."""
+
+    class _Leaf(BaseModel):
+        api_key: SecretStr
+        label: str = "ok"
+
+    class _ListSecretSettings(BaseModel):
+        items: list[_Leaf] = hot_field([])
+
+    field = _ListSecretSettings.model_fields["items"]
+    current = [_Leaf(api_key=SecretStr("stored-list-secret"), label="a")]
+    incoming = [{"api_key": SECRET_STR_MASK, "label": "a"}]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved[0]["api_key"] == "stored-list-secret"
+    assert preserved[0]["label"] == "a"
+
+
+def test_preserve_patch_secret_value_for_list_of_secrets() -> None:
+    """Assert masked elements inside ``list[SecretStr]`` are restored by index."""
+
+    class _ListOfSecretsSettings(BaseModel):
+        tokens: list[SecretStr] = hot_field([])
+
+    field = _ListOfSecretsSettings.model_fields["tokens"]
+    current = [SecretStr("keep-first"), SecretStr("keep-second")]
+    incoming = [SECRET_STR_MASK, "brand-new-second"]
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved == ["keep-first", "brand-new-second"]
+
+
+def test_preserve_patch_secret_value_for_set_of_secrets() -> None:
+    """Assert masked elements inside ``set[SecretStr]`` restore via stable order."""
+
+    class _SetOfSecretsSettings(BaseModel):
+        tokens: set[SecretStr] = hot_field(set())
+
+    field = _SetOfSecretsSettings.model_fields["tokens"]
+    current = {SecretStr("keep-a"), SecretStr("keep-b")}
+    dumped = dump_field_value(field, current)
+    assert dumped == [SECRET_STR_MASK, SECRET_STR_MASK]
+    preserved = preserve_patch_credential_url_value(field, current, dumped)
+    assert preserved == ["keep-a", "keep-b"]
+    preserved_partial = preserve_patch_credential_url_value(
+        field, current, [SECRET_STR_MASK, "brand-new-b"]
+    )
+    assert preserved_partial == ["keep-a", "brand-new-b"]

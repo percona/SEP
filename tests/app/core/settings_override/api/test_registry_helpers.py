@@ -51,8 +51,10 @@ from app.core.settings_override.registry import (
     iter_class_fields,
     iter_nested_leaf_keys,
     nested_overridable_field,
-    override_provenance_for_rows,
     ReloadClassification,
+)
+from app.core.settings_override.resolution import (
+    override_provenance_for_rows,
     resolve_nested_field_metadata,
     SettingProvenance,
 )

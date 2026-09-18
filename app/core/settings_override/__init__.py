@@ -94,5 +94,5 @@ from app.core.settings_override.registry import (
     NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field
