@@ -327,7 +327,7 @@ def test_served_stamp_prefers_catalogued_object_store_transport(
 ):
     """Serve an undeclared stamp with the catalogued S3/GCS transport over inference."""
     mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps._catalogued_transport_for_stamp",
+        "app.sep.apps.mysql_backups.restore.deps.catalogued_transport_for_stamp",
         return_value=catalogued,
     )
     # Local-looking fields: without the catalog, inference would open on local.
@@ -350,7 +350,7 @@ def test_served_stamp_prefers_catalogued_object_store_transport(
 def test_served_stamp_keeps_inference_when_catalog_has_no_transport(mocker):
     """Fall through to field inference when the matching catalog row has no transport."""
     mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps._catalogued_transport_for_stamp",
+        "app.sep.apps.mysql_backups.restore.deps.catalogued_transport_for_stamp",
         return_value=None,
     )
     task = _restore_task(

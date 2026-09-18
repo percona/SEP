@@ -25,7 +25,10 @@ from typing import Annotated, Any, TypeVar
 import yaml
 from fastapi import Body
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
@@ -50,7 +53,7 @@ from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
 )
-from app.sep.db import get_async_session_maker
+from app.sep.db.engine import engine as sep_engine
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
@@ -254,10 +257,12 @@ def _catalog_service_key_for_stamp(
 def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     """Run ``coro`` to completion from sync code, including under a running loop.
 
-    The restore ``response_builder`` is sync-only, so the catalog lookup has to
-    bridge into the async sep session. When no loop is running, ``asyncio.run``
-    is enough; when one is (the usual FastAPI request path), the coroutine runs
-    on a worker thread with its own loop.
+    The restore ``response_builder`` (and the sync form-backfill repairer) are
+    sync-only, so the catalog lookup has to bridge into async. When no loop is
+    running, ``asyncio.run`` is enough; when one is (the usual FastAPI request
+    path, or the backfill CLI's ``asyncio.run`` outer loop), the coroutine runs
+    on a worker thread with its own loop. Callers must open any asyncpg work on a
+    throwaway engine for that loop — see :func:`_fetch_catalogued_transport`.
 
     :param coro: The awaitable to drive to completion.
     :return: The coroutine's result.
@@ -275,17 +280,28 @@ async def _fetch_catalogued_transport(
 ) -> CataloguedSourceTransport | None:
     """Open a sep session and return the catalogued transport for ``backup_source``.
 
+    Uses a throwaway ``NullPool`` engine on the sep URL rather than the
+    process-wide sep ``AsyncAdaptedQueuePool``. This coroutine may run on a
+    worker-thread event loop (see :func:`_run_coro_sync`), and asyncpg
+    connections are loop-bound — borrowing from the shared pool would raise or
+    poison it for unrelated requests. Same pattern as
+    :func:`~app.core.db.utils.try_pg_advisory_xact_lock`.
+
     :param key: The service the catalog rows are selected for.
     :param backup_source: The restore stamp's ``backup_source``.
     :return: The recorded S3/GCS transport, or ``None``.
     """
-    async with get_async_session_maker()() as session:
-        return await MysqlBackupRunManager.catalogued_source_transport(
-            session, key, backup_source
-        )
+    lookup_engine = create_async_engine(sep_engine.url, poolclass=NullPool)
+    try:
+        async with get_async_session_maker_from_engine(lookup_engine)() as session:
+            return await MysqlBackupRunManager.catalogued_source_transport(
+                session, key, backup_source
+            )
+    finally:
+        await lookup_engine.dispose()
 
 
-def _catalogued_transport_for_stamp(
+def catalogued_transport_for_stamp(
     task: Task, stored_form: dict[str, Any]
 ) -> CataloguedSourceTransport | None:
     """Return the catalogued object-store transport for an undeclared stamp, if any.
@@ -355,7 +371,7 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     try:
         normalized = normalize_source_declaration(
             stored_form,
-            catalogued_transport=_catalogued_transport_for_stamp(task, stored_form),
+            catalogued_transport=catalogued_transport_for_stamp(task, stored_form),
         )
         declared = RestoreCreate.model_validate(normalized).model_dump(mode="json")
     except ValidationError:
