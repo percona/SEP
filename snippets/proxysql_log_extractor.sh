@@ -31,13 +31,15 @@
 #        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
-# atw:
-#  - PROXYSQL_CRASH
-#  - CONNECTION_ISSUES
-#  - QUERY_ROUTING_PROBLEMS
-# service_type: mysql
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NOT_RESPONDING
+#  - PERFORMANCE_OTHER
+# service_type: proxysql
 # alerts:
-#   - ProxySQLNotRunning
+#   - name: ProxySQLNotRunning
+#     service_type: mysql
 # ---
 
 # proxysql_log_extractor.sh

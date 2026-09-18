@@ -5,6 +5,9 @@
 # description: This script extracts a portion of the MongoDB log containing the time of the original crash and any restart attempts.
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # service_type: mongodb
 # parameters:
 #  - name: time

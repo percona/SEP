@@ -20,6 +20,7 @@
 #    label: Show help message
 #    description: Print the script's usage text instead of running it.
 #    default: false
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLInstanceNotAvailable

@@ -56,7 +56,7 @@
 #    description: Print the script's usage text instead of running it.
 #    default: false
 # service_type: mongodb
-# atw:
+# diagnostic_categories:
 #   - QUERY_TUNING_OPTIMIZATION
 # ---
 

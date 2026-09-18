@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB TLS certificate expiration dates to prevent service disruption from expired certificates."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBTLSCertificateExpiry

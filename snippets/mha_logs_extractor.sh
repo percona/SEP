@@ -5,6 +5,9 @@
 # description: This script extracts a portion of the MHA (Master High Availability) log based on a given time and a specified number of minutes before and after that time.
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NATIVE_ASYNC_REPLICATION
 # service_type: mysql
 # parameters:
 #  - name: time

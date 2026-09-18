@@ -5,6 +5,7 @@
 # description: "This script checks WiredTiger read/write ticket availability to diagnose ticket exhaustion causing request queuing."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBTicketExhaustion
