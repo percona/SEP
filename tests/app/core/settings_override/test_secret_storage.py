@@ -1027,12 +1027,11 @@ class TestTheEnvelopeDecidesBeforeTheStructuralCheck:
     def test_a_legacy_plaintext_carrying_the_marker_is_migrated(self) -> None:
         """Encrypt a pre-envelope plaintext that merely begins with the marker.
 
-        Edge Case 7a. Seeded directly rather than through
-        :func:`encrypt_secret_leaves`, because the writer never produces this
-        shape — the point is that a *stored* value carrying the prefix over a
-        payload that is not a token is claimed by neither discriminator and so
-        reaches the encrypt branch, rather than being skipped and left in the
-        clear.
+        Seeded directly rather than through :func:`encrypt_secret_leaves`,
+        because the writer never produces this shape — the point is that a
+        *stored* value carrying the prefix over a payload that is not a token
+        is claimed by neither discriminator and so reaches the encrypt branch,
+        rather than being skipped and left in the clear.
         """
         seeded = mark_ciphertext("operator-secret")
 
@@ -1047,9 +1046,8 @@ class TestTheEnvelopeDecidesBeforeTheStructuralCheck:
     ) -> None:
         """Return that same pre-migration value untouched instead of raising.
 
-        Edge Case 7a on the read path: until the migration rewrites it, the row
-        still holds plaintext, and a read that tried to decrypt it would drop
-        the override.
+        Until the migration rewrites it, the row still holds plaintext, and a
+        read that tried to decrypt it would drop the override.
         """
         seeded = mark_ciphertext("operator-secret")
 
@@ -1060,10 +1058,10 @@ class TestTheEnvelopeDecidesBeforeTheStructuralCheck:
     ) -> None:
         """Pin the one collision the envelope cannot remove, and its narrowness.
 
-        Edge Case 7b. Being skipped requires the exact marker *and* the ~0.4%
-        structural shape behind it, so this is the pre-existing collision
-        narrowed by many orders of magnitude rather than eliminated. Pinned so
-        the residual is a recorded decision rather than an unexamined gap.
+        Being skipped requires the exact marker *and* the ~0.4% structural
+        shape behind it, so this is the pre-existing collision narrowed by many
+        orders of magnitude rather than eliminated. Pinned so the residual is a
+        recorded decision rather than an unexamined gap.
         """
         seeded = mark_ciphertext(FERNET_SHAPED_PLAINTEXT)
 
@@ -1072,8 +1070,8 @@ class TestTheEnvelopeDecidesBeforeTheStructuralCheck:
     def test_the_write_path_ignores_a_marker_in_the_plaintext(self) -> None:
         """Encrypt a submitted credential that begins with the marker, and round-trip it.
 
-        Edge Case 7c: the write path consults neither discriminator, so no
-        prefix an operator types can divert it.
+        The write path consults neither discriminator, so no prefix an operator
+        types can divert it.
         """
         secret = mark_ciphertext("operator-secret")
 
@@ -1096,9 +1094,9 @@ class TestTheEnvelopeDecidesBeforeTheStructuralCheck:
         """Leave a pre-envelope ciphertext byte-identical rather than marking it.
 
         Marking it would require deciding it is ciphertext, which for an
-        unmarked row is exactly the structural guess this ticket exists to stop
-        trusting — and marking a legacy collision plaintext would freeze that
-        misclassification permanently.
+        unmarked row is exactly the structural guess the envelope exists to
+        stop trusting — and marking a legacy collision plaintext would freeze
+        that misclassification permanently.
         """
         seeded = pmm_payload(encrypt("pmm-secret"))
 

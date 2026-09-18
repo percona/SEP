@@ -282,11 +282,11 @@ def _rewrite_leaves(
 ) -> Any:
     """Return ``value`` with ``transform`` applied to every leaf of ``kinds``.
 
-    The shared body of the six public entry points above. Each resolves the same
+    The shared body of the public entry points above. Each resolves the same
     annotation for ``key`` and labels the walk with the same ``<class>.<key>``
     context, differing only in the transform it applies and the leaf kinds it
     selects — so the resolution and the label are settled here rather than
-    repeated six times, where one copy could drift.
+    restated per entry point, where one copy could drift.
 
     :param settings_cls: The settings class owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.

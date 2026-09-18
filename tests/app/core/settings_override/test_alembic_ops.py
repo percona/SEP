@@ -429,20 +429,20 @@ def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
 def test_unmark_migrations_cover_every_secret_bearing_class() -> None:
     """Assert the rollback revisions' class lists reach every class that can hold a secret.
 
-    The third hand-written family, and the one where an omission is worst. A
-    class missing from the *encrypt* tuples leaves its rows in the clear, which
-    the two checks above catch. A class missing from the tuples here is reached
-    by the write path — so its rows are encrypted *and marked* — and then
-    skipped by the rollback, leaving a marked value for a release predating the
-    envelope. That release's structural check answers ``False`` for a marked
-    value, so it reads the ciphertext as the plaintext credential and presents
-    it to a remote.
+    The omission this catches is the worst of the hand-written families. A
+    class missing from an *encrypt* revision's tuple leaves its rows in the
+    clear, which the encrypt-coverage checks catch. A class missing from the
+    tuples here is reached by the write path — so its rows are encrypted *and
+    marked* — and then skipped by the rollback, leaving a marked value for a
+    release predating the envelope. That release's structural check answers
+    ``False`` for a marked value, so it reads the ciphertext as the plaintext
+    credential and presents it to a remote.
 
     Before the envelope the same omission was benign: a class missing from a
     decrypt-downgrade tuple merely stayed encrypted, and the older release
     decrypted it correctly. Marking is what turned it into a disclosure, which
-    is why this family needs its own check rather than inheriting confidence
-    from the two above.
+    is why the rollback revisions need a coverage check of their own rather
+    than inheriting confidence from the encrypt-coverage ones.
     """
     revisions = sorted(
         BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
