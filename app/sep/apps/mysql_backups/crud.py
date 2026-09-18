@@ -16,7 +16,6 @@
 """Define database operations for the MySQL backup catalog."""
 
 from collections.abc import Mapping, Sequence
-from string import whitespace
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
@@ -27,6 +26,7 @@ from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import NullsLastOrdering
 from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.apps.mysql_backups.models import (
+    BACKUP_PATH_STRIP_CHARS,
     CatalogServiceKey,
     CataloguedSourceTransport,
     MysqlBackupRun,
@@ -42,31 +42,31 @@ _NEWEST_RUN_FIRST = (
     col(MysqlBackupRun.id).desc(),
 )
 
-#: ASCII whitespace set matching :meth:`str.strip`'s default character class
-#: (``string.whitespace``). Used instead of SQL ``TRIM()``, which drops spaces
-#: only — a tab/newline-padded upload would otherwise miss the catalog key the
-#: Python helper produces after ``.strip()``.
-_STRIP_CHARS = whitespace
-
 
 def _sql_strip(column: ColumnElement[str | None]) -> ColumnElement[str | None]:
-    """Strip leading/trailing ASCII whitespace the way Python ``str.strip`` does.
+    """Strip leading/trailing ASCII whitespace the way :func:`strip_backup_path` does.
 
-    ``ltrim`` / ``rtrim`` with :data:`_STRIP_CHARS` work on both PostgreSQL and
-    SQLite; plain ``TRIM`` would leave tabs and newlines in place.
+    ``ltrim`` / ``rtrim`` with :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS`
+    work on both PostgreSQL and SQLite; plain ``TRIM`` would leave tabs and
+    newlines in place. Unicode separators (NBSP, …) are intentionally left
+    alone — the same contract as the Python helper — so a catalog key and this
+    expression always agree.
 
     :param column: The text column to strip.
     :return: The stripped column expression.
     """
-    return func.rtrim(func.ltrim(column, _STRIP_CHARS), _STRIP_CHARS)
+    return func.rtrim(
+        func.ltrim(column, BACKUP_PATH_STRIP_CHARS), BACKUP_PATH_STRIP_CHARS
+    )
 
 
 def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
     """Return the SQL expression mirroring :func:`preferred_backup_source`.
 
-    Prefer a non-blank stripped ``upload_destination``, else a non-blank stripped
-    ``location``. Stripping uses the same ASCII whitespace set as Python
-    ``str.strip`` (not SQL ``TRIM``) so the catalog lookup keys on the same
+    Prefer a non-blank ASCII-stripped ``upload_destination``, else a non-blank
+    ASCII-stripped ``location``. Stripping uses
+    :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS` (not SQL
+    ``TRIM``, not Unicode ``str.strip``) so the catalog lookup keys on the same
     string
     :func:`~app.sep.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
     offers a restore form.

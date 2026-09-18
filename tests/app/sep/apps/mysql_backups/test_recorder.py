@@ -133,6 +133,24 @@ class TestRecordsSuccessfulRuns:
         assert _as_utc(record.finished_at) == _FINISHED
 
     @pytest.mark.asyncio
+    async def test_canonicalises_padded_paths_on_write(self, session) -> None:
+        """Store ASCII-stripped location/upload so catalog keys match later lookups."""
+        await record_backup_run(
+            session,
+            _history(backup_type="M"),
+            {
+                "backup_dir": "\t/data/backups/mydumper/svc-a/20260729\n",
+                "size_bytes": 4096,
+                "upload_destination": "  s3://bucket/svc-a  ",
+            },
+        )
+
+        record = (await MysqlBackupRunManager.list(session))[0]
+        assert record.location == "/data/backups/mydumper/svc-a/20260729"
+        assert record.upload_destination == "s3://bucket/svc-a"
+        assert record.source_transport == CataloguedSourceTransport.S3
+
+    @pytest.mark.asyncio
     async def test_gcs_upload_records_gcs_source_transport(self, session) -> None:
         """Derive ``source_transport`` as GCS from a ``gs://`` upload destination."""
         await record_backup_run(

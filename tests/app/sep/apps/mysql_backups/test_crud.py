@@ -524,12 +524,16 @@ class TestNewestForBackupSource:
         assert by_location is None
 
     @pytest.mark.asyncio
-    async def test_matches_tab_padded_upload_like_python_strip(self, session) -> None:
+    async def test_matches_tab_padded_upload_like_shared_ascii_strip(
+        self, session
+    ) -> None:
         """Match a tab-padded stored upload to the stripped preferred source.
 
         SQL ``TRIM`` drops spaces only; the lookup must strip the same ASCII
-        whitespace set as :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source`
-        so a stray tab does not miss the catalog and fall through to inference.
+        whitespace set as
+        :func:`~app.sep.apps.mysql_backups.models.strip_backup_path` /
+        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source` so a
+        stray tab does not miss the catalog and fall through to inference.
         """
         await _save(
             session,

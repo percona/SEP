@@ -51,7 +51,9 @@ def _run_state(sync_url: str) -> tuple[set[str], set[str]]:
         engine.dispose()
 
 
-def _insert_run(sync_url: str, *, source_transport: str | None, history_id: int) -> None:
+def _insert_run(
+    sync_url: str, *, source_transport: str | None, history_id: int
+) -> None:
     """Insert a minimal catalog row, optionally with ``source_transport``.
 
     :param sync_url: Sync SQLAlchemy URL of the migrated test database.
