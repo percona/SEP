@@ -18,6 +18,7 @@
 import logging
 import re
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID, uuid4
@@ -29,6 +30,7 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import BASE_DIR
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.core.utils.date_time import utc_now
@@ -49,8 +51,10 @@ from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_DIAGNOSTIC_CATEGORIES
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
+_REPO_SNIPPETS_DIR = BASE_DIR / "snippets"
 
 
 def _mock_atw_snippet(
@@ -106,6 +110,31 @@ async def _persist_atw_snippet(
     return await SnippetManager.create(session, snippet)
 
 
+async def _persist_corpus_snippet(
+    session: AsyncSession,
+    snippets_dir: Path,
+    *,
+    filename: str,
+    approved: bool = True,
+) -> Snippet:
+    """Persist a real repository snippet after parsing its on-disk frontmatter.
+
+    :param session: The database session.
+    :param snippets_dir: The temporary directory aliased as ``Snippet.BASE_DIR``.
+    :param filename: The repository snippet filename to copy and persist.
+    :param approved: Whether the persisted snippet should carry an ``approved_at``.
+    :return: The persisted ``Snippet`` row.
+    """
+    source = _REPO_SNIPPETS_DIR / filename
+    target = snippets_dir / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
+    snippet = await Snippet.from_path(filename, update_meta=True)
+    if approved:
+        snippet.approve("Seeded as approved", "seed-user")
+    return await SnippetManager.create(session, snippet)
+
+
 async def _persist_snippet(
     session: AsyncSession,
     *,
@@ -116,7 +145,8 @@ async def _persist_snippet(
     """Persist a real ``Snippet`` row carrying caller-supplied frontmatter.
 
     Unlike :func:`_persist_atw_snippet` the metadata is not shaped for the category
-    browser, so a row can omit the ``atw`` tag or declare a degenerate title.
+    browser, so a row can omit ``diagnostic_categories`` or declare a degenerate
+    title.
 
     :param session: The database session.
     :param filename: The snippet's filename.
@@ -388,7 +418,7 @@ class TestAtwListEndpoint:
             if category.name != "OVERALL_SLOWNESS":
                 assert (mysql_root, category.name) not in populated
 
-    def test_atw_list_non_list_atw_meta_not_substring_matched(
+    def test_atw_list_non_list_diagnostic_categories_not_substring_matched(
         self, test_client: TestClient
     ) -> None:
         """Ignore a non-list category tag (avoids ``str`` substring ``in``)."""
@@ -410,8 +440,8 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
         warn_mock.assert_called_once_with(
-            "Ignoring meta['diagnostic_categories'] for snippet %s: "
-            "expected list, got %s",
+            "Ignoring meta[%r] for snippet %s: expected list, got %s",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
             "bad-meta.sh",
             "str",
         )
@@ -472,6 +502,58 @@ class TestAtwListApprovalFilter:
         assert len(payload) == 1
         assert payload[0]["snippet_count"] == 1
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
+
+    @pytest.mark.asyncio
+    async def test_legacy_atw_meta_is_still_honoured(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Read the legacy ``atw`` metadata key until existing rows are resynced."""
+        await _persist_snippet(
+            session,
+            filename="legacy.sh",
+            meta={
+                "title": "Legacy",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert (
+            payload[0]["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
+        )
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "legacy.sh"
+
+    @pytest.mark.asyncio
+    async def test_diagnostic_categories_override_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Prefer ``diagnostic_categories`` when both metadata keys are present."""
+        await _persist_snippet(
+            session,
+            filename="dual-key.sh",
+            meta={
+                "title": "Dual key",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "dual-key.sh"
 
     @pytest.mark.asyncio
     async def test_all_unapproved_category_produces_no_row(
@@ -566,7 +648,7 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
 
     @pytest.mark.asyncio
-    async def test_approved_snippet_with_non_list_atw_meta_is_still_ignored(
+    async def test_approved_snippet_with_non_list_diagnostic_categories_is_still_ignored(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
         """Ensure approval does not bypass the category list-shape check."""
@@ -613,6 +695,60 @@ class TestAtwListApprovalFilter:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_real_corpus_scripts_drive_roots_and_categories(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        snippets_dir: Path,
+    ) -> None:
+        """Load real snippet files and expose their declared ATW roots and cells."""
+        for filename in (
+            "proxysql_log_extractor.sh",
+            "proxysql_status.sh",
+            "haproxy_config_files.sh",
+            "haproxy_logs_extractor.sh",
+        ):
+            await _persist_corpus_snippet(session, snippets_dir, filename=filename)
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        cells = {
+            (entry["category_root"], entry["category"]): {
+                snippet["name"] for snippet in entry["snippets"]
+            }
+            for entry in payload
+        }
+        haproxy_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.HAPROXY]
+        proxysql_root = CATEGORY_ROOT_LABELS[ServiceTypeEnum.PROXYSQL]
+        assert cells == {
+            (haproxy_root, "NOT_RESPONDING"): {"haproxy_logs_extractor.sh"},
+            (
+                haproxy_root,
+                "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL",
+            ): {"haproxy_config_files.sh", "haproxy_logs_extractor.sh"},
+            (haproxy_root, "SERVER_CRASHED_RESTART_SUCCESSFUL"): {
+                "haproxy_logs_extractor.sh"
+            },
+            (proxysql_root, "NOT_RESPONDING"): {
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+            },
+            (proxysql_root, "PERFORMANCE_OTHER"): {
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+            },
+            (proxysql_root, "SERVER_CRASHED_RESTART_NOT_SUCCESSFUL"): {
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+            },
+            (proxysql_root, "SERVER_CRASHED_RESTART_SUCCESSFUL"): {
+                "proxysql_log_extractor.sh"
+            },
+        }
 
 
 class TestAtwListTitleFallback:
@@ -746,7 +882,7 @@ class TestAtwSnippetSearch:
     async def test_reaches_a_snippet_outside_the_atw_taxonomy(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Return a snippet carrying no ``atw`` tag, which the listing never exposes."""
+        """Return a snippet carrying no category metadata, which the listing never exposes."""
         await _persist_snippet(
             session,
             filename="ops/pt-summary.sh",
@@ -1144,7 +1280,7 @@ class TestAtwSnippetSearch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.asyncio
-    async def test_malformed_atw_meta_does_not_affect_search(
+    async def test_malformed_diagnostic_categories_do_not_affect_search(
         self,
         async_api_client: AsyncClient,
         session: AsyncSession,

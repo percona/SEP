@@ -18,6 +18,7 @@
 __all__ = [
     "META_KEY_ALERTS",
     "META_KEY_ALLOW_EXTRA_ARGS",
+    "META_KEY_ATW",
     "META_KEY_DESCRIPTION",
     "META_KEY_DIAGNOSTIC_CATEGORIES",
     "META_KEY_PARAMETERS",
@@ -84,6 +85,9 @@ from app.sep.snippets.models.constants import (
 ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
+
+META_KEY_ATW = "atw"
+"""Legacy ``meta`` JSON key holding diagnostics-browser categories during migration."""
 
 META_KEY_TITLE = "title"
 """``meta`` JSON key holding a snippet's human title."""
