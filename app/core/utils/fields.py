@@ -516,16 +516,10 @@ StrippedNonEmptyStr = Annotated[
 ``strip_whitespace=True`` is a validation-time transform that never reaches the
 published JSON Schema, so ``min_length`` alone would let a client accept a
 whitespace-only value the server then rejects. ``NON_WHITESPACE_PATTERN`` states
-that same contract in the schema. It is deliberately unanchored:
+that same contract in the schema, and is deliberately unanchored:
 ``strip_whitespace`` trims only the edges, so a value with interior whitespace
-stays valid.
-
-``min_length`` stays alongside the pattern so a blank value keeps raising the
-``string_too_short`` error it always has; the pattern adds a second, independent
-reason to reject it rather than replacing the first. The published pattern also
-reaches past the schema: the SPA's ``validationMapper.ts`` matches this exact
-string to choose its whitespace-specific message, so editing the literal here
-silently reverts that message to the generic pattern-mismatch text.
+stays valid. Both constraints are kept so each rejects a blank value
+independently.
 """
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
