@@ -24,7 +24,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `clear_sentinels.sh` | Never run by `supervisord`; an operator runs it before a `supervisorctl` re-run of a schema step, to invalidate that step's sentinel. See [Re-running a schema step inside a running container](#re-running-a-schema-step-inside-a-running-container). |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
-| `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values. |
+| `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values — under either the `sep.enc.v1.` envelope or the bare-token shape predating it. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
 | `runtime.py` | Imported by `encryption_key.py` and `grafana_service_account.py`; resolves `SEP_STATE_DIR`, the retry interval and the positive-timeout inputs, and writes their diagnostics. Copied under `sidecar/` rather than beside the two scripts, so their `from sidecar.runtime import ...` resolves when `entrypoint.sh` runs each one standalone. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
@@ -299,9 +299,14 @@ So before minting, the helper reads the `settingoverride` table in all three
 service databases (`sep`, `inventory` and `tasks`, whose endpoints may differ),
 walking each stored value's JSON *leaves* rather than the row — the ciphertext
 sits inside lists and nested mappings, where a check against the row's own
-value finds nothing. It mints only if none of the three holds a Fernet token.
-Anything else refuses: a token found, a value it cannot parse, or a database it
-cannot reach — freshness unproven is treated exactly like freshness disproven.
+value finds nothing. It mints only if none of the three holds ciphertext under
+either at-rest shape: a leaf carrying the `sep.enc.v1.` envelope marker, or a
+bare Fernet token from before that envelope shipped. Testing only the bare shape
+would read a deployment whose overrides were all written under the envelope as
+holding none, because the marker's leading `.` puts the value outside base64 and
+so outside the structural check. Anything else refuses: ciphertext found, a value
+it cannot parse, or a database it cannot reach — freshness unproven is treated
+exactly like freshness disproven.
 The probe runs *only* on the mint path, so an ordinary restart opens no database
 connection and pays no startup latency.
 

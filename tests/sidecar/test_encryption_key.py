@@ -33,7 +33,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, insert
 
 from app import BASE_DIR
-from app.core.encryption import is_encrypted
+from app.core.encryption import is_encrypted, mark_ciphertext
 from app.core.settings_override.models import SettingOverride
 from sidecar import encryption_key as helper
 from tests.sidecar.conftest import SIDECAR_DIR
@@ -127,6 +127,21 @@ def ciphertext(plaintext: str = "a-stored-credential") -> str:
     :return: The token, as it would sit in a stored override.
     """
     return Fernet(fernet_key().encode()).encrypt(plaintext.encode()).decode("ascii")
+
+
+def marked_ciphertext_value(plaintext: str = "a-stored-credential") -> str:
+    """Return a token carrying the envelope marker the write path now writes.
+
+    The shape the structural check cannot see: ``is_encrypted`` answers
+    ``False`` for every marked value, so a deployment whose overrides were all
+    written after the envelope shipped reads as holding no ciphertext unless
+    the probe tests the envelope too — and the caller mints a fresh key on that
+    answer, destroying decryptability of every marked row.
+
+    :param plaintext: The value to encrypt.
+    :return: The marked token, as it would sit in a stored override.
+    """
+    return mark_ciphertext(ciphertext(plaintext))
 
 
 def create_database(directory: Path, filename: str, *values: Any) -> None:
@@ -354,6 +369,44 @@ def test_a_persisted_key_resolves_without_reaching_any_database(
 def test_a_scalar_ciphertext_row_refuses_the_mint(tmp_path: Path):
     """Refuse where a plain string column already holds a token."""
     create_database(tmp_path, DATABASE_FILENAMES["SEP"], ciphertext())
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
+def test_a_marked_ciphertext_row_refuses_the_mint(tmp_path: Path):
+    """Refuse over a row written under the envelope, not just a bare token.
+
+    The end-to-end half of the probe change, and the case a deployment upgraded
+    into the envelope eventually becomes entirely: every override row marked,
+    none of them visible to the structural check. A probe that missed them would
+    report the deployment fresh and mint over live ciphertext, which comes up
+    green with the operator's overrides silently reverted to their YAML values.
+    """
+    create_database(tmp_path, DATABASE_FILENAMES["SEP"], marked_ciphertext_value())
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
+def test_a_marked_credential_url_password_refuses_the_mint(tmp_path: Path):
+    """Refuse where the only ciphertext is a marked password inside an endpoint.
+
+    Two layers have to line up: the URL is not itself a token, and its password
+    is invisible to the structural check once marked.
+    """
+    endpoint = {"endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"}
+    create_database(tmp_path, DATABASE_FILENAMES["SEP"], endpoint)
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
 
@@ -620,6 +673,32 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
             {"PMM": {"endpoint": f"https://user:{ciphertext()}@host:8443/"}},
             id="url-password-nested-in-mapping",
         ),
+        pytest.param(marked_ciphertext_value(), id="marked-scalar"),
+        pytest.param(
+            [{"ROUTING_KEY": marked_ciphertext_value()}], id="marked-nested-in-list"
+        ),
+        pytest.param(
+            {"a": {"b": marked_ciphertext_value()}}, id="marked-nested-in-mapping"
+        ),
+        pytest.param(
+            [["deep", marked_ciphertext_value()]], id="marked-nested-in-nested-list"
+        ),
+        pytest.param(
+            f"https://user:{marked_ciphertext_value()}@host:8443/",
+            id="marked-url-password",
+        ),
+        pytest.param(
+            [{"endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"}],
+            id="marked-url-password-nested-in-list",
+        ),
+        pytest.param(
+            {
+                "PMM": {
+                    "endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"
+                }
+            },
+            id="marked-url-password-nested-in-mapping",
+        ),
     ],
 )
 def test_ciphertext_is_found_at_every_json_position(value: Any):
@@ -629,6 +708,11 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
     ``is_encrypted`` on the whole string answers ``False`` — a deployment whose
     only encrypted data is an endpoint password would otherwise clear the mint
     path and come up green with those overrides silently reverted to YAML.
+
+    The ``marked-*`` cases are the same positions under the envelope the write
+    path writes today, where ``is_encrypted`` answers ``False`` for the leaf
+    itself rather than only for its container. A probe that tested shape alone
+    would read a deployment holding nothing but post-envelope rows as fresh.
     """
     assert helper.contains_ciphertext(value)
 
@@ -645,10 +729,17 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
         pytest.param("https://user:hunter2@host:8443/", id="url-plaintext-password"),
         pytest.param("https://host:8443/", id="url-without-userinfo"),
         pytest.param("https://user:pw@[bad:ipv6/", id="url-unparseable"),
+        pytest.param("sep.enc.v1.operator-secret", id="marker-over-a-plaintext"),
     ],
 )
 def test_a_value_with_no_token_is_not_read_as_ciphertext(value: Any):
-    """Leave a plaintext deployment mintable, which is the common case."""
+    """Leave a plaintext deployment mintable, which is the common case.
+
+    ``marker-over-a-plaintext`` is a legacy value that merely begins with the
+    marker. The envelope's payload check refuses it, so it is classified by
+    what it is rather than by the prefix it happens to carry — the probe must
+    not be fooled into refusing a mint by an operator-chosen token either.
+    """
     assert not helper.contains_ciphertext(value)
 
 
