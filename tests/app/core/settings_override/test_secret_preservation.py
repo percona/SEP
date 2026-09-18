@@ -39,11 +39,11 @@ from app.sep.config import SEPSettings
 from app.tasks.config import TasksSettings
 
 
-class _SecretLeaf(BaseModel):
-    """Hold one scalar secret beside a stable public identifier."""
+class _SecretLeafModel(BaseModel):
+    """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
 
     api_key: SecretStr
-    label: str = "public"
+    label: str = "ok"
 
 
 class _OptionalValueSecretDict(BaseModel):
@@ -61,13 +61,13 @@ class _OptionalElementSecretList(BaseModel):
 class _OptionalElementModelList(BaseModel):
     """Declare a collection whose element type unions a model with ``None``."""
 
-    items: list[_SecretLeaf | None] = []
+    items: list[_SecretLeafModel | None] = []
 
 
 class _ModelList(BaseModel):
     """Declare a homogeneous collection of secret-bearing models."""
 
-    items: list[_SecretLeaf] = []
+    items: list[_SecretLeafModel] = []
 
 
 class _PlainCollections(BaseModel):
@@ -93,8 +93,10 @@ class TestSecretValuedDictPayloads:
     def test_absent_stored_entry_keeps_the_mask(self) -> None:
         """Leave the mask in place when no stored secret backs the submitted key.
 
-        Restoring from a missing entry would be a guess; keeping the literal is
-        what lets the validation layer reject the payload instead.
+        Restoring from a missing entry would be a guess. Keeping the literal is
+        what lets a mask-rejecting field validator refuse the payload, which is
+        how a mask reaches storage only over a class that declares no such
+        validator.
         """
         current = _OptionalValueSecretDict(tokens={"first": SecretStr("stored")})
 
@@ -158,7 +160,9 @@ class TestModelCollectionPairing:
 
     def test_union_element_model_collection_restores_masked_leaf(self) -> None:
         """Pair items when the annotated element type unions a model with ``None``."""
-        current = _OptionalElementModelList(items=[_SecretLeaf(api_key=SecretStr("k"))])
+        current = _OptionalElementModelList(
+            items=[_SecretLeafModel(api_key=SecretStr("k"))]
+        )
 
         preserved = preserve_secrets_in_model_payload(
             _OptionalElementModelList,
@@ -203,7 +207,7 @@ class TestModelCollectionPairing:
     def test_non_mapping_item_passes_through(self) -> None:
         """Forward a collection element that is not a mapping untouched."""
         field_info = _ModelList.model_fields["items"]
-        current = [_SecretLeaf(api_key=SecretStr("stored"))]
+        current = [_SecretLeafModel(api_key=SecretStr("stored"))]
 
         preserved = preserve_patch_secret_value(
             field_info, current, ["not-a-mapping", {"api_key": SECRET_STR_MASK}]
@@ -221,7 +225,7 @@ class TestModelCollectionPairing:
         field_info = _ModelList.model_fields["items"]
         current = [
             {"api_key": SecretStr("fingerprint")},
-            _SecretLeaf(api_key=SecretStr("model")),
+            _SecretLeafModel(api_key=SecretStr("model")),
             {"api_key": SecretStr("other-fingerprint")},
         ]
         incoming = [
@@ -247,13 +251,13 @@ class TestModelCollectionPairing:
         assert preserved == [{"api_key": SECRET_STR_MASK}]
 
 
-class TestStoredValueReads:
-    """Cover reading a stored leaf from a model, a mapping, or nothing."""
+class TestAbsentStoredValue:
+    """Cover a PATCH that has no stored value to restore from."""
 
     def test_absent_stored_model_keeps_the_mask(self) -> None:
         """Keep the mask when there is no stored model to restore from."""
         preserved = preserve_secrets_in_model_payload(
-            _SecretLeaf, None, {"api_key": SECRET_STR_MASK}
+            _SecretLeafModel, None, {"api_key": SECRET_STR_MASK}
         )
 
         assert preserved == {"api_key": SECRET_STR_MASK}
@@ -328,13 +332,6 @@ def test_preserve_patch_credential_url_value_recurses_into_nested_model() -> Non
     assert incoming["connection"]["endpoint"] == redact_credential_url(
         str(current.connection.endpoint)
     )
-
-
-class _SecretLeafModel(BaseModel):
-    """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
-
-    api_key: SecretStr
-    label: str = "ok"
 
 
 class _TopLevelSecretSettings(BaseModel):

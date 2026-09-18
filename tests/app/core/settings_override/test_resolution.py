@@ -657,6 +657,10 @@ class TestNestedValueTraversalGaps:
 
         assert value is NESTED_VALUE_MISSING
 
+
+class TestProvenanceKeys:
+    """Cover which keys one override row reports a provenance stamp for."""
+
     @pytest.mark.asyncio
     async def test_unresolvable_nested_row_reports_only_its_stored_key(
         self, session: AsyncSession
@@ -665,6 +669,9 @@ class TestNestedValueTraversalGaps:
 
         A row whose field was renamed or removed still has to report itself, so
         an admin can see and delete it, without inventing parent keys.
+
+        :param session: The async DB session the row is written through.
+        :return: ``None``.
         """
         row = await insert_override_row(
             session,

@@ -28,96 +28,61 @@ from app.core.settings_override import (
     secret_preservation,
 )
 
-#: Symbols that must live in the resolution module. ``_resolve_nested_segments``
-#: is imported back by the registry, so ownership is asserted on ``__module__``
-#: rather than on absence from the registry namespace.
-RESOLUTION_SYMBOLS = frozenset(
-    {
-        "_mapping_segment_or_default",
-        "_provenance_keys_for_row",
-        "_resolve_nested_segments",
-        "_stored_key_matches_override_key",
-        "canonical_override_key",
-        "override_provenance_for_rows",
-        "override_rows_for_key",
-        "resolve_field_in_model",
-        "resolve_nested_field",
-        "resolve_nested_field_metadata",
-        "resolve_nested_value",
-        "SettingProvenance",
-    }
-)
+#: The only definition the classification registry may pull back out of the
+#: resolution module. Anything else means the layering has started to rot.
+REGISTRY_BACK_IMPORTS = frozenset({"_resolve_nested_segments"})
 
-#: Symbols the registry may keep importing after the split.
-REGISTRY_REIMPORTS = frozenset({"_resolve_nested_segments"})
-
-SECRET_PRESERVATION_SYMBOLS = frozenset(
-    {
-        "_annotation_collection_element_model",
-        "_annotation_is_secret_valued_dict",
-        "_annotation_is_secret_valued_sequence",
-        "_collection_discriminator_candidates",
-        "_collection_item_value_score",
-        "_match_by_field_name_overlap",
-        "_match_collection_item_index",
-        "_pick_best_scored_index",
-        "_preserve_masked_secret_scalar",
-        "_preserve_secrets_in_dict_payload",
-        "_preserve_secrets_in_secret_sequence_payload",
-        "_preserve_secrets_in_sequence_payload",
-        "_read_mapping_or_model_attr",
-        "_stable_collection_items",
-        "preserve_credential_urls_in_model_payload",
-        "preserve_patch_credential_url_value",
-        "preserve_patch_secret_value",
-        "preserve_secrets_in_model_payload",
-    }
-)
+NEW_MODULES = (resolution, secret_preservation)
 
 
-def _owned(module: ModuleType, symbols: frozenset[str]) -> None:
-    """Assert ``module`` defines every symbol in ``symbols`` itself.
+def _defines(module: ModuleType, name: str) -> bool:
+    """Return whether ``module`` is where ``name`` is defined, not just visible.
 
-    :param module: The module expected to own the symbols.
-    :param symbols: The symbol names to check.
-    :return: ``None``; raises ``AssertionError`` on the first mismatch.
+    :param module: The module to inspect.
+    :param name: The symbol name to attribute.
+    :return: ``True`` when ``module`` declares the symbol itself.
     """
-    missing = sorted(name for name in symbols if name not in vars(module))
-    assert not missing, f"{module.__name__} is missing {missing}"
-    foreign = sorted(
+    value = vars(module).get(name)
+    return value is not None and getattr(value, "__module__", None) == module.__name__
+
+
+def _borrowed_from(module: ModuleType, sources: tuple[ModuleType, ...]) -> set[str]:
+    """Return the names ``module`` imported from ``sources``.
+
+    :param module: The importing module.
+    :param sources: The modules whose definitions to look for.
+    :return: Every name in ``module`` that one of ``sources`` defines.
+    """
+    origins = {source.__name__ for source in sources}
+    return {
         name
-        for name in symbols
-        if getattr(vars(module)[name], "__module__", module.__name__) != module.__name__
-    )
-    assert not foreign, f"{module.__name__} does not define {foreign}"
+        for name, value in vars(module).items()
+        if getattr(value, "__module__", None) in origins
+    }
 
 
 class TestSymbolOwnership:
     """Cover which module each moved symbol belongs to."""
 
-    def test_resolution_owns_the_nested_key_cluster(self) -> None:
-        """Assert the resolution module defines the whole nested-key cluster."""
-        _owned(resolution, RESOLUTION_SYMBOLS)
+    @pytest.mark.parametrize(
+        "module", NEW_MODULES, ids=["resolution", "secret-preservation"]
+    )
+    def test_module_defines_everything_it_exports(self, module: ModuleType) -> None:
+        """Assert a module owns its exports instead of re-exporting them.
 
-    def test_registry_no_longer_defines_the_nested_key_cluster(self) -> None:
-        """Assert the registry keeps only the re-imports it needs."""
-        leftover = sorted(
-            name
-            for name in RESOLUTION_SYMBOLS - REGISTRY_REIMPORTS
-            if name in vars(registry)
-        )
-        assert not leftover
+        :param module: One of the two modules carved out of the registry.
+        :return: ``None``.
+        """
+        borrowed = sorted(name for name in module.__all__ if not _defines(module, name))
+        assert not borrowed
 
-    def test_secret_preservation_owns_the_patch_restore_cluster(self) -> None:
-        """Assert the preservation module defines the whole PATCH-restore cluster."""
-        _owned(secret_preservation, SECRET_PRESERVATION_SYMBOLS)
+    def test_registry_borrows_only_the_one_resolution_helper(self) -> None:
+        """Assert the registry keeps exactly one back-import from the new modules.
 
-    def test_registry_no_longer_defines_the_patch_restore_cluster(self) -> None:
-        """Assert no preservation symbol is reachable through the registry."""
-        leftover = sorted(
-            name for name in SECRET_PRESERVATION_SYMBOLS if name in vars(registry)
-        )
-        assert not leftover
+        Asserted dynamically rather than against a symbol list so a later
+        rename stays free while a new cross-module import does not.
+        """
+        assert _borrowed_from(registry, NEW_MODULES) == REGISTRY_BACK_IMPORTS
 
     def test_field_resolution_helper_is_public_everywhere(self) -> None:
         """Assert the cross-module helper carries its public name only.
@@ -136,29 +101,24 @@ class TestExportLists:
 
     @pytest.mark.parametrize(
         "module",
-        [registry, resolution, secret_preservation],
+        [registry, *NEW_MODULES],
         ids=["registry", "resolution", "secret-preservation"],
     )
     def test_every_export_resolves(self, module: ModuleType) -> None:
-        """Assert each exported name exists on its module."""
+        """Assert each exported name exists on its module.
+
+        :param module: The module whose ``__all__`` to check.
+        :return: ``None``.
+        """
         unresolved = sorted(
             name for name in module.__all__ if not hasattr(module, name)
         )
         assert not unresolved
 
-    def test_registry_exports_no_moved_symbol(self) -> None:
-        """Assert the registry stops advertising what it no longer owns."""
-        moved = RESOLUTION_SYMBOLS | SECRET_PRESERVATION_SYMBOLS
+    def test_registry_exports_nothing_it_no_longer_owns(self) -> None:
+        """Assert the registry stops advertising the moved public API."""
+        moved = set(resolution.__all__) | set(secret_preservation.__all__)
         assert not sorted(set(registry.__all__) & moved)
-
-    def test_new_modules_export_their_public_symbols(self) -> None:
-        """Assert every public moved symbol is exported by its new module."""
-        for module, symbols in (
-            (resolution, RESOLUTION_SYMBOLS),
-            (secret_preservation, SECRET_PRESERVATION_SYMBOLS),
-        ):
-            public = {name for name in symbols if not name.startswith("_")}
-            assert public <= set(module.__all__)
 
 
 class TestImportCycles:
@@ -178,7 +138,10 @@ class TestImportCycles:
 
         The registry and resolution modules import each other, so the entry
         point decides which one is left partially initialized: only a fresh
-        interpreter per order can catch that.
+        interpreter per entry point can catch that.
+
+        :param module_name: The module to import as the interpreter's first act.
+        :return: ``None``.
         """
         result = subprocess.run(
             [sys.executable, "-c", f"import {module_name}"],
