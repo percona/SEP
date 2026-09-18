@@ -271,7 +271,7 @@
         "type": "object"
       },
       "atw__ATWIncidentExecutionResponse": {
-        "description": "Represent one recorded incident execution with live task status and snippet title.\n\nThe task-status fields are ``None`` when the Tasks API could not be reached\nfor that row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param snippet_title: The snippet's current display title, falling back to its\n    filename when its metadata title is missing or blank. ``None`` when the\n    snippet cannot be resolved. Defaults to ``None``.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely -- distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
+        "description": "Represent one recorded incident execution with live task status and snippet title.\n\nThe task-status fields are ``None`` when the Tasks API could not be reached\nfor that row; the locally-recorded fields are always present.\n\n:param id: The execution row's UUID primary key.\n:param snippet_filename: The executed snippet's filename.\n:param snippet_title: The snippet's current display title, falling back to its\n    filename when its metadata title is missing or blank. ``None`` when the\n    snippet cannot be resolved. Defaults to ``None``.\n:param task_history_id: The tasks-service execution this row references.\n:param created_at: When the execution was recorded.\n:param task_status: The upstream execution status.\n:param failure_reason: The upstream failure reason, carried verbatim.\n    ``None`` when the run did not fail or the reason is unknown.\n    Defaults to ``None``.\n:param started_at: When the upstream execution started.\n:param finished_at: When the upstream execution finished.\n:param has_logs: Whether the upstream execution has readable logs.\n:param masked_args: The command line the snippet ran with, credential values\n    replaced by a fixed-width mask. ``None`` together with\n    ``args_withheld=False`` means the execution recorded no arguments.\n    Defaults to ``None``.\n:param args_withheld: Whether the arguments were suppressed because they\n    could not be masked safely, distinguishing that from an execution that\n    genuinely ran with none. Defaults to ``False``.",
         "properties": {
           "args_withheld": {
             "default": false,
@@ -282,6 +282,17 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
           },
           "finished_at": {
             "anyOf": [
