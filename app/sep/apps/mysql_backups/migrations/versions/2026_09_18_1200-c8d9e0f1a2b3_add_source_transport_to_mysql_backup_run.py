@@ -87,6 +87,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     columns, checks = _table_state(op.get_bind())
+    if not columns and not checks:
+        return
     # Drop the CHECK in the same batch as the column: SQLite rebuilds from
     # reflection, so a constraint left behind would be re-emitted against a
     # column that no longer exists.
