@@ -16,7 +16,7 @@
 """Define models for the Restore plugin."""
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -320,6 +320,37 @@ _ALLOWED_SOURCE_FORMATS = {
     for backup_type in BackupType
 }
 
+
+def _rejected_format_message(
+    backup_type: BackupType,
+    rejected: EncryptionFormat,
+    allowed: Sequence[EncryptionFormat],
+) -> str:
+    """Return the message rejecting a format the named engine cannot have written.
+
+    The options clause is dropped for an engine that admits no format at all,
+    because ``join_or`` reads the last element of what it is given and raises on an
+    empty sequence. Built into the rules below at import time, that would take the
+    module down instead of rejecting the engine the lookup above meant to close.
+
+    :param backup_type: The engine the restore names.
+    :param rejected: The format being rejected for that engine.
+    :param allowed: The formats the engine may declare, empty for an engine the
+        create form's table omits.
+    :return: The message the generated rule fails with.
+    """
+    label = BackupType.LABELS.get(backup_type.value, backup_type.value)
+    options = (
+        f"Options are {join_or([fmt.value for fmt in allowed])}."
+        if allowed
+        else "No encryption format is available for it."
+    )
+    return (
+        f"Invalid 'source_encryption' {rejected.value!r} for a {label} restore. "
+        f"{options}"
+    )
+
+
 #: One rule per format an engine cannot write, generated from the table the
 #: create form validates against so the two forms cannot drift. Split per format
 #: rather than per engine so each message can name the value it rejects. Expressed as
@@ -334,11 +365,7 @@ _SOURCE_ENCRYPTION_FAIL_RULES = tuple(
             F("source_encryption") == rejected,
         ),
         error_fields=["source_encryption"],
-        message=(
-            f"Invalid 'source_encryption' {rejected.value!r} for a "
-            f"{BackupType.LABELS.get(backup_type.value, backup_type.value)} "
-            f"restore. Options are {join_or([fmt.value for fmt in allowed])}."
-        ),
+        message=_rejected_format_message(backup_type, rejected, allowed),
     )
     for backup_type, allowed in _ALLOWED_SOURCE_FORMATS.items()
     for rejected in EncryptionFormat

@@ -678,6 +678,31 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert "'xtrabackup_aes256_keyfile' must not be set" in response.text
         assert mock_task_api.create_count == 0
 
+    def test_update_422_on_an_aes_format_the_engine_cannot_write(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject the same pairing on ``PUT`` as on ``POST``, leaving the task stored.
+
+        Saving an edited restore is where the tightening bites an operator whose
+        task predates it, so the write path has to refuse the pairing rather than
+        re-stamp it.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(task_name=SEEDED_TASK_NAME)
+        body.update(
+            source_encryption=EncryptionFormat.DUAL.value,
+            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+        )
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert (
+            "Invalid 'source_encryption' 'dual' for a Mydumper restore. "
+            "Options are none or gpg." in response.text
+        )
+        assert mock_task_api.last_update_payload is None
+
     def test_create_201_for_a_declared_aes_restore(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:
@@ -751,9 +776,13 @@ class TestRestoreContract(DerivedRouterContractTests):
         response = contract_client.get(f"{base}/schema")
 
         assert response.status_code == status.HTTP_200_OK, response.text
+        payload = response.json()
+        assert not payload.get("fail_when"), (
+            "rules served at the schema root reach only the submit-time check"
+        )
         section = next(
             section
-            for section in response.json()["forms"]
+            for section in payload["forms"]
             if any(
                 field.get("name") == "source_encryption" for field in section["fields"]
             )

@@ -26,6 +26,8 @@ from app.sep.apps.framework.schema import ChoiceField, RemoteChoiceField
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import (
+    _ALLOWED_SOURCE_FORMATS,
+    _rejected_format_message,
     normalize_source_declaration,
     repair_source_declaration,
     RestoreConfigServer,
@@ -531,6 +533,31 @@ class TestSourceEncryptionAgreement:
 
         assert model.xtrabackup_aes256_keyfile is None
 
+    def test_every_engine_is_looked_up_for_the_formats_it_may_declare(self) -> None:
+        """Resolve a format list for every engine, so an untabled one rejects them all.
+
+        Iterating the create form's table instead would emit no rule at all for an
+        engine it omits, which reads as accepting every format.
+        """
+        assert set(_ALLOWED_SOURCE_FORMATS) == set(BackupType)
+
+    def test_an_engine_admitting_no_format_is_rejected_without_naming_options(
+        self,
+    ) -> None:
+        """Build the rejection message for an engine with no formats at all.
+
+        The rules are built at import time, so a message that raised on an empty
+        option list would take the module down rather than reject the engine.
+        """
+        message = _rejected_format_message(
+            BackupType.MYDUMPER, EncryptionFormat.AES256, []
+        )
+
+        assert message == (
+            "Invalid 'source_encryption' 'aes256' for a Mydumper restore. "
+            "No encryption format is available for it."
+        )
+
 
 def _legacy_stamp(**overrides: object) -> dict:
     """Return a full pre-declaration stamp, as ``stamp_form_input`` would have dumped it."""
@@ -957,10 +984,34 @@ class TestRepairSourceDeclaration:
                 },
                 id="key-file-already-declared",
             ),
+            pytest.param(
+                {
+                    "source_encryption": EncryptionFormat.GPG.value,
+                    "gpg_password_file": _GPG_PASSWORD_FILE,
+                },
+                id="gpg-declared-with-its-password-file",
+            ),
+            pytest.param(
+                {"source_encryption": EncryptionFormat.GPG.value},
+                id="gpg-declared-without-a-password-file",
+            ),
+            pytest.param(
+                {
+                    "backup_type": BackupType.XTRABACKUP.value,
+                    "source_encryption": EncryptionFormat.DUAL.value,
+                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
+                },
+                id="dual-declared-without-a-password-file",
+            ),
         ],
     )
     def test_owes_no_repair_to_a_consistent_stamp(self, overrides: dict) -> None:
-        """Leave a stamp whose declarations already match its values untouched."""
+        """Leave a stamp whose declarations already match its values untouched.
+
+        A GPG pass is the case worth pinning: the password file is optional under
+        a GPG declaration, so the declaration is the only place a file-less one is
+        recorded, and a repair reading the file alone would drop the pass.
+        """
         assert repair_source_declaration(_declared_stamp(**overrides)) is None
 
     def test_declares_the_source_of_a_stamp_that_predates_the_controls(self) -> None:
