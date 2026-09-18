@@ -32,6 +32,22 @@ from tests.sidecar.conftest import CONTAINERFILE
 EXPECTED_RETRY_INTERVAL_SECONDS = 3.0
 EXPECTED_TIMEOUT_SECONDS = 60.0
 
+IMAGE_IMPORT_PATH = (
+    "import os, runpy, sys;"
+    "sys.path[:] = [p for p in sys.path"
+    " if not os.path.exists(os.path.join(p, 'sidecar', '__init__.py'))];"
+    "runpy.run_path(sys.argv[1], run_name='__main__')"
+)
+"""Start a script with no installed ``sidecar`` package on the import path.
+
+The image ships ``runtime.py`` under a bare ``sidecar/`` directory and no
+``__init__.py``, so it resolves as a namespace package beside the scripts. A
+checkout is an editable install whose root carries ``sidecar/__init__.py``, and
+a regular package anywhere on the path wins over a namespace portion ahead of
+it. Without this the copied file is never the one imported and the layout goes
+unchecked.
+"""
+
 
 @pytest.mark.parametrize("helper", [encryption_key, grafana_service_account])
 class TestStateDirectory:
@@ -177,8 +193,13 @@ def test_warning_keeps_its_prefix_and_leaves_stdout_empty(
     assert capsys.readouterr() == ("", f"{prefix} diagnostic\n")
 
 
-@pytest.mark.parametrize("script", ["encryption_key.py", "grafana_service_account.py"])
-def test_standalone_script_uses_the_shipped_runtime(tmp_path: Path, script: str):
+@pytest.mark.parametrize(
+    ("script", "stdout_template"),
+    [("encryption_key.py", "{key}\n"), ("grafana_service_account.py", "")],
+)
+def test_standalone_script_uses_the_shipped_runtime(
+    tmp_path: Path, script: str, stdout_template: str
+):
     """Run the image's copied scripts without the checkout on the import path."""
     sources = {
         "./sidecar/encryption_key.py",
@@ -198,10 +219,10 @@ def test_standalone_script_uses_the_shipped_runtime(tmp_path: Path, script: str)
     (tmp_path / "app").symlink_to(BASE_DIR / "app", target_is_directory=True)
     key = Fernet.generate_key().decode("ascii")
     result = subprocess.run(
-        [sys.executable, str(tmp_path / script)],
+        [sys.executable, "-c", IMAGE_IMPORT_PATH, str(tmp_path / script)],
         cwd=tmp_path,
         env={
-            **os.environ,
+            "PATH": os.environ["PATH"],
             "PYTHONPATH": "",
             "ENCRYPTION_KEY": key,
             "AUTH__PROVIDER": "{}",
@@ -213,5 +234,5 @@ def test_standalone_script_uses_the_shipped_runtime(tmp_path: Path, script: str)
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == (f"{key}\n" if script == "encryption_key.py" else "")
+    assert result.stdout == stdout_template.format(key=key)
     assert "Traceback" not in result.stderr
