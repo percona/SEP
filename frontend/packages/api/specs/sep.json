@@ -17061,7 +17061,7 @@
     },
     "/api/apps/atw/snippets/": {
       "get": {
-        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The ``atw`` metadata tag\nis a presentation filter on the category listing and is deliberately not\napplied here, so search reaches snippets that listing never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
+        "description": "Search approved snippets by free text, independent of the ATW taxonomy.\n\nServed from ATW's own router over the snippets library, so the capability does\nnot depend on the Snippet Manager app being activated. The\n``diagnostic_categories`` metadata key is a presentation filter on the category\nlisting and is deliberately not applied here, so search reaches snippets that\nlisting never exposes.\n\n:param session: The database session.\n:param list_query: The vetted sort and search selections, pinned to approved.\n:param pagination: The offset/limit window for the page.\n:return: A paginated page of approved snippet summaries.\n:raises sqlalchemy.exc.SQLAlchemyError: When the count or data query fails to\n    execute.",
         "operationId": "atw_atw_snippet_search_api_apps_atw_snippets__get",
         "parameters": [
           {

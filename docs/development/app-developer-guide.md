@@ -52,7 +52,8 @@ A few terms this guide uses throughout:
    - [What "derived router" means](#what-derived-router-means)
    - [The copy hazard](#the-copy-hazard--scaffold-never-copy-a-whole-app)
 2. [Snippet or framework app?](#2-snippet-or-framework-app)
-   - [The routing rule](#the-routing-rule)
+   - [The routing rule](#the-routing-rule) — including snippet frontmatter and
+     [Diagnostic script authoring](diagnostic-script-authoring.md)
    - [Mapping the three scaffolder flavors](#mapping-the-three-scaffolder-flavors)
 3. [Quickstart](#3-quickstart)
    - [What the scaffolder generates](#what-the-scaffolder-generates)
@@ -244,10 +245,14 @@ ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
   script, frontmatter included, into the existing Snippet Manager catalog at
   `snippets/` in the repo root. The frontmatter is a commented YAML block
   (each line prefixed `# `) opening and closing on `# ---`, carrying `title`,
-  `description`, `sudo`, `allow_extra_args`, and a `parameters` list whose
-  entries give each form field's `name`, `type`, `label`, and `description`;
-  the ~90 scripts already in that directory are the working reference —
-  `snippets/disk_usage.sh` is a short one to copy the shape from. Choose this
+  `description`, `sudo`, `allow_extra_args`, `diagnostic_categories`, and a
+  `parameters` list whose entries give each form field's `name`, `type`,
+  `label`, and `description`; the ~90 scripts already in that directory are the
+  working reference — `snippets/disk_usage.sh` is a short one to copy the shape
+  from. `diagnostic_categories` is required on every script and decides whether
+  it appears in the Support diagnostics category browser; search reaches the
+  script either way. [Diagnostic script authoring](diagnostic-script-authoring.md)
+  gives the permitted values and the rule for choosing them. Choose this
   when the check is a single command whose only inputs are simple parameters.
 - **Anything that needs inventory or rules between fields** belongs in a
   **framework app**. Choose this when the form must offer values resolved from

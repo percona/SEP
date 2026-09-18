@@ -44,6 +44,8 @@
 #    label: Show help message
 #    description: Print the script's usage text instead of running it.
 #    default: false
+# diagnostic_categories:
+#  - QUERY_TUNING_OPTIMIZATION
 # service_type: mysql
 # alerts:
 #   - MySQLSlowQueries

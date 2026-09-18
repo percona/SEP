@@ -5,6 +5,9 @@
 # description: This script finds all MHA (Master High Availability) config files, including those referenced by !include and !includedir directives.
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NATIVE_ASYNC_REPLICATION
 # service_type: mysql
 # parameters: []
 # ---

@@ -31,6 +31,9 @@
 #    label: Authentication database
 #    description: Database used for authenticating the user.
 #    default: admin
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - PERFORMANCE_OTHER
 # service_type: mongodb
 # alerts:
 #   - MongoDBChunksImbalance

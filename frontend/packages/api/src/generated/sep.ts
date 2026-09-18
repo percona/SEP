@@ -1039,9 +1039,10 @@ export interface paths {
      * @description Search approved snippets by free text, independent of the ATW taxonomy.
      *
      *     Served from ATW's own router over the snippets library, so the capability does
-     *     not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
-     *     is a presentation filter on the category listing and is deliberately not
-     *     applied here, so search reaches snippets that listing never exposes.
+     *     not depend on the Snippet Manager app being activated. The
+     *     ``diagnostic_categories`` metadata key is a presentation filter on the category
+     *     listing and is deliberately not applied here, so search reaches snippets that
+     *     listing never exposes.
      *
      *     :param session: The database session.
      *     :param list_query: The vetted sort and search selections, pinned to approved.
