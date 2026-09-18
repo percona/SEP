@@ -58,19 +58,18 @@ def _mock_atw_snippet(
     filename: str,
     title: str = "Title",
     description: str = "",
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str | None = "mysql",
     sudo: SnippetSudoOption = SnippetSudoOption.NEVER,
 ) -> Mock:
-    snippet = Mock()
+    snippet = Mock(spec=Snippet)
     snippet.filename = filename
     snippet.title = title
     snippet.description = description
     snippet.sudo = sudo
-    meta: dict[str, Any] = {"atw": atw}
+    snippet.meta = {"diagnostic_categories": diagnostic_categories}
     if service_type is not None:
-        meta["service_type"] = service_type
-    snippet.meta = meta
+        snippet.meta["service_type"] = service_type
     return snippet
 
 
@@ -78,7 +77,7 @@ async def _persist_atw_snippet(
     session: AsyncSession,
     *,
     filename: str,
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str = "mysql",
     approved: bool,
 ) -> Snippet:
@@ -86,7 +85,8 @@ async def _persist_atw_snippet(
 
     :param session: The database session.
     :param filename: The snippet's filename.
-    :param atw: The ATW category tags to record under ``meta["atw"]``.
+    :param diagnostic_categories: The category tags to record under
+        ``meta["diagnostic_categories"]``.
     :param service_type: The service type to record under ``meta["service_type"]``.
     :param approved: Whether the persisted snippet should carry an ``approved_at``.
     :return: The persisted ``Snippet`` row.
@@ -100,7 +100,7 @@ async def _persist_atw_snippet(
             "title": f"Title for {filename}",
             "description": "desc",
             "service_type": service_type,
-            "atw": atw,
+            "diagnostic_categories": diagnostic_categories,
         },
     )
     return await SnippetManager.create(session, snippet)
@@ -143,7 +143,7 @@ class TestAtwListEndpoint:
             filename="diag/slow-query.sh",
             title="Slow Query Diagnostics",
             description="Collects slow-query and processlist data.",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -179,7 +179,7 @@ class TestAtwListEndpoint:
         """
         snippet = _mock_atw_snippet(
             filename="diag/dmesg.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             sudo=SnippetSudoOption.ALWAYS,
         )
 
@@ -211,7 +211,9 @@ class TestAtwListEndpoint:
         the default-checked nuance is carried by ``sudo_default``, not here.
         """
         snippet = _mock_atw_snippet(
-            filename="diag/x.sh", atw=["OVERALL_SLOWNESS"], sudo=option
+            filename="diag/x.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            sudo=option,
         )
 
         with patch(
@@ -235,7 +237,7 @@ class TestAtwListEndpoint:
                 "title": "Slow Query Diagnostics",
                 "description": "Collects slow-query and processlist data.",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -265,12 +267,12 @@ class TestAtwListEndpoint:
         """Ensure mysql and mongodb snippets produce separate ``category_root`` rows."""
         mysql_snippet = _mock_atw_snippet(
             filename="mysql/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
         mongo_snippet = _mock_atw_snippet(
             filename="mongo/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mongodb",
         )
 
@@ -300,7 +302,7 @@ class TestAtwListEndpoint:
         """Ensure ``service_type: generic`` snippets surface under the Generic root."""
         snippet = _mock_atw_snippet(
             filename="generic/disk.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="generic",
         )
 
@@ -321,7 +323,7 @@ class TestAtwListEndpoint:
         """Ensure missing ``service_type`` meta buckets under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="no-service-type.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type=None,
         )
 
@@ -344,7 +346,7 @@ class TestAtwListEndpoint:
         """Ensure unknown ``service_type`` values bucket under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="unknown/engine.sh",
-            atw=["GALERA"],
+            diagnostic_categories=["GALERA"],
             service_type="clickhouse",
         )
 
@@ -366,7 +368,7 @@ class TestAtwListEndpoint:
         """Ensure empty (root, category) cells are omitted from the listing."""
         snippet = _mock_atw_snippet(
             filename="mysql/only.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -389,12 +391,12 @@ class TestAtwListEndpoint:
     def test_atw_list_non_list_atw_meta_not_substring_matched(
         self, test_client: TestClient
     ) -> None:
-        """Ignore ``meta["atw"]`` when it is not a list (avoids ``str`` substring ``in``)."""
+        """Ignore a non-list category tag (avoids ``str`` substring ``in``)."""
         snippet = Mock()
         snippet.filename = "bad-meta.sh"
         snippet.title = "Bad meta"
         snippet.description = ""
-        snippet.meta = {"atw": "noise OVERALL_SLOWNESS noise"}
+        snippet.meta = {"diagnostic_categories": "noise OVERALL_SLOWNESS noise"}
 
         with (
             patch.object(atw_api_routes.logger, "warning") as warn_mock,
@@ -408,7 +410,8 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
         warn_mock.assert_called_once_with(
-            "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+            "Ignoring meta['diagnostic_categories'] for snippet %s: "
+            "expected list, got %s",
             "bad-meta.sh",
             "str",
         )
@@ -441,7 +444,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="unapproved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=False,
         )
 
@@ -458,7 +461,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="approved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=True,
         )
 
@@ -476,10 +479,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure a category whose snippets are all unapproved is omitted entirely."""
         await _persist_atw_snippet(
-            session, filename="a.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="a.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
         await _persist_atw_snippet(
-            session, filename="b.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="b.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -493,10 +502,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure a category's count and membership exclude only the unapproved row."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -515,7 +530,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="multi-tag.sh",
-            atw=["OVERALL_SLOWNESS", "GALERA"],
+            diagnostic_categories=["OVERALL_SLOWNESS", "GALERA"],
             approved=False,
         )
 
@@ -530,10 +545,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure the filter is applied per-row, not just within a shared cell."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["GALERA"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["GALERA"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -548,11 +569,11 @@ class TestAtwListApprovalFilter:
     async def test_approved_snippet_with_non_list_atw_meta_is_still_ignored(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Ensure approval does not bypass the ``meta["atw"]`` list-shape check."""
+        """Ensure approval does not bypass the category list-shape check."""
         snippet = await _persist_atw_snippet(
-            session, filename="bad-meta.sh", atw=[], approved=True
+            session, filename="bad-meta.sh", diagnostic_categories=[], approved=True
         )
-        snippet.meta["atw"] = "OVERALL_SLOWNESS"
+        snippet.meta["diagnostic_categories"] = "OVERALL_SLOWNESS"
         await SnippetManager.save(session, snippet)
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -566,7 +587,10 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure revoking a previously-approved snippet drops it on the next call."""
         snippet = await _persist_atw_snippet(
-            session, filename="revoked.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="revoked.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
 
         first = await async_api_client.get("/api/apps/atw/")
@@ -611,7 +635,7 @@ class TestAtwListTitleFallback:
                 "title": "",
                 "description": "d",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -636,7 +660,7 @@ class TestAtwListTitleFallback:
                 "title": "   ",
                 "description": "  ",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -1126,15 +1150,20 @@ class TestAtwSnippetSearch:
         session: AsyncSession,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Return a snippet whose ``atw`` tag is malformed, warning about nothing.
+        """Return a snippet whose category tag is malformed, warning about nothing.
 
-        Search never reads ``ATW_META_KEY``, unlike the category listing, so a
-        non-list tag is neither a filter nor a diagnostic here.
+        Search never reads ``META_KEY_DIAGNOSTIC_CATEGORIES``, unlike the
+        category listing, so a non-list tag is neither a filter nor a
+        diagnostic here.
         """
         await _persist_snippet(
             session,
             filename="ops/bad-meta.sh",
-            meta={"title": "Galera", "description": "d", "atw": "OVERALL_SLOWNESS"},
+            meta={
+                "title": "Galera",
+                "description": "d",
+                "diagnostic_categories": "OVERALL_SLOWNESS",
+            },
         )
 
         with caplog.at_level(logging.WARNING, logger=atw_api_routes.__name__):

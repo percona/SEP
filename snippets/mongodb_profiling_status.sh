@@ -35,6 +35,9 @@
 #    type: str
 #    label: Database
 #    description: Database whose profiling status to report. Leave empty to report every database.
+# diagnostic_categories:
+#  - QUERY_TUNING_OPTIMIZATION
+#  - OVERALL_SLOWNESS
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

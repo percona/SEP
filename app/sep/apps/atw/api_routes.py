@@ -94,15 +94,18 @@ from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
-from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_SERVICE_TYPE
+from app.sep.snippets.models.meta import (
+    META_KEY_DIAGNOSTIC_CATEGORIES,
+    META_KEY_SERVICE_TYPE,
+)
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
 from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = META_KEY_ATW
 ATW_META_WARNING = (
-    f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
+    f"Ignoring meta[{META_KEY_DIAGNOSTIC_CATEGORIES!r}] for snippet %s: "
+    "expected list, got %s"
 )
 ATW_ARG_MASKING_WARNING = (
     "Withholding recorded arguments for snippet %s: masking them failed"
@@ -213,15 +216,15 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     for snippet in snippets:
         root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
         tags = []
-        if ATW_META_KEY in snippet.meta:
-            raw_atw = snippet.meta[ATW_META_KEY]
-            if isinstance(raw_atw, list):
-                tags = raw_atw
+        if META_KEY_DIAGNOSTIC_CATEGORIES in snippet.meta:
+            raw_categories = snippet.meta[META_KEY_DIAGNOSTIC_CATEGORIES]
+            if isinstance(raw_categories, list):
+                tags = raw_categories
             else:
                 logger.warning(
                     ATW_META_WARNING,
                     snippet.filename,
-                    type(raw_atw).__name__,
+                    type(raw_categories).__name__,
                 )
         for tag in dict.fromkeys(tags):
             snippets_by_cell[(root, tag)].append(snippet)

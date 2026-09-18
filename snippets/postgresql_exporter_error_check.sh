@@ -5,6 +5,7 @@
 # description: "This script checks PMM agent and PostgreSQL exporter logs to diagnose exporter errors affecting monitoring."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # alerts:
 #   - PostgreSQLExporterError

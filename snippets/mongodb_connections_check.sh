@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB connection stats by client, idle connections, and blocked operations to diagnose high connection counts."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighConnections

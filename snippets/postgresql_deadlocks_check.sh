@@ -5,6 +5,7 @@
 # description: "This script checks for recent deadlock occurrences in PostgreSQL by searching logs."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname

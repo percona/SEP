@@ -10,6 +10,7 @@
 #    type: str
 #    label: MySQL defaults file
 #    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLHistoryListLengthHigh

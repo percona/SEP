@@ -20,10 +20,18 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models.snippet import Snippet
 from tests.app.sep.snippets.snippet_kit import persist_meta
 
 API_BASE = "/api/apps/alert_troubleshooting"
 EXPECTED_GROUP_COUNT = 2
+
+PROXYSQL_ALERT_SERVICE_TYPES = {
+    "mysql_proxysql_not_running_check.sh": "mysql",
+    "proxysql_log_extractor.sh": "proxysql",
+    "proxysql_status.sh": "proxysql",
+}
 
 
 @pytest.mark.asyncio
@@ -177,3 +185,42 @@ class TestAlertTroubleshootingApiDetail:
         response = api_client.get(f"{API_BASE}/mongodb/MySQLSlowQueries")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    async def test_proxysql_alerts_keep_their_mysql_grouping(
+        self,
+        api_client: TestClient,
+        session: AsyncSession,
+    ):
+        """Group both ProxySQL-rooted alerts under MySQL, as their overrides ask.
+
+        Loads the three declaring scripts from the real corpus rather than seeding
+        synthetic metadata, because what is under test is the per-alert
+        ``service_type`` override: two of the three now sit under the ProxySQL
+        category root, which ``AlertServiceType`` cannot parse, so only the
+        overrides those two author keep their alerts in this endpoint's MySQL
+        group at all.
+
+        Both alerts on ``proxysql_status.sh`` are checked because the override is
+        per entry: a pass on ``ProxySQLNotRunning`` says nothing about
+        ``MySQLTooManyConnections`` sharing the same file.
+        """
+        for filename in PROXYSQL_ALERT_SERVICE_TYPES:
+            await SnippetManager.create(
+                session, await Snippet.from_path(filename, update_meta=True)
+            )
+
+        response = api_client.get(f"{API_BASE}/mysql/ProxySQLNotRunning")
+
+        assert response.status_code == status.HTTP_200_OK
+        returned = {
+            entry["filename"]: entry["service_type"]
+            for entry in response.json()["snippets"]
+        }
+        assert returned == PROXYSQL_ALERT_SERVICE_TYPES
+
+        sibling = api_client.get(f"{API_BASE}/mysql/MySQLTooManyConnections")
+
+        assert sibling.status_code == status.HTTP_200_OK
+        assert "proxysql_status.sh" in {
+            entry["filename"] for entry in sibling.json()["snippets"]
+        }

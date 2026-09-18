@@ -5,6 +5,7 @@
 # description: "This script checks the ProxySQL ip_controller process and logs to diagnose VIP assignment issues for ProxySQL nodes."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - ProxySQLIPControllerDown

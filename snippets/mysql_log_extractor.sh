@@ -32,7 +32,7 @@
 #        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 #  - GROUP_REPLICATION

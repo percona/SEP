@@ -5,6 +5,7 @@
 # description: "This script checks PostgreSQL availability by verifying uptime, service status, processes, network ports, and pg_hba configuration."
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname

@@ -18,8 +18,8 @@
 __all__ = [
     "META_KEY_ALERTS",
     "META_KEY_ALLOW_EXTRA_ARGS",
-    "META_KEY_ATW",
     "META_KEY_DESCRIPTION",
+    "META_KEY_DIAGNOSTIC_CATEGORIES",
     "META_KEY_PARAMETERS",
     "META_KEY_REQUIRES_PACKAGES",
     "META_KEY_SERVICE_TYPE",
@@ -109,15 +109,15 @@ META_KEY_REQUIRES_PACKAGES = "requires_packages"
 META_KEY_ALERTS = "alerts"
 """``meta`` JSON key tagging snippets with alert-troubleshooting metadata."""
 
-META_KEY_ATW = "atw"
-"""``meta`` JSON key tagging snippets with ATW category metadata."""
+META_KEY_DIAGNOSTIC_CATEGORIES = "diagnostic_categories"
+"""``meta`` JSON key naming the diagnostics-browser categories a script sits under."""
 
 SUPPORTED_META_KEYS = frozenset(
     {
         META_KEY_ALERTS,
         META_KEY_ALLOW_EXTRA_ARGS,
-        META_KEY_ATW,
         META_KEY_DESCRIPTION,
+        META_KEY_DIAGNOSTIC_CATEGORIES,
         META_KEY_PARAMETERS,
         META_KEY_REQUIRES_PACKAGES,
         META_KEY_SERVICE_TYPE,

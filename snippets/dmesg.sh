@@ -3,7 +3,7 @@
 # ---
 # allow_extra_args: false
 # sudo: true
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 #  - NOT_RESPONDING
