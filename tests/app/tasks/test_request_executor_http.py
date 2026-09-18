@@ -144,7 +144,6 @@ async def test_file_stream_survives_a_reconcile_mid_transfer(
             update={"tracking": {"allocation_id": _ALLOCATION["ID"]}}
         )
     )
-    created_task_with_history.anonymize_mask = 0
     await TaskHistoryManager.save(session, created_task_with_history)
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
