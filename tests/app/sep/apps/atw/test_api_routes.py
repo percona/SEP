@@ -124,9 +124,17 @@ async def _persist_corpus_snippet(
     :param filename: The repository snippet filename to copy and persist.
     :param approved: Whether the persisted snippet should carry an ``approved_at``.
     :return: The persisted ``Snippet`` row.
+    :raises ValueError: When ``filename`` resolves outside the source or target
+        snippets directories.
     """
-    source = _REPO_SNIPPETS_DIR / filename
-    target = snippets_dir / filename
+    source_root = _REPO_SNIPPETS_DIR.resolve()
+    target_root = snippets_dir.resolve()
+    source = (source_root / filename).resolve()
+    target = (target_root / filename).resolve()
+    if not source.is_relative_to(source_root):
+        raise ValueError(f"snippet path escapes repository snippets dir: {filename}")
+    if not target.is_relative_to(target_root):
+        raise ValueError(f"snippet path escapes test snippets dir: {filename}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(source.read_bytes())
     snippet = await Snippet.from_path(filename, update_meta=True)
