@@ -78,7 +78,7 @@ from app.core.settings_override.policy import (
     is_key_allowed,
     is_restriction_active,
 )
-from app.core.settings_override.resolution import _resolve_nested_segments
+from app.core.settings_override.resolution import resolve_nested_segments
 from app.core.utils.fields import _credential_url_serializer
 from app.core.utils.pydantic import (
     annotation_pydantic_class,
@@ -807,7 +807,7 @@ def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) 
     :return: ``True`` iff some segment is explicitly ``NOT_OVERRIDABLE``.
     :rtype: bool
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     return any(
@@ -831,7 +831,7 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     :param key: The ``__``-delimited override key.
     :return: ``True`` iff some segment in the chain is flagged ``advanced``.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     return any(
@@ -860,7 +860,7 @@ def chain_is_locked(settings_cls: type[BaseModel], key: str) -> bool:
     :param key: The ``__``-delimited override key.
     :return: ``True`` iff an override of ``key`` would be refused.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     if any(
@@ -879,7 +879,8 @@ def coerce_nested_field_value(
 ) -> tuple[tuple[str, ...], Any]:
     """Resolve ``key`` to a nested attribute chain and coerce ``raw`` to the leaf type.
 
-    Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
+    Combines :func:`app.core.settings_override.resolution.resolve_nested_field`
+    and :func:`coerce_field_value` so the
     cache and API layers have one entry point for the full nested-row coercion
     contract. A path whose leaf *or any intermediate* is explicitly classified
     ``NOT_OVERRIDABLE``, or whose leaf ``SETTINGS_OVERRIDE.ALLOWED_KEYS``
@@ -896,7 +897,7 @@ def coerce_nested_field_value(
         ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` does not allow overriding the leaf.
     :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         raise KeyError(key)
     if chain_is_locked(settings_cls, key):
@@ -1277,7 +1278,8 @@ def iter_nested_leaf_keys(
     ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
     single leaf (their items are not expanded). Segments are the canonical
     attribute names from ``model_fields``, so each yielded key matches the form
-    :func:`resolve_nested_field` and :func:`override_provenance_for_rows`
+    :func:`app.core.settings_override.resolution.resolve_nested_field` and
+    :func:`app.core.settings_override.resolution.override_provenance_for_rows`
     produce, and ``"__".join(chain) == key`` holds by construction.
 
     Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
@@ -1384,7 +1386,8 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
 
     Unordered collections (``set``/``frozenset``) are dumped as a list sorted by
     :func:`_stable_collection_sort_key` so GET order matches the PATCH restore
-    path in :func:`_stable_collection_items` across workers.
+    path in :func:`app.core.settings_override.secret_preservation._stable_collection_items`
+    across workers.
 
     When ``field_info.annotation`` is a non-Pydantic-compatible type (e.g.
     ``string.Template``) for which Pydantic cannot build a TypeAdapter, the

@@ -69,7 +69,8 @@ def preserve_credential_urls_in_model_payload(
     """Restore masked URL passwords inside a materializer PATCH payload.
 
     Each child is classified with the **position** predicate rather than the
-    subtree one :func:`is_credential_url_field` asks. A model-typed child whose
+    subtree one :func:`app.core.settings_override.registry.is_credential_url_field`
+    asks. A model-typed child whose
     own leaf is a credential URL answers the subtree question ``True``, would
     take the scalar branch below, fail its ``isinstance(result[name], str)``
     guard and ``continue`` — skipping the nested recursion that child needs.
@@ -107,10 +108,11 @@ def preserve_patch_credential_url_value(
 
     Handles credential-bearing URL passwords (``****``) and
     :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
-    (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
+    (:data:`app.core.settings_override.registry.SECRET_STR_MASK`). Non-mask submissions are left unchanged.
 
     Routing is decided by the payload shape before
-    :func:`is_credential_url_field` is consulted. That predicate descends into
+    :func:`app.core.settings_override.registry.is_credential_url_field` is consulted.
+    That predicate descends into
     nested models, so it answers "does this subtree carry a credential URL",
     not "is this field itself one". A model-typed field holding a
     credential-URL leaf answers ``True`` to the first question while needing
@@ -214,7 +216,7 @@ def _stable_collection_items(current: Any) -> list[Any]:
     :param current: A stored ``list``/``set``/``tuple``/``frozenset``, or
         ``None``.
     :return: A list of items; ``set``/``frozenset`` inputs are sorted by
-        :func:`_stable_collection_sort_key`.
+        :func:`app.core.settings_override.registry._stable_collection_sort_key`.
     """
     if isinstance(current, set | frozenset):
         return sorted(current, key=_stable_collection_sort_key)
@@ -254,7 +256,7 @@ def _collection_item_value_score(
 
 
 def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
-    """Restore a stored secret when ``incoming`` equals :data:`SECRET_STR_MASK`.
+    """Restore a stored secret when ``incoming`` equals :data:`app.core.settings_override.registry.SECRET_STR_MASK`.
 
     :param current: The live stored value, possibly a ``SecretStr``/``SecretBytes``.
     :param incoming: The PATCH value that may be the secret JSON mask.
@@ -296,7 +298,7 @@ def _preserve_secrets_in_secret_sequence_payload(
 
     Pairing is positional against :func:`_stable_collection_items`: index ``i``
     of ``incoming`` is restored from index ``i`` of the stabilized ``current``
-    when the submitted value equals :data:`SECRET_STR_MASK`. Unordered stored
+    when the submitted value equals :data:`app.core.settings_override.registry.SECRET_STR_MASK`. Unordered stored
     collections (``set``/``frozenset``) are sorted so GET/PATCH workers agree.
 
     :param current: The stored collection of secret wrappers (or ``None``).
@@ -575,7 +577,7 @@ def preserve_patch_secret_value(
     """Restore masked SecretStr/SecretBytes values in a PATCH value before persist.
 
     When a client resubmits Pydantic's secret JSON mask
-    (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
+    (:data:`app.core.settings_override.registry.SECRET_STR_MASK`), replace it with the stored secret's plain value.
     Non-mask submissions are left unchanged. Recurses into nested Pydantic
     models, ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads,
     ``list[SecretStr]`` / ``set[SecretStr]``-style collections, and homogeneous

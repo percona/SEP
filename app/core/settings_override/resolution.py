@@ -25,6 +25,7 @@ __all__ = [
     "resolve_field_in_model",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
+    "resolve_nested_segments",
     "resolve_nested_value",
 ]
 
@@ -84,7 +85,7 @@ def resolve_field_in_model(
     return None
 
 
-def _resolve_nested_segments(
+def resolve_nested_segments(
     settings_cls: type[BaseModel],
     key: str,
 ) -> list[tuple[type[BaseModel], str, FieldInfo]] | None:
@@ -96,7 +97,8 @@ def _resolve_nested_segments(
     top-level parent down to the leaf, so callers can inspect intermediate
     fields (e.g. for an explicit ``not_overridable_field`` marker) and not just
     the leaf. Each entry carries its owning class so classifiers can consult that
-    class's :data:`INHERITED_MARKERS_ATTR` overlay.
+    class's :data:`app.core.settings_override.registry.INHERITED_MARKERS_ATTR`
+    overlay.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
@@ -145,7 +147,7 @@ def resolve_nested_field(
     :return: ``((canonical_segment, ...), leaf_FieldInfo)`` or ``None``.
     :rtype: tuple[tuple[str, ...], FieldInfo] | None
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return None
     return tuple(name for _owner, name, _info in resolved), resolved[-1][2]
@@ -393,27 +395,34 @@ def resolve_nested_field_metadata(
 ) -> FieldMetadata | None:
     """Return introspected metadata for a ``__``-delimited nested override key.
 
-    Resolves ``key`` to its leaf field and synthesises a :class:`FieldMetadata`
+    Resolves ``key`` to its leaf field and synthesises a
+    :class:`app.core.settings_override.registry.FieldMetadata`
     whose ``key`` is the full nested key while every other attribute
     (annotation, default, description, secret/complex flags) is taken from the
     leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
     leaf (the default under a nested-overridable parent) and
     ``NOT_OVERRIDABLE`` when the leaf *or any intermediate in its chain* is
-    explicitly :func:`not_overridable_field`-marked, or when
-    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds the leaf. That is the same chain
-    check that gates PATCH, so the reported classification matches what an
-    override would actually be allowed to do. ``is_advanced`` is chain-resolved
-    via
-    :func:`chain_has_advanced`, so a leaf inherits the flag from an advanced
-    parent.
+    explicitly marked by
+    :func:`app.core.settings_override.registry.not_overridable_field`, or when
+    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds the leaf. That is the same
+    chain check that gates PATCH, so the reported classification matches what
+    an override would actually be allowed to do. ``is_advanced`` is
+    chain-resolved via
+    :func:`app.core.settings_override.registry.chain_has_advanced`, so a leaf
+    inherits the flag from an advanced parent.
 
     :param settings_cls: The top-level Pydantic settings class.
     :param key: The ``__``-delimited override key.
     :return: The synthesised leaf metadata, or ``None`` when ``key`` does not
         resolve to a nested field.
     """
-    # Deferred: the classification registry imports this module at import
-    # time, so reaching back for its chain predicates has to happen per call.
+    # Deferred, and not safe to hoist: registry imports
+    # resolution.resolve_nested_segments at module scope, so a module-level
+    # import here closes registry -> resolution -> registry. Whichever module
+    # the interpreter reaches first would then be asked for names it has not
+    # bound yet. The failure depends on the entry point rather than on this
+    # file, so the module-boundary tests import each entry point in a fresh
+    # interpreter instead of trusting that this one stays acyclic.
     from app.core.settings_override.registry import (
         _field_contains_secret,
         _field_is_complex,

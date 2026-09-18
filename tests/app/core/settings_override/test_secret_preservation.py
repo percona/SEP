@@ -40,7 +40,7 @@ from app.tasks.config import TasksSettings
 
 
 class _SecretLeafModel(BaseModel):
-    """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
+    """Declare a nested model with a scalar ``SecretStr`` leaf (PMM-shaped)."""
 
     api_key: SecretStr
     label: str = "ok"
@@ -335,13 +335,13 @@ def test_preserve_patch_credential_url_value_recurses_into_nested_model() -> Non
 
 
 class _TopLevelSecretSettings(BaseModel):
-    """Fixture settings class with a top-level SecretStr field."""
+    """Declare a settings class with a top-level ``SecretStr`` field."""
 
     TOKEN: SecretStr = hot_field(SecretStr("stored-top-secret"))
 
 
 class _NestedSecretSettings(BaseModel):
-    """Fixture settings class with a nested model that holds a SecretStr."""
+    """Declare a settings class whose nested model holds a ``SecretStr``."""
 
     GROUP: _SecretLeafModel = hot_field(
         _SecretLeafModel(api_key=SecretStr("stored-nested-secret"))
@@ -349,7 +349,7 @@ class _NestedSecretSettings(BaseModel):
 
 
 class _DictSecretSettings(BaseModel):
-    """Fixture settings class with a ``dict[str, SecretStr]`` field."""
+    """Declare a settings class with a ``dict[str, SecretStr]`` field."""
 
     secrets: dict[str, SecretStr] = hot_field(
         {"api_key": SecretStr("stored-dict-secret"), "token": SecretStr("keep-me")}

@@ -30,7 +30,7 @@ from app.core.settings_override import (
 
 #: The only definition the classification registry may pull back out of the
 #: resolution module. Anything else means the layering has started to rot.
-REGISTRY_BACK_IMPORTS = frozenset({"_resolve_nested_segments"})
+REGISTRY_BACK_IMPORTS = frozenset({"resolve_nested_segments"})
 
 NEW_MODULES = (resolution, secret_preservation)
 
