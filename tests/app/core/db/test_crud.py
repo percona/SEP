@@ -1270,6 +1270,28 @@ class TestSaveDuplicatePrecheck:
             await CompositeUniqueManager.save(session, row)
 
     @pytest.mark.asyncio
+    async def test_index_collision_on_falsy_key_member_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the presence test reaches the index path, not only constraints."""
+        await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-a", source="pmm", discriminator=0),
+        )
+        row = await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-b", source="pmm", discriminator=0),
+        )
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="CompositeUniqueModel with the same external_id, source",
+        ):
+            await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
     async def test_constraint_update_collision_raises_conflict(
         self,
         session: AsyncSession,
@@ -1508,4 +1530,38 @@ class TestSaveDuplicatePrecheckPostgres:
             )
             assert (
                 await UniqueKeyManager.first(postgres_session, key="beta") is not None
+            )
+
+    @pytest.mark.asyncio
+    async def test_constraint_collision_raises_conflict_before_any_write(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Reject a constraint-declared retarget without aborting the transaction.
+
+        The constraint branch reaches the same autoflush-suppressed lookup the index
+        branch does, so the reads below are what show the suppression still holds for
+        a key the precheck learned about from ``local_table.constraints``.
+        """
+        row = await _two_constraint_rows(postgres_session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(postgres_session, row)
+
+        with postgres_session.no_autoflush:
+            assert (
+                await ConstraintUniqueManager.first(
+                    postgres_session, external_id="ext-a"
+                )
+                is not None
+            )
+            assert (
+                await ConstraintUniqueManager.first(
+                    postgres_session, external_id="ext-b"
+                )
+                is not None
             )
