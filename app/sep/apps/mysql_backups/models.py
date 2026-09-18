@@ -133,6 +133,53 @@ def restore_valid_backup_source(
     return value
 
 
+class CataloguedSourceTransport(EnumFieldMixin, StrEnum):
+    """Object-store transports a backup run can record authoritatively.
+
+    Narrower than the restore form's four-member source transport: only S3 and
+    GCS are unambiguous from the run's own ``upload_destination``. Local vs SSH
+    depends on comparing the backup host to the restore destination at restore
+    time, so those are never stored here. Wire values match the restore
+    ``SourceTransport`` members of the same name so a catalog hit can seed a
+    declaration without remapping.
+    """
+
+    S3 = "s3"
+    GCS = "gcs"
+
+
+#: Object-store upload schemes the catalog can classify authoritatively.
+_OBJECT_STORE_UPLOAD_SCHEMES = {
+    "s3://": CataloguedSourceTransport.S3,
+    "gs://": CataloguedSourceTransport.GCS,
+}
+
+
+def catalogued_transport_from_upload(
+    upload_destination: str | None,
+) -> CataloguedSourceTransport | None:
+    """Return the object-store transport ``upload_destination`` implies, or ``None``.
+
+    Only ``s3://`` / ``gs://`` uploads are unambiguous from the run alone — a bare
+    on-disk location still needs the restore's destination host to choose local
+    vs SSH, so those runs leave the column empty. Scheme matching is
+    case-insensitive and ignores surrounding whitespace, matching how
+    :func:`preferred_backup_source` treats the same field.
+
+    :param upload_destination: The run's recorded upload destination.
+    :return: :attr:`CataloguedSourceTransport.S3` or
+        :attr:`CataloguedSourceTransport.GCS` when the scheme matches, else
+        ``None``.
+    """
+    if not upload_destination or not (stripped := upload_destination.strip()):
+        return None
+    lowered = stripped.lower()
+    for scheme, transport in _OBJECT_STORE_UPLOAD_SCHEMES.items():
+        if lowered.startswith(scheme):
+            return transport
+    return None
+
+
 class BackupType(EnumFieldMixin, StrEnum):
     """Represent the backup tools a run can be taken with.
 
@@ -193,6 +240,10 @@ class MysqlBackupRun(BaseSQLModel, table=True):
         exactly as the payload reported it.
     :param upload_destination: The upload destination when one was configured,
         else ``None``.
+    :param source_transport: The object-store transport implied by
+        ``upload_destination`` (``s3`` / ``gcs``), or ``None`` when the run was
+        not uploaded — and for every row written before this column existed.
+        Never ``local`` or ``ssh``; those stay inferred at restore time.
     :param size_bytes: The backup size in bytes, when the run reported it.
     :param started_at: When the run started.
     :param finished_at: When the run finished.
@@ -212,6 +263,15 @@ class MysqlBackupRun(BaseSQLModel, table=True):
     )
     location: str | None = None
     upload_destination: str | None = None
+    source_transport: CataloguedSourceTransport | None = SQLField(
+        default=None,
+        sa_column=Column(
+            EnumField(
+                CataloguedSourceTransport, native_enum=False, create_constraint=True
+            ),
+            nullable=True,
+        ),
+    )
     size_bytes: int | None = SQLField(default=None, sa_type=BigInteger)
     started_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone
