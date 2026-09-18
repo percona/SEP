@@ -215,31 +215,48 @@ def _category_tags(snippet: Snippet) -> list[str]:
         raw_categories = snippet.meta.get(key, _MISSING_META)
         if raw_categories is _MISSING_META:
             continue
-        if isinstance(raw_categories, list):
-            invalid = next(
-                (
-                    type(category).__name__
-                    for category in raw_categories
-                    if not isinstance(category, str)
-                ),
-                None,
-            )
-            if invalid is None:
-                return raw_categories
-            logger.warning(
-                ATW_META_ELEMENT_WARNING,
-                key,
-                snippet.filename,
-                invalid,
-            )
-            continue
+        validated = _validated_category_tags(key, raw_categories, snippet.filename)
+        if validated is not None:
+            return validated
+    return []
+
+
+def _validated_category_tags(
+    key: str, raw_categories: object, filename: str
+) -> list[str] | None:
+    """Validate one category declaration and log why malformed data is ignored.
+
+    :param key: The metadata key being read.
+    :param raw_categories: The declared metadata value to validate.
+    :param filename: The snippet filename used in warning logs.
+    :return: The validated category list, or ``None`` when the declaration is
+        malformed and the caller should try another key.
+    """
+    if not isinstance(raw_categories, list):
         logger.warning(
             ATW_META_WARNING,
             key,
-            snippet.filename,
+            filename,
             type(raw_categories).__name__,
         )
-    return []
+        return None
+    invalid = next(
+        (
+            type(category).__name__
+            for category in raw_categories
+            if not isinstance(category, str)
+        ),
+        None,
+    )
+    if invalid is None:
+        return raw_categories
+    logger.warning(
+        ATW_META_ELEMENT_WARNING,
+        key,
+        filename,
+        invalid,
+    )
+    return None
 
 
 @router.get("/")
