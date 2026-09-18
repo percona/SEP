@@ -150,7 +150,7 @@ else
 fi
 
 if [[ ! -f $PROXYSQL_LOG || ! -r $PROXYSQL_LOG ]]; then
-    echo "Error: Cannot read ProxySQL log file: $PROXYSQL_LOG"
+    echo "Error: Cannot read ProxySQL log file (check --log-file): $PROXYSQL_LOG"
     exit 1
 fi
 

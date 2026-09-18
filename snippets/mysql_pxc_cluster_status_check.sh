@@ -59,7 +59,14 @@ systemctl status mysql --no-pager 2> /dev/null ||
 
 echo ""
 echo "********* Recent MySQL error log (wsrep entries) *********"
-ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> /dev/null) || true
+# Keep stderr out of the captured value: it is used as a path, and the client
+# writes warnings there on runs that otherwise succeed.
+MYSQL_ERR=$(mktemp)
+if ! ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> "$MYSQL_ERR"); then
+    echo "Could not read the error log path from MySQL (check --defaults-file): $(cat "$MYSQL_ERR")"
+    ERROR_LOG=""
+fi
+rm -f "$MYSQL_ERR"
 if [ -n "${ERROR_LOG:-}" ] && [ -f "$ERROR_LOG" ]; then
     grep -i "wsrep\|quorum\|non-primary\|split.brain" "$ERROR_LOG" | tail -30
 else

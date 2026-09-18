@@ -154,22 +154,25 @@ fi
 HAPROXY_LOG="${LOG_FILE_ARG:-$DEFAULT_HAPROXY_LOG}"
 # Note: $HAPROXY_LOG is always referenced as a quoted path below; avoid over-restricting valid filenames.
 if [ ! -f "$HAPROXY_LOG" ]; then
-    echo "Error: HAProxy log file not found at '$HAPROXY_LOG'."
+    echo "Error: HAProxy log file not found at '$HAPROXY_LOG' (check --log-file)."
     echo "Please ensure the file exists and the path is correct."
     exit 1
 fi
 
 if [ ! -r "$HAPROXY_LOG" ]; then
-    echo "Error: Cannot read HAProxy log file at '$HAPROXY_LOG'."
+    echo "Error: Cannot read HAProxy log file at '$HAPROXY_LOG' (check --log-file)."
     echo "Please check file permissions for '$HAPROXY_LOG'."
     exit 1
 fi
 
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse the provided time format (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))"
+    rm -f "$DATE_ERR"
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 case "$OUTPUT_MODE" in
     stdout) ;;
