@@ -257,19 +257,6 @@ default:
       # om_bootstrap package and pmm-managed's bootstrap dispatch 404s -
       # confirmed against a built image with this entry missing.
       - MODULE_NAME: om_bootstrap
-      # app/sep/main.py's sep_overrides_lifespan unconditionally imports
-      # app.sep.apps.alerts.config.AlertsSettings to wire the settings-override
-      # refresher, regardless of whether alerts is activated.
-      # restrict_apps.py's INFRASTRUCTURE_PACKAGES exemption (framework,
-      # shared) does not cover it, so without this entry the app-restricted
-      # build strips the alerts package and the "sep" program crashes at
-      # startup: ModuleNotFoundError: No module named 'app.sep.apps.alerts'.
-      # Confirmed against a built image (SEP_RESTRICT_APPS=1) - this gap
-      # predates om_bootstrap and affects main's own sidecar/settings.yaml
-      # too, but it blocks this image from booting at all, so it has to be
-      # fixed here regardless of who ends up owning the real fix (exempting
-      # alerts in restrict_apps.py, or making the import conditional).
-      - MODULE_NAME: alerts
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
