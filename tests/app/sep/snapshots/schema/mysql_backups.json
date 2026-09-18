@@ -446,6 +446,7 @@
           "label": "Backup directory",
           "min_length": 1,
           "name": "backup_dir",
+          "pattern": "\\S",
           "required": true,
           "type": "string"
         }
