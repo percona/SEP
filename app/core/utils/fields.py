@@ -503,9 +503,16 @@ def dsn_safe(value: str) -> str:
 
 
 StrippedNonEmptyStr = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1)
+    str, StringConstraints(strip_whitespace=True, min_length=1, pattern=r"\S")
 ]
-"""Define a string field that strips surrounding whitespace and must not be empty."""
+"""Define a string field that strips surrounding whitespace and must not be empty.
+
+``strip_whitespace=True`` is a validation-time transform that never reaches the
+published JSON Schema, so ``min_length`` alone would let a client accept a
+whitespace-only value the server then rejects. ``pattern=r"\\S"`` states that
+same contract in the schema. It is deliberately unanchored: ``strip_whitespace``
+trims only the edges, so a value with interior whitespace stays valid.
+"""
 
 EmptyStrToNone = Annotated[None, BeforeValidator(lambda v: None if v == "" else v)]
 """Convert empty strings to None."""

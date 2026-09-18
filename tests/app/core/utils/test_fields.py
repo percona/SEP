@@ -22,6 +22,7 @@ from app.core.utils.fields import (
     AuthSchemeStr,
     bounded_int_from_empty_str_factory,
     dsn_safe,
+    StrippedNonEmptyStr,
     TCP_PORT_MAX,
     TCP_PORT_MIN,
     TcpPort,
@@ -184,3 +185,39 @@ class TestUriPathPrefix:
         """Reject a trailing slash, a relative value, whitespace, and query or fragment."""
         with pytest.raises(ValidationError):
             TypeAdapter(URIPathPrefix).validate_python(value)
+
+
+class TestStrippedNonEmptyStr:
+    """Cover the ``StrippedNonEmptyStr`` trimmed non-blank string field type."""
+
+    adapter: TypeAdapter[str] = TypeAdapter(StrippedNonEmptyStr)
+
+    @pytest.mark.parametrize("value", ["", " ", "\t", "\n", "   \t\n "])
+    def test_rejects_whitespace_only_values(self, value: str) -> None:
+        """Reject a blank or whitespace-only value."""
+        with pytest.raises(ValidationError):
+            self.adapter.validate_python(value)
+
+    @pytest.mark.parametrize(
+        "value", ["/var/my backups", "a b", "schema name with spaces"]
+    )
+    def test_accepts_interior_whitespace(self, value: str) -> None:
+        """Accept interior whitespace when the edges carry non-whitespace."""
+        assert self.adapter.validate_python(value) == value
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("  /var/backups  ", "/var/backups"),
+            ("\t/var/my backups\n", "/var/my backups"),
+        ],
+    )
+    def test_strips_surrounding_whitespace(self, value: str, expected: str) -> None:
+        """Strip leading and trailing whitespace before the constraints apply."""
+        assert self.adapter.validate_python(value) == expected
+
+    def test_publishes_the_non_whitespace_pattern(self) -> None:
+        """Publish the non-whitespace constraint the validator already enforces."""
+        schema = self.adapter.json_schema()
+        assert schema["pattern"] == r"\S"
+        assert schema["minLength"] == 1

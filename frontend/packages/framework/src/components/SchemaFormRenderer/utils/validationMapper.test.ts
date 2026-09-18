@@ -17,7 +17,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { AppField } from '../types';
-import { coerceFormValues } from './validationMapper';
+import { buildValidationRules, coerceFormValues } from './validationMapper';
 
 const multiServiceField: AppField = {
   type: 'multi_service',
@@ -37,5 +37,31 @@ describe('coerceFormValues — multi reference fields', () => {
     expect(
       coerceFormValues({ services: [{ id: 10, name: 'a' }, 5, '', 'custom'] }, [multiServiceField]),
     ).toEqual({ services: [10, 5, 'custom'] });
+  });
+});
+
+const stringField = (pattern: string): AppField => ({
+  type: 'string',
+  name: 'backup_dir',
+  label: 'Backup directory',
+  pattern,
+});
+
+describe('buildValidationRules — patterned string fields', () => {
+  it('names the whitespace-only case for the non-whitespace pattern', () => {
+    const rules = buildValidationRules(stringField('\\S'));
+
+    expect(rules.pattern).toBeDefined();
+    const { value, message } = rules.pattern as { value: RegExp; message: string };
+    expect(value.test('   ')).toBe(false);
+    expect(value.test('/var/my backups')).toBe(true);
+    expect(message).toBe('Backup directory cannot be only whitespace');
+  });
+
+  it('keeps the generic message for every other pattern', () => {
+    const rules = buildValidationRules(stringField('^\\d+$'));
+
+    const { message } = rules.pattern as { value: RegExp; message: string };
+    expect(message).toBe('Backup directory does not match the required format');
   });
 });

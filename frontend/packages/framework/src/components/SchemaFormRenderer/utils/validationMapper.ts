@@ -19,6 +19,11 @@ import type { RegisterOptions } from 'react-hook-form';
 import type { AppField } from '../types';
 import { getAtPath, setAtPath } from './fieldPath';
 
+// The schema pattern every backend `StrippedNonEmptyStr` field publishes. It
+// only rules out a whitespace-only entry, so the generic format message would
+// misdescribe what the user has to change.
+const NON_WHITESPACE_PATTERN = '\\S';
+
 export function buildValidationRules(field: AppField): RegisterOptions {
   const rules: RegisterOptions = {};
 
@@ -45,7 +50,10 @@ export function buildValidationRules(field: AppField): RegisterOptions {
           const compiled = new RegExp(field.pattern);
           rules.pattern = {
             value: compiled,
-            message: `${field.label} does not match the required format`,
+            message:
+              field.pattern === NON_WHITESPACE_PATTERN
+                ? `${field.label} cannot be only whitespace`
+                : `${field.label} does not match the required format`,
           };
         } catch {
           // Invalid regex from schema. Surface as a validate fn so the field
