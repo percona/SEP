@@ -16,6 +16,7 @@
 """Define database operations for the MySQL backup catalog."""
 
 from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
@@ -43,7 +44,7 @@ _NEWEST_RUN_FIRST = (
 )
 
 
-def _sql_strip(column: ColumnElement[str | None]) -> ColumnElement[str | None]:
+def _sql_strip(column: Any) -> ColumnElement[str | None]:
     """Strip leading/trailing ASCII whitespace the way :func:`strip_backup_path` does.
 
     ``ltrim`` / ``rtrim`` with :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS`
@@ -52,15 +53,22 @@ def _sql_strip(column: ColumnElement[str | None]) -> ColumnElement[str | None]:
     alone — the same contract as the Python helper — so a catalog key and this
     expression always agree.
 
+    ``column`` is typed as :data:`~typing.Any` because ``sqlmodel.col`` yields
+    ``Mapped[...]`` at the call site while SQLAlchemy's ``ltrim``/``rtrim``
+    accept a ``ColumnElement``.
+
     :param column: The text column to strip.
     :return: The stripped column expression.
     """
-    return func.rtrim(
-        func.ltrim(column, BACKUP_PATH_STRIP_CHARS), BACKUP_PATH_STRIP_CHARS
+    return cast(
+        ColumnElement[str | None],
+        func.rtrim(
+            func.ltrim(column, BACKUP_PATH_STRIP_CHARS), BACKUP_PATH_STRIP_CHARS
+        ),
     )
 
 
-def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
+def _preferred_backup_source_expr() -> ColumnElement[str | None]:
     """Return the SQL expression mirroring :func:`preferred_backup_source`.
 
     Prefer a non-blank ASCII-stripped ``upload_destination``, else a non-blank
@@ -77,9 +85,26 @@ def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
     location = col(MysqlBackupRun.location)
     upload_stripped = _sql_strip(upload)
     location_stripped = _sql_strip(location)
-    return case(
-        (and_(upload.is_not(None), upload_stripped != ""), upload_stripped),
-        (and_(location.is_not(None), location_stripped != ""), location_stripped),
+    return cast(
+        ColumnElement[str | None],
+        case(
+            (and_(upload.is_not(None), upload_stripped != ""), upload_stripped),
+            (and_(location.is_not(None), location_stripped != ""), location_stripped),
+        ),
+    )
+
+
+def _matches_preferred_source(
+    backup_source: str,
+) -> ColumnExpressionArgument[bool]:
+    """Return a WHERE clause comparing the preferred source to ``backup_source``.
+
+    :param backup_source: The restore body's preferred-source string to match.
+    :return: The SQL predicate for :meth:`BaseSQLModelManager.list`.
+    """
+    return cast(
+        ColumnExpressionArgument[bool],
+        _preferred_backup_source_expr() == backup_source,
     )
 
 
@@ -231,7 +256,7 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         matches = await cls.list(
             session,
             cls._service_predicate(key),
-            _preferred_backup_source_expr() == backup_source,
+            _matches_preferred_source(backup_source),
             order_by=list(_NEWEST_RUN_FIRST),
             limit=1,
         )
@@ -303,14 +328,13 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         if not pending:
             return results
 
-        preferred = _preferred_backup_source_expr()
         matches = await cls.list(
             session,
             or_(
                 *(
                     and_(
                         cls._service_predicate(service_key),
-                        preferred == backup_source,
+                        _matches_preferred_source(backup_source),
                     )
                     for (
                         _service_id,

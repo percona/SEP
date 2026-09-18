@@ -294,8 +294,12 @@ def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
+
+    def _run() -> _T:
+        return asyncio.run(coro)
+
     with ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+        return pool.submit(_run).result()
 
 
 async def _fetch_catalogued_transport(
