@@ -178,7 +178,7 @@
 | app/sep/apps/archives/models.py                                                                                              |       76 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/archives/spec.py                                                                                                |       55 |       10 |       24 |        7 |     76% |106, 133, 156-\>164, 166, 173, 177-180, 182-183 |
 | app/sep/apps/archives/views.py                                                                                               |        4 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/atw/api\_routes.py                                                                                              |      239 |       48 |       40 |        3 |     77% |216-\>226, 275, 293, 308, 333, 407-408, 412-418, 481-494, 496-512, 521, 523-539, 559-561, 771-\>778, 772, 828-834, 836-839, 857, 875, 914 |
+| app/sep/apps/atw/api\_routes.py                                                                                              |      252 |       48 |       46 |        2 |     79% |317, 335, 350, 375, 449-450, 454-460, 523-536, 538-554, 563, 565-581, 601-603, 813-\>820, 814, 870-876, 878-881, 899, 917, 956 |
 | app/sep/apps/atw/app.py                                                                                                      |       12 |        1 |        2 |        1 |     86% |        47 |
 | app/sep/apps/atw/batch.py                                                                                                    |       76 |        0 |        8 |        0 |    100% |           |
 | app/sep/apps/atw/categories.py                                                                                               |       34 |        0 |        2 |        0 |    100% |           |
@@ -369,7 +369,7 @@
 | app/sep/snippets/list\_query.py                                                                                              |       15 |        0 |        0 |        0 |    100% |           |
 | app/sep/snippets/masking.py                                                                                                  |      158 |        5 |       76 |        5 |     96% |156, 190, 192, 229-230, 321-\>316 |
 | app/sep/snippets/models/constants.py                                                                                         |        5 |        0 |        0 |        0 |    100% |           |
-| app/sep/snippets/models/meta.py                                                                                              |      231 |        1 |       74 |        3 |     99% |589, 737-\>739, 739-\>741 |
+| app/sep/snippets/models/meta.py                                                                                              |      233 |        1 |       74 |        3 |     99% |593, 741-\>743, 743-\>745 |
 | app/sep/snippets/models/responses.py                                                                                         |       28 |        0 |        0 |        0 |    100% |           |
 | app/sep/snippets/models/snippet.py                                                                                           |      338 |        5 |       78 |        3 |     98% |241-\>264, 265-266, 671-673 |
 | app/sep/snippets/schema.py                                                                                                   |       97 |        4 |       34 |        1 |     96% |159-161, 376 |
@@ -481,7 +481,7 @@
 | app/tasks/routes.py                                                                                                          |      244 |       14 |       48 |        4 |     94% |154-158, 243-\>247, 280, 330-339, 346, 459, 502, 517, 677, 691, 696, 723, 726-\>728 |
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30232** | **1690** | **7426** |  **643** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30247** | **1690** | **7432** |  **642** | **93%** |           |
 
 
 ## Setup coverage badge
