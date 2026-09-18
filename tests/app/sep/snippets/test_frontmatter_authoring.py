@@ -348,7 +348,11 @@ async def test_declared_categories_name_taxonomy_members(filename):
     declared = snippet.meta.get(META_KEY_DIAGNOSTIC_CATEGORIES)
     if not isinstance(declared, list):
         pytest.skip(f"{filename} has no list-valued declaration; R12 reports it")
-    unknown = sorted(set(declared) - KNOWN_CATEGORY_NAMES)
+    unknown = [
+        category
+        for category in declared
+        if not isinstance(category, str) or category not in KNOWN_CATEGORY_NAMES
+    ]
     assert unknown == [], (
         f"{filename} declares categories the taxonomy does not define: {unknown}"
     )
