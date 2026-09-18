@@ -26,11 +26,10 @@ whether a stored value still needs encrypting.
 
 :func:`mark_ciphertext` and :func:`marked_ciphertext` wrap that ciphertext in a
 versioned envelope, so a consumer reads the answer off the stored value's own
-format instead of guessing it from the bytes. Only
-:mod:`app.core.settings_override.secret_storage` writes the envelope today, and
-:func:`encrypt` deliberately does not: marking inside the primitive would change
+format instead of guessing it from the bytes. The envelope is applied by the
+caller rather than by :func:`encrypt`: marking inside the primitive would change
 what every other at-rest consumer stores. A consumer that may see a marked value
-asks :func:`is_stored_ciphertext`, which orders the two discriminators correctly;
+asks :func:`is_stored_ciphertext`, which consults both discriminators;
 :func:`is_encrypted` alone reports ``False`` for every marked value.
 """
 
@@ -79,7 +78,7 @@ wrapper translates and then decodes without it.
 """
 
 _CIPHERTEXT_V1_PREFIX = "sep.enc.v1."
-"""The marker a settings-override ciphertext carries, naming its envelope version.
+"""The marker a stored ciphertext carries, naming its envelope version.
 
 Contains a character outside the base64 alphabet, so :func:`is_encrypted` rejects
 a marked value outright rather than answering from its length and padding, and the
@@ -220,14 +219,16 @@ def is_stored_ciphertext(value: str) -> bool:
     """Return whether ``value`` holds ciphertext under either at-rest envelope.
 
     The discriminator every consumer of a stored value wants, and the reason it
-    is here rather than spelled out per caller: the envelope has to be tested
-    *before* the structural check, because a marked value is invisible to it —
-    the marker's ``.`` is outside the base64 alphabet, so :func:`is_encrypted`
+    is here rather than spelled out per caller: *both* discriminators have to be
+    consulted, because a marked value is invisible to the structural one — the
+    marker's ``.`` is outside the base64 alphabet, so :func:`is_encrypted`
     rejects the whole string. A consumer testing only the shape reads a store
     holding nothing but marked values as holding no ciphertext at all.
 
-    Ordering the two correctly is the entire content of that rule, so a second
-    envelope version changes this function rather than every caller.
+    The order of the two is immaterial here, because they are disjoint: no
+    stored value satisfies both. Consulting both is the entire content of that
+    rule, so a second envelope version changes this function rather than every
+    caller.
 
     :param value: The stored value to classify.
     :return: Whether it holds ciphertext under either envelope.

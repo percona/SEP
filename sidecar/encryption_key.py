@@ -416,14 +416,15 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
 
 
 def _has_encrypted_url_password(value: str) -> bool:
-    """Return whether ``value`` is a URL whose embedded password is a Fernet token.
+    """Return whether ``value`` is a URL whose embedded password is stored ciphertext.
 
     A URL that cannot be parsed answers ``False`` rather than propagating: the
     caller has already tested the whole string, and a value malformed enough to
     defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
 
     :param value: One string leaf of a stored override value.
-    :return: Whether its userinfo password is structurally ciphertext.
+    :return: Whether its userinfo password holds ciphertext under either at-rest
+        envelope.
     """
     try:
         password = credential_url_password(value)
@@ -433,7 +434,7 @@ def _has_encrypted_url_password(value: str) -> bool:
 
 
 def contains_ciphertext(value: Any) -> bool:
-    """Return whether any string leaf of ``value`` is structurally a Fernet token.
+    """Return whether any string leaf of ``value`` holds ciphertext at rest.
 
     The stored value is JSON and the ciphertext sits at its *leaves*: an alert
     provider's routing key inside a list, a delivery input's API key inside a
@@ -464,7 +465,7 @@ def contains_ciphertext(value: Any) -> bool:
     resolves by supplying the key.
 
     :param value: The decoded stored value, at any depth.
-    :return: Whether a Fernet token appears anywhere within it.
+    :return: Whether ciphertext appears anywhere within it, marked or bare.
     """
     if isinstance(value, str):
         return is_stored_ciphertext(value) or _has_encrypted_url_password(value)

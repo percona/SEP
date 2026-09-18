@@ -34,6 +34,7 @@ from app.core.encryption import (
     DecryptionError,
     encrypt,
     is_encrypted,
+    is_stored_ciphertext,
     mark_ciphertext,
     marked_ciphertext,
 )
@@ -335,3 +336,36 @@ def test_marked_ciphertext_accepts_a_foreign_token_behind_the_marker():
     assert token is not None
     with pytest.raises(DecryptionError):
         decrypt(token)
+
+
+def test_is_stored_ciphertext_accepts_a_marked_token():
+    """Assert the envelope half of the discriminator claims a marked value."""
+    assert is_stored_ciphertext(mark_ciphertext(encrypt("hunter2"))) is True
+
+
+def test_is_stored_ciphertext_accepts_a_legacy_unmarked_token():
+    """Assert the structural fallback still claims a row written before the envelope.
+
+    The half that keeps every pre-envelope deployment readable: nothing
+    re-marks those rows, so a discriminator that dropped the fallback would
+    report a store full of them as holding no ciphertext.
+    """
+    assert is_stored_ciphertext(encrypt("hunter2")) is True
+
+
+def test_is_stored_ciphertext_rejects_a_plaintext():
+    """Assert an ordinary stored plaintext is claimed by neither half."""
+    assert is_stored_ciphertext("hunter2") is False
+
+
+def test_is_stored_ciphertext_rejects_a_marker_over_a_corrupt_token():
+    """Assert a marked value whose payload is damaged is not claimed as ciphertext.
+
+    Neither half accepts it: the envelope refuses the payload, and the marker's
+    ``.`` puts the whole string outside the structural check's alphabet. The
+    rollback therefore leaves it alone rather than stripping a marker off
+    something it cannot vouch for.
+    """
+    truncated = encrypt("hunter2")[:40]
+
+    assert is_stored_ciphertext(f"{_CIPHERTEXT_V1_PREFIX}{truncated}") is False

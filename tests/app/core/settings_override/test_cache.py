@@ -841,7 +841,7 @@ async def test_secret_leaf_decrypted_before_materialization(
 async def test_marked_secret_leaf_decrypted_before_materialization(
     session: AsyncSession,
 ) -> None:
-    """A secret leaf carrying the envelope marker is decrypted like any other.
+    """Decrypt a secret leaf carrying the envelope marker like any other.
 
     The sibling of the unmarked case above, and both have to keep passing: the
     two shapes coexist for the life of every deployment upgraded into the
