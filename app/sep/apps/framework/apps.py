@@ -379,10 +379,12 @@ class TaskExecutionApp(BaseApp):
     :param detail_response_model: An explicit detail response model overriding
         return-annotation inference on ``detail_response_builder`` (for an exotic
         builder whose return type cannot be introspected). Defaults to ``None``.
-    :param response_context_provider: A zero-arg async provider whose once-awaited
+    :param response_context_provider: An async provider whose once-awaited
         result (for example a username map) is bound as the builders' ``context``
-        across the list, detail, and create builds, consumed by the framework
-        default builder or an overriding ``response_builder``. Defaults to
+        across the list, detail, and create builds. Zero-arg providers keep the
+        historical contract; a provider that declares a ``tasks`` parameter
+        receives the current page (list) or the single task (detail/create) so
+        it can batch async side-data on the request event loop. Defaults to
         ``None``.
     :param create_extra_deps: Extra create-route dependencies appended after the
         standard auth guard; requires ``capabilities.create``. Defaults to ``()``.
@@ -469,7 +471,7 @@ class TaskExecutionApp(BaseApp):
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
-    response_context_provider: SkipValidation[Callable[[], Awaitable[Any]] | None] = (
+    response_context_provider: SkipValidation[Callable[..., Awaitable[Any]] | None] = (
         None
     )
     create_extra_deps: tuple[params.Depends, ...] = ()

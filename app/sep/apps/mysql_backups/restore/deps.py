@@ -17,7 +17,7 @@
 
 import asyncio
 import logging
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Annotated, Any, TypeVar
@@ -53,6 +53,7 @@ from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
 )
+from app.sep.db import get_async_session_maker
 from app.sep.db.engine import engine as sep_engine
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -60,6 +61,11 @@ from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 _log = logging.getLogger(__name__)
 _T = TypeVar("_T")
+
+#: Prefetched catalog transports keyed by ``(service_id, service_name, backup_source)``.
+CatalogTransportContext = Mapping[
+    tuple[int | None, str, str], CataloguedSourceTransport | None
+]
 
 
 async def resolve_restore_entities(
@@ -254,15 +260,32 @@ def _catalog_service_key_for_stamp(
     return CatalogServiceKey(service_name=service_name or sid, service_id=parsed)
 
 
+def _transport_cache_key(
+    task: Task, stored_form: dict[str, Any]
+) -> tuple[int | None, str, str] | None:
+    """Return the prefetch map key for ``stored_form``, or ``None`` when unscoped.
+
+    :param task: The restore task carrying optional service meta.
+    :param stored_form: The undeclared ``_form`` stamp.
+    :return: ``(service_id, service_name, backup_source)``, or ``None``.
+    """
+    backup_source = stored_form.get("backup_source")
+    if not isinstance(backup_source, str) or not backup_source:
+        return None
+    key = _catalog_service_key_for_stamp(task, stored_form)
+    if key is None:
+        return None
+    return (key.service_id, key.service_name, backup_source)
+
+
 def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     """Run ``coro`` to completion from sync code, including under a running loop.
 
-    The restore ``response_builder`` (and the sync form-backfill repairer) are
-    sync-only, so the catalog lookup has to bridge into async. When no loop is
-    running, ``asyncio.run`` is enough; when one is (the usual FastAPI request
-    path, or the backfill CLI's ``asyncio.run`` outer loop), the coroutine runs
-    on a worker thread with its own loop. Callers must open any asyncpg work on a
-    throwaway engine for that loop — see :func:`_fetch_catalogued_transport`.
+    Used by the sync form-backfill repairer (and as a fallback when no request
+    context was bound). When no loop is running, ``asyncio.run`` is enough; when
+    one is, the coroutine runs on a worker thread with its own loop. Callers must
+    open any asyncpg work on a throwaway engine for that loop — see
+    :func:`_fetch_catalogued_transport`.
 
     :param coro: The awaitable to drive to completion.
     :return: The coroutine's result.
@@ -301,25 +324,98 @@ async def _fetch_catalogued_transport(
         await lookup_engine.dispose()
 
 
+async def restore_response_context(
+    *, tasks: Sequence[Task] = ()
+) -> CatalogTransportContext:
+    """Prefetch catalogued transports for undeclared stamps on the request loop.
+
+    Bound once per list/detail/create build as the builders' ``context``. Runs on
+    the request event loop against the shared sep session maker — one session for
+    the whole page — so the sync builder never pays a per-row
+    thread+loop+NullPool spin-up. Lookups that fail are recorded as ``None`` so
+    the builder falls through to inference without re-querying.
+
+    :param tasks: The page (list) or singleton (detail/create) being rendered.
+    :return: A map from :func:`_transport_cache_key` to catalogued transport.
+    """
+    pending: dict[tuple[int | None, str, str], CatalogServiceKey] = {}
+    for task in tasks:
+        data = task.data if isinstance(task.data, dict) else None
+        stored_form = data.get(RESERVED_FORM_KEY) if data else None
+        if (
+            not isinstance(stored_form, dict)
+            or stored_form.get("source_transport") is not None
+        ):
+            continue
+        cache_key = _transport_cache_key(task, stored_form)
+        if cache_key is None or cache_key in pending:
+            continue
+        service_key = _catalog_service_key_for_stamp(task, stored_form)
+        if service_key is not None:
+            pending[cache_key] = service_key
+
+    if not pending:
+        return {}
+
+    results: dict[tuple[int | None, str, str], CataloguedSourceTransport | None] = {}
+    try:
+        async with get_async_session_maker()() as session:
+            for cache_key, service_key in pending.items():
+                _service_id, _service_name, backup_source = cache_key
+                try:
+                    results[
+                        cache_key
+                    ] = await MysqlBackupRunManager.catalogued_source_transport(
+                        session, service_key, backup_source
+                    )
+                except Exception:  # noqa: BLE001 — one miss must not take out the page
+                    _log.warning(
+                        "Catalog source_transport lookup failed for "
+                        "backup_source=%r; falling back to inference",
+                        backup_source,
+                        exc_info=True,
+                    )
+                    results[cache_key] = None
+    except Exception:  # noqa: BLE001 — session open failure must not take out the page
+        _log.warning(
+            "Catalog source_transport session failed; falling back to inference",
+            exc_info=True,
+        )
+        return dict.fromkeys(pending, None)
+    return results
+
+
 def catalogued_transport_for_stamp(
-    task: Task, stored_form: dict[str, Any]
+    task: Task,
+    stored_form: dict[str, Any],
+    *,
+    context: CatalogTransportContext | None = None,
 ) -> CataloguedSourceTransport | None:
     """Return the catalogued object-store transport for an undeclared stamp, if any.
 
-    Failures (no key, no ``backup_source``, or a lookup error) yield ``None`` so
-    the caller falls through to inference — this builder also serves the list
-    route, where one bad task must not take out the page.
+    When ``context`` is provided (the once-per-request prefetch from
+    :func:`restore_response_context`), look up there and never open a sync bridge
+    — a miss means the catalog had nothing, not that the lookup was skipped.
+    Without ``context`` (form backfill), fall back to the NullPool sync bridge.
+
+    Failures without ``context`` yield ``None`` so the caller falls through to
+    inference.
 
     :param task: The restore task being serialized.
     :param stored_form: The undeclared ``_form`` stamp.
+    :param context: Optional prefetch map from :func:`restore_response_context`.
     :return: The catalogued transport, or ``None``.
     """
-    backup_source = stored_form.get("backup_source")
-    if not isinstance(backup_source, str) or not backup_source:
+    cache_key = _transport_cache_key(task, stored_form)
+    if cache_key is None:
         return None
+    if context is not None:
+        return context.get(cache_key)
+
     key = _catalog_service_key_for_stamp(task, stored_form)
     if key is None:
         return None
+    backup_source = cache_key[2]
     try:
         return _run_coro_sync(_fetch_catalogued_transport(key, backup_source))
     except Exception:  # noqa: BLE001 — catalog being down must never fail the list
@@ -332,7 +428,9 @@ def catalogued_transport_for_stamp(
         return None
 
 
-def _declared_source_override(task: Task) -> dict[str, Any]:
+def _declared_source_override(
+    task: Task, *, context: CatalogTransportContext | None = None
+) -> dict[str, Any]:
     """Return a ``data`` override declaring the source of a stamp that predates it.
 
     The edit form seeds each field from the served stamp and falls back to the
@@ -356,6 +454,7 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     the list route, where one unparseable task must not take out the whole page.
 
     :param task: The restore task being serialized.
+    :param context: Optional prefetch map from :func:`restore_response_context`.
     :return: A single-key ``data`` override, or an empty mapping when the stamp
         already declares a source, is absent, or does not validate.
     """
@@ -371,7 +470,9 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     try:
         normalized = normalize_source_declaration(
             stored_form,
-            catalogued_transport=catalogued_transport_for_stamp(task, stored_form),
+            catalogued_transport=catalogued_transport_for_stamp(
+                task, stored_form, context=context
+            ),
         )
         declared = RestoreCreate.model_validate(normalized).model_dump(mode="json")
     except ValidationError:
@@ -384,6 +485,7 @@ def build_restore_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
+    context: CatalogTransportContext | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
@@ -391,6 +493,8 @@ def build_restore_api_task_response(
     :param status: The latest known execution status for the task.
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: Prefetched catalog transports from
+        :func:`restore_response_context`, or ``None`` outside the JSON routes.
     :return: A validated restore task API response object.
     """
     backup_type, host, port = _extract_restore_config(task)
@@ -405,7 +509,7 @@ def build_restore_api_task_response(
             "host": host,
             "port": port,
             "hostname": meta.get("target") if meta else None,
-            **_declared_source_override(task),
+            **_declared_source_override(task, context=context),
         },
     )
 

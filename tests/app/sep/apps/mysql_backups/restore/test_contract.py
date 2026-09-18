@@ -21,8 +21,8 @@ status-filter, route presence/absence, auth) against the real
 ``mysql_backups.restore`` definition. The create/update methods are overridden
 here with a hand-built body because the generic Polyfactory pass over the create
 model trips the ``backup_source`` shell-safe validator. Restore declares no
-``connectivity_check`` / ``detail_response_builder`` / ``response_context_provider``,
-so the connectivity, detail-model, and injected-extras suite methods skip.
+``connectivity_check`` / ``detail_response_builder``, so those suite methods
+skip; ``response_context_provider`` batches catalog transports (not usernames).
 """
 
 from typing import Any
@@ -84,13 +84,26 @@ def _valid_restore_body(
 class TestRestoreContract(DerivedRouterContractTests):
     """Assert the restore app's derived HTTP surface, knob by knob.
 
-    ``remapped_username`` is ``None``: the app wires no response context provider
-    (its ``response_builder`` stamps ``backup_type`` / ``hostname`` and leaves
-    ``created_by`` as the raw id), so the injected-extras tests do not apply.
+    ``remapped_username`` is ``None``: the context provider batches catalog
+    transports rather than remapping usernames, so the injected-extras tests
+    assert only the absence of internal classification fields. ``create_body_overrides``
+    pins a declared local source so polyfactory cannot plant SSH/S3 values the
+    gates forbid.
     """
 
     app_def = restore_app
     remapped_username = None
+    create_body_overrides = {
+        "backup_source": "/var/backups/latest",
+        "datadir": "/var/lib/mysql",
+        "source_transport": SourceTransport.LOCAL.value,
+        "source_encryption": EncryptionFormat.NONE.value,
+        "ssh_user": None,
+        "ssh_port": None,
+        "ssh_key": None,
+        "s3_tool": None,
+        "gpg_password_file": None,
+    }
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return the gated valid PUT body; the generic Polyfactory body 422s here.

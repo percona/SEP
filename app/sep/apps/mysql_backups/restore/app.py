@@ -40,6 +40,7 @@ from app.sep.apps.framework.apps import (
 from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
+    restore_response_context,
 )
 from app.sep.apps.mysql_backups.restore.models import (
     OWNER,
@@ -67,6 +68,7 @@ app = TaskExecutionApp(
     views=restore_views,
     payload_builder=build_restore_payload,
     response_builder=build_restore_api_task_response,
+    response_context_provider=restore_response_context,
     pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),

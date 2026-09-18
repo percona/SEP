@@ -323,14 +323,10 @@ def test_a_task_without_a_stamp_is_served_unchanged():
     ids=["s3", "gcs"],
 )
 def test_served_stamp_prefers_catalogued_object_store_transport(
-    mocker, catalogued: CataloguedSourceTransport, expected: str
+    catalogued: CataloguedSourceTransport, expected: str
 ):
     """Serve an undeclared stamp with the catalogued S3/GCS transport over inference."""
-    mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.catalogued_transport_for_stamp",
-        return_value=catalogued,
-    )
-    # Local-looking fields: without the catalog, inference would open on local.
+    # Prefetched context — the list/detail path; no per-row sync bridge.
     task = _restore_task(
         {
             "task_name": "restore-task",
@@ -341,18 +337,16 @@ def test_served_stamp_prefers_catalogued_object_store_transport(
             "s3_tool": "s3cmd",
         }
     )
-
-    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
+    cache_key = (7, "7", "/backups/mydumper/latest")
+    served = build_restore_api_task_response(
+        task, context={cache_key: catalogued}
+    ).data[RESERVED_FORM_KEY]
 
     assert served["source_transport"] == expected
 
 
-def test_served_stamp_keeps_inference_when_catalog_has_no_transport(mocker):
+def test_served_stamp_keeps_inference_when_catalog_has_no_transport():
     """Fall through to field inference when the matching catalog row has no transport."""
-    mocker.patch(
-        "app.sep.apps.mysql_backups.restore.deps.catalogued_transport_for_stamp",
-        return_value=None,
-    )
     task = _restore_task(
         {
             "task_name": "restore-task",
@@ -365,8 +359,8 @@ def test_served_stamp_keeps_inference_when_catalog_has_no_transport(mocker):
             "s3_tool": "s3cmd",
         }
     )
-
-    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
+    # Empty prefetch: key was considered and missed — do not re-bridge to the DB.
+    served = build_restore_api_task_response(task, context={}).data[RESERVED_FORM_KEY]
 
     assert served["source_transport"] == SourceTransport.SSH.value
     assert served["ssh_user"] == "deploy"

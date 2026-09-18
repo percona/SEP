@@ -354,6 +354,40 @@ class TestBuildTaskListResponses:
         assert seen_contexts == [{"u1": "Alice"}, {"u1": "Alice"}]
 
     @pytest.mark.asyncio
+    async def test_tasks_aware_context_provider_receives_the_page(self) -> None:
+        """Pass the current page to a provider that declares a ``tasks`` parameter."""
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a", "task-b"),
+            statuses={"task-a": "success", "task-b": "success"},
+        )
+        seen_names: list[list[str]] = []
+
+        async def _provider(*, tasks):
+            seen_names.append([task.name for task in tasks])
+            return {"mapped": True}
+
+        def _spy_builder(
+            task: Task,
+            *,
+            status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
+            context: dict | None = None,
+        ) -> _TaskResponse:
+            assert context == {"mapped": True}
+            return _TaskResponse(
+                name=task.name, status=status, last_executed_at=last_executed_at
+            )
+
+        await build_task_list_responses(
+            tasks_api,
+            owner="ARCHIVER",
+            response_builder=_spy_builder,
+            context_provider=_provider,
+        )
+
+        assert seen_names == [["task-a", "task-b"]]
+
+    @pytest.mark.asyncio
     async def test_context_provider_awaited_once_even_when_page_empty(self) -> None:
         """Await the provider exactly once even when the page yields no rows."""
         tasks_api = _mock_tasks_api(items=[], statuses={})

@@ -57,9 +57,11 @@ from app.sep.apps.framework.connectivity import (
     maybe_record_connectivity_warning,
 )
 from app.sep.apps.framework.responses import (
+    await_response_context,
     build_task_list_responses,
     derive_create_response_model,
     dump_with_excluded_fields,
+    ResponseContextProvider,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -239,7 +241,7 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
 
 
 def _reject_contextless_builders(
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
     **builders: Callable[..., BaseModel] | None,
 ) -> None:
     """Raise ``TypeError`` if a context provider cannot bind into a named builder.
@@ -460,7 +462,8 @@ def make_list_filter_dep(
 
 async def _bind_context(
     builder: Callable[..., BaseModel],
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
+    tasks: Sequence[Task] = (),
 ) -> Callable[..., BaseModel]:
     """Await the context provider once and bind its result onto ``builder``.
 
@@ -468,16 +471,18 @@ async def _bind_context(
     single-shot detail and create handlers: when ``context_provider`` is set it is
     awaited once and its result is bound as the builder's ``context`` keyword
     argument via :func:`functools.partial`, so a sync builder receives async
-    side-data without becoming async. When ``None`` the builder is returned
-    unchanged.
+    side-data without becoming async. A provider that declares a ``tasks``
+    parameter receives ``tasks`` (the page, or the single task being rendered).
+    When ``None`` the builder is returned unchanged.
 
     :param builder: The sync response builder to bind the context onto.
-    :param context_provider: The zero-arg async provider, or ``None`` to no-op.
+    :param context_provider: The async provider, or ``None`` to no-op.
+    :param tasks: The tasks in scope for this build (singleton for detail/create).
     :return: The original builder, or a partial binding ``context`` into it.
     """
     if context_provider is None:
         return builder
-    context = await context_provider()
+    context = await await_response_context(context_provider, tasks)
     return functools.partial(builder, context=context)
 
 
@@ -592,12 +597,14 @@ def _register_create_route(
             else None
         )
         if create_response_builder is not None:
-            builder = await _bind_context(create_response_builder, context_provider)
+            builder = await _bind_context(
+                create_response_builder, context_provider, tasks=(task,)
+            )
             result = builder(task)
             if warning is not None:
                 return result.model_copy(update={"connectivity_warning": warning})
             return result
-        builder = await _bind_context(base_builder, context_provider)
+        builder = await _bind_context(base_builder, context_provider, tasks=(task,))
         base = builder(task, status=None)
         if warning is not None:
             return create_response_model(
@@ -714,7 +721,9 @@ def _register_update_route(
             else None
         )
         if create_response_builder is not None:
-            builder = await _bind_context(create_response_builder, context_provider)
+            builder = await _bind_context(
+                create_response_builder, context_provider, tasks=(updated_task,)
+            )
             result = builder(
                 updated_task,
                 status=latest.status,
@@ -723,7 +732,9 @@ def _register_update_route(
             if warning is not None:
                 return result.model_copy(update={"connectivity_warning": warning})
             return result
-        builder = await _bind_context(base_builder, context_provider)
+        builder = await _bind_context(
+            base_builder, context_provider, tasks=(updated_task,)
+        )
         base = builder(
             updated_task, status=latest.status, last_executed_at=latest.finished_at
         )
@@ -1301,7 +1312,9 @@ def derive_crud_routes(
             except Exception:
                 logger.exception("Failed to fetch history for task %s", task.name)
                 status, last_executed_at = None, None
-            builder = await _bind_context(detail_builder, context_provider)
+            builder = await _bind_context(
+                detail_builder, context_provider, tasks=(task,)
+            )
             return builder(task, status=status, last_executed_at=last_executed_at)
 
         router.add_api_route(
