@@ -16,9 +16,10 @@
 """Define database operations for the MySQL backup catalog."""
 
 from collections.abc import Sequence
+from string import whitespace
 
 from sqlalchemy import case, func, or_
-from sqlalchemy.sql import ColumnExpressionArgument
+from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -37,12 +38,32 @@ _NEWEST_RUN_FIRST = (
     col(MysqlBackupRun.id).desc(),
 )
 
+#: ASCII whitespace set matching :meth:`str.strip`'s default character class
+#: (``string.whitespace``). Used instead of SQL ``TRIM()``, which drops spaces
+#: only — a tab/newline-padded upload would otherwise miss the catalog key the
+#: Python helper produces after ``.strip()``.
+_STRIP_CHARS = whitespace
+
+
+def _sql_strip(column: ColumnElement[str | None]) -> ColumnElement[str | None]:
+    """Strip leading/trailing ASCII whitespace the way Python ``str.strip`` does.
+
+    ``ltrim`` / ``rtrim`` with :data:`_STRIP_CHARS` work on both PostgreSQL and
+    SQLite; plain ``TRIM`` would leave tabs and newlines in place.
+
+    :param column: The text column to strip.
+    :return: The stripped column expression.
+    """
+    return func.rtrim(func.ltrim(column, _STRIP_CHARS), _STRIP_CHARS)
+
 
 def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
     """Return the SQL expression mirroring :func:`preferred_backup_source`.
 
-    Prefer a non-blank trimmed ``upload_destination``, else a non-blank trimmed
-    ``location``. Kept here so the catalog lookup keys on the same string
+    Prefer a non-blank stripped ``upload_destination``, else a non-blank stripped
+    ``location``. Stripping uses the same ASCII whitespace set as Python
+    ``str.strip`` (not SQL ``TRIM``) so the catalog lookup keys on the same
+    string
     :func:`~app.sep.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
     offers a restore form.
 
@@ -50,9 +71,11 @@ def _preferred_backup_source_expr() -> ColumnExpressionArgument[str | None]:
     """
     upload = col(MysqlBackupRun.upload_destination)
     location = col(MysqlBackupRun.location)
+    upload_stripped = _sql_strip(upload)
+    location_stripped = _sql_strip(location)
     return case(
-        (and_(upload.is_not(None), func.trim(upload) != ""), func.trim(upload)),
-        (and_(location.is_not(None), func.trim(location) != ""), func.trim(location)),
+        (and_(upload.is_not(None), upload_stripped != ""), upload_stripped),
+        (and_(location.is_not(None), location_stripped != ""), location_stripped),
     )
 
 

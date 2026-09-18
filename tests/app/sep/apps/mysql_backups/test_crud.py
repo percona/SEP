@@ -524,6 +524,30 @@ class TestNewestForBackupSource:
         assert by_location is None
 
     @pytest.mark.asyncio
+    async def test_matches_tab_padded_upload_like_python_strip(self, session) -> None:
+        """Match a tab-padded stored upload to the stripped preferred source.
+
+        SQL ``TRIM`` drops spaces only; the lookup must strip the same ASCII
+        whitespace set as :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source`
+        so a stray tab does not miss the catalog and fall through to inference.
+        """
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="\ts3://bucket/svc-a\n",
+            source_transport=CataloguedSourceTransport.S3,
+        )
+
+        run = await MysqlBackupRunManager.newest_for_backup_source(
+            session, _key("svc-a", 7), "s3://bucket/svc-a"
+        )
+
+        assert run is not None
+        assert run.task_history_id == 1
+
+    @pytest.mark.asyncio
     async def test_catalogued_source_transport_returns_recorded_value(
         self, session
     ) -> None:
