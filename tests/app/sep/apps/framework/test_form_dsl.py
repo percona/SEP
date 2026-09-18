@@ -23,7 +23,13 @@ import annotated_types
 import pytest
 from pydantic import BaseModel, create_model, Field, ValidationError
 
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TcpPort
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    NON_WHITESPACE_PATTERN,
+    NonEmptyStr,
+    StrippedNonEmptyStr,
+    TcpPort,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
@@ -186,6 +192,7 @@ class _GroupedBoundsModel(AppFormModel):
         annotated_types.Interval(le=_MULTI_LE),
         Ui(label="MG", section="s"),
     ] = _MULTI_GE
+    stripped: Annotated[StrippedNonEmptyStr, Ui(label="SN", section="s")] = "x"
 
 
 class _UnionBoundsModel(AppFormModel):
@@ -222,6 +229,18 @@ class TestGroupedAndUnionBounds:
         assert isinstance(field, StringField)
         assert field.min_length == _CODE_MIN_LEN
         assert field.max_length == _CODE_MAX_LEN
+
+    def test_string_constraints_pattern_flattened(self) -> None:
+        """Surface a ``StringConstraints`` pattern onto the derived StringField.
+
+        ``StringConstraints`` carries its pattern in Pydantic's own metadata marker,
+        not in an ``annotated_types`` one, so it reaches the scan by a different route
+        than a ``Field(pattern=...)`` declaration.
+        """
+        field = _fields_by_name(_GroupedBoundsModel)["stripped"]
+        assert isinstance(field, StringField)
+        assert field.pattern == NON_WHITESPACE_PATTERN
+        assert field.min_length == 1
 
     def test_multiple_grouped_metadata_merged(self) -> None:
         """Merge bounds spread across two GroupedMetadata containers on one field."""
