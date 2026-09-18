@@ -19,7 +19,7 @@ import pytest
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
 from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
@@ -312,3 +312,62 @@ def test_a_task_without_a_stamp_is_served_unchanged():
     served = build_restore_api_task_response(_restore_task(None)).data
 
     assert RESERVED_FORM_KEY not in served
+
+
+@pytest.mark.parametrize(
+    ("catalogued", "expected"),
+    [
+        (CataloguedSourceTransport.S3, SourceTransport.S3.value),
+        (CataloguedSourceTransport.GCS, SourceTransport.GCS.value),
+    ],
+    ids=["s3", "gcs"],
+)
+def test_served_stamp_prefers_catalogued_object_store_transport(
+    mocker, catalogued: CataloguedSourceTransport, expected: str
+):
+    """Serve an undeclared stamp with the catalogued S3/GCS transport over inference."""
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps._catalogued_transport_for_stamp",
+        return_value=catalogued,
+    )
+    # Local-looking fields: without the catalog, inference would open on local.
+    task = _restore_task(
+        {
+            "task_name": "restore-task",
+            "hostname": "executor-1",
+            "backup_type": BackupType.MYDUMPER.value,
+            "service_id": "7",
+            "backup_source": "/backups/mydumper/latest",
+            "s3_tool": "s3cmd",
+        }
+    )
+
+    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
+
+    assert served["source_transport"] == expected
+
+
+def test_served_stamp_keeps_inference_when_catalog_has_no_transport(mocker):
+    """Fall through to field inference when the matching catalog row has no transport."""
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.deps._catalogued_transport_for_stamp",
+        return_value=None,
+    )
+    task = _restore_task(
+        {
+            "task_name": "restore-task",
+            "hostname": "executor-1",
+            "backup_type": BackupType.XTRABACKUP.value,
+            "backup_source": "db01:/backups/xb/latest",
+            "ssh_user": "deploy",
+            "ssh_port": _NON_DEFAULT_SSH_PORT,
+            "ssh_key": "prod-key",
+            "s3_tool": "s3cmd",
+        }
+    )
+
+    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
+
+    assert served["source_transport"] == SourceTransport.SSH.value
+    assert served["ssh_user"] == "deploy"
+    assert served["ssh_key"] == "prod-key"
