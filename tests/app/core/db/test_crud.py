@@ -46,8 +46,8 @@ INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
 # first() is invoked twice on the conflict path: existence check, then refetch.
 CONFLICT_PATH_FIRST_CALLS = 2
-# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a truthy sentinel, so the save
-# precheck's all() guard does not skip the index it takes part in.
+# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a non-NULL sentinel, so the save
+# precheck's presence guard does not skip the index it takes part in.
 ACTIVE_DISCRIMINATOR = -1
 # The precheck may only read; any of these reaching the driver means a write escaped.
 WRITE_STATEMENT_PREFIXES = ("UPDATE", "INSERT", "DELETE")
@@ -1193,7 +1193,7 @@ class TestDMLWhereGuards:
 
 
 class TestSaveDuplicatePrecheck:
-    """Test ``BaseSQLModelManager.save``'s unique-index duplicate precheck."""
+    """Test ``BaseSQLModelManager.save``'s unique-key duplicate precheck."""
 
     @pytest.mark.asyncio
     async def test_update_colliding_with_committed_row_raises_conflict(
