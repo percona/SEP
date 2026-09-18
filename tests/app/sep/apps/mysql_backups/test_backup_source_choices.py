@@ -159,10 +159,22 @@ class TestBackupSourceResolvers:
         assert preferred_backup_source("   ", "/backups/x/base") == "/backups/x/base"
 
     def test_strips_the_chosen_candidate(self) -> None:
-        """Return the candidate with surrounding whitespace removed."""
+        """Return the candidate with surrounding ASCII whitespace removed."""
         assert (
             preferred_backup_source("  s3://bucket/base  ", None) == "s3://bucket/base"
         )
+        assert (
+            preferred_backup_source("\ts3://bucket/base\n", None) == "s3://bucket/base"
+        )
+
+    def test_leaves_unicode_separators_in_place(self) -> None:
+        """Keep NBSP padding — bare ``str.strip`` would drop it, SQL cannot.
+
+        Catalog lookup keys Python and SQL with the same ASCII set; a Unicode
+        separator is significant content, not padding we pretend to normalize.
+        """
+        nbsp_padded = "\u00a0s3://bucket/base\u00a0"
+        assert preferred_backup_source(nbsp_padded, None) == nbsp_padded
 
     def test_none_when_both_blank(self) -> None:
         """Return ``None`` when neither field holds a non-blank value."""

@@ -13,9 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the MySQL backup model enums."""
+"""Cover the MySQL backup model enums and catalog helpers."""
 
-from app.sep.apps.mysql_backups.models import BackupType
+import pytest
+
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    catalogued_transport_from_upload,
+    CataloguedSourceTransport,
+)
 
 
 def test_backup_type_labels_cover_every_member():
@@ -35,3 +41,33 @@ def test_backup_type_labels_are_the_declared_display_strings():
 def test_backup_type_labels_is_not_an_enum_member():
     """Keep ``LABELS`` off the enum's member list via ``enum.nonmember``."""
     assert "LABELS" not in {member.name for member in BackupType}
+
+
+@pytest.mark.parametrize(
+    ("upload", "expected"),
+    [
+        ("s3://bucket/path", CataloguedSourceTransport.S3),
+        ("  S3://Bucket/Path  ", CataloguedSourceTransport.S3),
+        ("gs://bucket/path", CataloguedSourceTransport.GCS),
+        ("GS://bucket/path", CataloguedSourceTransport.GCS),
+        ("/data/backups/local", None),
+        ("", None),
+        (None, None),
+        ("   ", None),
+    ],
+    ids=[
+        "s3",
+        "s3-case-and-whitespace",
+        "gcs",
+        "gcs-case",
+        "local-path",
+        "empty",
+        "none",
+        "blank",
+    ],
+)
+def test_catalogued_transport_from_upload(
+    upload: str | None, expected: CataloguedSourceTransport | None
+) -> None:
+    """Classify only unambiguous object-store uploads; leave local/ssh to restore time."""
+    assert catalogued_transport_from_upload(upload) is expected

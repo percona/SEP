@@ -57,9 +57,11 @@ from app.sep.apps.framework.connectivity import (
     maybe_record_connectivity_warning,
 )
 from app.sep.apps.framework.responses import (
+    await_response_context,
     build_task_list_responses,
     derive_create_response_model,
     dump_with_excluded_fields,
+    ResponseContextProvider,
     TaskExecuteWrite,
     TaskExecutionResponse,
     TaskResponseBuilder,
@@ -239,7 +241,7 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
 
 
 def _reject_contextless_builders(
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
     **builders: Callable[..., BaseModel] | None,
 ) -> None:
     """Raise ``TypeError`` if a context provider cannot bind into a named builder.
@@ -460,7 +462,8 @@ def make_list_filter_dep(
 
 async def _bind_context(
     builder: Callable[..., BaseModel],
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
+    tasks: Sequence[Task] = (),
 ) -> Callable[..., BaseModel]:
     """Await the context provider once and bind its result onto ``builder``.
 
@@ -468,16 +471,18 @@ async def _bind_context(
     single-shot detail and create handlers: when ``context_provider`` is set it is
     awaited once and its result is bound as the builder's ``context`` keyword
     argument via :func:`functools.partial`, so a sync builder receives async
-    side-data without becoming async. When ``None`` the builder is returned
-    unchanged.
+    side-data without becoming async. A provider that declares a ``tasks``
+    parameter receives ``tasks`` (the page, or the single task being rendered).
+    When ``None`` the builder is returned unchanged.
 
     :param builder: The sync response builder to bind the context onto.
-    :param context_provider: The zero-arg async provider, or ``None`` to no-op.
+    :param context_provider: The async provider, or ``None`` to no-op.
+    :param tasks: The tasks in scope for this build (singleton for detail/create).
     :return: The original builder, or a partial binding ``context`` into it.
     """
     if context_provider is None:
         return builder
-    context = await context_provider()
+    context = await await_response_context(context_provider, tasks)
     return functools.partial(builder, context=context)
 
 
@@ -535,7 +540,7 @@ def _register_create_route(
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
     create_response_model: type[BaseModel],
     connectivity_check: bool,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
     extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the standard ``POST /`` create route (``201``) on ``router``.
@@ -559,9 +564,10 @@ def _register_create_route(
         re-deriving it.
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
-    :param context_provider: A zero-arg async provider whose once-awaited result
-        is bound as the active builder's ``context`` keyword argument before the
-        single create build. ``None`` (the default) leaves the builder unbound.
+    :param context_provider: An async provider whose once-awaited result is bound
+        as the active builder's ``context`` keyword before the single create build.
+        A provider that declares ``tasks`` receives the created task. ``None``
+        (the default) leaves the builder unbound.
     :param extra_deps: Extra route dependencies appended after
         ``IsApiAuthenticated``, never replacing it.
     """
@@ -592,12 +598,14 @@ def _register_create_route(
             else None
         )
         if create_response_builder is not None:
-            builder = await _bind_context(create_response_builder, context_provider)
+            builder = await _bind_context(
+                create_response_builder, context_provider, tasks=(task,)
+            )
             result = builder(task)
             if warning is not None:
                 return result.model_copy(update={"connectivity_warning": warning})
             return result
-        builder = await _bind_context(base_builder, context_provider)
+        builder = await _bind_context(base_builder, context_provider, tasks=(task,))
         base = builder(task, status=None)
         if warning is not None:
             return create_response_model(
@@ -648,7 +656,7 @@ def _register_update_route(
     create_response_model: type[BaseModel],
     connectivity_check: bool,
     detail_path: str,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
     extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the derived ``PUT /{detail}`` update route, mirroring create.
@@ -677,9 +685,9 @@ def _register_update_route(
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
     :param detail_path: The ``/{detail}`` route template the PUT mounts on.
-    :param context_provider: A zero-arg async provider whose once-awaited result
-        is bound as the active builder's ``context`` keyword. ``None`` leaves the
-        builder unbound.
+    :param context_provider: An async provider whose once-awaited result is bound
+        as the active builder's ``context`` keyword. A provider that declares
+        ``tasks`` receives the updated task. ``None`` leaves the builder unbound.
     :param extra_deps: Route dependencies (guards) appended after
         ``IsApiAuthenticated``, never replacing it; the caller may resolve these to
         a default guard set rather than only per-route extras.
@@ -714,7 +722,9 @@ def _register_update_route(
             else None
         )
         if create_response_builder is not None:
-            builder = await _bind_context(create_response_builder, context_provider)
+            builder = await _bind_context(
+                create_response_builder, context_provider, tasks=(updated_task,)
+            )
             result = builder(
                 updated_task,
                 status=latest.status,
@@ -723,7 +733,9 @@ def _register_update_route(
             if warning is not None:
                 return result.model_copy(update={"connectivity_warning": warning})
             return result
-        builder = await _bind_context(base_builder, context_provider)
+        builder = await _bind_context(
+            base_builder, context_provider, tasks=(updated_task,)
+        )
         base = builder(
             updated_task, status=latest.status, last_executed_at=latest.finished_at
         )
@@ -816,7 +828,7 @@ def _register_mutation_routes(
     create_response_builder: TaskResponseBuilder[Any] | None,
     create_response_model: type[BaseModel] | None,
     connectivity_check: bool,
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
     update_enabled: bool,
     update_handler: Callable[..., Awaitable[Any]] | None,
     update_extra_deps: Sequence[params.Depends],
@@ -841,7 +853,8 @@ def _register_mutation_routes(
     :param create_response_model: The response model shared with the create route
         (resolved once by the caller); ``None`` when create is disabled.
     :param connectivity_check: Whether the derived PUT runs the connectivity probe.
-    :param context_provider: The once-per-request async context provider, or ``None``.
+    :param context_provider: The once-per-request async context provider (zero-arg
+        or ``tasks``-aware), or ``None``.
     :param update_enabled: Whether to derive the default PUT when no handler is set.
     :param update_handler: A full PUT override, or ``None`` for the derived default.
     :param update_extra_deps: Guards appended to the derived PUT after the auth
@@ -969,7 +982,7 @@ def _register_list_route(
     list_status_filter: bool,
     list_service_type: ServiceTypeEnum | None,
     list_extra_params: dict[str, str] | None = None,
-    context_provider: Callable[[], Awaitable[Any]] | None,
+    context_provider: ResponseContextProvider | None,
 ) -> None:
     """Register the owner-filtered ``GET /`` list route on ``router``.
 
@@ -991,7 +1004,9 @@ def _register_list_route(
         example ``{"parent_is_null": "true"}``) forwarded to the shared pipeline.
         These are server-side filters, so they do not perturb the paginated
         ``total``. Defaults to ``None`` (no extra params).
-    :param context_provider: The once-per-request async context provider, or ``None``.
+    :param context_provider: The once-per-request async context provider (zero-arg
+        or ``tasks``-aware; a ``tasks`` parameter receives the current page), or
+        ``None``.
     """
     extra_params = list_extra_params or {}
     filters_param = Annotated[
@@ -1085,7 +1100,7 @@ def derive_crud_routes(
     list_extra_params: dict[str, str] | None = None,
     derive_list: bool = True,
     derive_detail: bool = True,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
     update_enabled: bool = False,
     update_handler: Callable[..., Awaitable[Any]] | None = None,
@@ -1185,9 +1200,11 @@ def derive_crud_routes(
     :param derive_detail: When ``True`` (default), register the greedy derived
         ``GET /{detail_path_param}`` detail route. Set ``False`` to suppress it so
         a custom detail route (mounted last via ``extra_routes``) wins the path.
-    :param context_provider: A zero-arg async provider whose once-awaited result
-        is bound as the active builder's ``context`` keyword argument across the
-        list, detail, and create builds. ``None`` (default) leaves builders unbound.
+    :param context_provider: An async provider whose once-awaited result is bound
+        as the active builder's ``context`` keyword across the list, detail, and
+        create builds. Zero-arg providers keep the historical contract; a provider
+        that declares ``tasks`` receives the current page (list) or the single
+        task (detail/create/update). ``None`` (default) leaves builders unbound.
     :param create_extra_deps: Extra route dependencies appended to the create
         route after ``IsApiAuthenticated``, never replacing it.
     :param update_enabled: When ``True`` and no ``update_handler`` is supplied,
@@ -1301,7 +1318,9 @@ def derive_crud_routes(
             except Exception:
                 logger.exception("Failed to fetch history for task %s", task.name)
                 status, last_executed_at = None, None
-            builder = await _bind_context(detail_builder, context_provider)
+            builder = await _bind_context(
+                detail_builder, context_provider, tasks=(task,)
+            )
             return builder(task, status=status, last_executed_at=last_executed_at)
 
         router.add_api_route(

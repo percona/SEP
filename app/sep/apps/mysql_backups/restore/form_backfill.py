@@ -26,7 +26,10 @@ from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
+from app.sep.apps.mysql_backups.restore.deps import (
+    catalogued_transport_for_stamp,
+    parse_restore_task_data,
+)
 from app.sep.apps.mysql_backups.restore.models import (
     normalize_source_declaration,
     OWNER,
@@ -180,12 +183,15 @@ def reconstruct_mysql_restores_form(
         body["service_id"] = service_id
     if schema_id is not None:
         body["schema_id"] = schema_id
-    return normalize_source_declaration(body)
+    return normalize_source_declaration(
+        body,
+        catalogued_transport=catalogued_transport_for_stamp(task, body),
+    )
 
 
 def repair_mysql_restores_stamp(
     stored_form: dict[str, Any],
-    _task: Task,
+    task: Task,
     _ctx: FormBackfillContext,
 ) -> dict[str, Any] | None:
     """Declare the source controls on a stamp written before they existed.
@@ -202,18 +208,22 @@ def repair_mysql_restores_stamp(
     decision of whether a repair is owed at all; the normalizer call keeps the
     returned dict correct without relying on that downstream pass.
 
-    Neither the task row nor the backfill context is read: the stamp carries every
-    field the inference needs.
+    Prefers a matching catalog ``source_transport`` (S3/GCS) over field inference
+    — the same path the edit-form response builder uses — so a repaired stamp
+    lands on the transport the backup run recorded when one is available.
 
     :param stored_form: A copy of the task's existing ``data['_form']``.
-    :param _task: The stamped task row.
+    :param task: The stamped task row (catalog key / meta for the lookup).
     :param _ctx: Shared backfill context.
     :return: The repaired form, or ``None`` when the stamp already declares a source.
     """
     if stored_form.get("source_transport") is not None:
         return None
 
-    return normalize_source_declaration(stored_form)
+    return normalize_source_declaration(
+        stored_form,
+        catalogued_transport=catalogued_transport_for_stamp(task, stored_form),
+    )
 
 
 FORM_BACKFILL_ENTRY = FormBackfillEntry(

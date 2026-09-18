@@ -27,7 +27,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY,
     reconstruct_mysql_restores_form,
@@ -434,6 +434,27 @@ def test_repair_skips_a_stamp_that_already_declares_its_source():
 
     assert outcome.label == "skipped_existing"
     assert outcome.stamped_data is None
+
+
+def test_repair_prefers_catalogued_object_store_transport(mocker):
+    """Seed S3 from the catalog when repairing a stamp that would otherwise infer local."""
+    mocker.patch(
+        "app.sep.apps.mysql_backups.restore.form_backfill.catalogued_transport_for_stamp",
+        return_value=CataloguedSourceTransport.S3,
+    )
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _stamped_restore_task(_pre_declaration_stamp())
+
+    outcome = _backfill_single_task(
+        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+    )
+
+    assert outcome.label == "repaired"
+    assert outcome.stamped_data is not None
+    repaired = outcome.stamped_data[RESERVED_FORM_KEY]
+    assert repaired["source_transport"] == SourceTransport.S3.value
 
 
 def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():

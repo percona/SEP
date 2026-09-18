@@ -23,7 +23,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.pagination import Pagination
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import CatalogServiceKey, MysqlBackupRun
+from app.sep.apps.mysql_backups.models import (
+    CatalogServiceKey,
+    CataloguedSourceTransport,
+    MysqlBackupRun,
+)
 
 _PAGE = Pagination()
 
@@ -453,3 +457,216 @@ class TestListForHistoryIds:
 
         assert page.total == 2  # noqa: PLR2004
         assert {r.service_name for r in page.items} == {"svc-old", "svc-new"}
+
+
+class TestNewestForBackupSource:
+    """Cover the preferred-source lookup behind restore catalog transport seeding."""
+
+    @pytest.mark.asyncio
+    async def test_returns_the_newest_matching_run(self, session) -> None:
+        """Match on preferred source and keep only the newest finished row."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/svc-a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/svc-a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 3, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=3,
+            service_name="svc-a",
+            service_id=7,
+            location="/data/other",
+            finished_at=datetime(2026, 7, 29, 5, 0, tzinfo=UTC),
+        )
+
+        run = await MysqlBackupRunManager.newest_for_backup_source(
+            session, _key("svc-a", 7), "s3://bucket/svc-a"
+        )
+
+        assert run is not None
+        assert run.task_history_id == 2  # noqa: PLR2004
+
+    @pytest.mark.asyncio
+    async def test_prefers_upload_destination_over_location(self, session) -> None:
+        """Key on the same preferred source the restore form choices use."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            location="/data/local",
+            upload_destination="s3://bucket/svc-a",
+            source_transport=CataloguedSourceTransport.S3,
+        )
+
+        by_upload = await MysqlBackupRunManager.newest_for_backup_source(
+            session, _key("svc-a", 7), "s3://bucket/svc-a"
+        )
+        by_location = await MysqlBackupRunManager.newest_for_backup_source(
+            session, _key("svc-a", 7), "/data/local"
+        )
+
+        assert by_upload is not None
+        assert by_upload.task_history_id == 1
+        assert by_location is None
+
+    @pytest.mark.asyncio
+    async def test_matches_tab_padded_upload_like_shared_ascii_strip(
+        self, session
+    ) -> None:
+        """Match a tab-padded stored upload to the stripped preferred source.
+
+        SQL ``TRIM`` drops spaces only; the lookup must strip the same ASCII
+        whitespace set as
+        :func:`~app.sep.apps.mysql_backups.models.strip_backup_path` /
+        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source` so a
+        stray tab does not miss the catalog and fall through to inference.
+        """
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="\ts3://bucket/svc-a\n",
+            source_transport=CataloguedSourceTransport.S3,
+        )
+
+        run = await MysqlBackupRunManager.newest_for_backup_source(
+            session, _key("svc-a", 7), "s3://bucket/svc-a"
+        )
+
+        assert run is not None
+        assert run.task_history_id == 1
+
+    @pytest.mark.asyncio
+    async def test_catalogued_source_transport_returns_recorded_value(
+        self, session
+    ) -> None:
+        """Surface the run's recorded transport, or ``None`` when the row has none."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="gs://bucket/svc-a",
+            source_transport=CataloguedSourceTransport.GCS,
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            service_id=7,
+            location="/data/local-only",
+        )
+
+        assert (
+            await MysqlBackupRunManager.catalogued_source_transport(
+                session, _key("svc-a", 7), "gs://bucket/svc-a"
+            )
+            == CataloguedSourceTransport.GCS
+        )
+        assert (
+            await MysqlBackupRunManager.catalogued_source_transport(
+                session, _key("svc-a", 7), "/data/local-only"
+            )
+            is None
+        )
+        assert (
+            await MysqlBackupRunManager.catalogued_source_transport(
+                session, _key("svc-a", 7), "s3://missing"
+            )
+            is None
+        )
+
+
+class TestCataloguedSourceTransports:
+    """Cover the batched preferred-source transport prefetch for restore list."""
+
+    @pytest.mark.asyncio
+    async def test_empty_lookups_return_empty(self, session) -> None:
+        """Short-circuit without a query when the page needs no catalog hits."""
+        assert (
+            await MysqlBackupRunManager.catalogued_source_transports(session, {}) == {}
+        )
+
+    @pytest.mark.asyncio
+    async def test_batches_distinct_keys_in_one_pass(self, session) -> None:
+        """Return each key's newest transport without a per-key SELECT."""
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination="s3://bucket/a",
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 3, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=3,
+            service_name="svc-b",
+            service_id=8,
+            upload_destination="gs://bucket/b",
+            source_transport=CataloguedSourceTransport.GCS,
+            finished_at=datetime(2026, 7, 29, 2, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=4,
+            service_name="svc-a",
+            service_id=7,
+            location="/data/local-only",
+            finished_at=datetime(2026, 7, 29, 4, 0, tzinfo=UTC),
+        )
+
+        key_a = _key("svc-a", 7)
+        key_b = _key("svc-b", 8)
+        lookups = {
+            (7, "svc-a", "s3://bucket/a"): key_a,
+            (8, "svc-b", "gs://bucket/b"): key_b,
+            (7, "svc-a", "/data/local-only"): key_a,
+            (7, "svc-a", "s3://missing"): key_a,
+        }
+
+        results = await MysqlBackupRunManager.catalogued_source_transports(
+            session, lookups
+        )
+
+        assert results[(7, "svc-a", "s3://bucket/a")] == CataloguedSourceTransport.S3
+        assert results[(8, "svc-b", "gs://bucket/b")] == CataloguedSourceTransport.GCS
+        assert results[(7, "svc-a", "/data/local-only")] is None
+        assert results[(7, "svc-a", "s3://missing")] is None
+
+    @pytest.mark.asyncio
+    async def test_blank_backup_source_maps_to_none_without_matching(
+        self, session
+    ) -> None:
+        """Treat an empty ``backup_source`` as a miss the same way the single lookup does."""
+        key = _key("svc-a", 7)
+        results = await MysqlBackupRunManager.catalogued_source_transports(
+            session, {(7, "svc-a", ""): key}
+        )
+
+        assert results == {(7, "svc-a", ""): None}

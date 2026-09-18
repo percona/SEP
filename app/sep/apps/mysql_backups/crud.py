@@ -15,23 +15,96 @@
 
 """Define database operations for the MySQL backup catalog."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
-from sqlalchemy import or_
-from sqlalchemy.sql import ColumnExpressionArgument
+from sqlalchemy import case, column, func, Integer, or_, select, String, Values
+from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import NullsLastOrdering
 from app.core.pagination import PaginatedResponse, Pagination
-from app.sep.apps.mysql_backups.models import CatalogServiceKey, MysqlBackupRun
+from app.sep.apps.mysql_backups.models import (
+    BACKUP_PATH_STRIP_CHARS,
+    CatalogServiceKey,
+    CataloguedSourceTransport,
+    MysqlBackupRun,
+)
+
+#: Prefetch key ``(service_id, service_name, backup_source)`` used by restore list.
+CatalogTransportLookupKey = tuple[int | None, str, str]
 
 _NEWEST_RUN_FIRST = (
     NullsLastOrdering(col(MysqlBackupRun.finished_at), descending=True),
     col(MysqlBackupRun.created_at).desc(),
     col(MysqlBackupRun.id).desc(),
 )
+
+
+def _sql_strip(column: Any) -> ColumnElement[str | None]:
+    """Strip leading/trailing ASCII whitespace the way :func:`strip_backup_path` does.
+
+    ``ltrim`` / ``rtrim`` with :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS`
+    work on both PostgreSQL and SQLite; plain ``TRIM`` would leave tabs and
+    newlines in place. Unicode separators (NBSP, …) are intentionally left
+    alone — the same contract as the Python helper — so a catalog key and this
+    expression always agree.
+
+    ``column`` is typed as :data:`~typing.Any` because ``sqlmodel.col`` yields
+    ``Mapped[...]`` at the call site while SQLAlchemy's ``ltrim``/``rtrim``
+    accept a ``ColumnElement``.
+
+    :param column: The text column to strip.
+    :return: The stripped column expression.
+    """
+    return cast(
+        ColumnElement[str | None],
+        func.rtrim(
+            func.ltrim(column, BACKUP_PATH_STRIP_CHARS), BACKUP_PATH_STRIP_CHARS
+        ),
+    )
+
+
+def _preferred_backup_source_expr() -> ColumnElement[str | None]:
+    """Return the SQL expression mirroring :func:`preferred_backup_source`.
+
+    Prefer a non-blank ASCII-stripped ``upload_destination``, else a non-blank
+    ASCII-stripped ``location``. Stripping uses
+    :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS` (not SQL
+    ``TRIM``, not Unicode ``str.strip``) so the catalog lookup keys on the same
+    string
+    :func:`~app.sep.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
+    offers a restore form.
+
+    :return: The preferred-source column expression.
+    """
+    upload = col(MysqlBackupRun.upload_destination)
+    location = col(MysqlBackupRun.location)
+    upload_stripped = _sql_strip(upload)
+    location_stripped = _sql_strip(location)
+    return cast(
+        ColumnElement[str | None],
+        case(
+            (and_(upload.is_not(None), upload_stripped != ""), upload_stripped),
+            (and_(location.is_not(None), location_stripped != ""), location_stripped),
+        ),
+    )
+
+
+def _matches_preferred_source(
+    backup_source: str,
+) -> ColumnExpressionArgument[bool]:
+    """Return a WHERE clause comparing the preferred source to ``backup_source``.
+
+    :param backup_source: The restore body's preferred-source string to match.
+    :return: The SQL predicate for :meth:`BaseSQLModelManager.list`.
+    """
+    return cast(
+        ColumnExpressionArgument[bool],
+        _preferred_backup_source_expr() == backup_source,
+    )
 
 
 class MysqlBackupRunManager(BaseSQLModelManager):
@@ -155,3 +228,160 @@ class MysqlBackupRunManager(BaseSQLModelManager):
             order_by=list(_NEWEST_RUN_FIRST),
             pagination=pagination,
         )
+
+    @classmethod
+    async def newest_for_backup_source(
+        cls,
+        session: AsyncSession,
+        key: CatalogServiceKey,
+        backup_source: str,
+    ) -> MysqlBackupRun | None:
+        """Return the newest run whose catalog-computed source matches ``backup_source``.
+
+        Scoped by :meth:`_service_predicate` and ordered like
+        :meth:`list_for_service`. The match key is the preferred source
+        (``upload_destination`` when set, else ``location``), the same string
+        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source` /
+        restore-form choices use — never a raw field equality. Only the single
+        newest match is considered; older matching rows are ignored.
+
+        :param session: The database session to query on.
+        :param key: The service the records are selected for.
+        :param backup_source: The restore body's ``backup_source`` to match.
+        :return: The newest matching catalog row, or ``None`` when none match.
+        """
+        if not backup_source:
+            return None
+        matches = await cls.list(
+            session,
+            cls._service_predicate(key),
+            _matches_preferred_source(backup_source),
+            order_by=list(_NEWEST_RUN_FIRST),
+            limit=1,
+        )
+        return matches[0] if matches else None
+
+    @classmethod
+    async def catalogued_source_transport(
+        cls,
+        session: AsyncSession,
+        key: CatalogServiceKey,
+        backup_source: str,
+    ) -> CataloguedSourceTransport | None:
+        """Return the recorded object-store transport for a matching run, if any.
+
+        Looks up :meth:`newest_for_backup_source` and returns that row's
+        ``source_transport`` when set (S3/GCS). A miss, a location-only run, or a
+        row written before the column existed all yield ``None`` so the caller
+        falls back to inference.
+
+        :param session: The database session to query on.
+        :param key: The service the records are selected for.
+        :param backup_source: The restore body's ``backup_source`` to match.
+        :return: The catalogued transport, or ``None`` when unavailable.
+        """
+        run = await cls.newest_for_backup_source(session, key, backup_source)
+        return run.source_transport if run is not None else None
+
+    @classmethod
+    async def catalogued_source_transports(
+        cls,
+        session: AsyncSession,
+        lookups: Mapping[CatalogTransportLookupKey, CatalogServiceKey],
+    ) -> dict[CatalogTransportLookupKey, CataloguedSourceTransport | None]:
+        """Return catalogued transports for many preferred-source keys in one query.
+
+        Used by the restore list/detail prefetch so a page of undeclared stamps
+        pays one SELECT instead of one per key. Each lookup is scoped by the same
+        :meth:`_service_predicate` / preferred-source rules as
+        :meth:`catalogued_source_transport`. Ranking happens in SQL
+        (``row_number`` partitioned by lookup key, ordered like
+        :meth:`list_for_service`) so only the newest matching row per key is
+        materialised — stable destinations such as ``s3://bucket/service`` do not
+        pull every historical run into memory. Empty ``backup_source`` keys and
+        misses map to ``None``.
+
+        :param session: The database session to query on.
+        :param lookups: Map from ``(service_id, service_name, backup_source)`` to
+            the :class:`CatalogServiceKey` that scopes that lookup.
+        :return: The same keys mapped to a catalogued transport or ``None``.
+        """
+        results: dict[CatalogTransportLookupKey, CataloguedSourceTransport | None] = {}
+        pending: list[CatalogTransportLookupKey] = []
+        for cache_key in lookups:
+            if not cache_key[2]:
+                results[cache_key] = None
+            else:
+                pending.append(cache_key)
+        if not pending:
+            return results
+
+        lookup_values = (
+            Values(
+                column("lk_service_id", Integer),
+                column("lk_service_name", String),
+                column("lk_backup_source", String),
+                name="catalog_transport_lookups",
+            )
+            .data(list(pending))
+            .alias("catalog_transport_lookups")
+        )
+        # Mirror :meth:`_service_predicate` against each lookup row: a keyed id
+        # matches that id or a name-only legacy row; a null id matches by name.
+        service_match = or_(
+            and_(
+                lookup_values.c.lk_service_id.is_(None),
+                col(MysqlBackupRun.service_name) == lookup_values.c.lk_service_name,
+            ),
+            and_(
+                lookup_values.c.lk_service_id.is_not(None),
+                or_(
+                    col(MysqlBackupRun.service_id) == lookup_values.c.lk_service_id,
+                    and_(
+                        col(MysqlBackupRun.service_id).is_(None),
+                        col(MysqlBackupRun.service_name)
+                        == lookup_values.c.lk_service_name,
+                    ),
+                ),
+            ),
+        )
+        ranked = (
+            select(
+                lookup_values.c.lk_service_id,
+                lookup_values.c.lk_service_name,
+                lookup_values.c.lk_backup_source,
+                col(MysqlBackupRun.source_transport).label("source_transport"),
+                func.row_number()
+                .over(
+                    partition_by=(
+                        lookup_values.c.lk_service_id,
+                        lookup_values.c.lk_service_name,
+                        lookup_values.c.lk_backup_source,
+                    ),
+                    order_by=_NEWEST_RUN_FIRST,
+                )
+                .label("rn"),
+            )
+            .join_from(
+                MysqlBackupRun,
+                lookup_values,
+                and_(
+                    service_match,
+                    _preferred_backup_source_expr() == lookup_values.c.lk_backup_source,
+                ),
+            )
+            .subquery("ranked_catalog_transports")
+        )
+        query = select(
+            ranked.c.lk_service_id,
+            ranked.c.lk_service_name,
+            ranked.c.lk_backup_source,
+            ranked.c.source_transport,
+        ).where(ranked.c.rn == 1)
+
+        results.update(dict.fromkeys(pending, None))
+        for row in (await cls._exec(session, query)).all():
+            results[(row.lk_service_id, row.lk_service_name, row.lk_backup_source)] = (
+                row.source_transport
+            )
+        return results

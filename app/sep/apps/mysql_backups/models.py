@@ -44,6 +44,7 @@ the table, needed the heavier imports.
 
 from dataclasses import dataclass
 from enum import nonmember, StrEnum
+from string import whitespace
 from typing import Any, Literal
 
 import yaml
@@ -56,6 +57,44 @@ from app.core.db.models import BaseSQLModel, DateTimeWithTimezone
 from app.core.utils.fields import EnumFieldMixin, UTCDatetime
 
 UNKNOWN_SERVICE_SENTINEL = "-1"
+
+#: ASCII whitespace set used when stripping backup paths for catalog keys.
+#: Matches SQL ``ltrim``/``rtrim`` on both PostgreSQL and SQLite. Deliberately
+#: narrower than bare ``str.strip()``, which also drops Unicode separators
+#: (NBSP, …) that those SQL helpers cannot strip portably — Python and SQL must
+#: agree so a catalog lookup key matches the preferred-source expression.
+BACKUP_PATH_STRIP_CHARS = whitespace
+
+
+def strip_backup_path(value: str) -> str:
+    """Strip leading/trailing ASCII whitespace from a backup path field.
+
+    Shared by Python preferred-source helpers and mirrored in SQL by
+    ``ltrim``/``rtrim`` over :data:`BACKUP_PATH_STRIP_CHARS`. Catalog writes
+    should pass through this (or :func:`canonical_backup_path`) so stored values
+    match lookup keys.
+
+    :param value: The raw path or upload destination.
+    :return: ``value`` with ASCII whitespace trimmed from both ends.
+    """
+    return value.strip(BACKUP_PATH_STRIP_CHARS)
+
+
+def canonical_backup_path(value: str | None) -> str | None:
+    """Return ``value`` ASCII-stripped, or ``None`` when blank after stripping.
+
+    Canonicalise paths on catalog write so a tab/space-padded upload is stored
+    the same way :func:`preferred_backup_source` and the SQL preferred-source
+    expression will later key it.
+
+    :param value: A reported location or upload destination, or ``None``.
+    :return: The stripped non-blank path, or ``None``.
+    """
+    if value is None:
+        return None
+    stripped = strip_backup_path(value)
+    return stripped or None
+
 
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
@@ -95,14 +134,18 @@ def preferred_backup_source(
     """Return the preferred backup-source candidate, stripped, or ``None``.
 
     Prefer ``upload_destination`` when set and non-blank, otherwise ``location``.
+    Stripping uses :func:`strip_backup_path` (ASCII whitespace only) so the
+    result matches the SQL preferred-source expression used for catalog lookup —
+    not bare ``str.strip()``, which would also drop Unicode separators the SQL
+    helpers cannot strip portably.
 
     :param upload_destination: The run's recorded upload destination.
     :param location: The run's recorded on-disk location.
-    :return: The preferred candidate with surrounding whitespace removed, or
+    :return: The preferred candidate with surrounding ASCII whitespace removed, or
         ``None`` when neither field holds a non-blank value.
     """
     for candidate in (upload_destination, location):
-        if candidate and (stripped := candidate.strip()):
+        if candidate and (stripped := strip_backup_path(candidate)):
             return stripped
     return None
 
@@ -131,6 +174,56 @@ def restore_valid_backup_source(
     except ValueError:
         return None
     return value
+
+
+class CataloguedSourceTransport(EnumFieldMixin, StrEnum):
+    """Represent object-store transports a backup run can record authoritatively.
+
+    Narrower than the restore form's four-member source transport: only S3 and
+    GCS are unambiguous from the run's own ``upload_destination``. Local vs SSH
+    depends on comparing the backup host to the restore destination at restore
+    time, so those are never stored here. Wire values match the restore
+    ``SourceTransport`` members of the same name so a catalog hit can seed a
+    declaration without remapping.
+    """
+
+    S3 = "s3"
+    GCS = "gcs"
+
+
+#: Object-store upload schemes the catalog can classify authoritatively.
+_OBJECT_STORE_UPLOAD_SCHEMES = {
+    "s3://": CataloguedSourceTransport.S3,
+    "gs://": CataloguedSourceTransport.GCS,
+}
+
+
+def catalogued_transport_from_upload(
+    upload_destination: str | None,
+) -> CataloguedSourceTransport | None:
+    """Return the object-store transport ``upload_destination`` implies, or ``None``.
+
+    Only ``s3://`` / ``gs://`` uploads are unambiguous from the run alone — a bare
+    on-disk location still needs the restore's destination host to choose local
+    vs SSH, so those runs leave the column empty. Scheme matching is
+    case-insensitive and ignores surrounding ASCII whitespace via
+    :func:`strip_backup_path`, matching how :func:`preferred_backup_source`
+    treats the same field.
+
+    :param upload_destination: The run's recorded upload destination.
+    :return: :attr:`CataloguedSourceTransport.S3` or
+        :attr:`CataloguedSourceTransport.GCS` when the scheme matches, else
+        ``None``.
+    """
+    if not upload_destination or not (
+        stripped := strip_backup_path(upload_destination)
+    ):
+        return None
+    lowered = stripped.lower()
+    for scheme, transport in _OBJECT_STORE_UPLOAD_SCHEMES.items():
+        if lowered.startswith(scheme):
+            return transport
+    return None
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -193,6 +286,10 @@ class MysqlBackupRun(BaseSQLModel, table=True):
         exactly as the payload reported it.
     :param upload_destination: The upload destination when one was configured,
         else ``None``.
+    :param source_transport: The object-store transport implied by
+        ``upload_destination`` (``s3`` / ``gcs``), or ``None`` when the run was
+        not uploaded — and for every row written before this column existed.
+        Never ``local`` or ``ssh``; those stay inferred at restore time.
     :param size_bytes: The backup size in bytes, when the run reported it.
     :param started_at: When the run started.
     :param finished_at: When the run finished.
@@ -212,6 +309,15 @@ class MysqlBackupRun(BaseSQLModel, table=True):
     )
     location: str | None = None
     upload_destination: str | None = None
+    source_transport: CataloguedSourceTransport | None = SQLField(
+        default=None,
+        sa_column=Column(
+            EnumField(
+                CataloguedSourceTransport, native_enum=False, create_constraint=True
+            ),
+            nullable=True,
+        ),
+    )
     size_bytes: int | None = SQLField(default=None, sa_type=BigInteger)
     started_at: UTCDatetime | None = SQLField(
         default=None, sa_type=DateTimeWithTimezone

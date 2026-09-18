@@ -43,6 +43,7 @@ from app.sep.apps.mysql_backups.forms import (
 )
 from app.sep.apps.mysql_backups.models import (
     BackupType,
+    CataloguedSourceTransport,
     ensure_backup_source_shell_safe,
     XtraBackupTool,
 )
@@ -326,7 +327,41 @@ def _infer_source_transport(data: Mapping[str, Any]) -> SourceTransport:
     return SourceTransport.LOCAL
 
 
-def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
+def _object_store_transport(
+    catalogued: SourceTransport | CataloguedSourceTransport | str | None,
+) -> SourceTransport | None:
+    """Return ``catalogued`` when it is an object-store transport, else ``None``.
+
+    Only S3/GCS are accepted — the catalog never records local/ssh, and a stray
+    value must not override inference. Accepts the catalog enum, the restore
+    enum, or a raw wire string so callers need not remap.
+
+    :param catalogued: A candidate transport from the backup catalog, or ``None``.
+    :return: :attr:`SourceTransport.S3` or :attr:`SourceTransport.GCS`, else ``None``.
+    """
+    if catalogued is None:
+        return None
+    try:
+        transport = (
+            catalogued
+            if isinstance(catalogued, SourceTransport)
+            else SourceTransport(str(getattr(catalogued, "value", catalogued)))
+        )
+    except ValueError:
+        return None
+    if transport in (SourceTransport.S3, SourceTransport.GCS):
+        return transport
+    return None
+
+
+def normalize_source_declaration(
+    data: Mapping[str, Any],
+    *,
+    catalogued_transport: SourceTransport
+    | CataloguedSourceTransport
+    | str
+    | None = None,
+) -> dict[str, Any]:
     """Declare the source controls on a body that predates them, dropping what they forbid.
 
     A body written before the controls existed carries no transport or encryption
@@ -335,6 +370,11 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     body's own fields, and only the fields governed by an *inferred* declaration
     are dropped: a declaration the operator supplied is authoritative, so a body
     that contradicts it is left intact for the gates to reject.
+
+    When ``source_transport`` is undeclared, an object-store
+    ``catalogued_transport`` (S3/GCS from a matching :class:`MysqlBackupRun`) is
+    preferred over :func:`_infer_source_transport`. A miss, ``None``, or any
+    non-object-store value falls through to today's inference unchanged.
 
     Dropping is bounded by the inference above, so a removed value can only be one
     the inferred source has no working use for: ``s3_tool`` off the S3 path, or
@@ -345,6 +385,8 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     that was inferred, so no working restore depends on the dropped value.
 
     :param data: The body to normalize.
+    :param catalogued_transport: Optional object-store transport from the backup
+        catalog; ignored when the body already declares ``source_transport``.
     :return: A new body carrying both declarations and only the fields they allow.
     """
     normalized = dict(data)
@@ -355,7 +397,9 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
 
     forbidden_fields: dict[str, SourceTransport | EncryptionFormat] = {}
     if not transport_declared:
-        transport = _infer_source_transport(normalized)
+        transport = _object_store_transport(
+            catalogued_transport
+        ) or _infer_source_transport(normalized)
         normalized["source_transport"] = transport
         if transport != SourceTransport.SSH:
             forbidden_fields.update(dict.fromkeys(_SSH_SOURCE_FIELDS, transport))

@@ -16,7 +16,8 @@
 """Provide the shared JSON-API list pipeline, default builder, and base models."""
 
 import functools
-from collections.abc import Awaitable, Callable, Mapping
+import inspect
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, cast, overload, Protocol, TypeVar
 
@@ -37,6 +38,36 @@ from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 
 R = TypeVar("R", bound=BaseModel)
+
+#: Async provider bound once per list/detail/create build as ``context``.
+#: Zero-arg providers keep today's contract; a ``tasks`` parameter receives the
+#: page (list) or the single task (detail/create/update) so a plugin can batch
+#: async side-data on the request event loop.
+ResponseContextProvider = Callable[..., Awaitable[Any]]
+
+
+async def await_response_context(
+    provider: ResponseContextProvider,
+    tasks: Sequence[Task] = (),
+) -> Any:
+    """Await ``provider``, passing ``tasks`` when its signature declares them.
+
+    Zero-arg providers (username maps, remaps) are awaited unchanged. A provider
+    that names a ``tasks`` parameter receives the current page or the single
+    task being rendered, so it can batch async work on the request event loop
+    instead of forcing per-row sync bridges inside the builder.
+
+    :param provider: The configured response context provider.
+    :param tasks: The tasks in scope for this build (page or singleton).
+    :return: The provider's result, bound as the builders' ``context``.
+    """
+    try:
+        accepts_tasks = "tasks" in inspect.signature(provider).parameters
+    except (TypeError, ValueError):
+        accepts_tasks = False
+    if accepts_tasks:
+        return await provider(tasks=tasks)
+    return await provider()
 
 
 def serialized_field_names(model: type[BaseModel]) -> frozenset[str]:
@@ -368,7 +399,7 @@ async def build_task_list_responses(
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
     extra_params: dict[str, str] | None = None,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
 ) -> list[R]: ...
 
 
@@ -382,7 +413,7 @@ async def build_task_list_responses(
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
     extra_params: dict[str, str] | None = None,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
 ) -> PaginatedResponse[R]: ...
 
 
@@ -395,7 +426,7 @@ async def build_task_list_responses(
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
     extra_params: dict[str, str] | None = None,
-    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    context_provider: ResponseContextProvider | None = None,
 ) -> list[R] | PaginatedResponse[R]:
     """Assemble JSON-API task responses for an owner through one shared pipeline.
 
@@ -412,8 +443,10 @@ async def build_task_list_responses(
     into every per-row build as ``builder(task, status=..., context=...)`` via
     :func:`functools.partial`. This lets a sync builder receive async side-data
     (for example a username map) without the builder itself becoming async, which
-    the framework rejects. When ``None`` (the default) the builder is invoked
-    unchanged as ``builder(task, status=...)``.
+    the framework rejects. A provider that declares a ``tasks`` parameter receives
+    the current page so it can batch that work on the request event loop. When
+    ``None`` (the default) the builder is invoked unchanged as
+    ``builder(task, status=...)``.
 
     :param tasks_api: The Tasks API client used for the list and status lookups.
     :param owner: The task owner to list tasks for.
@@ -424,8 +457,8 @@ async def build_task_list_responses(
     :param extra_params: Fixed upstream task-list query parameters merged into the
         request as server-side filters, so they do not perturb the paginated
         ``total`` the way a client-side ``task_filter`` does.
-    :param context_provider: Zero-arg async provider whose once-awaited result is
-        bound into every per-row build as a ``context`` keyword argument.
+    :param context_provider: Async provider whose once-awaited result is bound into
+        every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
     """
     response = as_json_object(
@@ -439,7 +472,7 @@ async def build_task_list_responses(
 
     builder = response_builder
     if context_provider is not None:
-        context = await context_provider()
+        context = await await_response_context(context_provider, tasks)
         builder = functools.partial(response_builder, context=context)
 
     latest = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])

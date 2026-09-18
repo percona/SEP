@@ -25,6 +25,7 @@ import yaml
 
 from app.sep.apps.mysql_backups import recorder as recorder_module
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import CataloguedSourceTransport
 from app.sep.apps.mysql_backups.recorder import record_backup_run, RUN_RESULT_RECORDER
 from app.tasks.hook_resolver import resolve_hook
 from app.tasks.models import TaskHistory, TaskHistoryStatusEnum
@@ -127,8 +128,43 @@ class TestRecordsSuccessfulRuns:
         assert record.location == "/data/backups/mydumper/svc-a/20260729"
         assert record.size_bytes == 4096  # noqa: PLR2004
         assert record.upload_destination == "s3://bucket/svc-a"
+        assert record.source_transport == CataloguedSourceTransport.S3
         assert _as_utc(record.started_at) == _STARTED
         assert _as_utc(record.finished_at) == _FINISHED
+
+    @pytest.mark.asyncio
+    async def test_canonicalises_padded_paths_on_write(self, session) -> None:
+        """Store ASCII-stripped location/upload so catalog keys match later lookups."""
+        await record_backup_run(
+            session,
+            _history(backup_type="M"),
+            {
+                "backup_dir": "\t/data/backups/mydumper/svc-a/20260729\n",
+                "size_bytes": 4096,
+                "upload_destination": "  s3://bucket/svc-a  ",
+            },
+        )
+
+        record = (await MysqlBackupRunManager.list(session))[0]
+        assert record.location == "/data/backups/mydumper/svc-a/20260729"
+        assert record.upload_destination == "s3://bucket/svc-a"
+        assert record.source_transport == CataloguedSourceTransport.S3
+
+    @pytest.mark.asyncio
+    async def test_gcs_upload_records_gcs_source_transport(self, session) -> None:
+        """Derive ``source_transport`` as GCS from a ``gs://`` upload destination."""
+        await record_backup_run(
+            session,
+            _history(backup_type="M"),
+            {
+                "backup_dir": "/data/backups/mydumper/svc-a/20260729",
+                "upload_destination": "gs://bucket/svc-a",
+            },
+        )
+
+        record = (await MysqlBackupRunManager.list(session))[0]
+        assert record.upload_destination == "gs://bucket/svc-a"
+        assert record.source_transport == CataloguedSourceTransport.GCS
 
     @pytest.mark.asyncio
     async def test_xtrabackup_incremental_location_stored_verbatim(
@@ -146,6 +182,7 @@ class TestRecordsSuccessfulRuns:
         assert records[0].backup_type == "X"
         assert records[0].location == incremental
         assert records[0].upload_destination is None
+        assert records[0].source_transport is None
 
 
 @pytest.mark.usefixtures("_recorder_uses_test_session")
@@ -166,6 +203,7 @@ class TestPartialResults:
         assert records[0].location is None
         assert records[0].size_bytes is None
         assert records[0].upload_destination is None
+        assert records[0].source_transport is None
         assert _as_utc(records[0].finished_at) == _FINISHED
 
     @pytest.mark.asyncio
@@ -181,6 +219,7 @@ class TestPartialResults:
         assert record.location == "/data/backups/mydumper/svc-a/20260729"
         assert record.size_bytes is None
         assert record.upload_destination is None
+        assert record.source_transport is None
 
     @pytest.mark.asyncio
     async def test_malformed_result_fields_are_dropped_not_raised(
@@ -201,6 +240,7 @@ class TestPartialResults:
         assert record.location is None
         assert record.size_bytes is None
         assert record.upload_destination is None
+        assert record.source_transport is None
 
     @pytest.mark.asyncio
     async def test_bool_is_not_accepted_as_size(self, session) -> None:
