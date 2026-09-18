@@ -21,6 +21,7 @@ import pytest
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 
+from app.core.celery.models import IntervalSchedule, Period
 from app.sep.apps.atw.app import atw_periodic_tasks
 from app.sep.apps.atw.config import atw_settings, AtwSettings
 
@@ -88,6 +89,45 @@ class TestReconcileSettings:
     def test_reconcile_interval_may_be_disabled(self) -> None:
         """Ensure ``None`` is available as an explicit operator opt-out."""
         assert AtwSettings(reconcile_interval=None).reconcile_interval is None
+
+
+class TestAtwSettingsEnvironmentOptOut:
+    """Check the ``null`` opt-out that both sweep intervals document.
+
+    ``settings.yaml`` offers ``null`` as the way to unregister either sweep, and an
+    environment variable is the deployment path that offer is read against. Both
+    fields are optional models, which pydantic-settings treats as complex: the raw
+    value is JSON-decoded and a resulting ``None`` is dropped from the environment
+    source entirely, so without an explicit none-string the opt-out reads as "unset"
+    and the compiled-in default wins with nothing logged.
+    """
+
+    @pytest.mark.parametrize(
+        ("env_var", "field_name"),
+        [
+            ("SEP__ATW__CLEANUP_INTERVAL", "cleanup_interval"),
+            ("SEP__ATW__RECONCILE_INTERVAL", "reconcile_interval"),
+        ],
+    )
+    def test_a_null_env_var_unregisters_a_sweep(
+        self, monkeypatch: pytest.MonkeyPatch, env_var: str, field_name: str
+    ) -> None:
+        """Ensure ``null`` disables the sweep rather than restoring the default."""
+        monkeypatch.setenv(env_var, "null")
+
+        assert getattr(AtwSettings(), field_name) is None
+
+    def test_an_interval_env_var_still_overrides_the_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ensure reading ``null`` as an opt-out leaves an ordinary override intact."""
+        monkeypatch.setenv(
+            "SEP__ATW__RECONCILE_INTERVAL", '{"every": 30, "period": "seconds"}'
+        )
+
+        assert AtwSettings().reconcile_interval == IntervalSchedule(
+            every=30, period=Period.SECONDS
+        )
 
 
 class TestAtwPeriodicTaskContributions:
