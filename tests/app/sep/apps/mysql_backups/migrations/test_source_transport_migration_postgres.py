@@ -26,30 +26,46 @@ async engine, and the ``test_postgres`` CI job installs the ``postgresql`` group
 only, so no sync driver is available to lean on. Passing ``str(url)`` into a
 sync ``create_engine`` is also unsafe — SQLAlchemy hides the password as
 ``***`` in the string form.
+
+Schema isolation follows ``postgres_worker_schema()``: Alembic and the
+verification connections share a per-xdist-worker ``search_path``, and teardown
+drops only that schema — never ``public`` — so parallel workers and sibling
+Postgres tests do not erase each other.
 """
 
 import asyncio
 import os
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import make_url, URL
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import (
+    async_engine_from_config as real_async_engine_from_config,
+)
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    create_async_engine,
+)
 
+import app.sep.migrations.env as sep_alembic_env
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.sep.config import sep_settings
 from tests.app.alembic_paths import ALEMBIC_INI
-from tests.app.conftest import POSTGRES_DSN_ENV
+from tests.app.conftest import POSTGRES_DSN_ENV, postgres_worker_schema
 
 _TRANSPORT_REVISION = "c8d9e0f1a2b3"
 _PRE_TRANSPORT_REVISION = "b7c8d9e0f1a2"
 _TABLE = "mysql_backup_run"
 _COLUMN = "source_transport"
 _CHECK_NAME = "cataloguedsourcetransport"
+
+T = TypeVar("T")
 
 pytestmark = pytest.mark.postgres
 
@@ -68,14 +84,17 @@ def postgres_async_url():
 
 
 @pytest.fixture
-def sep_postgres_alembic_config(postgres_async_url, monkeypatch: pytest.MonkeyPatch):
-    """Point the sep track at real PostgreSQL and yield its Alembic config.
+def sep_postgres_alembic_config(
+    postgres_async_url: URL, monkeypatch: pytest.MonkeyPatch
+):
+    """Point the sep track at a per-worker PostgreSQL schema and yield Alembic config.
 
     ``command.upgrade`` builds its own engine inside the track's ``env.py`` from
-    ``sep_settings.DATABASE`` rather than accepting one, so the settings are
-    what must be redirected. Drop the schema on teardown so sibling tests
-    inherit a clean database.
+    ``sep_settings.DATABASE``, so settings are redirected and
+    ``async_engine_from_config`` is patched to set ``search_path`` to
+    :func:`postgres_worker_schema`. Teardown drops only that schema.
     """
+    schema = postgres_worker_schema()
     database = sep_settings.DATABASE
     monkeypatch.setattr(database, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
     monkeypatch.setattr(database, "USER", postgres_async_url.username)
@@ -88,18 +107,56 @@ def sep_postgres_alembic_config(postgres_async_url, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(database, "PORT", postgres_async_url.port)
     monkeypatch.setattr(database, "NAME", postgres_async_url.database)
 
+    def _engine_with_worker_search_path(*args, **kwargs):
+        connect_args = dict(kwargs.pop("connect_args", None) or {})
+        server_settings = dict(connect_args.get("server_settings") or {})
+        server_settings["search_path"] = schema
+        connect_args["server_settings"] = server_settings
+        kwargs["connect_args"] = connect_args
+        return real_async_engine_from_config(*args, **kwargs)
+
+    monkeypatch.setattr(
+        sep_alembic_env, "async_engine_from_config", _engine_with_worker_search_path
+    )
+
     cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    _manage_schema(postgres_async_url, schema, create=True)
     try:
-        yield cfg, postgres_async_url
+        yield cfg, postgres_async_url, schema
     finally:
-        _await(postgres_async_url, _drop_schema)
+        _manage_schema(postgres_async_url, schema, create=False)
 
 
-def _await(url, coroutine_factory):
-    """Run ``coroutine_factory`` against a fresh async engine and dispose of it."""
+def _manage_schema(url: URL, schema: str, *, create: bool) -> None:
+    """Create or drop ``schema`` on a connection that does not pin ``search_path``."""
 
-    async def _run():
+    async def _run() -> None:
         engine = create_async_engine(url)
+        try:
+            async with engine.begin() as conn:
+                if create:
+                    await conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+                else:
+                    await conn.execute(
+                        text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+                    )
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def _await(
+    url: URL,
+    schema: str,
+    coroutine_factory: Callable[[AsyncConnection], Awaitable[T]],
+) -> T:
+    """Run ``coroutine_factory`` on a fresh engine pinned to ``schema``."""
+
+    async def _run() -> T:
+        engine = create_async_engine(
+            url, connect_args={"server_settings": {"search_path": schema}}
+        )
         try:
             async with engine.begin() as conn:
                 return await coroutine_factory(conn)
@@ -109,13 +166,7 @@ def _await(url, coroutine_factory):
     return asyncio.run(_run())
 
 
-async def _drop_schema(conn):
-    """Drop and recreate the ``public`` schema."""
-    await conn.execute(text("DROP SCHEMA public CASCADE"))
-    await conn.execute(text("CREATE SCHEMA public"))
-
-
-async def _run_state(conn) -> tuple[set[str], set[str]]:
+async def _run_state(conn: AsyncConnection) -> tuple[set[str], set[str]]:
     """Return column names and check-constraint names on ``mysql_backup_run``."""
 
     def _inspect(sync_conn) -> tuple[set[str], set[str]]:
@@ -133,7 +184,9 @@ async def _run_state(conn) -> tuple[set[str], set[str]]:
     return await conn.run_sync(_inspect)
 
 
-async def _insert_run(conn, *, source_transport: str | None, history_id: int) -> None:
+async def _insert_run(
+    conn: AsyncConnection, *, source_transport: str | None, history_id: int
+) -> None:
     """Insert a minimal catalog row, optionally with ``source_transport``."""
     await conn.execute(
         text(
@@ -148,10 +201,10 @@ async def _insert_run(conn, *, source_transport: str | None, history_id: int) ->
 
 def test_upgrade_adds_column_and_check(sep_postgres_alembic_config) -> None:
     """Assert upgrade stamps the column and CHECK on native PostgreSQL ALTER."""
-    cfg, url = sep_postgres_alembic_config
+    cfg, url, schema = sep_postgres_alembic_config
     command.upgrade(cfg, _TRANSPORT_REVISION)
 
-    columns, checks = _await(url, _run_state)
+    columns, checks = _await(url, schema, _run_state)
 
     assert _COLUMN in columns
     assert _CHECK_NAME in checks
@@ -159,35 +212,37 @@ def test_upgrade_adds_column_and_check(sep_postgres_alembic_config) -> None:
 
 def test_upgrade_check_accepts_member_names(sep_postgres_alembic_config) -> None:
     """Assert the CHECK allows ``S3`` / ``GCS`` / NULL on PostgreSQL."""
-    cfg, url = sep_postgres_alembic_config
+    cfg, url, schema = sep_postgres_alembic_config
     command.upgrade(cfg, _TRANSPORT_REVISION)
 
-    async def _seed(conn):
+    async def _seed(conn: AsyncConnection) -> None:
         await _insert_run(conn, source_transport="S3", history_id=1)
         await _insert_run(conn, source_transport="GCS", history_id=2)
         await _insert_run(conn, source_transport=None, history_id=3)
 
-    _await(url, _seed)
+    _await(url, schema, _seed)
 
 
 def test_upgrade_check_rejects_unknown_transport(sep_postgres_alembic_config) -> None:
     """Assert PostgreSQL rejects a value outside the CHECK."""
-    cfg, url = sep_postgres_alembic_config
+    cfg, url, schema = sep_postgres_alembic_config
     command.upgrade(cfg, _TRANSPORT_REVISION)
 
     with pytest.raises(IntegrityError):
         _await(
-            url, lambda conn: _insert_run(conn, source_transport="SSH", history_id=1)
+            url,
+            schema,
+            lambda conn: _insert_run(conn, source_transport="SSH", history_id=1),
         )
 
 
 def test_downgrade_drops_column_and_check(sep_postgres_alembic_config) -> None:
     """Assert downgrade removes the column and CHECK via plain ALTER."""
-    cfg, url = sep_postgres_alembic_config
+    cfg, url, schema = sep_postgres_alembic_config
     command.upgrade(cfg, _TRANSPORT_REVISION)
     command.downgrade(cfg, _PRE_TRANSPORT_REVISION)
 
-    columns, checks = _await(url, _run_state)
+    columns, checks = _await(url, schema, _run_state)
 
     assert _COLUMN not in columns
     assert _CHECK_NAME not in checks

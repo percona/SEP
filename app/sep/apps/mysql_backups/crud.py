@@ -18,7 +18,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from sqlalchemy import case, func, or_
+from sqlalchemy import case, column, func, Integer, or_, select, String, Values
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -31,7 +31,6 @@ from app.sep.apps.mysql_backups.models import (
     CatalogServiceKey,
     CataloguedSourceTransport,
     MysqlBackupRun,
-    preferred_backup_source,
 )
 
 #: Prefetch key ``(service_id, service_name, backup_source)`` used by restore list.
@@ -263,20 +262,6 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         return matches[0] if matches else None
 
     @classmethod
-    def _run_matches_service(cls, run: MysqlBackupRun, key: CatalogServiceKey) -> bool:
-        """Return whether ``run`` would match :meth:`_service_predicate` for ``key``.
-
-        :param run: A catalog row already loaded from the database.
-        :param key: The service key the caller is looking up.
-        :return: ``True`` when the row is in that service's catalog scope.
-        """
-        if key.service_id is None:
-            return run.service_name == key.service_name
-        return run.service_id == key.service_id or (
-            run.service_id is None and run.service_name == key.service_name
-        )
-
-    @classmethod
     async def catalogued_source_transport(
         cls,
         session: AsyncSession,
@@ -309,9 +294,12 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         Used by the restore list/detail prefetch so a page of undeclared stamps
         pays one SELECT instead of one per key. Each lookup is scoped by the same
         :meth:`_service_predicate` / preferred-source rules as
-        :meth:`catalogued_source_transport`; when several rows match a key, the
-        newest (``finished_at`` / ``created_at`` / ``id``) wins. Empty
-        ``backup_source`` keys and misses map to ``None``.
+        :meth:`catalogued_source_transport`. Ranking happens in SQL
+        (``row_number`` partitioned by lookup key, ordered like
+        :meth:`list_for_service`) so only the newest matching row per key is
+        materialised — stable destinations such as ``s3://bucket/service`` do not
+        pull every historical run into memory. Empty ``backup_source`` keys and
+        misses map to ``None``.
 
         :param session: The database session to query on.
         :param lookups: Map from ``(service_id, service_name, backup_source)`` to
@@ -319,50 +307,81 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         :return: The same keys mapped to a catalogued transport or ``None``.
         """
         results: dict[CatalogTransportLookupKey, CataloguedSourceTransport | None] = {}
-        pending: dict[CatalogTransportLookupKey, CatalogServiceKey] = {}
-        for cache_key, service_key in lookups.items():
+        pending: list[CatalogTransportLookupKey] = []
+        for cache_key in lookups:
             if not cache_key[2]:
                 results[cache_key] = None
             else:
-                pending[cache_key] = service_key
+                pending.append(cache_key)
         if not pending:
             return results
 
-        matches = await cls.list(
-            session,
-            or_(
-                *(
-                    and_(
-                        cls._service_predicate(service_key),
-                        _matches_preferred_source(backup_source),
-                    )
-                    for (
-                        _service_id,
-                        _service_name,
-                        backup_source,
-                    ), service_key in pending.items()
-                )
-            ),
-            order_by=list(_NEWEST_RUN_FIRST),
+        lookup_values = (
+            Values(
+                column("lk_service_id", Integer),
+                column("lk_service_name", String),
+                column("lk_backup_source", String),
+                name="catalog_transport_lookups",
+            )
+            .data(list(pending))
+            .alias("catalog_transport_lookups")
         )
+        # Mirror :meth:`_service_predicate` against each lookup row: a keyed id
+        # matches that id or a name-only legacy row; a null id matches by name.
+        service_match = or_(
+            and_(
+                lookup_values.c.lk_service_id.is_(None),
+                col(MysqlBackupRun.service_name) == lookup_values.c.lk_service_name,
+            ),
+            and_(
+                lookup_values.c.lk_service_id.is_not(None),
+                or_(
+                    col(MysqlBackupRun.service_id) == lookup_values.c.lk_service_id,
+                    and_(
+                        col(MysqlBackupRun.service_id).is_(None),
+                        col(MysqlBackupRun.service_name)
+                        == lookup_values.c.lk_service_name,
+                    ),
+                ),
+            ),
+        )
+        ranked = (
+            select(
+                lookup_values.c.lk_service_id,
+                lookup_values.c.lk_service_name,
+                lookup_values.c.lk_backup_source,
+                col(MysqlBackupRun.source_transport).label("source_transport"),
+                func.row_number()
+                .over(
+                    partition_by=(
+                        lookup_values.c.lk_service_id,
+                        lookup_values.c.lk_service_name,
+                        lookup_values.c.lk_backup_source,
+                    ),
+                    order_by=_NEWEST_RUN_FIRST,
+                )
+                .label("rn"),
+            )
+            .join_from(
+                MysqlBackupRun,
+                lookup_values,
+                and_(
+                    service_match,
+                    _preferred_backup_source_expr() == lookup_values.c.lk_backup_source,
+                ),
+            )
+            .subquery("ranked_catalog_transports")
+        )
+        query = select(
+            ranked.c.lk_service_id,
+            ranked.c.lk_service_name,
+            ranked.c.lk_backup_source,
+            ranked.c.source_transport,
+        ).where(ranked.c.rn == 1)
 
         results.update(dict.fromkeys(pending, None))
-        remaining = set(pending)
-        for run in matches:
-            if not remaining:
-                break
-            resolved: list[CatalogTransportLookupKey] = []
-            for cache_key in remaining:
-                service_key = pending[cache_key]
-                backup_source = cache_key[2]
-                if not cls._run_matches_service(run, service_key):
-                    continue
-                if (
-                    preferred_backup_source(run.upload_destination, run.location)
-                    != backup_source
-                ):
-                    continue
-                results[cache_key] = run.source_transport
-                resolved.append(cache_key)
-            remaining.difference_update(resolved)
+        for row in (await cls._exec(session, query)).all():
+            results[(row.lk_service_id, row.lk_service_name, row.lk_backup_source)] = (
+                row.source_transport
+            )
         return results
