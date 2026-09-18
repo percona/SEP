@@ -15,8 +15,12 @@
 
 """Define dependencies for the Restores plugin."""
 
+import asyncio
+import logging
+from collections.abc import Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
 import yaml
 from fastapi import Body
@@ -29,15 +33,30 @@ from app.core.exceptions import (
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
-from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.meta_keys import SERVICE_NAME_META_KEY
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    CataloguedSourceTransport,
+    UNKNOWN_SERVICE_SENTINEL,
+)
+from app.sep.apps.mysql_backups.restore.models import (
+    normalize_source_declaration,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
 )
+from app.sep.db import get_async_session_maker
 from app.sep.deps import get_created_entity, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
+
+_log = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 
 async def resolve_restore_entities(
@@ -185,6 +204,118 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
         return None, host, port
 
 
+def _catalog_service_key_for_stamp(
+    task: Task, stored_form: dict[str, Any]
+) -> CatalogServiceKey | None:
+    """Build the catalog service key a stored restore stamp can query with.
+
+    Prefers the inventory id from the stamp plus ``_service_name`` from task meta
+    when both are present. A free-typed (non-decimal) ``service_id`` is treated as
+    a name-only key. Returns ``None`` when neither a usable id nor a name is
+    available — the caller then skips the catalog lookup.
+
+    :param task: The restore task carrying optional ``meta._service_name``.
+    :param stored_form: The undeclared ``_form`` stamp.
+    :return: The catalog key, or ``None`` when the stamp cannot be scoped.
+    """
+    meta = task.data.get("meta") if task.data else None
+    meta = meta if isinstance(meta, dict) else {}
+    raw_name = meta.get(SERVICE_NAME_META_KEY)
+    service_name = (
+        raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+    )
+
+    raw_id = stored_form.get("service_id")
+    if raw_id is None:
+        return (
+            CatalogServiceKey(service_name=service_name, service_id=None)
+            if service_name
+            else None
+        )
+
+    sid = str(raw_id).strip()
+    if not sid or sid == UNKNOWN_SERVICE_SENTINEL:
+        return (
+            CatalogServiceKey(service_name=service_name, service_id=None)
+            if service_name
+            else None
+        )
+    if not sid.isdecimal():
+        return CatalogServiceKey(service_name=sid, service_id=None)
+    try:
+        parsed = int(sid)
+    except ValueError:
+        return None
+    # Id alone still matches id-stamped rows; the name is only needed for the
+    # ``service_id IS NULL`` fallback on pre-id catalog rows.
+    return CatalogServiceKey(service_name=service_name or sid, service_id=parsed)
+
+
+def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
+    """Run ``coro`` to completion from sync code, including under a running loop.
+
+    The restore ``response_builder`` is sync-only, so the catalog lookup has to
+    bridge into the async sep session. When no loop is running, ``asyncio.run``
+    is enough; when one is (the usual FastAPI request path), the coroutine runs
+    on a worker thread with its own loop.
+
+    :param coro: The awaitable to drive to completion.
+    :return: The coroutine's result.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
+
+
+async def _fetch_catalogued_transport(
+    key: CatalogServiceKey, backup_source: str
+) -> CataloguedSourceTransport | None:
+    """Open a sep session and return the catalogued transport for ``backup_source``.
+
+    :param key: The service the catalog rows are selected for.
+    :param backup_source: The restore stamp's ``backup_source``.
+    :return: The recorded S3/GCS transport, or ``None``.
+    """
+    async with get_async_session_maker()() as session:
+        return await MysqlBackupRunManager.catalogued_source_transport(
+            session, key, backup_source
+        )
+
+
+def _catalogued_transport_for_stamp(
+    task: Task, stored_form: dict[str, Any]
+) -> CataloguedSourceTransport | None:
+    """Return the catalogued object-store transport for an undeclared stamp, if any.
+
+    Failures (no key, no ``backup_source``, or a lookup error) yield ``None`` so
+    the caller falls through to inference — this builder also serves the list
+    route, where one bad task must not take out the page.
+
+    :param task: The restore task being serialized.
+    :param stored_form: The undeclared ``_form`` stamp.
+    :return: The catalogued transport, or ``None``.
+    """
+    backup_source = stored_form.get("backup_source")
+    if not isinstance(backup_source, str) or not backup_source:
+        return None
+    key = _catalog_service_key_for_stamp(task, stored_form)
+    if key is None:
+        return None
+    try:
+        return _run_coro_sync(_fetch_catalogued_transport(key, backup_source))
+    except Exception:  # noqa: BLE001 — catalog being down must never fail the list
+        _log.warning(
+            "Catalog source_transport lookup failed for backup_source=%r; "
+            "falling back to inference",
+            backup_source,
+            exc_info=True,
+        )
+        return None
+
+
 def _declared_source_override(task: Task) -> dict[str, Any]:
     """Return a ``data`` override declaring the source of a stamp that predates it.
 
@@ -197,11 +328,16 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     the form opens on the transport the stored values imply and keeps them
     visible.
 
-    Re-validating through :class:`RestoreCreate` rather than calling the
-    normalizer directly keeps the served stamp exactly what a subsequent ``PUT``
-    would accept. It is tolerant of a stamp that cannot be validated at all,
-    because this builder also serves the list route, where one unparseable task
-    must not take out the whole page.
+    When a matching :class:`~app.sep.apps.mysql_backups.models.MysqlBackupRun`
+    recorded an object-store ``source_transport``, that value is preferred over
+    field inference — the same catalog-first path
+    :func:`~app.sep.apps.mysql_backups.restore.models.normalize_source_declaration`
+    accepts via ``catalogued_transport``.
+
+    Re-validating through :class:`RestoreCreate` after normalizing keeps the
+    served stamp exactly what a subsequent ``PUT`` would accept. It is tolerant
+    of a stamp that cannot be validated at all, because this builder also serves
+    the list route, where one unparseable task must not take out the whole page.
 
     :param task: The restore task being serialized.
     :return: A single-key ``data`` override, or an empty mapping when the stamp
@@ -217,7 +353,11 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     ):
         return {}
     try:
-        declared = RestoreCreate.model_validate(stored_form).model_dump(mode="json")
+        normalized = normalize_source_declaration(
+            stored_form,
+            catalogued_transport=_catalogued_transport_for_stamp(task, stored_form),
+        )
+        declared = RestoreCreate.model_validate(normalized).model_dump(mode="json")
     except ValidationError:
         return {}
     return {"data": {**data, RESERVED_FORM_KEY: declared}}
