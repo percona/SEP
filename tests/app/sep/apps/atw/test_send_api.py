@@ -28,7 +28,7 @@ from fastapi import status
 from httpx import AsyncClient
 from kombu.exceptions import OperationalError
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
 from app.core.utils.date_time import utc_now

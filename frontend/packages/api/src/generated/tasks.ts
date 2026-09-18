@@ -1560,6 +1560,17 @@ export interface components {
        *     carries one, and the target from the execution request. Falls back to
        *     ``"<task> on <target>"`` when no filename is available.
        *
+       *     A ``PROXY`` task that leaves the payload to each dispatch is classified by the
+       *     root it names, not by its own name, because history binds to the
+       *     *dispatched* task: an app wrapping a generic executor to attach its own hooks
+       *     would otherwise collapse every one of its runs onto the wrapper's single
+       *     name. A proxy carrying its own ``payload`` is left alone, because
+       *     ``prepare_task_history`` substitutes that payload into every run: it is a
+       *     configured job, and its own name is the meaningful label. That is the shape
+       *     of every proxy the framework builds over ``run-python``. Only the
+       *     classification uses the root — a proxy over a non-generic task still reports
+       *     its own name.
+       *
        *     :return: The display label for the task history entry.
        */
       readonly display_name: string;
@@ -1731,7 +1742,6 @@ export interface components {
        * @description Return the task duration summary.
        *
        *     :return: A dictionary summarizing average, last, and total task durations.
-       *     :rtype: dict[str, Any]
        */
       readonly duration: {
         [key: string]: unknown;
@@ -1746,7 +1756,6 @@ export interface components {
        * @description Return the last finished task timestamp.
        *
        *     :return: The timestamp of the last task finished, or None if not available.
-       *     :rtype: str | None
        */
       readonly last_finished_at: string | null;
       /**
