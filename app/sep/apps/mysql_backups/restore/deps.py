@@ -199,8 +199,8 @@ def _declared_source_override(task: Task) -> dict[str, Any]:
     dropped from the submission entirely, so saving that form would discard
     credentials the restore still needs. The same holds for an AES-256 key file a
     stamp names without declaring the format that reveals it. Repairing the stamp
-    here means the form opens on the source its stored values imply and keeps
-    every one of them visible.
+    here means the form opens on the source its stored values imply, keeping a key
+    file the engine can read and dropping one it cannot.
 
     Re-validating through :class:`RestoreCreate` rather than serving the repair
     directly keeps the served stamp exactly what a subsequent ``PUT`` would

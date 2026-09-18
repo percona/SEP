@@ -742,13 +742,23 @@ class TestRestoreContract(DerivedRouterContractTests):
 
         Expressed as rules rather than a server-side validator so the operator is
         stopped before submitting, with the predicates the renderer already knows.
+        Asserted on the section declaring ``source_encryption``, because the
+        renderer evaluates section-scoped rules only: served at the schema root
+        they would reach nothing but the submit-time check.
         """
         base = app_base_url(self.app_def)
 
         response = contract_client.get(f"{base}/schema")
 
         assert response.status_code == status.HTTP_200_OK, response.text
-        rules = response.json()["fail_when"]
+        section = next(
+            section
+            for section in response.json()["forms"]
+            if any(
+                field.get("name") == "source_encryption" for field in section["fields"]
+            )
+        )
+        rules = section["fail_when"]
         assert [rule["message"] for rule in rules] == [
             "Invalid 'source_encryption' 'aes256' for a Mydumper restore. "
             "Options are none or gpg.",

@@ -34,6 +34,7 @@ from app.sep.apps.framework.form_dsl import (
     RemoteChoices,
     Requires,
     SchemaRef,
+    SectionRules,
     ServiceRef,
     TaskFormModel,
     Ui,
@@ -264,8 +265,10 @@ _SSH_SOURCE_FIELDS = ("ssh_user", "ssh_port", "ssh_key")
 _S3_SOURCE_FIELDS = ("s3_tool",)
 _GPG_SOURCE_FIELDS = ("gpg_password_file",)
 _AES_KEYFILE_FIELD = "xtrabackup_aes256_keyfile"
-#: Every field a source declaration governs, and so every field the inference
-#: below has to know a pre-declaration default for.
+#: Every field a source declaration governs. The inference below needs a
+#: pre-declaration default for the transport fields it decides from; the key file
+#: is read for presence alone, and is listed here because a declaration gates it
+#: too.
 _GATED_SOURCE_FIELDS = (
     *_SSH_SOURCE_FIELDS,
     *_S3_SOURCE_FIELDS,
@@ -308,6 +311,15 @@ _AES_SOURCE_ONLY = Forbidden(
     ),
 )
 
+#: The formats each engine may declare, looked up for every :class:`BackupType`
+#: member so an engine the create form's table omits resolves to an empty list and
+#: has every format rejected. ``BackupCreate.validate_encryption_format`` reads the
+#: same table the same way, so the omission fails closed on both forms.
+_ALLOWED_SOURCE_FORMATS = {
+    backup_type: ALLOWED_ENCRYPTION_FORMATS.get(backup_type, [])
+    for backup_type in BackupType
+}
+
 #: One rule per format an engine cannot write, generated from the table the
 #: create form validates against so the two forms cannot drift. Split per format
 #: rather than per engine so each message can name the value it rejects. Expressed as
@@ -324,11 +336,11 @@ _SOURCE_ENCRYPTION_FAIL_RULES = tuple(
         error_fields=["source_encryption"],
         message=(
             f"Invalid 'source_encryption' {rejected.value!r} for a "
-            f"{BackupType.LABELS[backup_type.value]} restore. Options are "
-            f"{join_or([fmt.value for fmt in allowed])}."
+            f"{BackupType.LABELS.get(backup_type.value, backup_type.value)} "
+            f"restore. Options are {join_or([fmt.value for fmt in allowed])}."
         ),
     )
-    for backup_type, allowed in ALLOWED_ENCRYPTION_FORMATS.items()
+    for backup_type, allowed in _ALLOWED_SOURCE_FORMATS.items()
     for rejected in EncryptionFormat
     if rejected not in allowed
 )
@@ -338,9 +350,10 @@ _OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.G
 #: The gated fields' pre-declaration defaults, read from the config models that
 #: still declare them so the inference keeps no second copy of the table it
 #: matches against. Both models contribute: the transport fields are global to a
-#: restore, the key file is per-server. Restricted to the gated fields so a field
-#: renamed on one side alone drops out of the table and raises below, rather than
-#: reading as "no default" and reporting every value as operator-chosen.
+#: restore, the key file is per-server. ``_holds_a_non_default`` subscripts this
+#: table rather than reading it with ``.get``, so a field renamed on one side
+#: alone raises there instead of reading as "no default" and reporting every
+#: value as operator-chosen.
 _PRE_DECLARATION_DEFAULTS = {
     name: field.default
     for model in (RestoreConfigAll, BaseRestoreConfigServer)
@@ -455,7 +468,7 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _aligned_aes_declaration(data: dict[str, Any]) -> dict[str, Any]:
+def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     """Return the body with its stored key file and its declared format in agreement.
 
     Only a *declared* format needs this; an inferred one already follows the
@@ -484,7 +497,7 @@ def _aligned_aes_declaration(data: dict[str, Any]) -> dict[str, Any]:
     declares_aes = declared in (EncryptionFormat.AES256, EncryptionFormat.DUAL)
     key_file = data.get(_AES_KEYFILE_FIELD)
     if not key_file and not declares_aes:
-        return data
+        return dict(data)
 
     aes256 = bool(key_file) and data.get("backup_type") == BackupType.XTRABACKUP
     aligned = {
@@ -571,7 +584,16 @@ class RestoreCreate(TaskFormModel):
     ``deps.resolve_restore_entities``.
     """
 
-    __form_rules__ = FormRules(fail_when=_SOURCE_ENCRYPTION_FAIL_RULES)
+    __form_rules__ = FormRules(
+        # Section-scoped rather than app-scoped because ``useFailRules`` evaluates
+        # section rules only, and being stopped before submitting is the whole
+        # reason these are rules. ``backup_type`` and ``source_encryption`` both sit
+        # in the ``Task`` section, which is neither advanced nor collapsible, so the
+        # alert it renders at the section head is mounted whenever the form is. The
+        # submit-time 422 is unchanged either way: ``_prepare_fail_rules`` lowers
+        # the same runtime rule at both scopes.
+        sections={"Task": SectionRules(fail_when=_SOURCE_ENCRYPTION_FAIL_RULES)},
+    )
 
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
