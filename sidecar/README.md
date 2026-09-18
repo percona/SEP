@@ -26,6 +26,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
 | `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
+| `runtime.py` | Imported by `encryption_key.py` and `grafana_service_account.py`; resolves `SEP_STATE_DIR`, the retry interval and the positive-timeout inputs, and writes their diagnostics. Copied under `sidecar/` rather than beside the two scripts, so their `from sidecar.runtime import ...` resolves when `entrypoint.sh` runs each one standalone. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
 | `restrict_apps.py` | Build-step strip: removes every app package the baked profile does not activate. Deleted in the same `RUN`, so `make image`'s squashed build ships no copy of it. |
 | `verify_image_apps.py` | Post-build assertion that an image's app set matches its own baked profile. Piped into the image, never copied into it. |
