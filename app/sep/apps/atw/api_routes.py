@@ -231,14 +231,13 @@ def _category_tags(snippet: Snippet) -> list[str]:
                 snippet.filename,
                 invalid,
             )
-            return []
+            continue
         logger.warning(
             ATW_META_WARNING,
             key,
             snippet.filename,
             type(raw_categories).__name__,
         )
-        return []
     return []
 
 

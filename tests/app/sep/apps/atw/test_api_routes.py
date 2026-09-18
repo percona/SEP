@@ -584,6 +584,31 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "dual-key.sh"
 
     @pytest.mark.asyncio
+    async def test_malformed_diagnostic_categories_fall_back_to_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to the legacy key when the current one is malformed."""
+        await _persist_snippet(
+            session,
+            filename="fallback.sh",
+            meta={
+                "title": "Fallback",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS", 1],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "GALERA"
+        assert payload[0]["snippets"][0]["name"] == "fallback.sh"
+
+    @pytest.mark.asyncio
     async def test_all_unapproved_category_produces_no_row(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
