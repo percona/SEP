@@ -155,14 +155,14 @@ if [[ -z $DATA_DIR ]]; then
 fi
 
 if [[ ! -d $DATA_DIR ]]; then
-    echo "Error: Data directory '$DATA_DIR' does not exist."
+    echo "Error: Data directory '$DATA_DIR' does not exist (check --data-dir)."
     exit 1
 fi
 
 FTDC_DIR="$DATA_DIR/diagnostic.data"
 
 if [[ ! -d $FTDC_DIR ]]; then
-    echo "Error: FTDC directory not found at '$FTDC_DIR'."
+    echo "Error: FTDC directory not found at '$FTDC_DIR' (check --data-dir)."
     echo "Ensure MongoDB is or was running with FTDC enabled (enabled by default since v3.2)."
     exit 1
 fi

@@ -137,7 +137,7 @@ target="$1"
 shift
 
 if [ ! -e "$target" ]; then
-    >&2 echo "Error: '$target' does not exist."
+    >&2 echo "Error: Target '$target' does not exist."
     exit 1
 fi
 

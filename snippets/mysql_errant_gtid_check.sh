@@ -32,7 +32,11 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* GTID mode *********"
-$MYSQL -e "SELECT @@gtid_mode;" 2> /dev/null || echo "GTID mode not available."
+if ! gtid_mode=$($MYSQL -e "SELECT @@gtid_mode;" 2>&1); then
+    echo "Could not read GTID mode (check --defaults-file): $gtid_mode"
+else
+    printf '%s\n' "$gtid_mode"
+fi
 
 echo ""
 echo "********* Server UUID *********"
@@ -44,10 +48,16 @@ $MYSQL -e "SELECT @@global.gtid_executed\G"
 
 echo ""
 echo "********* Replica status (GTID details) *********"
-if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
-    $MYSQL -e 'SHOW REPLICA STATUS\G' 2> /dev/null | grep -E "Gtid|gtid|Source_UUID|Master_UUID|Executed|Retrieved" || true
+if $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
+    REPLICA_STATUS_QUERY='SHOW SLAVE STATUS\G'
 else
-    $MYSQL -e 'SHOW SLAVE STATUS\G' 2> /dev/null | grep -E "Gtid|gtid|Source_UUID|Master_UUID|Executed|Retrieved" || true
+    REPLICA_STATUS_QUERY='SHOW REPLICA STATUS\G'
+fi
+
+if ! replica_status=$($MYSQL -e "$REPLICA_STATUS_QUERY" 2>&1); then
+    echo "Could not read replica status (check --defaults-file): $replica_status"
+elif ! printf '%s\n' "$replica_status" | grep -E "Gtid|gtid|Source_UUID|Master_UUID|Executed|Retrieved"; then
+    echo "Replica status reported no GTID fields."
 fi
 
 echo ""

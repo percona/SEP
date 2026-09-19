@@ -40,4 +40,8 @@ fi
 
 echo ""
 echo "********* Processlist *********"
-$MYSQL -e "SHOW PROCESSLIST;" 2> /dev/null || echo "Cannot show processlist."
+if ! processlist=$($MYSQL -e "SHOW PROCESSLIST;" 2>&1); then
+    echo "Could not show the processlist (check --defaults-file): $processlist"
+else
+    printf '%s\n' "$processlist"
+fi
