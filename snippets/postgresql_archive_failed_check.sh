@@ -101,8 +101,18 @@ if [ "$LOG_DIR_KNOWN" -eq 0 ]; then
     echo "Log files were not searched, because log_directory could not be read."
 elif [ ${#LOG_FILES[@]} -eq 0 ]; then
     echo "No PostgreSQL log files found under log_directory."
-elif ! log_tail=$(tail -200 "${LOG_FILES[@]}" 2>&1); then
-    echo "Could not read the PostgreSQL log files: $log_tail"
-elif ! printf '%s\n' "$log_tail" | grep -iE "archiver|archive command failed|could not archive"; then
-    echo "No archiver errors found in PostgreSQL logs."
+else
+    log_tail=""
+    for log_file in "${LOG_FILES[@]}"; do
+        if ! file_tail=$(tail -n 200 "$log_file" 2>&1); then
+            echo "Could not read $log_file: $file_tail"
+        else
+            log_tail+="$file_tail"$'\n'
+        fi
+    done
+    if [ -z "$log_tail" ]; then
+        echo "None of the PostgreSQL log files under log_directory could be read."
+    elif ! printf '%s' "$log_tail" | grep -iE "archiver|archive command failed|could not archive"; then
+        echo "No archiver errors found in PostgreSQL logs."
+    fi
 fi

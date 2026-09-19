@@ -68,7 +68,9 @@ if ! ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> "$MYSQL_ERR"); then
 fi
 rm -f "$MYSQL_ERR"
 if [ -n "${ERROR_LOG:-}" ] && [ -f "$ERROR_LOG" ]; then
-    grep -i "wsrep\|quorum\|non-primary\|split.brain" "$ERROR_LOG" | tail -30
+    if ! grep -i "wsrep\|quorum\|non-primary\|split.brain" "$ERROR_LOG" | tail -30; then
+        echo "No wsrep, quorum or split-brain entries found in the error log."
+    fi
 else
     echo "MySQL error log not accessible."
 fi
