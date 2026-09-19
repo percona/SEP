@@ -184,14 +184,24 @@ two-branch version cannot tell "the tool failed" from "the filter matched
 nothing":
 
 ```bash
-if ! out=$($MYSQL -e "SELECT ... WHERE state LIKE '%lock%';" 2>&1); then
-    echo "Could not query threads waiting for locks (check --defaults-file): $out"
+err=$(mktemp)
+if ! out=$($MYSQL -e "SELECT ... WHERE state LIKE '%lock%';" 2> "$err"); then
+    echo "Could not query threads waiting for locks (check --defaults-file): $(cat "$err")"
 elif [ -z "$out" ]; then
     echo "No threads waiting for locks."
 else
     printf '%s\n' "$out"
 fi
+rm -f "$err"
 ```
+
+This is the one shape where `2>&1` is wrong. Emptiness is the signal that
+separates "the filter matched nothing" from "the tool did not run", and the
+MySQL client writes its password warning to stderr on runs that succeed — fold
+the two streams together and that warning becomes the captured value, so the
+middle branch never fires and the warning prints where `No threads waiting for
+locks.` belongs. Keep the stream in its own file and read it only on the failure
+branch, as `mysql_too_many_connections_check.sh` does.
 
 ### Name the cause, not the nearest parameter
 
