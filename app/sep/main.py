@@ -312,6 +312,17 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     never dereference not-yet-built ``app.state``. Any callback marked for
     boot must therefore not touch ``app.state``.
 
+    ``sep_startup()`` -- which seeds the periodic-task database from each app's
+    *current* settings -- runs inside the ``async with`` for the same reason:
+    an app-owned hot field (e.g. ``OmInventorySettings.ENABLED``) reads its
+    class default until the override snapshot's first publish, so seeding
+    before that point can seed a sweep as off when a prior run had already
+    turned it on, and nothing re-seeds it afterward -- the callback that would
+    is the one this same initial publish deliberately skips. Running it after
+    entry, once that publish has happened, is what makes ``sep_startup()``
+    see the real persisted settings on every restart, not just after the next
+    ``PATCH``.
+
     The clients are closed via ``app.state`` (not via the originals captured
     at startup) on shutdown, so a client a rebind callback swapped in mid-run is
     the one that gets closed -- the swapped-out original was already closed by
@@ -322,8 +333,8 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    await sep_startup()
     async with sep_overrides_lifespan(app):
+        await sep_startup()
         app.state.inventory_api = await RemoteAPI(
             endpoint=sep_settings.INVENTORY_ENDPOINT,
             ssl_cafile=settings.SSL_CAFILE,
