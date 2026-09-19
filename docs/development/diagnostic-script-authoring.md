@@ -139,8 +139,8 @@ it has to name the field, and it has to preserve what the tool actually said.
 Both halves matter, and the reason the *flag* is the half that carries the
 association is not obvious: a run's output is subject to PII anonymization on the
 way to the operator. `--defaults-file` is not an entity Presidio masks and
-survives intact; the host in `Access denied for user 'root'@'db-01'` is exactly
-what `TaskHistory.anonymize_mask` rewrites. Naming the flag is therefore the part
+survives intact; the host in `Access denied for user 'root'@'10.20.0.7'` is an
+`IP_ADDRESS`, which is exactly what `TaskHistory.anonymize_mask` rewrites. Naming the flag is therefore the part
 of the message that reliably arrives. Preserving the tool's own text is what
 stops the prose from asserting a cause nobody observed.
 
@@ -196,12 +196,13 @@ rm -f "$err"
 ```
 
 This is the one shape where `2>&1` is wrong. Emptiness is the signal that
-separates "the filter matched nothing" from "the tool did not run", and the
-MySQL client writes its password warning to stderr on runs that succeed — fold
-the two streams together and that warning becomes the captured value, so the
-middle branch never fires and the warning prints where `No threads waiting for
-locks.` belongs. Keep the stream in its own file and read it only on the failure
-branch, as `mysql_too_many_connections_check.sh` does.
+separates "the filter matched nothing" from "the tool did not run", and these
+clients write to stderr on runs that otherwise succeed — a deprecation or
+client-identity notice, a TLS warning, a server-version remark. Fold the two
+streams together and one of those becomes the captured value, so the middle
+branch never fires and the notice prints where `No threads waiting for locks.`
+belongs. Keep the stream in its own file and read it only on the failure branch,
+as `mysql_too_many_connections_check.sh` does.
 
 ### Name the cause, not the nearest parameter
 
