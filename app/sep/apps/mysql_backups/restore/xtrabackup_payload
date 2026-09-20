@@ -45,14 +45,11 @@ BACKUP_TEXTFILE_COLLECTOR_DIR = os.getenv(
     / "textfile-collector"
     / "low-resolution",
 )
-DEFAULT_MYCNF = '%s/.my.cnf' % (os.environ.get('HOME'))
+DEFAULT_MYCNF = '%s/.my.cnf' % (os.environ.get('HOME') or CURRENT_USER_HOME_DIR)
 DEFAULT_CFG_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_CFG_DIR', os.path.join(CURRENT_USER_HOME_DIR, '.config/percona/backup'))
-DEFAULT_CFG = DEFAULT_CFG_DIR + '/backup_config.yml'
 DEFAULT_LOGGING_DIR = os.getenv('PERCONA_BACKUP_DEFAULT_LOGGING_DIR',
                                 os.path.join(CURRENT_USER_HOME_DIR, '.local/percona/logs/backup'))
 INSTALL_DIR = os.getenv('PERCONA_BACKUP_INSTALL_DIR', os.path.join(CURRENT_USER_HOME_DIR, 'bin'))
-MYLOADER_BIN = os.getenv('PERCONA_BACKUP_MYLOADER_BIN', '/usr/bin/myloader')
-MYSQLBINLOG_CMD = os.getenv('PERCONA_BACKUP_MYSQLBINLOG_CMD', '/usr/bin/mysqlbinlog')
 PYTHON_BIN = sys.executable
 S3CMD_BIN = os.getenv('PERCONA_BACKUP_S3CMD_BIN', '/usr/bin/s3cmd')
 STATUS_CRITICAL = 2
@@ -1368,7 +1365,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         self.ssh_key = server_data.get('SSH_KEY', 'id_rsa')
         self.pre_script = server_data.get('PRE_SCRIPT')
         self.post_script = server_data.get('POST_SCRIPT')
-        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', "innobackupex")
+        self.xtrabackup_bin_cmd = server_data.get('XTRABACKUP_BIN_CMD', 'xtrabackup')
         self.s3_tool = server_data.get('S3_TOOL', 's3cmd')
         self.keyring_file_data = server_data.get('KEYRING_FILE_DATA')
 

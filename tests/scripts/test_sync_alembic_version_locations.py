@@ -15,24 +15,16 @@
 
 """Tests for the ``scripts/sync_alembic_version_locations.py`` CLI."""
 
-import importlib.util
-import sys
 from configparser import RawConfigParser
 from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_alembic_version_locations.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location(
-    "sync_alembic_version_locations", _SCRIPT_PATH
-)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-sync_alembic_version_locations = importlib.util.module_from_spec(_spec)
-sys.modules["sync_alembic_version_locations"] = sync_alembic_version_locations
-_spec.loader.exec_module(sync_alembic_version_locations)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+sync_alembic_version_locations = load_script("sync_alembic_version_locations")
 
 _MINIMAL_INI = """\
 [alembic]

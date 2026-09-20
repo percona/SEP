@@ -9,7 +9,7 @@
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the mongos router. Defaults to localhost.
+#    description: Hostname or IP of the mongos router.
 #    default: localhost
 #  - name: port
 #    type: int
@@ -31,6 +31,9 @@
 #    label: Authentication database
 #    description: Database used for authenticating the user.
 #    default: admin
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - PERFORMANCE_OTHER
 # service_type: mongodb
 # alerts:
 #   - MongoDBChunksImbalance

@@ -5,6 +5,7 @@
 # description: Collects Percona Backup for MongoDB (PBM) diagnostics from a node — pbm configuration, backup list, event logs, status, and the pbm-agent service unit. Run it on every node involved in the backup and/or restore. Optionally appends the tail of the local MongoDB server log for troubleshooting a node after a restore.
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories: []
 # service_type: mongodb
 # parameters:
 #  - name: mongodb-uri
@@ -15,7 +16,7 @@
 #  - name: log-entries
 #    type: int
 #    label: PBM log entries
-#    description: Number of recent PBM event-log entries to collect (pbm logs --tail).
+#    description: How many of the most recent PBM event-log entries to collect.
 #    default: 10000
 #    ge: 1
 #    le: 1000000

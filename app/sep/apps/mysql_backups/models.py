@@ -27,10 +27,11 @@ checkmigrations`` reproduces, however import-free the sibling itself is.
 Pulling in the heavier modules would additionally bleed their tables into the
 sep autogenerate comparison.
 
-That constraint is why the ``backup_source`` resolution below lives here rather
-than beside the restore form that also needs it: this module is the one both
-the catalog response and :mod:`app.sep.apps.mysql_backups.restore.models` can
-depend on, and the latter already imports ``BackupType`` from it.
+That constraint is also what decides where a piece two siblings both need goes
+— the ``backup_source`` resolution below, and the vocabulary enums the backup
+and restore forms share: this module is the one both the catalog response and
+:mod:`app.sep.apps.mysql_backups.restore.models` can depend on, so anything
+either would otherwise import from the other lands here instead.
 
 The split mirrors ``app.sep.apps.atw``, in the direction that matters: there,
 ``atw.models`` is the self-contained module and the one inventory-dependent
@@ -59,6 +60,12 @@ UNKNOWN_SERVICE_SENTINEL = "-1"
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
 
+#: The forbidden set spelled out for the operator who just hit it. Derived from
+#: the set rather than written beside it, and sorted so the wording is stable:
+#: the form's own help text no longer lists these, so this message is where a
+#: rejected path gets told what to remove.
+BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY = " ".join(sorted(BACKUP_SOURCE_SHELL_FORBIDDEN))
+
 
 def ensure_backup_source_shell_safe(value: str) -> str:
     """Reject shell metacharacters in a backup-source path (defense in depth).
@@ -76,8 +83,8 @@ def ensure_backup_source_shell_safe(value: str) -> str:
         raise ValueError("backup_source must not contain newline characters")
     if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
         raise ValueError(
-            "backup_source contains disallowed shell metacharacters; "
-            "remove special characters from the backup source field"
+            "backup_source contains disallowed shell metacharacters; remove any "
+            f"of {BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY} from the backup source"
         )
     return value
 
@@ -146,6 +153,14 @@ class BackupType(EnumFieldMixin, StrEnum):
             "B": "Binlog",
         }
     )
+
+
+class XtraBackupTool(EnumFieldMixin, StrEnum):
+    """Represent the XtraBackup-family binaries a backup or restore can run."""
+
+    INNOBACKUPEX = "innobackupex"
+    XTRABACKUP = "xtrabackup"
+    MARIADB_BACKUP = "mariadb-backup"
 
 
 class MysqlBackupRun(BaseSQLModel, table=True):

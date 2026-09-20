@@ -18,7 +18,8 @@
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -33,7 +34,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
-from app.core.utils.date_time import utc_now
+from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.core.utils.fields import StrippedNonEmptyStr
 from app.core.utils.iterators import unique_everseen
 from app.sep.apps.atw.batch import (
@@ -61,6 +62,7 @@ from app.sep.apps.atw.crud import (
     AtwIncidentExecutionManager,
     AtwIncidentManager,
     AtwSendLogManager,
+    IncidentRunAggregate,
 )
 from app.sep.apps.atw.deps import (
     AtwIncidentDep,
@@ -85,21 +87,29 @@ from app.sep.apps.atw.models import (
     AtwSendLogResponse,
     AtwSendStatusEnum,
 )
+from app.sep.apps.atw.proxy_tasks import resolve_atw_proxy_tasks
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.bundle_upload.factory import get_delivery_executor
 from app.sep.bundle_upload.resolver import resolve_delivery_plan
 from app.sep.deps import ApiCurrentUser, IsApiAdmin, SessionDep, TaskAPI
+from app.sep.snippets.config import SnippetSudoRequirement
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import mask_snippet_args
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import (
+    META_KEY_ATW,
+    META_KEY_DIAGNOSTIC_CATEGORIES,
+    META_KEY_SERVICE_TYPE,
+)
 from app.sep.snippets.script_source import snippet_not_found_detail, SnippetScript
+from app.tasks.execution_request_secrets import ARGS_LEAF
 
 logger = logging.getLogger(__name__)
 
-ATW_META_KEY = "atw"
-ATW_META_WARNING = (
-    f"Ignoring meta[{ATW_META_KEY!r}] for snippet %s: expected list, got %s"
+ATW_META_WARNING = "Ignoring meta[%r] for snippet %s: expected list, got %s"
+ATW_META_ELEMENT_WARNING = (
+    "Ignoring meta[%r] for snippet %s: expected list[str], got %s element"
 )
 ATW_ARG_MASKING_WARNING = (
     "Withholding recorded arguments for snippet %s: masking them failed"
@@ -110,6 +120,7 @@ ATW_SNIPPET_RESOLUTION_WARNING = (
 )
 NO_TASK_ID_ERROR = "Dispatched, but the Tasks API returned no task id; not recorded."
 UNRECORDED_EXECUTION_ERROR = "Dispatched, but the execution row could not be recorded"
+_MISSING_META = object()
 
 #: How long a case search may take before the field falls back to free text.
 #: Deliberately far below the delivery probe's 15s and the intra-cluster 5s:
@@ -133,16 +144,19 @@ class ATWSnippetSummary(BaseModel):
     """Represent one snippet entry under an ATW category.
 
     :param name: The snippet filename, used as its API identifier.
-    :type name: str
     :param title: The snippet display title.
-    :type title: str
     :param description: The snippet free-text description.
-    :type description: str
+    :param sudo: Whether the snippet's elevation is never wanted, optional, or
+        mandatory, letting a client warn before dispatching it to a host that
+        cannot elevate. Nullable only so the field is additive on an already
+        released model: every response this version builds populates it, and a
+        ``None`` means the server predates the field.
     """
 
     name: str
     title: str
     description: str
+    sudo: SnippetSudoRequirement | None = None
 
 
 class ATWCategoryListing(BaseModel):
@@ -181,13 +195,53 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     """Project a snippet onto the ATW summary shape.
 
     :param snippet: The snippet to project.
-    :return: The snippet's identifying name, display title, and description.
+    :return: The snippet's identifying name, display title, description, and
+        declared elevation requirement.
     """
     return ATWSnippetSummary(
         name=snippet.filename,
         title=snippet.title,
         description=snippet.description,
+        sudo=snippet.sudo.requirement,
     )
+
+
+def _validated_category_tags(
+    key: str, raw_categories: object, filename: str
+) -> list[str] | None:
+    """Validate one category declaration and log why malformed data is ignored.
+
+    :param key: The metadata key being read.
+    :param raw_categories: The declared metadata value to validate.
+    :param filename: The snippet filename used in warning logs.
+    :return: The validated category list, or ``None`` when the declaration is
+        malformed and the caller should try another key.
+    """
+    if not isinstance(raw_categories, list):
+        logger.warning(
+            ATW_META_WARNING,
+            key,
+            filename,
+            type(raw_categories).__name__,
+        )
+        return None
+    invalid = next(
+        (
+            type(category).__name__
+            for category in raw_categories
+            if not isinstance(category, str)
+        ),
+        None,
+    )
+    if invalid is None:
+        return cast("list[str]", raw_categories)
+    logger.warning(
+        ATW_META_ELEMENT_WARNING,
+        key,
+        filename,
+        invalid,
+    )
+    return None
 
 
 @router.get("/")
@@ -203,18 +257,16 @@ async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     snippets = await SnippetManager.list(session, col(Snippet.approved_at).is_not(None))
     snippets_by_cell = defaultdict(list)
     for snippet in snippets:
-        root = derive_category_root(snippet.meta.get("service_type"))
-        tags = []
-        if ATW_META_KEY in snippet.meta:
-            raw_atw = snippet.meta[ATW_META_KEY]
-            if isinstance(raw_atw, list):
-                tags = raw_atw
-            else:
-                logger.warning(
-                    ATW_META_WARNING,
-                    snippet.filename,
-                    type(raw_atw).__name__,
-                )
+        root = derive_category_root(snippet.meta.get(META_KEY_SERVICE_TYPE))
+        tags: list[str] = []
+        for key in (META_KEY_DIAGNOSTIC_CATEGORIES, META_KEY_ATW):
+            raw_categories = snippet.meta.get(key, _MISSING_META)
+            if raw_categories is _MISSING_META:
+                continue
+            validated = _validated_category_tags(key, raw_categories, snippet.filename)
+            if validated is not None:
+                tags = validated
+                break
         for tag in dict.fromkeys(tags):
             snippets_by_cell[(root, tag)].append(snippet)
 
@@ -249,9 +301,10 @@ async def atw_snippet_search(
     """Search approved snippets by free text, independent of the ATW taxonomy.
 
     Served from ATW's own router over the snippets library, so the capability does
-    not depend on the Snippet Manager app being activated. The ``atw`` metadata tag
-    is a presentation filter on the category listing and is deliberately not
-    applied here, so search reaches snippets that listing never exposes.
+    not depend on the Snippet Manager app being activated. The
+    ``diagnostic_categories`` metadata key is a presentation filter on the category
+    listing and is deliberately not applied here, so search reaches snippets that
+    listing never exposes.
 
     :param session: The database session.
     :param list_query: The vetted sort and search selections, pinned to approved.
@@ -265,6 +318,86 @@ async def atw_snippet_search(
     )
     items = [_build_summary(snippet) for snippet in page.items]
     return PaginatedResponse.from_pagination(items, page.total, pagination)
+
+
+def _last_activity_at(
+    incident: AtwIncident, last_execution_at: datetime | None
+) -> datetime:
+    """Resolve an incident's last-activity time from its own timestamps and its runs.
+
+    Computed in Python rather than SQL because SQLAlchemy ships no portable
+    construct for a row-wise maximum: PostgreSQL spells it ``GREATEST`` and SQLite
+    spells it as a multi-argument ``max()``. Every candidate is normalized first —
+    mixing a naive value in raises ``TypeError`` on comparison, and whether the
+    aggregate's timestamp arrives timezone-aware is dialect-dependent.
+
+    ``created_at`` is always set, so the result is never ``None`` — an incident
+    with no runs reports its own last change and the client needs no empty state.
+
+    Delivery attempts are deliberately not a source: ``atw_send_log`` rows are real
+    activity on an incident, but folding a third table into the aggregate is out of
+    scope, so a send does not move this timestamp.
+
+    :param incident: The incident whose own timestamps take part.
+    :param last_execution_at: The aggregated execution timestamp, when it has runs.
+    :return: The latest of the incident's creation, update, and execution times.
+    """
+    candidates = (incident.created_at, incident.updated_at, last_execution_at)
+    return max(
+        make_datetime_utc(candidate)
+        for candidate in candidates
+        if candidate is not None
+    )
+
+
+def _build_incident_responses(
+    incidents: Iterable[AtwIncident],
+    aggregates: Mapping[UUID4, IncidentRunAggregate],
+) -> list[AtwIncidentResponse]:
+    """Render incidents with their run totals attached.
+
+    Shared by all six routes that return :class:`AtwIncidentResponse`, so none of
+    them serves a defaulted ``0`` for an incident that actually has runs. An
+    incident absent from ``aggregates`` has no executions and is zeroed here.
+
+    :param incidents: The incidents to render, in the order to return them.
+    :param aggregates: Run totals keyed by incident id, as produced by
+        :meth:`AtwIncidentExecutionManager.aggregate_by_incident`.
+    :return: One response per incident, in the given order.
+    """
+    responses: list[AtwIncidentResponse] = []
+    for incident in incidents:
+        aggregate = aggregates.get(incident.id)
+        responses.append(
+            AtwIncidentResponse.model_validate(incident).model_copy(
+                update={
+                    "run_count": 0 if aggregate is None else aggregate.run_count,
+                    "failed_run_count": (
+                        0 if aggregate is None else aggregate.failed_run_count
+                    ),
+                    "last_activity_at": _last_activity_at(
+                        incident,
+                        None if aggregate is None else aggregate.last_execution_at,
+                    ),
+                }
+            )
+        )
+    return responses
+
+
+async def _build_incident_response(
+    session: SessionDep, incident: AtwIncident
+) -> AtwIncidentResponse:
+    """Render one incident with its run totals, fetching them for that id alone.
+
+    :param session: The database session.
+    :param incident: The incident to render.
+    :return: The incident's response, carrying true run totals.
+    """
+    aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
+        session, [incident.id]
+    )
+    return _build_incident_responses([incident], aggregates)[0]
 
 
 @router.post("/incidents/", status_code=status.HTTP_201_CREATED)
@@ -282,32 +415,41 @@ async def atw_create_incident(
     """
     incident = AtwIncident(**body.model_dump(), created_by=current_user.username)
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.get("/incidents/")
 async def atw_list_incidents(
     session: SessionDep, pagination: PaginationDep
 ) -> PaginatedResponse[AtwIncidentResponse]:
-    """List diagnostic incidents, newest first.
+    """List diagnostic incidents, newest first, with each one's run totals.
+
+    The totals come from one grouped query over the whole page, so rendering it
+    issues no per-row task-history request however many runs an incident holds.
 
     :param session: The database session.
     :param pagination: The offset/limit window for the page.
     :return: A paginated page of incidents, newest first.
     """
     page = await AtwIncidentManager.list_paginated(session, pagination=pagination)
-    items = [AtwIncidentResponse.model_validate(incident) for incident in page.items]
+    aggregates = await AtwIncidentExecutionManager.aggregate_by_incident(
+        session, [incident.id for incident in page.items]
+    )
+    items = _build_incident_responses(page.items, aggregates)
     return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
 @router.get("/incidents/{incident_id}")
-async def atw_get_incident(incident: AtwIncidentDep) -> AtwIncidentResponse:
+async def atw_get_incident(
+    session: SessionDep, incident: AtwIncidentDep
+) -> AtwIncidentResponse:
     """Retrieve a single diagnostic incident by id.
 
+    :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :return: The matching incident.
     """
-    return AtwIncidentResponse.model_validate(incident)
+    return await _build_incident_response(session, incident)
 
 
 @router.patch("/incidents/{incident_id}")
@@ -322,7 +464,7 @@ async def atw_update_incident(
     :return: The updated incident.
     """
     updated = await AtwIncidentManager.update(session, incident, body)
-    return AtwIncidentResponse.model_validate(updated)
+    return await _build_incident_response(session, updated)
 
 
 @router.delete(
@@ -351,7 +493,7 @@ async def atw_close_incident(
     """
     incident.closed_at = utc_now()
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.post("/incidents/{incident_id}/reopen/")
@@ -367,7 +509,7 @@ async def atw_reopen_incident(
     """
     incident.closed_at = None
     saved = await AtwIncidentManager.save(session, incident)
-    return AtwIncidentResponse.model_validate(saved)
+    return await _build_incident_response(session, saved)
 
 
 @router.get("/execution-schema/")
@@ -460,6 +602,12 @@ async def atw_batch_execute(
     nothing itself. ``incident.id`` is read once up front because both a commit and
     a rollback expire the instance, and re-reading it would trigger a lazy load.
 
+    ATW's proxy is resolved once per distinct interpreter before the loop, so a batch
+    of twenty items costs the same upstream traffic as one item. That resolution has
+    its own guard: it cannot fail for one item and not another, so a failure degrades
+    the whole batch to unwrapped dispatch instead of failing a request whose
+    dispatches may still succeed.
+
     :param session: The database session.
     :param incident: The incident resolved from the ``incident_id`` path parameter.
     :param body: The batch payload.
@@ -470,6 +618,20 @@ async def atw_batch_execute(
     """
     incident_id = incident.id
     resolved = await resolve_snippets([item.snippet_filename for item in body.items])
+    try:
+        proxies = await resolve_atw_proxy_tasks(
+            script.execution_task_name for script in resolved.values()
+        )
+    except (HTTPException, OSError, RuntimeError):
+        # Resolution failure is never item-specific — it affects every item the same
+        # way — so it degrades the whole batch to unwrapped dispatch rather than
+        # failing a request whose dispatches may well succeed. Outcomes then come
+        # from the reconciliation sweep instead of the recorder.
+        logger.warning(
+            "Could not resolve ATW's proxy tasks; dispatching this batch unwrapped.",
+            exc_info=True,
+        )
+        proxies = {}
     items = []
     for item in body.items:
         script = resolved.get(item.snippet_filename)
@@ -482,7 +644,13 @@ async def atw_batch_execute(
             )
             continue
         try:
-            dispatched = await dispatch_batch_item(body, item, script, tasks_api)
+            dispatched = await dispatch_batch_item(
+                body,
+                item,
+                script,
+                tasks_api,
+                execution_task_name=proxies.get(script.execution_task_name),
+            )
         except (HTTPException, OSError) as exc:
             await session.rollback()
             items.append(
@@ -571,6 +739,22 @@ def _execution_meta(history: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return meta if isinstance(meta, Mapping) else None
 
 
+def _args_unreadable_upstream(history: Mapping[str, Any]) -> bool:
+    """Return whether the tasks service could not read an execution's arguments.
+
+    Read off the documented ``unreadable_request_leaves`` field rather than
+    inferred from the value: the service serialises a leaf it could not decrypt
+    as ``null``, which is exactly what an execution recording no arguments also
+    looks like. The field is shape-checked because ``history`` is unvalidated on
+    this side, matching :func:`_execution_meta`.
+
+    :param history: The upstream task-history payload.
+    :return: Whether the recorded arguments are unreadable upstream.
+    """
+    unreadable = history.get("unreadable_request_leaves")
+    return isinstance(unreadable, list) and ARGS_LEAF in unreadable
+
+
 def _execution_args(
     history: dict[str, Any], script: SnippetScript | None
 ) -> tuple[str | None, bool]:
@@ -597,13 +781,19 @@ def _execution_args(
     separate arm: they arrive as the ``ValueError`` and ``TypeError`` they
     respectively subclass.
 
+    A row the tasks service stored encrypted and could not read back also
+    withholds. It is recognised from the documented ``unreadable_request_leaves``
+    field, never by inspecting the value: the service already serialises such a
+    leaf as ``null``, which is otherwise indistinguishable from an execution that
+    recorded no arguments.
+
     :param history: The upstream task-history payload, empty when unavailable.
     :param script: The resolved snippet, or ``None`` when its filename no longer
         resolves and the parameter metadata masking needs is unavailable.
     :return: The masked argument string paired with the withheld flag; a ``None``
         string and a false flag mean the execution recorded no arguments.
     """
-    if not history:
+    if not history or _args_unreadable_upstream(history):
         return None, True
     if (meta := _execution_meta(history)) is None:
         return None, True
@@ -624,21 +814,23 @@ def _build_execution_response(
     history: dict[str, Any],
     script: SnippetScript | None,
 ) -> ATWIncidentExecutionResponse:
-    """Merge a recorded execution row with its upstream task-history payload.
+    """Merge a recorded execution with live task history and the snippet title.
 
     :param execution: The locally-recorded execution row.
     :param history: The upstream task-history payload, empty when unavailable.
-    :param script: The resolved snippet whose parameter metadata drives argument
-        masking, or ``None`` when its filename no longer resolves.
+    :param script: The resolved snippet supplying the title and parameter metadata
+        for argument masking, or ``None`` when its filename no longer resolves.
     :return: The combined execution response.
     """
     masked_args, args_withheld = _execution_args(history, script)
     return ATWIncidentExecutionResponse(
         id=execution.id,
         snippet_filename=execution.snippet_filename,
+        snippet_title=None if script is None else script.snippet.title,
         task_history_id=execution.task_history_id,
         created_at=execution.created_at,
         task_status=history.get("status"),
+        failure_reason=history.get("failure_reason"),
         started_at=history.get("started_at"),
         finished_at=history.get("finished_at"),
         has_logs=history.get("has_logs"),
@@ -703,8 +895,11 @@ async def atw_case_search(
         async with asyncio.timeout(CASE_SEARCH_TIMEOUT_SECONDS):
             async with get_delivery_executor(plan) as executor:
                 matches = await executor.search_cases(term)
-    except Exception:  # noqa: BLE001 -- degraded, never surfaced to the dialog
-        logger.warning("Diagnostics case search failed.", exc_info=True)
+    except Exception as error:  # noqa: BLE001 -- degraded, never surfaced to the dialog
+        # ``RemoteAPI.request`` maps an upstream error body's ``detail`` onto
+        # the exception it raises, so rendering the exception would log a value
+        # the receiver supplied.
+        logger.warning("Diagnostics case search failed (%s).", type(error).__name__)
         return AtwCaseSearchResponse(available=False, matches=[])
     return AtwCaseSearchResponse(
         available=True,

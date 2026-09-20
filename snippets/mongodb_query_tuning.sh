@@ -53,10 +53,10 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 #    default: false
 # service_type: mongodb
-# atw:
+# diagnostic_categories:
 #   - QUERY_TUNING_OPTIMIZATION
 # ---
 

@@ -19,7 +19,7 @@ import pytest
 import yaml
 
 from app.core.utils.path import resolve_payload_reference
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.mysql_backups.payload_variants import (
     CANONICAL_PAYLOAD_NAME,
     selections,
@@ -43,13 +43,20 @@ _PAYLOAD_DIR_BY_TYPE = {
 }
 
 
-def _form(backup_type: BackupType) -> RestoreCreate:
+def _form(
+    backup_type: BackupType,
+    xtrabackup_bin_cmd: XtraBackupTool | None = None,
+) -> RestoreCreate:
     return RestoreCreate(
         hostname="restore-host",
         task_name="restore-task",
         backup_type=backup_type,
+        # A Mydumper restore has to name an inventory service; the other two
+        # methods legitimately leave the destination unset.
+        service_id="7" if backup_type == BackupType.MYDUMPER else None,
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
+        xtrabackup_bin_cmd=xtrabackup_bin_cmd,
     )
 
 
@@ -79,6 +86,20 @@ def test_build_restore_spec_xtrabackup_requires_filelock():
 
     assert "filelock" in xtrabackup.data["meta"]["requirements"]
     assert "filelock" not in mydumper.data["meta"]["requirements"]
+
+
+@pytest.mark.parametrize("binary", list(XtraBackupTool))
+def test_build_restore_spec_preserves_explicit_xtrabackup_binary(
+    binary: XtraBackupTool,
+):
+    """Preserve an explicitly selected XtraBackup binary in restore config."""
+    spec = build_restore_spec(
+        _form(BackupType.XTRABACKUP, xtrabackup_bin_cmd=binary),
+        RestoreResolved(),
+    )
+
+    config = yaml.safe_load(spec.data["meta"]["config"])["SERVER_LIST"][0]
+    assert config["XTRABACKUP_BIN_CMD"] == binary.value
 
 
 def test_build_restore_spec_injects_resolved_destination_and_service_name():
@@ -115,6 +136,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.LOCAL,
@@ -123,6 +145,7 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
         hostname="restore-host",
         task_name="restore-task",
         backup_type=BackupType.MYDUMPER,
+        service_id="7",
         backup_source="db01:/var/backups/latest",
         datadir="/var/lib/mysql",
         source_transport=SourceTransport.SSH,

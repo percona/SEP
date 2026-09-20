@@ -28,7 +28,7 @@ from fastapi import status
 from httpx import AsyncClient
 from kombu.exceptions import OperationalError
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
 from app.core.utils.date_time import utc_now
@@ -743,13 +743,13 @@ class TestAtwCaseSearch:
 
     @pytest.mark.usefixtures("case_search_configured")
     async def test_a_failed_search_leaves_no_secret_in_the_logs(
-        self, admin_api_client: AsyncClient, caplog
+        self, admin_api_client: AsyncClient, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Mask the plan's credential in everything a failed search records.
 
         Two records are in play and only one is the executor's: the transport
-        logs the outgoing request, and the route logs the failure with a
-        traceback after the executor's redaction context has already closed.
+        logs the outgoing request, and the route logs the failure's type after
+        the executor's redaction context has already closed.
         """
         caplog.set_level("DEBUG", logger=_TRANSPORT_LOGGER)
         with aioresponses() as mock:
@@ -777,9 +777,44 @@ class TestAtwCaseSearch:
         assert all(
             _DELIVERY_SECRET not in record.getMessage() for record in caplog.records
         )
-        assert all(
-            _DELIVERY_SECRET not in str(record.exc_info) for record in caplog.records
-        )
+        # A traceback is what would carry the credential past the assertion
+        # above, since that one reads the format string alone.
+        assert all(record.exc_info is None for record in caplog.records)
+
+    @pytest.mark.usefixtures("case_search_configured")
+    async def test_no_upstream_error_body_reaches_a_log_record(
+        self, admin_api_client: AsyncClient, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Keep an error body out of the log line the degraded search writes.
+
+        ``RemoteAPI`` maps an upstream error body's ``detail`` onto the
+        exception it raises, so a body-carried credential reaches the log
+        through the exception rather than through the request line the
+        transport redacts.
+        """
+        # No level is raised, unlike in the neighbours: the transport logs every
+        # response body at DEBUG, a separate leak at this call site that a DEBUG
+        # capture would see however this route behaves.
+        with aioresponses() as mock:
+            mock.get(
+                re.compile(r"https://intake\.example\.com/api/now/table/case.*"),
+                status=status.HTTP_401_UNAUTHORIZED,
+                payload={"detail": "encrypted-token-blob"},
+            )
+            response = await admin_api_client.get(
+                _CASE_SEARCH_PATH, params={"term": "CS00"}
+            )
+
+        assert response.json() == {"available": False, "matches": []}
+        assert "encrypted-token-blob" not in response.text
+        # Without this the sentinel assertion below holds vacuously, since a
+        # run that logged nothing carries nothing to leak. The open paren keeps
+        # the control on the route's own wording rather than on which exception
+        # the transport happens to map an unauthorised status to.
+        assert "Diagnostics case search failed (" in caplog.text
+        # ``caplog.text``, not ``record.getMessage()``: the latter renders the
+        # format string alone, so it cannot see a value carried in a traceback.
+        assert "encrypted-token-blob" not in caplog.text
 
     @pytest.mark.usefixtures("case_search_configured")
     async def test_reports_unavailable_when_the_search_outruns_its_bound(

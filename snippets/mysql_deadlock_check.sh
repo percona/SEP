@@ -8,8 +8,9 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLDeadlock
@@ -32,4 +33,8 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* InnoDB status (LATEST DETECTED DEADLOCK section) *********"
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null || echo "Cannot retrieve InnoDB status."
+if ! innodb_status=$($MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2>&1); then
+    echo "Could not retrieve InnoDB status (check --defaults-file): $innodb_status"
+else
+    printf '%s\n' "$innodb_status"
+fi

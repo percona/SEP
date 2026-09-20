@@ -2,7 +2,7 @@
 
 # ---
 # title: PostgreSQL Query Tuning (EXPLAIN ANALYZE)
-# description: Wraps a user-supplied query in BEGIN/EXPLAIN (ANALYZE, ...)/ROLLBACK and runs it via psql -X -f. Selects EXPLAIN modifiers based on the detected PostgreSQL version (BUFFERS/SETTINGS/WAL/MEMORY/SERIALIZE). Writes the formatted explain output to a file for sharing with Percona support, with optional PII masking.
+# description: Wraps a user-supplied query in BEGIN/EXPLAIN (ANALYZE, ...)/ROLLBACK and runs it against the target database. Selects EXPLAIN modifiers based on the detected PostgreSQL version (BUFFERS/SETTINGS/WAL/MEMORY/SERIALIZE). Writes the formatted explain output to a file for sharing with Percona support, with optional PII masking.
 # allow_extra_args: false
 # sudo: optional
 # service_type: postgresql
@@ -10,33 +10,30 @@
 #  - name: dbname
 #    type: str
 #    label: Database name
-#    description: PostgreSQL database to connect to (psql -d).
+#    description: The PostgreSQL database the query runs against.
 #    required: true
 #  - name: query
 #    type: str
 #    label: SQL statement
-#    description: The SQL statement to analyze. Mutually exclusive with --query-file. A trailing semicolon is stripped if present.
+#    description: The SQL statement to analyze. Give this or "SQL statement file", not both. A trailing semicolon is stripped if present.
 #    placeholder: SELECT * FROM orders WHERE customer_id = 42
 #  - name: query-file
 #    type: str
 #    label: SQL statement file
-#    description: Path to a file containing the SQL statement to analyze. Mutually exclusive with --query.
+#    description: Path to a file holding the SQL statement to analyze. Give this or "SQL statement", not both.
 #    placeholder: /tmp/query.sql
 #  - name: host
 #    type: str
 #    label: Host
-#    description: PostgreSQL host (psql -h). Omit to use libpq defaults.
-#    placeholder: 127.0.0.1
+#    description: Host running PostgreSQL. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: port
 #    type: int
 #    label: Port
-#    description: PostgreSQL port (psql -p). Omit to use libpq defaults.
-#    placeholder: 5432
+#    description: Port PostgreSQL listens on. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: user
 #    type: str
 #    label: User
-#    description: PostgreSQL user (psql -U). Omit to use libpq defaults.
-#    placeholder: postgres
+#    description: PostgreSQL account to connect as. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: output-file
 #    type: str
 #    label: Output file path
@@ -52,7 +49,7 @@
 #    label: Masquerade PII
 #    description: Redact IPv4 / IPv6 / email-like values in the captured explain output. Indentation is preserved so plan alignment stays usable.
 #    default: false
-# atw:
+# diagnostic_categories:
 #  - QUERY_TUNING_OPTIMIZATION
 # ---
 
@@ -220,10 +217,16 @@ PSQL_CONN=()
 
 if [[ -z $EXPLAIN_OPTS_ARG ]]; then
     echo "Detecting PostgreSQL server version ..." >&2
-    if ! VER_NUM=$(psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -tA -X -c "SHOW server_version_num;" 2> /dev/null); then
-        echo "Error: could not connect to '$DBNAME_ARG' to detect server version. Pass --explain-options to skip detection." >&2
+    # Keep stderr out of the captured value: it is parsed as an integer below,
+    # and psql writes warnings there on runs that otherwise succeed.
+    VER_ERR=$(mktemp)
+    if ! VER_NUM=$(psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -tA -X -c "SHOW server_version_num;" 2> "$VER_ERR"); then
+        echo "Error: could not connect to '$DBNAME_ARG' to detect server version (check --dbname, --host, --port, --user): $(cat "$VER_ERR")" >&2
+        echo "Pass --explain-options to skip detection." >&2
+        rm -f "$VER_ERR"
         exit 1
     fi
+    rm -f "$VER_ERR"
     VER_NUM=$(echo "$VER_NUM" | tr -d '[:space:]')
     if ! [[ $VER_NUM =~ ^[0-9]+$ ]]; then
         echo "Error: unexpected server_version_num value: '$VER_NUM'." >&2

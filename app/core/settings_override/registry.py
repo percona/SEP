@@ -30,7 +30,10 @@ __all__ = [
     "MaterializerPurpose",
     "ReloadClassification",
     "SettingProvenance",
+    "annotated_type",
+    "annotation_contains_credential_url",
     "annotation_contains_secret",
+    "annotation_is_credential_url",
     "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
@@ -475,21 +478,28 @@ def hot_field_names(settings_cls: type[BaseYamlSettings]) -> frozenset[str]:
     )
 
 
-def _annotated_type(field_info: FieldInfo) -> Any:
+def annotated_type(field_info: FieldInfo) -> Any:
     """Reassemble the constraint-preserving annotated type for a field.
 
     Constraint metadata attached to the field's annotation (e.g. ``Gt(0)`` from
     ``PositiveInt``) is preserved by re-assembling an ``Annotated`` type from
     ``field_info.annotation`` plus every non-:class:`CustomFieldMetadata` item
     in ``field_info.metadata``. Without this, ``TypeAdapter(field_info.annotation)``
-    would accept values the original settings model rejects -- e.g. a negative
+    would accept values the original settings model rejects — e.g. a negative
     integer override for a ``PositiveInt`` field would silently load.
 
+    Public for a second reason, and it is the load-bearing one for the at-rest
+    walker in :mod:`app.core.settings_override.secret_storage`: Pydantic hoists
+    a non-``Optional`` field's ``Annotated`` metadata onto ``FieldInfo``, so
+    ``field_info.annotation`` alone is a bare type carrying none of the markers
+    that decide how a leaf is stored. A field typed
+    :data:`~app.core.utils.fields.CredentialHttpUrl` presents as a bare
+    :class:`pydantic_core.Url`, and a classifier reading ``.annotation``
+    silently misses it. A second re-assembly there would drift from this one.
+
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :return: The field's annotation, wrapped in ``Annotated`` together with its
         preserved constraint metadata when any constraints are present.
-    :rtype: Any
     """
     constraints = tuple(
         item
@@ -516,7 +526,7 @@ def _coerce_value(field_info: FieldInfo, raw: Any) -> Any:
     :raises ValidationError: If ``raw`` cannot be coerced to the declared
         type or violates a preserved constraint. Callers handle and log.
     """
-    return TypeAdapter(_annotated_type(field_info)).validate_python(raw)
+    return TypeAdapter(annotated_type(field_info)).validate_python(raw)
 
 
 def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
@@ -525,15 +535,12 @@ def coerce_field_value(field_info: FieldInfo, raw: Any) -> Any:
     Mirrors the validation that :func:`app.core.settings_override.cache.build_snapshot`
     performs when materialising a DB-override row into a typed Python value,
     including preservation of constraint metadata (``PositiveInt`` etc.) via
-    the ``_annotated_type`` reassembly.
+    the ``annotated_type`` reassembly.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param raw: The raw, JSON-decoded value to validate and coerce.
-    :type raw: Any
     :return: The validated Python value matching the field's annotation plus
         its preserved constraint metadata.
-    :rtype: Any
     :raises ValidationError: If ``raw`` cannot be coerced or violates a
         preserved constraint. Callers in the API layer map this to HTTP 422.
     """
@@ -1332,10 +1339,30 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
     subclasses of a polymorphic base remain reachable (limited to subclasses
     already imported when this runs).
 
+    A model's fields are queued through :func:`annotated_type` rather than as
+    bare ``.annotation`` values, because Pydantic hoists a non-``Optional``
+    field's ``Annotated`` metadata onto ``FieldInfo``. Descending on the bare
+    annotation drops every marker one level down, which is invisible to a
+    predicate keyed on a type and fatal to one keyed on metadata.
+
+    Queueing those aliases is also why ``keep_alive`` exists. The cycle guard
+    keys on :func:`id`, which only identifies an object for as long as that
+    object lives, and :func:`annotated_type` returns a value ``Annotated``
+    built on demand rather than an attribute of anything. ``typing`` memoises
+    that construction in a 128-entry LRU whose overflow is evicted, and skips
+    it altogether for metadata that does not hash, so a walk wide enough to
+    pass either limit frees an alias whose address a later one can reuse — and
+    a recycled address already in ``seen`` would silently prune a subtree the
+    walk never looked at. Holding every visited object for the duration keeps
+    the addresses distinct. The leaves this guards reach the at-rest
+    encryption predicates, where a pruned subtree means a credential stored in
+    the clear, so the walk must not depend on when a cache evicts.
+
     :param annotation: The type annotation to walk.
     :return: An iterator over the referenced type arguments.
     """
     seen = set()
+    keep_alive: list[Any] = []
     stack = [annotation]
     while stack:
         current = stack.pop()
@@ -1345,13 +1372,16 @@ def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
         if ident in seen:
             continue
         seen.add(ident)
+        keep_alive.append(current)
         yield current
         origin = typing.get_origin(current)
         if origin is not None:
             stack.extend(typing.get_args(current))
             continue
         if isinstance(current, type) and issubclass(current, BaseModel):
-            stack.extend(nested.annotation for nested in current.model_fields.values())
+            stack.extend(
+                annotated_type(nested) for nested in current.model_fields.values()
+            )
             stack.extend(current.__subclasses__())
 
 
@@ -1437,25 +1467,79 @@ def unwrap_secrets_for_storage(value: Any) -> Any:
 
 
 def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:
-    """Return whether ``metadata`` carries the credential URL JSON serializer."""
+    """Return whether ``metadata`` carries the credential URL JSON serializer.
+
+    :param metadata: The ``__metadata__`` tuple of an ``Annotated`` type.
+    :return: ``True`` when the credential-URL serializer is among the markers.
+    """
     return any(
         isinstance(item, WrapSerializer) and item.func is _credential_url_serializer
         for item in metadata
     )
 
 
-def is_credential_url_field(field_info: FieldInfo) -> bool:
-    """Return whether ``field_info`` serializes as a credential-bearing URL."""
-    if _metadata_has_credential_url_serializer(field_info.metadata):
-        return True
-    for arg in _iter_type_arguments(field_info.annotation):
-        if _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ())):
+def annotation_contains_credential_url(annotation: Any) -> bool:
+    """Return whether a credential-bearing URL is reachable from ``annotation``.
+
+    The subtree question, and the counterpart of
+    :func:`annotation_contains_secret`: it descends nested models and imported
+    subclasses looking for the credential-URL marker anywhere below. Use
+    :func:`annotation_is_credential_url` for "is the value *at this position*
+    one", which is what a leaf transform needs.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when the marker is reachable from the annotation.
+    """
+    return any(
+        _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ()))
+        for arg in _iter_type_arguments(annotation)
+    )
+
+
+def annotation_is_credential_url(annotation: Any) -> bool:
+    """Return whether the value at this JSON position is itself a credential URL.
+
+    Flattens unions and optionals but deliberately **not** ``Annotated``: the
+    marker lives in ``__metadata__``, so stripping the wrapper first — which
+    ``secret_storage._positional_args`` does — discards the very thing being
+    tested.
+
+    :param annotation: The type annotation to inspect.
+    :return: ``True`` when a value at this position is a credential-bearing URL.
+    """
+    stack = [annotation]
+    while stack:
+        current = stack.pop()
+        if current is None or current is type(None):
+            continue
+        if _metadata_has_credential_url_serializer(
+            getattr(current, "__metadata__", ())
+        ):
             return True
+        if hasattr(current, "__metadata__"):
+            stack.append(typing.get_args(current)[0])
+            continue
+        if typing.get_origin(current) in {Union, UnionType}:
+            stack.extend(typing.get_args(current))
     return False
 
 
+def is_credential_url_field(field_info: FieldInfo) -> bool:
+    """Return whether ``field_info``'s subtree carries a credential-bearing URL.
+
+    :param field_info: The Pydantic field metadata for the target attribute.
+    :return: ``True`` when the marker is reachable from the field's annotation.
+    """
+    return annotation_contains_credential_url(annotated_type(field_info))
+
+
 def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
-    """Read ``name`` from a live model or a materializer fingerprint mapping."""
+    """Read ``name`` from a live model or a materializer fingerprint mapping.
+
+    :param current: The stored value, a model instance or a mapping.
+    :param name: The field name to read.
+    :return: The attribute or mapping entry, or ``None`` when either is absent.
+    """
     if current is None:
         return None
     if isinstance(current, Mapping):
@@ -1468,13 +1552,25 @@ def preserve_credential_urls_in_model_payload(
     current: Any,
     incoming: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Restore masked URL passwords inside a materializer PATCH payload."""
+    """Restore masked URL passwords inside a materializer PATCH payload.
+
+    Each child is classified with the **position** predicate rather than the
+    subtree one :func:`is_credential_url_field` asks. A model-typed child whose
+    own leaf is a credential URL answers the subtree question ``True``, would
+    take the scalar branch below, fail its ``isinstance(result[name], str)``
+    guard and ``continue`` — skipping the nested recursion that child needs.
+
+    :param model_cls: The model whose fields ``incoming`` is keyed by.
+    :param current: The effective stored value to restore passwords from.
+    :param incoming: The payload submitted in the PATCH body.
+    :return: ``incoming`` with any masked URL passwords restored.
+    """
     result = dict(incoming)
     for name, field_info in model_cls.model_fields.items():
         if name not in result:
             continue
         leaf_current = _read_mapping_or_model_attr(current, name)
-        if is_credential_url_field(field_info):
+        if annotation_is_credential_url(annotated_type(field_info)):
             if isinstance(result[name], str) and leaf_current is not None:
                 result[name] = preserve_credential_url_password(
                     str(leaf_current), result[name]
@@ -2231,15 +2327,13 @@ def _resolve_default(field_info: FieldInfo) -> Any:
     Pydantic sets ``field_info.default`` to :data:`PydanticUndefined` when a
     field is declared with ``Field(default_factory=...)``. Returning that
     sentinel through the metadata layer makes ``dump_field_value`` emit
-    ``None`` -- misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
+    ``None`` — misrepresenting fields like ``BACKEND_CORS_ORIGINS`` whose
     real default is the factory's return value (e.g. ``[]``). Invoke the
     factory eagerly so the API surfaces the actual default.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :return: The resolved default value, or :data:`PydanticUndefined` when
         neither ``default`` nor ``default_factory`` is declared.
-    :rtype: Any
     """
     if field_info.default is not PydanticUndefined:
         return field_info.default
@@ -2252,7 +2346,7 @@ def _resolve_default(field_info: FieldInfo) -> Any:
 def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     """Return a JSON-safe representation of ``value`` for the response model.
 
-    Delegates to ``TypeAdapter(_annotated_type(field_info)).dump_python(value, mode='json')``
+    Delegates to ``TypeAdapter(annotated_type(field_info)).dump_python(value, mode='json')``
     so nested Pydantic models, enums, timedeltas, URLs and paths all serialise
     to their canonical JSON shape, including field metadata such as credential-URL
     serializers and constraint annotations. :class:`pydantic.SecretStr` /
@@ -2272,13 +2366,10 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     and know it cannot be edited via the API.
 
     :param field_info: The Pydantic field metadata for the target attribute.
-    :type field_info: FieldInfo
     :param value: The Python value to serialise.
-    :type value: Any
     :return: A JSON-serialisable representation of ``value``, or ``None`` when
         ``value`` is :data:`pydantic_core.PydanticUndefined` (the field has no
         declared default).
-    :rtype: Any
     """
     if value is PydanticUndefined:
         return None
@@ -2291,6 +2382,6 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
                 TypeAdapter(type(item)).dump_python(item, mode="json")
                 for item in sorted(value, key=_stable_collection_sort_key)
             ]
-        return TypeAdapter(_annotated_type(field_info)).dump_python(value, mode="json")
+        return TypeAdapter(annotated_type(field_info)).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
         return None

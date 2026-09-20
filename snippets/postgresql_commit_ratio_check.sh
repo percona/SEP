@@ -5,12 +5,13 @@
 # description: "This script checks for databases with a low transaction commit ratio, indicating frequent rollbacks or aborted operations."
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # alerts:
 #   - PostgreSQLLowCommitRatio

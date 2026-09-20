@@ -8,8 +8,9 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLHistoryListLengthHigh
@@ -31,8 +32,11 @@ fi
 MYSQL="mysql $DEFAULTS_FILE -B"
 
 echo "********* InnoDB History List Length *********"
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | grep -i "history list length" ||
-    echo "Cannot retrieve InnoDB status."
+if ! innodb_status=$($MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2>&1); then
+    echo "Could not retrieve InnoDB status (check --defaults-file): $innodb_status"
+elif ! printf '%s\n' "$innodb_status" | grep -i "history list length"; then
+    echo "InnoDB status reported no history list length."
+fi
 
 echo ""
 echo "********* Purge thread configuration *********"
@@ -44,5 +48,8 @@ $MYSQL -e "SELECT * FROM information_schema.processlist WHERE command != 'Sleep'
 
 echo ""
 echo "********* Open transactions (including sleeping) *********"
-$MYSQL -e "SELECT * FROM information_schema.innodb_trx ORDER BY trx_started;" 2> /dev/null ||
-    echo "Cannot query innodb_trx."
+if ! innodb_trx=$($MYSQL -e "SELECT * FROM information_schema.innodb_trx ORDER BY trx_started;" 2>&1); then
+    echo "Could not query innodb_trx (check --defaults-file): $innodb_trx"
+else
+    printf '%s\n' "$innodb_trx"
+fi

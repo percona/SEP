@@ -8,23 +8,23 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to the defaults-file
-#    description: Path to the defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
 #  - name: run-time
 #    type: int
 #    ge: 0
 #    le: 43200
 #    label: How many seconds to run for
-#    description: How many iterations to run, used with --run-time
+#    description: How many seconds each capture runs for.
 #  - name: iterations
 #    type: int
 #    label: How many iterations to run
-#    description: How many iterations to run
+#    description: How many captures to take before the script stops.
 #    default: 2
 #  - name: sleep
 #    type: int
 #    label: Sleep time between iterations
-#    description: Sleep time between iterations
+#    description: Seconds to wait between captures.
 #    default: 30
 #  - name: system-only
 #    type: bool
@@ -33,8 +33,8 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
-# atw:
+#    description: Print the script's usage text instead of running it.
+# diagnostic_categories:
 #  - OVERALL_SLOWNESS
 #  - NOT_RESPONDING
 #  - WRITES_ARE_BLOCKED

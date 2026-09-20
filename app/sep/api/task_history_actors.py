@@ -66,10 +66,12 @@ class SepTaskResponse(TaskResponse):
     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
     actor fields carry.
 
-    :param created_by: Display name for the task's creator, or ``None`` when
-        none was recorded.
+    :param created_by: Display name for the task's creator: the provider's
+        username when resolvable, a system label for system-initiated work,
+        otherwise the stored identifier. ``None`` when none was recorded.
     :param last_updated_by: Display name for the user who last modified the
-        task, or ``None`` when none was recorded.
+        task, resolved on the same terms as ``created_by``. ``None`` when none
+        was recorded.
     """
 
     created_by: str | None = Field(description=_ACTOR_DESCRIPTION)
@@ -80,8 +82,10 @@ class SepTaskHistoryResponse(TaskHistoryResponse):
     """Represent a task-history row as SEP serves it, with actors resolved.
 
     :param task: The task this execution belongs to, carrying resolved actors.
-    :param executed_by: Display name for the actor that ran the task, or
-        ``None`` when none was recorded.
+    :param executed_by: Display name for the actor that ran the task: the
+        provider's username when resolvable, a system label for
+        system-initiated work, otherwise the stored identifier. ``None`` when
+        none was recorded.
     """
 
     task: SepTaskResponse

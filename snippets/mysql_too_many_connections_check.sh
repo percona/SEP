@@ -8,8 +8,9 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLTooManyConnections
@@ -45,15 +46,23 @@ $MYSQL -e "SELECT user, host, db, command, COUNT(*) AS cnt FROM information_sche
 
 echo ""
 echo "********* InnoDB status (transactions section) *********"
-set +o pipefail
-$MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2> /dev/null | head -100
-innodb_status_exit_code=${PIPESTATUS[0]}
-set -o pipefail
-if [[ ${innodb_status_exit_code} -ne 0 && ${innodb_status_exit_code} -ne 141 ]]; then
-    echo "Cannot retrieve InnoDB status."
+if ! innodb_status=$($MYSQL -e "SHOW ENGINE INNODB STATUS\G" 2>&1); then
+    echo "Could not retrieve InnoDB status (check --defaults-file): $innodb_status"
+else
+    printf '%s\n' "$innodb_status" | head -100 || true
 fi
 
 echo ""
 echo "********* Threads waiting for locks *********"
-$MYSQL -e "SELECT * FROM information_schema.processlist WHERE state LIKE '%lock%' ORDER BY time DESC;" 2> /dev/null ||
+# Keep stderr out of the captured value: an empty result is what distinguishes
+# "no threads are waiting" from "the query did not run", and a warning on an
+# otherwise successful run would suppress that distinction.
+LOCK_ERR=$(mktemp)
+if ! lock_waiters=$($MYSQL -e "SELECT * FROM information_schema.processlist WHERE state LIKE '%lock%' ORDER BY time DESC;" 2> "$LOCK_ERR"); then
+    echo "Could not query threads waiting for locks (check --defaults-file): $(cat "$LOCK_ERR")"
+elif [ -z "$lock_waiters" ]; then
     echo "No threads waiting for locks."
+else
+    printf '%s\n' "$lock_waiters"
+fi
+rm -f "$LOCK_ERR"

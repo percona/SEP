@@ -225,6 +225,7 @@ class HostSystemObservationWriteFactory(ModelFactory[HostSystemObservationWrite]
     os_version = "Ubuntu 22.04"
     installed_packages = [{"name": "mysql-client", "version": "8.0.35"}]
     config = {"kernel": "5.15.0"}
+    can_elevate = True
     observed_at = MOCK_OBSERVED_AT
 
 

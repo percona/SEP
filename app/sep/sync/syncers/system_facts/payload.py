@@ -82,8 +82,11 @@ def _redact_secrets(text: str) -> str:
 
 #: Path to the OS release file (module-level so tests can redirect it).
 OS_RELEASE_PATH = Path("/etc/os-release")
-#: Host fact fields that constitute a meaningful host observation.
-HOST_FIELDS = ("os_version", "installed_packages", "config")
+#: Host fact fields that constitute a meaningful host observation. Spelled as a literal
+#: rather than derived from the write model: this module is dispatched to the target node
+#: and runs stdlib-only before ``pip install``, so it cannot import ``app.inventory``. A
+#: future observation field must be added here as well as to the model.
+HOST_FIELDS = ("os_version", "installed_packages", "config", "can_elevate")
 #: Seconds to wait when connecting to a database service.
 DB_CONNECT_TIMEOUT = 10
 #: Seconds to wait for a package-manager query to complete.
@@ -251,19 +254,41 @@ def collect_host_config() -> dict[str, Any]:
     return {key: value for key, value in config.items() if value}
 
 
+def collect_can_elevate() -> bool | None:
+    """Collect whether a ``sudo``-prefixed command can start on this node.
+
+    ``True`` when the task user is uid 0, or when a bare ``sudo`` resolves on
+    PATH: the two conditions under which the launch check lets a
+    ``sudo``-prefixed interpreter through. It does not promise that user is in
+    sudoers — a ``sudo -n`` invocation still fails for a non-sudoer. A measured
+    ``False`` is a value, not an absence, so callers must admit it on
+    ``is not None`` rather than on truthiness.
+
+    :return: Whether the launch check would let a ``sudo``-prefixed command
+        through, or ``None`` on a platform without POSIX uids, where the
+        question has no answer.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is None:
+        return None
+    return geteuid() == 0 or shutil.which("sudo") is not None
+
+
 def collect_host_facts() -> dict[str, Any]:
     """Collect all host-level facts, each best-effort.
 
     :return: A mapping always carrying ``collected_at`` plus any gathered host fields.
     :rtype: dict[str, Any]
     """
-    facts = {"collected_at": _now_iso()}
+    facts: dict[str, Any] = {"collected_at": _now_iso()}
     if os_version := collect_os_version():
         facts["os_version"] = os_version
     if packages := collect_installed_packages():
         facts["installed_packages"] = packages
     if config := collect_host_config():
         facts["config"] = config
+    if (can_elevate := collect_can_elevate()) is not None:
+        facts["can_elevate"] = can_elevate
     return facts
 
 
@@ -275,6 +300,7 @@ def _mysql_creds(address: str) -> dict[str, str]:
     :return: A mapping with ``user``/``password`` keys, or an empty mapping.
     :rtype: dict[str, str]
     """
+    # optional-dependency: mysql
     import myloginpath
 
     try:
@@ -325,6 +351,7 @@ def _collect_mysql_version(address: str) -> str | None:
     :return: The MySQL version string, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: mysql
     import pymysql
 
     creds = _mysql_creds(address)
@@ -352,6 +379,7 @@ def _collect_postgresql_version(address: str) -> str | None:
     :return: The PostgreSQL ``server_version``, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: postgresql
     import psycopg
 
     host, port = parse_host_port(address, default_port=DefaultPort.POSTGRESQL)
@@ -433,6 +461,7 @@ def _collect_mongodb_version(address: str) -> str | None:
     :return: The MongoDB ``buildInfo`` version, or ``None``.
     :rtype: str | None
     """
+    # optional-dependency: mongodb
     import pymongo
 
     args, kwargs = _mongo_connect_params(address)
@@ -507,7 +536,7 @@ def main() -> None:
 
     if config.get("collect_host"):
         facts = collect_host_facts()
-        if any(facts.get(field) for field in HOST_FIELDS):
+        if any(facts.get(field) is not None for field in HOST_FIELDS):
             result["host"] = facts
 
     services = config.get("services", [])

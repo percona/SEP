@@ -15,9 +15,7 @@
 
 """Tests for ``scripts/sync_pr_labels.py``."""
 
-import importlib.util
 import json
-import sys
 import urllib.parse
 from pathlib import Path
 from unittest.mock import Mock
@@ -25,15 +23,11 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "sync_pr_labels.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("sync_pr_labels", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-sync_pr_labels = importlib.util.module_from_spec(_spec)
-sys.modules["sync_pr_labels"] = sync_pr_labels
-_spec.loader.exec_module(sync_pr_labels)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+sync_pr_labels = load_script("sync_pr_labels")
 
 _LABELER_PATH = _PROJECT_ROOT / ".github" / "labeler.yml"
 _LABELER_TEXT = _LABELER_PATH.read_text(encoding="utf-8")

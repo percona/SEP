@@ -5,12 +5,13 @@
 # description: "This script checks for PSQL queries that are in the conflicted state."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # alerts:
 #   - PostgreSQLLockConflicts

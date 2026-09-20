@@ -10,23 +10,20 @@
 #  - name: dbname
 #    type: str
 #    label: Database name
-#    description: PostgreSQL database to connect to (passed as psql -d).
-#    required: true
+#    description: The PostgreSQL database pg_gather collects from.
+#    default: postgres
 #  - name: host
 #    type: str
 #    label: Host
-#    description: PostgreSQL host (psql -h). Omit to use libpq defaults.
-#    placeholder: 127.0.0.1
+#    description: Host running PostgreSQL. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: port
 #    type: int
 #    label: Port
-#    description: PostgreSQL port (psql -p). Omit to use libpq defaults.
-#    placeholder: 5432
+#    description: Port PostgreSQL listens on. Leave empty to use this machine's PostgreSQL connection defaults.
 #  - name: user
 #    type: str
 #    label: User
-#    description: PostgreSQL user (psql -U). pg_gather recommends a superuser, rds_superuser, or an account with pg_monitor.
-#    placeholder: postgres
+#    description: PostgreSQL account to connect as. pg_gather wants a superuser, an rds_superuser, or an account granted pg_monitor.
 #  - name: output
 #    type: str
 #    label: Output destination
@@ -36,11 +33,11 @@
 #      - value: stdout
 #        label: Print to the terminal
 #      - value: file
-#        label: Write the output to a file named by the timestamp (default)
+#        label: Write the output to a file named by the timestamp
 #  - name: output-file
 #    type: str
 #    label: Output file path
-#    description: Override path when --output=file. Defaults to pg_gather_<epoch>.out in the current directory.
+#    description: Where to write the collected output when "Output destination" is a file. Defaults to pg_gather_<epoch>.out in the current directory.
 #    placeholder: /tmp/pg_gather.out
 #  - name: script
 #    type: str
@@ -52,7 +49,7 @@
 #    label: Masquerade PII
 #    description: Redact IPv4 / IPv6 addresses and email-like values in the captured output before writing it.
 #    default: false
-# atw:
+# diagnostic_categories:
 #  - OVERALL_SLOWNESS
 #  - NOT_RESPONDING
 #  - WRITES_ARE_BLOCKED

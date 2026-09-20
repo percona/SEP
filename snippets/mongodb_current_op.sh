@@ -2,14 +2,14 @@
 
 # ---
 # title: "MongoDB Current Operations"
-# description: "Captures db.currentOp(true) from a MongoDB instance — every in-progress operation, including idle and system operations — for support diagnostics. Filter with --min-secs to keep only long-running operations and --active-only to drop idle connections."
+# description: "Captures db.currentOp(true) from a MongoDB instance — every in-progress operation, including idle and system operations — for support diagnostics. Can be filtered to keep only long-running operations, or to drop idle connections."
 # allow_extra_args: false
 # sudo: optional
 # parameters:
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the MongoDB instance. Defaults to localhost.
+#    description: Hostname or IP of the MongoDB instance.
 #    default: localhost
 #  - name: port
 #    type: int
@@ -43,6 +43,10 @@
 #    label: Active operations only
 #    description: Exclude idle connections and idle system operations from the output.
 #    default: false
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - WRITES_ARE_BLOCKED
+#  - TEMPORARY_STALLS
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

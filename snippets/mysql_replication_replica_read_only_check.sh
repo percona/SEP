@@ -8,8 +8,9 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLReplicationBroken
@@ -40,10 +41,18 @@ fi
 
 echo ""
 echo "********* Server UUID and GTID info *********"
-$MYSQL -e "SELECT @@server_uuid;" 2> /dev/null || true
-$MYSQL -e "SELECT @@gtid_mode;" 2> /dev/null || true
-$MYSQL -e "SELECT @@global.gtid_executed\G" 2> /dev/null || true
+for gtid_query in "SELECT @@server_uuid;" "SELECT @@gtid_mode;" "SELECT @@global.gtid_executed\G"; do
+    if ! gtid_info=$($MYSQL -e "$gtid_query" 2>&1); then
+        echo "Could not run '$gtid_query' (check --defaults-file): $gtid_info"
+    else
+        printf '%s\n' "$gtid_info"
+    fi
+done
 
 echo ""
 echo "********* Read-only status *********"
-$MYSQL -e "SELECT @@global.read_only, @@global.super_read_only;" 2> /dev/null || true
+if ! read_only_status=$($MYSQL -e "SELECT @@global.read_only, @@global.super_read_only;" 2>&1); then
+    echo "Could not read the read-only flags (check --defaults-file): $read_only_status"
+else
+    printf '%s\n' "$read_only_status"
+fi

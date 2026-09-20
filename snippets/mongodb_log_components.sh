@@ -9,7 +9,7 @@
 #  - name: host
 #    type: str
 #    label: MongoDB host
-#    description: Hostname or IP of the MongoDB instance. Defaults to localhost.
+#    description: Hostname or IP of the MongoDB instance.
 #    default: localhost
 #  - name: port
 #    type: int
@@ -31,6 +31,7 @@
 #    label: Authentication database
 #    description: Database used for authenticating the user.
 #    default: admin
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

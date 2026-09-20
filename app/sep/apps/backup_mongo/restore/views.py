@@ -58,5 +58,5 @@ restore_views = Views(
         ),
         default_sort="name",
     ),
-    capabilities=Capabilities(chaining=True, scheduling=True),
+    capabilities=Capabilities(chaining=True, scheduling=False),
 )

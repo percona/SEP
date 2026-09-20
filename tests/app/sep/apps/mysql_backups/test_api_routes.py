@@ -23,6 +23,8 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
@@ -132,17 +134,29 @@ class TestSchemaEndpoint:
         """Declare every status value and whether it ends a run."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
         assert body["task_statuses"] == [
-            {"value": status_value.value, "terminal": status_value.is_terminal()}
+            {
+                "value": status_value.value,
+                "terminal": status_value.is_terminal(),
+                "output_available": status_value.is_finished(),
+            }
             for status_value in TaskHistoryStatusEnum
         ]
 
-    def test_schema_marks_lost_as_terminal(self, test_client):
-        """Mark a lost run terminal, so a client polling for completion stops on it."""
+    def test_schema_distinguishes_terminal_from_output_available(self, test_client):
+        """Publish both completion predicates for lost and successful runs."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
-        assert {
+        statuses = {entry["value"]: entry for entry in body["task_statuses"]}
+
+        assert statuses[TaskHistoryStatusEnum.LOST.value] == {
             "value": TaskHistoryStatusEnum.LOST.value,
             "terminal": True,
-        } in body["task_statuses"]
+            "output_available": False,
+        }
+        assert statuses[TaskHistoryStatusEnum.SUCCESS.value] == {
+            "value": TaskHistoryStatusEnum.SUCCESS.value,
+            "terminal": True,
+            "output_available": True,
+        }
 
     def test_schema_includes_backup_type_field(self, test_client):
         """The mode-discriminator field is present."""
@@ -157,7 +171,7 @@ class TestSchemaEndpoint:
         assert body["related_apps"] == [
             {
                 "app_key": "mysql_backups/restore",
-                "label": "Restore",
+                "label": "Restores",
                 "route_segment": "restores",
             },
         ]
@@ -174,6 +188,7 @@ class TestListEndpoint:
     def test_list_returns_data(self, test_client, mock_task_api_dep):
         """The list endpoint returns the registered backups tasks."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_task_api_dep.get = AsyncMock(
             return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
         )
@@ -195,6 +210,7 @@ class TestListEndpoint:
         assert len(items) == 1
         row = items[0]
         assert row["name"] == task["name"]
+        assert row["created_by"] == "Service account"
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert row["backup_type"] == BackupType.MYDUMPER.value
         assert "service_type" not in row
@@ -255,6 +271,7 @@ class TestDetailEndpoint:
     def test_detail_returns_task(self, test_client, mock_task_api_dep):
         """The detail endpoint returns a single backup task."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 task,
@@ -265,6 +282,7 @@ class TestDetailEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == task["name"]
+        assert body["created_by"] == "Service account"
         assert body["backup_type"] == BackupType.MYDUMPER.value
         assert "service_type" not in body
         assert "owner" not in body
@@ -292,6 +310,7 @@ class TestCreateEndpoint:
     ):
         """Happy path: backup_type=M creates a task with 201."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -304,6 +323,7 @@ class TestCreateEndpoint:
         )
         assert response.status_code == status.HTTP_201_CREATED, response.text
         assert response.json()["name"] == task["name"]
+        assert response.json()["created_by"] == "Service account"
 
     def test_create_xtrabackup_happy_path(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -379,6 +399,28 @@ class TestCreateEndpoint:
                 },
                 id="tmpdir-and-post-run-together",
             ),
+            pytest.param(
+                {
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="in-place-gpg-without-an-upload-target",
+            ),
+            pytest.param(
+                {
+                    "backup_type": BackupType.BINLOG,
+                    "binlog_prefix": "bp",
+                    "encryption_format": EncryptionFormat.GPG.value,
+                    "post_run_encrypt": True,
+                    "encryption_recipient": "ops@example.com",
+                    "upload": [],
+                    "s3_bucket": None,
+                },
+                id="binlog-post-run-gpg-without-an-upload-target",
+            ),
         ],
     )
     def test_create_rejects_invalid_encryption_combo(
@@ -398,6 +440,39 @@ class TestCreateEndpoint:
             "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_names_the_upload_requirement_in_the_error_body(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ):
+        """Return a 422 whose detail says what to change.
+
+        The rule is app-scoped, and the SPA's rule engine evaluates section-scoped
+        rules only, so the message in this body is the whole of what reaches the
+        operator.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        body = build_backup_write_body(
+            service_id=created_service.id,
+            encryption_format=EncryptionFormat.GPG.value,
+            encrypt=True,
+            encryption_recipient="ops@example.com",
+            upload=[],
+            s3_bucket=None,
+        )
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        messages = [error["msg"] for error in response.json()["detail"]]
+        assert any("requires at least one upload provider" in msg for msg in messages)
         mock_task_api_dep.post.assert_not_called()
 
     def test_create_rejects_missing_required_fields(
@@ -797,6 +872,7 @@ class TestUpdateReselectsThePayloadVariant:
     ):
         """Assert the PUT body's upload selection, not the stored one, picks the variant."""
         task = build_backup_task(backup_type=BackupType.XTRABACKUP)
+        task["last_updated_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -816,4 +892,5 @@ class TestUpdateReselectsThePayloadVariant:
             f"/api/apps/mysql_backups/{task['name']}", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_200_OK, response.text
+        assert response.json()["last_updated_by"] == "Service account"
         assert self._sent_payload(mock_task_api_dep).endswith(f"/{expected}")

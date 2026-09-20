@@ -29,10 +29,10 @@ import pytest
 from app.sep.snippets.models.meta import SnippetMetaParameterType
 from app.sep.snippets.models.snippet import BaseSnippet
 
-# The PostgreSQL snippet scripts that gain an optional ``dbname`` parameter.
-# Excludes ``postgresql_pg_gather.sh`` / ``postgresql_query_tuning.sh`` (already
-# ship a required ``dbname``) and ``postgresql_exporter_error_check.sh`` (no psql
-# call).
+# The PostgreSQL snippet scripts that declare an optional ``dbname`` parameter.
+# Excludes ``postgresql_exporter_error_check.sh``, which makes no psql call, and
+# ``postgresql_query_tuning.sh``, whose ``dbname`` stays required because the
+# database selects the schema the operator's own statement resolves against.
 POSTGRESQL_DBNAME_SCRIPTS = (
     "postgresql_archive_failed_check.sh",
     "postgresql_commit_ratio_check.sh",
@@ -42,6 +42,7 @@ POSTGRESQL_DBNAME_SCRIPTS = (
     "postgresql_lock_conflicts_check.sh",
     "postgresql_log_extractor.sh",
     "postgresql_max_connections_check.sh",
+    "postgresql_pg_gather.sh",
     "postgresql_replication_lag_check.sh",
     "postgresql_transaction_duration_too_many_locks_acquired_check.sh",
     "postgresql_wraparound_check.sh",

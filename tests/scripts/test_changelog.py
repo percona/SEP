@@ -15,22 +15,13 @@
 
 """Tests for the ``scripts/changelog.py`` CLI."""
 
-import importlib.util
 import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SCRIPT_PATH = _PROJECT_ROOT / "scripts" / "changelog.py"
+from tests.scripts import load_script
 
-_spec = importlib.util.spec_from_file_location("changelog", _SCRIPT_PATH)
-assert _spec is not None, f"cannot load {_SCRIPT_PATH}"
-assert _spec.loader is not None, f"cannot load {_SCRIPT_PATH}"
-changelog = importlib.util.module_from_spec(_spec)
-sys.modules["changelog"] = changelog
-_spec.loader.exec_module(changelog)
+changelog = load_script("changelog")
 
 
 SAMPLE_CHANGELOG = """\
@@ -71,17 +62,19 @@ def repo(tmp_path, monkeypatch):
 # --- add subcommand --------------------------------------------------------
 
 
-def test_add_creates_fragment(repo):
-    """Running ``add`` writes a fragment file with the given message.
+@pytest.mark.parametrize("ticket", ["SEP-503", "PMM-15326"])
+def test_add_creates_fragment(repo, ticket):
+    """Write a fragment file with the given message.
 
     :param repo: Test repo fixture.
     :type repo: pathlib.Path
+    :param ticket: The ticket key.
     """
     exit_code = changelog.main(
-        ["add", "--ticket", "SEP-503", "--section", "added", "--message", "New alert"],
+        ["add", "--ticket", ticket, "--section", "added", "--message", "New alert"],
     )
     assert exit_code == 0
-    fragment = repo / "changelog.d" / "SEP-503.added.md"
+    fragment = repo / "changelog.d" / f"{ticket}.added.md"
     assert fragment.exists()
     assert fragment.read_text(encoding="utf-8") == "New alert.\n"
 
@@ -158,7 +151,7 @@ def test_add_force_overwrites(repo):
 
 
 def test_add_rejects_invalid_ticket(repo, capsys):
-    """``add`` rejects ticket keys that do not match ``SEP-<digits>``.
+    """Reject ticket keys with an unsupported project prefix.
 
     :param repo: Test repo fixture.
     :type repo: pathlib.Path
@@ -169,7 +162,10 @@ def test_add_rejects_invalid_ticket(repo, capsys):
         ["add", "--ticket", "FOO-1", "--section", "added", "--message", "x"],
     )
     assert exit_code == 1
-    assert "invalid ticket" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "invalid ticket" in error
+    assert "SEP-<n>" in error
+    assert "PMM-<n>" in error
 
 
 def test_add_rejects_multiline_message(repo, capsys):
@@ -207,17 +203,58 @@ def test_check_passes_on_empty_dir(repo):
     assert changelog.main(["check"]) == 0
 
 
-def test_check_passes_on_valid_fragments(repo):
-    """``check`` exits 0 when all fragments are well-formed.
+@pytest.mark.parametrize("project", ["SEP", "PMM"])
+def test_check_passes_on_valid_fragments(repo, project):
+    """Accept well-formed fragments from supported projects.
 
     :param repo: Test repo fixture.
     :type repo: pathlib.Path
+    :param project: The ticket project prefix.
     """
-    (repo / "changelog.d" / "SEP-503.added.md").write_text("Fix\n", encoding="utf-8")
-    (repo / "changelog.d" / "SEP-816.changed.md").write_text(
+    (repo / "changelog.d" / f"{project}-503.added.md").write_text(
+        "Fix\n", encoding="utf-8"
+    )
+    (repo / "changelog.d" / f"{project}-816.changed.md").write_text(
         "Tweak\n", encoding="utf-8"
     )
     assert changelog.main(["check"]) == 0
+
+
+@pytest.mark.parametrize("section", sorted(changelog.VALID_SECTIONS))
+def test_load_pmm_fragment(repo, section):
+    """Load and render a PMM fragment in each supported section.
+
+    :param repo: Test repo fixture.
+    :param section: The short section name.
+    """
+    fragment = repo / "changelog.d" / f"PMM-15326.{section}.md"
+    fragment.write_text("New feature.\nAnother entry.\n", encoding="utf-8")
+
+    grouped = changelog.load_fragments(repo / "changelog.d")
+
+    assert grouped == {
+        changelog.SECTION_MAP[section]: [
+            ("PMM-15326", ["New feature.", "Another entry."], fragment),
+        ],
+    }
+    assert changelog.render_section_body(grouped) == (
+        f"### {changelog.SECTION_MAP[section]}\n\n"
+        "- PMM-15326: New feature.\n- PMM-15326: Another entry.\n"
+    )
+
+
+def test_load_rejects_unknown_project(repo):
+    """Reject unknown projects and name all accepted filename forms.
+
+    :param repo: Test repo fixture.
+    """
+    (repo / "changelog.d" / "FOO-1.added.md").write_text("x\n", encoding="utf-8")
+
+    with pytest.raises(changelog.FragmentError, match="FOO-1.added.md") as exc:
+        changelog.load_fragments()
+
+    assert "SEP-<n>.<section>.md" in str(exc.value)
+    assert "PMM-<n>.<section>.md" in str(exc.value)
 
 
 def test_check_fails_on_malformed_filename(repo, capsys):
@@ -344,6 +381,29 @@ def test_list_groups_and_sorts_by_ticket(repo, capsys):
     output = capsys.readouterr().out
     assert output.index("- SEP-100: C") < output.index("- SEP-503: B")
     assert output.index("### Added") < output.index("### Changed")
+
+
+def test_list_sorts_by_project_then_numeric_ticket(repo, capsys):
+    """Group tickets alphabetically by project and numerically within each.
+
+    :param repo: Test repo fixture.
+    :param capsys: pytest output capture fixture.
+    """
+    for ticket in ("SEP-2083", "PMM-15326", "SEP-2", "PMM-2", "SEP-10", "PMM-10"):
+        (repo / "changelog.d" / f"{ticket}.added.md").write_text(
+            "Entry.\n", encoding="utf-8"
+        )
+
+    assert changelog.main(["list"]) == 0
+    assert capsys.readouterr().out == (
+        "### Added\n\n"
+        "- PMM-2: Entry.\n"
+        "- PMM-10: Entry.\n"
+        "- PMM-15326: Entry.\n"
+        "- SEP-2: Entry.\n"
+        "- SEP-10: Entry.\n"
+        "- SEP-2083: Entry.\n"
+    )
 
 
 # --- assemble subcommand ---------------------------------------------------

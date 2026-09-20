@@ -46,6 +46,7 @@ from pydantic import (
 from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import resolve_actor
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
@@ -369,9 +370,10 @@ class TaskExecutionApp(BaseApp):
     :param response_builder: A sync list/detail builder override injecting the
         per-plugin response extras; replaces the framework default builder. When
         ``None`` (default) the framework builds a default list/detail builder
-        that stamps ``service_type`` and remaps the ``created_by`` /
-        ``last_updated_by`` user-ids to usernames through the bound response
-        context. Defaults to ``None``.
+        that stamps ``service_type`` and resolves the ``created_by`` /
+        ``last_updated_by`` user ids to system labels or provider usernames
+        through the bound response context, falling back to the raw id when
+        neither resolves it. Defaults to ``None``.
     :param detail_response_builder: A sync detail-only builder override; when
         ``None`` the detail route falls back to ``response_builder`` and the list
         model. When set, the create route renders like detail too unless an
@@ -500,6 +502,28 @@ class TaskExecutionApp(BaseApp):
         return any(
             ref.check_connectivity for ref in iter_service_refs(self.create_model)
         )
+
+    @property
+    def offers_scheduling(self) -> bool:
+        """Return whether the schema this app serves declares ``scheduling``.
+
+        A script-source app serves its ``static_schema``; any other app serves the
+        ``schema=`` passthrough when one is set and the schema derived from its
+        views bundle otherwise. Reading the same source keeps the answer equal to
+        the capabilities the UI gates every schedule entry point on.
+
+        :return: ``True`` when the served capabilities declare ``scheduling``.
+        """
+        if self.script_source is not None:
+            static_schema = self.script_source.static_schema
+            capabilities = (
+                static_schema.capabilities if static_schema is not None else None
+            )
+        elif self.app_schema is not None:
+            capabilities = self.app_schema.capabilities
+        else:
+            capabilities = self.views.capabilities
+        return capabilities is not None and capabilities.scheduling
 
     @model_validator(mode="after")
     def _build_api_router(self) -> Self:
@@ -1310,12 +1334,12 @@ class TaskExecutionApp(BaseApp):
     ) -> TaskResponseBuilder:
         """Build the framework default response builder over ``response_model``.
 
-        Stamp the app's ``service_type`` and remap the ``created_by`` /
-        ``last_updated_by`` user-ids to usernames through the bound response
-        context, falling back to the raw id when the map lacks an entry. Shared by
-        the list/detail and create/update response surfaces so a standard app
-        needs no per-app builder; left ``connectivity_warning`` at the model
-        default for the framework to merge on create/update.
+        Stamp the app's ``service_type`` and resolve the ``created_by`` /
+        ``last_updated_by`` user ids to system labels or provider usernames through
+        the bound response context, falling back to the raw id when neither resolves
+        it. Shared by the list/detail and create/update response surfaces so a
+        standard app needs no per-app builder; leave ``connectivity_warning`` at the
+        model default for the framework to merge on create/update.
 
         :param response_model: The model the builder constructs; its return
             annotation supplies the derived route's response model.
@@ -1337,10 +1361,8 @@ class TaskExecutionApp(BaseApp):
                 status,
                 last_executed_at=last_executed_at,
                 extras={
-                    "created_by": mapping.get(task.created_by, task.created_by),
-                    "last_updated_by": mapping.get(
-                        task.last_updated_by, task.last_updated_by
-                    ),
+                    "created_by": resolve_actor(task.created_by, mapping),
+                    "last_updated_by": resolve_actor(task.last_updated_by, mapping),
                     "service_type": service_type,
                 },
             )
@@ -1351,7 +1373,8 @@ class TaskExecutionApp(BaseApp):
         """Return the plugin's ``response_builder`` override, or a default builder.
 
         Use the supplied ``response_builder`` verbatim when set; otherwise build
-        the framework default builder (stamp ``service_type`` + remap usernames)
+        the framework default builder (stamp ``service_type`` and resolve actor
+        ids to system labels or provider usernames, falling back to the raw id)
         over ``response_model``.
 
         :return: A ``(task, *, status, context) -> response_model`` builder whose

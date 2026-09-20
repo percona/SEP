@@ -5,6 +5,7 @@
 # description: "This script checks the ip_controller process and logs to diagnose VIP assignment issues for MySQL clusters."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLIPControllerDown

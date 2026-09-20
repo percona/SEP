@@ -15,6 +15,7 @@
 
 """Define test cases for the tasks data models and validation."""
 
+import json
 from collections import defaultdict
 from datetime import datetime, UTC
 from typing import Any
@@ -22,20 +23,29 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
+from cryptography.fernet import Fernet
 from polyfactory.factories.pydantic_factory import ModelFactory
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.encryption import decrypt, is_encrypted
 from app.core.utils.path import PayloadReferenceError
 from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
+from app.sep.apps.framework.spec import build_run_python_task
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
+from app.tasks.execution_request_secrets import (
+    ARGS_LEAF,
+    ENCRYPTED_META_KEYS,
+    PAYLOAD_LEAF,
+)
 from app.tasks.models import (
     _encode_anonymize_mask,
+    ANY_OWNER,
     DispatchLock,
     FileMetadata,
     LogCaptureStatusEnum,
@@ -45,6 +55,7 @@ from app.tasks.models import (
     TaskBase,
     TaskExecuteRequest,
     TaskExecutionRequest,
+    TaskExecutionRequestJSON,
     TaskHistory,
     TaskHistoryBase,
     TaskHistoryLogState,
@@ -89,7 +100,7 @@ class TestTaskBackendEnum:
 
 
 class TestTaskHistoryStatusEnum:
-    """Test TaskHistoryStatusEnum values and is_finished method."""
+    """Test TaskHistoryStatusEnum values and output-availability predicates."""
 
     def test_all_values_exist(self) -> None:
         """Assert all eight status values exist."""
@@ -116,7 +127,7 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_true(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns True for terminal statuses."""
+        """Assert is_finished returns True for statuses with observed outcomes."""
         assert status.is_finished() is True
 
     @pytest.mark.parametrize(
@@ -128,7 +139,7 @@ class TestTaskHistoryStatusEnum:
         ],
     )
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
-        """Assert is_finished returns False for unfinished statuses."""
+        """Assert is_finished returns False when output retrieval is not meaningful."""
         assert status.is_finished() is False
 
     @pytest.mark.parametrize(
@@ -773,6 +784,53 @@ class TestTaskHistory:
         )
         assert history.anonymized_entities == {PIIEntity.CREDIT_CARD, PIIEntity.PERSON}
 
+    def test_anonymized_entities_none_mask_falls_back_to_task(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert a ``None`` history mask returns the associated task's entities."""
+        task_mask = PIIEntity.EMAIL_ADDRESS | PIIEntity.IP_ADDRESS
+        task = TaskFactory.build(
+            id=1, name="test-task", data={"key": "val"}, anonymize_mask=task_mask
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        assert history.anonymized_entities == {
+            PIIEntity.EMAIL_ADDRESS,
+            PIIEntity.IP_ADDRESS,
+        }
+        assert history.anonymized_entities == task.anonymized_entities
+
+    def test_anonymized_entities_none_mask_follows_task_owner_defaults(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``None`` on both history and task falls through to owner defaults."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
+        mock_defaults = defaultdict(lambda: default_entities)
+        task = TaskFactory.build(
+            id=1,
+            name="test-task",
+            data={"key": "val"},
+            anonymize_mask=None,
+            owner="BACKUPS",
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        with patch("app.tasks.models.anonymizer_settings") as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            result = history.anonymized_entities
+            assert result == default_entities
+            assert result == task.anonymized_entities
+
     @pytest.mark.asyncio
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
@@ -1284,6 +1342,69 @@ class TestTaskHistoryResponseDisplayName:
         req = TaskExecutionRequest(task="backup-task", target="node-1")
         assert self._history(normal_task, req).display_name == "backup-task"
 
+    def test_proxy_over_a_generic_executor_is_classified_by_its_root(self) -> None:
+        """Assert a proxy wrapping a generic executor still derives a per-run label.
+
+        History binds to the dispatched task, so an app that wraps ``exec-artifact``
+        to attach its own hooks would otherwise collapse every one of its runs onto
+        the wrapper's single name.
+        """
+        proxy = TaskFactory.build(
+            id=4,
+            name="atw__exec-artifact",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "exec-artifact"},
+        )
+        req = TaskExecutionRequest(
+            task="atw__exec-artifact",
+            target="node-1",
+            meta={"_snippet_filename": "snippets/collect.sh"},
+        )
+
+        assert self._history(proxy, req).display_name == "snippets/collect.sh on node-1"
+
+    def test_framework_proxy_carrying_its_own_payload_keeps_its_name(self) -> None:
+        """Assert a proxy that fixes its own payload is labelled by its own name.
+
+        The framework's task apps wrap ``run-python``, a generic executor, but carry
+        the payload themselves, so every run of one is the same configured job and
+        its per-service name is the meaningful label. Classifying it by its root
+        would relabel every backup or restore run as ``<dir>/<script> on <target>``.
+        """
+        write = build_run_python_task(
+            name="backup_mongo__nightly-rs0",
+            owner=ANY_OWNER,
+            target="node-1",
+            config="{}",
+            requirements="",
+            payload="file:///opt/sep/scripts/backup_mongo/mongo_backup.py",
+        )
+        proxy = TaskFactory.build(id=6, **write.model_dump())
+        req = TaskExecutionRequest(
+            task=proxy.name,
+            target="node-1",
+            meta=dict(proxy.data["meta"]),
+            payload=proxy.data["payload"],
+        )
+
+        assert self._history(proxy, req).display_name == "backup_mongo__nightly-rs0"
+
+    def test_proxy_over_a_named_task_still_reports_its_own_name(self) -> None:
+        """Assert a proxy over a non-generic root keeps its own name.
+
+        Only a generic executor's runs need a derived label; a proxy wrapping any
+        other task already carries the meaningful name.
+        """
+        proxy = TaskFactory.build(
+            id=5,
+            name="mysql-backup-svc-a",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "mysql-backup"},
+        )
+        req = TaskExecutionRequest(task="mysql-backup-svc-a", target="node-1")
+
+        assert self._history(proxy, req).display_name == "mysql-backup-svc-a"
+
     def test_generic_executor_uses_underscore_snippet_filename_from_meta(
         self, run_python_task: Task
     ) -> None:
@@ -1536,3 +1657,292 @@ class TestDispatchLock:
         """Assert DispatchLock can be constructed with a name."""
         lock = DispatchLock(name="my-lock")
         assert lock.name == "my-lock"
+
+
+class TestTaskExecutionRequestJSON:
+    """Cover the column type's encrypt-on-write and decrypt-on-read hooks."""
+
+    @staticmethod
+    def _column() -> TaskExecutionRequestJSON:
+        """Return the column type under test."""
+        return TaskExecutionRequestJSON()
+
+    @staticmethod
+    def _request(**overrides: Any) -> TaskExecutionRequest:
+        """Return an execution request carrying every protected leaf.
+
+        :param overrides: Field values replacing the defaults.
+        :return: The execution request.
+        """
+        fields = {
+            "task": "run-python",
+            "target": "node-1",
+            "meta": {
+                "args": "restore --password hunter2",
+                "config": "master_password: hunter2\n",
+                "_service_name": "mysql-1",
+            },
+            "payload": "secret document",
+        }
+        fields.update(overrides)
+        return TaskExecutionRequest(**fields)
+
+    def test_bind_encrypts_the_protected_leaves(self) -> None:
+        """Assert the dumped document reaches storage with each leaf as ciphertext."""
+        secret = "hunter2"
+        assert secret in json.dumps(self._request().model_dump(mode="json")), (
+            "the request must carry the secret before binding, or its absence "
+            "below proves nothing"
+        )
+
+        stored = self._column().process_bind_param(self._request(), None)
+
+        for key in ENCRYPTED_META_KEYS:
+            assert is_encrypted(stored["meta"][key])
+        assert is_encrypted(stored["payload"])
+        assert stored["meta"]["_service_name"] == "mysql-1"
+        assert secret not in json.dumps(stored)
+
+    def test_bind_does_not_mutate_the_request(self) -> None:
+        """Assert the live request the dedup comparison reads stays in plaintext."""
+        request = self._request()
+
+        self._column().process_bind_param(request, None)
+
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+        assert request.payload == "secret document"
+
+    def test_bind_does_not_mutate_a_plain_dict(self) -> None:
+        """Assert the non-request branch copies before encrypting."""
+        document = {
+            "task": "run-python",
+            "target": "node-1",
+            "meta": {"args": "restore --password hunter2"},
+            "payload": "secret document",
+        }
+
+        stored = self._column().process_bind_param(document, None)
+
+        assert is_encrypted(stored["payload"])
+        assert document["meta"]["args"] == "restore --password hunter2"
+        assert document["payload"] == "secret document"
+
+    def test_bind_leaves_an_already_encrypted_dict_byte_identical(self) -> None:
+        """Assert re-saving the raw fallback document does not encrypt it twice.
+
+        ``process_result_value`` hands back the stored document unchanged when it
+        will not validate, so the dict branch can receive ciphertext. A second
+        encryption there would leave a leaf no key can read, and the read path
+        would report it as plaintext rather than as unreadable, so nothing
+        downstream could tell.
+        """
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        assert is_encrypted(stored["payload"]), (
+            "the fixture must already be ciphertext, or the identity asserted "
+            "below proves nothing"
+        )
+
+        resaved = column.process_bind_param(stored, None)
+
+        assert resaved == stored
+        assert json.loads(decrypt(resaved["payload"])) == "secret document"
+
+    def test_bind_passes_none_through(self) -> None:
+        """Assert a ``None`` column value is stored unchanged."""
+        assert self._column().process_bind_param(None, None) is None
+
+    def test_result_returns_plaintext_leaves(self) -> None:
+        """Assert a stored row deserialises into a request carrying its plaintext."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+
+        request = column.process_result_value(stored, None)
+
+        assert isinstance(request, TaskExecutionRequest)
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+        assert request.payload == "secret document"
+        assert request.unreadable_leaves == ()
+
+    def test_result_passes_a_legacy_plaintext_row_through(self) -> None:
+        """Assert a row written before the migration ran still resolves."""
+        request = self._column().process_result_value(
+            {
+                "task": "run-python",
+                "target": "node-1",
+                "meta": {"args": "restore --password hunter2"},
+                "payload": "secret document",
+            },
+            None,
+        )
+
+        assert request.payload == "secret document"
+        assert request.unreadable_leaves == ()
+
+    def test_result_marks_the_leaf_it_cannot_decrypt(self) -> None:
+        """Assert a foreign token is reported on the object rather than raised."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        token = Fernet(Fernet.generate_key()).encrypt(b"elsewhere").decode("ascii")
+        stored["payload"] = token
+
+        request = column.process_result_value(stored, None)
+
+        assert request.unreadable_leaves == (PAYLOAD_LEAF,)
+        assert request.payload == token
+        assert (request.meta or {})["args"] == "restore --password hunter2"
+
+    def test_result_returns_a_non_document_value_unchanged(self) -> None:
+        """Assert a stored value that is not an execution request is handed back raw."""
+        column = self._column()
+
+        assert column.process_result_value("not-a-document", None) == "not-a-document"
+        assert column.process_result_value(None, None) is None
+
+    def test_bind_preserves_a_marked_leaf_byte_identically(self) -> None:
+        """Assert re-saving an unreadable row keeps the only copy of its plaintext."""
+        column = self._column()
+        stored = column.process_bind_param(self._request(), None)
+        token = Fernet(Fernet.generate_key()).encrypt(b"elsewhere").decode("ascii")
+        stored["payload"] = token
+        request = column.process_result_value(stored, None)
+
+        resaved = column.process_bind_param(request, None)
+
+        assert resaved["payload"] == token
+        assert is_encrypted(resaved["meta"]["args"])
+        assert decrypt(resaved["meta"]["args"]) == '"restore --password hunter2"'
+
+    def test_payload_content_resolves_a_round_tripped_file_reference(
+        self, tmp_path
+    ) -> None:
+        """Assert a ``file://`` payload still resolves after a storage round trip.
+
+        :param tmp_path: The directory holding the referenced payload file.
+        """
+        payload_file = tmp_path / "payload.json"
+        payload_file.write_text('{"key": "value"}')
+        column = self._column()
+        stored = column.process_bind_param(
+            self._request(payload=f"file://{payload_file}"), None
+        )
+
+        request = column.process_result_value(stored, None)
+
+        assert request.payload_content == '{"key": "value"}'
+
+
+class TestTaskHistoryResponseUnreadableLeaves:
+    """Cover how the response reports an execution request it could not decrypt."""
+
+    @staticmethod
+    def _response(
+        request: TaskExecutionRequest, *, task_name: str = "backup-task"
+    ) -> TaskHistoryResponse:
+        """Return the response built from a history row carrying ``request``.
+
+        :param request: The execution request the row carries.
+        :param task_name: The parent task's name.
+        :return: The validated response.
+        """
+        task = TaskFactory.build(id=1, name=task_name, data={"key": "val"})
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return TaskHistoryResponse.model_validate(history)
+
+    def test_readable_row_reports_no_leaves(self) -> None:
+        """Assert an ordinary row serialises its execution request unchanged."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "--fast"}
+        )
+
+        dumped = self._response(request).model_dump(mode="json")
+
+        assert dumped["unreadable_request_leaves"] == []
+        assert dumped["execution_request"]["meta"]["args"] == "--fast"
+
+    def test_unreadable_leaf_serialises_as_null_and_is_listed(self) -> None:
+        """Assert the token is replaced by ``None`` and the leaf is named."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "gAAAAAtoken"}
+        )
+        request.mark_unreadable_leaves((ARGS_LEAF,))
+
+        dumped = self._response(request).model_dump(mode="json")
+
+        assert dumped["unreadable_request_leaves"] == [ARGS_LEAF]
+        assert dumped["execution_request"]["meta"]["args"] is None
+
+    def test_a_readable_response_shares_the_row_s_request_object(self) -> None:
+        """Pin why redaction must replace the field rather than blank it in place.
+
+        Validating from an ORM row hands the response the row's own request
+        object, so an in-place edit would destroy the ciphertext the write path
+        has to preserve.
+        """
+        request = TaskExecutionRequest(task="backup-task", target="node-1")
+
+        assert self._response(request).execution_request is request
+
+    def test_redaction_leaves_the_source_request_untouched(self) -> None:
+        """Assert redaction cannot corrupt the object a later write would persist."""
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", payload="gAAAAAtoken"
+        )
+        request.mark_unreadable_leaves((PAYLOAD_LEAF,))
+
+        response = self._response(request)
+
+        assert request.payload == "gAAAAAtoken"
+        assert response.execution_request is not request
+        assert response.execution_request.payload is None
+
+    def test_execution_request_keeps_its_declared_schema(self) -> None:
+        """Assert redaction does not collapse the field's published type.
+
+        Deriving the schema from a serializer's return type would publish a bare
+        object here, and every generated client would lose the field's type.
+        """
+        schema = TaskHistoryResponse.model_json_schema()
+
+        assert schema["properties"]["execution_request"] == {
+            "$ref": "#/$defs/TaskExecutionRequest"
+        }
+
+    def test_inbound_indicator_survives_revalidation(self) -> None:
+        """Assert a gateway re-validating a redacted body keeps the indicator.
+
+        The leaf is already ``null`` by then, so nothing downstream can re-derive
+        the indicator from the execution request.
+        """
+        request = TaskExecutionRequest(
+            task="backup-task", target="node-1", meta={"args": "gAAAAAtoken"}
+        )
+        request.mark_unreadable_leaves((ARGS_LEAF,))
+        upstream = self._response(request).model_dump(mode="json")
+
+        revalidated = TaskHistoryResponse.model_validate(upstream)
+
+        assert revalidated.unreadable_request_leaves == [ARGS_LEAF]
+
+    def test_display_name_degrades_without_leaking_the_token(self) -> None:
+        """Assert an unreadable ``file://`` payload falls back to the task label.
+
+        A Fernet token matches no ``file://`` prefix, so the label loses the
+        filename it used to carry rather than publishing the token.
+        """
+        token = Fernet(Fernet.generate_key()).encrypt(b"file://x.py").decode("ascii")
+        request = TaskExecutionRequest(
+            task="run-python", target="node-1", payload=token
+        )
+        request.mark_unreadable_leaves((PAYLOAD_LEAF,))
+
+        display_name = self._response(request, task_name="run-python").display_name
+
+        assert display_name == "run-python on node-1"
+        assert token not in display_name

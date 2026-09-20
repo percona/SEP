@@ -61,10 +61,16 @@ SECTION_ORDER: list[str] = [
     "Security",
 ]
 VALID_SECTIONS: frozenset[str] = frozenset(SECTION_MAP)
-FRAGMENT_RE: re.Pattern[str] = re.compile(
-    r"^(SEP-\d+)\.(added|changed|breaking|config|fixed|security)\.md$",
+TICKET_PROJECTS: tuple[str, ...] = ("SEP", "PMM")
+PROJECT_PATTERN: str = "|".join(re.escape(project) for project in TICKET_PROJECTS)
+TICKET_FORMATS: str = " or ".join(f"``{project}-<n>``" for project in TICKET_PROJECTS)
+FRAGMENT_FORMATS: str = " or ".join(
+    f"``{project}-<n>.<section>.md``" for project in TICKET_PROJECTS
 )
-TICKET_RE: re.Pattern[str] = re.compile(r"^SEP-(\d+)$")
+FRAGMENT_RE: re.Pattern[str] = re.compile(
+    rf"^((?:{PROJECT_PATTERN})-\d+)\.(added|changed|breaking|config|fixed|security)\.md$",
+)
+TICKET_RE: re.Pattern[str] = re.compile(rf"^({PROJECT_PATTERN})-(\d+)$")
 UNRELEASED_COMPARE_RE: re.Pattern[str] = re.compile(
     r"^\[Unreleased\]: (?P<url>https://github\.com/percona/SEP/compare/"
     r"v(?P<previous>[\w.\-]+)\.\.\.HEAD)$",
@@ -84,16 +90,17 @@ class FragmentError(Exception):
     """Indicate an invalid changelog fragment or CHANGELOG.md state."""
 
 
-def _ticket_sort_key(ticket: str) -> int:
-    """Return the numeric sort key for a ticket key like ``SEP-<n>``.
+def _ticket_sort_key(ticket: str) -> tuple[str, int]:
+    """Return the project and numeric sort key for a ticket.
 
     :param ticket: The ticket key.
-    :return: The integer portion of the ticket key.
+    :return: The project prefix and integer portion of the ticket key.
+    :raises FragmentError: If the ticket key is invalid.
     """
     match = TICKET_RE.match(ticket)
     if match is None:
         raise FragmentError(f"invalid ticket key: {ticket}")
-    return int(match.group(1))
+    return match.group(1), int(match.group(2))
 
 
 def load_fragments(
@@ -107,7 +114,7 @@ def load_fragments(
 
     :param changelog_d: The fragments directory.
     :return: A mapping of display section name to ``(ticket, lines, path)``
-        triples sorted by numeric ticket ID.
+        triples sorted by project prefix and then numeric ticket ID.
     :raises FragmentError: If any fragment has an invalid filename, an unknown
         section, or empty/malformed content.
     """
@@ -125,7 +132,7 @@ def load_fragments(
         if match is None:
             errors.append(
                 f"{path.name}: invalid filename (expected "
-                f"``SEP-<n>.<section>.md`` where section is one of "
+                f"{FRAGMENT_FORMATS} where section is one of "
                 f"{', '.join(sorted(VALID_SECTIONS))})",
             )
             continue
@@ -140,7 +147,7 @@ def load_fragments(
         if bad_prefix is not None:
             errors.append(
                 f"{path.name}: content must not start with ``- `` (the bullet "
-                "and ``SEP-XXX:`` prefix are added at assembly time)",
+                "and ``<TICKET>:`` prefix are added at assembly time)",
             )
             continue
         grouped[section_display].append((ticket, lines, path))
@@ -162,7 +169,7 @@ def render_section_body(
     :param grouped: The output of :func:`load_fragments`, optionally filtered.
     :type grouped: dict[str, list[tuple[str, list[str], Path]]]
     :return: The rendered body with ``### Section`` subheaders and
-        ``- SEP-XXX: ...`` bullets, separated by blank lines, with a trailing
+        ``- <TICKET>: ...`` bullets, separated by blank lines, with a trailing
         newline.
     :rtype: str
     """
@@ -770,7 +777,7 @@ def ensure_terminal_punctuation(message: str) -> str:
 def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
     """Handle the ``add`` subcommand.
 
-    :param ticket: The ticket key, e.g. ``SEP-<n>``.
+    :param ticket: A ticket key from :data:`TICKET_PROJECTS`.
     :param section: The short section name, e.g. ``added``.
     :param message: The single-line description for the fragment.
     :param force: Overwrite an existing fragment when ``True``.
@@ -782,7 +789,7 @@ def cmd_add(ticket: str, section: str, message: str, *, force: bool) -> int:
 
     if TICKET_RE.match(ticket) is None:
         print(
-            f"error: invalid ticket key {ticket!r} (expected ``SEP-<n>``)",
+            f"error: invalid ticket key {ticket!r} (expected {TICKET_FORMATS})",
             file=sys.stderr,
         )
         return 1
@@ -963,7 +970,9 @@ def build_parser() -> argparse.ArgumentParser:
         "add",
         help="Create a new changelog fragment.",
     )
-    add_parser.add_argument("--ticket", required=True, help="Ticket key, e.g. SEP-503.")
+    add_parser.add_argument(
+        "--ticket", required=True, help=f"Ticket key: {TICKET_FORMATS}."
+    )
     add_parser.add_argument(
         "--section",
         required=True,
@@ -973,7 +982,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument(
         "--message",
         required=True,
-        help="Single-line description (no leading ``- SEP-XXX:`` prefix).",
+        help="Single-line description (no leading ``- <TICKET>:`` prefix).",
     )
     add_parser.add_argument(
         "--force",

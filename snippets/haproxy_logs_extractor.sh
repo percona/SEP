@@ -5,24 +5,28 @@
 # description: This script extracts a portion of the HAProxy log based on a given time and a specified number of minutes before and after that time. Supports both ISO 8601 (rsyslog default) and BSD syslog (Mmm DD HH:MM:SS) timestamp formats.
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NOT_RESPONDING
 # service_type: haproxy
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    ge: 1
-#    required: true
+#    default: 30
 #  - name: log-file
 #    type: str
 #    label: Log file path
 #    description: The path to your HAProxy log file
-#    placeholder: /var/log/haproxy.log
+#    default: /var/log/haproxy.log
 #  - name: output
 #    type: str
 #    description: Where to send the output
@@ -30,7 +34,7 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 # ---
@@ -39,7 +43,7 @@
 #
 # Extracts HAProxy log entries around a given timestamp.
 #
-# Usage: ./haproxy_logs_extractor.sh --time "<YYYY-MM-DD HH:MM:SS>" --minutes <minutes> [--log-file <path>] [--output <file|stdout>]
+# Usage: ./haproxy_logs_extractor.sh --time "<YYYY-MM-DDTHH:MM:SS>" --minutes <minutes> [--log-file <path>] [--output <file|stdout>]
 #
 # Timestamp formats handled automatically:
 #   ISO 8601  (rsyslog):      2023-10-27T15:30:00.123456+00:00 hostname haproxy[pid]: ...
@@ -60,16 +64,16 @@ DEFAULT_HAPROXY_LOG="/var/log/haproxy.log"
 # --- Script Functions ---
 
 usage() {
-    echo "Usage: $0 --time \"<YYYY-MM-DD HH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
-    echo "Example: $0 --time \"2023-10-27 15:30:00\" --minutes 5 --log-file /var/log/haproxy.log --output file"
-    echo "         $0 --time \"2024-01-01 10:00:00\" --minutes 30"
+    echo "Usage: $0 --time \"<YYYY-MM-DDTHH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
+    echo "Example: $0 --time \"2023-10-27T15:30:00\" --minutes 5 --log-file /var/log/haproxy.log --output file"
+    echo "         $0 --time \"2024-01-01T10:00:00\" --minutes 30"
     echo ""
     echo "This script extracts a portion of the HAProxy log."
     echo "It will print log entries from <minutes> before to <minutes> after"
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
+    echo '  --time "<YYYY-MM-DDTHH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the HAProxy log file. Defaults to /var/log/haproxy.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' (default) or 'file'."
@@ -150,22 +154,25 @@ fi
 HAPROXY_LOG="${LOG_FILE_ARG:-$DEFAULT_HAPROXY_LOG}"
 # Note: $HAPROXY_LOG is always referenced as a quoted path below; avoid over-restricting valid filenames.
 if [ ! -f "$HAPROXY_LOG" ]; then
-    echo "Error: HAProxy log file not found at '$HAPROXY_LOG'."
+    echo "Error: HAProxy log file not found at '$HAPROXY_LOG' (check --log-file)."
     echo "Please ensure the file exists and the path is correct."
     exit 1
 fi
 
 if [ ! -r "$HAPROXY_LOG" ]; then
-    echo "Error: Cannot read HAProxy log file at '$HAPROXY_LOG'."
+    echo "Error: Cannot read HAProxy log file at '$HAPROXY_LOG' (check --log-file)."
     echo "Please check file permissions for '$HAPROXY_LOG'."
     exit 1
 fi
 
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse the provided time format (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))"
+    rm -f "$DATE_ERR"
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 case "$OUTPUT_MODE" in
     stdout) ;;

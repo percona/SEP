@@ -5,12 +5,13 @@
 # description: "This script identifies long-running active transactions and any blocking queries to diagnose transaction duration, idle-in-transaction, and too-many-locks-acquired alerts."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # alerts:
 #   - PostgreSQLIdleInTransaction

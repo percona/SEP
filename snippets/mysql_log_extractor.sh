@@ -7,21 +7,21 @@
 # sudo: always
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    ge: 1
-#    required: true
+#    default: 30
 #  - name: log-file
 #    type: str
 #    label: Log file path
 #    description: The path to your MySQL error log file
-#    placeholder: /var/log/mysql/error.log
+#    default: /var/log/mysql/error.log
 #  - name: output
 #    type: str
 #    description: Where to send the output
@@ -29,10 +29,10 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 #  - GROUP_REPLICATION
@@ -51,10 +51,10 @@
 # This script extracts a portion of the MySQL error log based on a given time
 # and a specified number of minutes before and after that time.
 #
-# Usage: ./mysql_log_extractor.sh --time "<YYYY-MM-DD HH:MM:SS>" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]
+# Usage: ./mysql_log_extractor.sh --time "<YYYY-MM-DDTHH:MM:SS>" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]
 #
 # Arguments:
-#   --time "<YYYY-MM-DD HH:MM:SS>": The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#   --time "<YYYY-MM-DDTHH:MM:SS>": The central timestamp to focus on (e.g., "2023-10-27T15:30:00").
 #                                   This argument is required.
 #   --minutes <minutes>: The number of minutes before and after the central timestamp to include.
 #                        For example, if you provide 10, the script will show logs from 10 minutes
@@ -72,16 +72,16 @@ DEFAULT_MYSQL_ERROR_LOG="/var/log/mysql/error.log"
 
 # Function to display usage information
 usage() {
-    echo "Usage: $0 --time \"<YYYY-MM-DD HH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
-    echo "Example: $0 --time \"2023-10-27 15:30:00\" --minutes 5 --log-file /var/log/mysqld.log --output file"
-    echo "         $0 --time \"2024-01-01 10:00:00\" --minutes 30"
+    echo "Usage: $0 --time \"<YYYY-MM-DDTHH:MM:SS>\" --minutes <minutes> [--log-file <path/to/log>] [--output <file|stdout>]"
+    echo "Example: $0 --time \"2023-10-27T15:30:00\" --minutes 5 --log-file /var/log/mysqld.log --output file"
+    echo "         $0 --time \"2024-01-01T10:00:00\" --minutes 30"
     echo ""
     echo "This script extracts a portion of the MySQL error log."
     echo "It will print log entries from <minutes> before to <minutes> after"
     echo "the provided timestamp."
     echo ""
     echo "Arguments:"
-    echo '  --time "<YYYY-MM-DD HH:MM:SS>"   The central timestamp to focus on (required).'
+    echo '  --time "<YYYY-MM-DDTHH:MM:SS>"   The central timestamp to focus on (required).'
     echo "  --minutes <minutes>                The number of minutes before and after the timestamp to include (required)."
     echo "  --log-file <path/to/log>           Optional. Path to the MySQL error log file. Defaults to /var/log/mysql/error.log."
     echo "  --output <file|stdout>             Optional. Where to send the output. Use 'stdout' to print to the terminal (default), or 'file' to write the output to a file named by the timestamp."
@@ -167,13 +167,13 @@ MYSQL_ERROR_LOG="${LOG_FILE_ARG:-$DEFAULT_MYSQL_ERROR_LOG}"
 
 # Check if the log file exists and is readable
 if [ ! -f "$MYSQL_ERROR_LOG" ]; then
-    echo "Error: MySQL error log file not found at '$MYSQL_ERROR_LOG'."
+    echo "Error: MySQL error log file not found at '$MYSQL_ERROR_LOG' (check --log-file)."
     echo "Please ensure the file exists and the path is correct."
     exit 1
 fi
 
 if [ ! -r "$MYSQL_ERROR_LOG" ]; then
-    echo "Error: Cannot read MySQL error log file at '$MYSQL_ERROR_LOG'."
+    echo "Error: Cannot read MySQL error log file at '$MYSQL_ERROR_LOG' (check --log-file)."
     echo "Please check file permissions for '$MYSQL_ERROR_LOG'."
     exit 1
 fi
@@ -184,11 +184,14 @@ fi
 
 # Convert input time to epoch
 # Check if date parsing was successful
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse the provided time format (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))"
+    rm -f "$DATE_ERR"
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="mysql_error_${INPUT_EPOCH}.log"

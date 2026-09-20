@@ -17,10 +17,12 @@
 
 Forward periodic-task CRUD to the Tasks sub-app through the SEP gateway so the
 React frontend (``ScheduledTasksPanel``) reaches periodic-task list / create /
-update / delete via SEP rather than calling ``/api/tasks`` directly. Each route
-is a passthrough: it issues a single upstream call and forwards the response,
-mapping upstream failures onto the SEP gateway error contract via
-:func:`~app.sep.api.proxy.reraise_upstream_tasks_error`.
+update / delete via SEP rather than calling ``/api/tasks`` directly. Every route
+handler issues a single upstream call and forwards the response, mapping upstream
+failures onto the SEP gateway error contract via
+:func:`~app.sep.api.proxy.reraise_upstream_tasks_error`. Create and update pass
+the scheduling guard in :mod:`app.sep.api.deps` before that write; list, delete
+and preview are plain passthroughs.
 """
 
 from typing import Annotated
@@ -31,7 +33,11 @@ from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import PaginationDep
 from app.core.requests import as_json_object
 from app.core.utils.fields import ArbitraryMapping
-from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
+from app.sep.api.deps import RequireSchedulableTask, RequireSchedulableUpdate
+from app.sep.api.openapi import (
+    SCHEDULING_UNSUPPORTED_400_RESPONSE,
+    UPSTREAM_TASKS_502_RESPONSE,
+)
 from app.sep.api.proxy import reraise_upstream_tasks_errors
 from app.sep.deps import TaskAPI
 
@@ -93,7 +99,8 @@ async def preview_schedule(
 @router.post(
     "/{task_name}/",
     status_code=status.HTTP_201_CREATED,
-    responses=UPSTREAM_TASKS_502_RESPONSE,
+    responses=UPSTREAM_TASKS_502_RESPONSE | SCHEDULING_UNSUPPORTED_400_RESPONSE,
+    dependencies=[RequireSchedulableTask],
 )
 async def create_periodic_task(
     task_name: str,
@@ -106,6 +113,10 @@ async def create_periodic_task(
     :param tasks_api: The Tasks API client used to create the periodic task.
     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
     :return: The created periodic task as returned by the Tasks API.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
+    :raises HTTPBadRequestException: If no installed app offers scheduling for the
+        task.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500).
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -117,7 +128,11 @@ async def create_periodic_task(
         )
 
 
-@router.put("/{periodic_task_id}", responses=UPSTREAM_TASKS_502_RESPONSE)
+@router.put(
+    "/{periodic_task_id}",
+    responses=UPSTREAM_TASKS_502_RESPONSE | SCHEDULING_UNSUPPORTED_400_RESPONSE,
+    dependencies=[RequireSchedulableUpdate],
+)
 async def update_periodic_task(
     periodic_task_id: int,
     tasks_api: TaskAPI,
@@ -129,10 +144,16 @@ async def update_periodic_task(
     :param tasks_api: The Tasks API client used to update the periodic task.
     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
     :return: The updated periodic task as returned by the Tasks API.
+    :raises HTTPUnprocessableEntityException: If the body's ``task`` is present
+        and not a string, or if the resolved name is not a single plain URL path
+        segment.
+    :raises HTTPBadRequestException: If no installed app offers scheduling for the
+        task the schedule would run.
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500).
-    :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-        or a connection-level ``OSError``.
+    :raises HTTPBadGatewayException: If the stored schedule carries no task name,
+        and for an upstream server error (status >= 500) or a connection-level
+        ``OSError``.
     """
     with reraise_upstream_tasks_errors():
         return ArbitraryMapping(

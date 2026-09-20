@@ -7,9 +7,9 @@
 # parameters:
 #  - name: defaults-file
 #    type: str
-#    label: Path to defaults-file
-#    description: Path to defaults-file
-# atw:
+#    label: MySQL defaults file
+#    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories:
 #  - NATIVE_ASYNC_REPLICATION
 # service_type: mysql
 # alerts:

@@ -38,7 +38,7 @@ Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL
 | Inline `datetime.now(UTC)` / `datetime.utcnow()` timestamp | `utc_now()` from `app/core/utils/date_time` (microseconds zeroed) |
 | `fastapi.HTTPException` | `HTTPNotFoundException` / `HTTPConflictException` / etc. |
 | Inline `RemoteAPI` client | `Annotated[RemoteAPI, Depends(get_*_api)]` in `deps.py` |
-| Manual JWT/auth | `CurrentUser = Annotated[User, IsAuthenticated]` |
+| Manual JWT/auth | `CurrentUser = Annotated[BaseUser, IsAuthenticatedDep]` from `app/api/deps.py` — or `dependencies=[IsAuthenticatedDep]` when the handler needs no user object |
 | `len(v) > 0` `field_validator` | `NonEmptyStr` |
 | `.strip().lower()` `field_validator` | `Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True)]` or `LowercaseStr` |
 | `field_validator` doing a string-*shape* check (split on a separator, reject empty halves, reject stray whitespace) | `Annotated[str, StringConstraints(pattern=...)]` field type |
@@ -114,7 +114,7 @@ The mirror of dead code: a deletion that leaves its consumers standing, and the 
 
 - **Tooling config** — `pyproject.toml` tool sections (`also_copy`, `omit`, `known-first-party`), `Makefile` variables, `.pre-commit-config.yaml` args.
 - **Scaffolder templates** — `app/sep/apps/framework/templates/**`. `.tmpl` files are not imported, linted, or type-checked, so a stale symbol survives every gate and surfaces only when someone next runs `make startapp`, where it reads as a broken new app rather than a stale template.
-- **CI path filters and the labeler** — a `paths:` entry or `TEMPLATE_ALIASES` mapping keyed on a directory that no longer exists.
+- **The labeler surface** — `.github/labeler.yml`'s hand-written top block (`python`, `frontend`, `svc:tasks`, `svc:inventory`) and the path constants `scripts/sync_pr_labels.py` hardcodes outside it (`GENERATED_PREFIXES`, `GENERATED_EXACT`, `QA_NOT_REQUIRED_GLOBS`), any of which can be keyed on a directory that no longer exists. The generated block between the `BEGIN/END generated app labels` markers is exempt — `scripts/sync_labeler_apps.py --check` runs on pre-commit and asserts every app glob and `E2E_ALIASES` entry against disk — so a deletion inside `app/sep/apps/` is caught there and a deletion anywhere else is not.
 - **Docs and operator-facing prose.**
 
 **Test imports keep dead production symbols alive to every linter.** A module-level symbol whose only remaining callers are its own tests is dead production code, but `F401` sees a live import, the suite stays green, and coverage reports the symbol as exercised. Run the orphan sweep **ignoring test-only references** — a symbol referenced solely from `tests/` is a deletion candidate. (When such a symbol produced user-visible output, confirm the consumer is genuinely gone first; if a UI still surfaces it, that's a parity gap, not dead code.)

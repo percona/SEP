@@ -17,6 +17,10 @@
 
 This script runs on a Nomad client node. It receives a ``--config`` JSON
 argument, connects to the target database, and prints a JSON result to stdout.
+
+Each database driver is imported inside the check that uses it. The client
+carries only the drivers its own hosts need, so a module-scope import would
+stop the whole payload loading wherever any one driver is absent.
 """
 
 import argparse
@@ -45,6 +49,7 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     :param port: The database port number.
     :return: A dict with ``success`` and optionally ``error``.
     """
+    # optional-dependency: mysql
     import myloginpath
     import pymysql
 
@@ -83,6 +88,7 @@ def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     :param port: The database port number.
     :return: A dict with ``success`` and optionally ``error``.
     """
+    # optional-dependency: postgresql
     import psycopg2
 
     try:
@@ -114,9 +120,7 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     :param port: The database port number.
     :return: A dict with ``success`` and optionally ``error``.
     """
-    # optional-dependency: the payload runs standalone on a Nomad client that
-    # carries only the drivers that host needs, so a module-scope import would
-    # make it fail to load wherever pymongo is absent.
+    # optional-dependency: mongodb
     import pymongo.errors
 
     try:

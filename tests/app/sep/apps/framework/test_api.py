@@ -516,7 +516,11 @@ class TestSchemaEndpointTaskStatuses:
         body = authed_all_fields_client.get("/api/apps/test-all-fields/schema").json()
 
         assert body["task_statuses"] == [
-            {"value": status.value, "terminal": status.is_terminal()}
+            {
+                "value": status.value,
+                "terminal": status.is_terminal(),
+                "output_available": status.is_finished(),
+            }
             for status in TaskHistoryStatusEnum
         ]
 

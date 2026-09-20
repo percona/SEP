@@ -5,23 +5,26 @@
 # description: This script extracts a portion of the MongoDB log containing the time of the original crash and any restart attempts.
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # service_type: mongodb
 # parameters:
 #  - name: time
-#    type: str
+#    type: datetime
 #    label: Issue Time
-#    description: The central timestamp to focus on (e.g., "2023-10-27 15:30:00").
+#    description: The moment to centre the extracted window on, read in the executor host's time zone.
 #    required: true
 #  - name: minutes
 #    type: int
 #    label: Minutes
 #    description: The number of minutes before and after to include.
 #    ge: 1
-#    required: true
+#    default: 30
 #  - name: log-file
 #    type: str
 #    label: Log file path
-#    description: The path to your MongoDB log file.
+#    description: The path to your MongoDB log file. Read from the running server's config when left empty.
 #    placeholder: /var/log/mongodb/mongod.log
 #  - name: output
 #    type: str
@@ -30,7 +33,7 @@
 #    default: stdout
 #    choices:
 #      - value: stdout
-#        label: Print to the terminal (default)
+#        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
 # alerts:
@@ -49,12 +52,12 @@ OUTPUT_MODE="stdout"
 usage() {
     local -i exit_code="${1:-0}"
     cat << EOS
-Usage: $(basename "$0") --time "<YYYY-MM-DD HH:MM:SS>" --minutes <N> [OPTIONS]
+Usage: $(basename "$0") --time "<YYYY-MM-DDTHH:MM:SS>" --minutes <N> [OPTIONS]
 
 Extract MongoDB log entries around a given timestamp.
 
 Options:
-  --time "<YYYY-MM-DD HH:MM:SS>"  Central timestamp (required).
+  --time "<YYYY-MM-DDTHH:MM:SS>"  Central timestamp (required).
   --minutes N                      Minutes before/after to include (required).
   --log-file <path>                MongoDB log file (default: $DEFAULT_MONGODB_LOG).
   --output <stdout|file>           Output destination (default: stdout).
@@ -160,19 +163,22 @@ fi
 MONGODB_LOG="${LOG_FILE_ARG:-$DEFAULT_MONGODB_LOG}"
 
 if [[ ! -f $MONGODB_LOG ]]; then
-    echo "Error: MongoDB log file not found at '$MONGODB_LOG'." >&2
+    echo "Error: MongoDB log file not found at '$MONGODB_LOG' (check --log-file)." >&2
     exit 1
 fi
 
 if [[ ! -r $MONGODB_LOG ]]; then
-    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG'." >&2
+    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG' (check --log-file)." >&2
     exit 1
 fi
 
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse time: \"$TIME_ARG\"" >&2
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse time (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))" >&2
+    rm -f "$DATE_ERR"
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 START_EPOCH=$((INPUT_EPOCH - (MINUTES_ARG * 60)))
 END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))

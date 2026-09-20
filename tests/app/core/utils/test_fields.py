@@ -19,8 +19,11 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from app.core.utils.fields import (
+    AuthSchemeStr,
     bounded_int_from_empty_str_factory,
     dsn_safe,
+    NON_WHITESPACE_PATTERN,
+    StrippedNonEmptyStr,
     TCP_PORT_MAX,
     TCP_PORT_MIN,
     TcpPort,
@@ -93,6 +96,26 @@ class TestTcpPort:
             TypeAdapter(TcpPort).validate_python(port)
 
 
+class TestAuthSchemeStr:
+    """Cover the ``AuthSchemeStr`` RFC 7230 ``token`` field type."""
+
+    @pytest.mark.parametrize(
+        "scheme", ["Bearer", "Basic", "Token", "X-Custom.v1", "a!#$%&'*+^_`|~-"]
+    )
+    def test_accepts_token_schemes(self, scheme: str) -> None:
+        """Accept every scheme shape the ``token`` production allows."""
+        assert TypeAdapter(AuthSchemeStr).validate_python(scheme) == scheme
+
+    @pytest.mark.parametrize(
+        "scheme",
+        ["", " ", "Bea rer", "Bearer\r\nX-Injected: yes", "Bearer\n", "Bearer\x00"],
+    )
+    def test_rejects_values_no_header_can_carry(self, scheme: str) -> None:
+        """Reject whitespace and control bytes, which no header value can carry."""
+        with pytest.raises(ValidationError):
+            TypeAdapter(AuthSchemeStr).validate_python(scheme)
+
+
 class TestDsnSafe:
     """Cover the shared ``dsn_safe`` delimiter guard for free-typed names."""
 
@@ -163,3 +186,46 @@ class TestUriPathPrefix:
         """Reject a trailing slash, a relative value, whitespace, and query or fragment."""
         with pytest.raises(ValidationError):
             TypeAdapter(URIPathPrefix).validate_python(value)
+
+
+class TestStrippedNonEmptyStr:
+    """Cover the ``StrippedNonEmptyStr`` trimmed non-blank string field type."""
+
+    @pytest.mark.parametrize("value", ["", " ", "\t", "\n", "   \t\n "])
+    def test_rejects_whitespace_only_values(self, value: str) -> None:
+        """Reject a blank or whitespace-only value as a length violation.
+
+        The published pattern rejects such a value independently, so pin the error
+        type too: a client reading the error code has to keep seeing the length
+        violation it always saw, not a pattern mismatch.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            TypeAdapter(StrippedNonEmptyStr).validate_python(value)
+
+        assert [error["type"] for error in excinfo.value.errors()] == [
+            "string_too_short"
+        ]
+
+    @pytest.mark.parametrize(
+        "value", ["/var/my backups", "a b", "schema name with spaces"]
+    )
+    def test_accepts_interior_whitespace(self, value: str) -> None:
+        """Accept interior whitespace when the edges carry non-whitespace."""
+        assert TypeAdapter(StrippedNonEmptyStr).validate_python(value) == value
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("  /var/backups  ", "/var/backups"),
+            ("\t/var/my backups\n", "/var/my backups"),
+        ],
+    )
+    def test_strips_surrounding_whitespace(self, value: str, expected: str) -> None:
+        """Strip leading and trailing whitespace before the constraints apply."""
+        assert TypeAdapter(StrippedNonEmptyStr).validate_python(value) == expected
+
+    def test_publishes_the_non_whitespace_pattern(self) -> None:
+        """Publish the non-whitespace constraint the validator already enforces."""
+        schema = TypeAdapter(StrippedNonEmptyStr).json_schema()
+        assert schema["pattern"] == NON_WHITESPACE_PATTERN
+        assert schema["minLength"] == 1

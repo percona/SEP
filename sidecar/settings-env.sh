@@ -123,7 +123,7 @@ blank_cleared_names=(
     SEP__DATABASE__PASSWORD INVENTORY__DATABASE__PASSWORD TASKS__DATABASE__PASSWORD
     AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN PMM__API_KEY
     PMM__ENDPOINT AUTH__PROVIDER__GRAFANA__ENDPOINT
-    TASKS__NOMAD__ENDPOINT
+    TASKS__NOMAD__ENDPOINT TASKS__NOMAD__API_KEY
     SEP_INTERNAL_TOKEN BASE_URL
     CELERY__BEAT_DBURI
 )
@@ -142,12 +142,13 @@ if [[ -n ${SEP_DB_PASSWORD:-} ]]; then
     export_canonical TASKS__DATABASE__PASSWORD "$SEP_DB_PASSWORD"
 fi
 
-# A function rather than two lines in the guard below because entrypoint.sh calls
-# it a second time, with a token minted after this file has finished, and both
-# names have to keep resolving from one place.
+# A function rather than inline exports in the guard below because entrypoint.sh
+# calls it a second time, with a token minted after this file has finished, and
+# every destination name has to keep resolving from one place.
 export_grafana_token() {
     export_canonical AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN "$1"
     export_canonical PMM__API_KEY "$1"
+    export_canonical TASKS__NOMAD__API_KEY "$1"
 }
 
 if [[ -n ${SEP_GRAFANA_TOKEN:-} ]]; then

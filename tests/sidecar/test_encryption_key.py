@@ -70,19 +70,31 @@ UNREACHABLE_PORT = 1
 SHORT_PROBE_TIMEOUT = "1.5"
 """Short enough that an unreachable database is refused inside a test's patience."""
 
-BLOCKED_RUN_SECONDS = 60.0
-"""A subprocess bound generous enough that reaching it can only mean a hang.
+LOCK_WAIT_SECONDS = float(SHORT_PROBE_TIMEOUT) * helper.LOCK_WAIT_PROBE_BUDGETS
+"""How long the helper waits on a peer's lock before refusing.
 
-Sized against the helper's *startup*, not against the lock wait it brackets.
-Every run pays an interpreter start plus the application settings and database
-import the helper performs before it reaches any lock, and that cost dominates
-a short run and varies by host: measured at 7s warm and 12s cold on one
-developer machine, against a 3s lock bound. A budget picked as "comfortably
-past the lock wait" therefore times out on the importer rather than on a hang,
-which is what a 6s bound did here: deterministically, on every run. Whether the
-wait is bounded is asserted from the helper's own diagnostic below; this only
-has to sit above startup, and below the suite's per-test timeout.
+Derived rather than restated so the bound below and the elapsed-time assertion
+that reads it cannot drift from the helper's own budget arithmetic.
 """
+
+HELPER_STARTUP_ALLOWANCE_SECONDS = 60.0
+"""Slack over the lock wait for interpreter start and the helper's imports.
+
+Deliberately generous. This bound is a hang guard, not a performance assertion:
+the only thing it has to distinguish is "refused after waiting" from "never came
+back", and the elapsed-time assertion below is what pins the waiting. Sizing it
+close to the observed cost instead made it fail on load -- at ``6.0`` it raised
+``TimeoutExpired`` during a full ``-n auto`` run whose captured stderr already
+carried the correct refusal, so the helper had done its job and only the bound
+disagreed. Interpreter start plus the settings-stack import is the variable part
+and it swings with CPU contention and page-cache state, which is why the margin
+is wide rather than fitted. It still sits under the 120s ``pytest-timeout``
+ceiling, so this bound fires first and kills the child rather than leaving the
+global guard to orphan it.
+"""
+
+BLOCKED_RUN_SECONDS = LOCK_WAIT_SECONDS + HELPER_STARTUP_ALLOWANCE_SECONDS
+"""A subprocess bound comfortably past the lock wait, so a timeout means a hang."""
 
 RETRIED_PROBE_TIMEOUT = 2.0
 """A bound long enough that reaching it can only mean the probe retried.
@@ -578,7 +590,6 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
     """
     lock_path = fresh_deployment / "state" / helper.LOCK_FILENAME
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    bound = float(SHORT_PROBE_TIMEOUT) * helper.LOCK_WAIT_PROBE_BUDGETS
 
     with lock_path.open("w", encoding="utf-8") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
@@ -588,12 +599,12 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
 
     assert result.returncode != 0
     assert not result.stdout.strip()
-    assert elapsed >= bound
+    assert elapsed >= LOCK_WAIT_SECONDS
     assert str(lock_path) in result.stderr
     # What proves the wait was bounded rather than merely long: the refusal
     # names the bound it derived, so defeating the derivation fails here even on
     # a host whose startup dwarfs the wait
-    assert f"for over {bound:g}s" in result.stderr
+    assert f"for over {LOCK_WAIT_SECONDS:g}s" in result.stderr
     assert not persisted_key_path(fresh_deployment).exists()
 
 
@@ -604,10 +615,25 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
         pytest.param([{"ROUTING_KEY": ciphertext()}], id="nested-in-list"),
         pytest.param({"a": {"b": ciphertext()}}, id="nested-in-mapping"),
         pytest.param([["deep", ciphertext()]], id="nested-in-nested-list"),
+        pytest.param(f"https://user:{ciphertext()}@host:8443/", id="url-password"),
+        pytest.param(
+            [{"endpoint": f"https://user:{ciphertext()}@host:8443/"}],
+            id="url-password-nested-in-list",
+        ),
+        pytest.param(
+            {"PMM": {"endpoint": f"https://user:{ciphertext()}@host:8443/"}},
+            id="url-password-nested-in-mapping",
+        ),
     ],
 )
 def test_ciphertext_is_found_at_every_json_position(value: Any):
-    """Walk the decoded value rather than testing the row, which is a container."""
+    """Walk the decoded value rather than testing the row, which is a container.
+
+    A credential-URL leaf hides its token inside the userinfo segment, so
+    ``is_encrypted`` on the whole string answers ``False`` — a deployment whose
+    only encrypted data is an endpoint password would otherwise clear the mint
+    path and come up green with those overrides silently reverted to YAML.
+    """
     assert helper.contains_ciphertext(value)
 
 
@@ -620,6 +646,9 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
         pytest.param(None, id="null"),
         pytest.param(42, id="number"),
         pytest.param([], id="empty-list"),
+        pytest.param("https://user:hunter2@host:8443/", id="url-plaintext-password"),
+        pytest.param("https://host:8443/", id="url-without-userinfo"),
+        pytest.param("https://user:pw@[bad:ipv6/", id="url-unparseable"),
     ],
 )
 def test_a_value_with_no_token_is_not_read_as_ciphertext(value: Any):

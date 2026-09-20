@@ -8,7 +8,7 @@
 #  - name: basedir
 #    type: str
 #    label: Path to the MySQL base directory
-#    description: Path to the MySQL base directory
+#    description: Where the MySQL installation lives, when it is not on the default search path.
 #    default: ""
 #  - name: output-format
 #    type: str
@@ -18,8 +18,9 @@
 #  - name: help
 #    type: bool
 #    label: Show help message
-#    description: Show help message
+#    description: Print the script's usage text instead of running it.
 #    default: false
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - MySQLInstanceNotAvailable
@@ -98,15 +99,19 @@ else
     # Check if mysqld command is available in the specified base directory
     MYSQLD="$(command -v "$BASEDIR"/{bin,sbin,libexec}/mysqld)"
     if [[ -z $MYSQLD ]]; then
-        echo "mysqld command not found in the specified base directory: $BASEDIR. Please ensure the path is correct."
+        echo "mysqld command not found in the specified base directory (check --basedir): $BASEDIR. Please ensure the path is correct."
         exit 1
     fi
 fi
 
-if ! VERSION_STRING=$("$MYSQLD" --version 2> /dev/null); then
-    echo "Failed to retrieve MySQL version. Please check if mysqld is installed correctly."
+# Keep stderr out of the captured value: the version string is parsed below.
+VERSION_ERR=$(mktemp)
+if ! VERSION_STRING=$("$MYSQLD" --version 2> "$VERSION_ERR"); then
+    echo "Failed to retrieve MySQL version from '$MYSQLD' (check --basedir): $(cat "$VERSION_ERR")"
+    rm -f "$VERSION_ERR"
     exit 1
 fi
+rm -f "$VERSION_ERR"
 
 case "$OUTPUT_FORMAT" in
     full_string)
@@ -124,7 +129,7 @@ case "$OUTPUT_FORMAT" in
         echo "{\"version\": \"${VERSION_NUMBER}\", \"platform\": \"${PLATFORM}\", \"version_comment\": \"${VERSION_COMMENT}\"}"
         ;;
     *)
-        echo "Invalid output format: ${OUTPUT_FORMAT}. Use json, full_string, or number."
+        echo "Invalid output format (check --output-format): ${OUTPUT_FORMAT}. Use json, full_string, or number."
         exit 1
         ;;
 esac

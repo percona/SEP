@@ -509,7 +509,9 @@ class TestNodeIdentityCandidates:
         self, session: AsyncSession, node: Node
     ) -> None:
         """Raise nothing for two nodes that never shared a name."""
-        await NodeManager.create(session, NodeWriteFactory.build())
+        await NodeManager.create(
+            session, NodeWriteFactory.build(name=f"not-{node.name}")
+        )
 
         _, total = await RetiredInclusiveNodeManager.identity_candidates(
             session, pagination=PAGE

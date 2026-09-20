@@ -19,7 +19,7 @@
 The action matches path globs only, so three labels need code: ``large-diff``
 (a changed-line count), ``app-isolated`` (every file inside one app slice), and
 ``qa not required`` (a Dependabot or doc-only PR). This script reads ``app:<name>``
-globs from the base-branch ``.github/labeler.yml``, fetches the PR file list via
+globs from the default-branch ``.github/labeler.yml``, fetches the PR file list via
 the GitHub REST API, and adds or removes those labels.
 
 ``qa not required`` is computed here rather than declared in ``.github/labeler.yml``
@@ -34,7 +34,7 @@ and deliberately inexact in one direction, since automation authenticating with
 a user-owned token would earn a permanent label.
 
 Invoked from ``.github/workflows/labels.yaml`` after a sparse checkout of the
-base branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
+default branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
 Uses stdlib ``urllib`` so the workflow step needs no Poetry install.
 """
 
@@ -558,7 +558,7 @@ def apply_blast_radius_labels(
     :param repo: Repository name without owner.
     :param pr_number: Pull request number.
     :param files: Changed files from the pulls list-files API.
-    :param labeler_path: Path to the base-branch ``.github/labeler.yml``.
+    :param labeler_path: Path to the default-branch ``.github/labeler.yml``.
     :param log: Callable for informational messages.
     :return: Computed blast-radius signals.
     """

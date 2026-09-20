@@ -136,7 +136,7 @@
         "type": "object"
       },
       "SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:param size: Snippet file size in bytes.\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:param is_approved: Whether the snippet has been approved for execution.\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:param created_at: When the snippet row was first inserted.\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.",
         "properties": {
           "approved_at": {
             "anyOf": [
@@ -446,7 +446,7 @@
       },
       "framework__AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value whether it ends a run. Server-authored, so a\n    supplied value is replaced rather than honoured. Withheld (``None``) for\n    a plugin declaring ``entities``, whose records are not task runs.",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value both run terminality and whether output\n    retrieval is meaningful. Server-authored, so a supplied value is\n    replaced rather than honoured. Withheld (``None``) for a plugin\n    declaring ``entities``, whose records are not task runs.",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -667,6 +667,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -689,6 +690,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -699,6 +710,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -945,6 +969,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -967,6 +992,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -977,6 +1012,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1111,6 +1159,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1133,6 +1182,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1143,6 +1202,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1449,6 +1521,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1471,6 +1544,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1481,6 +1564,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1547,6 +1643,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1580,6 +1677,16 @@
             ],
             "title": "Ge"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1601,6 +1708,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1651,8 +1771,13 @@
       },
       "framework__FormSection": {
         "additionalProperties": false,
-        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:param description: Optional helper text for the section. SEP's\n    renderer shows it beneath the section heading, but a renderer may\n    omit it, so do not put guidance here that a user must see. Defaults\n    to ``None``.\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:param advanced: Whether the section holds expert options rather than the\n    common case. The renderer withholds advanced sections behind a single\n    \"Show advanced options\" control placed after the ordinary ones and\n    reveals them as ordinary top-level sections, so several expert sections\n    cost one row at rest instead of one each. Membership needs no\n    adjacency. Defaults to ``False``.\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.",
         "properties": {
+          "advanced": {
+            "default": false,
+            "title": "Advanced",
+            "type": "boolean"
+          },
           "cardinality_rules": {
             "anyOf": [
               {
@@ -1806,6 +1931,15 @@
         "title": "FormSection",
         "type": "object"
       },
+      "framework__HelpPlacement": {
+        "description": "Say where a field's ``description`` is shown, overriding the default.\n\nThe renderer otherwise places help by length — a description that fits\nroughly one line sits under the input, a longer one goes behind a help icon\nbeside the label. Setting this is for the cases where that reads wrong: a\nterse note that is still secondary, or a long one someone needs in front of\nthem while they type.",
+        "enum": [
+          "tooltip",
+          "inline"
+        ],
+        "title": "HelpPlacement",
+        "type": "string"
+      },
       "framework__HostField": {
         "additionalProperties": false,
         "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
@@ -1858,6 +1992,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1880,6 +2015,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -1890,6 +2035,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -1968,6 +2126,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2001,6 +2160,16 @@
             ],
             "title": "Ge"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2022,6 +2191,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2096,6 +2278,7 @@
           "overview_hidden_fields": {
             "items": {
               "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "title": "Overview Hidden Fields",
@@ -2156,6 +2339,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2178,6 +2362,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2188,6 +2382,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2278,6 +2485,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2300,6 +2508,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2310,6 +2528,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2404,6 +2635,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2426,6 +2658,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2436,6 +2678,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2514,6 +2769,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2536,6 +2792,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2546,6 +2812,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2636,6 +2915,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2658,6 +2938,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -2668,6 +2958,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -2976,6 +3279,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3003,6 +3307,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3013,6 +3327,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3096,6 +3423,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3118,6 +3446,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3128,6 +3466,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3261,6 +3612,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3288,6 +3640,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3310,6 +3672,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3412,6 +3787,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3434,6 +3810,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3444,6 +3830,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3518,6 +3917,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3539,6 +3939,16 @@
               }
             ],
             "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "label": {
             "minLength": 1,
@@ -3574,6 +3984,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "pattern": {
             "anyOf": [
@@ -3680,6 +4103,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3702,6 +4126,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3712,6 +4146,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "required": {
             "default": false,
@@ -3752,8 +4199,12 @@
       },
       "framework__TaskStatusDescriptor": {
         "additionalProperties": false,
-        "description": "Declare one task-status value and whether it ends a run.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.",
+        "description": "Declare one task-status value and its run terminality/output predicates.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.\n:param output_available: Whether the run reached an observed outcome, so its\n    output may be requested and may legitimately be empty, as for ``stale``\n    and ``unlaunchable``. ``lost`` is excluded because its outcome was never\n    observed.",
         "properties": {
+          "output_available": {
+            "title": "Output Available",
+            "type": "boolean"
+          },
           "terminal": {
             "title": "Terminal",
             "type": "boolean"
@@ -3764,7 +4215,8 @@
         },
         "required": [
           "value",
-          "terminal"
+          "terminal",
+          "output_available"
         ],
         "title": "TaskStatusDescriptor",
         "type": "object"
@@ -3798,6 +4250,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3820,6 +4273,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3830,6 +4293,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "placeholder": {
             "anyOf": [
@@ -3920,6 +4396,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3942,6 +4419,16 @@
             ],
             "title": "Forbidden"
           },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "label": {
             "minLength": 1,
             "title": "Label",
@@ -3952,6 +4439,19 @@
             "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
           },
           "placeholder": {
             "anyOf": [

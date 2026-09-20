@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Freeze the byte-identity guardrail for the backups ``run-python`` payload.
+"""Freeze the byte-identity guardrails for the MySQL backup payloads.
 
 Capture the full ``TaskWrite`` envelope produced by the model-first spec path
 (``build_backup_spec`` + ``assemble_envelope``) across the three backup types and
@@ -33,10 +33,20 @@ import yaml
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
-from app.sep.apps.mysql_backups.forms import BackupCreate
+from app.sep.apps.mysql_backups.forms import (
+    ALLOWED_XTRABACKUP_BIN_COMPRESSIONS,
+    BackupCreate,
+    resolve_xtrabackup_compression,
+)
+from app.sep.apps.mysql_backups.models import XtraBackupTool
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.inventory import CreatedService
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
+from tests.app.sep.apps.mysql_backups.conftest import (
+    xtrabackup_binary_default,
+    xtrabackup_payload_tree,
+)
+from tests.app.sep.apps.mysql_backups.restore.conftest import restore_payload_tree
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
 PAYLOAD_DIR = SNAPSHOTS_DIR / "payload"
@@ -45,6 +55,7 @@ _TASK_NAME = "backups-golden"
 _HOSTNAME = "executor-host"
 _BACKUP_DIR = "/backups"
 _PAYLOAD_ANCHOR = "app/sep/apps/mysql_backups/"
+
 
 # Each case names a slug and the backups field values; the cases cover the three
 # backup types, their per-type server host (M → service address, X → localhost,
@@ -218,13 +229,38 @@ def test_spec_path_payload_matrix_matches_golden():
     )
 
 
+def test_backup_and_restore_payloads_share_xtrabackup_binary_default():
+    """Pin the backup and restore payload binary fallbacks to each other."""
+    assert xtrabackup_binary_default(
+        xtrabackup_payload_tree()
+    ) == xtrabackup_binary_default(restore_payload_tree())
+
+
+def test_build_backup_spec_preserves_explicit_xtrabackup_binary():
+    """Preserve an explicitly selected XtraBackup binary in backup config."""
+    envelope = _spec_envelope(
+        _service(),
+        {
+            "form": {
+                "backup_type": "X",
+                "xtrabackup_bin_cmd": "innobackupex",
+            },
+            "alert_on_fail": False,
+        },
+    )
+
+    config = yaml.safe_load(envelope["data"]["meta"]["config"])["ALL_SERVERS"]
+    assert config["XTRABACKUP_BIN_CMD"] == "innobackupex"
+
+
 def _all_servers_config(
-    backup_type: str, encryption: dict[str, object]
+    backup_type: str, form_fields: dict[str, object]
 ) -> dict[str, object]:
     """Return the ``ALL_SERVERS`` block of the YAML config ``build_backup_spec`` emits.
 
     :param backup_type: The ``BackupType`` code (``M``/``X``/``B``).
-    :param encryption: The encryption fields to pass to the form, if any.
+    :param form_fields: Extra create-form fields to set, if any.
+    :return: The parsed ``ALL_SERVERS`` mapping the dispatched config carries.
     """
     service = _service()
     resolved = ResolvedEntities(
@@ -238,7 +274,7 @@ def _all_servers_config(
         service_id=service.id,
         backup_type=backup_type,
         backup_dir=_BACKUP_DIR,
-        **encryption,
+        **form_fields,
     )
     return yaml.safe_load(build_backup_spec(form, resolved).config)["ALL_SERVERS"]
 
@@ -252,6 +288,10 @@ def _all_servers_config(
                 "encryption_format": "gpg",
                 "encrypt": True,
                 "encryption_recipient": "ops@example.com",
+                # In-place GPG runs inside the upload loop, so the form requires a
+                # provider for it; the builder's ENCRYPT key is what is under test.
+                "upload": ["S3"],
+                "s3_bucket": "backups-bucket",
             },
             id="encrypt_true",
         ),
@@ -277,3 +317,54 @@ def test_build_backup_spec_always_emits_encrypt_key(backup_type: str, encryption
     assert all_servers["ENCRYPTION_FORMAT"] == encryption.get(
         "encryption_format", "none"
     )
+
+
+class TestDispatchedCompressionDefault:
+    """Assert a blank algorithm reaches the host resolved against its own binary.
+
+    Why dispatch resolves it at all is stated where the behaviour lives, in
+    ``spec._compression_override``.
+    """
+
+    @pytest.mark.parametrize("binary", [None, *ALLOWED_XTRABACKUP_BIN_COMPRESSIONS])
+    def test_blank_algorithm_is_resolved_per_binary(
+        self, binary: XtraBackupTool | None
+    ) -> None:
+        """Assert the emitted algorithm is the one the gated form resolves a blank to.
+
+        Derived from the resolver rather than re-typed, so the dispatched config and
+        the form gate cannot drift; the names themselves are pinned in
+        ``test_forms.py``.
+        """
+        form_fields: dict[str, object] = {}
+        if binary is not None:
+            form_fields["xtrabackup_bin_cmd"] = binary.value
+        all_servers = _all_servers_config("X", form_fields)
+        assert all_servers["COMPRESSION_ALGORITHM"] == resolve_xtrabackup_compression(
+            binary
+        )
+
+    def test_blank_string_algorithm_resolves_too(self) -> None:
+        """Assert a submitted-but-empty algorithm is resolved, not passed through.
+
+        The form coerces an empty selection to ``None``, so an empty string must not
+        reach the config as a compressor name the binary cannot run.
+        """
+        all_servers = _all_servers_config(
+            "X", {"xtrabackup_bin_cmd": "innobackupex", "compression_algorithm": ""}
+        )
+        assert all_servers["COMPRESSION_ALGORITHM"] == resolve_xtrabackup_compression(
+            XtraBackupTool.INNOBACKUPEX
+        )
+
+    def test_explicit_algorithm_is_preserved(self) -> None:
+        """Assert an operator's choice is never replaced by the resolved default."""
+        all_servers = _all_servers_config(
+            "X", {"xtrabackup_bin_cmd": "xtrabackup", "compression_algorithm": "lz4"}
+        )
+        assert all_servers["COMPRESSION_ALGORITHM"] == "lz4"
+
+    @pytest.mark.parametrize("backup_type", ["M", "B"])
+    def test_other_backup_types_keep_their_blank(self, backup_type: str) -> None:
+        """Assert only XtraBackup resolves here: the matrix is its binaries' alone."""
+        assert "COMPRESSION_ALGORITHM" not in _all_servers_config(backup_type, {})

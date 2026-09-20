@@ -5,12 +5,13 @@
 # description: "This script checks WAL archiving configuration, archiver status, and logs to diagnose archive failures."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # alerts:
 #   - PostgreSQLArchiveFailed
@@ -48,7 +49,14 @@ SQL
 echo ""
 echo "********* pg_wal directory size *********"
 echo ""
-PGDATA=$($PSQL -t -A -c "SELECT setting FROM pg_settings WHERE name = 'data_directory'" 2> /dev/null) || true
+# Keep stderr out of the captured value: it is used as a path, and psql writes
+# warnings there on runs that otherwise succeed.
+PSQL_ERR=$(mktemp)
+if ! PGDATA=$($PSQL -t -A -c "SELECT setting FROM pg_settings WHERE name = 'data_directory'" 2> "$PSQL_ERR"); then
+    echo "Could not read data_directory from PostgreSQL (check --dbname): $(cat "$PSQL_ERR")"
+    PGDATA=""
+fi
+rm -f "$PSQL_ERR"
 echo "Data directory: ${PGDATA:-unknown}"
 if [ -n "${PGDATA:-}" ] && test -d "$PGDATA/pg_wal"; then
     du -sh "$PGDATA/pg_wal" 2> /dev/null || echo "Cannot access pg_wal directory (may need elevated privileges)."
@@ -63,14 +71,22 @@ fi
 echo ""
 echo "********* Recent archiver failures in PostgreSQL logs *********"
 echo ""
-LOG_GLOB=$($PSQL -tA -c "
+PSQL_ERR=$(mktemp)
+if ! LOG_GLOB=$($PSQL -tA -c "
     SELECT CASE
         WHEN current_setting('log_directory') LIKE '/%'
         THEN current_setting('log_directory') || '/*.log'
         ELSE current_setting('data_directory') || '/'
              || current_setting('log_directory') || '/*.log'
     END;
-" 2> /dev/null) || LOG_GLOB=""
+" 2> "$PSQL_ERR"); then
+    echo "Could not read log_directory from PostgreSQL (check --dbname): $(cat "$PSQL_ERR")"
+    LOG_GLOB=""
+    LOG_DIR_KNOWN=0
+else
+    LOG_DIR_KNOWN=1
+fi
+rm -f "$PSQL_ERR"
 
 LOG_FILES=()
 if [ -n "${LOG_GLOB}" ]; then
@@ -81,9 +97,22 @@ if [ -n "${LOG_GLOB}" ]; then
     shopt -u nullglob
 fi
 
-if [ ${#LOG_FILES[@]} -eq 0 ]; then
-    echo "No archiver errors found in PostgreSQL logs or problem occurred when querying for log_directory parameter."
+if [ "$LOG_DIR_KNOWN" -eq 0 ]; then
+    echo "Log files were not searched, because log_directory could not be read."
+elif [ ${#LOG_FILES[@]} -eq 0 ]; then
+    echo "No PostgreSQL log files found under log_directory."
 else
-    tail -200 "${LOG_FILES[@]}" 2> /dev/null | grep -iE "archiver|archive command failed|could not archive" ||
-        echo "No archiver errors found in PostgreSQL logs or problem occurred when querying for log_directory parameter."
+    log_tail=""
+    for log_file in "${LOG_FILES[@]}"; do
+        if ! file_tail=$(tail -n 200 "$log_file" 2>&1); then
+            echo "Could not read $log_file: $file_tail"
+        else
+            log_tail+="$file_tail"$'\n'
+        fi
+    done
+    if [ -z "$log_tail" ]; then
+        echo "None of the PostgreSQL log files under log_directory could be read."
+    elif ! printf '%s' "$log_tail" | grep -iE "archiver|archive command failed|could not archive"; then
+        echo "No archiver errors found in PostgreSQL logs."
+    fi
 fi

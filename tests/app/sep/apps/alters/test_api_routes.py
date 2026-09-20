@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
@@ -78,13 +79,26 @@ def build_alters_task(
     return payload
 
 
-def build_alters_task_group(parent_name: str = DEFAULT_PARENT_NAME) -> dict[str, dict]:
-    """Return parent, dry-run, and pre-checks task payloads for one group."""
+def build_alters_task_group(
+    parent_name: str = DEFAULT_PARENT_NAME,
+    *,
+    created_by: str | None = None,
+) -> dict[str, dict]:
+    """Return parent, dry-run, and pre-checks task payloads for one group.
+
+    :param parent_name: The parent task name.
+    :param created_by: The actor identifier to stamp on every task, or ``None`` to
+        use the task factory default.
+    :return: The three task payloads keyed by their cascade roles.
+    """
+    actor = {"created_by": created_by} if created_by is not None else {}
     return {
-        "parent": build_alters_task(parent_name),
-        "dry_run": build_alters_task(f"{parent_name}-dry-run", parent=parent_name),
+        "parent": build_alters_task(parent_name, **actor),
+        "dry_run": build_alters_task(
+            f"{parent_name}-dry-run", parent=parent_name, **actor
+        ),
         "pre_checks": build_alters_task(
-            f"{parent_name}-pre-checks", parent=parent_name
+            f"{parent_name}-pre-checks", parent=parent_name, **actor
         ),
     }
 
@@ -122,12 +136,21 @@ def cascade_create_post_side_effect(
     task_name: str,
     *,
     execute_result: Any = None,
+    created_by: str | None = None,
 ) -> list[Any]:
-    """Build ``tasks_api.post`` side effects for a successful cascade create."""
+    """Build ``tasks_api.post`` side effects for a successful cascade create.
+
+    :param task_name: The parent task name.
+    :param execute_result: The response for an optional immediate execution.
+    :param created_by: The actor identifier to stamp on every task, or ``None`` to
+        use the task factory default.
+    :return: The ordered Tasks API responses for the cascade.
+    """
+    actor = {"created_by": created_by} if created_by is not None else {}
     return [
-        build_alters_task(task_name),
-        build_alters_task(f"{task_name}-dry-run", parent=task_name),
-        build_alters_task(f"{task_name}-pre-checks", parent=task_name),
+        build_alters_task(task_name, **actor),
+        build_alters_task(f"{task_name}-dry-run", parent=task_name, **actor),
+        build_alters_task(f"{task_name}-pre-checks", parent=task_name, **actor),
         execute_result,
     ]
 
@@ -140,18 +163,31 @@ def configure_cascade_create_mocks(
     *,
     execute_result: Any = None,
     fetch_created_task: bool = True,
+    created_by: str | None = None,
 ) -> None:
-    """Wire inventory, cascade POST, and Nomad hosts mocks for create-route tests."""
+    """Wire inventory, cascade POST, and Nomad hosts mocks for create-route tests.
+
+    :param mock_task_api_dep: The Tasks API boundary mock.
+    :param mock_inventory_api_dep: The Inventory API boundary mock.
+    :param created_service: The inventory service selected by the request.
+    :param task_name: The parent task name.
+    :param execute_result: The response for an optional immediate execution.
+    :param fetch_created_task: Whether rendering fetches the created parent task.
+    :param created_by: The actor identifier to stamp on every task, or ``None`` to
+        use the task factory default.
+    """
     mock_inventory_api_dep.get = AsyncMock(return_value=created_service.model_dump())
     mock_task_api_dep.post = AsyncMock(
         side_effect=cascade_create_post_side_effect(
             task_name,
             execute_result=execute_result,
+            created_by=created_by,
         )
     )
     get_side_effects: list[Any] = [NOMAD_HOSTS]
     if fetch_created_task:
-        get_side_effects.append(build_alters_task(task_name))
+        actor = {"created_by": created_by} if created_by is not None else {}
+        get_side_effects.append(build_alters_task(task_name, **actor))
     mock_task_api_dep.get = AsyncMock(side_effect=get_side_effects)
 
 
@@ -221,7 +257,9 @@ class TestAltersApiList:
         the Tasks API is queried with that filter and returns only parents; the
         rows keep the same builder-stamped fields as the detail surface.
         """
-        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        group = build_alters_task_group(
+            DEFAULT_PARENT_NAME, created_by=str(SERVICE_PRINCIPAL_ID)
+        )
         mock_task_api_dep.get = AsyncMock(
             return_value={
                 "items": [group["parent"]],
@@ -247,10 +285,11 @@ class TestAltersApiList:
         assert body["total"] == 1
         [row] = body["items"]
         assert row["name"] == DEFAULT_PARENT_NAME
+        assert row["created_by"] == "Service account"
         assert "service_type" not in row
         assert "owner" not in row
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
-        assert row["last_executed_at"] == "2026-07-07T09:00:00"
+        assert row["last_executed_at"] == "2026-07-07T09:00:00Z"
         assert "anonymize_mask" in row
         assert isinstance(row["anonymized_entities"], list)
         assert "connectivity_warning" in row
@@ -272,7 +311,9 @@ class TestAltersApiDetail:
 
     def test_detail_returns_parent_task(self, test_client, mock_task_api_dep) -> None:
         """Ensure the detail endpoint returns the parent task with status."""
-        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        group = build_alters_task_group(
+            DEFAULT_PARENT_NAME, created_by=str(SERVICE_PRINCIPAL_ID)
+        )
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 group["parent"],
@@ -285,6 +326,7 @@ class TestAltersApiDetail:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == DEFAULT_PARENT_NAME
+        assert body["created_by"] == "Service account"
         assert body["status"] == TaskHistoryStatusEnum.RUNNING.value
         assert "service_type" not in body
         assert "owner" not in body
@@ -328,6 +370,7 @@ class TestAltersApiCreate:
             mock_inventory_api_dep,
             created_service,
             DEFAULT_TASK_NAME,
+            created_by=str(SERVICE_PRINCIPAL_ID),
         )
 
         response = test_client.post(
@@ -340,6 +383,7 @@ class TestAltersApiCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         create_body = response.json()
+        assert create_body["created_by"] == "Service account"
         assert "service_type" not in create_body
         assert "owner" not in create_body
         assert "anonymize_mask" in create_body
@@ -425,6 +469,7 @@ class TestAltersApiUpdate:
     ) -> None:
         """PUT updates parent, dry-run sibling, and pre-checks predecessor."""
         group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        group["parent"]["last_updated_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 group["parent"],
@@ -448,6 +493,7 @@ class TestAltersApiUpdate:
 
         assert response.status_code == status.HTTP_200_OK
         update_body = response.json()
+        assert update_body["last_updated_by"] == "Service account"
         assert "service_type" not in update_body
         assert "owner" not in update_body
         assert "anonymize_mask" in update_body

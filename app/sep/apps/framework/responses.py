@@ -155,10 +155,11 @@ class BaseTaskResponse(BaseModel):
         back to the owner's configured defaults.
     :param created_at: The timestamp when the task was first created.
     :param updated_at: The timestamp of the last modification to the task.
-    :param created_by: Display name for the user who initiated the task (Casdoor
-        username when resolvable, otherwise the stored user id).
+    :param created_by: Display name for the user who initiated the task (system
+        label or provider username when resolvable, otherwise the stored user id).
     :param last_updated_by: Display name for the user who last modified the task
-        record (Casdoor username when resolvable, otherwise the stored user id).
+        record (system label or provider username when resolvable, otherwise the
+        stored user id).
     :param connectivity_warning: A warning surfaced when the post-creation
         database connectivity check fails. ``None`` when the check passes, is
         opted out, or the task meta lacks the connectivity keys.
@@ -171,15 +172,15 @@ class BaseTaskResponse(BaseModel):
     owner: str = Field(exclude=True)
     service_type: ServiceTypeEnum | None = Field(default=None, exclude=True)
     status: TaskHistoryStatusEnum | None = None
-    last_executed_at: datetime | None = None
+    last_executed_at: UTCDatetime | None = None
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any] = Field(json_schema_extra=ARBITRARY_ARGS_SCHEMA)
     protected: bool
     alert_on_fail: bool
     anonymize_mask: int | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: UTCDatetime | None = None
+    updated_at: UTCDatetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
     connectivity_warning: ConnectivityWarning | None = None

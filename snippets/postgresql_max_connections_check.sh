@@ -5,12 +5,13 @@
 # description: "This script checks the number of PostgreSQL connections against the max_connections limit to help troubleshoot connection exhaustion."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
 # alerts:
 #   - PostgreSQLMaxConnections

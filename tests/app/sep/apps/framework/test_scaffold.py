@@ -78,7 +78,9 @@ from tests.app.sep.apps.framework.kit import (
 def _settings_copy(tmp_path: Path) -> Path:
     """Return a throwaway ``settings.yaml`` seeded from the repository's own."""
     copy = tmp_path / "settings.yaml"
-    copy.write_text(scaffold.SETTINGS_FILE.read_text())
+    copy.write_text(
+        scaffold.SETTINGS_FILE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return copy
 
 

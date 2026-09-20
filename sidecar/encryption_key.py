@@ -43,13 +43,13 @@ Deployment inputs, all optional: ``SEP_STATE_DIR`` and
 import asyncio
 import base64
 import fcntl
-import math
 import os
 import sys
 import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
+from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
@@ -62,8 +62,25 @@ from app.core.config import BaseYamlSettings
 from app.core.db.config import DatabaseOptions
 from app.core.encryption import is_encrypted
 from app.core.settings_override.models import SettingOverride
+from app.core.utils.fields import credential_url_password
+from sidecar.runtime import (
+    DEFAULT_STATE_DIR,
+    positive_timeout,
+    RETRY_INTERVAL_SECONDS,
+    state_dir,
+)
+from sidecar.runtime import warn as runtime_warn
 
-DEFAULT_STATE_DIR = Path("/home/sep/state")
+__all__ = [
+    "DEFAULT_STATE_DIR",
+    "RETRY_INTERVAL_SECONDS",
+    "probe_timeout",
+    "state_dir",
+    "warn",
+]
+
+warn = partial(runtime_warn, "encryption-key")
+
 PERSISTED_FILENAME = "ENCRYPTION_KEY"
 LOCK_FILENAME = ".ENCRYPTION_KEY.lock"
 
@@ -76,8 +93,6 @@ start the databases are routinely not up yet, which is exactly when the mint
 path runs. A probe that refused on the first connection error would make PID 1
 die on the ordinary cold start this feature exists to serve.
 """
-
-RETRY_INTERVAL_SECONDS = 3.0
 
 LOCK_POLL_INTERVAL_SECONDS = 0.2
 """How often a start re-tries the state lock while a peer holds it."""
@@ -166,42 +181,14 @@ the lost key can sit in any one of the three.
 """
 
 
-def warn(message: str) -> None:
-    """Write one diagnostic line, leaving stdout as the key channel alone.
-
-    :param message: The line to write.
-    """
-    sys.stderr.write(f"[encryption-key] {message}\n")
-
-
-def state_dir() -> Path:
-    """Return the directory SEP persists its minted key in.
-
-    :return: The configured directory, or the image's own.
-    """
-    configured = os.environ.get("SEP_STATE_DIR") or ""
-    return Path(configured) if configured.strip() else DEFAULT_STATE_DIR
-
-
 def probe_timeout() -> float:
     """Return how long each freshness probe may wait for its database.
 
     :return: The bound in seconds.
     """
-    raw = (os.environ.get("SEP_ENCRYPTION_PROBE_TIMEOUT") or "").strip()
-    if not raw:
-        return DEFAULT_PROBE_TIMEOUT_SECONDS
-    try:
-        seconds = float(raw)
-    except ValueError:
-        seconds = 0.0
-    if not math.isfinite(seconds) or seconds <= 0:
-        warn(
-            f"SEP_ENCRYPTION_PROBE_TIMEOUT={raw!r} is not a finite positive "
-            f"number of seconds; waiting {DEFAULT_PROBE_TIMEOUT_SECONDS:g}s instead."
-        )
-        return DEFAULT_PROBE_TIMEOUT_SECONDS
-    return seconds
+    return positive_timeout(
+        "SEP_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
+    )
 
 
 def lock_timeout() -> float:
@@ -414,6 +401,23 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
         )
 
 
+def _has_encrypted_url_password(value: str) -> bool:
+    """Return whether ``value`` is a URL whose embedded password is a Fernet token.
+
+    A URL that cannot be parsed answers ``False`` rather than propagating: the
+    caller has already tested the whole string, and a value malformed enough to
+    defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
+
+    :param value: One string leaf of a stored override value.
+    :return: Whether its userinfo password is structurally ciphertext.
+    """
+    try:
+        password = credential_url_password(value)
+    except ValueError:
+        return False
+    return password is not None and is_encrypted(password)
+
+
 def contains_ciphertext(value: Any) -> bool:
     """Return whether any string leaf of ``value`` is structurally a Fernet token.
 
@@ -421,6 +425,13 @@ def contains_ciphertext(value: Any) -> bool:
     provider's routing key inside a list, a delivery input's API key inside a
     nested mapping. Testing the row's own value therefore finds nothing on
     exactly the rows that matter.
+
+    A credential-bearing URL hides its token one level deeper still, inside the
+    leaf's userinfo segment: ``is_encrypted`` answers ``False`` for the whole
+    ``https://user:<token>@host/`` string, because the string is not a Fernet
+    token. A string leaf is therefore tested twice — as itself, and as its
+    parsed password — or a deployment whose only encrypted data is an endpoint
+    password reads as holding none and clears the mint path.
 
     Deciding structurally is safe in this direction, and only this one. The
     write path must not (``secret_storage.encrypt_secret_leaves``: a credential
@@ -433,7 +444,7 @@ def contains_ciphertext(value: Any) -> bool:
     :return: Whether a Fernet token appears anywhere within it.
     """
     if isinstance(value, str):
-        return is_encrypted(value)
+        return is_encrypted(value) or _has_encrypted_url_password(value)
     if isinstance(value, dict):
         return any(contains_ciphertext(leaf) for leaf in value.values())
     if isinstance(value, list):

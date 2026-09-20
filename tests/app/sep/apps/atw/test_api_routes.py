@@ -18,6 +18,7 @@
 import logging
 import re
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 from uuid import UUID, uuid4
@@ -27,10 +28,13 @@ import pytest_asyncio
 from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from pytest_mock import MockerFixture
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app import BASE_DIR
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.atw import api_routes as atw_api_routes
@@ -46,10 +50,14 @@ from app.sep.apps.atw.models import (
     AtwIncidentResponse,
 )
 from app.sep.deps import BEARER_REQUIRED_DETAIL
+from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
+from app.sep.snippets.models.meta import META_KEY_ATW, META_KEY_DIAGNOSTIC_CATEGORIES
+from app.tasks.models import TaskHistoryStatusEnum
 
 _GENERIC_ROOT = CATEGORY_ROOT_LABELS["generic"]
+_REPO_SNIPPETS_DIR = BASE_DIR / "snippets"
 
 
 def _mock_atw_snippet(
@@ -57,17 +65,18 @@ def _mock_atw_snippet(
     filename: str,
     title: str = "Title",
     description: str = "",
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str | None = "mysql",
+    sudo: SnippetSudoOption = SnippetSudoOption.NEVER,
 ) -> Mock:
-    snippet = Mock()
+    snippet = Mock(spec=Snippet)
     snippet.filename = filename
     snippet.title = title
     snippet.description = description
-    meta: dict[str, Any] = {"atw": atw}
+    snippet.sudo = sudo
+    snippet.meta = {"diagnostic_categories": diagnostic_categories}
     if service_type is not None:
-        meta["service_type"] = service_type
-    snippet.meta = meta
+        snippet.meta["service_type"] = service_type
     return snippet
 
 
@@ -75,7 +84,7 @@ async def _persist_atw_snippet(
     session: AsyncSession,
     *,
     filename: str,
-    atw: list[str],
+    diagnostic_categories: list[str],
     service_type: str = "mysql",
     approved: bool,
 ) -> Snippet:
@@ -83,7 +92,8 @@ async def _persist_atw_snippet(
 
     :param session: The database session.
     :param filename: The snippet's filename.
-    :param atw: The ATW category tags to record under ``meta["atw"]``.
+    :param diagnostic_categories: The category tags to record under
+        ``meta["diagnostic_categories"]``.
     :param service_type: The service type to record under ``meta["service_type"]``.
     :param approved: Whether the persisted snippet should carry an ``approved_at``.
     :return: The persisted ``Snippet`` row.
@@ -97,9 +107,44 @@ async def _persist_atw_snippet(
             "title": f"Title for {filename}",
             "description": "desc",
             "service_type": service_type,
-            "atw": atw,
+            "diagnostic_categories": diagnostic_categories,
         },
     )
+    return await SnippetManager.create(session, snippet)
+
+
+async def _persist_corpus_snippet(
+    session: AsyncSession,
+    snippets_dir: Path,
+    *,
+    filename: str,
+    approved: bool = True,
+) -> Snippet:
+    """Persist a real repository snippet after parsing its on-disk frontmatter.
+
+    :param session: The database session.
+    :param snippets_dir: The temporary directory aliased as ``Snippet.BASE_DIR``.
+    :param filename: The repository snippet filename to copy and persist.
+    :param approved: Whether the persisted snippet should carry an ``approved_at``.
+    :return: The persisted ``Snippet`` row.
+    :raises ValueError: When ``filename`` resolves outside the source or target
+        snippets directories.
+    """
+    source_root = _REPO_SNIPPETS_DIR.resolve()
+    target_root = snippets_dir.resolve()
+    source = (source_root / filename).resolve()
+    target = (target_root / filename).resolve()
+    if not source.is_relative_to(source_root):
+        raise ValueError(f"snippet path escapes repository snippets dir: {filename}")
+    if not source.is_file():
+        raise ValueError(f"snippet path is not a repository snippet file: {filename}")
+    if not target.is_relative_to(target_root):
+        raise ValueError(f"snippet path escapes test snippets dir: {filename}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
+    snippet = await Snippet.from_path(filename, update_meta=True)
+    if approved:
+        snippet.approve("Seeded as approved", "seed-user")
     return await SnippetManager.create(session, snippet)
 
 
@@ -113,7 +158,8 @@ async def _persist_snippet(
     """Persist a real ``Snippet`` row carrying caller-supplied frontmatter.
 
     Unlike :func:`_persist_atw_snippet` the metadata is not shaped for the category
-    browser, so a row can omit the ``atw`` tag or declare a degenerate title.
+    browser, so a row can omit ``diagnostic_categories`` or declare a degenerate
+    title.
 
     :param session: The database session.
     :param filename: The snippet's filename.
@@ -140,7 +186,7 @@ class TestAtwListEndpoint:
             filename="diag/slow-query.sh",
             title="Slow Query Diagnostics",
             description="Collects slow-query and processlist data.",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -164,7 +210,63 @@ class TestAtwListEndpoint:
         assert overall["parent_category"] == "PERFORMANCE_ISSUES"
         summary = overall["snippets"][0]
         assert summary["name"] == "diag/slow-query.sh"
-        assert set(summary.keys()) == {"name", "title", "description"}
+        assert set(summary.keys()) == {"name", "title", "description", "sudo"}
+
+    def test_atw_list_reports_the_declared_sudo_requirement(
+        self, test_client: TestClient
+    ) -> None:
+        """Publish a mandatory-elevation snippet as ``always`` on the category listing.
+
+        The category browser is how the collect pane reaches scripts, so this path
+        needs its own assertion rather than inheriting the search route's.
+        """
+        snippet = _mock_atw_snippet(
+            filename="diag/dmesg.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            sudo=SnippetSudoOption.ALWAYS,
+        )
+
+        with patch(
+            "app.sep.apps.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["snippets"][0]["sudo"] == "always"
+
+    @pytest.mark.parametrize(
+        ("option", "expected"),
+        [
+            (SnippetSudoOption.NEVER, "never"),
+            (SnippetSudoOption.OPTIONAL, "optional"),
+            (SnippetSudoOption.ALWAYS, "always"),
+            (SnippetSudoOption.OPTIONAL_DEFAULT_TRUE, "optional"),
+        ],
+        ids=["never", "optional", "always", "optional_default_true"],
+    )
+    def test_atw_list_distinguishes_the_three_states(
+        self, test_client: TestClient, option: SnippetSudoOption, expected: str
+    ) -> None:
+        """Collapse the four declared options onto exactly three wire values.
+
+        ``OPTIONAL_DEFAULT_TRUE`` reports ``optional`` rather than a fourth value:
+        the default-checked nuance is carried by ``sudo_default``, not here.
+        """
+        snippet = _mock_atw_snippet(
+            filename="diag/x.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            sudo=option,
+        )
+
+        with patch(
+            "app.sep.apps.atw.api_routes.SnippetManager.list",
+            new=AsyncMock(return_value=[snippet]),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()[0]["snippets"][0]["sudo"] == expected
 
     def test_atw_list_real_snippet_row_meta_shape(
         self, test_client: TestClient
@@ -178,7 +280,7 @@ class TestAtwListEndpoint:
                 "title": "Slow Query Diagnostics",
                 "description": "Collects slow-query and processlist data.",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -208,12 +310,12 @@ class TestAtwListEndpoint:
         """Ensure mysql and mongodb snippets produce separate ``category_root`` rows."""
         mysql_snippet = _mock_atw_snippet(
             filename="mysql/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
         mongo_snippet = _mock_atw_snippet(
             filename="mongo/slow.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mongodb",
         )
 
@@ -243,7 +345,7 @@ class TestAtwListEndpoint:
         """Ensure ``service_type: generic`` snippets surface under the Generic root."""
         snippet = _mock_atw_snippet(
             filename="generic/disk.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="generic",
         )
 
@@ -264,7 +366,7 @@ class TestAtwListEndpoint:
         """Ensure missing ``service_type`` meta buckets under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="no-service-type.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type=None,
         )
 
@@ -287,7 +389,7 @@ class TestAtwListEndpoint:
         """Ensure unknown ``service_type`` values bucket under Generic, not MySQL."""
         snippet = _mock_atw_snippet(
             filename="unknown/engine.sh",
-            atw=["GALERA"],
+            diagnostic_categories=["GALERA"],
             service_type="clickhouse",
         )
 
@@ -309,7 +411,7 @@ class TestAtwListEndpoint:
         """Ensure empty (root, category) cells are omitted from the listing."""
         snippet = _mock_atw_snippet(
             filename="mysql/only.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             service_type="mysql",
         )
 
@@ -329,15 +431,15 @@ class TestAtwListEndpoint:
             if category.name != "OVERALL_SLOWNESS":
                 assert (mysql_root, category.name) not in populated
 
-    def test_atw_list_non_list_atw_meta_not_substring_matched(
+    def test_atw_list_non_list_diagnostic_categories_not_substring_matched(
         self, test_client: TestClient
     ) -> None:
-        """Ignore ``meta["atw"]`` when it is not a list (avoids ``str`` substring ``in``)."""
+        """Ignore a non-list category tag (avoids ``str`` substring ``in``)."""
         snippet = Mock()
         snippet.filename = "bad-meta.sh"
         snippet.title = "Bad meta"
         snippet.description = ""
-        snippet.meta = {"atw": "noise OVERALL_SLOWNESS noise"}
+        snippet.meta = {"diagnostic_categories": "noise OVERALL_SLOWNESS noise"}
 
         with (
             patch.object(atw_api_routes.logger, "warning") as warn_mock,
@@ -351,9 +453,38 @@ class TestAtwListEndpoint:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
         warn_mock.assert_called_once_with(
-            "Ignoring meta['atw'] for snippet %s: expected list, got %s",
+            "Ignoring meta[%r] for snippet %s: expected list, got %s",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
             "bad-meta.sh",
             "str",
+        )
+
+    def test_atw_list_non_string_diagnostic_categories_item_is_ignored(
+        self, test_client: TestClient
+    ) -> None:
+        """Ignore a category list containing a non-string member."""
+        snippet = Mock()
+        snippet.filename = "bad-item.sh"
+        snippet.title = "Bad item"
+        snippet.description = ""
+        snippet.meta = {"diagnostic_categories": ["OVERALL_SLOWNESS", 1]}
+
+        with (
+            patch.object(atw_api_routes.logger, "warning") as warn_mock,
+            patch(
+                "app.sep.apps.atw.api_routes.SnippetManager.list",
+                new=AsyncMock(return_value=[snippet]),
+            ),
+        ):
+            response = test_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        warn_mock.assert_called_once_with(
+            "Ignoring meta[%r] for snippet %s: expected list[str], got %s element",
+            META_KEY_DIAGNOSTIC_CATEGORIES,
+            "bad-item.sh",
+            "int",
         )
 
     def test_atw_list_requires_authentication(
@@ -384,7 +515,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="unapproved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=False,
         )
 
@@ -401,7 +532,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="approved.sh",
-            atw=["OVERALL_SLOWNESS"],
+            diagnostic_categories=["OVERALL_SLOWNESS"],
             approved=True,
         )
 
@@ -414,15 +545,98 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
 
     @pytest.mark.asyncio
+    async def test_legacy_atw_meta_is_still_honoured(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Read the legacy ``atw`` metadata key until existing rows are resynced."""
+        await _persist_snippet(
+            session,
+            filename="legacy.sh",
+            meta={
+                "title": "Legacy",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert (
+            payload[0]["category_root"] == CATEGORY_ROOT_LABELS[ServiceTypeEnum.MYSQL]
+        )
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "legacy.sh"
+
+    @pytest.mark.asyncio
+    async def test_diagnostic_categories_override_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Prefer ``diagnostic_categories`` when both metadata keys are present."""
+        await _persist_snippet(
+            session,
+            filename="dual-key.sh",
+            meta={
+                "title": "Dual key",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS"],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "OVERALL_SLOWNESS"
+        assert payload[0]["snippets"][0]["name"] == "dual-key.sh"
+
+    @pytest.mark.asyncio
+    async def test_malformed_diagnostic_categories_fall_back_to_legacy_atw_meta(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to the legacy key when the current one is malformed."""
+        await _persist_snippet(
+            session,
+            filename="fallback.sh",
+            meta={
+                "title": "Fallback",
+                "description": "d",
+                "service_type": "mysql",
+                META_KEY_ATW: ["GALERA"],
+                META_KEY_DIAGNOSTIC_CATEGORIES: ["OVERALL_SLOWNESS", 1],
+            },
+        )
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert len(payload) == 1
+        assert payload[0]["category"] == "GALERA"
+        assert payload[0]["snippets"][0]["name"] == "fallback.sh"
+
+    @pytest.mark.asyncio
     async def test_all_unapproved_category_produces_no_row(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
         """Ensure a category whose snippets are all unapproved is omitted entirely."""
         await _persist_atw_snippet(
-            session, filename="a.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="a.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
         await _persist_atw_snippet(
-            session, filename="b.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="b.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -436,10 +650,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure a category's count and membership exclude only the unapproved row."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["OVERALL_SLOWNESS"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -458,7 +678,7 @@ class TestAtwListApprovalFilter:
         await _persist_atw_snippet(
             session,
             filename="multi-tag.sh",
-            atw=["OVERALL_SLOWNESS", "GALERA"],
+            diagnostic_categories=["OVERALL_SLOWNESS", "GALERA"],
             approved=False,
         )
 
@@ -473,10 +693,16 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure the filter is applied per-row, not just within a shared cell."""
         await _persist_atw_snippet(
-            session, filename="approved.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="approved.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
         await _persist_atw_snippet(
-            session, filename="unapproved.sh", atw=["GALERA"], approved=False
+            session,
+            filename="unapproved.sh",
+            diagnostic_categories=["GALERA"],
+            approved=False,
         )
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -488,14 +714,14 @@ class TestAtwListApprovalFilter:
         assert payload[0]["snippets"][0]["name"] == "approved.sh"
 
     @pytest.mark.asyncio
-    async def test_approved_snippet_with_non_list_atw_meta_is_still_ignored(
+    async def test_approved_snippet_with_non_list_diagnostic_categories_is_still_ignored(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Ensure approval does not bypass the ``meta["atw"]`` list-shape check."""
+        """Ensure approval does not bypass the category list-shape check."""
         snippet = await _persist_atw_snippet(
-            session, filename="bad-meta.sh", atw=[], approved=True
+            session, filename="bad-meta.sh", diagnostic_categories=[], approved=True
         )
-        snippet.meta["atw"] = "OVERALL_SLOWNESS"
+        snippet.meta["diagnostic_categories"] = "OVERALL_SLOWNESS"
         await SnippetManager.save(session, snippet)
 
         response = await async_api_client.get("/api/apps/atw/")
@@ -509,7 +735,10 @@ class TestAtwListApprovalFilter:
     ) -> None:
         """Ensure revoking a previously-approved snippet drops it on the next call."""
         snippet = await _persist_atw_snippet(
-            session, filename="revoked.sh", atw=["OVERALL_SLOWNESS"], approved=True
+            session,
+            filename="revoked.sh",
+            diagnostic_categories=["OVERALL_SLOWNESS"],
+            approved=True,
         )
 
         first = await async_api_client.get("/api/apps/atw/")
@@ -533,6 +762,47 @@ class TestAtwListApprovalFilter:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    @pytest.mark.asyncio
+    async def test_real_corpus_scripts_drive_roots_and_categories(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        snippets_dir: Path,
+    ) -> None:
+        """Load real snippet files and expose their declared ATW roots and cells."""
+        snippets = [
+            await _persist_corpus_snippet(session, snippets_dir, filename=filename)
+            for filename in (
+                "proxysql_log_extractor.sh",
+                "proxysql_status.sh",
+                "haproxy_config_files.sh",
+                "haproxy_logs_extractor.sh",
+            )
+        ]
+
+        response = await async_api_client.get("/api/apps/atw/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        cells = {
+            (entry["category_root"], entry["category"]): {
+                snippet["name"] for snippet in entry["snippets"]
+            }
+            for entry in payload
+        }
+        assert {entry["category_root"] for entry in payload} == {
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.HAPROXY],
+            CATEGORY_ROOT_LABELS[ServiceTypeEnum.PROXYSQL],
+        }
+        for snippet in snippets:
+            expected_root = CATEGORY_ROOT_LABELS[snippet.service_type]
+            declared = snippet.meta[META_KEY_DIAGNOSTIC_CATEGORIES]
+            assert declared, (
+                f"{snippet.filename} should declare categories for this test"
+            )
+            for category in declared:
+                assert snippet.filename in cells[(expected_root, category)]
+
 
 class TestAtwListTitleFallback:
     """Observe the library's blank-title fallback through the category listing.
@@ -554,7 +824,7 @@ class TestAtwListTitleFallback:
                 "title": "",
                 "description": "d",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -579,7 +849,7 @@ class TestAtwListTitleFallback:
                 "title": "   ",
                 "description": "  ",
                 "service_type": "mysql",
-                "atw": ["OVERALL_SLOWNESS"],
+                "diagnostic_categories": ["OVERALL_SLOWNESS"],
             },
         )
 
@@ -665,7 +935,7 @@ class TestAtwSnippetSearch:
     async def test_reaches_a_snippet_outside_the_atw_taxonomy(
         self, async_api_client: AsyncClient, session: AsyncSession
     ) -> None:
-        """Return a snippet carrying no ``atw`` tag, which the listing never exposes."""
+        """Return a snippet carrying no category metadata, which the listing never exposes."""
         await _persist_snippet(
             session,
             filename="ops/pt-summary.sh",
@@ -754,8 +1024,75 @@ class TestAtwSnippetSearch:
 
         assert response.status_code == status.HTTP_200_OK
         item = response.json()["items"][0]
-        assert set(item) == {"name", "title", "description"}
-        assert item == {"name": "ops/x.sh", "title": "Summary", "description": "d"}
+        assert set(item) == {"name", "title", "description", "sudo"}
+        assert item == {
+            "name": "ops/x.sh",
+            "title": "Summary",
+            "description": "d",
+            "sudo": "never",
+        }
+
+    @pytest.mark.asyncio
+    async def test_search_reports_the_declared_sudo_requirement(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Publish a mandatory-elevation snippet as ``always`` on the search route."""
+        await _persist_snippet(
+            session,
+            filename="ops/elevated.sh",
+            meta={"title": "Elevated", "description": "d", "sudo": "always"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "elevated"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "always"
+
+    @pytest.mark.asyncio
+    async def test_search_reports_a_boolean_sudo_declaration_as_always(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Resolve ``sudo: true`` to ``always``, as the option parser already does.
+
+        YAML hands Python ``True``, which equals the ``ALWAYS`` member's value of
+        ``1`` — so this spelling is mandatory elevation and must warn like one.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/bool-sudo.sh",
+            meta={"title": "Bool", "description": "d", "sudo": True},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "bool"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "always"
+
+    @pytest.mark.asyncio
+    async def test_search_reports_a_malformed_sudo_declaration_as_the_default(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Fall back to the configured default when the declaration is garbage.
+
+        ``Snippet.sudo`` swallows the ``ValidationError``, so the summary inherits
+        the configured default rather than surfacing an error.
+        """
+        await _persist_snippet(
+            session,
+            filename="ops/garbage-sudo.sh",
+            meta={"title": "Garbage", "description": "d", "sudo": "not-an-option"},
+        )
+
+        response = await async_api_client.get(
+            self.SEARCH_URL, params={"search": "garbage"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["items"][0]["sudo"] == "never"
 
     @pytest.mark.asyncio
     async def test_title_falls_back_to_filename_when_key_absent(
@@ -996,21 +1333,26 @@ class TestAtwSnippetSearch:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     @pytest.mark.asyncio
-    async def test_malformed_atw_meta_does_not_affect_search(
+    async def test_malformed_diagnostic_categories_do_not_affect_search(
         self,
         async_api_client: AsyncClient,
         session: AsyncSession,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Return a snippet whose ``atw`` tag is malformed, warning about nothing.
+        """Return a snippet whose category tag is malformed, warning about nothing.
 
-        Search never reads ``ATW_META_KEY``, unlike the category listing, so a
-        non-list tag is neither a filter nor a diagnostic here.
+        Search never reads ``META_KEY_DIAGNOSTIC_CATEGORIES``, unlike the
+        category listing, so a non-list tag is neither a filter nor a
+        diagnostic here.
         """
         await _persist_snippet(
             session,
             filename="ops/bad-meta.sh",
-            meta={"title": "Galera", "description": "d", "atw": "OVERALL_SLOWNESS"},
+            meta={
+                "title": "Galera",
+                "description": "d",
+                "diagnostic_categories": "OVERALL_SLOWNESS",
+            },
         )
 
         with caplog.at_level(logging.WARNING, logger=atw_api_routes.__name__):
@@ -1095,6 +1437,53 @@ async def seeded_incident(session: AsyncSession) -> AtwIncident:
         session,
         AtwIncident(created_by="alice", name="Original", case_ref="SN-1"),
     )
+
+
+_SEEDED_RUN_COUNT = 3
+_SEEDED_FAILED_COUNT = 2
+#: The statuses ``incident_with_runs`` records, two of which count as failed.
+_SEEDED_RUN_STATUSES = (
+    TaskHistoryStatusEnum.FAILED,
+    TaskHistoryStatusEnum.STALE,
+    TaskHistoryStatusEnum.SUCCESS,
+)
+
+
+@pytest_asyncio.fixture
+async def incident_with_runs(session: AsyncSession) -> AtwIncident:
+    """Seed one incident carrying three resolved runs, two of them failures."""
+    incident = await AtwIncidentManager.save(
+        session, AtwIncident(created_by="alice", name="with-runs")
+    )
+    for task_history_id, run_status in enumerate(_SEEDED_RUN_STATUSES, start=1):
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=task_history_id,
+                snippet_filename="diag.sh",
+                terminal_status=run_status.value,
+                finished_at=utc_now(),
+            ),
+        )
+    return incident
+
+
+@pytest_asyncio.fixture
+async def incident_with_unresolved_run(session: AsyncSession) -> AtwIncident:
+    """Seed one incident whose single run has no recorded outcome yet."""
+    incident = await AtwIncidentManager.save(
+        session, AtwIncident(created_by="alice", name="in-flight")
+    )
+    await AtwIncidentExecutionManager.save(
+        session,
+        AtwIncidentExecution(
+            incident_id=incident.id,
+            task_history_id=1,
+            snippet_filename="diag.sh",
+        ),
+    )
+    return incident
 
 
 @pytest_asyncio.fixture
@@ -1407,3 +1796,184 @@ class TestAtwIncidentCloseReopen:
         assert isinstance(result, AtwIncidentResponse)
         assert result.closed_at is None
         assert result.id == seeded_incident.id
+
+
+class TestAtwIncidentRunAggregates:
+    """Check the run counts and last-activity timestamp all six routes serve."""
+
+    def test_list_serves_run_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure the listing carries per-row run totals and a last-activity time."""
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        row = response.json()["items"][0]
+        assert row["run_count"] == _SEEDED_RUN_COUNT
+        assert row["failed_run_count"] == _SEEDED_FAILED_COUNT
+        assert row["last_activity_at"] is not None
+
+    def test_list_issues_no_upstream_request(
+        self,
+        api_client: TestClient,
+        incident_with_runs: AtwIncident,
+        mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        """Ensure rendering a page costs no task-history call, however many runs.
+
+        The list route requests no Tasks API dependency, so the overridden client
+        alone could not see a call made through a client built outside dependency
+        injection; the transport-level spies cover that path too.
+        """
+        transport_get = mocker.spy(RemoteAPI, "get")
+        transport_post = mocker.spy(RemoteAPI, "post")
+
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_task_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
+        transport_get.assert_not_called()
+        transport_post.assert_not_called()
+
+    def test_list_page_issues_one_aggregate_query(
+        self,
+        api_client: TestClient,
+        incident_with_runs: AtwIncident,
+        seeded_incidents: list[AtwIncident],
+        mocker: MockerFixture,
+    ) -> None:
+        """Ensure a multi-incident page is summarized by one grouped query."""
+        spy = mocker.spy(AtwIncidentExecutionManager, "aggregate_by_incident")
+
+        response = api_client.get(INCIDENTS_BASE)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert len(response.json()["items"]) > 1
+        assert spy.call_count == 1
+
+    def test_detail_serves_run_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure the detail route serves the same totals as the listing row."""
+        response = api_client.get(f"{INCIDENTS_BASE}{incident_with_runs.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    def test_create_serves_zeroed_aggregates(self, api_client: TestClient) -> None:
+        """Ensure a fresh incident reports no runs and its own creation time."""
+        response = api_client.post(INCIDENTS_BASE, json={"name": "brand new"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert payload["run_count"] == 0
+        assert payload["failed_run_count"] == 0
+        assert payload["last_activity_at"] == payload["created_at"]
+
+    def test_patch_preserves_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure renaming an incident does not blank its run totals."""
+        response = api_client.patch(
+            f"{INCIDENTS_BASE}{incident_with_runs.id}", json={"name": "renamed"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["name"] == "renamed"
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    @pytest.mark.asyncio
+    async def test_last_activity_tracks_an_edit_made_after_the_last_run(
+        self, async_api_client: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Ensure editing an incident after its last run moves its last-activity time.
+
+        The incident's own ``updated_at`` is one of the three sources, so an edit is
+        activity even when no run has happened since. The run is seeded well in the
+        past because ``utc_now`` truncates to whole seconds, which would otherwise
+        tie the two timestamps.
+        """
+        long_ago = utc_now() - timedelta(hours=2)
+        incident = await AtwIncidentManager.save(
+            session,
+            AtwIncident(created_by="alice", name="stale-runs", created_at=long_ago),
+        )
+        await AtwIncidentExecutionManager.save(
+            session,
+            AtwIncidentExecution(
+                incident_id=incident.id,
+                task_history_id=1,
+                snippet_filename="diag.sh",
+                terminal_status=TaskHistoryStatusEnum.SUCCESS.value,
+                finished_at=long_ago,
+            ),
+        )
+        before = await async_api_client.get(f"{INCIDENTS_BASE}{incident.id}")
+
+        renamed = await async_api_client.patch(
+            f"{INCIDENTS_BASE}{incident.id}", json={"name": "touched"}
+        )
+
+        assert renamed.status_code == status.HTTP_200_OK
+        assert renamed.json()["last_activity_at"] > before.json()["last_activity_at"]
+
+    def test_close_serves_aggregates(
+        self, api_client: TestClient, incident_with_runs: AtwIncident
+    ) -> None:
+        """Ensure closing an incident still reports its run totals."""
+        response = api_client.post(f"{INCIDENTS_BASE}{incident_with_runs.id}/close/")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["closed_at"] is not None
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+        assert payload["failed_run_count"] == _SEEDED_FAILED_COUNT
+
+    @pytest.mark.asyncio
+    async def test_reopen_serves_aggregates(
+        self,
+        async_api_client: AsyncClient,
+        session: AsyncSession,
+        incident_with_runs: AtwIncident,
+    ) -> None:
+        """Ensure reopening an incident still reports its run totals."""
+        incident_with_runs.closed_at = utc_now()
+        await AtwIncidentManager.save(session, incident_with_runs)
+
+        response = await async_api_client.post(
+            f"{INCIDENTS_BASE}{incident_with_runs.id}/reopen/"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["closed_at"] is None
+        assert payload["run_count"] == _SEEDED_RUN_COUNT
+
+    def test_run_less_incident_reports_its_own_timestamps(
+        self, api_client: TestClient, seeded_incident: AtwIncident
+    ) -> None:
+        """Ensure last activity is never null, so the client needs no empty state."""
+        response = api_client.get(f"{INCIDENTS_BASE}{seeded_incident.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == 0
+        assert payload["last_activity_at"] is not None
+
+    def test_unresolved_runs_are_counted_but_not_failed(
+        self, api_client: TestClient, incident_with_unresolved_run: AtwIncident
+    ) -> None:
+        """Ensure a still-running run raises run_count without implying a failure."""
+        response = api_client.get(f"{INCIDENTS_BASE}{incident_with_unresolved_run.id}")
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["run_count"] == 1
+        assert payload["failed_run_count"] == 0
+        assert payload["last_activity_at"] is not None

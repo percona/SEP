@@ -17,16 +17,23 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import Annotated, ClassVar, TYPE_CHECKING
+from typing import Annotated, ClassVar, Self, TYPE_CHECKING
 
 from annotated_types import Gt, Le
-from pydantic import AfterValidator, Field, PositiveInt
+from pydantic import (
+    AfterValidator,
+    Field,
+    model_validator,
+    PositiveInt,
+    StringConstraints,
+)
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
+from app.core.models import BaseLowercaseModel
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
@@ -34,6 +41,7 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
     not_overridable_field,
 )
+from app.core.utils.fields import UniqueList
 from app.tasks.hook_resolver import is_dotted_module_path
 
 if TYPE_CHECKING:
@@ -90,6 +98,31 @@ def _validate_syncer_name(name: str) -> str:
 #: that was pinned on purpose, and a whitespace-only one would fail every firing.
 SyncerName = Annotated[str, AfterValidator(_validate_syncer_name)]
 
+#: The longest syncer path an ``INVENTORY_SYNC_SCHEDULES`` entry may name. Its
+#: seeded row name is the path appended to a fixed prefix, and the celery-beat
+#: ``PeriodicTask.name`` column is bounded, so a longer path passes the dotted-path
+#: check and then fails the insert at startup — on PostgreSQL only, since SQLite
+#: does not enforce the width. Held against the real prefix and column by
+#: ``tests/app/tasks/db/test_seed.py``.
+MAX_SCHEDULED_SYNCER_LENGTH = 232
+
+
+class InventorySyncSchedule(BaseLowercaseModel):
+    """Pair one syncer with the interval its own seeded schedule runs on.
+
+    :param syncer: The fully qualified syncer this schedule targets, in
+        ``BaseSyncer.get_name()`` form. Unlike ``SEP.SYNCERS[].SYNCER`` it is not
+        auto-prefixed, so the two spellings are not interchangeable. Bounded
+        because a well-formed path is not necessarily a schedulable one: a longer
+        one overflows the seeded row name it derives.
+    :param interval: How often this syncer's own seeded schedule fires.
+    """
+
+    syncer: Annotated[  # settings-yaml-exempt: see SYNCER in settings.yaml
+        SyncerName, StringConstraints(max_length=MAX_SCHEDULED_SYNCER_LENGTH)
+    ]
+    interval: IntervalSchedule  # settings-yaml-exempt: see INTERVAL in settings.yaml
+
 
 class PreExecutionCheckMode(StrEnum):
     """Define modes for the pre-execution connectivity check.
@@ -128,6 +161,10 @@ class TasksSettings(BaseYamlAppSettings):
     :param STALENESS_THRESHOLD_SECONDS: The maximum seconds allowed between a
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
+    :param PENDING_ALLOCATION_TIMEOUT_SECONDS: The maximum seconds a RUNNING
+        TaskHistory row may wait behind a Nomad allocation that has never
+        produced TaskStates before sync escalates it to LOST. Measured from
+        ``started_at``. Must be positive. Defaults to 3600.
     :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
         logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
         positive integer no greater than 365. Defaults to 90.
@@ -149,6 +186,11 @@ class TasksSettings(BaseYamlAppSettings):
         is still not rejected at seed time — the tasks service does not import
         the sep syncers — so every firing of the schedule fails instead. Read at
         startup. Defaults to ``None``.
+    :param INVENTORY_SYNC_SCHEDULES: Per-syncer schedules seeded beside the
+        scalar default, for a syncer whose useful cadence differs from it. Each
+        entry names a syncer in ``BaseSyncer.get_name()`` form and its own
+        interval. Read at startup. Defaults to no extra schedules, which
+        reproduces the previous behaviour exactly.
     :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
         ``(task_history_id, source, stream)``. As a stream grows past the cap
         the writer drops the oldest chunks, keeping a bounded recent tail so a
@@ -189,6 +231,9 @@ class TasksSettings(BaseYamlAppSettings):
     STALENESS_THRESHOLD_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
         hot_field(3600, advanced=True)
     )
+    PENDING_ALLOCATION_TIMEOUT_SECONDS: PositiveInt = (  # ty: ignore[invalid-assignment]
+        hot_field(3600, advanced=True)
+    )
     LOG_RETENTION_DAYS: Annotated[
         int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)
     ] = (  # ty: ignore[invalid-assignment]
@@ -202,6 +247,9 @@ class TasksSettings(BaseYamlAppSettings):
     )
     INVENTORY_SYNC_INTERVAL: IntervalSchedule | None = None
     INVENTORY_SYNC_SYNCER: SyncerName | None = None
+    INVENTORY_SYNC_SCHEDULES: UniqueList[InventorySyncSchedule] = Field(
+        default_factory=list
+    )
     LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(  # ty: ignore[invalid-assignment]
         104857600, advanced=True
     )
@@ -213,6 +261,51 @@ class TasksSettings(BaseYamlAppSettings):
     ] = (  # ty: ignore[invalid-assignment]
         not_overridable_field(("app.sep.apps",))
     )
+
+    @model_validator(mode="after")
+    def reject_double_scheduled_syncers(self) -> Self:
+        """Reject the combinations that would fire one syncer's payload twice.
+
+        A per-node sync dispatches a task per node, so a doubled schedule is
+        expensive rather than merely redundant, and nothing downstream notices:
+        both rows are well-formed and fire independently.
+
+        Both scalar-facing checks are gated on the interval, since without one the
+        scalar pair seeds nothing and there is no second firing to prevent.
+
+        ``UniqueList`` deduplicates whole entries, not syncers, so the same syncer
+        at two intervals survives it and then collides on one seeded row name,
+        leaving a schedule whose interval depends on configuration order.
+
+        :return: The validated instance.
+        :raises ValueError: If an entry duplicates the scalar pin, sits beside the
+            sync-all default, or repeats a syncer another entry already names.
+        """
+        scalar_schedules = self.INVENTORY_SYNC_INTERVAL is not None
+        seen: set[str] = set()
+        for entry in self.INVENTORY_SYNC_SCHEDULES:
+            if scalar_schedules and entry.syncer == self.INVENTORY_SYNC_SYNCER:
+                raise ValueError(
+                    f"INVENTORY_SYNC_SCHEDULES names {entry.syncer!r}, which "
+                    "INVENTORY_SYNC_SYNCER already schedules; drop one of them"
+                )
+            if entry.syncer in seen:
+                raise ValueError(
+                    f"INVENTORY_SYNC_SCHEDULES names {entry.syncer!r} more than "
+                    "once; keep a single entry per syncer"
+                )
+            seen.add(entry.syncer)
+        if (
+            self.INVENTORY_SYNC_SCHEDULES
+            and scalar_schedules
+            and self.INVENTORY_SYNC_SYNCER is None
+        ):
+            raise ValueError(
+                "INVENTORY_SYNC_SCHEDULES cannot be combined with the sync-all "
+                "default, which already runs every configured syncer; pin "
+                "INVENTORY_SYNC_SYNCER or clear INVENTORY_SYNC_INTERVAL"
+            )
+        return self
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

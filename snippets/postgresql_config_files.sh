@@ -15,12 +15,12 @@
 #  - name: auto-config-file
 #    type: str
 #    label: postgresql.auto.conf path
-#    description: Path to postgresql.auto.conf. Defaults to the same directory as --config-file or the detected data_directory.
+#    description: Path to postgresql.auto.conf. Looked for in the detected data directory, then beside the postgresql.conf path, when left empty.
 #    placeholder: /var/lib/postgresql/16/main/postgresql.auto.conf
 #  - name: data-dir
 #    type: str
 #    label: PostgreSQL data directory
-#    description: Override for the PostgreSQL data_directory (used to locate postgresql.auto.conf when --auto-config-file is not given).
+#    description: Where the PostgreSQL data directory lives. Used to find postgresql.auto.conf, and detected from the server when this is left empty.
 #    placeholder: /var/lib/postgresql/16/main
 #  - name: output
 #    type: str
@@ -35,9 +35,9 @@
 #  - name: dbname
 #    type: str
 #    label: Target database
-#    description: Database to connect to (psql --dbname). Defaults to postgres.
+#    description: The PostgreSQL database this script connects to.
 #    default: postgres
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # alerts:
@@ -198,7 +198,7 @@ if [[ -z $CONFIG_FILE ]]; then
 fi
 
 if [[ ! -r $CONFIG_FILE ]] && ! sudo -n -u postgres test -r "$CONFIG_FILE" 2> /dev/null; then
-    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions or run with sudo)." >&2
+    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check --config-file, permissions, or run with sudo)." >&2
     exit 1
 fi
 
