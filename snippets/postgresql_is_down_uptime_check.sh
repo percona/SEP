@@ -49,15 +49,21 @@ sudo ss -lntp 2> /dev/null | grep postgres || echo "Could not check PostgreSQL l
 
 echo ""
 echo "********* PostgreSQL uptime *********"
-$PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2> /dev/null ||
-    echo "Could not connect to PostgreSQL via psql."
+if ! pg_uptime=$($PSQL -c "SELECT now(), pg_postmaster_start_time(), now()-pg_postmaster_start_time() AS uptime;" 2>&1); then
+    echo "Could not connect to PostgreSQL via psql (check --dbname): $pg_uptime"
+else
+    printf '%s\n' "$pg_uptime"
+fi
 
 echo ""
 echo "********* Recent PostgreSQL log entries *********"
 tail -50 /var/log/postgresql/postgresql-*.log 2> /dev/null ||
     tail -50 /var/log/postgresql/postgresql*.log 2> /dev/null ||
     echo "No PostgreSQL logs found in /var/log/postgresql/."
-log_glob=$(
+# Keep stderr out of the captured value: it is expanded as a glob, and psql
+# writes warnings there on runs that otherwise succeed.
+psql_err=$(mktemp)
+if ! log_glob=$(
     $PSQL -tA -c "
         SELECT CASE
             WHEN current_setting('log_directory') LIKE '/%'
@@ -65,11 +71,31 @@ log_glob=$(
             ELSE current_setting('data_directory') || '/'
                  || current_setting('log_directory') || '/*.log'
         END;
-    " 2> /dev/null
-) && [ -n "$log_glob" ] && for f in $log_glob; do
-    [ -f "$f" ] && tail -50 "$f"
-done ||
-    echo "No PostgreSQL logs found in log_directory or problem occurred when querying for log_directory parameter."
+    " 2> "$psql_err"
+); then
+    echo "Could not read log_directory from PostgreSQL (check --dbname): $(cat "$psql_err")"
+    log_glob=""
+    log_dir_known=0
+else
+    log_dir_known=1
+fi
+rm -f "$psql_err"
+
+log_files_read=0
+for f in $log_glob; do
+    [ -f "$f" ] || continue
+    log_files_read=1
+    if ! file_tail=$(tail -50 "$f" 2>&1); then
+        echo "Could not read $f: $file_tail"
+    else
+        printf '%s\n' "$file_tail"
+    fi
+done
+if [ "$log_dir_known" -eq 0 ]; then
+    echo "Log files were not searched, because log_directory could not be read."
+elif [ "$log_files_read" -eq 0 ]; then
+    echo "No PostgreSQL log files found under log_directory."
+fi
 
 echo ""
 echo "********* Last logins to the server *********"

@@ -109,10 +109,15 @@ function mysql_exec() {
     local retvalue
     local retoutput
     # shellcheck disable=SC2086
+    # Filter the mylogin.cnf notice only after capturing mysql's own status:
+    # grep -v exits 1 when it emits nothing, which a successful empty result set
+    # also produces, so folding it into the same pipeline reports failure for a
+    # query that worked.
     retoutput=$(printf "[client]\nuser=%s\npassword=\"%s\"\nhost=%s\nport=%s" "${USER}" "${PASSWORD}" "${HOST}" "${PORT}" |
         mysql --defaults-file=/dev/stdin --protocol=tcp \
-            ${args} -e "${query}" 2>&1 | grep -v "mylogin.cnf")
+            ${args} -e "${query}" 2>&1)
     retvalue=$?
+    retoutput=$(printf "%s" "${retoutput}" | grep -v "mylogin.cnf" || true)
 
     if [[ -n $retoutput ]]; then
         retoutput+=$'\n'
@@ -199,7 +204,7 @@ function parse_args() {
     done
 
     if [[ ! -r $DEFAULTS_FILE ]]; then
-        echo "Cannot find or read $DEFAULTS_FILE."
+        echo "Cannot find or read the config file (check --defaults-file): $DEFAULTS_FILE."
         exit 1
     fi
 
@@ -229,13 +234,20 @@ parse_args "$@"
 function run_dumps() {
     if [[ $DUMP_ALL -eq 1 || $DUMP_MAIN -eq 1 ]]; then
         echo "............ DUMPING MAIN DATABASE ............"
-        TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION" 2> /dev/null)
+        if ! TABLES=$(mysql_exec -BN "SHOW TABLES $RUNTIME_OPTION"); then
+            echo "Could not list the main tables from the ProxySQL admin interface (check --defaults-file): $TABLES"
+            TABLES=""
+        fi
         for table in $TABLES; do
             if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
                 continue
             fi
             echo "***** DUMPING $table *****"
-            mysql_exec -t "SELECT * FROM $table"
+            if ! table_dump=$(mysql_exec -t "SELECT * FROM $table"); then
+                echo "Could not dump $table (check --defaults-file): $table_dump"
+            else
+                printf '%s\n' "$table_dump"
+            fi
             echo "***** END OF DUMPING $table *****"
             echo ""
         done
@@ -245,13 +257,20 @@ function run_dumps() {
 
     if [[ $DUMP_ALL -eq 1 || $DUMP_STATS -eq 1 ]]; then
         echo "............ DUMPING STATS DATABASE ............"
-        TABLES=$(mysql_exec -BN "SHOW TABLES FROM stats" 2> /dev/null)
+        if ! TABLES=$(mysql_exec -BN "SHOW TABLES FROM stats"); then
+            echo "Could not list the stats tables from the ProxySQL admin interface (check --defaults-file): $TABLES"
+            TABLES=""
+        fi
         for table in $TABLES; do
             if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
                 continue
             fi
             echo "***** DUMPING stats.$table *****"
-            mysql_exec "-t --database=stats" "SELECT * FROM $table" 2> /dev/null
+            if ! table_dump=$(mysql_exec "-t --database=stats" "SELECT * FROM $table"); then
+                echo "Could not dump stats.$table (check --defaults-file): $table_dump"
+            else
+                printf '%s\n' "$table_dump"
+            fi
             echo "***** END OF DUMPING stats.$table *****"
             echo ""
         done
@@ -261,13 +280,20 @@ function run_dumps() {
 
     if [[ $DUMP_ALL -eq 1 || $DUMP_MONITOR -eq 1 ]]; then
         echo "............ DUMPING MONITOR DATABASE ............"
-        TABLES=$(mysql_exec -BN "SHOW TABLES FROM monitor" 2> /dev/null)
+        if ! TABLES=$(mysql_exec -BN "SHOW TABLES FROM monitor"); then
+            echo "Could not list the monitor tables from the ProxySQL admin interface (check --defaults-file): $TABLES"
+            TABLES=""
+        fi
         for table in $TABLES; do
             if [[ -n $TABLE_FILTER && $table != *${TABLE_FILTER}* ]]; then
                 continue
             fi
             echo "***** DUMPING monitor.$table *****"
-            mysql_exec "-t --database=monitor" "SELECT * FROM $table" 2> /dev/null
+            if ! table_dump=$(mysql_exec "-t --database=monitor" "SELECT * FROM $table"); then
+                echo "Could not dump monitor.$table (check --defaults-file): $table_dump"
+            else
+                printf '%s\n' "$table_dump"
+            fi
             echo "***** END OF DUMPING monitor.$table *****"
             echo ""
         done
@@ -277,7 +303,10 @@ function run_dumps() {
 
     if [[ $DUMP_ALL -eq 1 || $DUMP_FILES -eq 1 ]]; then
         if [[ -z $TABLE_FILTER ]]; then
-            DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'" 2> /dev/null)
+            if ! DATADIR=$(mysql_exec -BN "SELECT variable_value FROM global_variables WHERE variable_name='admin-datadir'"); then
+                echo "Could not read admin-datadir from the ProxySQL admin interface (check --defaults-file): $DATADIR"
+                DATADIR=""
+            fi
             if [[ -z $DATADIR ]]; then
                 DATADIR="/var/lib/proxysql"
             fi

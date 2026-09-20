@@ -36,22 +36,32 @@ $MYSQL -e "SELECT @@global.read_only AS read_only, @@global.super_read_only AS s
 
 echo ""
 echo "********* Server identity and uptime *********"
-$MYSQL -e '\s' 2> /dev/null | head -10 || true
+if ! server_status=$($MYSQL -e '\s' 2>&1); then
+    echo "Could not read server identity (check --defaults-file): $server_status"
+else
+    printf '%s\n' "$server_status" | head -10 || true
+fi
 $MYSQL -e "SHOW GLOBAL STATUS LIKE 'Uptime';"
 
 echo ""
 echo "********* Replication status (verify this is a primary) *********"
-if ! $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
-    REPL=$($MYSQL -N -e 'SHOW REPLICA STATUS\G' 2> /dev/null) || true
+if $MYSQL -e 'SHOW REPLICA STATUS\G' 2>&1 | grep -q "You have an error"; then
+    REPLICA_STATUS_QUERY='SHOW SLAVE STATUS\G'
 else
-    REPL=$($MYSQL -N -e 'SHOW SLAVE STATUS\G' 2> /dev/null) || true
+    REPLICA_STATUS_QUERY='SHOW REPLICA STATUS\G'
 fi
-if [ -z "${REPL:-}" ]; then
+# Keep stderr out of the captured value: an empty result is what distinguishes a
+# standalone primary from a replica, and a warning would read as replication.
+REPL_ERR=$(mktemp)
+if ! REPL=$($MYSQL -N -e "$REPLICA_STATUS_QUERY" 2> "$REPL_ERR"); then
+    echo "Could not read replica status (check --defaults-file): $(cat "$REPL_ERR")"
+elif [ -z "$REPL" ]; then
     echo "No replication configured - this appears to be a primary/standalone."
 else
     echo "Replication IS configured - verify this is actually a primary node."
-    echo "$REPL" | grep -E "Running|Host|Behind" || true
+    printf '%s\n' "$REPL" | grep -E "Running|Host|Behind" || true
 fi
+rm -f "$REPL_ERR"
 
 echo ""
 echo "********* my.cnf read_only setting *********"

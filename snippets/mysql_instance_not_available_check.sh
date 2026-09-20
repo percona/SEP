@@ -42,11 +42,22 @@ pgrep -a -x "mysqld" || echo "No mysqld processes found."
 
 echo ""
 echo "********* MySQL uptime (if accessible) *********"
-$MYSQL -e "SHOW GLOBAL STATUS LIKE 'Uptime';" 2> /dev/null || echo "Cannot connect to MySQL."
+if ! uptime_status=$($MYSQL -e "SHOW GLOBAL STATUS LIKE 'Uptime';" 2>&1); then
+    echo "Could not connect to MySQL (check --defaults-file): $uptime_status"
+else
+    printf '%s\n' "$uptime_status"
+fi
 
 echo ""
 echo "********* MySQL error log (last 50 lines) *********"
-ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> /dev/null) || true
+# Keep stderr out of the captured value: it is used as a path, and the client
+# writes warnings there on runs that otherwise succeed.
+MYSQL_ERR=$(mktemp)
+if ! ERROR_LOG=$($MYSQL -N -e "SELECT @@log_error;" 2> "$MYSQL_ERR"); then
+    echo "Could not read the error log path from MySQL (check --defaults-file): $(cat "$MYSQL_ERR")"
+    ERROR_LOG=""
+fi
+rm -f "$MYSQL_ERR"
 if [ -n "${ERROR_LOG:-}" ] && [ -f "$ERROR_LOG" ]; then
     tail -50 "$ERROR_LOG"
 else
