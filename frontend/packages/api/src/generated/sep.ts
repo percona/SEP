@@ -9644,11 +9644,6 @@ export interface components {
      *     the only one also carrying a ``Requires``, since an AES-256 format with no
      *     key file has nothing to decrypt with.
      *
-     *     Which formats each engine can write is a form rule rather than a field gate:
-     *     the served schema carries it, so the renderer rejects an impossible pairing
-     *     before it is submitted, and a mismatch is reported alongside the key file the
-     *     format asks for instead of being masked by it.
-     *
      *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
      *     markers drive only the ``GET /schema`` widgets, while the conditional,
