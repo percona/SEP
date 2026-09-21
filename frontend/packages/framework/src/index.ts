@@ -67,8 +67,18 @@ export { FreeSoloSelect } from './components/FreeSoloSelect';
 export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
 export { FreeSoloMultiSelect } from './components/FreeSoloMultiSelect';
 export type { FreeSoloMultiSelectProps } from './components/FreeSoloMultiSelect';
-export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
-export type { StandaloneHostSelectorProps } from './components/HostSelector';
+export {
+  HostElevationWarning,
+  HostSelector,
+  StandaloneHostSelector,
+  snippetsLaunchedWithSudo,
+} from './components/HostSelector';
+export type {
+  HostElevationWarningProps,
+  SnippetElevation,
+  SnippetSudoRequirement,
+  StandaloneHostSelectorProps,
+} from './components/HostSelector';
 export {
   TaskLogViewer,
   LogStepTabs,
