@@ -317,30 +317,54 @@ def test_the_extracted_guard_reads_every_arg(name: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("client", "version", "tag", "witness", "expected"),
+    ("client", "version", "tag", "witness", "expected", "stderr_marker"),
     [
         pytest.param(
-            "", ANY_VERSION, NEW_TAG, OLD_TAG, 0, id="feature-build-client-abstains"
+            "", ANY_VERSION, NEW_TAG, OLD_TAG, 0, None,
+            id="feature-build-client-abstains"
         ),
         pytest.param(
-            RELEASED_CLIENT, ANY_VERSION, OLD_TAG, OLD_TAG, 0, id="pairing-restated"
+            RELEASED_CLIENT, ANY_VERSION, OLD_TAG, OLD_TAG, 0, None,
+            id="pairing-restated"
         ),
         pytest.param(
-            RELEASED_CLIENT, ANY_VERSION, NEW_TAG, OLD_TAG, 1, id="witness-left-behind"
+            RELEASED_CLIENT, ANY_VERSION, NEW_TAG, OLD_TAG, 1, None,
+            id="witness-left-behind"
         ),
-        pytest.param(RELEASED_CLIENT, "", NEW_TAG, OLD_TAG, 0, id="parity-opted-out"),
-        pytest.param(RELEASED_CLIENT, ANY_VERSION, "", OLD_TAG, 1, id="tag-blanked"),
         pytest.param(
-            RELEASED_CLIENT, ANY_VERSION, NEW_TAG, "", 1, id="witness-blanked"
+            RELEASED_CLIENT, "", NEW_TAG, OLD_TAG, 0, None, id="parity-opted-out"
         ),
-        pytest.param(RELEASED_CLIENT, ANY_VERSION, "", "", 0, id="both-tags-blank"),
+        pytest.param(
+            RELEASED_CLIENT, ANY_VERSION, "", OLD_TAG, 1, None, id="tag-blanked"
+        ),
+        pytest.param(
+            RELEASED_CLIENT, ANY_VERSION, NEW_TAG, "", 1, None, id="witness-blanked"
+        ),
+        pytest.param(
+            RELEASED_CLIENT,
+            ANY_VERSION,
+            "",
+            "",
+            1,
+            "both PMM_FB_TAG and NOMAD_VERSION_FB_TAG are blank",
+            id="both-tags-blank",
+        ),
     ],
 )
 def test_guard_verdicts(
-    client: str, version: str, tag: str, witness: str, expected: int
+    client: str,
+    version: str,
+    tag: str,
+    witness: str,
+    expected: int,
+    stderr_marker: str | None,
 ) -> None:
     """Check the guard's verdict for each combination of the four build args."""
-    assert run_guard(client, version, tag, witness).returncode == expected
+    result = run_guard(client, version, tag, witness)
+
+    assert result.returncode == expected
+    if stderr_marker is not None:
+        assert stderr_marker in result.stderr
 
 
 def test_the_refusal_names_both_tags() -> None:
