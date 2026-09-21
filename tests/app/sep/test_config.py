@@ -441,6 +441,20 @@ class TestPluginModuleNameResolution:
         assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_not_called()
 
+    def test_missing_module_rejects_full_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a missing app package even when its registration is disabled."""
+        monkeypatch.setenv(
+            "SEP__APPS",
+            '[{"MODULE_NAME": "_scaffold_missing_package", "ENABLED": false}]',
+        )
+        with pytest.raises(
+            ValidationError,
+            match=r"No module named app\.sep\.apps\._scaffold_missing_package",
+        ):
+            SEPSettings()
+
     @pytest.mark.parametrize(
         ("sibling_value", "expected_module"),
         [

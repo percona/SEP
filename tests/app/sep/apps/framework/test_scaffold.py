@@ -31,11 +31,16 @@ import importlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
+from threading import Barrier, Event
+from typing import Any
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
@@ -61,7 +66,7 @@ from app.sep.apps.framework.conformance import (
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.apps.framework.schema import ITEM_DISPLAY_NAME_KEYS
 from app.sep.apps.nav_icons import NavIcon
-from app.sep.config import App
+from app.sep.config import App, SEPSettings
 from app.sep.deps import get_current_user, IsApiAuthenticated
 from app.sep.snippets.config import snippets_settings
 from tests.app.sep.apps.framework.contract_suite import (
@@ -1153,6 +1158,37 @@ def test_wizard_keyboard_interrupt_aborts_without_writing(
     assert tmp_settings.read_text() == before
 
 
+@pytest.mark.parametrize("override", [None, "", 'settings with "quotes".yaml'])
+def test_settings_file_environment_override(
+    tmp_path: Path, override: str | None
+) -> None:
+    """Resolve the settings redirect without importing application dependencies."""
+    env = os.environ.copy()
+    env.pop(scaffold.SETTINGS_FILE_ENV_VAR, None)
+    expected = scaffold._REPO_ROOT / "settings.yaml"
+    if override is not None:
+        env[scaffold.SETTINGS_FILE_ENV_VAR] = (
+            str(tmp_path / override) if override else ""
+        )
+        if override:
+            expected = tmp_path / override
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-S",
+            "-c",
+            "import runpy, sys; print(runpy.run_path(sys.argv[1])['SETTINGS_FILE'])",
+            str(Path(scaffold.__file__)),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert Path(result.stdout.strip()) == expected
+
+
 def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     """Forward a description with spaces and a quote intact through ``make startapp``.
 
@@ -1160,7 +1196,7 @@ def test_makefile_forwards_quoted_values(tmp_path: Path) -> None:
     process cannot take ``tmp_settings``'s monkeypatch, so it is redirected at a
     throwaway settings file through :func:`_startapp_env` instead.
     """
-    name = "_scaffold_ci_makeforward"
+    name = f"_scaffold_ci_makeforward_{uuid4().hex}"
     description = 'describe the "cool" widget here'
     settings_copy = _settings_copy(tmp_path)
     venv_root = _venv_root()
@@ -1205,7 +1241,7 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
     forwarding, redirecting the child's settings write through
     :func:`_startapp_env` like :func:`test_makefile_forwards_quoted_values`.
     """
-    name = "_scaffold_ci_scriptforward"
+    name = f"_scaffold_ci_scriptforward_{uuid4().hex}"
     script_src = tmp_path / "seed.sh"
     script_src.write_text("#!/usr/bin/env bash\necho hi\n")
     settings_copy = _settings_copy(tmp_path)
@@ -1236,6 +1272,51 @@ def test_makefile_forwards_script_flag(tmp_path: Path) -> None:
         assert f"MODULE_NAME: {name}" in settings_copy.read_text()
     finally:
         _cleanup(name)
+
+
+def test_concurrent_makefile_tests_leave_settings_valid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Keep repository settings unchanged while real make tests run and clean up."""
+    settings_file = scaffold._REPO_ROOT / "settings.yaml"
+    original = settings_file.read_bytes()
+    original_apps = SEPSettings().APPS
+    registered = Barrier(3, timeout=30)
+    inspected = Event()
+    run = subprocess.run
+
+    def run_until_registered(
+        args: list[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        result = run(args, **kwargs)
+        if args[:2] == ["make", "startapp"]:
+            registered.wait()
+            assert inspected.wait(timeout=30), "Settings inspection did not finish"
+        return result
+
+    monkeypatch.setattr(subprocess, "run", run_until_registered)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures: list[Future[None]] = []
+        for test in (
+            test_makefile_forwards_quoted_values,
+            test_makefile_forwards_script_flag,
+        ):
+            directory = tmp_path / test.__name__
+            directory.mkdir()
+            futures.append(executor.submit(test, directory))
+        try:
+            # Both genuine make subprocesses have registered their apps; neither
+            # test can restore settings or remove its package before inspection.
+            registered.wait()
+            assert settings_file.read_bytes() == original
+            assert original_apps == SEPSettings().APPS
+        finally:
+            inspected.set()
+        for future in futures:
+            future.result()
+
+    assert settings_file.read_bytes() == original
+    assert original_apps == SEPSettings().APPS
 
 
 def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:
