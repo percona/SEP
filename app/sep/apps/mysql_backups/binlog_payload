@@ -1895,10 +1895,15 @@ class Upload(Backup):
 
         #self.textfile_collector_write_status(-1, self.backup_code, self.alias, True)
 
+        # Encrypt (AES or GPG) and upload after the tmpdir copy. Cleanup must run
+        # even when a pool.map chunk aborts mid-encrypt, or the upload tmpdir can
+        # retain plaintext beside any .xbcrypt files already written.
         self._copy_to_tmpdir()
-        self._encrypt()
-        self._upload()
-        self._cleanup()
+        try:
+            self._encrypt()
+            self._upload()
+        finally:
+            self._cleanup()
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."

@@ -1610,10 +1610,15 @@ class Upload(Backup):
 
         self.textfile_collector_write_status(-1, MSPAction.UPLOAD)
 
+        # Encrypt and upload after the tmpdir copy. Cleanup must run even when
+        # encrypt fails mid-pass so a GPG (or leftover) tmpdir cannot retain
+        # plaintext beside any files already written.
         self._copy_to_tmpdir()
-        self._encrypt()
-        self._upload()
-        self._cleanup()
+        try:
+            self._encrypt()
+            self._upload()
+        finally:
+            self._cleanup()
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."

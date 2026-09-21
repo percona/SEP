@@ -22,6 +22,7 @@ skipping GPG for dual, and leaving the GPG-only path unchanged.
 
 import logging
 import os
+import shutil
 import types
 from pathlib import Path
 from typing import cast
@@ -284,6 +285,51 @@ class TestUploadEncrypt:
         assert gpg_dirs == []
         assert aes_dirs == []
         assert warnings == ["UPLOADING UNENCRYPTED BACKUP!!!"]
+
+
+class TestUploadRunCleansTmpdirOnEncryptFailure:
+    """Assert ``Upload.run`` removes the upload tmpdir when encrypt aborts."""
+
+    def test_partial_aes_failure_still_removes_tmpdir(self, tmp_path: Path) -> None:
+        """Assert a raised encrypt leaves no plaintext sibling in the upload tmpdir.
+
+        ``pool.map`` aborts the rest of a chunk on the first raise; without a
+        ``finally`` the tmpdir would keep whatever plaintext (and partial
+        ``.xbcrypt``) files were already written.
+        """
+        tmpdir = tmp_path / "enc"
+        tmpdir.mkdir()
+        (tmpdir / "binlog.000001").write_text("plain")
+        (tmpdir / "binlog.000002.xbcrypt").write_text("partial")
+
+        inst, backup_error, _ = payload_instance(
+            ("run", "_cleanup"),
+            payload_path=_PATH,
+            extra_namespace={
+                "shutil": shutil,
+                "time": types.SimpleNamespace(time=lambda: 0.0),
+                "format_seconds_to_hhmmss": lambda _s: "00:00:00",
+                "MSPAction": types.SimpleNamespace(UPLOAD="upload"),
+            },
+        )
+        inst.full_backup_path = tmp_path / "missing"
+        inst.paths = [{"source": str(tmp_path / "src"), "tmpdir": str(tmpdir)}]
+        inst.encrypt_using_tmpdir = True
+        inst.upload_type = "rsync"
+        inst.backup_type = "binlog"
+        inst._copy_to_tmpdir = lambda: None
+
+        def _raise_encrypt() -> None:
+            raise backup_error("AES-256 verify failed")
+
+        inst._encrypt = _raise_encrypt
+        inst._upload = lambda: None
+        inst.textfile_collector_write_status = lambda *_a, **_k: None
+
+        with pytest.raises(backup_error, match="AES-256 verify failed"):
+            inst.run()
+
+        assert not tmpdir.exists()
 
 
 class _StubBase:
