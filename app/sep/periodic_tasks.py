@@ -56,7 +56,7 @@ from app.sep.models import (
     SEPPluginPeriodicTask,
     SEPPluginPeriodicTaskBase,
 )
-from app.tasks.crud import TaskManager
+from app.tasks.crud import ACTIVE_TASK_BATCH_SIZE, TaskManager
 from app.tasks.db import get_async_session_maker as get_tasks_session_maker
 from app.tasks.models import Task
 from app.tasks.periodic.crud import PeriodicTaskManager
@@ -64,7 +64,6 @@ from app.tasks.periodic.utils import resolve_schedule_task_name
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_TASK_BATCH_SIZE = 500
 SCHEDULE_BATCH_SIZE = 500
 
 
@@ -208,34 +207,40 @@ async def sync_app_periodic_task_gating(
 async def _collect_owned_task_names(
     session: AsyncSession, owners: Collection[str]
 ) -> set[str]:
-    """Collect names of active tasks owned by the given apps in batches."""
+    """Collect the names of the active tasks owned by the given apps.
+
+    Loads only ``Task.name``, one keyset batch at a time, so no row's ``data``
+    payload is transferred: schedules are matched by name alone.
+
+    :param session: The Tasks database session.
+    :param owners: The ``Task.owner`` values whose tasks to collect.
+    :return: The names of every active task owned by ``owners``.
+    """
     owned_names: set[str] = set()
-    last_task_id = 0
-    while True:
-        tasks = await TaskManager.list(
-            session,
-            col(Task.owner).in_(owners),
-            col(Task.deleted_at).is_(None),
-            col(Task.id) > last_task_id,
-            order_by=[col(Task.id)],
-            limit=ACTIVE_TASK_BATCH_SIZE,
-            query_options=[load_only(Task.name)],  # ty: ignore[invalid-argument-type]
-        )
-        if not tasks:
-            break
-        owned_names.update(task.name for task in tasks)
-        if len(tasks) < ACTIVE_TASK_BATCH_SIZE:
-            break
-        last_task_id = tasks[-1].id
-        if last_task_id is None:
-            break
+    batches = TaskManager.iter_active_batches(
+        session,
+        col(Task.owner).in_(owners),
+        batch_size=ACTIVE_TASK_BATCH_SIZE,
+        query_options=[load_only(Task.name)],  # ty: ignore[invalid-argument-type]
+    )
+    async for batch in batches:
+        owned_names.update(task.name for task in batch)
     return owned_names
 
 
 async def _collect_owned_schedules(
     session: AsyncSession, owned_names: set[str]
 ) -> list[PeriodicTask]:
-    """Collect enabled schedules for owned tasks in batches."""
+    """Collect the enabled schedules whose task is one of ``owned_names``.
+
+    Pages by primary key rather than by offset so the batches stay disjoint and
+    exhaustive while other writers insert, delete or switch off schedules, and
+    holds only the matches across batches.
+
+    :param session: The celery-beat database session.
+    :param owned_names: The task names a schedule must resolve to.
+    :return: The matching enabled schedules, in ascending id order.
+    """
     schedules: list[PeriodicTask] = []
     last_schedule_id = 0
     while True:

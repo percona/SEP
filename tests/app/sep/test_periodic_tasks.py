@@ -604,9 +604,9 @@ class TestDisableSchedulesForOwners:
         celery_beat_session: AsyncSession,
         mocker: MockerFixture,
     ) -> None:
-        """Continue scanning tasks after a batch owned by another app."""
+        """Match a schedule whose owned task lands beyond the first task batch."""
         mocker.patch.object(periodic_tasks, "ACTIVE_TASK_BATCH_SIZE", 1)
-        await _seed_task(session, "other-task", BACKUPS_OWNER)
+        await _seed_task(session, "r0", RESTORES_OWNER)
         await _seed_task(session, "r1", RESTORES_OWNER)
         await _seed_user_schedule(
             celery_beat_session,

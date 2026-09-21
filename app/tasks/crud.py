@@ -147,9 +147,10 @@ class TaskManager(BaseSQLModelManager):
     async def iter_active_batches(
         cls,
         session: AsyncSession,
-        *,
+        *whereclause: ColumnElement[bool],
         owner: str | None = None,
         batch_size: int = ACTIVE_TASK_BATCH_SIZE,
+        query_options: Sequence = (),
     ) -> AsyncGenerator[list[Task], None]:
         """Yield every active task in ascending-id batches.
 
@@ -161,10 +162,14 @@ class TaskManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
+        :param whereclause: Extra SQL predicates ANDed onto the active-task
+            filter.
         :param owner: The owner of the tasks. If provided, only tasks for this
             owner are yielded.
         :param batch_size: The maximum number of tasks per batch.
-        :yield: Batches of active tasks, ordered by ascending id.
+        :param query_options: SQLAlchemy loader options applied to every batch
+            query, e.g. ``load_only`` to keep unread columns out of it.
+        :return: Batches of active tasks, ordered by ascending id.
         """
         kwargs: dict[str, Any] = {}
         if owner is not None:
@@ -175,8 +180,10 @@ class TaskManager(BaseSQLModelManager):
                 session,
                 col(Task.deleted_at).is_(None),
                 col(Task.id) > last_id,
+                *whereclause,
                 order_by=[col(Task.id)],
                 limit=batch_size,
+                query_options=query_options,
                 **kwargs,
             )
             if not batch:
