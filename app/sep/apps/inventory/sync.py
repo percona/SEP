@@ -84,20 +84,13 @@ async def run_scheduled_inventory_sync(
         and so goes ahead only while ``syncer`` has no run of its own. Defaults
         to ``False``.
     :return: The note saying why the run was skipped, otherwise ``None``.
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if a run
-        that is not skipped names a ``syncer`` that matches no configured syncer
-        able to sync inventory.
+    :raises ValueError: If a run that is not skipped names a ``syncer`` that
+        matches no configured syncer able to sync inventory.
     :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read
         to decide the ordering.
     :raises app.sep.sync.exceptions.SyncInstanceAlreadyInProgressError: If a run
         that is not a started first run overlaps another run of its syncer.
     """
-    if (api_key := get_internal_token()) is None:
-        raise ValueError(
-            "SEP_INTERNAL_TOKEN must be configured for scheduled inventory "
-            "sync. Set it in .env to a long random secret "
-            "(e.g. `openssl rand -hex 32`)."
-        )
     if after_syncer and not await _inventory_sync_completed(after_syncer):
         return _report_skip(
             f"Skipped {syncer}: it waits until {after_syncer} completes its first "
@@ -116,7 +109,7 @@ async def run_scheduled_inventory_sync(
         lambda candidate: candidate.can_sync_inventory(),
     )
     try:
-        await run_inventory_sync(api_key, *selected)
+        await run_inventory_sync(get_internal_token(), *selected)
     except SyncInstanceAlreadyInProgressError:
         if not first_run_only:
             raise

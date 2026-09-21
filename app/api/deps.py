@@ -83,8 +83,8 @@ def _build_service_principal(secret: str) -> BaseUser:
 async def authenticate_bearer_token(token: str) -> BaseUser:
     """Return the authenticated user from an OAuth2 token.
 
-    When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
-    token matches it (constant-time comparison), return a synthetic non-admin
+    When the incoming Bearer token matches ``settings.SEP_INTERNAL_TOKEN``
+    (constant-time comparison), return a synthetic non-admin
     "service principal" user instead of contacting the OAuth provider. This
     allows SEP-internal service-to-service calls (e.g. scheduled inventory
     sync) to authenticate with a stable deployment-level secret rather than a
@@ -103,11 +103,10 @@ async def authenticate_bearer_token(token: str) -> BaseUser:
     :raises BaseAuthProviderException: If the auth provider errors while
         validating the credential.
     """
-    if (token_setting := settings.SEP_INTERNAL_TOKEN) is not None:
-        secret = token_setting.get_secret_value()
-        if secret and secrets.compare_digest(token, secret):
-            set_log_context(user=_SERVICE_PRINCIPAL.username)
-            return _build_service_principal(secret)
+    secret = settings.SEP_INTERNAL_TOKEN.get_secret_value()
+    if secret and secrets.compare_digest(token, secret):
+        set_log_context(user=_SERVICE_PRINCIPAL.username)
+        return _build_service_principal(secret)
     try:
         user = await User.from_bearer(token)
     except ValidationError:

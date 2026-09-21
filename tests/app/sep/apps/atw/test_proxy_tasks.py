@@ -111,7 +111,7 @@ def tasks_api(mocker: MockerFixture) -> AsyncMock:
         new=AsyncMock(return_value=client),
     )
     mocker.patch(
-        "app.sep.apps.atw.proxy_tasks.require_internal_token", return_value="token"
+        "app.sep.apps.atw.proxy_tasks.get_internal_token", return_value="token"
     )
     return api
 
