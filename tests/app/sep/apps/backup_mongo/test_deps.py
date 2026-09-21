@@ -46,7 +46,7 @@ from tests.app.factories import (
     MOCK_UPDATER_ID,
     TaskFactory,
 )
-from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
+from tests.app.sep.path_unsafe_task_names import SUFFIXED_UNSAFE_TASKS
 
 
 def _backup_mongo_task() -> Task:
@@ -176,19 +176,34 @@ class TestBuildBackupMongoApiTaskResponse:
 class TestEnsureMissingDerivedChildrenPathGuard:
     """Test that a parent name cannot reshape the derived-sibling lookup."""
 
-    @pytest.mark.parametrize(
-        "parent_name", [name for name in PATH_UNSAFE_TASKS if name != ".."]
-    )
+    @pytest.mark.parametrize("parent_name", SUFFIXED_UNSAFE_TASKS)
     async def test_refuses_an_unsafe_parent_name(self, parent_name: str) -> None:
-        """Refuse an unsafe parent name and issue no GET.
-
-        A bare dot-segment is excluded because appending a sibling suffix stops
-        it being one, so the composed name it produces is genuinely safe.
-        """
+        """Refuse an unsafe parent name and issue no GET."""
         tasks_api = AsyncMock(spec=RemoteAPI)
 
         with pytest.raises(HTTPUnprocessableEntityException):
             await ensure_backup_derived_siblings(tasks_api, parent_name, {})
 
         tasks_api.get.assert_not_awaited()
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.parametrize("renamed", SUFFIXED_UNSAFE_TASKS)
+    async def test_refuses_a_rename_before_creating_a_missing_sibling(
+        self, renamed: str
+    ) -> None:
+        """Refuse a sibling built from an unsafe rename before it is POSTed.
+
+        The probe GET composes the *existing* parent name, so it passes; the
+        sibling this backfill creates is built from the updated payload, and a
+        sibling created under an unaddressable name could never be updated or
+        deleted again.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.get = AsyncMock(side_effect=HTTPNotFoundException)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(
+                tasks_api, "parent", {"name": renamed, "data": {"meta": {}}}
+            )
+
         tasks_api.post.assert_not_awaited()

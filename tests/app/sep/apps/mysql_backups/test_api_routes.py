@@ -29,7 +29,10 @@ from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
-from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
+from tests.app.sep.path_unsafe_task_names import (
+    PATH_PARAM_UNSAFE_TASKS,
+    PATH_UNSAFE_TASKS,
+)
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
@@ -357,6 +360,37 @@ class TestCreateEndpoint:
             "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_201_CREATED
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    def test_create_refuses_a_name_that_is_not_one_path_segment(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        task_name,
+    ):
+        """Refuse before the task exists, since no later route could address it.
+
+        A create takes the name in the request body, where no path convertor
+        narrows it, so every shape reaches this route. A task created under one
+        of them would be unreachable: update, delete, execute and history all
+        compose the name into an upstream path and refuse it.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.post = AsyncMock(return_value=build_backup_task())
+        body = build_backup_write_body(
+            task_name=task_name, service_id=created_service.id
+        )
+
+        response = test_client.post(
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.post.assert_not_called()
 
     def test_create_binlog_happy_path(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -859,6 +893,44 @@ class TestBearerAuthGate:
         }
         response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
+
+
+class TestUpdateRenameGuard:
+    """Tests that PUT refuses a rename to a name no later route could address."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    def test_update_refuses_a_rename_that_is_not_one_path_segment(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+        task_name,
+    ):
+        """Refuse the rename, since the renamed task would be unreachable.
+
+        The route addresses the task by its stored name, so the guard on the
+        outbound path passes; the new name travels in the body, and the upstream
+        update applies it. Without this check a task could be renamed into a
+        shape that every later route — including delete — refuses.
+        """
+        task = build_backup_task()
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        empty_page = {"items": [], "total": 0, "offset": 0, "limit": 50}
+        mock_task_api_dep.get = AsyncMock(side_effect=chain([task], repeat(empty_page)))
+        mock_task_api_dep.put = AsyncMock(return_value=task)
+        body = build_backup_write_body(
+            task_name=task_name, service_id=created_service.id
+        )
+
+        response = test_client.put(
+            f"/api/apps/mysql_backups/{task['name']}", json=body, headers=BEARER_HEADERS
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.put.assert_not_called()
 
 
 class TestUpdateReselectsThePayloadVariant:

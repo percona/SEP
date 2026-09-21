@@ -32,6 +32,9 @@ PATH_UNSAFE_TASKS = [
     "..",
     "foo:bar",
     "http://evil.example.com/x",
+    "a\nb",
+    "a\rb",
+    "a\tb",
 ]
 
 PATH_PARAM_UNSAFE_TASKS = [
@@ -49,6 +52,17 @@ dot-segment is normalised away before the request is sent; and the test
 transport unquotes the path twice, so a ``%``-bearing name arrives split across
 two segments and matches no route. Those three reach the guard only through a
 request body or a stored name, which the dependency-level tests cover.
+
+A name carrying a control character does survive as a path parameter — sent
+percent-encoded it arrives decoded — so it stays in this list.
+"""
+
+SUFFIXED_UNSAFE_TASKS = [task for task in PATH_UNSAFE_TASKS if task != ".."]
+"""The unsafe names that stay unsafe once a derived suffix is appended.
+
+A bare dot-segment is the one shape a suffix repairs: ``"..-logical"`` is an
+ordinary segment. Tests that compose a sibling name from a parent name assert
+against this list so that repair is not mistaken for a missing guard.
 """
 
 SAFE_TASK_NAMES = [

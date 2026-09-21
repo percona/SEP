@@ -55,6 +55,7 @@ from app.sep.apps.framework.cascade import (
     cascade_create_tasks,
     cascade_update_tasks,
     CascadeResult,
+    require_addressable_names,
 )
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
@@ -408,8 +409,9 @@ async def ensure_backup_derived_siblings(
     :param tasks_api: The TaskAPI used to GET existing legs and POST missing ones.
     :param parent_name: The parent ``pbm_config`` task name.
     :param parent_payload: The updated parent payload used to build missing children.
-    :raises HTTPUnprocessableEntityException: If a derived sibling's name is not a
-        single plain URL path segment.
+    :raises HTTPUnprocessableEntityException: If a derived sibling's name — the
+        one probed, or the one an update's rename would create — is not a single
+        plain URL path segment.
     """
     for spec in BACKUP_MONGO_DERIVED:
         derived_name = f"{parent_name}{spec.name_suffix}"
@@ -417,6 +419,7 @@ async def ensure_backup_derived_siblings(
             await tasks_api.get(task_path(derived_name))
         except HTTPNotFoundException:
             child_payload = build_derived_payload(parent_payload, spec)
+            require_addressable_names([child_payload])
             await tasks_api.post("/", json=child_payload)
 
 

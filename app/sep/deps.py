@@ -855,6 +855,9 @@ _PATH_UNSAFE_CHARACTERS = frozenset("/?#%:")
 _PATH_UNSAFE_NAMES = frozenset({"", ".", ".."})
 """Names that resolve to a different upstream path rather than a task."""
 
+_PATH_UNSAFE_CONTROL_CHARACTERS = frozenset(chr(code) for code in (*range(0x20), 0x7F))
+"""Characters ``urlsplit`` deletes, so the path stops naming the task it names."""
+
 
 def require_one_path_segment(task_name: str) -> None:
     """Refuse a task name that is not exactly one URL path segment.
@@ -873,12 +876,21 @@ def require_one_path_segment(task_name: str) -> None:
     named with one is unreachable through those endpoints anyway, so the name is
     refused here.
 
+    A control character is refused for the opposite reason: ``urlsplit`` deletes
+    tab, carriage return and newline outright rather than encoding or rejecting
+    them, so a name carrying one composes the path of the shorter name left once
+    it is gone, and the request succeeds against that other task instead of
+    failing. The whole C0 range and ``DEL`` go with them; none belongs in a name.
+
     :param task_name: The task name about to be composed into a request path.
     :raises HTTPUnprocessableEntityException: If the name is empty, a dot-segment,
-        or carries a character that would restructure the outbound path.
+        or carries a character that would restructure the outbound path or be
+        dropped from it.
     """
-    if task_name in _PATH_UNSAFE_NAMES or _PATH_UNSAFE_CHARACTERS.intersection(
-        task_name
+    if (
+        task_name in _PATH_UNSAFE_NAMES
+        or _PATH_UNSAFE_CHARACTERS.intersection(task_name)
+        or _PATH_UNSAFE_CONTROL_CHARACTERS.intersection(task_name)
     ):
         raise HTTPUnprocessableEntityException(
             "The task name must be a single plain path segment."

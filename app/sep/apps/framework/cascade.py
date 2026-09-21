@@ -27,7 +27,7 @@ from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.deps import require_one_path_segment, task_path
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from app.core.requests.remote_api import RemoteAPI
     from app.sep.apps.framework.schema import ChainedPredecessor, DerivedTask
@@ -45,6 +45,7 @@ __all__ = [
     "cascade_delete_tasks",
     "cascade_update_predecessors",
     "cascade_update_tasks",
+    "require_addressable_names",
 ]
 
 logger = logging.getLogger(__name__)
@@ -199,24 +200,23 @@ def _apply_payload_substitutions(
     data["payload"] = payload_path
 
 
-def require_creatable_names(
-    parent_payload: Mapping[str, Any],
-    child_payloads: Sequence[Mapping[str, Any]],
-) -> None:
+def require_addressable_names(payloads: Iterable[Mapping[str, Any]]) -> None:
     """Refuse the whole cascade unless every planned name is a plain path segment.
 
-    The Tasks API takes a new task's name in the POST body, where nothing narrows
+    The Tasks API takes a task's name in the request body, where nothing narrows
     it to one path segment, but every later request addressing that task composes
-    the name into a path. Checking before the first POST keeps a name that only
-    the rollback DELETE would reject from leaving a created task behind, since
-    that DELETE's failure is logged rather than raised.
+    the name into a path. A create checked only at its rollback DELETE would leave
+    a task behind, because that DELETE's failure is logged rather than raised; an
+    update carries the *existing* name in its PUT path, so the guard there never
+    sees the new one, and each leg collects its own exception into the result
+    rather than raising. Both make the check belong before the first request.
 
-    :param parent_payload: The parent task's serialised payload.
-    :param child_payloads: The derived, predecessor, or independent child payloads.
+    :param payloads: The serialised payloads of every task the cascade will write,
+        parent first.
     :raises HTTPUnprocessableEntityException: If any planned name is not a single
         plain path segment.
     """
-    for payload in (parent_payload, *child_payloads):
+    for payload in payloads:
         require_one_path_segment(payload["name"])
 
 
@@ -252,7 +252,7 @@ async def cascade_create_tasks(
     child_payloads = [
         build_derived_payload(parent_payload, spec) for spec in derived_specs
     ]
-    require_creatable_names(parent_payload, child_payloads)
+    require_addressable_names([parent_payload, *child_payloads])
     created_names = []
     try:
         await tasks_api.post("/", json=parent_payload)
@@ -317,12 +317,19 @@ async def cascade_update_tasks(
     :return: A :class:`CascadeResult` recording per-leg outcomes.
     :rtype: CascadeResult
     :raises ValueError: When ``len(derived_existing_names) != len(derived_specs)``.
+    :raises HTTPUnprocessableEntityException: If the rename, or a derived name
+        built from it, is not a single plain path segment. Raised before the
+        first PUT, so no leg is renamed.
     """
     if len(derived_existing_names) != len(derived_specs):
         raise ValueError(
             f"derived_existing_names length {len(derived_existing_names)} "
             f"does not match derived_specs length {len(derived_specs)}"
         )
+    child_payloads = [
+        build_derived_payload(parent_updated, spec) for spec in derived_specs
+    ]
+    require_addressable_names([parent_updated, *child_payloads])
     result = CascadeResult()
     parent_failed = False
     try:
@@ -345,8 +352,9 @@ async def cascade_update_tasks(
                 )
             )
         return result
-    for existing_name, spec in zip(derived_existing_names, derived_specs, strict=True):
-        child_payload = build_derived_payload(parent_updated, spec)
+    for existing_name, child_payload in zip(
+        derived_existing_names, child_payloads, strict=True
+    ):
         try:
             await tasks_api.put(task_path(existing_name), json=child_payload)
             result.successes.append(child_payload["name"])
@@ -537,7 +545,7 @@ async def cascade_create_predecessors(
         build_predecessor_payload(parent_payload, pred_payload, spec)
         for spec, pred_payload in predecessor_specs_with_payloads
     ]
-    require_creatable_names(parent_payload, built_payloads)
+    require_addressable_names([parent_payload, *built_payloads])
     created_names = []
     try:
         await tasks_api.post("/", json=parent_payload)
@@ -591,7 +599,7 @@ async def cascade_create_independent_tasks(
     :raises Exception: Re-raises whatever exception ``tasks_api.post``
         produced after the rollback DELETEs complete.
     """
-    require_creatable_names(parent_payload, child_payloads)
+    require_addressable_names([parent_payload, *child_payloads])
     created_names: list[str] = []
     try:
         await tasks_api.post("/", json=parent_payload)

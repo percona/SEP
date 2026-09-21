@@ -77,6 +77,7 @@ from app.sep.apps.framework.task_status import get_task_latest_history
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     IsApiAuthenticated,
+    require_one_path_segment,
     task_path,
     TaskAPI,
 )
@@ -579,12 +580,20 @@ def _register_create_route(
     ) -> BaseModel:
         """Build the create response, optionally attaching a connectivity warning.
 
+        The name arrives in the request body, where nothing narrows it to one
+        path segment, but every route that later addresses the task composes the
+        name into an upstream path. Refusing it before the POST keeps a task that
+        no route could reach — not even delete — from being created at all.
+
         :param tasks_api: The upstream task API client.
         :param task_write: The validated create payload.
         :param check_connectivity: Whether to run the connectivity probe.
             ``None`` when the probe is disabled for the route.
         :return: The rendered create response.
+        :raises HTTPUnprocessableEntityException: If the task name is not a single
+            plain URL path segment. Raised before the POST, so nothing is created.
         """
+        require_one_path_segment(task_write.name)
         created = await tasks_api.post("/", json=task_write.model_dump())
         task = Task.model_validate(created)
         warning = (
@@ -699,13 +708,22 @@ def _register_update_route(
     ) -> BaseModel:
         """Build the update response, optionally attaching a connectivity warning.
 
+        The URL addresses the task by its stored name, so the guard on the
+        outbound path never sees a rename — that travels in the body, and the
+        upstream update applies it. Refusing an unaddressable new name here
+        keeps the task from being renamed out of reach of every later route.
+
         :param tasks_api: The upstream task API client.
         :param task: The resolved task (fetched by name via ``get_task``).
         :param task_write: The validated update payload.
         :param check_connectivity: Whether to run the connectivity probe.
             ``None`` when the probe is disabled for the route.
         :return: The rendered update response.
+        :raises HTTPUnprocessableEntityException: If the payload's task name is
+            not a single plain URL path segment. Raised before the PUT, so the
+            task keeps its current name.
         """
+        require_one_path_segment(task_write.name)
         updated = await tasks_api.put(
             task_path(task.name), json=task_write.model_dump()
         )

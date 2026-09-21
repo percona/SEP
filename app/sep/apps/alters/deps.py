@@ -51,7 +51,7 @@ from app.sep.apps.framework.cascade import (
     cascade_update_tasks,
     CascadeFailure,
     CascadeResult,
-    require_creatable_names,
+    require_addressable_names,
 )
 from app.sep.apps.framework.form_dsl import (
     derive_arg_parser_from_model,
@@ -401,7 +401,7 @@ async def cascade_create_alters_group(
         pre_checks_template.model_dump(),
         predecessor_spec,
     )
-    require_creatable_names(parent_payload, [*child_payloads, predecessor_payload])
+    require_addressable_names([parent_payload, *child_payloads, predecessor_payload])
 
     created_names: list[str] = []
     try:

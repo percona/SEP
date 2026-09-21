@@ -1302,11 +1302,16 @@ class TestCascadePathGuard:
     async def test_update_records_an_unsafe_existing_name_as_a_failure(
         self, task_name: str
     ) -> None:
-        """Record the refusal as a leg failure and issue no PUT."""
+        """Record the refusal as a leg failure and issue no PUT.
+
+        The planned name is safe here, so the prevalidation pass admits the
+        update and the refusal comes from composing the *existing* name into
+        the PUT path — the one leg the caller cannot fix by editing the form.
+        """
         tasks_api = AsyncMock(spec=RemoteAPI)
 
         result = await cascade_update_tasks(
-            tasks_api, task_name, {"name": task_name}, [], []
+            tasks_api, task_name, {"name": "renamed"}, [], []
         )
 
         assert not result.success
@@ -1388,3 +1393,41 @@ class TestCascadeCreatePrevalidation:
 
         tasks_api.post.assert_not_awaited()
         tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestCascadeUpdatePrevalidation:
+    """Test that a rename is checked before the first leg is PUT."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_update_refuses_an_unsafe_rename(self, task_name: str) -> None:
+        """Refuse a rename to an unsafe name and PUT nothing.
+
+        The PUT path carries the *existing* name, so the guard on the outbound
+        path cannot see the rename; and every leg collects its own exception
+        into the result, so a check inside the loop would be recorded rather
+        than raised. Both make the check belong before the first PUT.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_update_tasks(
+                tasks_api, "t1", _parent_payload(name=task_name), [], []
+            )
+
+        tasks_api.put.assert_not_awaited()
+
+    async def test_update_refuses_a_rename_an_unsafe_derived_suffix_makes(self) -> None:
+        """Refuse when the rename is safe but a derived name built from it is not."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_update_tasks(
+                tasks_api,
+                "t1",
+                _parent_payload(name="t2"),
+                ["t1-child"],
+                [DerivedTask(name_suffix="?q=1")],
+            )
+
+        tasks_api.put.assert_not_awaited()
