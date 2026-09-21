@@ -137,7 +137,7 @@ describe('SchemaFormRenderer field errors', () => {
   it('skips unknown and unmounted error fields without wedging submission', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    let form: UseFormReturn<Record<string, unknown>>;
+    let form: UseFormReturn<Record<string, unknown>> | undefined;
     function Probe({ children }: { children: ReactNode }) {
       form = useFormContext();
       return children;
@@ -179,12 +179,53 @@ describe('SchemaFormRenderer field errors', () => {
     await user.click(screen.getByLabelText('Blocked'));
     expect(screen.getByRole('alert')).toHaveTextContent('Blocked combination.');
     expect(screen.queryByRole('textbox', { name: 'Hidden' })).not.toBeInTheDocument();
+    expect(form).toBeDefined();
     for (const path of ['ghost', 'hidden', 'unmounted']) {
-      expect(form!.getFieldState(path).error).toBeUndefined();
+      expect(form?.getFieldState(path).error).toBeUndefined();
     }
+    await user.click(screen.getByRole('button', { name: 'Unopened' }));
+    expect(screen.getByRole('textbox', { name: 'Unmounted' })).toHaveAccessibleDescription(
+      'Blocked combination.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Unopened' }));
+    await waitFor(() => expect(form?.getFieldState('unmounted').error).toBeUndefined());
     await user.click(screen.getByLabelText('Blocked'));
     await user.click(screen.getByRole('button', { name: 'Run' }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('applies an active fail rule after native validation clears', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Main',
+            fields: [
+              { type: 'bool', name: 'blocked', label: 'Blocked' },
+              { type: 'string', name: 'target', label: 'Target', required: true },
+            ],
+            fail_when: [
+              {
+                fail_when: { truthy: 'blocked' },
+                error_fields: ['target'],
+                message: 'Rule violation.',
+              },
+            ],
+          },
+        ]}
+        onSubmit={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    const target = screen.getByRole('textbox', { name: /Target/ });
+    expect(target).toHaveAccessibleDescription('Target is required');
+    await user.click(screen.getByLabelText('Blocked'));
+    expect(target).toHaveAccessibleDescription('Target is required');
+    await user.type(target, 'valid');
+    await waitFor(() => expect(target).toHaveAccessibleDescription('Rule violation.'));
+    await user.click(screen.getByLabelText('Blocked'));
+    expect(target).toHaveAttribute('aria-invalid', 'false');
   });
 
   it('keeps an error until the last rule targeting the field clears, even after submit', async () => {

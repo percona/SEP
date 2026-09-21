@@ -24,13 +24,14 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import {
   FormProvider,
   get,
   useForm,
   useFormContext,
-  useWatch,
+  useFormState,
   type FieldErrors,
   type SubmitHandler,
 } from 'react-hook-form';
@@ -176,6 +177,43 @@ function sectionHasError(
   errors: FieldErrors<Record<string, unknown>>,
 ): boolean {
   return flattenSectionFields([section]).some((field) => Boolean(get(errors, field.name)));
+}
+
+function FailRuleFieldError({
+  name,
+  message,
+  children,
+}: {
+  name: string;
+  message?: string;
+  children: ReactNode;
+}) {
+  const { control, setError, clearErrors, getFieldState } = useFormContext();
+  const { errors } = useFormState({ control, name, exact: true });
+  const error = get(errors, name);
+
+  useEffect(() => {
+    // RHF retains unmounted registrations. Custom widgets may not register a
+    // field at all, so never create an orphan error for either case.
+    if (message !== undefined && get(control._fields, name)?._f?.mount) {
+      if (!error || (error.type === 'failRule' && error.message !== message)) {
+        setError(name, { type: 'failRule', message });
+      }
+    } else if (error?.type === 'failRule') {
+      clearErrors(name);
+    }
+  }, [name, message, error, control, setError, clearErrors]);
+
+  useEffect(
+    () => () => {
+      if (getFieldState(name).error?.type === 'failRule') {
+        clearErrors(name);
+      }
+    },
+    [name, getFieldState, clearErrors],
+  );
+
+  return children;
 }
 
 interface SectionRendererProps {
@@ -413,7 +451,7 @@ function SchemaFormBody({
   capabilities,
   renderField,
 }: SchemaFormRendererProps) {
-  const { handleSubmit, formState, setError, clearErrors, getFieldState, control } =
+  const { handleSubmit, formState, setError, clearErrors, getFieldState } =
     useFormContext<Record<string, unknown>>();
 
   // Apply backend per-field errors to the form. Clear the paths set by the
@@ -489,43 +527,25 @@ function SchemaFormBody({
   const cardinalityViolations = useCardinalityRules(sections);
   const failViolations = useFailRules(sections);
 
-  // Unlike submit-time server errors, fail-rule errors follow every value change.
-  const values = useWatch({
-    control,
-    disabled: !sections.some((section) => section.fail_when?.length),
-  });
-  const appliedFailErrorPaths = useRef(new Set<string>());
-  useEffect(() => {
+  const failFieldMessages = useMemo(() => {
     const messages = new Map<string, string>();
     for (const violations of failViolations) {
       for (const { error_fields, message } of violations) {
         for (const path of error_fields) {
-          // RHF retains unmounted registrations; only mounted fields can display
-          // and validate these errors. Unknown paths must not become orphan errors.
-          if (get(control._fields, path)?._f?.mount && !messages.has(path)) {
+          if (!messages.has(path)) {
             messages.set(path, message);
           }
         }
       }
     }
-    for (const path of appliedFailErrorPaths.current) {
-      if (!messages.has(path) && getFieldState(path).error?.type === 'failRule') {
-        clearErrors(path);
-      }
-    }
-    const applied = new Set<string>();
-    for (const [path, message] of messages) {
-      const error = getFieldState(path).error;
-      if (error && error.type !== 'failRule') {
-        continue;
-      }
-      if (error?.message !== message) {
-        setError(path, { type: 'failRule', message });
-      }
-      applied.add(path);
-    }
-    appliedFailErrorPaths.current = applied;
-  }, [failViolations, values, control, getFieldState, setError, clearErrors]);
+    return messages;
+  }, [failViolations]);
+
+  const renderFieldWithFailError: RenderFieldOverride = (props) => (
+    <FailRuleFieldError name={props.field.name} message={failFieldMessages.get(props.field.name)}>
+      {renderField?.(props) ?? props.renderDefault()}
+    </FailRuleFieldError>
+  );
 
   // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
   const violationsBySection = useMemo(() => {
@@ -562,7 +582,11 @@ function SchemaFormBody({
       idx={idx}
       isHidden={hiddenSections[entry.index] ?? false}
       violations={violationsBySection.get(entry.section) ?? []}
-      renderField={renderField}
+      renderField={
+        sections.some((section) => section.fail_when?.length)
+          ? renderFieldWithFailError
+          : renderField
+      }
       forceExpanded={
         seededAdvanced.has(entry.index) ||
         erroredAdvanced.has(entry.index) ||
