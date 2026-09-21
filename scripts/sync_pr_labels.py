@@ -583,7 +583,10 @@ def apply_blast_radius_labels(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Compute and sync every code-computed label for one pull request.
+    """Sync one pull request's code-computed labels, or report one and stop.
+
+    ``--print-eligibility`` computes only the automatic ``qa not required``
+    predicate, prints it to stdout, and adds or removes no label.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success; ``1`` on error.
