@@ -169,7 +169,7 @@ mkdir "${DEST}"
 
 if [[ -z $QUERY ]]; then
     if ! QUERY=$(cat "$FILE"); then
-        echo "Error reading query from file: $FILE, exiting."
+        echo "Error reading query from file (check --file): $FILE, exiting."
         exit 1
     fi
 fi
