@@ -46,7 +46,7 @@ from pydantic import (
 from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import make_pagination_dep, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
-from app.sep.api.task_history_actors import resolve_actor
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
@@ -89,7 +89,12 @@ from app.sep.apps.framework.spec import (
     stamp_form_input,
     validate_arg_formats,
 )
-from app.sep.deps import InventoryAPI, make_conflict_guard, protected_task_guard
+from app.sep.deps import (
+    get_username_mapping,
+    InventoryAPI,
+    make_conflict_guard,
+    protected_task_guard,
+)
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
@@ -385,7 +390,10 @@ class TaskExecutionApp(BaseApp):
         result (for example a username map) is bound as the builders' ``context``
         across the list, detail, and create builds, consumed by the framework
         default builder or an overriding ``response_builder``. Defaults to
-        ``None``.
+        :func:`~app.sep.deps.get_username_mapping`, so every builder must accept a
+        ``context`` keyword. ``None`` opts out and leaves actor ids raw, which the
+        registry conformance check rejects for a production app whose responses
+        render actor fields.
     :param create_extra_deps: Extra create-route dependencies appended after the
         standard auth guard; requires ``capabilities.create``. Defaults to ``()``.
     :param create_response_builder: A sync create-response builder override that
@@ -472,7 +480,7 @@ class TaskExecutionApp(BaseApp):
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
     response_context_provider: SkipValidation[Callable[[], Awaitable[Any]] | None] = (
-        None
+        get_username_mapping
     )
     create_extra_deps: tuple[params.Depends, ...] = ()
     create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
@@ -1361,8 +1369,7 @@ class TaskExecutionApp(BaseApp):
                 status,
                 last_executed_at=last_executed_at,
                 extras={
-                    "created_by": resolve_actor(task.created_by, mapping),
-                    "last_updated_by": resolve_actor(task.last_updated_by, mapping),
+                    **task_actor_fields(task, mapping),
                     "service_type": service_type,
                 },
             )

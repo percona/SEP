@@ -37,16 +37,9 @@ from tests.app.sep.apps.framework.kit import MockInventoryAPI, MockTaskAPI
 
 
 class TestChecksumsContract(DerivedRouterContractTests):
-    """Assert the checksums app's full derived HTTP surface, knob by knob.
-
-    ``remapped_username`` is ``None``: the app's context provider is the real
-    Casdoor ``get_username_mapping``, which is not deterministic under test, so the
-    injected-extras tests assert only the deterministic ``service_type``. The
-    context-driven username remap itself is unit-tested in ``test_deps``.
-    """
+    """Assert the checksums app's full derived HTTP surface, knob by knob."""
 
     app_def = checksums_app
-    remapped_username = None
     create_body_overrides = {"defaults_file": ""}
 
 
