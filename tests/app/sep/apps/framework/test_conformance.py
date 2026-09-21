@@ -682,6 +682,14 @@ class _ActorDetailResponse(_CleanResponse):
     last_updated_by: str | None = None
 
 
+class _AliasedActorResponse(_CleanResponse):
+    """Represent a response that renders the task's creator under a wire alias."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    created_by: str | None = Field(default=None, serialization_alias="creator")
+
+
 def _actor_detail_builder(
     task: object, *, status: object = None
 ) -> _ActorDetailResponse:
@@ -716,6 +724,18 @@ def test_actor_fields_flags_an_opted_out_detail_model():
 
     assert len(violations) == 1
     assert "last_updated_by" in violations[0]
+
+
+def test_actor_fields_flags_an_aliased_actor_field():
+    """Assert an actor field renamed by a serialization alias is still flagged."""
+    app = _build_app(
+        response_model=_AliasedActorResponse, response_context_provider=None
+    )
+
+    violations = check_actor_fields_resolvable(app)
+
+    assert len(violations) == 1
+    assert "created_by" in violations[0]
 
 
 def test_actor_fields_ignores_an_opted_out_app_rendering_no_actor():
