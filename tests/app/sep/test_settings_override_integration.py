@@ -15,9 +15,10 @@
 
 """End-to-end-ish integration tests for the SEP-side override layer."""
 
+import logging.config
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -37,12 +38,14 @@ from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
+from app.core.utils.fields import LogLevel
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from tests.app.core.settings_override.conftest import (
     SEP_SETTINGS_TOKEN,
+    SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
@@ -755,3 +758,58 @@ async def test_removing_sync_interval_override_reverts_beat_to_yaml_default(
         task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
     assert task.schedule_model.every == yaml_default.every
     assert task.schedule_model.period == Period(yaml_default.period)
+
+
+class TestBootAppliesLoggingOverride:
+    """Cover a web process that boots with a ``LOGGING`` override already stored."""
+
+    @pytest.mark.asyncio
+    async def test_main_lifespan_reapplies_dictconfig_with_the_stored_level(
+        self,
+        override_session_maker: async_sessionmaker,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Re-enter ``dictConfig`` with the overridden level before the app serves.
+
+        The boot-time ``dictConfig`` call reads ``LOGGING_CONFIG`` (not HOT), so
+        the level it baked in is the YAML/env one. The lifespan's seed must fire
+        the logging rebind itself, and the level it applies must be the one
+        ``GET /api/sep/admin/settings/Settings`` reports.
+        """
+        assert core_settings.LOGGING != LogLevel.DEBUG
+        async with override_session_maker() as session:
+            await SettingsOverrideManager.create(
+                session,
+                SettingOverride(
+                    setting_class=SETTINGS_TOKEN, key="LOGGING", value="DEBUG"
+                ),
+            )
+
+        async def _no_op_sep_startup() -> None:
+            """Stub ``sep_startup`` so the test does not hit the real SEP DB."""
+
+        @asynccontextmanager
+        async def _no_op_tasks_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+            """Stub ``tasks_lifespan`` so the test does not hit the real tasks DB."""
+            yield
+
+        monkeypatch.setattr(main_module, "sep_startup", _no_op_sep_startup)
+        monkeypatch.setattr(main_module, "tasks_lifespan", _no_op_tasks_lifespan)
+        monkeypatch.setattr(
+            "app.sep.main.get_async_session_maker", lambda: override_session_maker
+        )
+        monkeypatch.setattr(core_settings.SETTINGS_OVERRIDE, "REFRESHER_ENABLED", True)
+        dict_config = MagicMock()
+        monkeypatch.setattr(logging.config, "dictConfig", dict_config)
+
+        try:
+            async with main_module.main_lifespan(FastAPI()):
+                dict_config.assert_called_once()
+                applied = dict_config.call_args.args[0]
+                assert applied["loggers"][""]["level"] == LogLevel.DEBUG
+                assert applied["loggers"]["app"]["level"] == LogLevel.DEBUG
+                assert applied["loggers"]["app"]["level"] == core_settings.LOGGING
+        finally:
+            core_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+            sep_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
+            snippets_settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
