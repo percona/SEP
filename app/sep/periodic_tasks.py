@@ -205,6 +205,66 @@ async def sync_app_periodic_task_gating(
         await apply_effective_enabled(sep_session, celery_beat_session)
 
 
+async def _collect_owned_task_names(
+    session: AsyncSession, owners: Collection[str]
+) -> set[str]:
+    """Collect names of active tasks owned by the given apps in batches."""
+    owned_names: set[str] = set()
+    last_task_id = 0
+    while True:
+        tasks = await TaskManager.list(
+            session,
+            col(Task.owner).in_(owners),
+            col(Task.deleted_at).is_(None),
+            col(Task.id) > last_task_id,
+            order_by=[col(Task.id)],
+            limit=ACTIVE_TASK_BATCH_SIZE,
+            query_options=[load_only(Task.name)],  # ty: ignore[invalid-argument-type]
+        )
+        if not tasks:
+            break
+        owned_names.update(task.name for task in tasks)
+        if len(tasks) < ACTIVE_TASK_BATCH_SIZE:
+            break
+        last_task_id = tasks[-1].id
+        if last_task_id is None:
+            break
+    return owned_names
+
+
+async def _collect_owned_schedules(
+    session: AsyncSession, owned_names: set[str]
+) -> list[PeriodicTask]:
+    """Collect enabled schedules for owned tasks in batches."""
+    schedules: list[PeriodicTask] = []
+    last_schedule_id = 0
+    while True:
+        candidates = await PeriodicTaskManager.list(
+            session,
+            col(PeriodicTask.id) > last_schedule_id,
+            enabled=True,
+            order_by=[col(PeriodicTask.id)],
+            limit=SCHEDULE_BATCH_SIZE,
+        )
+        if not candidates:
+            break
+        for candidate in candidates:
+            task_name = resolve_schedule_task_name(candidate)
+            if task_name is None:
+                logger.warning(
+                    "Skipped periodic task %r: its args/kwargs do not name a task.",
+                    candidate.name,
+                )
+            elif task_name in owned_names:
+                schedules.append(candidate)
+        if len(candidates) < SCHEDULE_BATCH_SIZE:
+            break
+        last_schedule_id = candidates[-1].id
+        if last_schedule_id is None:
+            break
+    return schedules
+
+
 async def disable_schedules_for_owners(
     tasks_session: AsyncSession,
     celery_beat_session: AsyncSession,
@@ -228,54 +288,10 @@ async def disable_schedules_for_owners(
     """
     if not owners:
         return []
-    owned_names: set[str] = set()
-    last_task_id = 0
-    while True:
-        tasks = await TaskManager.list(
-            tasks_session,
-            col(Task.owner).in_(owners),
-            col(Task.deleted_at).is_(None),
-            col(Task.id) > last_task_id,
-            order_by=[col(Task.id)],
-            limit=ACTIVE_TASK_BATCH_SIZE,
-            query_options=[load_only(Task.name)],  # ty: ignore[invalid-argument-type]
-        )
-        if not tasks:
-            break
-        owned_names.update(task.name for task in tasks)
-        if len(tasks) < ACTIVE_TASK_BATCH_SIZE:
-            break
-        last_task_id = tasks[-1].id
-        if last_task_id is None:
-            break
+    owned_names = await _collect_owned_task_names(tasks_session, owners)
     if not owned_names:
         return []
-    schedules: list[PeriodicTask] = []
-    last_schedule_id = 0
-    while True:
-        candidates = await PeriodicTaskManager.list(
-            celery_beat_session,
-            col(PeriodicTask.id) > last_schedule_id,
-            enabled=True,
-            order_by=[col(PeriodicTask.id)],
-            limit=SCHEDULE_BATCH_SIZE,
-        )
-        if not candidates:
-            break
-        for candidate in candidates:
-            task_name = resolve_schedule_task_name(candidate)
-            if task_name is None:
-                logger.warning(
-                    "Skipped periodic task %r: its args/kwargs do not name a task.",
-                    candidate.name,
-                )
-            elif task_name in owned_names:
-                schedules.append(candidate)
-        if len(candidates) < SCHEDULE_BATCH_SIZE:
-            break
-        last_schedule_id = candidates[-1].id
-        if last_schedule_id is None:
-            break
+    schedules = await _collect_owned_schedules(celery_beat_session, owned_names)
     if not schedules:
         return []
     names: list[str] = [  # ty: ignore[invalid-assignment]
