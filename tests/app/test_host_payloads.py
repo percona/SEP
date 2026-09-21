@@ -112,6 +112,33 @@ def test_no_host_payload_evaluates_a_type_union_at_runtime() -> None:
         pytest.param(
             "def f(v):\n    return isinstance(v, (int, str))\n", 0, id="tuple-form"
         ),
+        pytest.param(
+            "from typing import cast\n\n\ndef f(v):\n    return cast(int | str, v)\n",
+            1,
+            id="cast-type-argument",
+        ),
+        pytest.param(
+            "import typing\n\n\ndef f(v):\n    return typing.cast(int | str, v)\n",
+            1,
+            id="qualified-cast",
+        ),
+        pytest.param(
+            "from typing import cast as as_type\n\n\n"
+            "def f(v):\n    return as_type(int | str, v)\n",
+            1,
+            id="aliased-cast",
+        ),
+        pytest.param(
+            "def f():\n    alias = int | str\n    return alias\n",
+            1,
+            id="builtin-type-operand",
+        ),
+        pytest.param(
+            "def f():\n    return list[int] | str\n", 1, id="builtin-generic-operand"
+        ),
+        pytest.param(
+            "import re\n\n\ndef f():\n    return re.I | re.M\n", 0, id="flag-or"
+        ),
     ],
 )
 def test_the_union_check_flags_only_runtime_type_unions(
@@ -119,8 +146,10 @@ def test_the_union_check_flags_only_runtime_type_unions(
 ) -> None:
     """Flag a type union in a function body, and leave other ``|`` alone.
 
-    Python 3.9 raises ``TypeError`` on these only when the function runs, which
-    loading never does and ``vermin`` does not report.
+    Covers ``isinstance``/``issubclass``, ``typing.cast`` under a bare, aliased,
+    or qualified name, and a builtin type name (bare or subscripted) as an
+    operand — Python 3.9 raises ``TypeError`` on these only when the function
+    runs, which loading never does and ``vermin`` does not report.
     """
     payload = fixture_dir / "unions_payload"
     payload.write_text(source, encoding="utf-8")

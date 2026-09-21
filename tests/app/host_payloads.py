@@ -518,6 +518,27 @@ def _annotation_node_ids(tree: ast.Module) -> set[int]:
     return {id(sub) for annotation in annotations for sub in ast.walk(annotation)}
 
 
+#: Builtin type names that mark a ``|`` operand as a type rather than a value.
+_BUILTIN_TYPE_NAMES = frozenset(
+    {
+        "bool",
+        "bytearray",
+        "bytes",
+        "complex",
+        "dict",
+        "float",
+        "frozenset",
+        "int",
+        "list",
+        "object",
+        "set",
+        "str",
+        "tuple",
+        "type",
+    }
+)
+
+
 def _union_operands(node: ast.expr) -> Iterator[ast.BinOp]:
     """Yield every ``|`` expression within ``node``, ``node`` included.
 
@@ -529,15 +550,66 @@ def _union_operands(node: ast.expr) -> Iterator[ast.BinOp]:
             yield sub
 
 
+def _cast_names(tree: ast.Module) -> set[str]:
+    """Return the local names ``tree`` binds to ``typing.cast``.
+
+    :param tree: A parsed module.
+    :return: ``cast`` itself plus every alias it is imported under.
+    """
+    names = {"cast"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(
+                alias.asname
+                for alias in node.names
+                if alias.name == "cast" and alias.asname
+            )
+    return names
+
+
+def _is_cast_call(node: ast.Call, cast_names: Collection[str]) -> bool:
+    """Return whether ``node`` calls ``typing.cast`` under any name it is known by.
+
+    :param node: A call expression.
+    :param cast_names: Local names bound to ``cast`` (see :func:`_cast_names`).
+    :return: Whether ``node.func`` is a bare name in ``cast_names`` or any
+        attribute access named ``cast`` (``typing.cast``, ``t.cast``).
+    """
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in cast_names
+    return isinstance(func, ast.Attribute) and func.attr == "cast"
+
+
+def _is_static_type_operand(node: ast.expr) -> bool:
+    """Return whether ``node`` names a type rather than a value.
+
+    :param node: One operand of a ``|`` expression.
+    :return: Whether ``node`` is ``None``, a builtin type name, or a
+        subscripted builtin type name (``list[int]``).
+    """
+    if isinstance(node, ast.Constant):
+        return node.value is None
+    if isinstance(node, ast.Name):
+        return node.id in _BUILTIN_TYPE_NAMES
+    if isinstance(node, ast.Subscript):
+        return isinstance(node.value, ast.Name) and node.value.id in _BUILTIN_TYPE_NAMES
+    return False
+
+
 def runtime_union_violations(paths: Sequence[Path]) -> list[str]:
     """Return every ``X | Y`` type union ``paths`` evaluate outside an annotation.
 
     Python 3.9 has no ``|`` on types, so ``isinstance(value, int | str)`` raises
     ``TypeError`` when the function runs. Loading never runs a function body and
     ``vermin`` does not flag the expression. An ``|`` counts as a type union when
-    it is part of the type argument of ``isinstance`` or ``issubclass``, or has
-    ``None`` as an operand; integer and set ``|`` fit neither. Annotations are left
-    to the load branch, which evaluates the ones Python evaluates.
+    either: it sits in a type-expression argument, namely the second argument of
+    ``isinstance``/``issubclass`` or the first argument of ``typing.cast`` (under
+    a bare, aliased, or qualified name); or one of its operands is statically a
+    type, namely ``None``, a builtin type name (``int``, ``list``, ...), or a
+    subscripted builtin type name (``list[int]``). Integer and set ``|`` fit
+    neither. Annotations are left to the load branch, which evaluates the ones
+    Python evaluates.
 
     :param paths: The files to analyse.
     :return: One line per union, naming the file and line.
@@ -546,6 +618,7 @@ def runtime_union_violations(paths: Sequence[Path]) -> list[str]:
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         in_annotation = _annotation_node_ids(tree)
+        cast_names = _cast_names(tree)
         unions: dict[int, ast.BinOp] = {}
         for node in ast.walk(tree):
             if (
@@ -556,11 +629,16 @@ def runtime_union_violations(paths: Sequence[Path]) -> list[str]:
             ):
                 unions.update((id(u), u) for u in _union_operands(node.args[1]))
             elif (
+                isinstance(node, ast.Call)
+                and _is_cast_call(node, cast_names)
+                and node.args
+            ):
+                unions.update((id(u), u) for u in _union_operands(node.args[0]))
+            elif (
                 isinstance(node, ast.BinOp)
                 and isinstance(node.op, ast.BitOr)
                 and any(
-                    isinstance(side, ast.Constant) and side.value is None
-                    for side in (node.left, node.right)
+                    _is_static_type_operand(side) for side in (node.left, node.right)
                 )
             ):
                 unions[id(node)] = node
