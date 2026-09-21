@@ -20,6 +20,7 @@ import logging
 import re
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
+from itertools import chain
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
@@ -32,14 +33,17 @@ from sqlalchemy import (
     inspect,
     JSON,
     literal,
+    Table,
     Text,
     text,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncConnection,
@@ -65,6 +69,10 @@ from app.core.utils.serialization import json_serializer
 logger = logging.getLogger(__name__)
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
+
+# SQLite carries no structured diagnostics, so the violated key is only recoverable
+# from the message text.
+SQLITE_UNIQUE_VIOLATION_RE = re.compile(r"UNIQUE constraint failed:\s*(?P<columns>.+)")
 
 
 def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmaker:
@@ -208,6 +216,74 @@ def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
     if engine_name == DatabaseDialect.SQLITE:
         return sqlite.insert(table).on_conflict_do_nothing()
     raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
+
+
+def _columns_of_named_unique_key(table: Table, name: str) -> list[str] | None:
+    """Resolve a unique index or constraint name to the column names it spans.
+
+    :param table: The table whose declared unique keys are searched.
+    :param name: The index or constraint name the database reported.
+    :return: The key's column names, or ``None`` if no declared unique key bears
+        that name.
+    """
+    declared_keys = chain(
+        (index for index in table.indexes if index.unique),
+        (
+            constraint
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint)
+        ),
+    )
+    for key in declared_keys:
+        if key.name == name:
+            return [column.name for column in key.columns]
+    return None
+
+
+def _reported_constraint_name(error: IntegrityError) -> str | None:
+    """Return the constraint name the database driver attached to an error.
+
+    The two drivers expose it in different places, and asyncpg's is reachable only
+    through the wrapper SQLAlchemy raises in its place: psycopg carries a ``diag``
+    record, while asyncpg sets the attribute on the original exception it chains to.
+
+    :param error: The integrity error raised while flushing or committing.
+    :return: The reported constraint name, or ``None`` if neither shape carries one.
+    """
+    for candidate in (error.orig, getattr(error.orig, "__cause__", None)):
+        name = getattr(
+            getattr(candidate, "diag", None), "constraint_name", None
+        ) or getattr(candidate, "constraint_name", None)
+        if name:
+            return str(name)
+    return None
+
+
+def unique_violation_columns(table: Table, error: IntegrityError) -> list[str] | None:
+    """Name the columns of the unique key an integrity error violated.
+
+    The two supported dialects report a violation differently: PostgreSQL names the
+    offending index or constraint, which resolves against the table's declared unique
+    keys, while SQLite spells the columns into the message itself. Any other integrity
+    violation (a foreign key, a ``NOT NULL``, a primary key) resolves to no declared
+    unique key, so the caller can tell a duplicate apart from a row the database
+    rejected for another reason.
+
+    :param table: The table the failing statement targeted.
+    :param error: The integrity error raised while flushing or committing.
+    :return: The violated key's column names, or ``None`` when the error is not a
+        unique-key violation.
+    """
+    reported_name = _reported_constraint_name(error)
+    if reported_name is not None:
+        return _columns_of_named_unique_key(table, reported_name)
+    match = SQLITE_UNIQUE_VIOLATION_RE.search(str(error.orig))
+    if match is None:
+        return None
+    return [
+        qualified_column.strip().rpartition(".")[2]
+        for qualified_column in match["columns"].split(",")
+    ]
 
 
 class NullsLastOrdering(ColumnElement):
