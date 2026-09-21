@@ -1048,11 +1048,12 @@ async def seed_system_periodic_tasks() -> None:
     rather than orphaning and re-creating it — which ``due_on_first_seed`` would
     turn into a sync on every boot.
 
-    When the pinned default is seeded, it and each per-syncer schedule carry the
-    first-run relationship in their meta: the default names its followers, and
-    each follower names the default, so a follower's first run waits for the
-    default's first completed sync. Nothing is written when the default is not
-    seeded, which leaves a standalone or operator-scheduled install unchanged.
+    When the pinned default is seeded, it and each per-syncer schedule it seeds
+    carry the first-run relationship in their meta: the default names its
+    followers, and each follower names the default, so a follower's first run
+    waits for the default's first completed sync. Nothing is written when the
+    default is not seeded, which leaves a standalone or operator-scheduled
+    install unchanged.
 
     :raises SQLAlchemyError: When the celery-beat store cannot be written.
     """

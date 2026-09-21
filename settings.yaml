@@ -386,7 +386,9 @@ default:
     # duplicates INVENTORY_SYNC_SYNCER, repeats another entry's syncer, or sits
     # beside a sync-all default (an interval with no syncer pinned). While the pinned
     # default above is seeded, an entry's first run waits for that syncer's first
-    # completed inventory sync, which then starts it. Example:
+    # completed inventory sync, which then starts it if it has never run. An entry
+    # an operator-managed schedule already covers is not seeded, and that schedule
+    # does not wait. Example:
     #   INVENTORY_SYNC_SCHEDULES:
     #     - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
     #       INTERVAL: 1 days
