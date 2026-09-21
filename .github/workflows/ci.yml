@@ -25,8 +25,11 @@ jobs:
   label-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout codebase
+      - name: Checkout the label tooling
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # One stdlib-only script, and its eligibility mode reads no labeler file.
+          sparse-checkout: scripts
 
       - name: Resolve the merge verdict from the state the PR has now
         id: verdict
