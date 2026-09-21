@@ -571,7 +571,10 @@ class TestDeriveInternalToken:
             instance.model_dump_json(),
         ]
 
-        assert all(dumps)
+        assert (
+            instance.model_dump()["SEP_INTERNAL_TOKEN"].get_secret_value()
+            == "masked-token"
+        )
         assert not [dump for dump in dumps if "masked-token" in dump]
 
 
