@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 from fastapi import HTTPException, status
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType, OWNER
@@ -90,6 +91,32 @@ def build_backup_write_body(
         "storage_filesystem_path": "/var/backups/mongo",
         "pitr_compression": "snappy",
         **kwargs,
+    }
+
+
+def _backup_group_by_path(parent: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Map every task path of a backup group to its payload, the parent first.
+
+    :param parent: The parent ``pbm_config`` task payload the group hangs off.
+    :return: The parent and its four derived legs keyed by ``/<task name>``, in
+        the order the cascade creates them.
+    """
+    name = parent["name"]
+    legs = (
+        ("logical", BackupType.PBM_LOGICAL),
+        ("physical", BackupType.PBM_PHYSICAL),
+        ("status", BackupType.PBM_STATUS),
+        ("incremental", BackupType.PBM_INCREMENTAL),
+    )
+    return {
+        f"/{name}": parent,
+        **{
+            f"/{name}-{suffix}": build_backup_task(
+                f"{name}-{suffix}",
+                data={"backup_type": backup_type.value, "parent": name},
+            )
+            for suffix, backup_type in legs
+        },
     }
 
 
@@ -492,6 +519,39 @@ class TestBackupMongoApiCreate:
         assert logical_post["data"]["parent"] == "mongo-backup-task"
         assert RESERVED_FORM_KEY not in logical_post["data"]
 
+    def test_create_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+    ) -> None:
+        """Render both actors' usernames on the cascade-create response."""
+        creator, updater = known_actors
+        group = _backup_group_by_path(
+            build_backup_task(
+                "mongo-backup-task",
+                created_by=str(creator.id),
+                last_updated_by=str(updater.id),
+            )
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(side_effect=list(group.values()))
+        mock_task_api_dep.get = mock_task_api_get_by_path(group)
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert (body["created_by"], body["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
+
     def test_create_rolls_back_on_mid_chain_failure(
         self,
         test_client,
@@ -794,6 +854,39 @@ class TestBackupMongoApiUpdate:
         assert logical_put.kwargs["json"]["data"]["parent"] == "parent-backup"
         assert RESERVED_FORM_KEY not in logical_put.kwargs["json"]["data"]
 
+    def test_update_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+    ) -> None:
+        """Render both actors' usernames on the cascade-update response."""
+        creator, updater = known_actors
+        parent = build_backup_task(
+            "parent-backup",
+            created_by=str(creator.id),
+            last_updated_by=str(updater.id),
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path(_backup_group_by_path(parent))
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-backup",
+            json=build_backup_write_body(
+                task_name="parent-backup", service_id=mongo_service.id
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert (body["created_by"], body["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
+
     def test_update_resolves_satellite_url_to_parent(
         self,
         test_client,
@@ -1032,8 +1125,9 @@ class TestBackupMongoApiUpdate:
     ) -> None:
         """Create a missing ``-incremental`` sibling before cascading PUTs.
 
-        Pre-SEP-1373 groups lack the incremental leg. Updating must backfill it
-        rather than partially mutate the group and then 500 on a missing PUT.
+        Groups created before the incremental leg existed lack it. Updating must
+        backfill it rather than partially mutate the group and then 500 on a
+        missing PUT.
         """
         parent = build_backup_task("parent-backup")
         mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())

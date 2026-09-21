@@ -19,7 +19,7 @@ from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.atw.crud import AtwIncidentManager, AtwSendLogManager
 from app.sep.apps.atw.models import (

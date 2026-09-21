@@ -50,7 +50,6 @@ from tests.app.conftest import (  # noqa: F401
     async_test_client,
     celery_beat_session_fixture,
     dummy_request,
-    mock_get_username_mapping,
     mock_inventory_api_dep,
     mock_task_api_dep,
     session_fixture,

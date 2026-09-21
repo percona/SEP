@@ -37,7 +37,7 @@
 #    label: Target database
 #    description: The PostgreSQL database this script connects to.
 #    default: postgres
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # alerts:
@@ -198,7 +198,7 @@ if [[ -z $CONFIG_FILE ]]; then
 fi
 
 if [[ ! -r $CONFIG_FILE ]] && ! sudo -n -u postgres test -r "$CONFIG_FILE" 2> /dev/null; then
-    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions or run with sudo)." >&2
+    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check --config-file, permissions, or run with sudo)." >&2
     exit 1
 fi
 

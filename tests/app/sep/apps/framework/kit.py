@@ -90,7 +90,7 @@ SEEDED_TASK_NAME = "contract-seeded-task"
 #: ``SUCCESS`` -- so asserting them tells a forwarded field from a defaulted one.
 EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
 EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
-SYNTH_CREATED_BY = "synth-user-id"
+SYNTH_CREATED_BY = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
 _SYNTH_LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
@@ -117,10 +117,11 @@ class MockTaskAPI:
     ``get_task_by_name``'s 404 path fires without dependency stubbing.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, created_by: str = SYNTH_CREATED_BY) -> None:
         self._tasks: dict[str, dict[str, Any]] = {}
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._ids = count(1)
+        self._created_by = created_by
         self.create_count = 0
         self.last_create_payload: dict[str, Any] = {}
         self.last_update_payload: dict[str, Any] | None = None
@@ -132,6 +133,7 @@ class MockTaskAPI:
         owner: str,
         statuses: Sequence[TaskHistoryStatusEnum] = (),
         created_by: str = SYNTH_CREATED_BY,
+        last_updated_by: str | None = None,
         protected: bool = False,
         parent: str | None = None,
         data_extra: dict[str, Any] | None = None,
@@ -143,6 +145,8 @@ class MockTaskAPI:
         :param statuses: Execution statuses, newest first, seeded as history rows.
         :param created_by: The user id stamped as the task creator, so the
             response builder's context-driven username remap is exercisable.
+        :param last_updated_by: The user id stamped as the task updater, or
+            ``None`` to use the task factory default.
         :param protected: Whether to mark the task protected, so a plugin's
             protected-task update guard is exercisable.
         :param parent: The parent task name stamped on ``data["parent"]``, so a
@@ -157,12 +161,16 @@ class MockTaskAPI:
             data["parent"] = parent
         if data_extra:
             data |= data_extra
+        updater = (
+            {"last_updated_by": last_updated_by} if last_updated_by is not None else {}
+        )
         task = TaskFactory.build(
             name=name,
             owner=owner,
             data=data,
             created_by=created_by,
             protected=protected,
+            **updater,
         )
         self._tasks[name] = task.model_dump(mode="json")
         self._history[name] = [
@@ -312,7 +320,7 @@ class MockTaskAPI:
             data=payload["data"],
             backend=payload.get("backend", TaskFactory.backend),
             alert_on_fail=payload.get("alert_on_fail", False),
-            created_by=SYNTH_CREATED_BY,
+            created_by=self._created_by,
         )
         stored = created.model_dump(mode="json")
         self._tasks[created.name] = stored
