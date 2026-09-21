@@ -45,10 +45,12 @@ from app.sep.models import (
     SyncItemWrite,
     SyncStatusEnum,
 )
+from app.sep.sync.exceptions import SyncInstanceAlreadyInProgressError
 from app.sep.sync.models import BaseSyncer
 from app.tasks.models import (
     EXECUTE_TASK_BY_NAME_TASK,
     INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_FIRST_RUN_KEY,
     INVENTORY_SYNC_TASK_NAME,
 )
 from tests.app.factories import (
@@ -352,7 +354,11 @@ def _follower_kick(follower: str, leader: str) -> dict[str, object]:
     return {
         "task_name": INVENTORY_SYNC_TASK_NAME,
         "execution_data": {
-            "meta": {"syncer": follower, INVENTORY_SYNC_AFTER_KEY: leader}
+            "meta": {
+                "syncer": follower,
+                INVENTORY_SYNC_AFTER_KEY: leader,
+                INVENTORY_SYNC_FIRST_RUN_KEY: True,
+            }
         },
     }
 
@@ -382,11 +388,15 @@ async def test_a_follower_defers_until_the_leader_completes(
         assert await SyncInstanceManager.list(session) == []
 
 
+@pytest.mark.parametrize("first_run_only", [False, True])
 @pytest.mark.asyncio
 async def test_a_follower_runs_once_the_leader_completed(
-    sep_maker, mocker, mock_remote_api
+    sep_maker, mocker, mock_remote_api, *, first_run_only: bool
 ):
-    """Run the follower's sync once the leader has finished a whole pass."""
+    """Run the follower's sync once the leader has finished a whole pass.
+
+    A leader-started first run of a follower that has never run goes ahead too.
+    """
     _route_sessions(mocker, sep_maker)
     await _record_run(sep_maker, _LEADER)
     mocker.patch(
@@ -394,11 +404,107 @@ async def test_a_follower_runs_once_the_leader_completed(
         return_value=[_FollowerSyncer(inventory_api=mock_remote_api)],
     )
 
-    await run_scheduled_inventory_sync(syncer=_FOLLOWER, after_syncer=_LEADER)
+    note = await run_scheduled_inventory_sync(
+        syncer=_FOLLOWER, after_syncer=_LEADER, first_run_only=first_run_only
+    )
 
+    assert note is None
     async with sep_maker() as session:
         (run,) = await SyncInstanceManager.list(session, syncer=_FOLLOWER)
     assert run.status == SyncStatusEnum.SUCCESS
+
+
+@pytest.mark.parametrize(
+    "earlier_status", [SyncStatusEnum.SUCCESS, SyncStatusEnum.FAILED]
+)
+@pytest.mark.asyncio
+async def test_a_started_first_run_skips_a_follower_that_already_started(
+    sep_maker, mocker, mock_remote_api, earlier_status
+):
+    """Skip a leader-started first run once the follower has any run of its own.
+
+    A beat fire of the follower queued behind the leader runs first when the
+    worker takes one task at a time, so the start the leader sent meanwhile must
+    not repeat it. A failed run counts, since it too was the follower's own.
+    """
+    _route_sessions(mocker, sep_maker)
+    await _record_run(sep_maker, _LEADER)
+    await _record_run(sep_maker, _FOLLOWER, earlier_status)
+    mocker.patch(
+        "app.sep.apps.inventory.sync.get_syncers_standalone",
+        return_value=[_FollowerSyncer(inventory_api=mock_remote_api)],
+    )
+
+    note = await run_scheduled_inventory_sync(
+        syncer=_FOLLOWER, after_syncer=_LEADER, first_run_only=True
+    )
+
+    assert note is not None
+    assert _FOLLOWER in note
+    async with sep_maker() as session:
+        (run,) = await SyncInstanceManager.list(session, syncer=_FOLLOWER)
+    assert run.status == earlier_status
+
+
+def _claim_the_follower_before_listing(
+    maker: async_sessionmaker[AsyncSession], mocker, mock_remote_api
+) -> None:
+    """Start a competing follower run between the first-run recheck and the claim.
+
+    The syncers are listed after the recheck and before the run claims its
+    syncer, so recording a running follower there is the overlap in which both a
+    started first run and a beat fire of the follower passed their checks.
+    """
+
+    async def _claim_then_list() -> list[BaseSyncer]:
+        await _record_run(maker, _FOLLOWER, SyncStatusEnum.RUNNING)
+        return [_FollowerSyncer(inventory_api=mock_remote_api)]
+
+    mocker.patch(
+        "app.sep.apps.inventory.sync.get_syncers_standalone",
+        side_effect=_claim_then_list,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_started_first_run_that_loses_the_claim_is_skipped(
+    sep_maker, mocker, mock_remote_api
+):
+    """Report a started first run refused by an overlapping run as skipped.
+
+    Raising would record a failed host-facts run on a bring-up where the two
+    happened to overlap, although the follower's first run is the one running.
+    """
+    _route_sessions(mocker, sep_maker)
+    await _record_run(sep_maker, _LEADER)
+    _claim_the_follower_before_listing(sep_maker, mocker, mock_remote_api)
+
+    note = await run_scheduled_inventory_sync(
+        syncer=_FOLLOWER, after_syncer=_LEADER, first_run_only=True
+    )
+
+    assert note is not None
+    assert _FOLLOWER in note
+    async with sep_maker() as session:
+        (run,) = await SyncInstanceManager.list(session, syncer=_FOLLOWER)
+    assert run.status == SyncStatusEnum.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_run_that_loses_the_claim_still_raises(
+    sep_maker, mocker, mock_remote_api
+):
+    """Keep refusing a follower's own scheduled run that overlaps another run.
+
+    Only a leader-started first run treats the refusal as a skip: any other
+    overlapping run of one syncer fails as it always has.
+    """
+    _route_sessions(mocker, sep_maker)
+    await _record_run(sep_maker, _LEADER)
+    _claim_the_follower_before_listing(sep_maker, mocker, mock_remote_api)
+
+    with pytest.raises(SyncInstanceAlreadyInProgressError):
+        await run_scheduled_inventory_sync(syncer=_FOLLOWER, after_syncer=_LEADER)
 
 
 class TestStartFollowerFirstRuns:

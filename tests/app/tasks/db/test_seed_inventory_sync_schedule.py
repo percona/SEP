@@ -61,6 +61,7 @@ from app.tasks.config import InventorySyncSchedule, tasks_settings
 from app.tasks.models import (
     EXECUTE_TASK_BY_NAME_TASK,
     INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_FIRST_RUN_KEY,
     INVENTORY_SYNC_FOLLOWERS_KEY,
     INVENTORY_SYNC_TASK_NAME,
 )
@@ -794,14 +795,15 @@ async def test_the_seeded_meta_binds_to_the_scheduled_callable(
 
 
 @pytest.mark.asyncio
-async def test_the_leader_kick_repeats_the_seeded_follower_request(
+async def test_the_leader_kick_is_the_seeded_follower_request_as_a_first_run(
     with_system_facts_schedule, beat_maker, tasks_maker, mocker, mock_remote_api
 ) -> None:
-    """Assert a kicked first run is the same request the follower's own row makes.
+    """Assert a kicked first run is the follower row's request plus the first-run flag.
 
-    The identical-task guard deduplicates by task and meta, so a kick that differed
-    from the follower's beat row could run beside that row's own fire instead of
-    being refused while the other is in flight.
+    The row's meta carries the ordering the run must honour, and the flag makes
+    the started run skip itself if the follower has run by the time it executes.
+    Every key is forwarded to the callable as a keyword argument, so each must
+    bind to it.
     """
     await seed_module.seed_system_periodic_tasks()
     (primary,) = await _seeded_rows(beat_maker)
@@ -835,7 +837,9 @@ async def test_the_leader_kick_repeats_the_seeded_follower_request(
     assert (
         kick.kwargs["kwargs"]["task_name"] == json.loads(follower.kwargs)["task_name"]
     )
-    assert kick.kwargs["kwargs"]["execution_data"]["meta"] == _meta(follower)
+    kicked_meta = kick.kwargs["kwargs"]["execution_data"]["meta"]
+    assert kicked_meta == {**_meta(follower), INVENTORY_SYNC_FIRST_RUN_KEY: True}
+    inspect.signature(run_scheduled_inventory_sync).bind(**kicked_meta)
 
 
 @pytest.mark.asyncio
