@@ -75,8 +75,16 @@ class _StubMySQLSyncer:
         return True
 
 
+class _StubFactsSyncer:
+    """Stand in for a follower listed after another one."""
+
+    def can_sync_inventory(self) -> bool:
+        return True
+
+
 _PMM_STUB_NAME = f"{_StubPMMSyncer.__module__}.{_StubPMMSyncer.__name__}"
 _MYSQL_STUB_NAME = f"{_StubMySQLSyncer.__module__}.{_StubMySQLSyncer.__name__}"
+_FACTS_STUB_NAME = f"{_StubFactsSyncer.__module__}.{_StubFactsSyncer.__name__}"
 
 
 @pytest.fixture
@@ -594,6 +602,45 @@ class TestStartFollowerFirstRuns:
         (record,) = [r for r in caplog.records if r.levelno == logging.ERROR]
         assert record.exc_info is not None
         assert _MYSQL_STUB_NAME in record.getMessage()
+
+    @pytest.mark.parametrize(
+        ("configured", "broker_replies"),
+        [
+            pytest.param([_StubFactsSyncer], [None], id="first-is-unconfigured"),
+            pytest.param(
+                [_StubMySQLSyncer, _StubFactsSyncer],
+                [KombuError("broker unreachable"), None],
+                id="broker-refuses-the-first",
+            ),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_skipped_follower_does_not_stop_the_next(
+        self,
+        sep_maker,
+        send_task,
+        configured: list[type],
+        broker_replies: list[KombuError | None],
+    ):
+        """Start the next follower after one is passed over, on either skip branch.
+
+        Both branches log and move on, so a follower listed after the skipped one
+        is still started in the same call.
+        """
+        await _record_run(sep_maker, _PMM_STUB_NAME)
+        send_task.side_effect = broker_replies
+
+        await start_follower_first_runs(
+            _PMM_STUB_NAME,
+            [_MYSQL_STUB_NAME, _FACTS_STUB_NAME],
+            [syncer_cls() for syncer_cls in configured],
+        )
+
+        assert send_task.call_count == len(broker_replies)
+        send_task.assert_called_with(
+            EXECUTE_TASK_BY_NAME_TASK,
+            kwargs=_follower_kick(_FACTS_STUB_NAME, _PMM_STUB_NAME),
+        )
 
 
 async def _assert_the_leader_run_starts_its_follower(
