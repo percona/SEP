@@ -724,9 +724,7 @@ class TestRestoreContract(DerivedRouterContractTests):
         """
         task_name = "contract-hidden-aes-keyfile"
         stored_form = {
-            **_valid_restore_body(
-                task_name=task_name, backup_type=BackupType.MYDUMPER
-            ),
+            **_valid_restore_body(task_name=task_name, backup_type=BackupType.MYDUMPER),
             "source_transport": SourceTransport.LOCAL.value,
             "source_encryption": EncryptionFormat.NONE.value,
             "xtrabackup_aes256_keyfile": "/etc/xb/aes.key",
