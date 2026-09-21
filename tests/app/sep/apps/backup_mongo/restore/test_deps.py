@@ -27,6 +27,7 @@ from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.deps import (
     _backup_type_from_parent,
     _resolve_service_name,
+    build_restore_mongo_api_task_response,
     build_restore_task_group,
     build_restore_update_form_from_body,
 )
@@ -34,7 +35,12 @@ from app.sep.apps.backup_mongo.restore.models import RestoreCreate, RestoreTaskW
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskBackendEnum, TaskWrite
-from tests.app.factories import TaskFactory
+from tests.app.factories import (
+    MOCK_ACTOR_USERNAMES,
+    MOCK_CREATOR_ID,
+    MOCK_UPDATER_ID,
+    TaskFactory,
+)
 
 EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN = 4
 
@@ -277,3 +283,41 @@ def test_build_restore_update_rejects_namespace_for_physical_parent(
         match="Namespace Filter is only supported for logical MongoDB restores",
     ):
         build_restore_update_form_from_body(body, parent_task)
+
+
+class TestBuildRestoreMongoApiTaskResponse:
+    """Cover the MongoDB restore builder's actor resolution."""
+
+    @staticmethod
+    def _recorded_task() -> Task:
+        """Build a parent restore config task recorded by two known users."""
+        config = yaml.dump(
+            {
+                "backupType": BackupType.PBM_LOGICAL.value,
+                "backupSource": "2026-04-29T10:00:00",
+            }
+        )
+        return _restore_parent_task(config=config).model_copy(
+            update={"created_by": MOCK_CREATOR_ID, "last_updated_by": MOCK_UPDATER_ID}
+        )
+
+    def test_resolves_actors_through_the_context(self):
+        """Render both actors as usernames and keep the app's own extras."""
+        response = build_restore_mongo_api_task_response(
+            self._recorded_task(), context=MOCK_ACTOR_USERNAMES
+        )
+
+        assert (response.created_by, response.last_updated_by) == ("alice", "bob")
+        assert (response.backup_type, response.backup_source) == (
+            BackupType.PBM_LOGICAL.value,
+            "2026-04-29T10:00:00",
+        )
+
+    def test_keeps_raw_ids_without_a_context(self):
+        """Serve the stored identifiers when no username map is bound."""
+        response = build_restore_mongo_api_task_response(self._recorded_task())
+
+        assert (response.created_by, response.last_updated_by) == (
+            MOCK_CREATOR_ID,
+            MOCK_UPDATER_ID,
+        )

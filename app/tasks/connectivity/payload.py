@@ -23,6 +23,8 @@ carries only the drivers its own hosts need, so a module-scope import would
 stop the whole payload loading wherever any one driver is absent.
 """
 
+from __future__ import annotations
+
 import argparse
 import contextlib
 import json

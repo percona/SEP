@@ -33,9 +33,25 @@ and this script are both ``github-actions[bot]``, a maintainer is a ``User`` —
 and deliberately inexact in one direction, since automation authenticating with
 a user-owned token would earn a permanent label.
 
-Invoked from ``.github/workflows/labels.yaml`` after a sparse checkout of the
-default branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
-Uses stdlib ``urllib`` so the workflow step needs no Poetry install.
+The ``label-gate`` job in ``.github/workflows/ci.yml`` computes the same predicate
+in its own run via ``--print-eligibility``, so a pull request no longer needs the
+label written here to clear the gate. Both runs start from one pull-request
+activity and proceed concurrently, so the label may not exist yet when the gate
+evaluates; and a label applied here authenticates with ``GITHUB_TOKEN``, which
+GitHub bars from triggering the CI re-run that would refresh a stale verdict.
+Precedence is unchanged: the gate still short-circuits on a ``qa not required`` it
+finds — whoever applied it — and reaches the predicate only when the label is
+absent. So the label remains the reviewer-facing record and the bypass for a pull
+request the predicate does not cover, and an automatic one left behind by a diff
+that has since grown keeps approving until it is removed.
+
+Two callers, two trust contexts. ``.github/workflows/labels.yaml`` runs on
+``pull_request_target``, which is privileged, and so invokes this after a sparse
+checkout of the default branch's ``.github/`` and ``scripts/`` trees only — never
+PR-head code. ``label-gate`` runs on ``pull_request`` with a read-only token, where
+the workflow and its scripts already come from the pull request's merge commit, so
+there this file is PR-head code and is deliberately not pinned. Uses stdlib
+``urllib`` so neither workflow step needs a Poetry install.
 """
 
 from __future__ import annotations
@@ -574,7 +590,10 @@ def apply_blast_radius_labels(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Compute and sync every code-computed label for one pull request.
+    """Sync one pull request's code-computed labels, or report one and stop.
+
+    ``--print-eligibility`` computes only the automatic ``qa not required``
+    predicate, prints it to stdout, and adds or removes no label.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success; ``1`` on error.
@@ -601,13 +620,21 @@ def main(argv: list[str] | None = None) -> int:
         default="GITHUB_TOKEN",
         help="environment variable holding the GitHub API token (default: GITHUB_TOKEN)",
     )
+    parser.add_argument(
+        "--print-eligibility",
+        action="store_true",
+        help=(
+            "print 'true' or 'false' for the automatic 'qa not required' predicate "
+            "and exit, adding and removing no label"
+        ),
+    )
     args = parser.parse_args(argv)
 
     token = os.environ.get(args.token_env)
     if not token:
         print(f"{args.token_env} is not set", file=sys.stderr)
         return 1
-    if not args.labeler.is_file():
+    if not args.print_eligibility and not args.labeler.is_file():
         print(f"{args.labeler}: file not found", file=sys.stderr)
         return 1
     if not args.head_ref:
@@ -621,6 +648,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         files = client.list_pr_files(args.owner, args.repo, args.pr_number)
+        if args.print_eligibility:
+            print("true" if qa_not_required_eligible(files, args.head_ref) else "false")
+            return 0
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
         )
