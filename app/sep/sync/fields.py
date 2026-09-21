@@ -48,10 +48,22 @@ constraint for the reason :data:`StaleRunAfter` is.
 """
 
 TaskExecutionTimeout = Annotated[int, Gt(0)]
-"""Define the positive number of seconds allowed for a task to complete."""
+"""Define the number of seconds a task is allowed to take before it times out.
+
+At zero or below the poll loop's ``time_waiting < task_execution_timeout`` guard is
+false on its first evaluation, so the loop never runs and the task is declared timed
+out without having been polled once. Expressed as an annotation constraint for the
+reason :data:`StaleRunAfter` is.
+"""
 
 TasksExecutionWaitInterval = Annotated[int, Gt(0)]
-"""Define the positive number of seconds between task status checks."""
+"""Define the number of seconds between two task status checks.
+
+The interval is also what advances the poll loop's elapsed-time counter, so at zero
+the counter never moves and the timeout above can never fire, and below zero it moves
+backwards and the loop stops terminating at all. Expressed as an annotation constraint
+for the reason :data:`StaleRunAfter` is.
+"""
 
 
 class SyncerFieldConstraint(NamedTuple):

@@ -1210,7 +1210,13 @@ def test_syncer_rejects_non_positive_stale_run_after(
 def test_task_syncer_rejects_non_positive_timing_value(
     mock_remote_api, field: str, value: int
 ) -> None:
-    """Reject task timing values that would make the polling loop busy or unbounded."""
+    """Reject task timing values the polling loop cannot act on.
+
+    The two fields fail differently: a non-positive wait interval never advances the
+    elapsed-time counter, so the loop polls without ever timing out, while a
+    non-positive timeout makes the loop's guard false on its first evaluation, so the
+    task is declared timed out without being polled at all.
+    """
 
     class TaskTestSyncer(BaseTaskSyncer):
         SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.INVENTORY
