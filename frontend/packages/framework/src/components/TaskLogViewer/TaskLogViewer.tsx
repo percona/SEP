@@ -196,6 +196,7 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     // the previous stream: useTaskLogs only clears it in this same commit.
     if (finishStatusHistoryIdRef.current !== taskHistoryId) {
       finishStatusHistoryIdRef.current = taskHistoryId;
+      setCompleteLiveLogId(null);
       return;
     }
     if (
