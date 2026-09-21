@@ -12,6 +12,7 @@ on:
       - 'scripts/check_pmm_fb_pins.py'
       - '.github/workflows/pmm-fb-nomad-pin.yaml'
       - 'tests/sidecar/test_pmm_fb_nomad_pin.py'
+      - 'tests/scripts/test_check_pmm_fb_pins.py'
 
 permissions:
   contents: read
@@ -42,7 +43,7 @@ jobs:
 
       # ci.yml runs only for main, where sidecar/pmm-fb/ does not exist.
       - name: Run the witness guard and pin-reader tests
-        run: python3 -m pytest tests/sidecar/test_pmm_fb_nomad_pin.py -q
+        run: python3 -m pytest tests/sidecar/test_pmm_fb_nomad_pin.py tests/scripts/test_check_pmm_fb_pins.py -q
 
       - name: Resolve the committed pins
         id: pins
