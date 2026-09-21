@@ -1,5 +1,7 @@
 """ PBM Config Payload """
 
+from __future__ import annotations
+
 import subprocess
 import os
 import sys
@@ -170,4 +172,5 @@ def pbm():
     _apply_pbm_config(config)
 
 
-pbm()
+if __name__ == "__main__":
+    pbm()
