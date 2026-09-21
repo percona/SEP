@@ -33,18 +33,25 @@ and this script are both ``github-actions[bot]``, a maintainer is a ``User`` —
 and deliberately inexact in one direction, since automation authenticating with
 a user-owned token would earn a permanent label.
 
-The ``label-gate`` job in ``.github/workflows/ci.yml`` recomputes the same
-predicate in its own run via ``--print-eligibility`` rather than reading the label
-written here. The two workflows are triggered by the same pull-request event and
-run concurrently, so the label may not exist yet when the gate evaluates; and a
-label applied here authenticates with ``GITHUB_TOKEN``, which GitHub bars from
-triggering the CI re-run that would refresh a stale verdict. Computing it where it
-is consumed removes that handoff. The label stays as the reviewer-facing record and
-as the hand-applied bypass for a pull request the predicate does not cover.
+The ``label-gate`` job in ``.github/workflows/ci.yml`` computes the same predicate
+in its own run via ``--print-eligibility``, so a pull request no longer needs the
+label written here to clear the gate. Both runs start from one pull-request
+activity and proceed concurrently, so the label may not exist yet when the gate
+evaluates; and a label applied here authenticates with ``GITHUB_TOKEN``, which
+GitHub bars from triggering the CI re-run that would refresh a stale verdict.
+Precedence is unchanged: the gate still short-circuits on a ``qa not required`` it
+finds — whoever applied it — and reaches the predicate only when the label is
+absent. So the label remains the reviewer-facing record and the bypass for a pull
+request the predicate does not cover, and an automatic one left behind by a diff
+that has since grown keeps approving until it is removed.
 
-Invoked from ``.github/workflows/labels.yaml`` after a sparse checkout of the
-default branch ``.github/`` and ``scripts/`` trees only — never PR-head code.
-Uses stdlib ``urllib`` so the workflow step needs no Poetry install.
+Two callers, two trust contexts. ``.github/workflows/labels.yaml`` runs on
+``pull_request_target``, which is privileged, and so invokes this after a sparse
+checkout of the default branch's ``.github/`` and ``scripts/`` trees only — never
+PR-head code. ``label-gate`` runs on ``pull_request`` with a read-only token, where
+the workflow and its scripts already come from the pull request's merge commit, so
+there this file is PR-head code and is deliberately not pinned. Uses stdlib
+``urllib`` so neither workflow step needs a Poetry install.
 """
 
 from __future__ import annotations
