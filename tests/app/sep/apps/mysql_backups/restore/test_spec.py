@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from app.core.utils.path import resolve_payload_reference
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, XtraBackupTool
 from app.sep.apps.mysql_backups.payload_variants import (
     CANONICAL_PAYLOAD_NAME,
@@ -168,6 +169,32 @@ def test_gated_off_fields_emit_the_config_defaults_they_replaced():
     ):
         expected = RestoreConfigAll.model_fields[field_name].default
         assert gated_config[alias] == getattr(expected, "value", expected), alias
+
+
+def test_a_declared_aes_restore_emits_its_key_file():
+    """Emit the AES-256 key file on a restore that declares the format reading it.
+
+    The key file is per-server config the payload's decrypt step reads, so the
+    declaration that now reveals it must not change what the payload receives.
+    """
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        backup_type=BackupType.XTRABACKUP,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+        source_encryption=EncryptionFormat.AES256,
+        xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+    )
+
+    config = yaml.safe_load(
+        build_restore_spec(form, RestoreResolved()).data["meta"]["config"]
+    )
+
+    server = config["SERVER_LIST"][0]
+    assert server["XTRABACKUP_AES256_KEYFILE"] == "/etc/xb/aes.key"
+    assert "SOURCE_ENCRYPTION" not in config["ALL_SERVERS"]
+    assert "SOURCE_ENCRYPTION" not in server
 
 
 class TestRestoreUsesTheCanonicalPayload:
