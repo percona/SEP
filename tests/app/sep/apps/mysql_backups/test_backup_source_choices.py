@@ -688,6 +688,87 @@ class TestBackupSourceChoicesRoute:
         assert [item["value"] for item in body] == [shared]
         assert "200 B" in body[0]["label"]
 
+    @pytest.mark.asyncio
+    async def test_late_catalogued_duplicate_does_not_supply_the_label(
+        self, session, regular_user
+    ) -> None:
+        """Label a reused location by finish time, not by when it was recorded.
+
+        A run catalogued after an already-recorded later run carries the higher
+        ``id``, so collapsing on insertion order would hand the label to the run
+        whose dump the rerun replaced.
+        """
+        shared = "/backups/mydumper/20260921"
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                1,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 46, tzinfo=UTC),
+                size_bytes=200,
+            ),
+        )
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                2,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 44, tzinfo=UTC),
+                size_bytes=100,
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [shared]
+        # Size, not the rendered time, tells the two runs apart without
+        # assuming how the session backend stores a timestamp's offset.
+        assert "200 B" in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_distinct_locations_keep_their_order_around_a_collapse(
+        self, session, regular_user
+    ) -> None:
+        """Keep distinct locations newest-first when a collapse falls between them.
+
+        The duplicate is older than one distinct location and newer than another,
+        so dropping it must not reorder the values it sits between or relabel them.
+        """
+        reused = "/backups/mydumper/20260921"
+        middle = "/backups/mydumper/20260920"
+        oldest = "/backups/mydumper/20260919"
+        rows = (
+            (1, reused, datetime(2026, 9, 21, 17, 46, tzinfo=UTC), 300),
+            (2, middle, datetime(2026, 9, 20, 17, 0, tzinfo=UTC), 200),
+            (3, reused, datetime(2026, 9, 20, 9, 0, tzinfo=UTC), 150),
+            (4, oldest, datetime(2026, 9, 19, 17, 0, tzinfo=UTC), 100),
+        )
+        for task_history_id, location, finished_at, size_bytes in rows:
+            await MysqlBackupRunManager.save(
+                session,
+                _catalog_run(
+                    task_history_id,
+                    location,
+                    finished_at=finished_at,
+                    size_bytes=size_bytes,
+                ),
+            )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [reused, middle, oldest]
+        # Each row carries its own size, so a label naming the wrong run shows up
+        # here even where the rendered finish time would not.
+        assert "300 B" in body[0]["label"]
+        assert "200 B" in body[1]["label"]
+        assert "100 B" in body[2]["label"]
+
 
 class TestBackupSourceChoicesScan:
     """Page the catalog for distinct restore values within the scan bound.
