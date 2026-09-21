@@ -44,6 +44,8 @@
 #    label: Show help message
 #    description: Print the script's usage text instead of running it.
 #    default: false
+# diagnostic_categories:
+#  - QUERY_TUNING_OPTIMIZATION
 # service_type: mysql
 # alerts:
 #   - MySQLSlowQueries
@@ -167,7 +169,7 @@ mkdir "${DEST}"
 
 if [[ -z $QUERY ]]; then
     if ! QUERY=$(cat "$FILE"); then
-        echo "Error reading query from file: $FILE, exiting."
+        echo "Error reading query from file (check --file): $FILE, exiting."
         exit 1
     fi
 fi

@@ -34,6 +34,7 @@ from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
+from app.sep.apps.framework.spec import build_run_python_task
 from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
@@ -44,6 +45,7 @@ from app.tasks.execution_request_secrets import (
 )
 from app.tasks.models import (
     _encode_anonymize_mask,
+    ANY_OWNER,
     DispatchLock,
     FileMetadata,
     LogCaptureStatusEnum,
@@ -782,6 +784,53 @@ class TestTaskHistory:
         )
         assert history.anonymized_entities == {PIIEntity.CREDIT_CARD, PIIEntity.PERSON}
 
+    def test_anonymized_entities_none_mask_falls_back_to_task(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert a ``None`` history mask returns the associated task's entities."""
+        task_mask = PIIEntity.EMAIL_ADDRESS | PIIEntity.IP_ADDRESS
+        task = TaskFactory.build(
+            id=1, name="test-task", data={"key": "val"}, anonymize_mask=task_mask
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        assert history.anonymized_entities == {
+            PIIEntity.EMAIL_ADDRESS,
+            PIIEntity.IP_ADDRESS,
+        }
+        assert history.anonymized_entities == task.anonymized_entities
+
+    def test_anonymized_entities_none_mask_follows_task_owner_defaults(
+        self, execution_request: TaskExecutionRequest
+    ) -> None:
+        """Assert ``None`` on both history and task falls through to owner defaults."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
+        mock_defaults = defaultdict(lambda: default_entities)
+        task = TaskFactory.build(
+            id=1,
+            name="test-task",
+            data={"key": "val"},
+            anonymize_mask=None,
+            owner="BACKUPS",
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            anonymize_mask=None,
+        )
+        with patch("app.tasks.models.anonymizer_settings") as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            result = history.anonymized_entities
+            assert result == default_entities
+            assert result == task.anonymized_entities
+
     @pytest.mark.asyncio
     async def test_alert_for_status_failed(
         self, task_instance: Task, execution_request: TaskExecutionRequest
@@ -1292,6 +1341,69 @@ class TestTaskHistoryResponseDisplayName:
         """Assert a regular task returns its ``task.name`` as the display label."""
         req = TaskExecutionRequest(task="backup-task", target="node-1")
         assert self._history(normal_task, req).display_name == "backup-task"
+
+    def test_proxy_over_a_generic_executor_is_classified_by_its_root(self) -> None:
+        """Assert a proxy wrapping a generic executor still derives a per-run label.
+
+        History binds to the dispatched task, so an app that wraps ``exec-artifact``
+        to attach its own hooks would otherwise collapse every one of its runs onto
+        the wrapper's single name.
+        """
+        proxy = TaskFactory.build(
+            id=4,
+            name="atw__exec-artifact",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "exec-artifact"},
+        )
+        req = TaskExecutionRequest(
+            task="atw__exec-artifact",
+            target="node-1",
+            meta={"_snippet_filename": "snippets/collect.sh"},
+        )
+
+        assert self._history(proxy, req).display_name == "snippets/collect.sh on node-1"
+
+    def test_framework_proxy_carrying_its_own_payload_keeps_its_name(self) -> None:
+        """Assert a proxy that fixes its own payload is labelled by its own name.
+
+        The framework's task apps wrap ``run-python``, a generic executor, but carry
+        the payload themselves, so every run of one is the same configured job and
+        its per-service name is the meaningful label. Classifying it by its root
+        would relabel every backup or restore run as ``<dir>/<script> on <target>``.
+        """
+        write = build_run_python_task(
+            name="backup_mongo__nightly-rs0",
+            owner=ANY_OWNER,
+            target="node-1",
+            config="{}",
+            requirements="",
+            payload="file:///opt/sep/scripts/backup_mongo/mongo_backup.py",
+        )
+        proxy = TaskFactory.build(id=6, **write.model_dump())
+        req = TaskExecutionRequest(
+            task=proxy.name,
+            target="node-1",
+            meta=dict(proxy.data["meta"]),
+            payload=proxy.data["payload"],
+        )
+
+        assert self._history(proxy, req).display_name == "backup_mongo__nightly-rs0"
+
+    def test_proxy_over_a_named_task_still_reports_its_own_name(self) -> None:
+        """Assert a proxy over a non-generic root keeps its own name.
+
+        Only a generic executor's runs need a derived label; a proxy wrapping any
+        other task already carries the meaningful name.
+        """
+        proxy = TaskFactory.build(
+            id=5,
+            name="mysql-backup-svc-a",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "mysql-backup"},
+        )
+        req = TaskExecutionRequest(task="mysql-backup-svc-a", target="node-1")
+
+        assert self._history(proxy, req).display_name == "mysql-backup-svc-a"
 
     def test_generic_executor_uses_underscore_snippet_filename_from_meta(
         self, run_python_task: Task

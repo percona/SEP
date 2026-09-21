@@ -21,6 +21,7 @@ import logging.config
 import time
 from collections.abc import Iterator
 from typing import ClassVar
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import SecretStr
@@ -563,6 +564,57 @@ class TestWorkerLoggingRebind:
 
         assert settings.LOGGING == LogLevel.DEBUG
         assert not logging.getLogger("app").isEnabledFor(logging.DEBUG)
+
+    @pytest.mark.usefixtures("worker_logging_boot")
+    def test_child_boot_applies_an_existing_logging_override(
+        self, worker_loop_env: WorkerLoopEnv
+    ) -> None:
+        """Raise the app logger to a pre-existing override during the child's seed.
+
+        A prefork child that forks after the override row was written never
+        sees a diff, so the boot seed itself must re-enter ``dictConfig``.
+        """
+        loop, maker = worker_loop_env
+        runtime_logger = logging.getLogger("kombu.connection")
+        loop.run_until_complete(
+            _upsert_override(maker, settings_cls=Settings, key="LOGGING", value="DEBUG")
+        )
+
+        start_sep_settings_override_refresher()
+
+        assert settings.LOGGING == LogLevel.DEBUG
+        assert logging.getLogger("app").isEnabledFor(logging.DEBUG)
+        assert not runtime_logger.disabled
+
+    @pytest.mark.usefixtures("worker_logging_boot")
+    def test_child_boot_leaves_the_pmm_callback_silent(
+        self, worker_loop_env: WorkerLoopEnv, mocker: MockerFixture
+    ) -> None:
+        """Fire only the logging rebind from the child's seed, never the PMM eviction.
+
+        A fresh child starts with an empty client registry, so evicting at boot
+        would be busywork; the real worker registry must keep that callback
+        unmarked even when a ``PMM`` override row is already stored.
+        """
+        loop, maker = worker_loop_env
+        invalidate = mocker.patch.object(Settings, "invalidate_client", new=AsyncMock())
+        loop.run_until_complete(
+            _upsert_override(
+                maker,
+                settings_cls=Settings,
+                key="PMM",
+                value={"endpoint": PMM_ENDPOINT, "api_key": "boot-key"},
+            )
+        )
+        loop.run_until_complete(
+            _upsert_override(maker, settings_cls=Settings, key="LOGGING", value="DEBUG")
+        )
+
+        start_sep_settings_override_refresher()
+
+        invalidate.assert_not_awaited()
+        assert str(settings.PMM.endpoint) == PMM_ENDPOINT
+        assert logging.getLogger("app").isEnabledFor(logging.DEBUG)
 
 
 class TestRepublishSepSettingsSnapshot:

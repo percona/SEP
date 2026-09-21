@@ -22,6 +22,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.exceptions import HTTPBadGatewayException
 
 
 def test_casdoor_credentials_masked_in_repr():
@@ -95,3 +96,47 @@ async def test_get_tokens_paginates_by_page_size(mocker):
 
     assert get_mock.await_count == expected_pages
     assert len(yielded) == expected_pages
+
+
+@pytest.mark.asyncio
+async def test_get_users_returns_the_listed_users(mocker):
+    """Return the ``data`` array of a successful user listing."""
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="test-id",
+        client_secret="test-secret",
+    )
+    listed = [{"id": "u1", "name": "alice"}]
+    mocker.patch.object(
+        CasdoorSDK,
+        "get",
+        new=mocker.AsyncMock(return_value={"status": "ok", "data": listed}),
+    )
+
+    assert await sdk.get_users() == listed
+
+
+@pytest.mark.asyncio
+async def test_get_users_raises_on_an_error_body_without_caching_it(mocker):
+    """Raise on Casdoor's HTTP-200 error body and retry the listing on the next call.
+
+    Casdoor answers a denied or failed ``/api/get-users`` with HTTP 200 and
+    ``"data": null``. Returning that ``None`` would reach callers as a user list
+    and be cached for the listing's whole TTL.
+    """
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="test-id",
+        client_secret="test-secret",
+    )
+    error_body = {"status": "error", "msg": "Unauthorized operation", "data": None}
+    get_mock = mocker.patch.object(
+        CasdoorSDK, "get", new=mocker.AsyncMock(return_value=error_body)
+    )
+    attempts = 2
+
+    for _ in range(attempts):
+        with pytest.raises(HTTPBadGatewayException):
+            await sdk.get_users()
+
+    assert get_mock.await_count == attempts

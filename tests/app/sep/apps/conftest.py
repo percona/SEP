@@ -27,10 +27,12 @@ per test and clearing them on teardown so nothing leaks to the next test.
 
 from collections.abc import Iterator
 from typing import get_args
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
+from pytest_mock import MockerFixture
 
 from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.casdoor.models import CasdoorUser
@@ -39,7 +41,7 @@ from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.deps import check_for_conflicted_running_tasks, get_current_user
 from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskWrite
-from tests.app.factories import GeneratedTaskFactory
+from tests.app.factories import CasdoorUserFactory, GeneratedTaskFactory
 from tests.app.sep.apps.framework.contract_suite import (
     borrow_shared_mount,
     shared_contract_client,
@@ -68,6 +70,34 @@ def literal_members(model: type[BaseModel], field: str) -> tuple[str, ...]:
         for arg in get_args(member)
         if isinstance(arg, str)
     )
+
+
+@pytest.fixture(autouse=True)
+def provider_users(mocker: MockerFixture) -> AsyncMock:
+    """Stub the active provider's user listing so no app test reaches the provider.
+
+    Every task app renders its actor fields through the username map, so an
+    unstubbed request would call the real provider SDK. Serve no users by
+    default, which leaves each actor on its stored identifier; a test asserting
+    resolution sets ``return_value``, and one asserting a failed lookup sets
+    ``side_effect``, on the returned mock.
+
+    :param mocker: The pytest-mock fixture that owns the patch's teardown.
+    :return: The mock standing in for ``User.get_users``.
+    """
+    return mocker.patch("app.sep.deps.User.get_users", new=AsyncMock(return_value=[]))
+
+
+@pytest.fixture
+def known_actors(provider_users: AsyncMock) -> tuple[CasdoorUser, CasdoorUser]:
+    """Stub the provider's user listing with a task's creator and last updater.
+
+    :param provider_users: The autouse user-listing stub, configured here.
+    :return: The creator and the last updater, in that order.
+    """
+    creator, updater = CasdoorUserFactory.batch(2)
+    provider_users.return_value = [creator, updater]
+    return creator, updater
 
 
 @pytest.fixture

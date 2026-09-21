@@ -31,13 +31,15 @@
 #        label: Print to the terminal
 #      - value: file
 #        label: Write the output to a file named by the timestamp
-# atw:
-#  - PROXYSQL_CRASH
-#  - CONNECTION_ISSUES
-#  - QUERY_ROUTING_PROBLEMS
-# service_type: mysql
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NOT_RESPONDING
+#  - PERFORMANCE_OTHER
+# service_type: proxysql
 # alerts:
-#   - ProxySQLNotRunning
+#   - name: ProxySQLNotRunning
+#     service_type: mysql
 # ---
 
 # proxysql_log_extractor.sh
@@ -148,16 +150,19 @@ else
 fi
 
 if [[ ! -f $PROXYSQL_LOG || ! -r $PROXYSQL_LOG ]]; then
-    echo "Error: Cannot read ProxySQL log file: $PROXYSQL_LOG"
+    echo "Error: Cannot read ProxySQL log file (check --log-file): $PROXYSQL_LOG"
     exit 1
 fi
 
 echo "Using ProxySQL log file: $PROXYSQL_LOG" >&2
 
-INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null) || {
-    echo "Invalid time format"
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse the provided time format (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))"
+    rm -f "$DATE_ERR"
     exit 1
-}
+fi
+rm -f "$DATE_ERR"
 
 START_EPOCH=$((INPUT_EPOCH - (MINUTES_ARG * 60)))
 END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))

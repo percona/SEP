@@ -23,7 +23,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import aioresponses.core
@@ -802,12 +802,3 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}
-
-
-@pytest.fixture
-def mock_get_username_mapping(mocker: MockerFixture) -> Mock:
-    """Mock the TaskDep dependency."""
-    return mocker.patch(
-        "app.sep.deps.get_username_mapping",
-        return_value={"12345678-1234-5678-9abc-123456789012": "test-user"},
-    )

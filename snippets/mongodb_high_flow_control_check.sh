@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB flow control status and replication lag to diagnose write throttling on the primary."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighFlowControl

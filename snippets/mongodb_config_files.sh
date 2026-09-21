@@ -5,6 +5,8 @@
 # description: This script finds and displays the MongoDB configuration file, including detection from the running process command line.
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # service_type: mongodb
 # parameters: []
 # alerts:

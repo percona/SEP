@@ -5,6 +5,7 @@
 # description: "This script checks for recent deadlock occurrences in PostgreSQL by searching logs."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
@@ -32,14 +33,24 @@ PSQL="psql"
 
 echo "********* Recent deadlock entries in PostgreSQL logs *********"
 echo ""
-LOG_GLOB=$($PSQL -tA -c "
+# Keep stderr out of the captured value: it is expanded as a glob, and psql
+# writes warnings there on runs that otherwise succeed.
+PSQL_ERR=$(mktemp)
+if ! LOG_GLOB=$($PSQL -tA -c "
     SELECT CASE
         WHEN current_setting('log_directory') LIKE '/%'
         THEN current_setting('log_directory') || '/*.log'
         ELSE current_setting('data_directory') || '/'
              || current_setting('log_directory') || '/*.log'
     END;
-" 2> /dev/null) || LOG_GLOB=""
+" 2> "$PSQL_ERR"); then
+    echo "Could not read log_directory from PostgreSQL (check --dbname): $(cat "$PSQL_ERR")"
+    LOG_GLOB=""
+    LOG_DIR_KNOWN=0
+else
+    LOG_DIR_KNOWN=1
+fi
+rm -f "$PSQL_ERR"
 
 LOG_FILES=()
 if [ -n "${LOG_GLOB}" ]; then
@@ -50,9 +61,22 @@ if [ -n "${LOG_GLOB}" ]; then
     shopt -u nullglob
 fi
 
-if [ ${#LOG_FILES[@]} -eq 0 ]; then
-    echo "No deadlock entries found in PostgreSQL logs or problem occurred when querying for log_directory parameter."
+if [ "$LOG_DIR_KNOWN" -eq 0 ]; then
+    echo "Log files were not searched, because log_directory could not be read."
+elif [ ${#LOG_FILES[@]} -eq 0 ]; then
+    echo "No PostgreSQL log files found under log_directory."
 else
-    tail -50 "${LOG_FILES[@]}" 2> /dev/null | grep -i "deadlock" ||
-        echo "No deadlock entries found in PostgreSQL logs or problem occurred when querying for log_directory parameter."
+    log_tail=""
+    for log_file in "${LOG_FILES[@]}"; do
+        if ! file_tail=$(tail -n 50 "$log_file" 2>&1); then
+            echo "Could not read $log_file: $file_tail"
+        else
+            log_tail+="$file_tail"$'\n'
+        fi
+    done
+    if [ -z "$log_tail" ]; then
+        echo "None of the PostgreSQL log files under log_directory could be read."
+    elif ! printf '%s' "$log_tail" | grep -i "deadlock"; then
+        echo "No deadlock entries found in PostgreSQL logs."
+    fi
 fi

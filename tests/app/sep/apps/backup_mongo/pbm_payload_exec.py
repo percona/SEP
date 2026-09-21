@@ -117,18 +117,20 @@ class FakePopen:
 def run_payload(path: pathlib.Path) -> dict[str, object]:
     """Exec a payload script's source and return the resulting namespace.
 
-    Every payload calls its module-level ``pbm()`` unconditionally at the bottom of
-    the file, which may raise ``SystemExit``; wrap the call in ``pytest.raises`` at
-    the call site to assert on that. ``PBM_MONGODB_URI`` is always cleaned up
-    afterward regardless of how execution ends, since the payload sets it directly
-    in ``os.environ`` (outside ``monkeypatch``) and it would otherwise leak into
-    later tests in the same process.
+    Every payload calls its module-level ``pbm()`` under a ``__main__`` guard at the
+    bottom of the file, so the namespace names itself ``__main__``, and that call
+    may raise ``SystemExit``; wrap the call in ``pytest.raises`` at the call site to
+    assert on that. ``PBM_MONGODB_URI`` is always cleaned up afterward regardless of
+    how execution ends, since the payload sets it directly in ``os.environ``
+    (outside ``monkeypatch``) and it would otherwise leak into later tests in the
+    same process.
 
     :param path: The payload script path to exec.
     :return: The namespace populated by the payload's module-level execution
         (function definitions, module-level variables) up to wherever it stopped.
     """
     namespace: dict[str, object] = {}
+    namespace["__name__"] = "__main__"
     try:
         exec(compile(path.read_text(), str(path), "exec"), namespace)  # noqa: S102
     finally:

@@ -62,6 +62,14 @@ R10. A ``description`` may not restate a ``default:`` the front matter already
 R11. A parameter whose script detects its value when the flag is omitted must
     not declare a ``default:``. A default is always sent, so it would suppress
     the detection the script performs.
+R12. Every script must declare ``diagnostic_categories:`` with a list value,
+    populated or empty. The diagnostics browser reaches a script only through
+    that key, so an omitted declaration and a deliberate exclusion are
+    otherwise indistinguishable. Search-only is the empty list; a valueless
+    key parses to ``None``, which the reader logs and discards.
+R13. Every declared category must name an ``ATWCategory`` member. The listing
+    matches ``category.name``, so a name the taxonomy does not define places
+    the script in no cell and is discarded without a warning.
 
 The numbering skips R5 and R6, which stay judgement calls and are not checked
 here: whether a ``placeholder`` shows a literal the script would itself use
@@ -78,9 +86,11 @@ import re
 
 import pytest
 
+from app.sep.apps.atw.categories import ATWCategory
 from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 from app.sep.snippets.models.meta import (
     META_KEY_DESCRIPTION,
+    META_KEY_DIAGNOSTIC_CATEGORIES,
     META_KEY_TITLE,
     SnippetMetaParameter,
     SnippetMetaParameterType,
@@ -92,6 +102,11 @@ from tests.app.sep.snippets.snippet_corpus import SNIPPET_FILENAMES
 KNOWN_PARAMETER_TYPES = frozenset(
     member.name.lower() for member in SnippetMetaParameterType
 )
+
+KNOWN_CATEGORY_NAMES = frozenset(member.name for member in ATWCategory)
+
+_MISSING = object()
+"""Sentinel separating an absent category key from one declared with no value."""
 
 TIMESTAMP_PARAMETER_NAMES = frozenset(
     {
@@ -281,6 +296,42 @@ async def test_top_level_keys_are_read_by_the_application(filename):
 
     unknown = sorted(set(snippet.meta) - SUPPORTED_META_KEYS)
     assert unknown == [], f"{filename} declares unread front-matter keys {unknown}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", SNIPPET_FILENAMES)
+async def test_every_snippet_declares_its_browser_membership(filename):
+    """Verify every script records a browser-membership decision (R12)."""
+    snippet = await _load(filename)
+
+    declared = snippet.meta.get(META_KEY_DIAGNOSTIC_CATEGORIES, _MISSING)
+    assert declared is not _MISSING, (
+        f"{filename} declares no {META_KEY_DIAGNOSTIC_CATEGORIES!r}, so whether it "
+        "belongs in the diagnostics browser is unrecorded"
+    )
+    assert isinstance(declared, list), (
+        f"{filename} declares {META_KEY_DIAGNOSTIC_CATEGORIES!r} as "
+        f"{type(declared).__name__}; search-only is the empty list, not a bare key"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", SNIPPET_FILENAMES)
+async def test_declared_categories_name_taxonomy_members(filename):
+    """Verify every declared category names an ``ATWCategory`` member (R13)."""
+    snippet = await _load(filename)
+
+    declared = snippet.meta.get(META_KEY_DIAGNOSTIC_CATEGORIES)
+    if not isinstance(declared, list):
+        pytest.skip(f"{filename} has no list-valued declaration; R12 reports it")
+    unknown = [
+        category
+        for category in declared
+        if not isinstance(category, str) or category not in KNOWN_CATEGORY_NAMES
+    ]
+    assert unknown == [], (
+        f"{filename} declares categories the taxonomy does not define: {unknown}"
+    )
 
 
 @pytest.mark.asyncio

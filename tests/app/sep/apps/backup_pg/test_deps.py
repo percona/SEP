@@ -21,6 +21,8 @@ import yaml
 from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
+    build_backup_pg_api_detail_response,
+    build_backup_pg_api_task_response,
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
@@ -28,9 +30,14 @@ from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework.spec import ResolvedEntities
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedService
+from app.tasks.models import Task
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
+    MOCK_ACTOR_USERNAMES,
+    MOCK_CREATOR_ID,
+    MOCK_UPDATER_ID,
+    TaskFactory,
 )
 
 
@@ -40,6 +47,28 @@ def _resolved(service: CreatedService) -> ResolvedEntities:
         service=service,
         entities={"service_id": service},
         executor_host="executor-host",
+    )
+
+
+def _backup_pg_task() -> Task:
+    """Build a backup_pg task whose config names one pgBackRest server."""
+    config = yaml.dump(
+        {
+            "SERVER_LIST": [
+                {
+                    "HOST": "db.internal",
+                    "PORT": 5433,
+                    "BACKUP_TYPE": BackupType.PGBACKREST.value,
+                }
+            ]
+        }
+    )
+    return TaskFactory.build(
+        name="pg-backup",
+        owner="BACKUP_PG",
+        data={"meta": {"target": "pg-host", "config": config}},
+        created_by=MOCK_CREATOR_ID,
+        last_updated_by=MOCK_UPDATER_ID,
     )
 
 
@@ -279,3 +308,38 @@ def test_parse_backup_task_data_without_all_servers():
     assert result["host"] == "localhost"
     assert result["port"] == expected_port
     assert "logging_dir" not in result
+
+
+class TestBuildBackupPgApiTaskResponse:
+    """Cover the backup_pg list-row builder's actor resolution."""
+
+    def test_resolves_actors_through_the_context(self):
+        """Render both actors as usernames and keep the app's own extras."""
+        response = build_backup_pg_api_task_response(
+            _backup_pg_task(), context=MOCK_ACTOR_USERNAMES
+        )
+
+        assert (response.created_by, response.last_updated_by) == ("alice", "bob")
+        assert (response.hostname, response.backup_type) == (
+            "pg-host",
+            BackupType.PGBACKREST.value,
+        )
+
+    def test_keeps_raw_ids_without_a_context(self):
+        """Serve the stored identifiers when no username map is bound."""
+        response = build_backup_pg_api_task_response(_backup_pg_task())
+
+        assert (response.created_by, response.last_updated_by) == (
+            MOCK_CREATOR_ID,
+            MOCK_UPDATER_ID,
+        )
+
+
+def test_detail_builder_forwards_the_context_to_the_task_builder():
+    """Resolve actors on the detail response the derived detail and create serve."""
+    response = build_backup_pg_api_detail_response(
+        _backup_pg_task(), context=MOCK_ACTOR_USERNAMES
+    )
+
+    assert (response.created_by, response.last_updated_by) == ("alice", "bob")
+    assert response.host == "db.internal"

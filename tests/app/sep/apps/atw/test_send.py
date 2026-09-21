@@ -33,9 +33,10 @@ from aiohttp import ClientError
 from pydantic import SecretStr
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException

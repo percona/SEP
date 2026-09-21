@@ -50,7 +50,6 @@ from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.mysql_backups.views import mysql_backups_views
 from app.sep.apps.nav_icons import NavIcon
-from app.sep.deps import get_username_mapping
 
 app = TaskExecutionApp(
     name="mysql_backups",
@@ -71,7 +70,6 @@ app = TaskExecutionApp(
     task_spec_builder=build_backup_spec,
     run_result_recorder=RUN_RESULT_RECORDER,
     response_builder=build_mysql_backups_api_task_response,
-    response_context_provider=get_username_mapping,
     pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),

@@ -27,7 +27,7 @@ import app.sep.main as sep_main
 from app.core.celery.models import IntervalSchedule
 from app.core.config import PMMSettings, Settings, settings
 from app.core.requests import RemoteAPI
-from app.core.settings_override.lifecycle import SnapshotChange
+from app.core.settings_override.lifecycle import is_fire_on_boot, SnapshotChange
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
 from app.sep.main import (
@@ -455,7 +455,7 @@ async def test_apply_logging_dictconfig_reapplies_new_level(
     dict_config = mocker.patch("app.sep.settings_override.logging.config.dictConfig")
     settings._set_snapshot({"LOGGING": "DEBUG"})  # ty: ignore[unresolved-attribute]
     try:
-        await apply_logging_dictconfig({})
+        await apply_logging_dictconfig(SnapshotChange({}, {"LOGGING": "DEBUG"}))
     finally:
         settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
@@ -477,7 +477,7 @@ async def test_apply_logging_dictconfig_swallows_failure(
     settings._set_snapshot({"LOGGING": "DEBUG"})  # ty: ignore[unresolved-attribute]
     try:
         # Must not raise.
-        await apply_logging_dictconfig({})
+        await apply_logging_dictconfig(SnapshotChange({}, {"LOGGING": "DEBUG"}))
     finally:
         settings._set_snapshot({})  # ty: ignore[unresolved-attribute]
 
@@ -499,3 +499,15 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
         )
     finally:
         sep_main.sep_app.state.override_callbacks = original
+
+
+class TestBootMarker:
+    """Pin which SEP callbacks the boot-time seed fires on its own."""
+
+    def test_logging_rebind_fires_on_boot(self) -> None:
+        """Mark the logging rebind: boot ``dictConfig`` never sees the override."""
+        assert is_fire_on_boot(apply_logging_dictconfig)
+
+    def test_pmm_invalidation_does_not_fire_on_boot(self) -> None:
+        """Keep PMM eviction silent at boot: a fresh registry key-misses on its own."""
+        assert not is_fire_on_boot(invalidate_pmm_clients)

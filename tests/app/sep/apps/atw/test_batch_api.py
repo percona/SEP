@@ -22,7 +22,7 @@ so the suite points ``script_source.get_async_session_maker`` at the in-memory
 test session (mirroring ``tests/app/sep/apps/snippets/conftest.py``).
 """
 
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -34,16 +34,20 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.datastructures import URL
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.exceptions import HTTPBadRequestException
+from app.core.exceptions import (
+    HTTPBadRequestException,
+    HTTPServiceUnavailableException,
+)
 from app.core.requests import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.sep.apps.atw.crud import AtwIncidentExecutionManager, AtwIncidentManager
 from app.sep.apps.atw.models import AtwIncident, AtwIncidentExecution
+from app.sep.apps.atw.proxy_tasks import atw_proxy_task_name
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -51,7 +55,11 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
-from app.sep.snippets.config import snippets_settings, SnippetSudoOption
+from app.sep.snippets.config import (
+    DEFAULT_SNIPPETS_TASK,
+    snippets_settings,
+    SnippetSudoOption,
+)
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.masking import SENSITIVE_ARG_MASK
 from app.sep.snippets.models import Snippet
@@ -72,6 +80,10 @@ _DEFAULTS_FILE_PARAM = {
 _MINUTES_PARAM = {"name": "minutes", "type": "int", "label": "Minutes"}
 
 _DEFAULT_TASK_ID = 7
+#: The snippet interpreter the seeded snippets dispatch under.
+_ROOT_TASK_NAME = DEFAULT_SNIPPETS_TASK
+#: The proxy ATW dispatches through, wrapping that interpreter root.
+_PROXY_TASK_NAME = atw_proxy_task_name(_ROOT_TASK_NAME)
 _FIRST_TASK_ID = 11
 _SECOND_TASK_ID = 12
 _DUPLICATE_TASK_IDS = (21, 22)
@@ -163,6 +175,25 @@ def tasks_api() -> Iterator[AsyncMock]:
     sep_app.dependency_overrides[get_tasks_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides.pop(get_tasks_api, None)
+
+
+@pytest.fixture(autouse=True)
+def atw_proxy_task(mocker: MockerFixture) -> AsyncMock:
+    """Resolve ATW's proxy tasks without reaching the Tasks API.
+
+    ``resolve_atw_proxy_tasks`` builds its own service-principal client, so the
+    ``tasks_api`` dependency override these tests install does not reach it.
+    Patching it at the route keeps them about batching; resolution itself is covered
+    by ``test_proxy_tasks``.
+    """
+
+    async def _resolve(root_task_names: Iterable[str]) -> dict[str, str | None]:
+        return {name: atw_proxy_task_name(name) for name in root_task_names}
+
+    return mocker.patch(
+        "app.sep.apps.atw.api_routes.resolve_atw_proxy_tasks",
+        new=AsyncMock(side_effect=_resolve),
+    )
 
 
 @pytest_asyncio.fixture
@@ -511,6 +542,95 @@ class TestAtwBatchExecute:
             _FIRST_TASK_ID,
             _SECOND_TASK_ID,
         ]
+
+    @pytest.mark.asyncio
+    async def test_dispatches_through_the_atw_proxy_task(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Dispatch under ATW's proxy, which is what carries ATW's run recorder."""
+        await create_snippet("a.sh", parameters=[])
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert tasks_api.post.await_args.args[0] == f"/execute/{_PROXY_TASK_NAME}"
+        assert response.json()["items"][0]["task_name"] == _PROXY_TASK_NAME
+
+    @pytest.mark.asyncio
+    async def test_unreachable_tasks_api_degrades_the_whole_batch(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        atw_proxy_task: AsyncMock,
+    ) -> None:
+        """Dispatch every item unwrapped when resolution itself fails.
+
+        Resolution runs once for the whole batch, so its failure is never
+        item-specific. Surfacing it would fail a request whose dispatches may well
+        succeed; the sweep supplies the outcomes the recorder would have.
+        """
+        await create_snippet("a.sh", parameters=[])
+        await create_snippet("b.sh", parameters=[])
+        tasks_api.post.side_effect = [{"id": _FIRST_TASK_ID}, {"id": _SECOND_TASK_ID}]
+        atw_proxy_task.side_effect = HTTPServiceUnavailableException("try later")
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [
+                    {"snippet_filename": "a.sh"},
+                    {"snippet_filename": "b.sh"},
+                ],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        dispatched = [call.args[0] for call in tasks_api.post.await_args_list]
+        assert dispatched == [f"/execute/{_ROOT_TASK_NAME}"] * 2
+        assert [item["error"] for item in response.json()["items"]] == [None, None]
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_proxy_dispatches_under_the_root_unchanged(
+        self,
+        api_client: TestClient,
+        create_snippet: Callable[..., Awaitable[Snippet]],
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+        atw_proxy_task: AsyncMock,
+    ) -> None:
+        """Degrade to the interpreter root when the proxy cannot be resolved.
+
+        The sweep then supplies the outcome, which is strictly better than failing
+        the dispatch or wrapping a task whose behaviour is unknown.
+        """
+        await create_snippet("a.sh", parameters=[])
+        atw_proxy_task.side_effect = None
+        atw_proxy_task.return_value = {}
+
+        response = api_client.post(
+            executions_url(incident.id),
+            json={
+                "executor_host": "host1",
+                "items": [{"snippet_filename": "a.sh"}],
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert tasks_api.post.await_args.args[0] == f"/execute/{_ROOT_TASK_NAME}"
+        assert response.json()["items"][0]["task_history_id"] == _DEFAULT_TASK_ID
 
     @pytest.mark.asyncio
     async def test_closed_incident_returns_409_before_dispatch(
@@ -965,6 +1085,40 @@ class TestAtwListIncidentExecutions:
             )
             for task_history_id in _SEEDED_TASK_IDS
         ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.usefixtures("executions")
+    async def test_execution_payload_keys_are_unchanged(
+        self,
+        api_client: TestClient,
+        incident: AtwIncident,
+        tasks_api: AsyncMock,
+    ) -> None:
+        """Keep this payload's key set fixed despite the new columns on the table.
+
+        The four denormalized outcome columns are internal bookkeeping. Leaking them
+        onto this listing would widen a shipped contract for no consumer, so the key
+        set is pinned rather than left to whatever the model happens to expose.
+        """
+        tasks_api.get.return_value = {"status": TaskHistoryStatusEnum.SUCCESS.value}
+
+        response = api_client.get(executions_url(incident.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert set(response.json()["items"][0]) == {
+            "id",
+            "snippet_filename",
+            "snippet_title",
+            "task_history_id",
+            "created_at",
+            "task_status",
+            "started_at",
+            "finished_at",
+            "has_logs",
+            "failure_reason",
+            "masked_args",
+            "args_withheld",
+        }
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("executions")

@@ -5,6 +5,7 @@
 # description: "This script checks backup upload logs, binary log upload logs, and S3 upload status to diagnose stale or failed (binary log) uploads."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - StaleUpload

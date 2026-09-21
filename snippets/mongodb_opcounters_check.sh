@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB operation counters to diagnose sudden spikes in insert/query/update/delete rates."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBOpcountersSpike

@@ -5,6 +5,7 @@
 # description: "This script checks for databases with a low transaction commit ratio, indicating frequent rollbacks or aborted operations."
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname

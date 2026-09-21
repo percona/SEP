@@ -49,7 +49,7 @@
 #    label: Masquerade PII
 #    description: Redact IPv4 / IPv6 / email-like values in the captured explain output. Indentation is preserved so plan alignment stays usable.
 #    default: false
-# atw:
+# diagnostic_categories:
 #  - QUERY_TUNING_OPTIMIZATION
 # ---
 
@@ -217,10 +217,16 @@ PSQL_CONN=()
 
 if [[ -z $EXPLAIN_OPTS_ARG ]]; then
     echo "Detecting PostgreSQL server version ..." >&2
-    if ! VER_NUM=$(psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -tA -X -c "SHOW server_version_num;" 2> /dev/null); then
-        echo "Error: could not connect to '$DBNAME_ARG' to detect server version. Pass --explain-options to skip detection." >&2
+    # Keep stderr out of the captured value: it is parsed as an integer below,
+    # and psql writes warnings there on runs that otherwise succeed.
+    VER_ERR=$(mktemp)
+    if ! VER_NUM=$(psql "${PSQL_CONN[@]}" -d "$DBNAME_ARG" -tA -X -c "SHOW server_version_num;" 2> "$VER_ERR"); then
+        echo "Error: could not connect to '$DBNAME_ARG' to detect server version (check --dbname, --host, --port, --user): $(cat "$VER_ERR")" >&2
+        echo "Pass --explain-options to skip detection." >&2
+        rm -f "$VER_ERR"
         exit 1
     fi
+    rm -f "$VER_ERR"
     # pipefail-safe: echo and tr cannot fail on an in-memory string
     VER_NUM=$(echo "$VER_NUM" | tr -d '[:space:]')
     if ! [[ $VER_NUM =~ ^[0-9]+$ ]]; then

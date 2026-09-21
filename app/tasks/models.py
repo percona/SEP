@@ -74,6 +74,7 @@ from app.tasks.execution_request_secrets import (
     reencrypt_request_leaves,
 )
 from app.tasks.hook_resolver import validate_hook_path
+from app.tasks.task_status import TaskHistoryStatusEnum
 
 TASK_ALIAS_LENGTH = 100
 SYSTEM_USER = "SYSTEM"
@@ -146,96 +147,6 @@ class TaskBackendEnum(StrEnum):
     NOMAD = auto()
     PROXY = auto()
     CELERY = auto()
-
-
-class TaskHistoryStatusEnum(StrEnum):
-    """Define status codes for task executions.
-
-    :cvar FAILED: Enum value for failed tasks.
-    :cvar PENDING: Enum value for pending tasks.
-    :cvar RUNNING: Enum value for running tasks.
-    :cvar SUCCESS: Enum value for successfully completed tasks.
-    :cvar STOPPED: Enum value for stopped tasks.
-    :cvar LOST: Enum value for tasks that are lost.
-    :cvar STALE: Enum value for tasks skipped because executor placement
-        exceeded the configured staleness threshold (for example a Nomad
-        allocation that never left the queue).
-    :cvar UNLAUNCHABLE: Enum value for tasks the executor node could not
-        launch at all, because some command in the invocation does not
-        resolve there. The payload never ran, so this is not a script
-        failure.
-    """
-
-    FAILED = "failed"
-    PENDING = "pending"
-    RUNNING = "running"
-    SUCCESS = "success"
-    STOPPED = "stopped"
-    LOST = "lost"
-    STALE = "stale"
-    UNLAUNCHABLE = "unlaunchable"
-
-    def is_finished(self) -> bool:
-        """Check whether this status has an observed run outcome.
-
-        :return: True when output retrieval is meaningful for this status
-            (FAILED, SUCCESS, STOPPED, STALE, or UNLAUNCHABLE); False
-            otherwise.
-        """
-        return self in [
-            TaskHistoryStatusEnum.FAILED,
-            TaskHistoryStatusEnum.SUCCESS,
-            TaskHistoryStatusEnum.STOPPED,
-            TaskHistoryStatusEnum.STALE,
-            TaskHistoryStatusEnum.UNLAUNCHABLE,
-        ]
-
-    def is_terminal(self) -> bool:
-        """Check if task execution has reached a terminal state.
-
-        :return: True if task execution will not transition again.
-        """
-        return self.is_finished() or self == TaskHistoryStatusEnum.LOST
-
-    @classmethod
-    def active_statuses(cls) -> frozenset["TaskHistoryStatusEnum"]:
-        """Return the statuses whose executions are still in flight.
-
-        These are the non-terminal statuses (``PENDING`` / ``RUNNING``); a new
-        non-terminal status only needs adding here.
-
-        :return: The frozen set of in-flight statuses.
-        """
-        return frozenset({cls.PENDING, cls.RUNNING})
-
-    def is_active(self) -> bool:
-        """Check whether the task status indicates an in-flight execution.
-
-        :return: True if the status is ``PENDING`` or ``RUNNING``; False otherwise.
-        """
-        return self in self.active_statuses()
-
-    def operator_summary(self) -> str | None:
-        """Return the operator-facing prose for this status, if it has any.
-
-        The single source both :meth:`TaskHistory.alert_for_status` and the
-        ``failure_reason`` composers read, so the alert summary and the stored
-        reason cannot drift apart. Phrased as a sentence fragment because the
-        alert interpolates it mid-sentence.
-
-        :return: The prose fragment, or ``None`` for a status carrying none.
-        """
-        return {
-            TaskHistoryStatusEnum.FAILED: "failed",
-            TaskHistoryStatusEnum.LOST: "execution tracking lost",
-            TaskHistoryStatusEnum.STALE: (
-                "skipped as stale (executor placement delayed past threshold)"
-            ),
-            TaskHistoryStatusEnum.UNLAUNCHABLE: (
-                "could not be launched (the executor node cannot run the "
-                "requested command)"
-            ),
-        }.get(self)
 
 
 class TaskLogType(StrEnum):
@@ -905,10 +816,18 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     def anonymized_entities(self) -> set[PIIEntity]:
         """Return the set of anonymized PII entities.
 
+        When :attr:`anonymize_mask` is ``None``, fall back to the associated
+        task's :attr:`Task.anonymized_entities` (which itself falls back to the
+        owner's configured defaults when the task has no mask).
+
         :return: A set of anonymized PIIEntity.
         :rtype: set[PIIEntity]
         """
-        return PIIEntity.decode_selection(self.anonymize_mask)
+        return (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else self.task.anonymized_entities
+        )
 
     def set_failure_reason(self, reason: str | None) -> None:
         """Normalize and store an operator-facing reason for this run's outcome.
@@ -1179,6 +1098,14 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
 )
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+#: The Celery task every seeded or kicked ``inventory-sync`` run goes through.
+EXECUTE_TASK_BY_NAME_TASK = "app.tasks.celery.execute_task_by_name"
+#: Meta key naming the per-syncer schedules whose first run follows this one.
+INVENTORY_SYNC_FOLLOWERS_KEY = "follower_syncers"
+#: Meta key naming the pinned syncer a per-syncer schedule waits on.
+INVENTORY_SYNC_AFTER_KEY = "after_syncer"
+#: Meta key marking a leader-started run that goes ahead only as the syncer's first.
+INVENTORY_SYNC_FIRST_RUN_KEY = "first_run_only"
 INVENTORY_COLLECTION_TASK_NAME = "inventory-collection"
 SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 
@@ -1291,10 +1218,27 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         carries one, and the target from the execution request. Falls back to
         ``"<task> on <target>"`` when no filename is available.
 
+        A ``PROXY`` task that leaves the payload to each dispatch is classified by the
+        root it names, not by its own name, because history binds to the
+        *dispatched* task: an app wrapping a generic executor to attach its own hooks
+        would otherwise collapse every one of its runs onto the wrapper's single
+        name. A proxy carrying its own ``payload`` is left alone, because
+        ``prepare_task_history`` substitutes that payload into every run: it is a
+        configured job, and its own name is the meaningful label. That is the shape
+        of every proxy the framework builds over ``run-python``. Only the
+        classification uses the root — a proxy over a non-generic task still reports
+        its own name.
+
         :return: The display label for the task history entry.
         """
         task_name = self.task.name
-        if task_name not in GENERIC_EXECUTOR_TASK_NAMES:
+        classified_as = task_name
+        if (
+            self.task.backend == TaskBackendEnum.PROXY
+            and "payload" not in self.task.data
+        ):
+            classified_as = self.task.data.get("task") or task_name
+        if classified_as not in GENERIC_EXECUTOR_TASK_NAMES:
             return task_name
         meta = self.execution_request.meta or {}
         snippet_fn = meta.get("_snippet_filename") or meta.get("snippet_filename")
@@ -1374,7 +1318,6 @@ class TaskStats(BaseModel):
         """Return the task duration summary.
 
         :return: A dictionary summarizing average, last, and total task durations.
-        :rtype: dict[str, Any]
         """
         if self._durations["average_seconds"] is None:
             self._process()
@@ -1386,7 +1329,6 @@ class TaskStats(BaseModel):
         """Return the last finished task timestamp.
 
         :return: The timestamp of the last task finished, or None if not available.
-        :rtype: str | None
         """
         if not self._raw["finished_at"]:
             self._process()

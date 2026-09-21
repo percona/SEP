@@ -5,6 +5,7 @@
 # description: "This script checks the WiredTiger dirty cache ratio and write throughput to diagnose cache pressure issues."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighDirtyRatio

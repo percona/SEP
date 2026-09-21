@@ -38,7 +38,7 @@
 #    label: Target database
 #    description: The PostgreSQL database this script connects to.
 #    default: postgres
-# atw:
+# diagnostic_categories:
 #  - SERVER_CRASHED_RESTART_SUCCESSFUL
 #  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # alerts:
@@ -218,19 +218,22 @@ fi
 POSTGRESQL_LOG="$LOG_FILE_ARG"
 
 if [[ ! -f $POSTGRESQL_LOG ]]; then
-    echo "Error: PostgreSQL log file not found at '$POSTGRESQL_LOG'." >&2
+    echo "Error: PostgreSQL log file not found at '$POSTGRESQL_LOG' (check --log-file)." >&2
     exit 1
 fi
 
 if [[ ! -r $POSTGRESQL_LOG ]]; then
-    echo "Error: Cannot read PostgreSQL log file at '$POSTGRESQL_LOG'." >&2
+    echo "Error: Cannot read PostgreSQL log file at '$POSTGRESQL_LOG' (check --log-file)." >&2
     exit 1
 fi
 
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse time: \"$TIME_ARG\"" >&2
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse time (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))" >&2
+    rm -f "$DATE_ERR"
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 START_EPOCH=$((INPUT_EPOCH - (MINUTES_ARG * 60)))
 END_EPOCH=$((INPUT_EPOCH + (MINUTES_ARG * 60)))

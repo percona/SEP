@@ -5,6 +5,7 @@
 # description: "This script checks mydumper/xtrabackup logs, retention configuration, and disk space to diagnose failed and/or stale backups, including binary log backups."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - BackupFailed
