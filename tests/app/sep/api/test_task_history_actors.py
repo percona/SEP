@@ -134,6 +134,7 @@ def test_actor_fields_are_declared_on_every_owning_task_model(
     A rename on the owning model must fail here rather than leave the resolver
     and the framework conformance check keyed on stale field names.
     """
+    assert TASK_ACTOR_FIELDS
     assert set(TASK_ACTOR_FIELDS) <= model.model_fields.keys()
 
 
