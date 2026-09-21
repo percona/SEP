@@ -28,7 +28,7 @@ from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
-from app.sep.api.task_history_actors import resolve_actor
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.alters.models import (
     AltersCreate,
     AltersTaskResponse,
@@ -761,8 +761,7 @@ def build_alters_api_task_response(
         status,
         last_executed_at=last_executed_at,
         extras={
-            "created_by": resolve_actor(task.created_by, mapping),
-            "last_updated_by": resolve_actor(task.last_updated_by, mapping),
+            **task_actor_fields(task, mapping),
             "data": data,
             "service_type": ServiceTypeEnum.MYSQL,
             **warning_extras,

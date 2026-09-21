@@ -33,16 +33,18 @@ from pydantic import Field
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.pagination import PaginatedResponse
-from app.tasks.models import SYSTEM_USER, TaskHistoryResponse, TaskResponse
+from app.tasks.models import SYSTEM_USER, Task, TaskHistoryResponse, TaskResponse
 
 __all__ = [
     "SYSTEM_ACTOR_LABELS",
+    "TASK_ACTOR_FIELDS",
     "SepTaskHistoryResponse",
     "SepTaskResponse",
     "resolve_actor",
     "resolve_history_payload_actors",
     "resolve_task_actors",
     "resolve_task_history_actors",
+    "task_actor_fields",
 ]
 
 #: Display text for the identifiers that stand for system-initiated work.
@@ -53,6 +55,9 @@ SYSTEM_ACTOR_LABELS: dict[str, str] = {
     SYSTEM_USER: "System",
     str(SERVICE_PRINCIPAL_ID): "Service account",
 }
+
+#: The task fields that hold a user identifier and render as a display name.
+TASK_ACTOR_FIELDS: tuple[str, ...] = ("created_by", "last_updated_by")
 
 _ACTOR_DESCRIPTION = (
     "Display name for the actor: the provider's username when resolvable, a "
@@ -111,6 +116,21 @@ def resolve_actor(actor: str | None, username_map: Mapping[str, str]) -> str | N
     return username_map.get(actor, actor)
 
 
+def task_actor_fields(
+    task: Task | TaskResponse, username_map: Mapping[str, str]
+) -> dict[str, str | None]:
+    """Resolve a task's actor fields to display text for a response's extras.
+
+    :param task: The task whose stored actor identifiers are resolved.
+    :param username_map: The active provider's identifier-to-username map.
+    :return: Each field in :data:`TASK_ACTOR_FIELDS` mapped to its display text.
+    """
+    return {
+        field: resolve_actor(getattr(task, field), username_map)
+        for field in TASK_ACTOR_FIELDS
+    }
+
+
 def resolve_task_actors(
     task: SepTaskResponse, username_map: Mapping[str, str]
 ) -> SepTaskResponse:
@@ -120,8 +140,8 @@ def resolve_task_actors(
     :param username_map: The active provider's identifier-to-username map.
     :return: The same task, for use as a call site's expression.
     """
-    task.created_by = resolve_actor(task.created_by, username_map)
-    task.last_updated_by = resolve_actor(task.last_updated_by, username_map)
+    for field, value in task_actor_fields(task, username_map).items():
+        setattr(task, field, value)
     return task
 
 
@@ -191,6 +211,6 @@ def resolve_history_payload_actors(
         task = item.get("task")
         if not isinstance(task, dict):
             continue
-        for key in ("created_by", "last_updated_by"):
+        for key in TASK_ACTOR_FIELDS:
             _resolve_payload_actor_key(task, key, username_map)
     return payload

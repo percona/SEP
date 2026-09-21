@@ -43,6 +43,7 @@ from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
     CAPABILITY_RENDERED_CONTROLS,
+    check_actor_fields_resolvable,
     check_capability_route_consistency,
     check_child_app_registration,
     check_form_conformance,
@@ -81,6 +82,7 @@ from tests.app.sep.apps.framework.kit import (
     MockInventoryAPI,
     MockTaskAPI,
     synth_app,
+    synth_script_app,
 )
 
 _OWNER = "ARCHIVER"
@@ -133,7 +135,9 @@ class _AliasedResponse(_CleanResponse):
     internal_host: str | None = Field(default=None, serialization_alias="wire_host")
 
 
-def _detail_builder(task: object, *, status: object = None) -> _DetailResponse:
+def _detail_builder(
+    task: object, *, status: object = None, context: object = None
+) -> _DetailResponse:
     """Return a synthetic detail response; the detector never invokes it."""
     return _DetailResponse(name="x")
 
@@ -663,6 +667,71 @@ def test_schema_derivation_skips_passthrough_app():
     assert check_schema_derivation_succeeds(stub) == []
 
 
+# --- check_actor_fields_resolvable --------------------------------------------
+
+
+class _ActorResponse(_CleanResponse):
+    """Represent a list/detail response that renders the task's creator."""
+
+    created_by: str | None = None
+
+
+class _ActorDetailResponse(_CleanResponse):
+    """Represent a detail-only response that renders the task's last updater."""
+
+    last_updated_by: str | None = None
+
+
+def _actor_detail_builder(
+    task: object, *, status: object = None
+) -> _ActorDetailResponse:
+    """Return a synthetic actor-bearing detail response; the detector never calls it."""
+    return _ActorDetailResponse(name="x")
+
+
+def test_actor_fields_resolvable_with_the_default_provider():
+    """Assert an app rendering an actor field through the default provider passes."""
+    assert (
+        check_actor_fields_resolvable(_build_app(response_model=_ActorResponse)) == []
+    )
+
+
+def test_actor_fields_flags_an_opted_out_list_model():
+    """Assert opting out of the provider while the list renders an actor is flagged."""
+    app = _build_app(response_model=_ActorResponse, response_context_provider=None)
+
+    violations = check_actor_fields_resolvable(app)
+
+    assert len(violations) == 1
+    assert "created_by" in violations[0]
+
+
+def test_actor_fields_flags_an_opted_out_detail_model():
+    """Assert an actor field rendered only on the detail model is flagged too."""
+    app = _build_app(
+        response_context_provider=None, detail_response_builder=_actor_detail_builder
+    )
+
+    violations = check_actor_fields_resolvable(app)
+
+    assert len(violations) == 1
+    assert "last_updated_by" in violations[0]
+
+
+def test_actor_fields_ignores_an_opted_out_app_rendering_no_actor():
+    """Assert opting out is allowed for an app whose responses carry no actor."""
+    assert (
+        check_actor_fields_resolvable(_build_app(response_context_provider=None)) == []
+    )
+
+
+def test_actor_fields_skips_a_script_source_app():
+    """Assert a script-source app, which derives no CRUD responses, is skipped."""
+    app = synth_script_app(response_context_provider=None)
+
+    assert check_actor_fields_resolvable(app) == []
+
+
 # --- check_route_collisions ---------------------------------------------------
 
 
@@ -772,6 +841,7 @@ def test_registry_migrated_app_structural_checks(registry_app):
     assert check_capability_route_consistency(registry_app) == []
     assert check_view_fields_reference_real_fields(registry_app) == []
     assert check_schema_derivation_succeeds(registry_app) == []
+    assert check_actor_fields_resolvable(registry_app) == []
 
 
 @pytest.mark.parametrize("registry_app", _APPS, ids=lambda app: app.key)

@@ -29,14 +29,15 @@ from app.sep.api.task_history_actors import (
     SepTaskHistoryResponse,
     SepTaskResponse,
     SYSTEM_ACTOR_LABELS,
+    task_actor_fields,
 )
 from app.tasks.crud import SYSTEM_EXECUTOR_IDS
 from app.tasks.execution_request_secrets import ARGS_LEAF
 from app.tasks.models import SYSTEM_USER, TaskBackendEnum
+from tests.app.factories import MOCK_CREATOR_ID as CREATOR_ID
+from tests.app.factories import MOCK_UPDATER_ID as UPDATER_ID
 from tests.app.factories import TaskFactory
 
-CREATOR_ID = "11111111-1111-4111-8111-111111111111"
-UPDATER_ID = "22222222-2222-4222-8222-222222222222"
 EXECUTOR_ID = "33333333-3333-4333-8333-333333333333"
 UNKNOWN_ID = "99999999-9999-4999-8999-999999999999"
 
@@ -140,6 +141,39 @@ class TestResolveTaskActors:
         resolved = resolve_task_actors(task, USERNAME_MAP)
 
         assert resolved.created_by is None
+
+
+class TestTaskActorFields:
+    """Cover the actor-field extras a task response builder spreads."""
+
+    def test_resolves_both_actor_fields(self):
+        """Map the creator and last-updater to their provider usernames."""
+        task = TaskFactory.build(created_by=CREATOR_ID, last_updated_by=UPDATER_ID)
+
+        assert task_actor_fields(task, USERNAME_MAP) == {
+            "created_by": "alice",
+            "last_updated_by": "bob",
+        }
+
+    def test_system_label_wins_over_the_username_map(self):
+        """Render a service-principal creator as its label, whatever the map says."""
+        service_principal = str(SERVICE_PRINCIPAL_ID)
+        task = TaskFactory.build(
+            created_by=service_principal, last_updated_by=UPDATER_ID
+        )
+
+        fields = task_actor_fields(task, {service_principal: "someone"})
+
+        assert fields["created_by"] == "Service account"
+
+    def test_degrades_unknown_and_missing_actors(self):
+        """Keep an unresolvable identifier and leave an unrecorded actor ``None``."""
+        task = TaskFactory.build(created_by=UNKNOWN_ID, last_updated_by=None)
+
+        assert task_actor_fields(task, {}) == {
+            "created_by": UNKNOWN_ID,
+            "last_updated_by": None,
+        }
 
 
 class TestResolveTaskHistoryActors:

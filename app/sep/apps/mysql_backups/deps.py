@@ -24,7 +24,7 @@ from fastapi import Depends, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
-from app.sep.api.task_history_actors import resolve_actor
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.api.task_history_merge import fetch_task_history_window
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.deps import make_task_dep
@@ -353,7 +353,6 @@ def build_mysql_backups_api_task_response(
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
             "service_type": ServiceTypeEnum.MYSQL,
-            "created_by": resolve_actor(task.created_by, mapping),
-            "last_updated_by": resolve_actor(task.last_updated_by, mapping),
+            **task_actor_fields(task, mapping),
         },
     )

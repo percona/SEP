@@ -135,7 +135,6 @@ app = TaskExecutionApp(
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
-    response_context_provider=get_username_mapping,
 )
 ```
 
@@ -1060,19 +1059,28 @@ checks, can be replaced with your own dependency tuple, or removed with
 ### Rung 4 — `response_context_provider` and cascade hooks
 
 **`response_context_provider`** injects request-scoped context into every response
-builder — the app names a provider, and the framework calls it and threads the
-result through. Checksums uses it to resolve the username mapping:
+builder — the framework awaits the provider once per request and threads the
+result through as each builder's `context` keyword. It defaults to the username
+mapping, so a task app resolves `created_by` / `last_updated_by` to display names
+without naming a provider at all:
 
-<!-- src: app/sep/apps/checksums/app.py :: app -->
+<!-- src: app/sep/apps/framework/apps.py :: TaskExecutionApp -->
 ```python
-app = TaskExecutionApp(
-    name="checksums",
+class TaskExecutionApp(BaseApp):
     ...
-    response_context_provider=get_username_mapping,
-)
+    response_context_provider: SkipValidation[Callable[[], Awaitable[Any]] | None] = (
+        get_username_mapping
+    )
 ```
 
-The provider is an ordinary async callable:
+Because a provider is always bound, every builder an app supplies must accept a
+`context` keyword; the framework rejects one that does not when the app is
+constructed. Name your own provider to thread other request-scoped data, or pass
+`None` to opt out and leave actor ids raw. The registry conformance check
+(`check_actor_fields_resolvable`) rejects a production app that opts out while its
+responses render actor fields.
+
+The default provider is an ordinary async callable:
 
 <!-- src: app/sep/deps.py :: get_username_mapping -->
 ```python
@@ -1187,14 +1195,12 @@ class TestChecksumsContract(DerivedRouterContractTests):
     """Assert the checksums app's full derived HTTP surface, knob by knob."""
 
     app_def = checksums_app
-    remapped_username = None
 ```
 
-`remapped_username` names the username the app's `response_context_provider`
-remaps the seeded `created_by` to, so the suite can assert it. Checksums sets it
-to `None` because its provider does a real user lookup that is not deterministic
-under test; `None` tells the suite to skip that assertion. The scaffolder emits
-the right value for a fresh app — leave it alone until you add a provider.
+The suite stubs the auth provider's user listing, so it asserts the resolved
+username on the seeded task for every app. An app left with no
+`response_context_provider` fails `test_response_context_provider_bound` and the
+injected-extras tests rather than skipping them.
 
 The suite reads the contract from the app's own knobs, so switching a capability on
 or changing a response model is covered automatically — no per-route test to write.

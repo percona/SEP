@@ -27,6 +27,7 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
@@ -228,6 +229,7 @@ def build_restore_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
@@ -235,6 +237,9 @@ def build_restore_api_task_response(
     :param status: The latest known execution status for the task.
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map bound by ``response_context_provider``, used
+        to resolve ``created_by`` / ``last_updated_by`` to system labels or
+        provider usernames; falls back to the raw id when neither resolves it.
     :return: A validated restore task API response object.
     """
     backup_type, host, port = _extract_restore_config(task)
@@ -249,6 +254,7 @@ def build_restore_api_task_response(
             "host": host,
             "port": port,
             "hostname": meta.get("target") if meta else None,
+            **task_actor_fields(task, context or {}),
             **_declared_source_override(task),
         },
     )

@@ -34,7 +34,6 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
 )
 from app.sep.apps.nav_icons import NavIcon
-from app.sep.deps import get_username_mapping
 
 app = TaskExecutionApp(
     name="checksums",
@@ -53,5 +52,4 @@ app = TaskExecutionApp(
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
-    response_context_provider=get_username_mapping,
 )

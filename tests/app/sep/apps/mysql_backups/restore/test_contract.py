@@ -21,8 +21,8 @@ status-filter, route presence/absence, auth) against the real
 ``mysql_backups.restore`` definition. The create/update methods are overridden
 here with a hand-built body because the generic Polyfactory pass over the create
 model trips the ``backup_source`` shell-safe validator. Restore declares no
-``connectivity_check`` / ``detail_response_builder`` / ``response_context_provider``,
-so the connectivity, detail-model, and injected-extras suite methods skip.
+``connectivity_check`` / ``detail_response_builder``, so the connectivity and
+detail-model suite methods skip.
 """
 
 from typing import Any
@@ -46,6 +46,7 @@ from tests.app.sep.apps.framework.contract_suite import (
 )
 from tests.app.sep.apps.framework.kit import (
     SEEDED_TASK_NAME,
+    SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
     SYNTH_SERVICE_HOST,
     SYNTH_SERVICE_PORT,
@@ -82,15 +83,9 @@ def _valid_restore_body(
 
 
 class TestRestoreContract(DerivedRouterContractTests):
-    """Assert the restore app's derived HTTP surface, knob by knob.
-
-    ``remapped_username`` is ``None``: the app wires no response context provider
-    (its ``response_builder`` stamps ``backup_type`` / ``hostname`` and leaves
-    ``created_by`` as the raw id), so the injected-extras tests do not apply.
-    """
+    """Assert the restore app's derived HTTP surface, knob by knob."""
 
     app_def = restore_app
-    remapped_username = None
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return the gated valid PUT body; the generic Polyfactory body 422s here.
@@ -240,6 +235,41 @@ class TestRestoreContract(DerivedRouterContractTests):
         )
 
         assert response.status_code == status.HTTP_200_OK, response.text
+
+    def test_create_injects_extras(self, contract_client: Any) -> None:
+        """Assert create resolves the creator and omits internal fields.
+
+        Overrides the generic suite method: the Polyfactory body trips the create
+        model's per-``backup_type`` rules, so the hand-built body is used.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.post(f"{base}/", json=_valid_restore_body())
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_update_derived_injects_extras(self, contract_client: Any) -> None:
+        """Assert the derived PUT resolves the creator and omits internal fields.
+
+        Overrides the generic suite method for the same body reason as
+        :meth:`test_create_injects_extras`.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(
+            f"{base}/{SEEDED_TASK_NAME}",
+            json=_valid_restore_body(task_name=SEEDED_TASK_NAME),
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_update_404(self, contract_client: Any) -> None:
         """``PUT /{task_name}`` 404s for an unknown task name."""
