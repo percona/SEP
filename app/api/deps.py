@@ -83,8 +83,8 @@ def _build_service_principal(secret: str) -> BaseUser:
 async def authenticate_bearer_token(token: str) -> BaseUser:
     """Return the authenticated user from an OAuth2 token.
 
-    When the incoming Bearer token matches ``settings.SEP_INTERNAL_TOKEN``
-    (constant-time comparison), return a synthetic non-admin
+    When ``settings.SEP_INTERNAL_TOKEN`` is non-empty and the incoming Bearer
+    token matches it (constant-time comparison), return a synthetic non-admin
     "service principal" user instead of contacting the OAuth provider. This
     allows SEP-internal service-to-service calls (e.g. scheduled inventory
     sync) to authenticate with a stable deployment-level secret rather than a
