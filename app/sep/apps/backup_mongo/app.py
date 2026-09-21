@@ -35,6 +35,7 @@ derived router), so it is no longer mounted as a ``/restores`` sub-router here.
 """
 
 from app.sep.apps.backup_mongo.api_routes import router as backup_mongo_custom_router
+from app.sep.apps.backup_mongo.config.app import app as config_app
 from app.sep.apps.backup_mongo.deps import (
     build_backup_mongo_api_task_response,
     get_backups_task,
@@ -72,5 +73,5 @@ app = TaskExecutionApp(
         create=False, detail=False, execute=False, update=False, delete=False
     ),
     extra_routes=(backup_mongo_custom_router,),
-    child_apps=(restore_app,),
+    child_apps=(config_app, restore_app),
 )
