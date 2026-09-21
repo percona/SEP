@@ -16,7 +16,7 @@
 """Define models for the Restore plugin."""
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -24,24 +24,20 @@ from pydantic import Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
-from app.core.utils.strings import join_or
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     Forbidden,
-    FormRules,
     RemoteChoices,
     Requires,
     SchemaRef,
-    SectionRules,
     ServiceRef,
     TaskFormModel,
     Ui,
 )
-from app.sep.apps.framework.rules import all_, any_, F, FailRule, not_
+from app.sep.apps.framework.rules import any_, F, not_
 from app.sep.apps.mysql_backups.forms import (
-    ALLOWED_ENCRYPTION_FORMATS,
     encryption_format_for_passes,
     EncryptionFormat,
 )
@@ -310,68 +306,7 @@ _AES_SOURCE_ONLY = Forbidden(
         "does not include AES-256."
     ),
 )
-
-#: The formats each engine may declare, looked up for every :class:`BackupType`
-#: member so an engine the create form's table omits resolves to an empty list and
-#: has every format rejected. ``BackupCreate.validate_encryption_format`` reads the
-#: same table the same way, so the omission fails closed on both forms.
-_ALLOWED_SOURCE_FORMATS = {
-    backup_type: ALLOWED_ENCRYPTION_FORMATS.get(backup_type, [])
-    for backup_type in BackupType
-}
-
-
-def _rejected_format_message(
-    backup_type: BackupType,
-    rejected: EncryptionFormat,
-    allowed: Sequence[EncryptionFormat],
-) -> str:
-    """Return the message rejecting a format the named engine cannot have written.
-
-    The options clause is dropped for an engine that admits no format at all,
-    because ``join_or`` reads the last element of what it is given and raises on an
-    empty sequence. Built into the rules below at import time, that would take the
-    module down instead of rejecting the engine the lookup above meant to close.
-
-    :param backup_type: The engine the restore names.
-    :param rejected: The format being rejected for that engine.
-    :param allowed: The formats the engine may declare, empty for an engine the
-        create form's table omits.
-    :return: The message the generated rule fails with.
-    """
-    label = BackupType.LABELS.get(backup_type.value, backup_type.value)
-    options = (
-        f"Options are {join_or([fmt.value for fmt in allowed])}."
-        if allowed
-        else "No encryption format is available for it."
-    )
-    return (
-        f"Invalid 'source_encryption' {rejected.value!r} for a {label} restore. "
-        f"{options}"
-    )
-
-
-#: One rule per format an engine cannot write, generated from the table the
-#: create form validates against so the two forms cannot drift. Split per format
-#: rather than per engine so each message can name the value it rejects. Expressed as
-#: rules rather than a validator on two counts: the served schema carries them,
-#: so the renderer rejects the pairing before it is submitted, and rules are
-#: evaluated with the field gates, so a mismatch is reported alongside the key
-#: file it asks for instead of being masked by it.
-_SOURCE_ENCRYPTION_FAIL_RULES = tuple(
-    FailRule(
-        fail_when=all_(
-            F("backup_type") == backup_type,
-            F("source_encryption") == rejected,
-        ),
-        error_fields=["source_encryption"],
-        message=_rejected_format_message(backup_type, rejected, allowed),
-    )
-    for backup_type, allowed in _ALLOWED_SOURCE_FORMATS.items()
-    for rejected in EncryptionFormat
-    if rejected not in allowed
-)
-
+_AES_SOURCE_FIELDS = (_AES_KEYFILE_FIELD,)
 _OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.GCS}
 
 #: The gated fields' pre-declaration defaults, read from the config models that
@@ -476,13 +411,14 @@ def normalize_source_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
             forbidden_fields.update(dict.fromkeys(_S3_SOURCE_FIELDS, transport))
     if not encryption_declared:
         encryption = encryption_format_for_passes(
-            aes256=normalized.get("backup_type") == BackupType.XTRABACKUP
-            and bool(normalized.get(_AES_KEYFILE_FIELD)),
+            aes256=bool(normalized.get(_AES_KEYFILE_FIELD)),
             gpg=bool(normalized.get("gpg_password_file")),
         )
         normalized["source_encryption"] = encryption
         if encryption not in (EncryptionFormat.GPG, EncryptionFormat.DUAL):
             forbidden_fields.update(dict.fromkeys(_GPG_SOURCE_FIELDS, encryption))
+        if encryption not in (EncryptionFormat.AES256, EncryptionFormat.DUAL):
+            forbidden_fields.update(dict.fromkeys(_AES_SOURCE_FIELDS, encryption))
 
     for field_name, declaration in forbidden_fields.items():
         normalized.pop(field_name, None)
@@ -499,19 +435,18 @@ def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     """Return the body with its stored key file and its declared format in agreement.
 
     Only a *declared* format needs this; an inferred one already follows the
-    body's own fields. An AES-256 pass is real for exactly one shape — an
-    XtraBackup body holding a key file — so the declaration is rebuilt from that
-    fact rather than trusted, in either direction:
+    body's own fields. An AES-256 pass is real when the body holds a key file —
+    every engine can write one — so the declaration is rebuilt from that fact
+    rather than trusted, in either direction:
 
-    - An XtraBackup body holding a key file gains the format that reveals it. The
-      edit form drops a field its gates hide, so a narrower declaration would
-      strip the key the next save needs.
-    - A body whose declaration claims an AES-256 pass it cannot run loses it,
-      along with a key file no payload would reach: an engine other than
-      XtraBackup decrypts nothing, and an AES-256 format naming no key file has
-      nothing to decrypt with. Both shapes predate the rules and the key-file
-      gate, and leaving either intact would fail the re-validation the read paths
-      perform and leave the form unopenable.
+    - A body holding a key file gains the format that reveals it. The edit form
+      drops a field its gates hide, so a narrower declaration would strip the
+      key the next save needs.
+    - A body whose declaration claims an AES-256 pass with no key file loses
+      that claim: an AES-256 format naming no key file has nothing to decrypt
+      with. That shape predates the key-file gate, and leaving it intact would
+      fail the re-validation the read paths perform and leave the form
+      unopenable.
 
     The GPG pass is carried across untouched, read from the declaration as well as
     the password file: that file is optional under a GPG declaration, so the
@@ -526,8 +461,8 @@ def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
     if not key_file and not declares_aes:
         return dict(data)
 
-    aes256 = bool(key_file) and data.get("backup_type") == BackupType.XTRABACKUP
-    aligned = {
+    aes256 = bool(key_file)
+    return {
         **data,
         "source_encryption": encryption_format_for_passes(
             aes256=aes256,
@@ -535,15 +470,6 @@ def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
             or bool(data.get("gpg_password_file")),
         ),
     }
-    if aes256:
-        return aligned
-    if key_file:
-        _log.info(
-            "Dropped %r from a restore stamp: %r cannot read it",
-            _AES_KEYFILE_FIELD,
-            data.get("backup_type"),
-        )
-    return {key: value for key, value in aligned.items() if key != _AES_KEYFILE_FIELD}
 
 
 def repair_source_declaration(stamp: Mapping[str, Any]) -> dict[str, Any] | None:
@@ -594,11 +520,6 @@ class RestoreCreate(TaskFormModel):
     the only one also carrying a ``Requires``, since an AES-256 format with no
     key file has nothing to decrypt with.
 
-    Which formats each engine can write is a form rule rather than a field gate:
-    the served schema carries it, so the renderer rejects an impossible pairing
-    before it is submitted, and a mismatch is reported alongside the key file the
-    format asks for instead of being masked by it.
-
     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
     markers drive only the ``GET /schema`` widgets, while the conditional,
@@ -610,17 +531,6 @@ class RestoreCreate(TaskFormModel):
     a resolvable service rather than a typed name or the placeholder stays in
     ``deps.resolve_restore_entities``.
     """
-
-    __form_rules__ = FormRules(
-        # Section-scoped rather than app-scoped because ``useFailRules`` evaluates
-        # section rules only, and being stopped before submitting is the whole
-        # reason these are rules. ``backup_type`` and ``source_encryption`` both sit
-        # in the ``Task`` section, which is neither advanced nor collapsible, so the
-        # alert it renders at the section head is mounted whenever the form is. The
-        # submit-time 422 is unchanged either way: ``_prepare_fail_rules`` lowers
-        # the same runtime rule at both scopes.
-        sections={"Task": SectionRules(fail_when=_SOURCE_ENCRYPTION_FAIL_RULES)},
-    )
 
     service_id: Annotated[
         NonEmptyStr | EmptyStrToNone,
@@ -694,8 +604,8 @@ class RestoreCreate(TaskFormModel):
             (
                 (EncryptionFormat.NONE, "No encryption"),
                 (EncryptionFormat.GPG, "GPG"),
-                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
-                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+                (EncryptionFormat.AES256, "AES-256"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG"),
             )
         ),
         Ui(
@@ -703,7 +613,8 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             description=(
                 "Which encryption the backup being restored was written with. "
-                "The GPG formats reveal the password file used to decrypt it."
+                "The GPG formats reveal the password file used to decrypt it; the "
+                "AES-256 formats reveal the key file."
             ),
         ),
     ] = EncryptionFormat.NONE
@@ -927,20 +838,6 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ] = None
-    xtrabackup_aes256_keyfile: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        _AES_KEYFILE_REQUIRED,
-        _AES_SOURCE_ONLY,
-        Ui(
-            label="XtraBackup AES-256 keyfile",
-            section="XtraBackup",
-            description=(
-                "AES-256 key file the backup was encrypted with, needed to decrypt it "
-                "before the prepare. Revealed by the AES-256 encryption formats, "
-                "which XtraBackup alone can write."
-            ),
-        ),
-    ] = None
     slave_from_master: Annotated[
         bool,
         Ui(
@@ -1158,6 +1055,19 @@ class RestoreCreate(TaskFormModel):
             description=(
                 "Path on the target host to the file holding the passphrase for a "
                 "GPG-encrypted backup"
+            ),
+        ),
+    ] = None
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _AES_KEYFILE_REQUIRED,
+        _AES_SOURCE_ONLY,
+        Ui(
+            label="AES-256 key file",
+            section="General",
+            description=(
+                "Path on the target host to the AES-256 key file the backup was "
+                "encrypted with, needed to decrypt .xbcrypt files before restore"
             ),
         ),
     ] = None

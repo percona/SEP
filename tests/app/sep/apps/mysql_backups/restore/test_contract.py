@@ -645,30 +645,36 @@ class TestRestoreContract(DerivedRouterContractTests):
                 }
             }
         ]
-
-    def test_create_422_on_an_aes_format_the_engine_cannot_write(
-        self, contract_client: Any, mock_task_api: Any
-    ) -> None:
-        """Reject an AES-256 declaration on a Mydumper restore, before any POST.
-
-        AES-256 is XtraBackup's own ``xbcrypt`` pass, so no Mydumper backup was
-        ever written with it — the create form rejects the same pairing.
-        """
-        base = app_base_url(self.app_def)
-        body = _valid_restore_body()
-        body.update(
-            source_encryption=EncryptionFormat.AES256.value,
-            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
-        )
-
-        response = contract_client.post(f"{base}/", json=body)
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert (
-            "Invalid 'source_encryption' 'aes256' for a Mydumper restore. "
-            "Options are none or gpg." in response.text
-        )
-        assert mock_task_api.create_count == 0
+        assert fields["xtrabackup_aes256_keyfile"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_encryption": "aes256"}},
+                            {"equals": {"source_encryption": "dual"}},
+                        ]
+                    }
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' must not be set when "
+                    "'source_encryption' does not include AES-256."
+                ),
+            }
+        ]
+        assert fields["xtrabackup_aes256_keyfile"]["requires"] == [
+            {
+                "when": {
+                    "any": [
+                        {"equals": {"source_encryption": "aes256"}},
+                        {"equals": {"source_encryption": "dual"}},
+                    ]
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' is required when "
+                    "'source_encryption' includes AES-256."
+                ),
+            }
+        ]
 
     def test_create_422_on_a_key_file_no_declared_format_admits(
         self, contract_client: Any, mock_task_api: Any
@@ -687,58 +693,12 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert "'xtrabackup_aes256_keyfile' must not be set" in response.text
         assert mock_task_api.create_count == 0
 
-    def test_create_422_on_a_key_file_under_no_declaration_at_all(
-        self, contract_client: Any, mock_task_api: Any
-    ) -> None:
-        """Reject a key file on an engine that cannot read it, declaration omitted.
-
-        An omitted ``source_encryption`` is inferred from the body, and the
-        inference cannot name AES-256 for an engine with no AES-256 pass. The key
-        file has to survive that inference and reach its gate, or an operator who
-        names a key file and forgets the declaration would have the key silently
-        dropped instead of being told.
-        """
-        base = app_base_url(self.app_def)
-        body = _valid_restore_body()
-        body["xtrabackup_aes256_keyfile"] = "/etc/xb/aes.key"
-
-        response = contract_client.post(f"{base}/", json=body)
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "'xtrabackup_aes256_keyfile' must not be set" in response.text
-        assert mock_task_api.create_count == 0
-
-    def test_update_422_on_an_aes_format_the_engine_cannot_write(
-        self, contract_client: Any, mock_task_api: Any
-    ) -> None:
-        """Reject the same pairing on ``PUT`` as on ``POST``, leaving the task stored.
-
-        Saving an edited restore is where the tightening bites an operator whose
-        task predates it, so the write path has to refuse the pairing rather than
-        re-stamp it.
-        """
-        base = app_base_url(self.app_def)
-        body = _valid_restore_body(task_name=SEEDED_TASK_NAME)
-        body.update(
-            source_encryption=EncryptionFormat.DUAL.value,
-            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
-        )
-
-        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert (
-            "Invalid 'source_encryption' 'dual' for a Mydumper restore. "
-            "Options are none or gpg." in response.text
-        )
-        assert mock_task_api.last_update_payload is None
-
     def test_create_201_for_a_declared_aes_restore(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:
-        """Accept an XtraBackup restore that declares AES-256 and names its key file."""
+        """Accept a restore that declares AES-256 and names its key file."""
         base = app_base_url(self.app_def)
-        body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+        body = _valid_restore_body(backup_type=BackupType.MYDUMPER)
         body.update(
             source_encryption=EncryptionFormat.AES256.value,
             xtrabackup_aes256_keyfile="/etc/xb/aes.key",
@@ -754,82 +714,6 @@ class TestRestoreContract(DerivedRouterContractTests):
             config["SERVER_LIST"][0]["XTRABACKUP_AES256_KEYFILE"] == "/etc/xb/aes.key"
         )
 
-    def test_schema_gates_the_aes_key_file(self, contract_client: Any) -> None:
-        """Serve the key file required by the AES-256 formats and forbidden outside them."""
-        base = app_base_url(self.app_def)
-
-        response = contract_client.get(f"{base}/schema")
-
-        assert response.status_code == status.HTTP_200_OK, response.text
-        fields = {
-            field["name"]: field
-            for form in response.json()["forms"]
-            for field in form["fields"]
-        }
-        has_aes = {
-            "any": [
-                {"equals": {"source_encryption": "aes256"}},
-                {"equals": {"source_encryption": "dual"}},
-            ]
-        }
-        keyfile = fields["xtrabackup_aes256_keyfile"]
-        assert keyfile["requires"] == [
-            {
-                "when": has_aes,
-                "message": (
-                    "'xtrabackup_aes256_keyfile' is required when "
-                    "'source_encryption' includes AES-256."
-                ),
-            }
-        ]
-        assert keyfile["forbidden"] == [
-            {
-                "when": {"not": has_aes},
-                "message": (
-                    "'xtrabackup_aes256_keyfile' must not be set when "
-                    "'source_encryption' does not include AES-256."
-                ),
-            }
-        ]
-
-    def test_schema_serves_the_engine_format_rules(self, contract_client: Any) -> None:
-        """Serve the engine/format pairings as rules the renderer can evaluate itself.
-
-        Expressed as rules rather than a server-side validator so the operator is
-        stopped before submitting, with the predicates the renderer already knows.
-        Asserted on the section declaring ``source_encryption``, because the
-        renderer evaluates section-scoped rules only: served at the schema root
-        they would reach nothing but the submit-time check.
-        """
-        base = app_base_url(self.app_def)
-
-        response = contract_client.get(f"{base}/schema")
-
-        assert response.status_code == status.HTTP_200_OK, response.text
-        payload = response.json()
-        assert not payload.get("fail_when"), (
-            "rules served at the schema root reach only the submit-time check"
-        )
-        section = next(
-            section
-            for section in payload["forms"]
-            if any(
-                field.get("name") == "source_encryption" for field in section["fields"]
-            )
-        )
-        rules = section["fail_when"]
-        assert [rule["message"] for rule in rules] == [
-            "Invalid 'source_encryption' 'aes256' for a Mydumper restore. "
-            "Options are none or gpg.",
-            "Invalid 'source_encryption' 'dual' for a Mydumper restore. "
-            "Options are none or gpg.",
-            "Invalid 'source_encryption' 'aes256' for a Binlog restore. "
-            "Options are none or gpg.",
-            "Invalid 'source_encryption' 'dual' for a Binlog restore. "
-            "Options are none or gpg.",
-        ]
-        assert all(rule["error_fields"] == ["source_encryption"] for rule in rules)
-
     def test_detail_reveals_a_key_file_its_stamp_hid(
         self, contract_client: Any, mock_task_api: Any
     ) -> None:
@@ -840,9 +724,7 @@ class TestRestoreContract(DerivedRouterContractTests):
         """
         task_name = "contract-hidden-aes-keyfile"
         stored_form = {
-            **_valid_restore_body(
-                task_name=task_name, backup_type=BackupType.XTRABACKUP
-            ),
+            **_valid_restore_body(task_name=task_name, backup_type=BackupType.MYDUMPER),
             "source_transport": SourceTransport.LOCAL.value,
             "source_encryption": EncryptionFormat.NONE.value,
             "xtrabackup_aes256_keyfile": "/etc/xb/aes.key",

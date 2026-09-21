@@ -158,21 +158,11 @@ def encryption_format_for_passes(*, aes256: bool, gpg: bool) -> EncryptionFormat
     stored task ran — the stored config and a stored form spell those fields
     differently, but they agree on the format the pair implies.
 
-    :param aes256: Whether the task runs XtraBackup's built-in AES-256 pass.
+    :param aes256: Whether the task runs an AES-256 / xbcrypt pass.
     :param gpg: Whether the task runs a GPG pass.
     :return: The matching format.
     """
     return ENCRYPTION_FORMAT_BY_PASSES[aes256 * 2 + gpg]
-
-
-# AES-256 is XtraBackup's own ``--encrypt`` / xbcrypt path, so only that engine
-# can reach the AES-bearing formats; GPG is applied to the finished directory and
-# works for every engine.
-ALLOWED_ENCRYPTION_FORMATS = {
-    BackupType.MYDUMPER: [EncryptionFormat.NONE, EncryptionFormat.GPG],
-    BackupType.XTRABACKUP: list(EncryptionFormat),
-    BackupType.BINLOG: [EncryptionFormat.NONE, EncryptionFormat.GPG],
-}
 
 
 class UploadProvider(EnumFieldMixin, StrEnum):
@@ -297,14 +287,18 @@ _BACKUP_BOOL_FAIL_RULES = (
 # GPG format over a plaintext backup. Mydumper and XtraBackup encrypt the finished
 # directory on the host, so their post-run timing needs no target.
 #
-# Scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``: under ``dual``
-# XtraBackup's own AES-256 pass runs whatever the timing says, so no plaintext
-# backup ships, and neither remedy the messages offer would make the GPG pass run
-# either — the upload path returns early once a key file is resolved.
+# The GPG pair is scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``:
+# under ``dual`` Mydumper and XtraBackup apply AES-256 on the host whatever the
+# GPG timing says, so no plaintext backup ships, and neither remedy the messages
+# offer would make the GPG pass run either — the upload path returns early once a
+# key file is resolved.
+#
+# Binlog has no host-side AES either (AES runs only inside ``Upload._encrypt``), so
+# a third rule rejects AES-bearing formats with no upload target for that engine.
 _FMT_IS_GPG_ONLY = _FMT == EncryptionFormat.GPG
 
-#: The pair of rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it
-#: so a test can assert the two tuples partition the strict model's rules.
+#: The rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it so a test
+#: can assert the two tuples partition the strict model's rules.
 UPLOAD_REACHABILITY_FAIL_RULES = (
     FailRule(
         fail_when=all_(truthy("encrypt"), _FMT_IS_GPG_ONLY, falsy("upload")),
@@ -328,9 +322,21 @@ UPLOAD_REACHABILITY_FAIL_RULES = (
             "'post_run_encrypt' requires at least one upload provider."
         ),
     ),
+    FailRule(
+        fail_when=all_(
+            _FMT_HAS_AES,
+            F("backup_type") == BackupType.BINLOG,
+            falsy("upload"),
+        ),
+        error_fields=["encryption_format", "upload"],
+        message=(
+            "A Binlog backup encrypts only as part of an upload, so an AES-256 "
+            "format requires at least one upload provider."
+        ),
+    ),
 )
 
-#: Every app-scoped rule except the upload-reachability pair, and no section rules
+#: Every app-scoped rule except the upload-reachability ones, and no section rules
 #: at all, for the backfill's lenient subclass: a task saved in a shape the create
 #: form now rejects has to keep reconstructing, or it loses the stamp its Edit
 #: affordance needs to correct it. Shared the way :data:`BACKUP_DIR_UI` is, so the
@@ -1067,8 +1073,8 @@ class BackupCreate(TaskFormModel):
             (
                 (EncryptionFormat.NONE, "No encryption"),
                 (EncryptionFormat.GPG, "GPG"),
-                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
-                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+                (EncryptionFormat.AES256, "AES-256"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG"),
             )
         ),
         Ui(
@@ -1080,15 +1086,15 @@ class BackupCreate(TaskFormModel):
                 "needs an upload provider, while 'Encrypt after backup completes' "
                 "encrypts on the host for a Mydumper or XtraBackup backup and during "
                 "the upload — needing a provider too — for a Binlog one. 'AES-256' "
-                "and 'AES-256 + GPG' need a key file and are XtraBackup-only. "
-                "'AES-256 + GPG' selects XtraBackup's built-in AES-256 and skips the "
-                "GPG pass, which the backend cannot apply on top of it."
+                "and 'AES-256 + GPG' need a key file, and for a Binlog backup an "
+                "upload provider too — AES runs only during upload. 'AES-256 + GPG' "
+                "selects AES-256 and skips the GPG pass, which the backend cannot "
+                "apply on top of it."
             ),
         ),
     ] = EncryptionFormat.NONE
     xtrabackup_aes256_keyfile: Annotated[
         NonEmptyStr | EmptyStrToNone,
-        _XTRABACKUP_ONLY,
         Requires(
             when=_FMT_HAS_AES,
             message=(
@@ -1108,7 +1114,7 @@ class BackupCreate(TaskFormModel):
             section="Encryption",
             description=(
                 "Path on the database host to the AES-256 key file. Required by the "
-                "AES-256 formats, which are XtraBackup-only."
+                "AES-256 formats."
             ),
         ),
     ] = None
@@ -1365,27 +1371,6 @@ class BackupCreate(TaskFormModel):
             raise ValueError(
                 "S3 auxiliary fields set but 'S3' is not in the upload list."
             )
-        return self
-
-    @model_validator(mode="after")
-    def validate_encryption_format(self) -> Self:
-        """Validate the encryption format against the selected backup type.
-
-        Expressed as a validator rather than a conditional ``Choices`` set because
-        the DSL's option list is static: the AES-bearing formats stay published and
-        are rejected here for the engines that have no AES-256 path.
-
-        :return: The validated instance.
-        :raises ValueError: If the format is not valid for the backup type.
-        """
-        allowed_formats = ALLOWED_ENCRYPTION_FORMATS.get(self.backup_type, [])
-        if self.encryption_format not in allowed_formats:
-            raise ValueError(
-                f"Invalid encryption_format {self.encryption_format.value!r} for "
-                f"{self.backup_type.name} backup. Options are "
-                f"{[fmt.value for fmt in allowed_formats]}"
-            )
-
         return self
 
     @model_validator(mode="after")
