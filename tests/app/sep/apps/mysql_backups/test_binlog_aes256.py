@@ -24,6 +24,7 @@ import logging
 import os
 import shutil
 import types
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import cast
 
@@ -144,7 +145,9 @@ class _RecordingThreadPool:
     def __exit__(self, *_exc: object) -> None:
         return None
 
-    def map(self, func, iterable):
+    def map(
+        self, func: Callable[[object], object], iterable: Iterable[object]
+    ) -> list[object]:
         """Apply ``func`` to each item synchronously."""
         return [func(item) for item in iterable]
 

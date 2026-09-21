@@ -1895,9 +1895,9 @@ class Upload(Backup):
 
         #self.textfile_collector_write_status(-1, self.backup_code, self.alias, True)
 
-        # Encrypt (AES or GPG) and upload after the tmpdir copy. Cleanup must run
-        # even when a pool.map chunk aborts mid-encrypt, or the upload tmpdir can
-        # retain plaintext beside any .xbcrypt files already written.
+        # Cleanup must run even when a pool.map chunk aborts mid-encrypt, or the
+        # upload tmpdir can retain plaintext beside any .xbcrypt files already
+        # written.
         self._copy_to_tmpdir()
         try:
             self._encrypt()

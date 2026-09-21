@@ -336,7 +336,7 @@ UPLOAD_REACHABILITY_FAIL_RULES = (
     ),
 )
 
-#: Every app-scoped rule except the upload-reachability pair, and no section rules
+#: Every app-scoped rule except the upload-reachability ones, and no section rules
 #: at all, for the backfill's lenient subclass: a task saved in a shape the create
 #: form now rejects has to keep reconstructing, or it loses the stamp its Edit
 #: affordance needs to correct it. Shared the way :data:`BACKUP_DIR_UI` is, so the
