@@ -41,6 +41,7 @@ import {
   TaskFilesDialog,
   TaskHistoryStatusBadge,
   TaskLogViewer,
+  isRunningStatus,
   isTaskHistoryStatus,
 } from '@sep/framework';
 import {
@@ -458,6 +459,10 @@ function ExecutionRow({
   const { snippet_filename, task_status, task_history_id, has_logs, masked_args, args_withheld } =
     execution;
   const selectable = isSelectable(execution);
+  // `has_logs` reports only the log SEP has already captured, which trails a
+  // running execution — sometimes by its whole length — so while it runs the
+  // viewer's own stream is what shows the output.
+  const logsUnavailable = has_logs === false && !(task_status && isRunningStatus(task_status));
 
   return (
     <Accordion disableGutters sx={{ mb: 1 }} slotProps={{ transition: { unmountOnExit: true } }}>
@@ -544,7 +549,7 @@ function ExecutionRow({
 
         <Divider sx={{ mb: 2 }} />
 
-        {has_logs === false ? (
+        {logsUnavailable ? (
           <Typography variant="body2" color="text.secondary">
             No logs available for this execution.
           </Typography>

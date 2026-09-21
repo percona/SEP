@@ -16,7 +16,7 @@
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ResultsPane } from '../src/ResultsPane';
@@ -34,9 +34,10 @@ beforeEach(() => {
   mockCanMutate = true;
 });
 
-// No test here mounts the log viewer: rows that stay collapsed leave it unmounted
-// (unmountOnExit), and the rows that expand report no logs. The files dialog stays
-// closed throughout — so none of them fires a query.
+// Only the live-log cases mount the log viewer, and they stub `fetch` for its
+// stream: every other row stays collapsed (unmountOnExit) or is a finished one
+// reporting no logs. The files dialog stays closed throughout — so none of them
+// fires a query.
 
 import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
@@ -835,5 +836,79 @@ describe('ResultsPane — write access', () => {
     expect(screen.queryByLabelText('Select diag/slow-query.sh')).not.toBeInTheDocument();
     // Results and their history stay readable.
     expect(screen.getByText(/CS0042/)).toBeTruthy();
+  });
+});
+
+// ── Live log of a running execution ──────────────────────────────────────
+
+describe('ResultsPane live log', () => {
+  /** An open SSE connection that never delivers a frame. */
+  const fetchSpy = vi.fn(
+    (_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => {}),
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function streamRequests(): string[] {
+    return fetchSpy.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.includes('/stream-logs/'));
+  }
+
+  it('streams the log of a running execution before any of it is captured', async () => {
+    routeGet({
+      executions: {
+        items: [{ ...RUNNING_EXECUTION, has_logs: false }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('diag/dmesg.sh')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('diag/dmesg.sh'));
+
+    await waitFor(() => {
+      expect(
+        streamRequests().some((url) =>
+          url.endsWith(`/stream-logs/${RUNNING_EXECUTION.task_history_id}`),
+        ),
+      ).toBe(true);
+    });
+    expect(screen.queryByText('No logs available for this execution.')).not.toBeInTheDocument();
+  });
+
+  it('opens no stream for a finished execution that captured no log', async () => {
+    routeGet({
+      executions: {
+        items: [{ ...FINISHED_EXECUTION, has_logs: false }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('diag/slow-query.sh')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('diag/slow-query.sh'));
+
+    await waitFor(() => {
+      expect(screen.getByText('No logs available for this execution.')).toBeInTheDocument();
+    });
+    expect(streamRequests()).toEqual([]);
   });
 });
