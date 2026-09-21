@@ -889,6 +889,29 @@ describe('ResultsPane live log', () => {
     expect(screen.queryByText('No logs available for this execution.')).not.toBeInTheDocument();
   });
 
+  it('opens no stream for a pending execution, whose log route refuses it until it starts', async () => {
+    routeGet({
+      executions: {
+        items: [{ ...RUNNING_EXECUTION, task_status: 'pending', has_logs: false }],
+        total: 1,
+        offset: 0,
+        limit: 20,
+      },
+    });
+
+    renderPane(<ResultsPane incidentId="inc-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('diag/dmesg.sh')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText('diag/dmesg.sh'));
+
+    await waitFor(() => {
+      expect(screen.getByText('No logs available for this execution.')).toBeInTheDocument();
+    });
+    expect(streamRequests()).toEqual([]);
+  });
+
   it('opens no stream for a finished execution that captured no log', async () => {
     routeGet({
       executions: {
