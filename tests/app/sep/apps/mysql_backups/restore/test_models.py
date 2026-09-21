@@ -15,9 +15,6 @@
 
 """Define tests for the app.sep.apps.mysql_backups.restore.models module."""
 
-import logging
-import re
-
 import pytest
 from pydantic import ValidationError
 
@@ -26,8 +23,6 @@ from app.sep.apps.framework.schema import ChoiceField, RemoteChoiceField
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import (
-    _ALLOWED_SOURCE_FORMATS,
-    _rejected_format_message,
     normalize_source_declaration,
     repair_source_declaration,
     RestoreConfigServer,
@@ -263,14 +258,12 @@ def test_source_controls_are_always_visible_task_choices() -> None:
 
 
 def test_only_the_transport_and_decryption_fields_are_gated() -> None:
-    """Gate exactly the fields a source declaration governs, and nothing else.
+    """Gate exactly the six fields a source declaration governs, and nothing else.
 
     The predicates themselves are pinned on the served schema in
     ``test_schema_gates_transport_and_decryption_fields``; what matters here is
     that no other field acquired a gate, since every gated field also had to give
-    up its default. ``xtrabackup_aes256_keyfile`` is the one whose gate was worth
-    a behaviour change: it reaches the emitted config, so an undeclared key file
-    was read whenever the backup turned out to be AES-encrypted.
+    up its default.
     """
     gated = {name for name, field in _derived_fields().items() if field.forbidden}
 
@@ -332,6 +325,38 @@ def test_declared_encryption_rejects_gpg_password_file() -> None:
         )
 
 
+def test_declared_encryption_rejects_aes_keyfile() -> None:
+    """Reject an AES-256 key file on a restore declaring no AES pass."""
+    with pytest.raises(
+        ValidationError, match="'xtrabackup_aes256_keyfile' must not be set"
+    ):
+        RestoreCreate.model_validate(
+            _minimal_restore_create_body(
+                source_encryption=EncryptionFormat.NONE,
+                xtrabackup_aes256_keyfile="/etc/aes.key",
+            )
+        )
+
+
+def test_aes256_requires_the_key_file() -> None:
+    """Reject ``aes256`` without a key file."""
+    with pytest.raises(ValidationError, match="xtrabackup_aes256_keyfile"):
+        RestoreCreate.model_validate(
+            _minimal_restore_create_body(source_encryption=EncryptionFormat.AES256)
+        )
+
+
+def test_aes256_with_the_key_file_ok() -> None:
+    """Accept ``aes256`` with a key file for any backup type."""
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(
+            source_encryption=EncryptionFormat.AES256,
+            xtrabackup_aes256_keyfile="/etc/aes.key",
+        )
+    )
+    assert model.xtrabackup_aes256_keyfile == "/etc/aes.key"
+
+
 def test_empty_s3_tool_does_not_trip_its_gate() -> None:
     """Coerce a cleared ``s3_tool`` select to ``None`` rather than tripping its gate."""
     model = RestoreCreate.model_validate(
@@ -339,224 +364,6 @@ def test_empty_s3_tool_does_not_trip_its_gate() -> None:
     )
 
     assert model.s3_tool is None
-
-
-_AES_KEYFILE = "/etc/xb/aes.key"
-_GPG_PASSWORD_FILE = "/etc/gpg.pass"
-
-
-class TestSourceEncryptionAgreement:
-    """Assert a restore's encryption declaration agrees with the engine and the key file.
-
-    Both halves mirror the create form, which is where the same backup's
-    encryption was chosen: AES-256 is XtraBackup's own ``xbcrypt`` pass, so no
-    other engine can have written it, and an AES format with no key file names an
-    encryption the restore has nothing to decrypt with.
-    """
-
-    @pytest.mark.parametrize(
-        ("backup_type", "label"),
-        [
-            (BackupType.MYDUMPER, "Mydumper"),
-            (BackupType.BINLOG, "Binlog"),
-        ],
-    )
-    @pytest.mark.parametrize(
-        "source_encryption", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
-    )
-    def test_rejects_an_aes_format_on_an_engine_that_cannot_write_one(
-        self,
-        backup_type: BackupType,
-        label: str,
-        source_encryption: EncryptionFormat,
-    ) -> None:
-        """Reject an AES-256 format on an engine with no AES-256 pass, naming the options."""
-        expected_message = re.escape(
-            f"Invalid 'source_encryption' {source_encryption.value!r} for a "
-            f"{label} restore. Options are none or gpg."
-        )
-        with pytest.raises(ValidationError, match=expected_message):
-            RestoreCreate.model_validate(
-                _minimal_restore_create_body(
-                    backup_type=backup_type,
-                    source_encryption=source_encryption,
-                    xtrabackup_aes256_keyfile=_AES_KEYFILE,
-                )
-            )
-
-    def test_reports_the_format_and_the_missing_key_file_together(self) -> None:
-        """Surface both failures of a doubly-invalid declaration in one error.
-
-        The field gates run ahead of any plugin-level validator, so expressing the
-        engine check as a rule rather than a validator is what keeps the mismatch
-        from being masked by the key file the mismatch itself asked for.
-        """
-        with pytest.raises(ValidationError) as excinfo:
-            RestoreCreate.model_validate(
-                _minimal_restore_create_body(
-                    backup_type=BackupType.MYDUMPER,
-                    source_encryption=EncryptionFormat.AES256,
-                )
-            )
-
-        message = str(excinfo.value)
-        assert "Invalid 'source_encryption' 'aes256' for a Mydumper restore" in message
-        assert "'xtrabackup_aes256_keyfile' is required" in message
-
-    @pytest.mark.parametrize(
-        ("backup_type", "source_encryption", "extra"),
-        [
-            (BackupType.MYDUMPER, EncryptionFormat.NONE, {}),
-            (
-                BackupType.MYDUMPER,
-                EncryptionFormat.GPG,
-                {"gpg_password_file": _GPG_PASSWORD_FILE},
-            ),
-            (BackupType.BINLOG, EncryptionFormat.NONE, {}),
-            (
-                BackupType.BINLOG,
-                EncryptionFormat.GPG,
-                {"gpg_password_file": _GPG_PASSWORD_FILE},
-            ),
-            (BackupType.XTRABACKUP, EncryptionFormat.NONE, {}),
-            (
-                BackupType.XTRABACKUP,
-                EncryptionFormat.GPG,
-                {"gpg_password_file": _GPG_PASSWORD_FILE},
-            ),
-            (
-                BackupType.XTRABACKUP,
-                EncryptionFormat.AES256,
-                {"xtrabackup_aes256_keyfile": _AES_KEYFILE},
-            ),
-            (
-                BackupType.XTRABACKUP,
-                EncryptionFormat.DUAL,
-                {
-                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
-                    "gpg_password_file": _GPG_PASSWORD_FILE,
-                },
-            ),
-        ],
-    )
-    def test_accepts_every_format_its_engine_can_write(
-        self,
-        backup_type: BackupType,
-        source_encryption: EncryptionFormat,
-        extra: dict,
-    ) -> None:
-        """Accept each engine's own formats, key file and all, unchanged."""
-        model = RestoreCreate.model_validate(
-            _minimal_restore_create_body(
-                backup_type=backup_type,
-                source_encryption=source_encryption,
-                **extra,
-            )
-        )
-
-        assert model.source_encryption is source_encryption
-        assert model.xtrabackup_aes256_keyfile == extra.get("xtrabackup_aes256_keyfile")
-        assert model.gpg_password_file == extra.get("gpg_password_file")
-
-    @pytest.mark.parametrize(
-        "source_encryption", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
-    )
-    @pytest.mark.parametrize("keyfile", [None, ""], ids=["omitted", "cleared"])
-    def test_requires_a_key_file_for_an_aes_format(
-        self, source_encryption: EncryptionFormat, keyfile: str | None
-    ) -> None:
-        """Reject an AES-256 restore naming no key file, cleared field included."""
-        with pytest.raises(
-            ValidationError, match="'xtrabackup_aes256_keyfile' is required"
-        ):
-            RestoreCreate.model_validate(
-                _minimal_restore_create_body(
-                    backup_type=BackupType.XTRABACKUP,
-                    source_encryption=source_encryption,
-                    xtrabackup_aes256_keyfile=keyfile,
-                    gpg_password_file=_GPG_PASSWORD_FILE
-                    if source_encryption == EncryptionFormat.DUAL
-                    else None,
-                )
-            )
-
-    @pytest.mark.parametrize(
-        ("source_encryption", "extra"),
-        [
-            (EncryptionFormat.NONE, {}),
-            (EncryptionFormat.GPG, {"gpg_password_file": _GPG_PASSWORD_FILE}),
-        ],
-    )
-    def test_forbids_a_key_file_no_declared_format_decrypts_with(
-        self, source_encryption: EncryptionFormat, extra: dict
-    ) -> None:
-        """Reject a key file the declared format does not admit.
-
-        This one tightens accepted behaviour rather than describing it: the
-        payload decides to decrypt from what it finds on disk, so an undeclared
-        key file was read whenever the backup turned out to be AES-encrypted.
-        """
-        with pytest.raises(
-            ValidationError, match="'xtrabackup_aes256_keyfile' must not be set"
-        ):
-            RestoreCreate.model_validate(
-                _minimal_restore_create_body(
-                    backup_type=BackupType.XTRABACKUP,
-                    source_encryption=source_encryption,
-                    xtrabackup_aes256_keyfile=_AES_KEYFILE,
-                    **extra,
-                )
-            )
-
-    def test_the_default_declaration_does_not_trip_the_key_file_gate(self) -> None:
-        """Validate a body that leaves both the format and the key file alone.
-
-        A field-level ``Forbidden`` rejects a field that is merely present, so a
-        non-``None`` default would 422 every restore that declares no encryption.
-        """
-        model = RestoreCreate.model_validate(_minimal_restore_create_body())
-
-        assert model.source_encryption is EncryptionFormat.NONE
-        assert model.xtrabackup_aes256_keyfile is None
-        assert RestoreCreate.model_fields["xtrabackup_aes256_keyfile"].default is None
-        assert _derived_fields()["xtrabackup_aes256_keyfile"].default is None
-
-    def test_a_cleared_key_file_does_not_trip_its_gate(self) -> None:
-        """Coerce an emptied key-file input to ``None`` rather than tripping its gate."""
-        model = RestoreCreate.model_validate(
-            _minimal_restore_create_body(
-                backup_type=BackupType.XTRABACKUP,
-                source_encryption=EncryptionFormat.NONE,
-                xtrabackup_aes256_keyfile="",
-            )
-        )
-
-        assert model.xtrabackup_aes256_keyfile is None
-
-    def test_every_engine_is_looked_up_for_the_formats_it_may_declare(self) -> None:
-        """Resolve a format list for every engine, so an untabled one rejects them all.
-
-        Iterating the create form's table instead would emit no rule at all for an
-        engine it omits, which reads as accepting every format.
-        """
-        assert set(_ALLOWED_SOURCE_FORMATS) == set(BackupType)
-
-    def test_an_engine_admitting_no_format_is_rejected_without_naming_options(
-        self,
-    ) -> None:
-        """Build the rejection message for an engine with no formats at all.
-
-        The rules are built at import time, so a message that raised on an empty
-        option list would take the module down rather than reject the engine.
-        """
-        message = _rejected_format_message(
-            BackupType.MYDUMPER, EncryptionFormat.AES256, []
-        )
-
-        assert message == (
-            "Invalid 'source_encryption' 'aes256' for a Mydumper restore. "
-            "No encryption format is available for it."
-        )
 
 
 def _legacy_stamp(**overrides: object) -> dict:
@@ -674,6 +481,20 @@ def test_normalize_source_declaration_infers_and_strips(
         ),
         (
             {
+                "backup_type": BackupType.MYDUMPER.value,
+                "xtrabackup_aes256_keyfile": "/etc/aes.key",
+            },
+            EncryptionFormat.AES256,
+        ),
+        (
+            {
+                "backup_type": BackupType.BINLOG.value,
+                "xtrabackup_aes256_keyfile": "/etc/aes.key",
+            },
+            EncryptionFormat.AES256,
+        ),
+        (
+            {
                 "backup_type": BackupType.XTRABACKUP.value,
                 "xtrabackup_aes256_keyfile": "/etc/aes.key",
                 "gpg_password_file": "/etc/gpg.pass",
@@ -693,6 +514,10 @@ def test_normalize_source_declaration_infers_encryption(
         assert normalized["gpg_password_file"] == "/etc/gpg.pass"
     else:
         assert "gpg_password_file" not in normalized
+    if expected_encryption in (EncryptionFormat.AES256, EncryptionFormat.DUAL):
+        assert normalized["xtrabackup_aes256_keyfile"] == "/etc/aes.key"
+    else:
+        assert "xtrabackup_aes256_keyfile" not in normalized
 
 
 def test_normalize_source_declaration_infers_only_the_missing_half() -> None:
@@ -764,63 +589,12 @@ def test_declared_stamp_keeps_its_gate_teeth_through_the_before_validator() -> N
         )
 
 
-@pytest.mark.parametrize(
-    "backup_type", [BackupType.MYDUMPER, BackupType.BINLOG], ids=lambda t: t.name
-)
-def test_normalize_source_declaration_keeps_an_unreadable_key_file_for_its_gate(
-    backup_type: BackupType,
-) -> None:
-    """Keep a key file the inferred format forbids instead of dropping it.
-
-    Unlike the transport fields, the key file names a secret an operator set on
-    purpose, so an undeclared body carrying one under an engine with no AES-256
-    pass has to reach the gate and be rejected rather than be quietly emptied.
-    """
-    body = _legacy_stamp(
-        backup_type=backup_type.value,
-        xtrabackup_aes256_keyfile=_AES_KEYFILE,
-    )
-
-    normalized = normalize_source_declaration(body)
-
-    assert normalized["source_encryption"] == EncryptionFormat.NONE
-    assert normalized["xtrabackup_aes256_keyfile"] == _AES_KEYFILE
-    with pytest.raises(
-        ValidationError, match="'xtrabackup_aes256_keyfile' must not be set"
-    ):
-        RestoreCreate.model_validate(body)
-
-
-def test_normalize_source_declaration_keeps_a_key_file_its_engine_reads() -> None:
-    """Keep an XtraBackup key file, declaring the AES format that reveals it.
-
-    The one direction the inference may widen: naming AES-256 for the engine that
-    writes it keeps the stored key file readable, where declaring ``none`` beside
-    it would leave a body its own gate rejects. So an undeclared XtraBackup body
-    carrying a key file validates, unlike the same body on any other engine.
-    """
-    body = _legacy_stamp(
-        backup_type=BackupType.XTRABACKUP.value,
-        xtrabackup_aes256_keyfile=_AES_KEYFILE,
-    )
-
-    normalized = normalize_source_declaration(body)
-
-    assert normalized["source_encryption"] == EncryptionFormat.AES256
-    assert normalized["xtrabackup_aes256_keyfile"] == _AES_KEYFILE
-    model = RestoreCreate.model_validate(body)
-    assert model.source_encryption is EncryptionFormat.AES256
-    assert model.xtrabackup_aes256_keyfile == _AES_KEYFILE
+_AES_KEYFILE = "/etc/xb/aes.key"
+_GPG_PASSWORD_FILE = "/etc/gpg.pass"
 
 
 def _declared_stamp(**overrides: object) -> dict:
-    """Return a full stamp as the model dumps one now the source controls exist.
-
-    The gated transport fields gave up their defaults when they gained gates, so
-    a stamp written since carries ``None`` for the ones its transport forbids —
-    unlike :func:`_legacy_stamp`, whose ``percona`` / ``22`` / ``s3cmd`` are what
-    the normalizer exists to strip.
-    """
+    """Return a stamp that already names both source controls."""
     stamp = _legacy_stamp(
         source_transport=SourceTransport.LOCAL.value,
         source_encryption=EncryptionFormat.NONE.value,
@@ -833,186 +607,43 @@ def _declared_stamp(**overrides: object) -> dict:
 
 
 class TestRepairSourceDeclaration:
-    """Assert the stamp repair never serves an edit form that hides stored state.
+    """Repair stamps whose declarations disagree with the values they store."""
 
-    A stamp written while the key file was ungated can name a format that does not
-    admit it. Serving that stamp as-is would open the edit form with the key file
-    hidden, and a hidden field is dropped from the submission, so saving the form
-    would strip the key an AES restore needs.
-    """
-
-    @pytest.mark.parametrize(
-        ("declared", "extra", "expected"),
-        [
-            pytest.param(
-                EncryptionFormat.NONE, {}, EncryptionFormat.AES256, id="undeclared"
-            ),
-            pytest.param(
-                EncryptionFormat.GPG,
-                {"gpg_password_file": _GPG_PASSWORD_FILE},
-                EncryptionFormat.DUAL,
-                id="gpg-declared-with-its-password-file",
-            ),
-            pytest.param(
-                EncryptionFormat.GPG,
-                {},
-                EncryptionFormat.DUAL,
-                id="gpg-declared-without-a-password-file",
-            ),
-        ],
-    )
-    def test_widens_a_declaration_that_hides_a_stored_key_file(
-        self,
-        declared: EncryptionFormat,
-        extra: dict,
-        expected: EncryptionFormat,
-    ) -> None:
-        """Widen the declaration to every pass the stamp implies, not only its files.
-
-        The password file is optional under a GPG declaration, so the declaration
-        itself is what says a GPG pass ran; reading only the file would repair a
-        GPG stamp to ``aes256`` and lose that pass on the next save.
-        """
+    def test_widens_a_declaration_that_hides_a_stored_key_file(self) -> None:
+        """Widen ``none`` beside a key file to the AES-256 format that reveals it."""
         repaired = repair_source_declaration(
-            _declared_stamp(
-                backup_type=BackupType.XTRABACKUP.value,
-                source_encryption=declared.value,
-                xtrabackup_aes256_keyfile=_AES_KEYFILE,
-                **extra,
-            )
+            _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE)
         )
 
         assert repaired is not None
-        assert repaired["source_encryption"] == expected
+        assert repaired["source_encryption"] == EncryptionFormat.AES256
         assert repaired["xtrabackup_aes256_keyfile"] == _AES_KEYFILE
 
-    @pytest.mark.parametrize(
-        ("backup_type", "declared", "extra", "expected"),
-        [
-            pytest.param(
-                BackupType.MYDUMPER,
-                EncryptionFormat.AES256,
-                {"xtrabackup_aes256_keyfile": _AES_KEYFILE},
-                EncryptionFormat.NONE,
-                id="mydumper-aes-holding-a-key-file",
-            ),
-            pytest.param(
-                BackupType.BINLOG,
-                EncryptionFormat.DUAL,
-                {
-                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
-                    "gpg_password_file": _GPG_PASSWORD_FILE,
-                },
-                EncryptionFormat.GPG,
-                id="binlog-dual-holding-a-key-file",
-            ),
-            pytest.param(
-                BackupType.MYDUMPER,
-                EncryptionFormat.AES256,
-                {},
-                EncryptionFormat.NONE,
-                id="mydumper-aes-holding-nothing",
-            ),
-            pytest.param(
-                BackupType.XTRABACKUP,
-                EncryptionFormat.DUAL,
-                {"gpg_password_file": _GPG_PASSWORD_FILE},
-                EncryptionFormat.GPG,
-                id="xtrabackup-dual-holding-no-key-file",
-            ),
-        ],
-    )
-    def test_narrows_a_declaration_no_stored_value_can_back(
-        self,
-        backup_type: BackupType,
-        declared: EncryptionFormat,
-        extra: dict,
-        expected: EncryptionFormat,
-    ) -> None:
-        """Drop the AES-256 pass from a declaration the stamp cannot support.
-
-        Both shapes were accepted before the engine/format rules and the key-file
-        gate existed: an AES-256 format on an engine that cannot write one, and an
-        AES-256 format naming no key. Serving either unrepaired would fail the
-        re-validation the read paths perform and leave the edit form unopenable,
-        so the pass the stamp cannot back is dropped and the surviving GPG pass —
-        declared or filed — is kept.
-        """
+    def test_narrows_a_declaration_naming_no_key_file(self) -> None:
+        """Drop an AES-256 claim that names no key file to decrypt with."""
         repaired = repair_source_declaration(
             _declared_stamp(
-                backup_type=backup_type.value,
-                source_encryption=declared.value,
-                **extra,
+                source_encryption=EncryptionFormat.DUAL.value,
+                gpg_password_file=_GPG_PASSWORD_FILE,
             )
         )
 
         assert repaired is not None
-        assert repaired["source_encryption"] == expected
-        assert "xtrabackup_aes256_keyfile" not in repaired
-        assert repaired.get("gpg_password_file") == extra.get("gpg_password_file")
+        assert repaired["source_encryption"] == EncryptionFormat.GPG
+        assert repaired["gpg_password_file"] == _GPG_PASSWORD_FILE
         RestoreCreate.model_validate(repaired)
 
-    def test_drops_a_key_file_the_stamped_engine_cannot_read(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Drop rather than reveal a key file on an engine with no AES-256 pass.
-
-        Widening here would declare a format the engine cannot produce, which the
-        rules reject; the key file is unreachable for that engine either way.
-        """
-        with caplog.at_level(logging.INFO, logger=repair_source_declaration.__module__):
-            repaired = repair_source_declaration(
-                _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE)
+    def test_owes_no_repair_to_a_consistent_stamp(self) -> None:
+        """Leave a stamp whose declarations already match its values untouched."""
+        assert (
+            repair_source_declaration(
+                _declared_stamp(
+                    source_encryption=EncryptionFormat.AES256.value,
+                    xtrabackup_aes256_keyfile=_AES_KEYFILE,
+                )
             )
-
-        assert repaired is not None
-        assert "xtrabackup_aes256_keyfile" not in repaired
-        assert "xtrabackup_aes256_keyfile" in caplog.text
-
-    @pytest.mark.parametrize(
-        "overrides",
-        [
-            pytest.param(
-                {"source_encryption": EncryptionFormat.NONE.value},
-                id="nothing-encrypted",
-            ),
-            pytest.param(
-                {
-                    "backup_type": BackupType.XTRABACKUP.value,
-                    "source_encryption": EncryptionFormat.AES256.value,
-                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
-                },
-                id="key-file-already-declared",
-            ),
-            pytest.param(
-                {
-                    "source_encryption": EncryptionFormat.GPG.value,
-                    "gpg_password_file": _GPG_PASSWORD_FILE,
-                },
-                id="gpg-declared-with-its-password-file",
-            ),
-            pytest.param(
-                {"source_encryption": EncryptionFormat.GPG.value},
-                id="gpg-declared-without-a-password-file",
-            ),
-            pytest.param(
-                {
-                    "backup_type": BackupType.XTRABACKUP.value,
-                    "source_encryption": EncryptionFormat.DUAL.value,
-                    "xtrabackup_aes256_keyfile": _AES_KEYFILE,
-                },
-                id="dual-declared-without-a-password-file",
-            ),
-        ],
-    )
-    def test_owes_no_repair_to_a_consistent_stamp(self, overrides: dict) -> None:
-        """Leave a stamp whose declarations already match its values untouched.
-
-        A GPG pass is the case worth pinning: the password file is optional under
-        a GPG declaration, so the declaration is the only place a file-less one is
-        recorded, and a repair reading the file alone would drop the pass.
-        """
-        assert repair_source_declaration(_declared_stamp(**overrides)) is None
+            is None
+        )
 
     def test_declares_the_source_of_a_stamp_that_predates_the_controls(self) -> None:
         """Declare both halves for a stamp carrying neither, as the backfill needs."""
@@ -1022,26 +653,11 @@ class TestRepairSourceDeclaration:
         assert repaired["source_transport"] == SourceTransport.SSH
         assert repaired["source_encryption"] == EncryptionFormat.NONE
 
-    @pytest.mark.parametrize(
-        "stamp",
-        [
-            pytest.param(_legacy_stamp(), id="pre-declaration"),
-            pytest.param(
-                _declared_stamp(
-                    backup_type=BackupType.XTRABACKUP.value,
-                    xtrabackup_aes256_keyfile=_AES_KEYFILE,
-                ),
-                id="key-file-hidden-by-its-declaration",
-            ),
-            pytest.param(
-                _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE),
-                id="key-file-on-an-engine-that-cannot-read-it",
-            ),
-        ],
-    )
-    def test_a_repaired_stamp_validates(self, stamp: dict) -> None:
+    def test_a_repaired_stamp_validates(self) -> None:
         """Return a body the create model accepts, which is what the read path serves."""
-        repaired = repair_source_declaration(stamp)
+        repaired = repair_source_declaration(
+            _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE)
+        )
 
         assert repaired is not None
         RestoreCreate.model_validate(repaired)

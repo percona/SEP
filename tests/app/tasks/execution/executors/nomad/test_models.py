@@ -36,10 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yarl import URL
 
 from app.core.exceptions import HTTPBadRequestException
-from app.core.settings_override.registry import (
-    ReloadClassification,
-    resolve_nested_field_metadata,
-)
+from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils import slugify, utc_now
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings, TasksSettings

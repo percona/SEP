@@ -465,33 +465,10 @@ def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():
 
 
 def test_reconstructed_body_declares_the_aes_format_of_a_stored_key_file():
-    """Declare AES-256 for an XtraBackup restore whose config names a key file.
+    """Declare AES-256 for a restore whose config names a key file.
 
     The key file is what the restore decrypts with, so the reconstructed body has
     to name the format that admits it rather than leave it for the gate to reject.
-    """
-    service_lookup, schema_lookup = _lookups(
-        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
-    )
-    task = _legacy_restore_task(
-        backup_type=BackupType.XTRABACKUP,
-        server_extra={"XTRABACKUP_AES256_KEYFILE": "/etc/xb/aes.key"},
-    )
-
-    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
-
-    assert body is not None
-    assert body["source_encryption"] == EncryptionFormat.AES256
-    assert body["xtrabackup_aes256_keyfile"] == "/etc/xb/aes.key"
-    RestoreCreate.model_validate(body)
-
-
-def test_reconstructed_body_drops_a_key_file_its_engine_cannot_read():
-    """Drop a key file stored on a Mydumper restore, which never decrypts.
-
-    The payload is selected by backup type, so this key file reaches no reader;
-    keeping it would leave a body the key-file gate rejects and cost the task its
-    stamp.
     """
     service_lookup, schema_lookup = _lookups(
         _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
@@ -506,5 +483,6 @@ def test_reconstructed_body_drops_a_key_file_its_engine_cannot_read():
     body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
 
     assert body is not None
-    assert "xtrabackup_aes256_keyfile" not in body
+    assert body["source_encryption"] == EncryptionFormat.AES256
+    assert body["xtrabackup_aes256_keyfile"] == "/etc/xb/aes.key"
     RestoreCreate.model_validate(body)

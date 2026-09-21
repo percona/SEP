@@ -676,19 +676,18 @@ class TestEncryptionFormatStampRepair:
         """Derive each format from the fields the older stamp does carry."""
         assert self._repaired_format(**stamped_fields) == expected
 
-    def test_a_key_file_off_xtrabackup_adds_no_aes_pass(self):
-        """Ignore a key file on an engine with no AES-256 path.
+    def test_a_key_file_on_mydumper_stamps_aes256(self):
+        """Stamp AES-256 from a key file on a Mydumper task.
 
-        Deriving ``aes256`` there would write a format the task's own backup type
-        rejects, so the repair could never validate and the stamp would stay
-        broken.
+        AES-256 is available for every engine, so a key file on Mydumper is a real
+        AES configuration rather than noise to ignore.
         """
         assert (
             self._repaired_format(
                 backup_type=BackupType.MYDUMPER.value,
                 xtrabackup_aes256_keyfile="/keys/aes.key",
             )
-            == EncryptionFormat.NONE
+            == EncryptionFormat.AES256
         )
 
     @pytest.mark.parametrize(

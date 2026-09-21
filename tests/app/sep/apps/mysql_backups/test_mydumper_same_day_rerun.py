@@ -415,6 +415,8 @@ def _runner(
         record.purged = True
 
     instance.post_run_encrypt = post_run_encrypt
+    instance.enc_gpg = post_run_encrypt
+    instance.enc_aes = False
     instance.notify = lambda *_a, **_k: None
     instance._get_version = lambda: "0.19.3"
     if popen is None:

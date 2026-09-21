@@ -416,6 +416,8 @@ def payload_instance(
         if name not in method_names:
             setattr(inst, name, stub)
     inst.aes_keyfile = "/keys/aes.key"
+    # Binlog/XtraBackup Upload encrypt paths read this historical attribute name.
+    inst.xtrabackup_aes256 = "/keys/aes.key"
     inst.enc_aes = True
     inst.enc_gpg = False
     inst.compress = False
