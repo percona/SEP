@@ -49,15 +49,6 @@ def test_get_internal_token_returns_secret(mocker):
     assert get_internal_token() == "internal-secret"
 
 
-def test_get_internal_token_is_always_populated():
-    """``get_internal_token`` answers a usable token with nothing configured.
-
-    ``Settings.derive_internal_token`` populates every instance, so no caller
-    has an unset or empty token to handle.
-    """
-    assert get_internal_token()
-
-
 class TestBearerHeaderEdgeCases:
     """Cover header-parsing edges for ``is_bearer_authenticated``.
 

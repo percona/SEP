@@ -720,13 +720,12 @@ class Settings(BaseYamlSettings):
     @computed_field
     @property
     def SEP_INTERNAL_TOKEN(self) -> SecretStr:
-        """The internal service-to-service token, always populated.
+        """Return the internal service-to-service token, always populated.
 
         ``derive_internal_token`` fills it at the end of every construction, so
         nothing downstream has an unset case to handle.
 
         :return: The configured or derived internal token.
-        :rtype: SecretStr
         """
         return self._SEP_INTERNAL_TOKEN
 
@@ -735,7 +734,6 @@ class Settings(BaseYamlSettings):
         """Replace the resolved token, leaving the configured input untouched.
 
         :param value: The token to resolve to from here on.
-        :type value: SecretStr
         """
         self._SEP_INTERNAL_TOKEN = value
 
