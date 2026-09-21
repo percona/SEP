@@ -36,9 +36,9 @@ _LABEL_PATH_MAX = 48
 _LABEL_PATH_TAIL = (_LABEL_PATH_MAX - 1) // 2
 
 # Scan at most this many catalog pages when filling Choice options so a run of
-# unusable rows (missing location / shell-unsafe) cannot starve the selector of
-# older valid backups, while still bounding DB work for a free-text-friendly
-# endpoint.
+# rows that yield no option — unusable (missing location / shell-unsafe) or
+# collapsed into a value already offered — cannot starve the selector of older
+# valid backups, while still bounding DB work for a free-text-friendly endpoint.
 _MAX_CHOICE_SCAN_PAGES = 10
 
 
@@ -101,16 +101,22 @@ async def choices_for_service(
 ) -> list[Choice]:
     """Return Choice options for a service's catalogued runs, newest first.
 
-    Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` valid choices are
-    collected (or rows/pages are exhausted), so filtered-out runs do not shrink
-    the usable option set below the intended cap.
+    Offers each restore value once, under the label of the most recently finished
+    run that resolves to it: a rerun that republishes into the directory an
+    earlier run wrote to leaves both rows in the catalog, but only the newer
+    run's dump is still there, so an older row's label would name data the
+    restore would not write.
+
+    Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` distinct values are
+    collected (or rows/pages are exhausted), so runs that are filtered out or
+    collapsed do not shrink the usable option set below the intended cap.
 
     :param session: The database session the catalog is queried on.
     :param key: The service whose catalog rows are mapped to options; a free-typed
         destination with no inventory row carries a name and no id.
     :return: Choice-compatible options; at most ``DEFAULT_PAGINATION_LIMIT`` items.
     """
-    choices: list[Choice] = []
+    by_value: dict[str, Choice] = {}
     offset = 0
     for _ in range(_MAX_CHOICE_SCAN_PAGES):
         page = await MysqlBackupRunManager.list_for_service(
@@ -120,12 +126,12 @@ async def choices_for_service(
         )
         for run in page.items:
             choice = backup_run_to_choice(run)
-            if choice is None:
+            if choice is None or choice.value in by_value:
                 continue
-            choices.append(choice)
-            if len(choices) >= DEFAULT_PAGINATION_LIMIT:
-                return choices
+            by_value[choice.value] = choice
+            if len(by_value) >= DEFAULT_PAGINATION_LIMIT:
+                return list(by_value.values())
         if not page.items or offset + len(page.items) >= page.total:
             break
         offset += len(page.items)
-    return choices
+    return list(by_value.values())
