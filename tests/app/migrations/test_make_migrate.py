@@ -30,7 +30,7 @@ from sqlalchemy import Column, Engine, inspect, MetaData, String, Table
 from tests.app.alembic_paths import ALEMBIC_INI, REPO_ROOT
 from tests.app.beat_autogenerate import BEAT_TABLES
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.xdist_group("make_migrate")]
 
 
 @pytest.fixture
@@ -50,9 +50,6 @@ def migrate_env(postgres_migration_stores: dict[str, Engine]) -> dict[str, str]:
                 "INVENTORY__DATABASE",
                 "SEP__DATABASE",
                 "CELERY",
-                "TASKS__CELERY",
-                "INVENTORY__CELERY",
-                "SEP__CELERY",
             )
         )
         and key
