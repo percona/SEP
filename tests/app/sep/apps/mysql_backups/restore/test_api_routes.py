@@ -29,7 +29,7 @@ API_BASE = "/api/apps/mysql_backups/restore"
 _TASK_NAME = "restore-task"
 
 
-def build_restore_task(**overrides: Any) -> dict:
+def build_restore_task(**overrides: Any) -> dict[str, Any]:
     """Build a MySQL restore task payload shaped like the Tasks API response."""
     task = TaskFactory.build(
         name=_TASK_NAME,
@@ -41,14 +41,14 @@ def build_restore_task(**overrides: Any) -> dict:
     return task.model_dump(mode="json")
 
 
-def serve_single_restore(tasks_api: AsyncMock, task: dict) -> None:
+def serve_single_restore(tasks_api: AsyncMock, task: dict[str, Any]) -> None:
     """Serve ``task`` as the only restore on the list and detail upstream calls.
 
     :param tasks_api: The Tasks-API mock installed on the production mount.
     :param task: The restore task payload to serve.
     """
 
-    async def _get(path: str, **_: Any) -> dict:
+    async def _get(path: str, **_: Any) -> dict[str, Any]:
         if path == "/":
             return {"items": [task], "total": 1, "offset": 0, "limit": 50}
         if path == f"/{_TASK_NAME}":

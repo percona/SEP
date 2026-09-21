@@ -94,7 +94,7 @@ def build_backup_write_body(
     }
 
 
-def _backup_group_by_path(parent: dict) -> dict[str, dict]:
+def _backup_group_by_path(parent: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Map every task path of a backup group to its payload, the parent first.
 
     :param parent: The parent ``pbm_config`` task payload the group hangs off.
