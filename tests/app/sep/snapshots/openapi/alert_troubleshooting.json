@@ -631,6 +631,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -932,6 +933,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1121,6 +1123,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1482,6 +1485,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1603,6 +1607,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -1951,6 +1956,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2084,6 +2090,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2235,6 +2242,7 @@
           "overview_hidden_fields": {
             "items": {
               "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "title": "Overview Hidden Fields",
@@ -2295,6 +2303,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2440,6 +2449,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2589,6 +2599,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2722,6 +2733,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -2867,6 +2879,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3230,6 +3243,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3373,6 +3387,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3503,6 +3518,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3653,6 +3669,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3782,6 +3799,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -3967,6 +3985,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -4113,6 +4132,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {
@@ -4258,6 +4278,7 @@
             "anyOf": [
               {
                 "minLength": 1,
+                "pattern": "\\S",
                 "type": "string"
               },
               {

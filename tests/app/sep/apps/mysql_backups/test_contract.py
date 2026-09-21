@@ -55,6 +55,7 @@ from tests.app.sep.apps.framework.kit import (
     MockInventoryAPI,
     MockTaskAPI,
     SEEDED_TASK_NAME,
+    SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
 )
 from tests.app.sep.apps.mysql_backups.description_coverage import (
@@ -91,17 +92,12 @@ def _valid_body(
 class TestMysqlBackupsContract(DerivedRouterContractTests):
     """Assert the mysql_backups app's derived HTTP surface, knob by knob.
 
-    ``remapped_username`` is ``None``: the app wires ``get_username_mapping`` as
-    its response context provider (so ``created_by`` / ``last_updated_by`` resolve
-    to usernames), but that provider is a real Casdoor lookup that is not
-    deterministic under test, so the injected-extras tests assert only the
-    deterministic ``service_type`` extra. The two create/update injected-extras
-    methods are overridden here to feed the gated per-``backup_type`` body, since
-    the generic Polyfactory body trips the create model's gates.
+    The two create/update injected-extras methods are overridden here to feed the
+    gated per-``backup_type`` body, since the generic Polyfactory body trips the
+    create model's gates.
     """
 
     app_def = mysql_backups_app
-    remapped_username = None
 
     def test_create_injects_extras(self, contract_client: Any) -> None:
         """Assert create binds the context provider and omits internal fields.
@@ -115,8 +111,10 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         response = contract_client.post(f"{base}/", json=_valid_body())
 
         assert response.status_code == status.HTTP_201_CREATED, response.text
-        assert "service_type" not in response.json()
-        assert "owner" not in response.json()
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_update_derived_injects_extras(self, contract_client: Any) -> None:
         """Assert the derived PUT binds the context provider and omits internal fields.
@@ -132,8 +130,10 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         )
 
         assert response.status_code == status.HTTP_200_OK, response.text
-        assert "service_type" not in response.json()
-        assert "owner" not in response.json()
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return the gated valid PUT body; the generic Polyfactory body 422s here.

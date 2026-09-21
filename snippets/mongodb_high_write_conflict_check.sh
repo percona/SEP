@@ -5,6 +5,7 @@
 # description: "This script checks MongoDB write conflict metrics and identifies hot collections to diagnose write contention."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighWriteConflict

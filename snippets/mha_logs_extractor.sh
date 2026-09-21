@@ -5,6 +5,9 @@
 # description: This script extracts a portion of the MHA (Master High Availability) log based on a given time and a specified number of minutes before and after that time.
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - NATIVE_ASYNC_REPLICATION
 # service_type: mysql
 # parameters:
 #  - name: time
@@ -156,13 +159,13 @@ MHA_LOG="${LOG_FILE_ARG:-$DEFAULT_MHA_LOG}"
 
 # Check if the log file exists and is readable
 if [ ! -f "$MHA_LOG" ]; then
-    echo "Error: MHA log file not found at '$MHA_LOG'."
+    echo "Error: MHA log file not found at '$MHA_LOG' (check --log-file)."
     echo "Please ensure the file exists and the path is correct."
     exit 1
 fi
 
 if [ ! -r "$MHA_LOG" ]; then
-    echo "Error: Cannot read MHA log file at '$MHA_LOG'."
+    echo "Error: Cannot read MHA log file at '$MHA_LOG' (check --log-file)."
     echo "Please check file permissions for '$MHA_LOG'."
     exit 1
 fi
@@ -173,11 +176,14 @@ fi
 
 # Convert input time to epoch
 # Check if date parsing was successful
-if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> /dev/null); then
-    echo "Error: Could not parse the provided time format: \"$TIME_ARG\""
+DATE_ERR=$(mktemp)
+if ! INPUT_EPOCH=$(date -d "$TIME_ARG" +%s 2> "$DATE_ERR"); then
+    echo "Error: Could not parse the provided time format (check --time): \"$TIME_ARG\" ($(cat "$DATE_ERR"))"
+    rm -f "$DATE_ERR"
     echo 'Please ensure the time is in a valid format, e.g., "YYYY-MM-DD HH:MM:SS"'
     exit 1
 fi
+rm -f "$DATE_ERR"
 
 if [[ $OUTPUT_MODE == "file" ]]; then
     OUTPUT_FILE="mha_logs_${INPUT_EPOCH}.log"

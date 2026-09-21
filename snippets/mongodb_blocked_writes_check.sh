@@ -53,7 +53,7 @@
 #    default: 3
 #    ge: 1
 #    le: 365
-# atw:
+# diagnostic_categories:
 #  - WRITES_ARE_BLOCKED
 #  - NOT_RESPONDING
 #  - OVERALL_SLOWNESS

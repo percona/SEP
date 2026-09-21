@@ -17,7 +17,7 @@
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.exceptions import HTTPConflictException
 from app.core.utils.date_time import utc_now

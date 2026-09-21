@@ -33,6 +33,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, computed_field, ValidationError
 from sqlalchemy import column
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.list_query import ListQuerySpec
 from app.core.pagination import PaginatedResponse
@@ -81,7 +82,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.sep.deps import InventoryAPI, IsApiAuthenticated
+from app.sep.deps import get_username_mapping, InventoryAPI, IsApiAuthenticated
 from app.sep.snippets.schema import SNIPPETS_PLUGIN_SCHEMA
 from app.tasks.models import Task, TaskWrite
 from tests.app.factories import (
@@ -1522,7 +1523,11 @@ class _BaseLikeResponse(BaseModel):
 
 async def _remap_context_provider() -> dict[str, str]:
     """Return a username map the default builder remaps the user-ids through."""
-    return {"uid-a": "Alice", "uid-b": "Bob"}
+    return {
+        "uid-a": "Alice",
+        "uid-b": "Bob",
+        str(SERVICE_PRINCIPAL_ID): "Provider account",
+    }
 
 
 def _raw_task_dict() -> dict:
@@ -1548,6 +1553,15 @@ class TestDefaultResponseBuilder:
 
         assert _detail_route(app_def).response_model is BaseTaskResponse
 
+    def test_omitted_context_provider_defaults_to_the_username_map(self) -> None:
+        """Assert an app that binds no provider resolves actors through the default."""
+        kwargs = synth_app_kwargs()
+        kwargs.pop("response_context_provider")
+
+        app_def = TaskExecutionApp(**kwargs)
+
+        assert app_def.response_context_provider is get_username_mapping
+
     def test_stamps_service_type_and_remaps_usernames_from_context(
         self, regular_user: CasdoorUser
     ) -> None:
@@ -1567,6 +1581,28 @@ class TestDefaultResponseBuilder:
         assert item["service_type"] == ServiceTypeEnum.MYSQL.value
         assert item["created_by"] == "Alice"
         assert item["last_updated_by"] == "Bob"
+
+    def test_resolves_service_principal_ahead_of_context(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the default builder gives system labels precedence over context."""
+        task = _raw_task_dict()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
+        task["last_updated_by"] = str(SERVICE_PRINCIPAL_ID)
+        tasks_api = _make_tasks_api(list_items=[task])
+        app_def = _synth_app(
+            response_builder=None,
+            response_model=_RemapResponse,
+            response_context_provider=_remap_context_provider,
+        )
+        client = _client(
+            app_def, tasks_api, regular_user, inventory_api=_make_inventory_api()
+        )
+
+        item = client.get(f"{_BASE}/").json()["items"][0]
+
+        assert item["created_by"] == "Service account"
+        assert item["last_updated_by"] == "Service account"
 
     def test_passes_raw_ids_through_without_context(
         self, regular_user: CasdoorUser

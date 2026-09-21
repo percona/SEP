@@ -28,6 +28,7 @@ from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.alters.models import (
     AltersCreate,
     AltersTaskResponse,
@@ -736,7 +737,8 @@ def build_alters_api_task_response(
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
-    :param username_mapping: Optional mapping of user IDs to usernames.
+    :param username_mapping: Optional provider mapping used to resolve actor IDs to
+        system labels or usernames, falling back to the raw ID.
     :type username_mapping: dict[str, str] | None
     :return: A validated alters task API response object.
     :rtype: AltersTaskResponse
@@ -759,8 +761,7 @@ def build_alters_api_task_response(
         status,
         last_executed_at=last_executed_at,
         extras={
-            "created_by": mapping.get(task.created_by, task.created_by),
-            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
+            **task_actor_fields(task, mapping),
             "data": data,
             "service_type": ServiceTypeEnum.MYSQL,
             **warning_extras,
@@ -786,7 +787,8 @@ def build_alters_api_list_response(
     :param task: The parent alters task retrieved from the Tasks API.
     :param status: The latest known execution status for the task.
     :param last_executed_at: The task's most recent finish time, if any.
-    :param context: The username map bound by ``response_context_provider``.
+    :param context: The username map bound by ``response_context_provider`` for
+        resolving actor IDs to system labels or provider usernames.
     :return: A validated alters task API response for the list surface.
     """
     return build_alters_api_task_response(

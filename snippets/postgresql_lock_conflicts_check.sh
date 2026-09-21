@@ -5,6 +5,7 @@
 # description: "This script checks for PSQL queries that are in the conflicted state."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: postgresql
 # parameters:
 #  - name: dbname
