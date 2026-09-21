@@ -106,17 +106,17 @@ def _restore_instance(
     extra_namespace: dict[str, object] | None = None,
 ):
     """Build a restore-payload instance carrying the named methods."""
-    calls: list[str] = []
+    calls: list[list[str]] = []
 
     class _FakeSubprocess:
         PIPE = -1
 
         @staticmethod
-        def Popen(cmd, **_kwargs):  # noqa: N802
+        def Popen(cmd: list[str], **_kwargs: object) -> _FakeRestoreProc:  # noqa: N802
             calls.append(cmd)
             return _FakeRestoreProc(returncode)
 
-    namespace: dict[str, object] = {
+    namespace = {
         "os": os,
         "Path": pathlib.Path,
         "thread_pool": __import__("multiprocessing.pool", fromlist=["pool"]),
@@ -364,7 +364,7 @@ class TestRunAesBranch:
             for node in class_nodes[0].body
             if isinstance(node, ast.FunctionDef) and node.name == "run"
         ]
-        namespace: dict[str, object] = {
+        namespace = {
             "os": os,
             "time": __import__("time"),
         }

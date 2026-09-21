@@ -1842,8 +1842,7 @@ class Restore(BaseBackup):  # pylint: disable=too-many-instance-attributes
         """Decrypt ``.xbcrypt`` files under ``path`` with xbcrypt/AES-256.
 
         Runs each decrypt as an argv list (no shell), so path/keyfile characters
-        cannot inject. Fails fast when nothing encrypted is present — the old
-        ``find | xargs`` pipeline exited 0 on an empty find.
+        cannot inject. Fails fast when nothing encrypted is present.
 
         :param path: Directory containing ``.xbcrypt`` files to decrypt.
         :raises BackupError: If the AES-256 key file is missing/unusable, no
