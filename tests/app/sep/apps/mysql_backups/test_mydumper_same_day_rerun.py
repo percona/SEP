@@ -843,11 +843,14 @@ class TestReclaimInterruptedPublish:
 
     @pytest.mark.skipif(not Path("/proc/self/stat").exists(), reason="needs procfs")
     def test_a_process_start_time_is_read_off_the_kernels_record(self) -> None:
-        """Assert the start time comes from ``/proc/<pid>/stat``, not the entry's ctime.
+        """Assert field 22 of ``/proc/<pid>/stat`` is turned into a Unix timestamp.
 
-        The entry's timestamps are set when it is first looked up, which for a child
-        nobody has inspected is the moment this test stats it, so a reading taken
-        after a pause has to still land at the spawn, not at the lookup.
+        The field index, the ``SC_CLK_TCK`` conversion and the ``CLOCK_BOOTTIME``
+        epoch are the parts that can go wrong silently, so a reading for a child of
+        known age has to land at its spawn. Any host this runs on stamps
+        ``/proc/<pid>`` at about the spawn too, so the case cannot tell the two
+        sources apart; why the field is read instead of the entry's own timestamps
+        is documented on ``_process_started_at``.
         """
         instance, _, _ = _mydumper_instance(("_process_started_at",))
         spawned_at = real_time.time()
