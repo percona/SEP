@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Coverage for app/tasks/execution/executors/nomad/models.py: 92%</title>
+    <title>Coverage for app/tasks/execution/executors/nomad/models.py: 93%</title>
     <link rel="icon" sizes="32x32" href="favicon_32_cb_c827f16f.png">
     <link rel="stylesheet" href="style_cb_4667309f.css" type="text/css">
     <script src="coverage_html_cb_dd2e7eb5.js" defer></script>
@@ -12,7 +12,7 @@
     <div class="content">
         <h1>
             <span class="text">Coverage for </span><b>app<span class="sep">/</span>tasks<span class="sep">/</span>execution<span class="sep">/</span>executors<span class="sep">/</span>nomad<span class="sep">/</span>models.py</b>:
-            <span class="pc_cov">92%</span>
+            <span class="pc_cov">93%</span>
         </h1>
         <aside id="help_panel_wrapper">
             <input id="help_panel_state" type="checkbox">
@@ -56,10 +56,10 @@
         </aside>
         <h2>
             <span class="text">935 statements &nbsp;</span>
-            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">867<span class="text"> run</span></button>
-            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">68<span class="text"> missing</span></button>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">869<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">66<span class="text"> missing</span></button>
             <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">3<span class="text"> excluded</span></button>
-            <button type="button" class="par run show_par button_toggle_par" value="par" data-shortcut="p" title="Toggle lines partially run">19<span class="text"> partial</span></button>
+            <button type="button" class="par run show_par button_toggle_par" value="par" data-shortcut="p" title="Toggle lines partially run">16<span class="text"> partial</span></button>
         </h2>
         <p class="text">
             <a id="prevFileLink" class="nav" href="z_4d841bdcdb1786ba_exceptions_py.html">&#xab; prev</a> &nbsp; &nbsp;
@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_4d841bdcdb1786ba_steps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 19:00 +0000
+            created at 2026-09-21 19:20 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -1419,7 +1419,7 @@
     <p class="run run2"><span class="n"><a id="t1335" href="#t1335">1335</a></span><span class="t">            <span class="str">&quot;{&quot;</span> <span class="op">+</span> <span class="nam">item</span> <span class="key">for</span> <span class="nam">item</span> <span class="key">in</span> <span class="nam">raw_log_data</span><span class="op">.</span><span class="nam">split</span><span class="op">(</span><span class="str">&quot;{&quot;</span><span class="op">)</span> <span class="key">if</span> <span class="nam">item</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1336" href="#t1336">1336</a></span><span class="t">        <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1337" href="#t1337">1337</a></span><span class="t">            <span class="nam">log_data</span> <span class="op">=</span> <span class="nam">json</span><span class="op">.</span><span class="nam">loads</span><span class="op">(</span><span class="nam">raw_log_data_item</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="par run show_par"><span class="n"><a id="t1338" href="#t1338">1338</a></span><span class="t">            <span class="key">if</span> <span class="nam">raw_msg</span> <span class="op">:=</span> <span class="nam">log_data</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;Data&quot;</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"><span class="annotate short">1338&#x202F;&#x219B;&#x202F;1334</span><span class="annotate long">line 1338 didn't jump to line 1334 because the condition on line 1338 was always true</span></span></p>
+    <p class="run"><span class="n"><a id="t1338" href="#t1338">1338</a></span><span class="t">            <span class="key">if</span> <span class="nam">raw_msg</span> <span class="op">:=</span> <span class="nam">log_data</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;Data&quot;</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1339" href="#t1339">1339</a></span><span class="t">                <span class="nam">nomad_offset</span> <span class="op">=</span> <span class="nam">log_data</span><span class="op">.</span><span class="nam">get</span><span class="op">(</span><span class="str">&quot;Offset&quot;</span><span class="op">,</span> <span class="nam">nomad_offset</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1340" href="#t1340">1340</a></span><span class="t">                <span class="nam">pieces</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">b64decode</span><span class="op">(</span><span class="nam">raw_msg</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1341" href="#t1341">1341</a></span><span class="t">        <span class="nam">raw_buf</span> <span class="op">=</span> <span class="str">b&quot;&quot;</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">pieces</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -2496,7 +2496,7 @@
     <p class="run run2"><span class="n"><a id="t2412" href="#t2412">2412</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2413" href="#t2413">2413</a></span><span class="t">        <span class="nam">state</span> <span class="op">=</span> <span class="str">&quot;running&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2414" href="#t2414">2414</a></span><span class="t">        <span class="nam">pending</span> <span class="op">=</span> <span class="nam">WithheldLineBuffer</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="par run show_par"><span class="n"><a id="t2415" href="#t2415">2415</a></span><span class="t">        <span class="key">while</span> <span class="nam">state</span> <span class="op">==</span> <span class="str">&quot;running&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"><span class="annotate short">2415&#x202F;&#x219B;&#x202F;2460</span><span class="annotate long">line 2415 didn't jump to line 2460 because the condition on line 2415 was always true</span></span></p>
+    <p class="run"><span class="n"><a id="t2415" href="#t2415">2415</a></span><span class="t">        <span class="key">while</span> <span class="nam">state</span> <span class="op">==</span> <span class="str">&quot;running&quot;</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2416" href="#t2416">2416</a></span><span class="t">            <span class="nam">alloc_id</span> <span class="op">=</span> <span class="nam">alloc</span><span class="op">[</span><span class="str">&quot;ID&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2417" href="#t2417">2417</a></span><span class="t">            <span class="nam">stream_start</span> <span class="op">=</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2418" href="#t2418">2418</a></span><span class="t">            <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -2531,7 +2531,7 @@
     <p class="run run2"><span class="n"><a id="t2447" href="#t2447">2447</a></span><span class="t">                    <span class="nam">start_offset</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t2448" href="#t2448">2448</a></span><span class="t">                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2449" href="#t2449">2449</a></span><span class="t">                <span class="key">break</span>&nbsp;</span><span class="r"></span></p>
-    <p class="par run show_par"><span class="n"><a id="t2450" href="#t2450">2450</a></span><span class="t">            <span class="key">if</span> <span class="nam">state</span> <span class="op">==</span> <span class="nam">_NOMAD_LOG_STREAM_CLIENT_ERROR</span><span class="op">:</span>&nbsp;</span><span class="r"><span class="annotate short">2450&#x202F;&#x219B;&#x202F;2415</span><span class="annotate long">line 2450 didn't jump to line 2415 because the condition on line 2450 was always true</span></span></p>
+    <p class="run"><span class="n"><a id="t2450" href="#t2450">2450</a></span><span class="t">            <span class="key">if</span> <span class="nam">state</span> <span class="op">==</span> <span class="nam">_NOMAD_LOG_STREAM_CLIENT_ERROR</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2451" href="#t2451">2451</a></span><span class="t">                <span class="nam">self</span><span class="op">.</span><span class="nam">_log_stream_client_error</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t2452" href="#t2452">2452</a></span><span class="t">                    <span class="nam">alloc_id</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t2453" href="#t2453">2453</a></span><span class="t">                    <span class="nam">step</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -2765,8 +2765,8 @@
     <p class="pln"><span class="n"><a id="t2681" href="#t2681">2681</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2682" href="#t2682">2682</a></span><span class="t">    <span class="key">def</span> <span class="nam">preflight_stream_logs</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">queue_item</span><span class="op">:</span> <span class="nam">TaskHistory</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2683" href="#t2683">2683</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Resolve allocation for live log streaming before HTTP response headers are sent.&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t2684" href="#t2684">2684</a></span><span class="t">        <span class="nam">job_id</span><span class="op">,</span> <span class="nam">eval_id</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">job_eval_ids_for_stream_logs</span><span class="op">(</span><span class="nam">queue_item</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="mis show_mis"><span class="n"><a id="t2685" href="#t2685">2685</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">get_last_allocation</span><span class="op">(</span><span class="nam">job_id</span><span class="op">,</span> <span class="nam">eval_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2684" href="#t2684">2684</a></span><span class="t">        <span class="nam">job_id</span><span class="op">,</span> <span class="nam">eval_id</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">job_eval_ids_for_stream_logs</span><span class="op">(</span><span class="nam">queue_item</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t2685" href="#t2685">2685</a></span><span class="t">        <span class="nam">self</span><span class="op">.</span><span class="nam">get_last_allocation</span><span class="op">(</span><span class="nam">job_id</span><span class="op">,</span> <span class="nam">eval_id</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2686" href="#t2686">2686</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t2687" href="#t2687">2687</a></span><span class="t">    <span class="key">def</span> <span class="nam">job_eval_ids_for_stream_logs</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">queue_item</span><span class="op">:</span> <span class="nam">TaskHistory</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">tuple</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">str</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t2688" href="#t2688">2688</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Return job_id and evaluation_id from task history tracking for log streaming.</span>&nbsp;</span><span class="r"></span></p>
@@ -3114,7 +3114,7 @@
             <a class="nav" href="z_4d841bdcdb1786ba_steps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-21 19:00 +0000
+            created at 2026-09-21 19:20 +0000
         </p>
     </div>
 </footer>
