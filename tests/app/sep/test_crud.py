@@ -225,8 +225,8 @@ class TestSyncItemManagerSyncIsRunning:
 # SyncItemManager.inventory_sync_completed (real session)
 # ---------------------------------------------------------------------------
 
-_LEADER = "app.sep.sync.syncers.pmm.PMMSyncer"
-_OTHER_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+_LEADER = "leader-syncer"
+_OTHER_SYNCER = "other-syncer"
 
 
 async def _record_run(

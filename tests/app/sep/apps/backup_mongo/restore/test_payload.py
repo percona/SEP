@@ -88,7 +88,7 @@ def _run_payload_capture_command(
     monkeypatch.setattr(subprocess, "Popen", _FakePopen)
     monkeypatch.setattr(subprocess, "run", _fake_run)
 
-    namespace_globals: dict[str, object] = {"__name__": "__main__"}
+    namespace_globals = {"__name__": "__main__"}
     exec(compile(_PAYLOAD.read_text(), str(_PAYLOAD), "exec"), namespace_globals)
     os.environ.pop("PBM_MONGODB_URI", None)
     return captured["cmd"]

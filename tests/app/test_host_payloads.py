@@ -128,6 +128,7 @@ def test_discovery_includes_no_shell_script() -> None:
 
 def test_every_load_argv_entry_names_a_discovered_payload() -> None:
     """Keep ``LOAD_ARGV`` from naming a payload the guard no longer loads."""
+    assert LOAD_ARGV
     assert set(LOAD_ARGV) <= {_relative(path) for path in DISCOVERED}
 
 

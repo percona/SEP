@@ -17,22 +17,17 @@
 
 import logging
 import re
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 from kombu.exceptions import KombuError
 from pydantic import SecretStr
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession, create_async_engine
-from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from app.celery import celery
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.core.utils import json_serializer
 from app.sep.apps.inventory.sync import (
     run_inventory_sync,
     run_node_sync,
@@ -56,7 +51,6 @@ from app.tasks.models import (
     INVENTORY_SYNC_AFTER_KEY,
     INVENTORY_SYNC_TASK_NAME,
 )
-from tests.app.db_schema import apply_schema
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -310,21 +304,14 @@ _LEADER = _LeaderSyncer.get_name()
 _FOLLOWER = _FollowerSyncer.get_name()
 
 
-@pytest_asyncio.fixture(name="sep_maker")
-async def sep_maker_fixture() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    """Provide a session maker bound to an in-memory SEP DB."""
-    engine = create_async_engine(
-        "sqlite+aiosqlite://",
-        connect_args={"check_same_thread": False},
-        json_serializer=json_serializer,
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await apply_schema(conn, SQLModel.metadata)
-    try:
-        yield get_async_session_maker_from_engine(engine)
-    finally:
-        await engine.dispose()
+@pytest.fixture(name="sep_maker")
+def sep_maker_fixture(session: AsyncSession) -> async_sessionmaker[AsyncSession]:
+    """Return a session maker over the ``session`` fixture's in-memory SEP DB.
+
+    The code under test opens its own sessions, so it needs a maker rather than
+    the one session the fixture yields.
+    """
+    return get_async_session_maker_from_engine(session.bind)
 
 
 def _route_sessions(mocker, maker: async_sessionmaker[AsyncSession]) -> None:

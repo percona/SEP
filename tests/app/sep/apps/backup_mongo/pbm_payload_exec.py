@@ -129,7 +129,8 @@ def run_payload(path: pathlib.Path) -> dict[str, object]:
     :return: The namespace populated by the payload's module-level execution
         (function definitions, module-level variables) up to wherever it stopped.
     """
-    namespace: dict[str, object] = {"__name__": "__main__"}
+    namespace: dict[str, object] = {}
+    namespace["__name__"] = "__main__"
     try:
         exec(compile(path.read_text(), str(path), "exec"), namespace)  # noqa: S102
     finally:
