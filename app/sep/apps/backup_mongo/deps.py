@@ -63,6 +63,7 @@ from app.sep.deps import (
     get_username_mapping,
     InventoryAPI,
     reject_if_protected,
+    task_path,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -273,7 +274,9 @@ async def _fetch_backup_derived_detail(
         derived = await get_backups_task(derived_name, tasks_api)
     except HTTPNotFoundException:
         return None
-    history_response = as_json_object(await tasks_api.get(f"/{derived.name}/history/"))
+    history_response = as_json_object(
+        await tasks_api.get(task_path(derived.name, "/history/"))
+    )
     return derived, history_response["items"]
 
 
@@ -405,11 +408,13 @@ async def ensure_backup_derived_siblings(
     :param tasks_api: The TaskAPI used to GET existing legs and POST missing ones.
     :param parent_name: The parent ``pbm_config`` task name.
     :param parent_payload: The updated parent payload used to build missing children.
+    :raises HTTPUnprocessableEntityException: If a derived sibling's name is not a
+        single plain URL path segment.
     """
     for spec in BACKUP_MONGO_DERIVED:
         derived_name = f"{parent_name}{spec.name_suffix}"
         try:
-            await tasks_api.get(f"/{derived_name}")
+            await tasks_api.get(task_path(derived_name))
         except HTTPNotFoundException:
             child_payload = build_derived_payload(parent_payload, spec)
             await tasks_api.post("/", json=child_payload)

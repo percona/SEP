@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, call
 import pytest
 from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
@@ -47,6 +48,7 @@ from app.tasks.models import (
 )
 from tests.app.factories import GeneratedTaskFactory, TaskFactory
 from tests.app.sep.apps.alters.factories import AltersCreateFactory
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 @pytest.fixture
@@ -816,3 +818,32 @@ def _legacy_form_base() -> dict[str, object]:
         "alter": "ADD COLUMN x INT",
         "recursion_method": "processlist",
     }
+
+
+@pytest.mark.asyncio
+class TestAltersCascadeCreatePrevalidation:
+    """Test that the alters group refuses an unsafe name before any create."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_refuses_an_unsafe_parent_name(self, task_name: str) -> None:
+        """Refuse an unsafe parent name and POST nothing."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        body = AltersCreate(
+            task_name=task_name,
+            hostname="host1",
+            service_id=1,
+            db_schema="app",
+            db_table="users",
+            alter="ADD COLUMN x INT",
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_alters_group(
+                tasks_api,
+                _cascade_parent_task(name=task_name),
+                _cascade_pre_checks_template(),
+                body,
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()

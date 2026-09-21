@@ -74,7 +74,12 @@ from app.sep.apps.framework.script_source import (
 )
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.apps.framework.task_status import get_task_latest_history
-from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
+from app.sep.deps import (
+    HasNoConflictedRunningTasks,
+    IsApiAuthenticated,
+    task_path,
+    TaskAPI,
+)
 from app.tasks.models import (
     Task,
     TaskHistoryResponse,
@@ -701,7 +706,9 @@ def _register_update_route(
             ``None`` when the probe is disabled for the route.
         :return: The rendered update response.
         """
-        updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+        updated = await tasks_api.put(
+            task_path(task.name), json=task_write.model_dump()
+        )
         updated_task = Task.model_validate(updated)
         latest = await get_task_latest_history(tasks_api, updated_task.name)
         warning = (
@@ -793,7 +800,7 @@ def _register_delete_route(
     async def _delete(
         tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
     ) -> None:
-        await tasks_api.delete(f"/{task.name}")
+        await tasks_api.delete(task_path(task.name))
 
     router.add_api_route(
         detail_path,
@@ -1457,7 +1464,7 @@ def derive_execute_route(
     ) -> BaseModel:
         """Resolve, dispatch, and wrap a standard task execution."""
         created = await tasks_api.post(
-            f"/execute/{task.name}",
+            f"/execute{task_path(task.name)}",
             json=body.model_dump(exclude_none=True),
         )
         task_history = TaskHistoryResponse.model_validate(created)
@@ -1884,7 +1891,7 @@ def derive_script_routes(
         return ArbitraryMapping(
             as_json_object(
                 await tasks_api.get(
-                    f"/{script.execution_task_name}/history/",
+                    task_path(script.execution_task_name, "/history/"),
                     params={"snippet_filename": script.filename},
                 )
             )

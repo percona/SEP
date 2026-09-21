@@ -856,7 +856,7 @@ _PATH_UNSAFE_NAMES = frozenset({"", ".", ".."})
 """Names that resolve to a different upstream path rather than a task."""
 
 
-def _require_one_path_segment(task_name: str) -> None:
+def require_one_path_segment(task_name: str) -> None:
     """Refuse a task name that is not exactly one URL path segment.
 
     A task name is composed into an outbound path, and
@@ -889,7 +889,10 @@ def task_path(task_name: str, suffix: str = "") -> str:
     """Return the guarded outbound Tasks API path for ``task_name``.
 
     Composing a name through here rather than through an f-string keeps
-    :func:`_require_one_path_segment` impossible to forget at a new call site.
+    :func:`require_one_path_segment` impossible to forget at a new call site.
+    Call the check directly only where a name is validated without being composed
+    yet — a create that must refuse a name before it POSTs anything it would then
+    have to roll back.
 
     :param task_name: The task name to compose into the path.
     :param suffix: Trailing path appended after the name, e.g. ``"/history/"``.
@@ -897,7 +900,7 @@ def task_path(task_name: str, suffix: str = "") -> str:
     :raises HTTPUnprocessableEntityException: If the name is not a single plain
         path segment.
     """
-    _require_one_path_segment(task_name)
+    require_one_path_segment(task_name)
     return f"/{task_name}{suffix}"
 
 

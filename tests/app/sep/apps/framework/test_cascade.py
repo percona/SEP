@@ -1314,3 +1314,77 @@ class TestCascadePathGuard:
             result.failures[0].exception, HTTPUnprocessableEntityException
         )
         tasks_api.put.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestCascadeCreatePrevalidation:
+    """Test that every planned name is checked before the first create."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_refuses_an_unsafe_parent_name(self, task_name: str) -> None:
+        """Refuse an unsafe parent name and POST nothing."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_tasks(tasks_api, _parent_payload(name=task_name), [])
+
+        tasks_api.post.assert_not_awaited()
+
+    async def test_create_refuses_an_unsafe_derived_name(self) -> None:
+        """Refuse a derived name the suffix makes unsafe, leaving no parent behind."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_tasks(
+                tasks_api, _parent_payload(), [DerivedTask(name_suffix="?q=1")]
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_predecessors_refuses_an_unsafe_parent_name(
+        self, task_name: str
+    ) -> None:
+        """Refuse an unsafe parent name before the predecessor chain is POSTed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_predecessors(
+                tasks_api,
+                _parent_payload(name=task_name),
+                [(ChainedPredecessor(name_suffix="-pre"), {"name": "ignored"})],
+            )
+
+        tasks_api.post.assert_not_awaited()
+
+    async def test_create_predecessors_refuses_an_unsafe_predecessor_name(
+        self,
+    ) -> None:
+        """Refuse a predecessor name the suffix makes unsafe, POSTing no parent."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_predecessors(
+                tasks_api,
+                _parent_payload(),
+                [(ChainedPredecessor(name_suffix="?q=1"), {"name": "ignored"})],
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_independent_refuses_an_unsafe_child_name(
+        self, task_name: str
+    ) -> None:
+        """Refuse an unsafe child name before the parent is POSTed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_independent_tasks(
+                tasks_api, _parent_payload(), [{"name": task_name}]
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()

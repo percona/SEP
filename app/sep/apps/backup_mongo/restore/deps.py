@@ -62,6 +62,7 @@ from app.sep.deps import (
     get_username_mapping,
     InventoryAPI,
     reject_if_protected,
+    task_path,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -184,7 +185,7 @@ async def update_restore_task_group(
     result = CascadeResult()
     for name, payload in legs:
         try:
-            await tasks_api.put(f"/{name}", json=payload.model_dump())
+            await tasks_api.put(task_path(name), json=payload.model_dump())
             result.successes.append(name)
         except Exception as exc:  # noqa: BLE001 — surfaced as HTTP 500 by the route
             result.failures.append(CascadeFailure(name, exc))
@@ -459,7 +460,9 @@ async def _fetch_restore_child_detail(
         child = await get_restores_task(child_name, tasks_api)
     except HTTPNotFoundException:
         return None
-    history_response = as_json_object(await tasks_api.get(f"/{child.name}/history/"))
+    history_response = as_json_object(
+        await tasks_api.get(task_path(child.name, "/history/"))
+    )
     return child, history_response["items"]
 
 

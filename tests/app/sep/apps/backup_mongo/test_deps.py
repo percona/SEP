@@ -15,13 +15,21 @@
 
 """Define tests for the app.sep.apps.backup_mongo.deps module."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
+from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import (
     build_backup_mongo_api_task_response,
     build_backup_task_payload,
+    ensure_backup_derived_siblings,
     ensure_backup_group_update_preserves_names,
 )
 from app.sep.apps.backup_mongo.models import (
@@ -38,6 +46,7 @@ from tests.app.factories import (
     MOCK_UPDATER_ID,
     TaskFactory,
 )
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 def _backup_mongo_task() -> Task:
@@ -161,3 +170,25 @@ class TestBuildBackupMongoApiTaskResponse:
             MOCK_CREATOR_ID,
             MOCK_UPDATER_ID,
         )
+
+
+@pytest.mark.asyncio
+class TestEnsureMissingDerivedChildrenPathGuard:
+    """Test that a parent name cannot reshape the derived-sibling lookup."""
+
+    @pytest.mark.parametrize(
+        "parent_name", [name for name in PATH_UNSAFE_TASKS if name != ".."]
+    )
+    async def test_refuses_an_unsafe_parent_name(self, parent_name: str) -> None:
+        """Refuse an unsafe parent name and issue no GET.
+
+        A bare dot-segment is excluded because appending a sibling suffix stops
+        it being one, so the composed name it produces is genuinely safe.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(tasks_api, parent_name, {})
+
+        tasks_api.get.assert_not_awaited()
+        tasks_api.post.assert_not_awaited()
