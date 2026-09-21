@@ -29,11 +29,12 @@ from app.sep.api.task_history_actors import (
     SepTaskHistoryResponse,
     SepTaskResponse,
     SYSTEM_ACTOR_LABELS,
+    TASK_ACTOR_FIELDS,
     task_actor_fields,
 )
 from app.tasks.crud import SYSTEM_EXECUTOR_IDS
 from app.tasks.execution_request_secrets import ARGS_LEAF
-from app.tasks.models import SYSTEM_USER, TaskBackendEnum
+from app.tasks.models import SYSTEM_USER, Task, TaskBackendEnum, TaskResponse
 from tests.app.factories import MOCK_CREATOR_ID as CREATOR_ID
 from tests.app.factories import MOCK_UPDATER_ID as UPDATER_ID
 from tests.app.factories import TaskFactory
@@ -115,6 +116,25 @@ class TestResolveActor:
 def test_system_actor_labels_cover_every_system_executor_id():
     """Label exactly the identifiers the task-history SQL filter treats as system."""
     assert set(SYSTEM_ACTOR_LABELS) == SYSTEM_EXECUTOR_IDS
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        pytest.param(Task, id="Task"),
+        pytest.param(TaskResponse, id="TaskResponse"),
+        pytest.param(SepTaskResponse, id="SepTaskResponse"),
+    ],
+)
+def test_actor_fields_are_declared_on_every_owning_task_model(
+    model: type[Task | TaskResponse | SepTaskResponse],
+):
+    """Pin TASK_ACTOR_FIELDS to fields the owning task models actually declare.
+
+    A rename on the owning model must fail here rather than leave the resolver
+    and the framework conformance check keyed on stale field names.
+    """
+    assert set(TASK_ACTOR_FIELDS) <= model.model_fields.keys()
 
 
 class TestResolveTaskActors:
