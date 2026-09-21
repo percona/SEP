@@ -168,6 +168,29 @@ So a task runs **only** on the client whose registered name equals the selected 
 
 See GAS `docs/usage/nomad.md` for production networking guidance.
 
+### 4.4 Executor-host Python
+
+SEP's Python payloads (backups, restores, pre-checks, connectivity checks, inventory and host-facts collection, and diagnostics collectors) run under the executor host's own interpreter. The `run-python` and `exec-python-artifact` jobs build a virtual environment with `python3 -m venv` and install the payload's drivers into it with `pip`. So every Nomad client that runs SEP workloads needs:
+
+- **`python3` 3.9 or newer** on the Nomad agent's `PATH`;
+- **its `venv` module**, including the `pip` bootstrap `venv` relies on.
+
+| Platform | Default `python3` | Action |
+|----------|-------------------|--------|
+| Red Hat / Oracle Linux 8 | 3.6 | Install a newer Python, for example the `python39` package, and make `python3` resolve to it |
+| Red Hat / Oracle Linux 9, Amazon Linux 2023 | 3.9 | None |
+| Ubuntu 22.04 | 3.10 | Install `python3-venv` |
+| Debian 12 | 3.11 | Install `python3-venv` |
+| Red Hat 10 | 3.12 | None |
+
+On Python 3.9, `pip` installs the newest driver releases that still support it, which can be older than on a newer host.
+
+**Customer action:** On each Nomad client, run this as the agent's user and confirm it prints a version of 3.9 or newer without an error:
+
+```bash
+python3 -c 'import sys, venv; print(sys.version)'
+```
+
 ---
 
 ## 5. Nomad does not run as root (customer requirement)
@@ -229,7 +252,7 @@ Registered in the Tasks database (`app/tasks/db/seed.py`):
 | Job ID | Purpose | Driver |
 |--------|---------|--------|
 | `run-command` | Proxy apps / `pt-*` style commands via `meta.command` + `meta.args` | `raw_exec` |
-| `run-python` | Python payload with venv prestart | `raw_exec` |
+| `run-python` | Python payload with venv prestart, built from the host's `python3` (3.9 or newer, §4.4) | `raw_exec` |
 | `exec-artifact` | Approved snippets / signed artifact download | `raw_exec` |
 
 Common properties:
@@ -267,5 +290,6 @@ Common properties:
 | `GAS/automation/roles/sep/templates/prod-settings.yaml.j2` | SEP → Nomad endpoint or cert paths |
 | `SEP/app/tasks/db/seed.py` | Job templates or drivers |
 | `SEP/app/tasks/execution/executors/nomad/models.py` | Node selection / health filters |
+| `SEP/tests/app/host_payloads.py` (`MINIMUM_HOST_PYTHON`) | The executor-host Python floor in §4.4, which `tests/app/test_host_payloads.py` enforces on every shipped payload |
 
 **Automation repository:** Percona **GAS** repository, `automation/` directory (sibling to SEP in Percona’s source layout). Paths in §3 are relative to that tree.

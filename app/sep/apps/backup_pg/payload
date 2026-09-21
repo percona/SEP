@@ -2,6 +2,8 @@
 
 # Copyright 2020-2023 by Percona LLC or its affiliates, all rights reserved.
 
+from __future__ import annotations
+
 import argparse
 import configparser
 import datetime

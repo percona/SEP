@@ -1098,6 +1098,12 @@ GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
 )
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
+#: The Celery task every seeded or kicked ``inventory-sync`` run goes through.
+EXECUTE_TASK_BY_NAME_TASK = "app.tasks.celery.execute_task_by_name"
+#: Meta key naming the per-syncer schedules whose first run follows this one.
+INVENTORY_SYNC_FOLLOWERS_KEY = "follower_syncers"
+#: Meta key naming the pinned syncer a per-syncer schedule waits on.
+INVENTORY_SYNC_AFTER_KEY = "after_syncer"
 INVENTORY_COLLECTION_TASK_NAME = "inventory-collection"
 SYNC_RUNNING_TASKS_TASK_NAME = "tasks__sync_running_tasks"
 

@@ -15,16 +15,35 @@
 
 """Provide synchronization functions for the SEP inventory."""
 
+import logging
+from collections.abc import Sequence
+
+from kombu.exceptions import KombuError
+
+from app.celery import celery
 from app.core.security import get_internal_token
 from app.sep.apps.inventory.deps import (
     filter_syncers_by_name,
     get_syncers_standalone,
 )
+from app.sep.crud import SyncInstanceManager, SyncItemManager
+from app.sep.db import get_async_session_maker
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.sync.models import BaseSyncer
+from app.tasks.models import (
+    EXECUTE_TASK_BY_NAME_TASK,
+    INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_TASK_NAME,
+)
+
+logger = logging.getLogger(__name__)
 
 
-async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
+async def run_scheduled_inventory_sync(
+    syncer: str | None = None,
+    after_syncer: str | None = None,
+    follower_syncers: Sequence[str] = (),
+) -> None:
     """Execute scheduled inventory sync using configured internal token and syncers.
 
     Read the internal token from ``settings.SEP_INTERNAL_TOKEN`` and construct
@@ -37,10 +56,19 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
     single-syncer path while a row with empty meta resolves to the sync-all
     path.
 
+    The tasks seeder orders a per-syncer schedule's first run after the pinned
+    default's first completed sync through two meta keys, forwarded here as
+    keyword arguments: a follower's run is skipped while ``after_syncer`` has
+    never completed a whole-inventory pass, and the default's run then starts
+    each follower that has never run.
+
     :param syncer: Fully qualified syncer name (e.g.
         ``"app.sep.sync.syncers.pmm.PMMSyncer"``), or ``None`` / empty for the
         sync-all path.
-    :type syncer: str | None
+    :param after_syncer: The pinned syncer this schedule waits on, or ``None`` to
+        run unconditionally.
+    :param follower_syncers: The per-syncer schedules to start once after this
+        run, each only if it has never run. Defaults to none.
     :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if
         ``syncer`` is set but does not match any configured syncer that can
         sync inventory.
@@ -51,6 +79,13 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
             "sync. Set it in .env to a long random secret "
             "(e.g. `openssl rand -hex 32`)."
         )
+    if after_syncer and not await _inventory_sync_completed(after_syncer):
+        logger.info(
+            "Deferring %s until %s completes its first inventory sync",
+            syncer,
+            after_syncer,
+        )
+        return
     syncers = await get_syncers_standalone()
     selected = filter_syncers_by_name(
         syncers,
@@ -58,6 +93,70 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
         lambda candidate: candidate.can_sync_inventory(),
     )
     await run_inventory_sync(api_key, *selected)
+    if syncer and follower_syncers:
+        await start_follower_first_runs(syncer, follower_syncers, syncers)
+
+
+async def _inventory_sync_completed(syncer: str) -> bool:
+    """Return whether ``syncer`` has ever completed a whole-inventory pass.
+
+    :param syncer: The fully qualified syncer name.
+    :return: Whether such a pass is recorded.
+    """
+    async with get_async_session_maker()() as session:
+        return await SyncItemManager.inventory_sync_completed(session, syncer)
+
+
+async def start_follower_first_runs(
+    leader: str, followers: Sequence[str], syncers: list[BaseSyncer]
+) -> None:
+    """Start once each follower of ``leader`` that has never run.
+
+    Nothing starts until ``leader`` has completed a whole-inventory pass, so a
+    follower's first run reads the inventory that pass produced. A follower with
+    any recorded run is left to its own schedule. The start goes through the same
+    task and meta as the follower's beat row, so the identical-task guard refuses
+    it while that row's own fire is in flight. An enqueue failure is logged rather
+    than raised: the follower's next beat fire runs it instead.
+
+    :param leader: The fully qualified name of the syncer the followers wait on.
+    :param followers: The fully qualified names of the followers to consider.
+    :param syncers: The configured syncers, which a follower must resolve against.
+    """
+    async with get_async_session_maker()() as session:
+        if not await SyncItemManager.inventory_sync_completed(session, leader):
+            return
+        never_run = [
+            follower
+            for follower in followers
+            if await SyncInstanceManager.first(session, syncer=follower) is None
+        ]
+    for follower in never_run:
+        try:
+            filter_syncers_by_name(
+                syncers, follower, lambda candidate: candidate.can_sync_inventory()
+            )
+        except ValueError:
+            logger.warning(
+                "Not starting %s after %s: it is not a configured inventory syncer",
+                follower,
+                leader,
+            )
+            continue
+        try:
+            celery.send_task(
+                EXECUTE_TASK_BY_NAME_TASK,
+                kwargs={
+                    "task_name": INVENTORY_SYNC_TASK_NAME,
+                    "execution_data": {
+                        "meta": {"syncer": follower, INVENTORY_SYNC_AFTER_KEY: leader}
+                    },
+                },
+            )
+        except (OSError, KombuError):
+            logger.exception(
+                "Could not start %s after %s's first inventory sync", follower, leader
+            )
 
 
 async def run_inventory_sync(api_key: str, *syncers: BaseSyncer) -> None:

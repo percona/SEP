@@ -136,6 +136,30 @@ class SyncItemManager(BaseSQLModelManager):
         return sync_in_progress is not None
 
     @classmethod
+    async def inventory_sync_completed(cls, session: AsyncSession, syncer: str) -> bool:
+        """Return whether ``syncer`` has ever finished a whole-inventory pass.
+
+        A pass counts once its ``INVENTORY`` item reached ``SUCCESS``. That item
+        fails only when an exception escapes the pass, so a run with per-entity
+        failures counts while a run that could not list the inventory does not,
+        unlike the run-level status, which any failed item turns ``FAILED``. The
+        answer relies on sync rows being retained.
+
+        :param session: The SEP database session.
+        :param syncer: The fully qualified syncer name, in ``get_name()`` form.
+        :return: Whether such a pass exists.
+        """
+        completed = await cls.first(
+            session,
+            col(SyncItem.sync_instance_id).in_(
+                select(SyncInstance.id).where(col(SyncInstance.syncer) == syncer)
+            ),
+            entity_type=SyncInventoryEntityTypeEnum.INVENTORY,
+            status=SyncStatusEnum.SUCCESS,
+        )
+        return completed is not None
+
+    @classmethod
     async def start_sync(cls, session: AsyncSession, instance: SyncItem) -> SyncItem:
         """Mark a SyncItem as running.
 

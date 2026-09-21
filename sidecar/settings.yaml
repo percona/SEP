@@ -285,7 +285,8 @@ default:
     # Daily rather than PMM's 15 minutes: a node's uid and sudo availability change
     # at provisioning time, not during operation, and each run costs a per-node venv
     # build plus a four-driver pip install. The full get_name() form is required
-    # here; the SYNCERS entry above takes the short auto-prefixed one.
+    # here; the SYNCERS entry above takes the short auto-prefixed one. Its first run
+    # waits for the PMM default's first completed sync, which then starts it.
     INVENTORY_SYNC_SCHEDULES:
       - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
         INTERVAL: 1 days

@@ -28,6 +28,8 @@ usable snapshot. Database drivers (``pymysql``, ``psycopg``, ``pymongo``) and
 ``myloginpath`` are imported lazily so the module imports without them present.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -38,7 +40,7 @@ import shutil
 import subprocess
 import sys
 from configparser import Error as ConfigParserError, RawConfigParser
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum, IntEnum
 from pathlib import Path
 from typing import Any
@@ -121,7 +123,7 @@ def _now_iso() -> str:
     :return: The current UTC timestamp.
     :rtype: str
     """
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def parse_host_port(
