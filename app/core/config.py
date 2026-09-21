@@ -717,7 +717,12 @@ class Settings(BaseYamlSettings):
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
     _SEP_INTERNAL_TOKEN: SecretStr = SecretStr("")
 
-    @computed_field
+    @computed_field(
+        description=(
+            "The internal service-to-service token. Derived from SECRET_KEY "
+            "when no explicit value is configured."
+        )
+    )
     @property
     def SEP_INTERNAL_TOKEN(self) -> SecretStr:
         """Return the internal service-to-service token, always populated.

@@ -698,6 +698,21 @@ class TestSettingsInternalTokenKeys:
         assert meta.is_secret is True
         assert meta.reload is ReloadClassification.NOT_OVERRIDABLE
 
+    def test_internal_token_description_is_operator_facing(self) -> None:
+        """Describe the token for an operator rather than echoing its docstring.
+
+        Docstrings here open in imperative mood, which reads as an instruction
+        once the settings page renders it, so the computed field declares its
+        own description instead of inheriting the summary line.
+        """
+        meta = next(
+            m for m in iter_class_fields(Settings) if m.key == "SEP_INTERNAL_TOKEN"
+        )
+        assert meta.description == (
+            "The internal service-to-service token. Derived from SECRET_KEY "
+            "when no explicit value is configured."
+        )
+
     def test_base_dir_is_advertised(self) -> None:
         """Assert ``BASE_DIR`` is listed: matching ``model_dump()`` adds every computed key."""
         keys = {meta.key for meta in iter_class_fields(Settings)}
