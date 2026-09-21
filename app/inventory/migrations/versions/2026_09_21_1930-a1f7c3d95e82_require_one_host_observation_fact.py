@@ -40,15 +40,31 @@ row — the validator and the table landed together, and the sole producer retur
 ``None`` when no fact was collected — so this step is a pre-flight for rows
 introduced by hand-written SQL, a restored backup or a future bug.
 
-Both steps go through SQLAlchemy Core rather than raw SQL, for the reasons
-``e4b8c2f7a915``'s docstring spells out: all three supported engines are
-reachable here and their spellings diverge. The CHECK is added inside
-``batch_alter_table`` because SQLite has no ``ALTER TABLE ... ADD CONSTRAINT``;
-batch mode recreates the table there and emits a plain ``ALTER`` elsewhere.
+``installed_packages`` and ``config`` are normalized before that deletion runs.
+Both are JSON columns, and SQLAlchemy's ``JSON`` persisted an unset value as the
+JSON text ``null`` rather than as SQL NULL until the model started declaring
+``JSON(none_as_null=True)``. Such a value is not NULL, so without this step a
+row holding no observed fact at all would read as holding two, escape the
+deletion below, and then satisfy the CHECK for the rest of its life — the exact
+case this revision exists to make impossible. Rewriting them to SQL NULL both
+exposes those rows to the deletion and leaves every surviving row spelling an
+unset JSON fact the one way the CHECK understands. The match is written as
+``CAST(col AS TEXT) = 'null'`` because PostgreSQL's ``json`` type has no
+equality operator, and the rewrite binds ``sa.null()`` rather than ``None``,
+which the same bind processor would turn straight back into JSON ``null``.
 
-Downgrade drops the CHECK and restores nothing. Unlike ``e4b8c2f7a915``, whose
-upgrade only retired and backfilled, this one genuinely discards rows — an
-all-NULL observation carries no fact worth restoring.
+All three steps go through SQLAlchemy Core rather than raw SQL, for the reasons
+``e4b8c2f7a915``'s docstring spells out: both supported engines — SQLite and
+PostgreSQL, the two members of ``DatabaseDialect`` — are reachable here and
+their spellings diverge. The CHECK is added inside ``batch_alter_table`` because
+SQLite has no ``ALTER TABLE ... ADD CONSTRAINT``; batch mode recreates the table
+there and emits a plain ``ALTER`` on PostgreSQL.
+
+Downgrade drops the CHECK and restores nothing — neither the discarded rows nor
+the JSON ``null``s the normalization rewrote. Unlike ``e4b8c2f7a915``, whose
+upgrade only retired and backfilled, this one genuinely discards rows: an
+all-NULL observation carries no fact worth restoring, and a JSON ``null`` and a
+SQL NULL both decode to ``None`` at the API, so there is nothing to put back.
 """
 
 import logging
@@ -92,13 +108,43 @@ _FACT_COLUMNS = (
     _OBSERVATION.c.can_elevate,
 )
 
+#: The subset of the facts stored as JSON, and therefore the ones a pre-existing
+#: row may hold as the JSON text ``null`` instead of as SQL NULL.
+_JSON_FACT_COLUMNS = (
+    _OBSERVATION.c.installed_packages,
+    _OBSERVATION.c.config,
+)
+
 _HAS_NO_FACT = sa.and_(*(fact.is_(None) for fact in _FACT_COLUMNS))
 _HAS_A_FACT = sa.or_(*(sa.column(fact.name).is_not(None) for fact in _FACT_COLUMNS))
 
 
+def _holds_json_null(fact: sa.ColumnClause) -> sa.ColumnElement[bool]:
+    """Match rows whose JSON ``fact`` holds the JSON text ``null``.
+
+    The comparison goes through a text cast because PostgreSQL's ``json`` type
+    has no equality operator; the cast renders and matches on SQLite too.
+
+    :param fact: The JSON column to test.
+    :return: A predicate true for rows storing JSON ``null`` in that column.
+    """
+    return sa.cast(fact, sa.Text) == "null"
+
+
 def upgrade() -> None:
-    """Delete fact-less observations, then constrain the table against new ones."""
+    """Normalize JSON nulls, delete fact-less rows, then constrain the table.
+
+    The normalization has to run first: a row whose JSON facts hold the JSON
+    text ``null`` holds no observed fact, but reads as holding two until it is
+    rewritten, and would survive the deletion below.
+    """
     bind = op.get_bind()
+    for fact in _JSON_FACT_COLUMNS:
+        bind.execute(
+            sa.update(_OBSERVATION)
+            .where(_holds_json_null(fact))
+            .values({fact.name: sa.null()})
+        )
     factless = bind.execute(
         sa.select(_OBSERVATION.c.node_id, _OBSERVATION.c.observed_at).where(
             _HAS_NO_FACT

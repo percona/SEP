@@ -1021,11 +1021,11 @@ class HostSystemObservationBase(SQLModel):
     os_version: str | None = None
     installed_packages: list[ArbitraryMapping] | None = SQLField(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON(none_as_null=True)),
     )
     config: ArbitraryMapping | None = SQLField(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON(none_as_null=True)),
     )
     can_elevate: bool | None = None
     observed_at: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
@@ -1068,6 +1068,11 @@ def host_observation_min_content_check() -> CheckConstraint:
     guard and the Pydantic one stay in lockstep as fields are added. Sorting
     makes the rendered expression deterministic across interpreter runs, which a
     frozenset's iteration order is not.
+
+    A plain ``IS NOT NULL`` disjunction covers the JSON-typed facts only because
+    they are declared ``JSON(none_as_null=True)``. SQLAlchemy's default persists
+    an unset JSON value as the JSON text ``null``, which is not SQL NULL and so
+    would satisfy this CHECK on a row carrying no fact at all.
 
     :return: A CHECK requiring at least one observed fact to be non-NULL.
     """
