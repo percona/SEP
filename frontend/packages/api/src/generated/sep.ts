@@ -9635,12 +9635,19 @@ export interface components {
      *
      *     The transport and decryption fields are the exception, and they pay that
      *     price deliberately: ``source_transport`` and ``source_encryption`` declare
-     *     where the backup lives and how it was encrypted, and the five fields those
+     *     where the backup lives and how it was encrypted, and the six fields those
      *     declarations govern are gated on them. Because a field-level ``Forbidden``
      *     rejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /
      *     ``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still
      *     declares them and ``build_restore_spec`` applies them from there, so the
-     *     emitted config is unchanged.
+     *     emitted config is unchanged. ``xtrabackup_aes256_keyfile`` is the sixth and
+     *     the only one also carrying a ``Requires``, since an AES-256 format with no
+     *     key file has nothing to decrypt with.
+     *
+     *     Which formats each engine can write is a form rule rather than a field gate:
+     *     the served schema carries it, so the renderer rejects an impossible pairing
+     *     before it is submitted, and a mismatch is reported alongside the key file the
+     *     format asks for instead of being masked by it.
      *
      *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
      *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
