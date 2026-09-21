@@ -41,6 +41,7 @@ import logging
 from collections.abc import Collection
 
 from sqlalchemy_celery_beat import PeriodicTask
+from sqlalchemy.orm import load_only
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -62,6 +63,9 @@ from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.utils import resolve_schedule_task_name
 
 logger = logging.getLogger(__name__)
+
+TASK_BATCH_SIZE = 500
+SCHEDULE_BATCH_SIZE = 500
 
 
 async def seed_app_periodic_task_rows(
@@ -224,24 +228,59 @@ async def disable_schedules_for_owners(
     """
     if not owners:
         return []
-    tasks = await TaskManager.list(
-        tasks_session,
-        col(Task.owner).in_(owners),
-        col(Task.deleted_at).is_(None),
-    )
-    owned_names = {task.name for task in tasks}
+    owned_names: set[str] = set()
+    last_task_id = 0
+    while True:
+        tasks = await TaskManager.list(
+            tasks_session,
+            col(Task.owner).in_(owners),
+            col(Task.deleted_at).is_(None),
+            col(Task.id) > last_task_id,
+            query_options=[
+                load_only(
+                    Task.id,  # ty: ignore[invalid-argument-type]
+                    Task.name,  # ty: ignore[invalid-argument-type]
+                )
+            ],
+            order_by=[col(Task.id)],
+            limit=TASK_BATCH_SIZE,
+        )
+        if not tasks:
+            break
+        owned_names.update(task.name for task in tasks)
+        if len(tasks) < TASK_BATCH_SIZE:
+            break
+        last_task_id = tasks[-1].id
+        if last_task_id is None:
+            break
     if not owned_names:
         return []
     schedules: list[PeriodicTask] = []
-    for candidate in await PeriodicTaskManager.list(celery_beat_session, enabled=True):
-        task_name = resolve_schedule_task_name(candidate)
-        if task_name is None:
-            logger.warning(
-                "Skipped periodic task %r: its args/kwargs do not name a task.",
-                candidate.name,
-            )
-        elif task_name in owned_names:
-            schedules.append(candidate)
+    last_schedule_id = 0
+    while True:
+        candidates = await PeriodicTaskManager.list(
+            celery_beat_session,
+            col(PeriodicTask.id) > last_schedule_id,
+            enabled=True,
+            order_by=[col(PeriodicTask.id)],
+            limit=SCHEDULE_BATCH_SIZE,
+        )
+        if not candidates:
+            break
+        for candidate in candidates:
+            task_name = resolve_schedule_task_name(candidate)
+            if task_name is None:
+                logger.warning(
+                    "Skipped periodic task %r: its args/kwargs do not name a task.",
+                    candidate.name,
+                )
+            elif task_name in owned_names:
+                schedules.append(candidate)
+        if len(candidates) < SCHEDULE_BATCH_SIZE:
+            break
+        last_schedule_id = candidates[-1].id
+        if last_schedule_id is None:
+            break
     if not schedules:
         return []
     names: list[str] = [  # ty: ignore[invalid-assignment]

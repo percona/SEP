@@ -571,6 +571,50 @@ class TestDisableSchedulesForOwners:
         result = await celery_beat_session.exec(select(PeriodicTaskChanged.last_update))
         assert result.one_or_none() is not None
 
+    async def test_schedule_beyond_first_batch_is_switched_off(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Switch off a matching schedule in a later schedule batch."""
+        monkeypatch.setattr(periodic_tasks, "SCHEDULE_BATCH_SIZE", 1)
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session, "unrelated", kwargs=json.dumps({"task_name": "other"})
+        )
+        await _seed_user_schedule(
+            celery_beat_session, "nightly-restore", kwargs=json.dumps({"task_name": "r1"})
+        )
+
+        switched_off = await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert switched_off == ["nightly-restore"]
+        assert await _read_enabled(celery_beat_session, "nightly-restore") is False
+
+    async def test_task_beyond_first_batch_is_matched(
+        self,
+        session: AsyncSession,
+        celery_beat_session: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Switch off a schedule whose task is in a later task batch."""
+        monkeypatch.setattr(periodic_tasks, "TASK_BATCH_SIZE", 1)
+        await _seed_task(session, "other", BACKUPS_OWNER)
+        await _seed_task(session, "r1", RESTORES_OWNER)
+        await _seed_user_schedule(
+            celery_beat_session, "nightly-restore", kwargs=json.dumps({"task_name": "r1"})
+        )
+
+        switched_off = await disable_schedules_for_owners(
+            session, celery_beat_session, [RESTORES_OWNER]
+        )
+
+        assert switched_off == ["nightly-restore"]
+        assert await _read_enabled(celery_beat_session, "nightly-restore") is False
+
     async def test_other_owners_and_system_rows_are_untouched(
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
