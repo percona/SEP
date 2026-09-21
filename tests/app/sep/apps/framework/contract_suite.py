@@ -495,8 +495,8 @@ class DerivedRouterContractTests:
     every app: the stubbed provider lists that user for an app on the default
     provider, and the synthetic apps' own provider maps the same id. An app left
     with no response context provider fails
-    :meth:`test_response_context_provider_bound` and each injected-extras test
-    its capabilities do not skip.
+    :meth:`test_response_context_provider_bound`, and also fails — rather than
+    skips — every injected-extras test its capabilities enable.
 
     Set :attr:`create_body_overrides` to pin fields the generic body generator cannot
     satisfy on its own — a scalar a ``__form_rules__`` rule or a model validator
