@@ -15,6 +15,9 @@
 
 """Test how the settings-override substrate is split across its modules."""
 
+import ast
+import functools
+import inspect
 import pkgutil
 import subprocess
 import sys
@@ -74,29 +77,58 @@ def _package_module_names() -> list[str]:
     ]
 
 
-def _defines(module: ModuleType, name: str) -> bool:
-    """Return whether ``module`` is where ``name`` is defined, not just visible.
+@functools.cache
+def _declared_names(module: ModuleType) -> frozenset[str]:
+    """Return the names ``module`` binds at its own top level.
 
-    :param module: The module to inspect.
-    :param name: The symbol name to attribute.
-    :return: ``True`` when ``module`` declares the symbol itself.
+    Attribution cannot go through ``__module__``: only functions and classes
+    carry it, so a borrowed constant — the kind of symbol this split was most
+    careful about — would read as owned by whichever module imported it, and a
+    module's own constant would read as borrowed. Parsing the source answers
+    the question the tests actually ask, for every kind of definition.
+
+    :param module: The module whose source to parse.
+    :return: Every name bound by a top-level statement other than an import.
     """
-    value = vars(module).get(name)
-    return value is not None and getattr(value, "__module__", None) == module.__name__
+    names: set[str] = set()
+    for node in ast.parse(inspect.getsource(module)).body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Assign):
+            names.update(
+                target.id for target in node.targets if isinstance(target, ast.Name)
+            )
+    return frozenset(names)
 
 
 def _borrowed_from(module: ModuleType, sources: tuple[ModuleType, ...]) -> set[str]:
     """Return the names ``module`` imported from ``sources``.
 
+    A name counts as borrowed when a source owns it — declares it, or exports
+    it — and ``module`` is bound to that same object, so a relayed constant is
+    caught alongside a relayed function. Names the module declares itself are
+    excluded, and so are the third-party imports both modules happen to share.
+
     :param module: The importing module.
     :param sources: The modules whose definitions to look for.
-    :return: Every name in ``module`` that one of ``sources`` defines.
+    :return: Every name in ``module`` bound to a definition one of ``sources`` owns.
     """
-    origins = {source.__name__ for source in sources}
+    unbound = object()
+    own = _declared_names(module)
+    owned_by = {
+        source: _declared_names(source) | set(getattr(source, "__all__", ()))
+        for source in sources
+    }
     return {
         name
         for name, value in vars(module).items()
-        if getattr(value, "__module__", None) in origins
+        if name not in own
+        and any(
+            name in names and value is getattr(source, name, unbound)
+            for source, names in owned_by.items()
+        )
     }
 
 
@@ -112,8 +144,9 @@ class TestSymbolOwnership:
         :param module: One of the two modules carved out of the registry.
         :return: ``None``.
         """
-        borrowed = sorted(name for name in module.__all__ if not _defines(module, name))
-        assert not borrowed
+        owned = _declared_names(module)
+        borrowed = sorted(name for name in module.__all__ if name not in owned)
+        assert not borrowed, borrowed
 
     def test_registry_borrows_only_the_one_resolution_helper(self) -> None:
         """Assert the registry keeps exactly one back-import from the new modules.
@@ -157,12 +190,12 @@ class TestExportLists:
         unresolved = sorted(
             name for name in module.__all__ if not hasattr(module, name)
         )
-        assert not unresolved
+        assert not unresolved, unresolved
 
     def test_registry_exports_nothing_it_no_longer_owns(self) -> None:
         """Assert the registry stops advertising the moved public API."""
         moved = set(resolution.__all__) | set(secret_preservation.__all__)
-        assert not sorted(set(registry.__all__) & moved)
+        assert not set(registry.__all__) & moved
 
 
 class TestImportCycles:

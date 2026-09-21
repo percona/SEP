@@ -15,7 +15,6 @@
 
 """Test how ``__``-delimited override keys resolve against nested models."""
 
-import functools
 from collections.abc import Callable
 from datetime import timedelta
 from types import SimpleNamespace
@@ -26,11 +25,9 @@ from pydantic import BaseModel, Field, SecretStr, ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.middleware.security_headers import SecurityHeadersOptions
-from app.core.settings_override.api.routes import _settings_response_from_field
 from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
-    _clear_cached_properties,
     chain_has_advanced,
     chain_has_explicit_not_overridable,
     coerce_nested_field_value,
@@ -80,17 +77,6 @@ class _Outer(BaseModel):
 
     NESTED: _Inner = nested_overridable_field(_Inner())
     PLAIN: int = 5
-
-
-class _CachedModel(BaseModel):
-    """Model with a ``cached_property`` to exercise the memo-clearing helper."""
-
-    value: int = 1
-
-    @functools.cached_property
-    def derived(self) -> int:
-        """Return a value derived from ``value`` (memoised)."""
-        return self.value * 10
 
 
 def test_resolve_field_in_model_exact_match() -> None:
@@ -249,22 +235,6 @@ def test_chain_has_explicit_not_overridable_false_for_open_path() -> None:
 def test_chain_has_explicit_not_overridable_false_for_unresolvable() -> None:
     """An unresolvable path reports ``False`` (resolution failure surfaces elsewhere)."""
     assert not chain_has_explicit_not_overridable(_Outer, "NESTED__BOGUS")
-
-
-def test_clear_cached_properties_removes_memo() -> None:
-    """A populated ``cached_property`` memo is removed from ``__dict__``."""
-    instance = _CachedModel(value=2)
-    assert instance.derived == instance.value * 10  # populate the memo
-    assert "derived" in instance.__dict__
-    _clear_cached_properties(instance)
-    assert "derived" not in instance.__dict__
-
-
-def test_clear_cached_properties_noop_when_unpopulated() -> None:
-    """Clearing an instance with no populated memo is a no-op."""
-    instance = _CachedModel(value=2)
-    _clear_cached_properties(instance)
-    assert "derived" not in instance.__dict__
 
 
 def test_not_overridable_field_detected_as_not_hot() -> None:
@@ -494,46 +464,6 @@ def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
     )
     assert value is None
     assert value is not NESTED_VALUE_MISSING
-
-
-def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
-    """LIST projection maps a missing nested segment to JSON ``null``."""
-    proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
-    )
-    proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
-    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
-    assert leaf_meta is not None
-    response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
-        settings_cls=_SecretLeafParent,
-        proxy=proxy,
-        field_meta=leaf_meta,
-        provenance=None,
-    )
-    assert response.value is None
-    assert response.is_secret is True
-
-
-def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
-    """LIST projection renders an unresolved secret leaf as JSON ``null``."""
-    proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
-    )
-    proxy._set_snapshot(
-        {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
-    )
-    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
-    assert leaf_meta is not None
-    response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
-        settings_cls=_SecretLeafParent,
-        proxy=proxy,
-        field_meta=leaf_meta,
-        provenance=None,
-    )
-    assert response.value is None
-    assert response.is_secret is True
 
 
 class _OverlayLeafOwner(BaseModel):

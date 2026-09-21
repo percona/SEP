@@ -222,11 +222,14 @@ class TestModelCollectionPairing:
         assert preserved == ["not-a-mapping", {"api_key": "stored"}]
 
     def test_unmatched_item_keeps_the_mask(self) -> None:
-        """Keep the mask when no stored model can be paired with the submitted item.
+        """Keep the mask when the discriminator has claimed the only pairable model.
 
-        The discriminator claims the only stored model, leaving the second item
-        with mapping-only candidates it cannot match. Inheriting a secret from
-        an arbitrary leftover slot would hand one item another's credential.
+        The mask survives because the candidates ran out, not because the
+        second item's discriminator failed to match: item 0 claims index 1, so
+        item 1 falls through to a preferred index already taken and is left
+        with mapping-only candidates that overlap on no field name. An
+        unmatched item placed *first* still inherits a leftover secret; that
+        pairing defect is tracked separately and is not what this pins.
         """
         field_info = _ModelList.model_fields["items"]
         current = [

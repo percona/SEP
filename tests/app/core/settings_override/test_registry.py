@@ -15,6 +15,7 @@
 
 """Test settings-override classification, resolution, and PATCH preservation."""
 
+import functools
 from string import Template
 from typing import ClassVar
 
@@ -24,6 +25,7 @@ from pydantic import BaseModel, SecretBytes, SecretStr
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.settings_override.registry import (
+    _clear_cached_properties,
     chain_has_advanced,
     field_materializer,
     field_reload_classification,
@@ -48,6 +50,33 @@ from app.inventory.config import InventorySettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
+
+
+class _CachedModel(BaseModel):
+    """Model with a ``cached_property`` to exercise the memo-clearing helper."""
+
+    value: int = 1
+
+    @functools.cached_property
+    def derived(self) -> int:
+        """Return a value derived from ``value`` (memoised)."""
+        return self.value * 10
+
+
+def test_clear_cached_properties_removes_memo() -> None:
+    """A populated ``cached_property`` memo is removed from ``__dict__``."""
+    instance = _CachedModel(value=2)
+    assert instance.derived == instance.value * 10  # populate the memo
+    assert "derived" in instance.__dict__
+    _clear_cached_properties(instance)
+    assert "derived" not in instance.__dict__
+
+
+def test_clear_cached_properties_noop_when_unpopulated() -> None:
+    """Clearing an instance with no populated memo is a no-op."""
+    instance = _CachedModel(value=2)
+    _clear_cached_properties(instance)
+    assert "derived" not in instance.__dict__
 
 
 def _ctx(settings_cls: type, field_name: str, raw: object) -> MaterializerContext:
