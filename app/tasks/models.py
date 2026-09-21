@@ -727,9 +727,7 @@ class TaskHistoryBase(SQLModel):
     status: TaskHistoryStatusEnum = SQLField(
         default=TaskHistoryStatusEnum.PENDING,
         sa_column=Column(
-            EnumField(
-                TaskHistoryStatusEnum, native_enum=False, create_constraint=True
-            ),
+            EnumField(TaskHistoryStatusEnum, native_enum=False, create_constraint=True),
             nullable=False,
             index=True,
         ),
