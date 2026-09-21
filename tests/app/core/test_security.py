@@ -15,7 +15,6 @@
 
 """Define tests for the app.core.security module."""
 
-import pytest
 from pydantic import SecretStr
 
 from app.core.config import settings

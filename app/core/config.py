@@ -741,8 +741,14 @@ class Settings(BaseYamlSettings):
 
     @SEP_INTERNAL_TOKEN.deleter
     def SEP_INTERNAL_TOKEN(self) -> None:
-        """Resolve the token back to its configured or derived value."""
-        self.derive_internal_token()
+        """Resolve the token back to its configured or derived value.
+
+        An override set through the setter is discarded by re-running the one
+        derivation there is, rather than by restoring a remembered copy.
+        """
+        # The validator stays an ordinary bound method at runtime; only the
+        # decorator's static type says otherwise.
+        self.derive_internal_token()  # ty: ignore[call-non-callable]
 
     @computed_field
     @property
