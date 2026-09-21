@@ -37,6 +37,7 @@ from tests.app.host_payloads import (
     LOAD_ARGV,
     load_under,
     MINIMUM_HOST_PYTHON,
+    MINIMUM_HOST_PYTHON_VERSION,
     missing_interpreter_is_fatal,
     resolve_py39_interpreter,
     runtime_union_violations,
@@ -59,10 +60,12 @@ def py39() -> str:
         return python
     if missing_interpreter_is_fatal():
         pytest.fail(
-            f"CI must provide Python {MINIMUM_HOST_PYTHON} for the host-payload "
-            f"load check: set {CHECK_PYTHON_ENV} to its path"
+            f"CI must provide Python {MINIMUM_HOST_PYTHON_VERSION} for the "
+            f"host-payload load check: set {CHECK_PYTHON_ENV} to its path"
         )
-    pytest.skip(f"no Python {MINIMUM_HOST_PYTHON} on PATH and {CHECK_PYTHON_ENV} unset")
+    pytest.skip(
+        f"no Python {MINIMUM_HOST_PYTHON_VERSION} on PATH and {CHECK_PYTHON_ENV} unset"
+    )
 
 
 @pytest.mark.parametrize("payload", DISCOVERED, ids=_relative)

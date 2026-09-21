@@ -52,7 +52,8 @@ from tests.app.import_ast import absolute_base, package_of
 
 #: The oldest Python an executor host is documented to run payloads under.
 MINIMUM_HOST_PYTHON = (3, 9)
-_MINIMUM_VERSION = ".".join(map(str, MINIMUM_HOST_PYTHON))
+#: :data:`MINIMUM_HOST_PYTHON` in dotted form, as messages and ``vermin`` spell it.
+MINIMUM_HOST_PYTHON_VERSION = ".".join(map(str, MINIMUM_HOST_PYTHON))
 
 #: The environment variable naming the interpreter the load branch runs under.
 CHECK_PYTHON_ENV = "SEP_PAYLOAD_CHECK_PYTHON"
@@ -342,6 +343,7 @@ def drift_violations(root: Path, discovered: Collection[Path]) -> list[str]:
                 f"R1: {target.relative_to(root)} is named by {where} but not discovered"
             )
     packages = reference_site_packages(root)
+    known = covered | referenced
     violations.extend(
         f"R2: {path.relative_to(root)} is extensionless beside a payload reference"
         " but not discovered"
@@ -352,7 +354,7 @@ def drift_violations(root: Path, discovered: Collection[Path]) -> list[str]:
         if path.is_file()
         and not path.suffix
         and not path.name.startswith(".")
-        and path not in covered | referenced
+        and path not in known
         and not _runs_under_another_interpreter(path)
     )
     exempt = _imported_module_files(root) | referenced
@@ -409,14 +411,15 @@ def resolve_py39_interpreter() -> str | None:
     :raises subprocess.CalledProcessError: When the named interpreter fails to run.
     """
     configured = os.environ.get(CHECK_PYTHON_ENV)
-    python = configured or shutil.which(f"python{_MINIMUM_VERSION}")
+    python = configured or shutil.which(f"python{MINIMUM_HOST_PYTHON_VERSION}")
     if python is None:
         return None
     if not Path(python).is_file():
         raise InterpreterMismatchError(f"{CHECK_PYTHON_ENV}={python} does not exist")
     if (version := _interpreter_version(python)) != MINIMUM_HOST_PYTHON:
         raise InterpreterMismatchError(
-            f"{python} is Python {'.'.join(map(str, version))}, not {_MINIMUM_VERSION}"
+            f"{python} is Python {'.'.join(map(str, version))}, "
+            f"not {MINIMUM_HOST_PYTHON_VERSION}"
         )
     return python
 
@@ -483,7 +486,7 @@ def static_violations(paths: Sequence[Path]) -> str | None:
             "-c",
             "import sys, vermin; sys.exit(vermin.main())",
             "--no-config-file",
-            f"--target={_MINIMUM_VERSION}-",
+            f"--target={MINIMUM_HOST_PYTHON_VERSION}-",
             "--violations",
             "--no-tips",
             *map(str, paths),
@@ -645,7 +648,7 @@ def runtime_union_violations(paths: Sequence[Path]) -> list[str]:
         nested = {id(side) for u in unions.values() for side in (u.left, u.right)}
         violations.extend(
             f"{path}:{union.lineno}: {ast.unparse(union)} is a type union Python "
-            f"{_MINIMUM_VERSION} cannot evaluate"
+            f"{MINIMUM_HOST_PYTHON_VERSION} cannot evaluate"
             for key, union in sorted(unions.items(), key=lambda item: item[1].lineno)
             if key not in in_annotation and key not in nested
         )
