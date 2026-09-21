@@ -47,6 +47,12 @@ reported absence, which is the behaviour it exists to end. Expressed as an annot
 constraint for the reason :data:`StaleRunAfter` is.
 """
 
+TaskExecutionTimeout = Annotated[int, Gt(0)]
+"""Define the positive number of seconds allowed for a task to complete."""
+
+TasksExecutionWaitInterval = Annotated[int, Gt(0)]
+"""Define the positive number of seconds between task status checks."""
+
 
 class SyncerFieldConstraint(NamedTuple):
     """Pair a constrained syncer field with the spelling of its accepted values.
@@ -68,6 +74,14 @@ CONSTRAINED_SYNCER_FIELDS: Final[dict[str, SyncerFieldConstraint]] = {
     "missing_grace_generations": SyncerFieldConstraint(
         TypeAdapter(MissingGraceGenerations),
         "an integer of 2 or more",
+    ),
+    "task_execution_timeout": SyncerFieldConstraint(
+        TypeAdapter(TaskExecutionTimeout),
+        "a positive integer number of seconds",
+    ),
+    "tasks_execution_wait_interval": SyncerFieldConstraint(
+        TypeAdapter(TasksExecutionWaitInterval),
+        "a positive integer number of seconds",
     ),
 }
 """Map each constrained syncer field to the validator its configured value must pass.

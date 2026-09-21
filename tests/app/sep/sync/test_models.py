@@ -913,7 +913,7 @@ async def test_wait_for_task_output(session: AsyncSession, mock_remote_api, mock
         inventory_api=mock_remote_api,
         tasks_api=mock_remote_api,
         sync_instance=sync_instance,
-        tasks_execution_wait_interval=0,
+        tasks_execution_wait_interval=1,
     )
 
     await task_syncer.wait_for_task_output(task_name="syncing", stdout_step=step_name)
@@ -964,7 +964,7 @@ async def test_wait_for_task_output_tolerates_http_exception(
     log_spy = mocker.patch("app.sep.sync.models.logger.exception")
 
     task_syncer = _build_task_test_syncer(
-        session, mock_remote_api, tasks_execution_wait_interval=0
+        session, mock_remote_api, tasks_execution_wait_interval=1
     )
     result = await task_syncer.wait_for_task_output(
         task_name="syncing", stdout_step="step"
@@ -995,7 +995,7 @@ async def test_wait_for_task_output_tolerates_client_error(
     log_spy = mocker.patch("app.sep.sync.models.logger.exception")
 
     task_syncer = _build_task_test_syncer(
-        session, mock_remote_api, tasks_execution_wait_interval=0
+        session, mock_remote_api, tasks_execution_wait_interval=1
     )
     result = await task_syncer.wait_for_task_output(
         task_name="syncing", stdout_step="step"
@@ -1195,6 +1195,31 @@ def test_syncer_rejects_non_positive_stale_run_after(
     with pytest.raises(PydanticValidationError):
         lifecycle_syncer_cls(
             inventory_api=mock_remote_api, stale_run_after=stale_run_after
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("task_execution_timeout", 0),
+        ("task_execution_timeout", -1),
+        ("tasks_execution_wait_interval", 0),
+        ("tasks_execution_wait_interval", -1),
+    ],
+)
+def test_task_syncer_rejects_non_positive_timing_value(
+    mock_remote_api, field: str, value: int
+) -> None:
+    """Reject task timing values that would make the polling loop busy or unbounded."""
+
+    class TaskTestSyncer(BaseTaskSyncer):
+        SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.INVENTORY
+
+    with pytest.raises(PydanticValidationError):
+        TaskTestSyncer(
+            inventory_api=mock_remote_api,
+            tasks_api=mock_remote_api,
+            **{field: value},
         )
 
 
