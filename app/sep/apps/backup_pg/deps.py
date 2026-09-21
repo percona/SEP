@@ -31,7 +31,7 @@ from app.sep.apps.backup_pg.models import BackupTaskDetailResponse, BackupTaskRe
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
-from app.sep.deps import TaskAPI
+from app.sep.deps import task_path, TaskAPI
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,9 @@ async def check_create_has_no_conflicted_running_tasks(
 
     :param request: The incoming request carrying the JSON create body.
     :param tasks_api: The TaskAPI instance used to query running/pending history.
+    :raises HTTPUnprocessableEntityException: If the body's task name is not a
+        single plain URL path segment. A body value, unlike a path parameter,
+        can carry a literal ``/``.
     :raises HTTPConflictException: When a RUNNING or PENDING task already
         exists for the candidate task name.
     """
@@ -65,13 +68,14 @@ async def check_create_has_no_conflicted_running_tasks(
     if not isinstance(task_name, str) or not task_name:
         return
 
+    history_path = task_path(task_name, "/history/")
     for history_status in (
         TaskHistoryStatusEnum.RUNNING,
         TaskHistoryStatusEnum.PENDING,
     ):
         response = as_json_object(
             await tasks_api.get(
-                f"/{task_name}/history/",
+                history_path,
                 params={"status": history_status},
             )
         )

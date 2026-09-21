@@ -3358,11 +3358,10 @@ export interface paths {
      *
      *     :param task_name: The task name (not the database id) whose stats are
      *         being requested.
-     *     :type task_name: str
      *     :param tasks_api: The Tasks API client used to fetch the upstream stats.
-     *     :type tasks_api: TaskAPI
      *     :return: The raw upstream stats payload.
-     *     :rtype: dict[str, Any]
+     *     :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+     *         plain URL path segment.
      *     :raises HTTPBadGatewayException: If the Tasks API call fails with an
      *         ``HTTPException`` (e.g. an upstream non-2xx response) or an
      *         ``OSError`` (e.g. a connection failure).

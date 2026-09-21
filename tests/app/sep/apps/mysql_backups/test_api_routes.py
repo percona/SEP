@@ -18,6 +18,7 @@
 from datetime import datetime, UTC
 from itertools import chain, repeat
 from unittest.mock import AsyncMock
+from urllib.parse import quote
 
 import pytest
 import yaml
@@ -28,6 +29,7 @@ from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
+from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
 
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
@@ -294,6 +296,18 @@ class TestDetailEndpoint:
         response = test_client.get("/api/apps/mysql_backups/nope")
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize("task_name", PATH_PARAM_UNSAFE_TASKS)
+    def test_detail_refuses_a_name_that_is_not_one_path_segment(
+        self, test_client, mock_task_api_dep, task_name
+    ):
+        """Ensure a name that would restructure the upstream URL never reaches it."""
+        response = test_client.get(
+            f"/api/apps/mysql_backups/{quote(task_name, safe='')}"
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
 
     def test_detail_returns_404_for_wrong_owner(self, test_client, mock_task_api_dep):
         """Task owned by another plugin returns 404 (no cross-plugin enumeration)."""
@@ -777,6 +791,25 @@ class TestExecuteEndpoint:
             headers=BEARER_HEADERS,
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize("task_name", PATH_PARAM_UNSAFE_TASKS)
+    def test_execute_refuses_a_name_that_is_not_one_path_segment(
+        self, test_client, mock_task_api_dep, task_name
+    ):
+        """Refuse before the running/pending history lookups are composed.
+
+        Those lookups are a route-level dependency, so they run ahead of the
+        task dependency and compose the name into their own upstream path.
+        """
+        response = test_client.post(
+            f"/api/apps/mysql_backups/{quote(task_name, safe='')}/execute",
+            json={},
+            headers=BEARER_HEADERS,
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+        mock_task_api_dep.post.assert_not_called()
 
     def test_execute_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_task_api_dep

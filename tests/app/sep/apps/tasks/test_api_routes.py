@@ -18,6 +18,7 @@
 from datetime import datetime, UTC
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from urllib.parse import quote
 
 import pytest
 from fastapi import status
@@ -32,6 +33,7 @@ from app.tasks.models import (
     TaskHistoryStatusEnum,
 )
 from tests.app.factories import TaskFactory
+from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
 
 API_BASE = "/api/apps/tasks"
 EXPECTED_TEMPLATE_DETAIL_CALLS = 2
@@ -332,6 +334,20 @@ class TestTasksPluginDetailEndpoint:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json() == {"detail": "Not Found"}
+        mock_task_api_dep.get.assert_not_called()
+
+    @pytest.mark.parametrize("task_name", PATH_PARAM_UNSAFE_TASKS)
+    def test_detail_refuses_a_name_that_is_not_one_path_segment(
+        self, test_client, mock_task_api_dep, task_name
+    ):
+        """Ensure a name that would restructure the upstream URL never reaches it.
+
+        Each name is sent percent-encoded, the only way such a name survives as
+        one path segment; Starlette decodes it back before the guard sees it.
+        """
+        response = test_client.get(f"{API_BASE}/{quote(task_name, safe='')}")
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
 
     def test_detail_returns_404_for_invalid_upstream_payload(

@@ -23,7 +23,11 @@ import pytest
 from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
-from app.core.exceptions import HTTPInternalServerErrorException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
@@ -41,6 +45,7 @@ from app.sep.apps.framework.cascade import (
 )
 from app.sep.apps.framework.schema import ChainedPredecessor, DerivedTask
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 def _parent_payload(**overrides: Any) -> dict[str, Any]:
@@ -1272,3 +1277,40 @@ class TestCascadeDeletePredecessors:
         assert not result.success
         assert result.failures[0].task_name == "t1-a"
         assert result.failures[0].exception is connection_error
+
+
+@pytest.mark.asyncio
+class TestCascadePathGuard:
+    """Test that a stored name is refused before it composes an outbound path."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_delete_records_an_unsafe_name_as_a_failure(
+        self, task_name: str
+    ) -> None:
+        """Record the refusal as a leg failure and issue no DELETE."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        result = await cascade_delete_tasks(tasks_api, task_name, [])
+
+        assert not result.success
+        assert isinstance(
+            result.failures[0].exception, HTTPUnprocessableEntityException
+        )
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_update_records_an_unsafe_existing_name_as_a_failure(
+        self, task_name: str
+    ) -> None:
+        """Record the refusal as a leg failure and issue no PUT."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        result = await cascade_update_tasks(
+            tasks_api, task_name, {"name": task_name}, [], []
+        )
+
+        assert not result.success
+        assert isinstance(
+            result.failures[0].exception, HTTPUnprocessableEntityException
+        )
+        tasks_api.put.assert_not_awaited()

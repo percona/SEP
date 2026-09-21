@@ -30,6 +30,7 @@ from app.core.pagination import (
 )
 from app.core.requests.remote_api import as_json_object, JSONBody, RemoteAPI
 from app.sep.api.task_history_actors import SepTaskHistoryResponse
+from app.sep.deps import task_path
 from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = [
@@ -128,6 +129,8 @@ async def fetch_task_history_window(
         contract.
     :return: A paginated-response-shaped dict with accumulated items and
         upstream total.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
     :raises HTTPBadGatewayException: Under ``strict``, when the Tasks API answers
         with a body :func:`_strict_history_page` cannot read as a page.
     :raises HTTPException: The error the Tasks API itself answered with, mapped by
@@ -145,7 +148,7 @@ async def fetch_task_history_window(
     while len(all_items) < window_size:
         page_limit = min(MAX_PAGINATION_LIMIT, window_size - len(all_items))
         raw = await tasks_api.get(
-            f"/{task_name}/history/",
+            task_path(task_name, "/history/"),
             params={
                 **base_params,
                 "offset": upstream_offset,

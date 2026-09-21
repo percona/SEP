@@ -15,14 +15,18 @@
 
 """Define tests for the app.sep.apps.backup_pg.deps and spec modules."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
     build_backup_pg_api_detail_response,
     build_backup_pg_api_task_response,
+    check_create_has_no_conflicted_running_tasks,
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
@@ -39,6 +43,7 @@ from tests.app.factories import (
     MOCK_UPDATER_ID,
     TaskFactory,
 )
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 def _resolved(service: CreatedService) -> ResolvedEntities:
@@ -343,3 +348,48 @@ def test_detail_builder_forwards_the_context_to_the_task_builder():
 
     assert (response.created_by, response.last_updated_by) == ("alice", "bob")
     assert response.host == "db.internal"
+
+
+class TestCheckCreateHasNoConflictedRunningTasks:
+    """Test the create guard's handling of the body-supplied task name."""
+
+    @staticmethod
+    def _request(payload: object) -> AsyncMock:
+        """Build a request stub whose JSON body is ``payload``."""
+        request = AsyncMock()
+        request.json = AsyncMock(return_value=payload)
+        return request
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_refuses_a_name_that_is_not_one_path_segment(
+        self, task_name: str
+    ) -> None:
+        """Refuse a body-supplied name before the history lookups are composed.
+
+        A body value is the one shape that can carry a literal ``/``, which a
+        path parameter's ``[^/]+`` convertor cannot deliver.
+        """
+        tasks_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await check_create_has_no_conflicted_running_tasks(
+                self._request({"task_name": task_name}), tasks_api
+            )
+
+        tasks_api.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_safe_name_reaches_both_history_lookups(self) -> None:
+        """Query RUNNING then PENDING history for a plain name."""
+        tasks_api = AsyncMock()
+        tasks_api.get = AsyncMock(return_value={"items": []})
+
+        await check_create_has_no_conflicted_running_tasks(
+            self._request({"task_name": "backup-task"}), tasks_api
+        )
+
+        assert [call.args[0] for call in tasks_api.get.await_args_list] == [
+            "/backup-task/history/",
+            "/backup-task/history/",
+        ]

@@ -24,6 +24,7 @@ from typing import Any, Literal, TYPE_CHECKING
 
 from app.core.exceptions import HTTPInternalServerErrorException, HTTPNotFoundException
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.deps import task_path
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -235,7 +236,7 @@ async def cascade_create_tasks(
     except Exception:
         for task_name in reversed(created_names):
             try:
-                await tasks_api.delete(f"/{task_name}")
+                await tasks_api.delete(task_path(task_name))
             except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Rollback DELETE failed for %r during cascade_create rollback: %s",
@@ -298,7 +299,7 @@ async def cascade_update_tasks(
     result = CascadeResult()
     parent_failed = False
     try:
-        await tasks_api.put(f"/{parent_existing_name}", json=parent_updated)
+        await tasks_api.put(task_path(parent_existing_name), json=parent_updated)
         result.successes.append(parent_updated["name"])
     except Exception as exc:  # noqa: BLE001
         result.failures.append(CascadeFailure(parent_existing_name, exc))
@@ -320,7 +321,7 @@ async def cascade_update_tasks(
     for existing_name, spec in zip(derived_existing_names, derived_specs, strict=True):
         child_payload = build_derived_payload(parent_updated, spec)
         try:
-            await tasks_api.put(f"/{existing_name}", json=child_payload)
+            await tasks_api.put(task_path(existing_name), json=child_payload)
             result.successes.append(child_payload["name"])
         except Exception as exc:  # noqa: BLE001
             result.failures.append(CascadeFailure(existing_name, exc))
@@ -377,7 +378,7 @@ async def _delete_one(
     :type result: CascadeResult
     """
     try:
-        await tasks_api.delete(f"/{task_name}")
+        await tasks_api.delete(task_path(task_name))
         result.successes.append(task_name)
     except HTTPNotFoundException:
         result.successes.append(task_name)
@@ -513,7 +514,7 @@ async def cascade_create_predecessors(
     except Exception:
         for task_name in reversed(created_names):
             try:
-                await tasks_api.delete(f"/{task_name}")
+                await tasks_api.delete(task_path(task_name))
             except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Rollback DELETE failed for %r during "
@@ -563,7 +564,7 @@ async def cascade_create_independent_tasks(
     except Exception:
         for task_name in reversed(created_names):
             try:
-                await tasks_api.delete(f"/{task_name}")
+                await tasks_api.delete(task_path(task_name))
             except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Rollback DELETE failed for %r during "
@@ -658,13 +659,13 @@ async def cascade_update_predecessors(
         )
     result = CascadeResult()
     try:
-        await tasks_api.put(f"/{parent_existing_name}", json=parent_updated)
+        await tasks_api.put(task_path(parent_existing_name), json=parent_updated)
         result.successes.append(parent_updated["name"])
     except Exception as exc:  # noqa: BLE001
         result.failures.append(CascadeFailure(parent_existing_name, exc))
     for existing_name, built in built_predecessors:
         try:
-            await tasks_api.put(f"/{existing_name}", json=built)
+            await tasks_api.put(task_path(existing_name), json=built)
             result.successes.append(built["name"])
         except Exception as exc:  # noqa: BLE001
             result.failures.append(CascadeFailure(existing_name, exc))
