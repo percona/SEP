@@ -380,6 +380,39 @@
         ]
       },
       "message": "A Binlog backup encrypts only as part of an upload, so 'post_run_encrypt' requires at least one upload provider."
+    },
+    {
+      "error_fields": [
+        "encryption_format",
+        "upload"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "any": [
+              {
+                "equals": {
+                  "encryption_format": "aes256"
+                }
+              },
+              {
+                "equals": {
+                  "encryption_format": "dual"
+                }
+              }
+            ]
+          },
+          {
+            "equals": {
+              "backup_type": "B"
+            }
+          },
+          {
+            "falsy": "upload"
+          }
+        ]
+      },
+      "message": "A Binlog backup encrypts only as part of an upload, so an AES-256 format requires at least one upload provider."
     }
   ],
   "forms": [
@@ -1243,7 +1276,7 @@
             }
           ],
           "default": "none",
-          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so it needs an upload provider, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload — needing a provider too — for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file. 'AES-256 + GPG' selects AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
+          "description": "Which encryption this task applies. 'GPG' needs a recipient and a timing below: 'Encrypt backup' encrypts as part of an upload, so it needs an upload provider, while 'Encrypt after backup completes' encrypts on the host for a Mydumper or XtraBackup backup and during the upload — needing a provider too — for a Binlog one. 'AES-256' and 'AES-256 + GPG' need a key file, and for a Binlog backup an upload provider too — AES runs only during upload. 'AES-256 + GPG' selects AES-256 and skips the GPG pass, which the backend cannot apply on top of it.",
           "label": "Encryption format",
           "name": "encryption_format",
           "required": false,

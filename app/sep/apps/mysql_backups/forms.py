@@ -287,14 +287,18 @@ _BACKUP_BOOL_FAIL_RULES = (
 # GPG format over a plaintext backup. Mydumper and XtraBackup encrypt the finished
 # directory on the host, so their post-run timing needs no target.
 #
-# Scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``: under ``dual``
-# XtraBackup's own AES-256 pass runs whatever the timing says, so no plaintext
-# backup ships, and neither remedy the messages offer would make the GPG pass run
-# either — the upload path returns early once a key file is resolved.
+# The GPG pair is scoped to the pure GPG format rather than to ``_FMT_HAS_GPG``:
+# under ``dual`` Mydumper and XtraBackup apply AES-256 on the host whatever the
+# GPG timing says, so no plaintext backup ships, and neither remedy the messages
+# offer would make the GPG pass run either — the upload path returns early once a
+# key file is resolved.
+#
+# Binlog has no host-side AES either (AES runs only inside ``Upload._encrypt``), so
+# a third rule rejects AES-bearing formats with no upload target for that engine.
 _FMT_IS_GPG_ONLY = _FMT == EncryptionFormat.GPG
 
-#: The pair of rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it
-#: so a test can assert the two tuples partition the strict model's rules.
+#: The rules :data:`LENIENT_BACKUP_FORM_RULES` drops. Exported beside it so a test
+#: can assert the two tuples partition the strict model's rules.
 UPLOAD_REACHABILITY_FAIL_RULES = (
     FailRule(
         fail_when=all_(truthy("encrypt"), _FMT_IS_GPG_ONLY, falsy("upload")),
@@ -316,6 +320,18 @@ UPLOAD_REACHABILITY_FAIL_RULES = (
         message=(
             "A Binlog backup encrypts only as part of an upload, so "
             "'post_run_encrypt' requires at least one upload provider."
+        ),
+    ),
+    FailRule(
+        fail_when=all_(
+            _FMT_HAS_AES,
+            F("backup_type") == BackupType.BINLOG,
+            falsy("upload"),
+        ),
+        error_fields=["encryption_format", "upload"],
+        message=(
+            "A Binlog backup encrypts only as part of an upload, so an AES-256 "
+            "format requires at least one upload provider."
         ),
     ),
 )
@@ -1070,8 +1086,10 @@ class BackupCreate(TaskFormModel):
                 "needs an upload provider, while 'Encrypt after backup completes' "
                 "encrypts on the host for a Mydumper or XtraBackup backup and during "
                 "the upload — needing a provider too — for a Binlog one. 'AES-256' "
-                "and 'AES-256 + GPG' need a key file. 'AES-256 + GPG' selects AES-256 "
-                "and skips the GPG pass, which the backend cannot apply on top of it."
+                "and 'AES-256 + GPG' need a key file, and for a Binlog backup an "
+                "upload provider too — AES runs only during upload. 'AES-256 + GPG' "
+                "selects AES-256 and skips the GPG pass, which the backend cannot "
+                "apply on top of it."
             ),
         ),
     ] = EncryptionFormat.NONE
