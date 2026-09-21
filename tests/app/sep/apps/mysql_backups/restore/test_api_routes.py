@@ -23,7 +23,7 @@ from fastapi import HTTPException, status
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.mysql_backups.restore.models import OWNER
 from app.tasks.models import TaskBackendEnum
-from tests.app.factories import TaskFactory
+from tests.app.factories import MOCK_CREATOR_ID, TaskFactory
 
 API_BASE = "/api/apps/mysql_backups/restore"
 _TASK_NAME = "restore-task"
@@ -119,12 +119,11 @@ class TestRestoreApiActors:
         provider_users.side_effect = HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="provider unreachable"
         )
-        creator_id = "11111111-1111-4111-8111-111111111111"
         serve_single_restore(
-            mock_task_api_dep, build_restore_task(created_by=creator_id)
+            mock_task_api_dep, build_restore_task(created_by=MOCK_CREATOR_ID)
         )
 
         response = test_client.get(f"{API_BASE}/")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json()["items"][0]["created_by"] == creator_id
+        assert response.json()["items"][0]["created_by"] == MOCK_CREATOR_ID

@@ -981,7 +981,9 @@ part of one logical operation — see [Rung 4](#rung-4--response_context_provide
 ### Rung 2 — `extra_routes`
 
 When you need a route the spine does not derive (an approval endpoint, a manual
-refresh, a download), hand the app a router via `extra_routes`.
+refresh, a download), hand the app a router via `extra_routes`. A handler that
+returns a task response resolves its own actor fields — see
+[Rung 4](#rung-4--response_context_provider-and-cascade-hooks).
 
 > **This rung means writing FastAPI directly.** Everything above it is
 > declarative — knobs and markers. From here down you are writing route
@@ -1061,8 +1063,9 @@ checks, can be replaced with your own dependency tuple, or removed with
 **`response_context_provider`** injects request-scoped context into every response
 builder — the framework awaits the provider once per request and threads the
 result through as each builder's `context` keyword. It defaults to the username
-mapping, so a task app resolves `created_by` / `last_updated_by` to display names
-without naming a provider at all:
+mapping, so an app on the framework's default response builder resolves
+`created_by` / `last_updated_by` to display names without naming a provider at
+all:
 
 <!-- src: app/sep/apps/framework/apps.py :: TaskExecutionApp -->
 ```python
@@ -1073,12 +1076,19 @@ class TaskExecutionApp(BaseApp):
     )
 ```
 
-Because a provider is always bound, every builder an app supplies must accept a
-`context` keyword; the framework rejects one that does not when the app is
-constructed. Name your own provider to thread other request-scoped data, or pass
-`None` to opt out and leave actor ids raw. The registry conformance check
-(`check_actor_fields_resolvable`) rejects a production app that opts out while its
-responses render actor fields.
+Because a provider is bound by default, every builder an app supplies must accept
+a `context` keyword; the framework rejects one that does not when the app is
+constructed. Accepting it is not enough to resolve anything, though: a custom
+`response_builder` or `detail_response_builder` resolves the actor fields only if
+it spreads `task_actor_fields(task, context or {})` (from
+`app.sep.api.task_history_actors`) into its extras. The framework never renders
+an `extra_routes` handler's response, so a custom route that returns a task
+awaits `get_username_mapping()` itself and passes the map as the builder's
+`context`. A replacement provider replaces the username map, so it must still
+supply it for the builders to resolve actors. Pass `None` to opt out and leave
+actor ids raw; the registry conformance check (`check_actor_fields_resolvable`)
+rejects a production app that opts out while its responses render actor fields,
+and the contract suite fails its username assertions.
 
 The default provider is an ordinary async callable:
 

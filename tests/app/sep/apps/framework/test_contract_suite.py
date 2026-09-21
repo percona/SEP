@@ -837,7 +837,9 @@ def test_providerless_app_fails_its_contract_rather_than_skipping(
         "provider_bound or injects_extras or resolves_username",
     )
 
+    username_assertion = r'>\s+assert \w+\["created_by"\] == SYNTH_CREATED_BY_NAME$'
     result.assert_outcomes(failed=4, skipped=1)
+    result.stdout.re_match_lines([username_assertion] * 3)
     result.stdout.fnmatch_lines(
         ["FAILED *TestProviderless::test_response_context_provider_bound*"]
     )
