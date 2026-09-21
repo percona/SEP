@@ -63,14 +63,14 @@
 | app/core/settings\_override/api/routes.py                                                                                    |      313 |       39 |      100 |        8 |     86% |325, 464, 488, 618-625, 752, 781-791, 825-831, 839, 973, 1004, 1068, 1070-1071, 1150, 1152, 1154, 1177, 1409-\>1446, 1419-1430, 1434-1445, 1447 |
 | app/core/settings\_override/cache.py                                                                                         |      126 |       13 |       46 |        6 |     87% |200-205, 218-223, 309, 372, 413, 417-424 |
 | app/core/settings\_override/constants.py                                                                                     |        4 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/lifecycle.py                                                                                     |      106 |        1 |       28 |        1 |     99% |67-\>exit, 435 |
+| app/core/settings\_override/lifecycle.py                                                                                     |      123 |        1 |       34 |        1 |     99% |70-\>exit, 536 |
 | app/core/settings\_override/manager.py                                                                                       |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                                        |       48 |        2 |        8 |        2 |     93% |  117, 119 |
 | app/core/settings\_override/policy.py                                                                                        |       29 |        0 |        6 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                                         |       21 |        0 |        2 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                                      |      664 |       27 |      332 |       16 |     95% |990, 1092, 1159, 1455, 1646-1647, 1651, 1652-\>1638, 1653-\>1652, 1683, 1688, 1725, 1754, 1872, 1877, 1956, 2021-2022, 2036-2046 |
 | app/core/settings\_override/secret\_storage.py                                                                               |      135 |        4 |       46 |        5 |     95% |441, 443-\>445, 469, 620, 650 |
-| app/core/settings\_override/worker.py                                                                                        |       59 |        1 |       14 |        1 |     97% |       207 |
+| app/core/settings\_override/worker.py                                                                                        |       59 |        1 |       14 |        1 |     97% |       214 |
 | app/core/utils/async\_run.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/cache.py                                                                                                      |       93 |        5 |       16 |        4 |     90% |60-62, 147-\>153, 151, 187-\>192, 224 |
 | app/core/utils/cli\_args.py                                                                                                  |       12 |        0 |        0 |        0 |    100% |           |
@@ -330,7 +330,7 @@
 | app/sep/db/seed.py                                                                                                           |       52 |        0 |       16 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      255 |        1 |       48 |        1 |     99% |695-\>700, 716 |
 | app/sep/inventory.py                                                                                                         |      100 |        6 |       12 |        1 |     94% |84, 95, 203, 284, 321, 379 |
-| app/sep/main.py                                                                                                              |      121 |       15 |       12 |        2 |     87% |162-164, 310-329, 349-\>358, 483-487 |
+| app/sep/main.py                                                                                                              |      121 |       15 |       12 |        2 |     87% |162-164, 312-331, 351-\>360, 485-489 |
 | app/sep/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/sep/migrations/\_orphan\_heads.py                                                                                        |       37 |        0 |        8 |        0 |    100% |           |
 | app/sep/migrations/env.py                                                                                                    |       42 |        5 |        4 |        2 |     85% |41-\>44, 70-82, 126 |
@@ -486,7 +486,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30623** | **1690** | **7504** |  **644** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30640** | **1690** | **7510** |  **644** | **93%** |           |
 
 
 ## Setup coverage badge
