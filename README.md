@@ -60,16 +60,18 @@
 | app/core/settings\_override/alembic\_ops.py                                                                                  |      107 |       11 |       34 |       12 |     84% |89, 92, 94, 96-\>98, 116, 118, 154, 156, 170, 172, 209, 251 |
 | app/core/settings\_override/api/export.py                                                                                    |        9 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/api/models.py                                                                                    |       24 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/api/routes.py                                                                                    |      313 |       39 |      100 |        8 |     86% |325, 464, 488, 618-625, 752, 781-791, 825-831, 839, 973, 1004, 1068, 1070-1071, 1150, 1152, 1154, 1177, 1409-\>1446, 1419-1430, 1434-1445, 1447 |
-| app/core/settings\_override/cache.py                                                                                         |      126 |       13 |       46 |        6 |     87% |200-205, 218-223, 309, 372, 413, 417-424 |
-| app/core/settings\_override/constants.py                                                                                     |        4 |        0 |        0 |        0 |    100% |           |
+| app/core/settings\_override/api/routes.py                                                                                    |      316 |       40 |      100 |        8 |     86% |329, 468, 492, 622-629, 756, 785-795, 829-835, 843, 977, 1007-1008, 1072, 1074-1075, 1154, 1156, 1158, 1181, 1413-\>1450, 1423-1434, 1438-1449, 1451 |
+| app/core/settings\_override/cache.py                                                                                         |      127 |       13 |       46 |        6 |     87% |200-205, 218-223, 309, 372, 413, 417-424 |
+| app/core/settings\_override/constants.py                                                                                     |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/lifecycle.py                                                                                     |      123 |        1 |       34 |        1 |     99% |70-\>exit, 536 |
 | app/core/settings\_override/manager.py                                                                                       |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                                        |       48 |        2 |        8 |        2 |     93% |  117, 119 |
 | app/core/settings\_override/policy.py                                                                                        |       29 |        0 |        6 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                                         |       21 |        0 |        2 |        0 |    100% |           |
-| app/core/settings\_override/registry.py                                                                                      |      664 |       27 |      332 |       16 |     95% |990, 1092, 1159, 1455, 1646-1647, 1651, 1652-\>1638, 1653-\>1652, 1683, 1688, 1725, 1754, 1872, 1877, 1956, 2021-2022, 2036-2046 |
-| app/core/settings\_override/secret\_storage.py                                                                               |      135 |        4 |       46 |        5 |     95% |441, 443-\>445, 469, 620, 650 |
+| app/core/settings\_override/registry.py                                                                                      |      296 |        1 |      116 |        1 |     99% |      1201 |
+| app/core/settings\_override/resolution.py                                                                                    |      116 |        0 |       62 |        0 |    100% |           |
+| app/core/settings\_override/secret\_preservation.py                                                                          |      267 |        0 |      154 |        0 |    100% |           |
+| app/core/settings\_override/secret\_storage.py                                                                               |      136 |        4 |       46 |        5 |     95% |441, 443-\>445, 469, 620, 650 |
 | app/core/settings\_override/worker.py                                                                                        |       59 |        1 |       14 |        1 |     97% |       214 |
 | app/core/utils/async\_run.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/cache.py                                                                                                      |       93 |        5 |       16 |        4 |     90% |60-62, 147-\>153, 151, 187-\>192, 224 |
@@ -486,7 +488,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30641** | **1695** | **7512** |  **644** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30662** | **1670** | **7512** |  **629** | **93%** |           |
 
 
 ## Setup coverage badge
