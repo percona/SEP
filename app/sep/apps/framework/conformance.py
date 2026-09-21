@@ -261,8 +261,8 @@ def _rendered_names(model: type[BaseModel]) -> frozenset[str]:
     attribute_names = {
         name for name, field in model.model_fields.items() if not field.exclude
     }
-    attribute_names.update(model.model_computed_fields.keys())
-    return serialized_field_names(model) | frozenset(attribute_names)
+    attribute_names.update(model.model_computed_fields)
+    return serialized_field_names(model) | attribute_names
 
 
 def check_actor_fields_resolvable(app: "TaskExecutionApp") -> list[str]:
