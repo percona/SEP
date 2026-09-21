@@ -606,6 +606,7 @@
           "description": "Path on the target host to the AES-256 key file the backup was encrypted with, needed to decrypt .xbcrypt files before restore",
           "forbidden": [
             {
+              "message": "'xtrabackup_aes256_keyfile' must not be set when 'source_encryption' does not include AES-256.",
               "when": {
                 "not": {
                   "any": [

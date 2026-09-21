@@ -13,20 +13,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Share the AST-extraction harness for exercising mysql_backups payload methods.
+"""Share the AST-extraction harness for exercising a backup payload's methods.
 
-The payload cannot be imported directly (it pulls boto3 and other heavy
-runtime deps), so callers locate the relevant symbols in the source via AST
-and exec them in an isolated namespace. This module holds the shared pieces
-so every test module that reaches into a payload — encryption, restore, the
-incremental base guards — builds on one harness instead of re-exporting private
-helpers from each other.
-
-Helpers default to the XtraBackup payload for backwards compatibility; pass
-``payload_path`` to target Mydumper or Binlog.
+A payload cannot be imported directly (it pulls boto3 and other heavy runtime
+deps), so callers locate the relevant symbols in the source via AST and exec them
+in an isolated namespace. This module holds the shared pieces so every test module
+that reaches into a payload builds on one harness instead of re-exporting private
+helpers from each other. ``payload_path`` selects the payload; it defaults to
+xtrabackup, which most of the callers here exercise.
 """
 
 import ast
+import contextlib
+import datetime
 import logging
 import multiprocessing.pool
 import os
@@ -38,6 +37,7 @@ from collections.abc import Callable
 from typing import Any
 
 from tests.app.sep.apps.mysql_backups.conftest import (
+    payload_tree,
     XTRABACKUP_PAYLOAD_PATH,
     xtrabackup_payload_tree,
 )
@@ -54,7 +54,6 @@ _CONST_NAMES = frozenset(
     {
         "MD5SUM_FILE",
         "UPLOADME_FILE",
-        "MYDUMPER_METADATA",
         "XTRABACKUP_INFO",
         "XTRABACKUP_CHECKPOINTS",
         "PLAINTEXT_METADATA_FILES",
@@ -65,6 +64,12 @@ _CONST_NAMES = frozenset(
         "XTRABACKUP_BIN",
         "XTRABACKUP_BIN_REAL",
         "XTRABACKUP_BIN_MARIADB",
+        "BACKUP_DIR_REGEX",
+        "MYDUMPER_BIN",
+        "MYDUMPER_METADATA",
+        "PARTIAL_MAX_AGE_SECONDS",
+        "PARTIAL_SUFFIX",
+        "REPLACED_SUFFIX",
         "CURRENT_USER",
         "CURRENT_USER_HOME_DIR",
         "BACKUP_TEXTFILE_COLLECTOR_DIR",
@@ -78,24 +83,8 @@ _CONST_NAMES = frozenset(
 )
 
 
-def _payload_path(payload_path: pathlib.Path | None = None) -> pathlib.Path:
-    """Return ``payload_path``, defaulting to the XtraBackup payload."""
-    return payload_path or XTRABACKUP_PAYLOAD_PATH
-
-
-def _payload_tree(payload_path: pathlib.Path | None = None) -> ast.Module:
-    """Parse and return the chosen payload's AST."""
-    path = _payload_path(payload_path)
-    if path == XTRABACKUP_PAYLOAD_PATH:
-        return xtrabackup_payload_tree()
-    return ast.parse(path.read_text())
-
-
-def const_nodes(
-    tree: ast.Module | None = None, *, payload_path: pathlib.Path | None = None
-) -> list[ast.stmt]:
+def const_nodes(tree: ast.Module) -> list[ast.stmt]:
     """Return the whitelisted module-level constant assignments from the payload AST."""
-    tree = tree if tree is not None else _payload_tree(payload_path)
     return [
         node
         for node in tree.body
@@ -112,41 +101,43 @@ def base_namespace() -> dict:
     ``pwd`` and ``getpass`` are stubbed rather than real: the home-derived constants
     would otherwise resolve against whoever runs the suite, and ``pwd.getpwnam``
     raises for a user the passwd database does not carry — which a container can
-    produce — taking every harness test with it. Bare ``getuser`` is seeded too:
-    Mydumper/Binlog write ``from getpass import getuser`` and the AST harness
-    never runs that import, so ``CURRENT_USER = ... or getuser()`` needs the name
-    in this namespace (XtraBackup calls ``getpass.getuser()`` instead).
+    produce — taking every harness test with it.
     """
-
-    def getuser() -> str:
-        return STUB_USER
-
     namespace: dict = {
         "os": os,
         "subprocess": subprocess,
         "logging": logging,
         "re": re,
+        "datetime": datetime,
         "Path": pathlib.Path,
         "Any": object,
+        "suppress": contextlib.suppress,
         "thread_pool": multiprocessing.pool,
         "pwd": types.SimpleNamespace(
             getpwnam=lambda _name: types.SimpleNamespace(pw_dir=STUB_HOME)
         ),
-        "getpass": types.SimpleNamespace(getuser=getuser),
-        "getuser": getuser,
+        "getpass": types.SimpleNamespace(getuser=lambda: STUB_USER),
+        # The mydumper payload imports the function itself.
+        "getuser": lambda: STUB_USER,
     }
     exec("class BackupError(Exception):\n    pass", namespace)  # noqa: S102
     return namespace
 
 
-def load_constant(name: str, *, payload_path: pathlib.Path | None = None) -> object:
-    """Return a whitelisted module-level constant's value from the payload source."""
-    path = _payload_path(payload_path)
+def load_constant(
+    name: str, *, payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH
+) -> object:
+    """Return a whitelisted module-level constant's value from a payload's source.
+
+    :param name: The constant to read; it has to be in ``_CONST_NAMES``.
+    :param payload_path: The payload script to read the constant out of.
+    :return: The constant's value.
+    """
     namespace = base_namespace()
     exec(  # noqa: S102
         compile(
-            ast.Module(body=const_nodes(payload_path=path), type_ignores=[]),
-            str(path),
+            ast.Module(body=const_nodes(payload_tree(payload_path)), type_ignores=[]),
+            str(payload_path),
             "exec",
         ),
         namespace,
@@ -158,14 +149,15 @@ XBCRYPT_BIN = load_constant("XBCRYPT_BIN")
 
 
 def load_function(
-    name: str, *, payload_path: pathlib.Path | None = None
+    name: str, *, payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH
 ) -> Callable[..., Any]:
     """Extract a single module-level payload function with its constants seeded.
 
+    :param name: The function to extract; it has to be defined at module level.
+    :param payload_path: The payload script to extract the function out of.
     :raises TypeError: If the extracted name is not callable.
     """
-    path = _payload_path(payload_path)
-    tree = _payload_tree(path)
+    tree = payload_tree(payload_path)
     namespace = base_namespace()
     body = const_nodes(tree)
     fn_nodes = [
@@ -174,15 +166,15 @@ def load_function(
         if isinstance(node, ast.FunctionDef) and node.name == name
     ]
     if not fn_nodes:
-        raise RuntimeError(f"{name} not found in {path}. Renamed or removed?")
+        raise RuntimeError(f"{name} not found in {payload_path}. Renamed or removed?")
     body = body + fn_nodes
     exec(  # noqa: S102
-        compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"),
+        compile(ast.Module(body=body, type_ignores=[]), str(payload_path), "exec"),
         namespace,
     )
     extracted = namespace[name]
     if not callable(extracted):
-        raise TypeError(f"{name} in {path} is not callable.")
+        raise TypeError(f"{name} in {payload_path} is not callable.")
     return extracted
 
 
@@ -191,7 +183,7 @@ def payload_method(
     method_name: str,
     *,
     extra_namespace: dict[str, object] | None = None,
-    payload_path: pathlib.Path | None = None,
+    payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH,
 ) -> Callable[..., object]:
     """Return one payload method lifted out of its class as a plain function.
 
@@ -205,18 +197,19 @@ def payload_method(
     :param method_name: The method to lift.
     :param extra_namespace: Globals the method body reads that are not whitelisted
         constants — module-level payload functions, or stand-ins for them.
-    :param payload_path: Payload source to read; defaults to XtraBackup.
+    :param payload_path: The payload script to lift the method out of.
     :return: The lifted method, called as ``fn(self, ...)``.
     """
-    path = _payload_path(payload_path)
-    tree = _payload_tree(path)
+    tree = payload_tree(payload_path)
     class_nodes = [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef) and node.name == class_name
     ]
     if not class_nodes:
-        raise RuntimeError(f"{class_name} not found in {path}. Renamed or removed?")
+        raise RuntimeError(
+            f"{class_name} not found in {payload_path}. Renamed or removed?"
+        )
     method_nodes = [
         node
         for node in class_nodes[0].body
@@ -224,30 +217,25 @@ def payload_method(
     ]
     if not method_nodes:
         raise RuntimeError(
-            f"{class_name}.{method_name} not found in {path}. Renamed or removed?"
+            f"{class_name}.{method_name} not found in {payload_path}. "
+            "Renamed or removed?"
         )
     namespace = base_namespace()
     module = ast.fix_missing_locations(
         ast.Module(body=const_nodes(tree) + method_nodes, type_ignores=[])
     )
-    exec(compile(module, str(path), "exec"), namespace)  # noqa: S102
+    exec(compile(module, str(payload_path), "exec"), namespace)  # noqa: S102
     namespace.update(extra_namespace or {})
     return namespace[method_name]
 
 
-def gpg_probe(
-    *,
-    returncode: int = 0,
-    payload_path: pathlib.Path | None = None,
-) -> tuple[Callable[..., bool], list[list[str]]]:
+def gpg_probe(*, returncode: int = 0) -> tuple[Callable[..., bool], list[list[str]]]:
     """Return the payload's ``is_encrypted_dir`` wired to a faked ``gpg`` binary.
 
     :param returncode: Exit status every faked ``gpg`` run reports.
-    :param payload_path: Payload source to read; defaults to XtraBackup.
     :return: The lifted function and the list its ``Popen`` calls append to.
     """
-    path = _payload_path(payload_path)
-    tree = _payload_tree(path)
+    tree = xtrabackup_payload_tree()
     namespace = base_namespace()
     calls: list[list[str]] = []
 
@@ -268,12 +256,64 @@ def gpg_probe(
     exec(  # noqa: S102
         compile(
             ast.Module(body=const_nodes(tree) + fn_nodes, type_ignores=[]),
-            str(path),
+            str(XTRABACKUP_PAYLOAD_PATH),
             "exec",
         ),
         namespace,
     )
     return namespace["is_encrypted_dir"], calls
+
+
+class Recorder:
+    """Collect the messages a payload method logs, in order."""
+
+    def __init__(self) -> None:
+        self.infos: list[str] = []
+        self.warnings: list[str] = []
+        self.errors: list[str] = []
+
+    def info(self, msg: str, *args: object) -> None:
+        """Record an informational message.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
+        self.infos.append(msg % args if args else msg)
+
+    def warning(self, msg: str, *args: object) -> None:
+        """Record a warning.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
+        self.warnings.append(msg % args if args else msg)
+
+    warn = warning
+
+    def debug(self, msg: str, *args: object) -> None:
+        """Discard a debug message.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
+
+    def error(self, msg: str, *args: object) -> None:
+        """Record an error.
+
+        :param msg: The message, or the ``%``-style format string for one.
+        :param args: The values that format string interpolates.
+        """
+        self.errors.append(msg % args if args else msg)
+
+    exception = error
+
+    @property
+    def messages(self) -> list[str]:
+        """Return every recorded message regardless of level.
+
+        :return: The recorded messages, informational ones first.
+        """
+        return [*self.infos, *self.warnings, *self.errors]
 
 
 class FakeProc:
@@ -283,7 +323,7 @@ class FakeProc:
         self.returncode = returncode
 
     def communicate(self) -> tuple[bytes, bytes]:
-        """Return ``(stdout, stderr)`` -- stderr is non-empty so error paths format it."""
+        """Return ``(stdout, stderr)``, stderr is non-empty so error paths format it."""
         return b"", b"boom"
 
 
@@ -293,7 +333,7 @@ def payload_instance(
     returncode: int = 0,
     extra_namespace: dict[str, object] | None = None,
     real_subprocess: bool = False,
-    payload_path: pathlib.Path | None = None,
+    payload_path: pathlib.Path = XTRABACKUP_PAYLOAD_PATH,
 ) -> tuple[object, type[Exception], list[list[str]]]:
     """Build an instance of a synthetic class carrying the named payload methods.
 
@@ -309,13 +349,12 @@ def payload_instance(
         namespace after the payload's own constants are loaded (so this wins),
         before the class is compiled.
     :param real_subprocess: When True, keep the real ``subprocess`` module instead
-        of faking ``Popen`` -- for integration tests that need a real process (e.g.
+        of faking ``Popen``, for integration tests that need a real process (e.g.
         a stand-in ``xbcrypt`` executable) to actually run. ``calls`` is unused
         (always ``[]``) in this mode.
-    :param payload_path: Payload source to read; defaults to XtraBackup.
+    :param payload_path: The payload script to lift the methods out of.
     """
-    path = _payload_path(payload_path)
-    tree = _payload_tree(path)
+    tree = payload_tree(payload_path)
     method_nodes = [
         node
         for node in ast.walk(tree)
@@ -323,7 +362,7 @@ def payload_instance(
     ]
     missing = set(method_names) - {node.name for node in method_nodes}
     if missing:
-        raise RuntimeError(f"{sorted(missing)} not found in {path}.")
+        raise RuntimeError(f"{sorted(missing)} not found in {payload_path}.")
 
     calls: list[list[str]] = []
 
@@ -344,7 +383,7 @@ def payload_instance(
     exec(  # noqa: S102
         compile(
             ast.Module(body=const_nodes(tree), type_ignores=[]),
-            str(path),
+            str(payload_path),
             "exec",
         ),
         namespace,
@@ -358,7 +397,7 @@ def payload_instance(
         decorator_list=[],
     )
     module = ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[]))
-    exec(compile(module, str(path), "exec"), namespace)  # noqa: S102
+    exec(compile(module, str(payload_path), "exec"), namespace)  # noqa: S102
 
     inst = namespace["_Payload"]()
     inst.logger = types.SimpleNamespace(
@@ -377,8 +416,6 @@ def payload_instance(
         if name not in method_names:
             setattr(inst, name, stub)
     inst.aes_keyfile = "/keys/aes.key"
-    # Upload classes (XtraBackup/Mydumper/Binlog) share this attribute name.
-    inst.xtrabackup_aes256 = "/keys/aes.key"
     inst.enc_aes = True
     inst.enc_gpg = False
     inst.compress = False

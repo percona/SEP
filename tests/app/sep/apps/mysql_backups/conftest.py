@@ -41,10 +41,10 @@ from tests.app.sep.conftest import (  # noqa: F401
     unauthenticated_client,
 )
 
-_MYSQL_BACKUPS_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups"
-XTRABACKUP_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "xtrabackup_payload"
-MYDUMPER_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "mydumper_payload"
-BINLOG_PAYLOAD_PATH = _MYSQL_BACKUPS_DIR / "binlog_payload"
+_APPS_DIR = pathlib.Path(__file__).parents[5] / "app/sep/apps/mysql_backups"
+XTRABACKUP_PAYLOAD_PATH = _APPS_DIR / "xtrabackup_payload"
+MYDUMPER_PAYLOAD_PATH = _APPS_DIR / "mydumper_payload"
+BINLOG_PAYLOAD_PATH = _APPS_DIR / "binlog_payload"
 
 # Spelled out on purpose: this is the cadence vocabulary the product promises, so a
 # test that read it back off a model or the payload would assert a surface against
@@ -79,23 +79,31 @@ def readable_cnf(tmp_path: pathlib.Path) -> pathlib.Path:
     return cnf
 
 
-def xtrabackup_payload_tree() -> ast.Module:
-    """Parse and return the xtrabackup payload's AST, fresh on every call.
+def payload_tree(path: pathlib.Path) -> ast.Module:
+    """Parse and return a payload script's AST, fresh on every call.
 
-    Centralizes the payload-path lookup so the per-file AST-extraction helpers
-    in this directory's test modules do not each re-derive it independently.
+    Centralizes the parse so the per-file AST-extraction helpers in this
+    directory's test modules do not each re-derive it independently.
+
+    :param path: Path to the payload script.
+    :return: The parsed module.
     """
-    return ast.parse(XTRABACKUP_PAYLOAD_PATH.read_text())
+    return ast.parse(path.read_text(encoding="utf-8"))
+
+
+def xtrabackup_payload_tree() -> ast.Module:
+    """Parse and return the xtrabackup payload's AST, fresh on every call."""
+    return payload_tree(XTRABACKUP_PAYLOAD_PATH)
 
 
 def mydumper_payload_tree() -> ast.Module:
     """Parse and return the mydumper payload's AST, fresh on every call."""
-    return ast.parse(MYDUMPER_PAYLOAD_PATH.read_text())
+    return payload_tree(MYDUMPER_PAYLOAD_PATH)
 
 
 def binlog_payload_tree() -> ast.Module:
     """Parse and return the binlog payload's AST, fresh on every call."""
-    return ast.parse(BINLOG_PAYLOAD_PATH.read_text())
+    return payload_tree(BINLOG_PAYLOAD_PATH)
 
 
 def xtrabackup_binary_default(tree: ast.Module) -> str:

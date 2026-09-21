@@ -27,6 +27,7 @@ detail-model suite methods skip.
 
 from typing import Any
 
+import yaml
 from fastapi import status
 from pytest_mock import MockerFixture
 
@@ -653,7 +654,11 @@ class TestRestoreContract(DerivedRouterContractTests):
                             {"equals": {"source_encryption": "dual"}},
                         ]
                     }
-                }
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' must not be set when "
+                    "'source_encryption' does not include AES-256."
+                ),
             }
         ]
         assert fields["xtrabackup_aes256_keyfile"]["requires"] == [
@@ -670,3 +675,76 @@ class TestRestoreContract(DerivedRouterContractTests):
                 ),
             }
         ]
+
+    def test_create_422_on_a_key_file_no_declared_format_admits(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject a key file on a restore that declares no AES-256 encryption."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+        body.update(
+            source_encryption=EncryptionFormat.NONE.value,
+            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "'xtrabackup_aes256_keyfile' must not be set" in response.text
+        assert mock_task_api.create_count == 0
+
+    def test_create_201_for_a_declared_aes_restore(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Accept a restore that declares AES-256 and names its key file."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.MYDUMPER)
+        body.update(
+            source_encryption=EncryptionFormat.AES256.value,
+            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        config = yaml.safe_load(
+            mock_task_api.last_create_payload["data"]["meta"]["config"]
+        )
+        assert (
+            config["SERVER_LIST"][0]["XTRABACKUP_AES256_KEYFILE"] == "/etc/xb/aes.key"
+        )
+
+    def test_detail_reveals_a_key_file_its_stamp_hid(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Serve a stamp that names no AES format beside its key file with one declared.
+
+        The edit form drops a field its gates hide, so serving such a stamp
+        unrepaired would strip the key the restore decrypts with on save.
+        """
+        task_name = "contract-hidden-aes-keyfile"
+        stored_form = {
+            **_valid_restore_body(
+                task_name=task_name, backup_type=BackupType.MYDUMPER
+            ),
+            "source_transport": SourceTransport.LOCAL.value,
+            "source_encryption": EncryptionFormat.NONE.value,
+            "xtrabackup_aes256_keyfile": "/etc/xb/aes.key",
+        }
+        mock_task_api.seed_task(
+            task_name,
+            owner=self.app_def.owner,
+            data_extra={RESERVED_FORM_KEY: stored_form},
+        )
+        base = app_base_url(self.app_def)
+
+        detail = contract_client.get(f"{base}/{task_name}")
+
+        assert detail.status_code == status.HTTP_200_OK, detail.text
+        served = detail.json()["data"][RESERVED_FORM_KEY]
+        assert served["source_encryption"] == EncryptionFormat.AES256.value
+        assert served["xtrabackup_aes256_keyfile"] == "/etc/xb/aes.key"
+
+        resubmit = contract_client.put(f"{base}/{task_name}", json=served)
+
+        assert resubmit.status_code == status.HTTP_200_OK, resubmit.text

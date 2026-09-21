@@ -17,6 +17,7 @@
 
 import json
 import logging
+from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
@@ -49,7 +50,10 @@ from app.tasks.execution.executors.nomad.steps import (
     RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
 from app.tasks.models import (
+    EXECUTE_TASK_BY_NAME_TASK,
     INVENTORY_COLLECTION_TASK_NAME,
+    INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_FOLLOWERS_KEY,
     INVENTORY_SYNC_TASK_NAME,
     SYNC_RUNNING_TASKS_TASK_NAME,
     SYSTEM_USER,
@@ -873,7 +877,10 @@ def _inventory_sync_schedule_name(syncer: str) -> str:
 
 
 def _inventory_sync_schedule(
-    name: str, syncer: str | None, interval: IntervalSchedule | None
+    name: str,
+    syncer: str | None,
+    interval: IntervalSchedule | None,
+    ordering: Mapping[str, str | list[str]] | None = None,
 ) -> SystemPeriodicTaskSchedule | None:
     """Build one inventory-sync schedule, or ``None`` when unconfigured.
 
@@ -891,9 +898,16 @@ def _inventory_sync_schedule(
     since a schedule switched on for the first time should collect inventory now
     rather than one interval from now.
 
+    ``ordering`` carries the first-run relationship between the pinned default
+    and the per-syncer schedules. It is merged into the meta beside ``syncer``,
+    where the executor forwards it to the callable, so the ordering is decided at
+    run time and the due marker above stays unchanged.
+
     :param name: The seeded row name this schedule owns.
     :param syncer: The syncer to pin, or ``None`` to run every configured one.
     :param interval: How often the schedule fires, or ``None`` to seed nothing.
+    :param ordering: Meta keys ordering this schedule's first run against the
+        pinned default, or ``None`` for none. Ignored when ``syncer`` is unset.
     :return: The schedule to append to the seeded set, or ``None`` when
         ``interval`` is unset.
     """
@@ -902,14 +916,18 @@ def _inventory_sync_schedule(
     kwargs = {
         "task_name": INVENTORY_SYNC_TASK_NAME,
         "periodic_task_name": name,
-        **({"execution_data": {"meta": {"syncer": syncer}}} if syncer else {}),
+        **(
+            {"execution_data": {"meta": {"syncer": syncer, **(ordering or {})}}}
+            if syncer
+            else {}
+        ),
     }
     return SystemPeriodicTaskSchedule(
         schedule=interval,
         tasks=[
             SystemPeriodicTaskData(
                 name=name,
-                task_name="app.tasks.celery.execute_task_by_name",
+                task_name=EXECUTE_TASK_BY_NAME_TASK,
                 extra_kwargs={"kwargs": json.dumps(kwargs)},
                 due_on_first_seed=True,
             ),
@@ -950,7 +968,10 @@ def _schedule_covers_syncer(row: PeriodicTask, syncer: str | None) -> bool:
 
 
 async def _seeded_inventory_sync_schedule(
-    name: str, syncer: str | None, interval: IntervalSchedule | None
+    name: str,
+    syncer: str | None,
+    interval: IntervalSchedule | None,
+    ordering: Mapping[str, str | list[str]] | None = None,
 ) -> SystemPeriodicTaskSchedule | None:
     """Return the schedule to seed, or ``None`` when unset or already covered.
 
@@ -978,9 +999,11 @@ async def _seeded_inventory_sync_schedule(
     :param name: The seeded row name this schedule owns.
     :param syncer: The syncer to pin, or ``None`` to run every configured one.
     :param interval: How often the schedule fires, or ``None`` to seed nothing.
+    :param ordering: Meta keys carrying the schedule's first-run relationship to
+        the pinned default, or ``None`` for none.
     :return: The schedule to seed, or ``None``.
     """
-    if (schedule := _inventory_sync_schedule(name, syncer, interval)) is None:
+    if (schedule := _inventory_sync_schedule(name, syncer, interval, ordering)) is None:
         return None
     session_maker = get_celery_beat_session_maker()
     already_seeded = False
@@ -1025,27 +1048,44 @@ async def seed_system_periodic_tasks() -> None:
     rather than orphaning and re-creating it — which ``due_on_first_seed`` would
     turn into a sync on every boot.
 
+    When the pinned default is seeded, it and each per-syncer schedule it seeds
+    carry the first-run relationship in their meta: the default names its
+    followers, and each follower names the default, so a follower's first run
+    waits for the default's first completed sync. Nothing is written when the
+    default is not seeded, which leaves a standalone or operator-scheduled
+    install unchanged.
+
     :raises SQLAlchemyError: When the celery-beat store cannot be written.
     """
     periodic_tasks = list(SYSTEM_PERIODIC_TASKS)
-    configured = [
-        (
-            INVENTORY_SYNC_SCHEDULE_NAME,
-            tasks_settings.INVENTORY_SYNC_SYNCER,
-            tasks_settings.INVENTORY_SYNC_INTERVAL,
-        ),
-        *(
-            (_inventory_sync_schedule_name(entry.syncer), entry.syncer, entry.interval)
+    leader = tasks_settings.INVENTORY_SYNC_SYNCER
+    followers = [entry.syncer for entry in tasks_settings.INVENTORY_SYNC_SCHEDULES]
+    primary = await _seeded_inventory_sync_schedule(
+        INVENTORY_SYNC_SCHEDULE_NAME,
+        leader,
+        tasks_settings.INVENTORY_SYNC_INTERVAL,
+        {INVENTORY_SYNC_FOLLOWERS_KEY: followers} if followers else None,
+    )
+    if primary is not None:
+        periodic_tasks.append(primary)
+    ordering = (
+        {INVENTORY_SYNC_AFTER_KEY: leader} if primary is not None and leader else None
+    )
+    periodic_tasks.extend(
+        [
+            schedule
             for entry in tasks_settings.INVENTORY_SYNC_SCHEDULES
-        ),
-    ]
-    for name, syncer, interval in configured:
-        if (
-            inventory_sync := await _seeded_inventory_sync_schedule(
-                name, syncer, interval
+            if (
+                schedule := await _seeded_inventory_sync_schedule(
+                    _inventory_sync_schedule_name(entry.syncer),
+                    entry.syncer,
+                    entry.interval,
+                    ordering,
+                )
             )
-        ) is not None:
-            periodic_tasks.append(inventory_sync)
+            is not None
+        ]
+    )
     await init_periodic_tasks_db(periodic_tasks, SYSTEM_PERIODIC_TASK_PREFIX)
 
 

@@ -24,6 +24,8 @@ Usage:
     python pre_checks.py --config <config.yaml>
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import shutil

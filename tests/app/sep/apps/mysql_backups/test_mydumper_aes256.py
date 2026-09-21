@@ -228,8 +228,9 @@ def _run_backup(
 ):
     """Run the real ``run`` past its post-backup encryption block."""
     probe = _RunProbe()
-    backup_dir = tmp_path / "backup"
-    backup_dir.mkdir()
+    backup_server_dir = tmp_path
+    backup_dir = tmp_path / "20260101"
+    work_dir = tmp_path / ".20260101.030000.1.partial"
     latest_link = tmp_path / "latest"
 
     inst, _, _ = payload_instance(
@@ -260,14 +261,19 @@ def _run_backup(
     inst.check_disk_space = False
     inst.mydumper_for_schemas = True
     inst.upload_type = []
+    inst.backup_server_dir = backup_server_dir
     inst.backup_dir = backup_dir
+    inst.work_dir = work_dir
     inst.latest_link = latest_link
     inst.today_str = "20260101"
     inst.last_backup_dir = str(backup_dir)
     inst.dir_encrypt_config = {}
+    inst.report_options = {}
     inst.encrypt_files_aes256 = probe.aes_dirs.append
     inst._get_version = lambda: "0.16"
     inst._run_backup_cmd = lambda: None
+    inst._reclaim_interrupted_publish = lambda: None
+    inst._publish_backup = lambda: backup_dir.mkdir(exist_ok=True)
     inst._purge_old_backups = lambda: None
     inst._save_disk_space = lambda: setattr(
         probe, "saved_disk_space", probe.saved_disk_space + 1
@@ -304,6 +310,7 @@ class TestSaveDiskSpacePrevEncrypted:
         inst.encrypt_using_tmpdir = False
         inst.prev_backup_dir = prev
         inst.backup_dir = today
+        inst.work_dir = today
         inst.backup_server_dir = tmp_path
         inst.updated_since = 0
         inst.valid_prev_backup_dir = None

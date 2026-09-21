@@ -44,6 +44,9 @@ from tests.app.sep.apps.mysql_backups.payload_harness import (
 from tests.app.sep.apps.mysql_backups.payload_harness import (
     payload_instance as _payload_instance,
 )
+from tests.app.sep.apps.mysql_backups.payload_harness import (
+    Recorder,
+)
 
 CHECKPOINTS = "xtrabackup_checkpoints"
 BASE_LSN = 4242
@@ -83,35 +86,9 @@ def _lift_plain(name: str) -> Callable[..., Any]:
     return namespace[name]
 
 
-class _Recorder:
-    """Collect the messages a payload method logs, in order."""
-
-    def __init__(self) -> None:
-        self.warnings: list[str] = []
-        self.infos: list[str] = []
-        self.errors: list[str] = []
-
-    def warn(self, msg: str, *args: object) -> None:
-        """Record a warning."""
-        self.warnings.append(msg % args if args else msg)
-
-    warning = warn
-
-    def info(self, msg: str, *args: object) -> None:
-        """Record an informational message."""
-        self.infos.append(msg % args if args else msg)
-
-    def debug(self, msg: str, *args: object) -> None:
-        """Discard a debug message."""
-
-    def error(self, msg: str, *args: object) -> None:
-        """Record an error."""
-        self.errors.append(msg % args if args else msg)
-
-
 def _lift_guards(
     method_names: tuple[str, ...],
-) -> tuple[Any, _Recorder, list[list[str]]]:
+) -> tuple[Any, Recorder, list[list[str]]]:
     """Build a payload instance carrying the named methods.
 
     :param method_names: Payload methods to lift onto the synthetic class.
@@ -120,14 +97,14 @@ def _lift_guards(
         long as encryption detection needs no external binary.
     """
     instance, _, calls = _payload_instance(method_names)
-    recorder = _Recorder()
+    recorder = Recorder()
     instance.logger = recorder
     return instance, recorder, calls
 
 
 def _guard(
     *, method: str | None = "fast_restore"
-) -> tuple[Any, _Recorder, list[list[str]]]:
+) -> tuple[Any, Recorder, list[list[str]]]:
     """Build a payload instance carrying only the base-backup guards.
 
     :param method: Value for ``incremental_method``.
@@ -347,7 +324,7 @@ class TestDefineIncrementalOptions:
         method: str | None = "fast_restore",
         checkpoints: str = UNPREPARED,
         found: bool = True,
-    ) -> tuple[Any, _Recorder]:
+    ) -> tuple[Any, Recorder]:
         """Drive ``_define_incremental_options`` over a single base backup.
 
         :param tmp_path: Root standing in for the server's backup directory.

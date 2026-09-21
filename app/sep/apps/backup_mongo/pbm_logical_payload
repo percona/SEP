@@ -1,5 +1,7 @@
 """ PBM Logical Payload """
 
+from __future__ import annotations
+
 import subprocess
 import getpass
 import os
@@ -426,4 +428,5 @@ def pbm():
         sys.exit(ret_code)
     write_backup_status(PBM_METRIC_TYPE, 0)
 
-pbm()
+if __name__ == "__main__":
+    pbm()

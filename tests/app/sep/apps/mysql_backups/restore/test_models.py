@@ -24,6 +24,7 @@ from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, UNKNOWN_SERVICE_SENTINEL
 from app.sep.apps.mysql_backups.restore.models import (
     normalize_source_declaration,
+    repair_source_declaration,
     RestoreConfigServer,
     RestoreCreate,
     SourceTransport,
@@ -586,3 +587,77 @@ def test_declared_stamp_keeps_its_gate_teeth_through_the_before_validator() -> N
                 source_transport=SourceTransport.LOCAL.value, ssh_user="deploy"
             )
         )
+
+
+_AES_KEYFILE = "/etc/xb/aes.key"
+_GPG_PASSWORD_FILE = "/etc/gpg.pass"
+
+
+def _declared_stamp(**overrides: object) -> dict:
+    """Return a stamp that already names both source controls."""
+    stamp = _legacy_stamp(
+        source_transport=SourceTransport.LOCAL.value,
+        source_encryption=EncryptionFormat.NONE.value,
+        ssh_user=None,
+        ssh_port=None,
+        s3_tool=None,
+    )
+    stamp.update(overrides)
+    return stamp
+
+
+class TestRepairSourceDeclaration:
+    """Repair stamps whose declarations disagree with the values they store."""
+
+    def test_widens_a_declaration_that_hides_a_stored_key_file(self) -> None:
+        """Widen ``none`` beside a key file to the AES-256 format that reveals it."""
+        repaired = repair_source_declaration(
+            _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE)
+        )
+
+        assert repaired is not None
+        assert repaired["source_encryption"] == EncryptionFormat.AES256
+        assert repaired["xtrabackup_aes256_keyfile"] == _AES_KEYFILE
+
+    def test_narrows_a_declaration_naming_no_key_file(self) -> None:
+        """Drop an AES-256 claim that names no key file to decrypt with."""
+        repaired = repair_source_declaration(
+            _declared_stamp(
+                source_encryption=EncryptionFormat.DUAL.value,
+                gpg_password_file=_GPG_PASSWORD_FILE,
+            )
+        )
+
+        assert repaired is not None
+        assert repaired["source_encryption"] == EncryptionFormat.GPG
+        assert repaired["gpg_password_file"] == _GPG_PASSWORD_FILE
+        RestoreCreate.model_validate(repaired)
+
+    def test_owes_no_repair_to_a_consistent_stamp(self) -> None:
+        """Leave a stamp whose declarations already match its values untouched."""
+        assert (
+            repair_source_declaration(
+                _declared_stamp(
+                    source_encryption=EncryptionFormat.AES256.value,
+                    xtrabackup_aes256_keyfile=_AES_KEYFILE,
+                )
+            )
+            is None
+        )
+
+    def test_declares_the_source_of_a_stamp_that_predates_the_controls(self) -> None:
+        """Declare both halves for a stamp carrying neither, as the backfill needs."""
+        repaired = repair_source_declaration(_legacy_stamp(ssh_key="prod-key"))
+
+        assert repaired is not None
+        assert repaired["source_transport"] == SourceTransport.SSH
+        assert repaired["source_encryption"] == EncryptionFormat.NONE
+
+    def test_a_repaired_stamp_validates(self) -> None:
+        """Return a body the create model accepts, which is what the read path serves."""
+        repaired = repair_source_declaration(
+            _declared_stamp(xtrabackup_aes256_keyfile=_AES_KEYFILE)
+        )
+
+        assert repaired is not None
+        RestoreCreate.model_validate(repaired)

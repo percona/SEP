@@ -834,3 +834,113 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
         if body is not None
     ]
     assert writes == [("POST", {"labels": ["qa not required"]})]
+
+
+def test_print_eligibility_reports_true_and_writes_no_label(monkeypatch, capsys):
+    """Report an eligible pull request without touching its labels.
+
+    ``label-gate`` runs this mode with a read-only token, so a write here would
+    fail the merge gate rather than mislabel.
+    """
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    recorded = _patch_urlopen_routes(
+        monkeypatch,
+        [
+            (
+                "/pulls/7/files",
+                [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
+            )
+        ],
+    )
+
+    assert (
+        sync_pr_labels.main(
+            [
+                "--owner",
+                "percona",
+                "--repo",
+                "SEP",
+                "--pr-number",
+                "7",
+                "--head-ref",
+                "dependabot/pip/urllib3-2.5.0",
+                "--print-eligibility",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out == "true\n"
+    assert [method for method, _url, _body in recorded] == ["GET"]
+
+
+def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
+    """Report a pull request that needs QA as ineligible."""
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    _patch_urlopen_routes(
+        monkeypatch,
+        [
+            (
+                "/pulls/7/files",
+                [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
+            )
+        ],
+    )
+
+    assert (
+        sync_pr_labels.main(
+            [
+                "--owner",
+                "percona",
+                "--repo",
+                "SEP",
+                "--pr-number",
+                "7",
+                "--head-ref",
+                "SEP-1234",
+                "--print-eligibility",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out == "false\n"
+
+
+def test_print_eligibility_needs_no_labeler_file(monkeypatch, capsys):
+    """Compute the predicate without the labeler file the sync path requires.
+
+    The predicate reads no ``app:<name>`` glob, and ``label-gate`` resolves the
+    default ``--labeler`` against a checkout that need not carry it.
+    """
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    _patch_urlopen_routes(
+        monkeypatch,
+        [
+            (
+                "/pulls/7/files",
+                [{"filename": "README.md", "additions": 1, "deletions": 0}],
+            )
+        ],
+    )
+
+    assert (
+        sync_pr_labels.main(
+            [
+                "--owner",
+                "percona",
+                "--repo",
+                "SEP",
+                "--pr-number",
+                "7",
+                "--labeler",
+                "/tmp/does-not-exist-labeler.yml",
+                "--head-ref",
+                "SEP-1234",
+                "--print-eligibility",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out == "true\n"
