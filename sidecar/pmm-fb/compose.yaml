@@ -73,7 +73,7 @@ services:
       - sep-pmm
 
   sep-sidecar:
-    image: docker.io/percona/percona-sep:193cd869ad5d178da3104e10452bdfc63320f1fb
+    image: docker.io/percona/percona-sep:83e40358c7ecaeeb62f1bae04bda759b5f3d3864
     platform: linux/amd64
     # service_healthy, not service_started: SEP builds its settings once, at
     # process start, so a side-car released before pmm-server has written the
