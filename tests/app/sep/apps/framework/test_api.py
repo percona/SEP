@@ -2851,9 +2851,9 @@ class TestDeriveCrudRoutesCreateContext:
     ) -> None:
         """Assert create still writes and degrades to the raw id on a provider outage.
 
-        The real default ``get_username_mapping`` context provider catches a failed
-        user listing and returns an empty map, so the write already went through
-        upstream and the response should render the stored id rather than error.
+        The real default provider, ``get_username_mapping``, turns these listing
+        failures into an empty map, so the response renders the stored id; the
+        upstream write has already landed by the time the map is fetched.
         """
         provider_users.side_effect = failure
         tasks_api = _make_tasks_api(
