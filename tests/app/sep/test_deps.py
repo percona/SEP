@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
+from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.auth.exceptions import (
@@ -33,6 +34,8 @@ from app.core.auth.models import (
     SessionExchangeTokenResponse,
     UserRole,
 )
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
@@ -412,6 +415,37 @@ class TestGetUsernameMapping:
         ):
             result = await get_username_mapping()
         assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_casdoor_error_body_returns_empty_dict(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Assert Casdoor's HTTP-200 error body degrades to an empty map.
+
+        Only the SDK's HTTP call is stubbed, so the body travels through the real
+        ``CasdoorSDK.get_users`` and ``CasdoorUser.get_users``. A fresh SDK keeps
+        the listing cache of the process-wide provider out of the test.
+        """
+        sdk = CasdoorSDK(
+            endpoint="https://casdoor.example.com",
+            client_id="test-id",
+            client_secret="test-secret",
+        )
+        mocker.patch.object(
+            CasdoorSDK,
+            "get",
+            new=mocker.AsyncMock(
+                return_value={
+                    "status": "error",
+                    "msg": "Unauthorized operation",
+                    "data": None,
+                }
+            ),
+        )
+        mocker.patch("app.core.auth.config.get_active_auth_provider", return_value=sdk)
+        mocker.patch("app.sep.deps.User", CasdoorUser)
+
+        assert await get_username_mapping() == {}
 
 
 class TestGetInventoryApi:
