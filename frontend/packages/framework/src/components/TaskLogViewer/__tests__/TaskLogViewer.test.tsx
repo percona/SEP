@@ -146,6 +146,150 @@ describe('TaskLogViewer', () => {
     expect(getTailSelect()).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('keeps a live log that finished cleanly when the run turns terminal', async () => {
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('7');
+    act(() => {
+      handle.pushMessage({ msg: 'line-1\n', step: 'setup', type: 'stdout', offset: 1 });
+    });
+    await waitFor(() => expect(screen.getByTestId('log-output').textContent).toBe('line-1\n'));
+    act(() => {
+      handle.pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+    const output = screen.getByTestId('log-output');
+
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    expect(logFetchUrls()).toEqual(['/stream-logs/7']);
+    expect(screen.getByTestId('log-output')).toBe(output);
+    expect(output.textContent).toBe('line-1\n');
+  });
+
+  it('reloads a live log whose finish carried a non-terminal status', async () => {
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    act(() => {
+      getHandle('7').pushNamed('finish', { status: 'running' });
+    });
+    await waitFor(() => expect(screen.getByText('running')).toBeInTheDocument());
+
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    expect(logFetchUrls()).toEqual(['/stream-logs/7', '/stream-logs/7?tail=1000']);
+  });
+
+  it('reloads a live log that never finished when the run turns terminal', async () => {
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    act(() => {
+      getHandle('7').pushMessage({ msg: 'line-1\n', step: 'setup', type: 'stdout', offset: 1 });
+    });
+
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    expect(logFetchUrls()).toEqual(['/stream-logs/7', '/stream-logs/7?tail=1000']);
+  });
+
+  it('reloads the next task history capped after keeping a live log', async () => {
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    act(() => {
+      getHandle('7').pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="9" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="9" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    expect(logFetchUrls()).toEqual([
+      '/stream-logs/7',
+      '/stream-logs/9',
+      '/stream-logs/9?tail=1000',
+    ]);
+  });
+
+  it('reloads with a newly chosen line cap after keeping a live log', async () => {
+    const { rerender } = render(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const handle = getHandle('7');
+    act(() => {
+      handle.pushMessage({ msg: lines(150), step: 'setup', type: 'stdout', offset: 1 });
+      handle.pushNamed('finish', { status: 'success' });
+    });
+    await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
+    rerender(
+      <QueryWrapper>
+        <TaskLogViewer taskHistoryId="7" taskStatus="SUCCESS" />
+      </QueryWrapper>,
+    );
+    await flushPromises();
+
+    const user = userEvent.setup();
+    await user.click(getTailSelect());
+    await user.click(screen.getByRole('option', { name: 'Last 100' }));
+    await flushPromises();
+
+    expect(logFetchUrls()).toEqual(['/stream-logs/7', '/stream-logs/7?tail=100']);
+  });
+
   it('requests tail=1000 by default for finished tasks', async () => {
     render(
       <QueryWrapper>
