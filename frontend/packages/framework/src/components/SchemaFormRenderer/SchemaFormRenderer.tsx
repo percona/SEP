@@ -30,6 +30,7 @@ import {
   get,
   useForm,
   useFormContext,
+  useWatch,
   type FieldErrors,
   type SubmitHandler,
 } from 'react-hook-form';
@@ -187,7 +188,7 @@ interface SectionRendererProps {
    * Open a collapsible section that would otherwise start collapsed, because
    * it holds something the reader needs to see. Raising this later — when a
    * submit puts an error inside a collapsed section — opens it then; the
-   * reader can still collapse it again afterwards.
+   * reader can still collapse it afterwards unless a section violation is active.
    */
   forceExpanded?: boolean;
 }
@@ -269,7 +270,7 @@ const SectionRenderer = memo(function SectionRenderer({
       {showDivider && <Divider sx={{ mb: 2 }} />}
       {section.collapsible ? (
         <Accordion
-          expanded={expanded}
+          expanded={expanded || violations.length > 0}
           onChange={(_, isExpanded) => setExpanded(isExpanded)}
           disableGutters
           slotProps={{ transition: { unmountOnExit: true } }}
@@ -412,7 +413,7 @@ function SchemaFormBody({
   capabilities,
   renderField,
 }: SchemaFormRendererProps) {
-  const { handleSubmit, formState, setError, clearErrors, getFieldState } =
+  const { handleSubmit, formState, setError, clearErrors, getFieldState, control } =
     useFormContext<Record<string, unknown>>();
 
   // Apply backend per-field errors to the form. Clear the paths set by the
@@ -484,13 +485,47 @@ function SchemaFormBody({
     [advancedEntries, formState.errors],
   );
   const [advancedRevealed, setAdvancedRevealed] = useState(false);
-  // Reveal, never re-hide: a submit that puts an error in an advanced section
-  // has to show it, and pulling the section back once the reader fixes it
-  // would move the ground under them.
-  const showAdvanced = advancedRevealed || seededAdvanced.size > 0 || erroredAdvanced.size > 0;
   const visibleAdvanced = advancedEntries.filter(({ index }) => !(hiddenSections[index] ?? false));
   const cardinalityViolations = useCardinalityRules(sections);
   const failViolations = useFailRules(sections);
+
+  // Unlike submit-time server errors, fail-rule errors follow every value change.
+  const values = useWatch({
+    control,
+    disabled: !sections.some((section) => section.fail_when?.length),
+  });
+  const appliedFailErrorPaths = useRef(new Set<string>());
+  useEffect(() => {
+    const messages = new Map<string, string>();
+    for (const violations of failViolations) {
+      for (const { error_fields, message } of violations) {
+        for (const path of error_fields) {
+          // RHF retains unmounted registrations; only mounted fields can display
+          // and validate these errors. Unknown paths must not become orphan errors.
+          if (get(control._fields, path)?._f?.mount && !messages.has(path)) {
+            messages.set(path, message);
+          }
+        }
+      }
+    }
+    for (const path of appliedFailErrorPaths.current) {
+      if (!messages.has(path) && getFieldState(path).error?.type === 'failRule') {
+        clearErrors(path);
+      }
+    }
+    const applied = new Set<string>();
+    for (const [path, message] of messages) {
+      const error = getFieldState(path).error;
+      if (error && error.type !== 'failRule') {
+        continue;
+      }
+      if (error?.message !== message) {
+        setError(path, { type: 'failRule', message });
+      }
+      applied.add(path);
+    }
+    appliedFailErrorPaths.current = applied;
+  }, [failViolations, values, control, getFieldState, setError, clearErrors]);
 
   // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
   const violationsBySection = useMemo(() => {
@@ -500,6 +535,19 @@ function SchemaFormBody({
     });
     return map;
   }, [sections, cardinalityViolations, failViolations]);
+
+  // Reveal, never re-hide: pulling the section back once the reader fixes it
+  // would move the ground under them.
+  const showAdvanced =
+    advancedRevealed ||
+    seededAdvanced.size > 0 ||
+    erroredAdvanced.size > 0 ||
+    advancedEntries.some(({ section }) => (violationsBySection.get(section)?.length ?? 0) > 0);
+  useEffect(() => {
+    if (showAdvanced) {
+      setAdvancedRevealed(true);
+    }
+  }, [showAdvanced]);
 
   const hasSectionViolations = useMemo(
     () => [...violationsBySection.values()].some((vs) => vs.length > 0),
@@ -515,7 +563,11 @@ function SchemaFormBody({
       isHidden={hiddenSections[entry.index] ?? false}
       violations={violationsBySection.get(entry.section) ?? []}
       renderField={renderField}
-      forceExpanded={seededAdvanced.has(entry.index) || erroredAdvanced.has(entry.index)}
+      forceExpanded={
+        seededAdvanced.has(entry.index) ||
+        erroredAdvanced.has(entry.index) ||
+        (violationsBySection.get(entry.section)?.length ?? 0) > 0
+      }
     />
   );
 

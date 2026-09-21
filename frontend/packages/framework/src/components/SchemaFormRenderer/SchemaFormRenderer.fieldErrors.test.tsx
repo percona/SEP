@@ -20,6 +20,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { useFormContext, type UseFormReturn } from 'react-hook-form';
 import type { FieldValidationError } from '@sep/api';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import type { FormSection } from './types';
@@ -67,6 +68,214 @@ const SECTIONS: FormSection[] = [
 ];
 
 describe('SchemaFormRenderer field errors', () => {
+  it.each([false, true])(
+    'reactively reveals fail rules and highlights every named field (advanced=%s)',
+    async (advanced) => {
+      const user = userEvent.setup();
+      const onSubmit = vi.fn();
+      renderWithProviders(
+        <SchemaFormRenderer
+          sections={[
+            {
+              title: 'Main',
+              fields: [{ type: 'bool', name: 'blocked', label: 'Blocked' }],
+            },
+            {
+              title: 'Options',
+              advanced,
+              collapsible: true,
+              collapsed_by_default: true,
+              fail_when: [
+                {
+                  fail_when: { truthy: 'blocked' },
+                  error_fields: ['options.first', 'second'],
+                  message: 'Invalid combination.',
+                },
+              ],
+              fields: [
+                { type: 'string', name: 'options.first', label: 'First' },
+                { type: 'string', name: 'second', label: 'Second' },
+              ],
+            },
+          ]}
+          onSubmit={onSubmit}
+        />,
+      );
+
+      expect(screen.queryByRole('textbox', { name: 'First' })).not.toBeInTheDocument();
+      await user.click(screen.getByLabelText('Blocked'));
+      expect(screen.getByRole('button', { name: 'Options' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      expect(screen.queryByTestId('show-advanced-options')).not.toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent('Invalid combination.');
+      for (const name of ['First', 'Second']) {
+        expect(screen.getByRole('textbox', { name })).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByRole('textbox', { name })).toHaveAccessibleDescription(
+          'Invalid combination.',
+        );
+      }
+      await user.click(screen.getByRole('button', { name: 'Run' }));
+      expect(onSubmit).not.toHaveBeenCalled();
+      await user.type(screen.getByRole('textbox', { name: 'First' }), 'still blocked');
+      expect(screen.getByRole('textbox', { name: 'First' })).toHaveAttribute(
+        'aria-invalid',
+        'true',
+      );
+
+      await user.click(screen.getByLabelText('Blocked'));
+      expect(screen.queryByText('Invalid combination.')).not.toBeInTheDocument();
+      for (const name of ['First', 'Second']) {
+        expect(screen.getByRole('textbox', { name })).toHaveAttribute('aria-invalid', 'false');
+      }
+      await user.click(screen.getByRole('button', { name: 'Run' }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    },
+  );
+
+  it('skips unknown and unmounted error fields without wedging submission', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    let form: UseFormReturn<Record<string, unknown>>;
+    function Probe({ children }: { children: ReactNode }) {
+      form = useFormContext();
+      return children;
+    }
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Main',
+            fail_when: [
+              {
+                fail_when: { truthy: 'blocked' },
+                error_fields: ['ghost', 'hidden', 'unmounted'],
+                message: 'Blocked combination.',
+              },
+            ],
+            fields: [
+              { type: 'bool', name: 'blocked', label: 'Blocked' },
+              {
+                type: 'string',
+                name: 'hidden',
+                label: 'Hidden',
+                forbidden: [{ when: { truthy: 'blocked' } }],
+              },
+            ],
+          },
+          {
+            title: 'Unopened',
+            collapsible: true,
+            collapsed_by_default: true,
+            fields: [{ type: 'string', name: 'unmounted', label: 'Unmounted' }],
+          },
+        ]}
+        renderField={({ renderDefault }) => <Probe>{renderDefault()}</Probe>}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Blocked'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Blocked combination.');
+    expect(screen.queryByRole('textbox', { name: 'Hidden' })).not.toBeInTheDocument();
+    for (const path of ['ghost', 'hidden', 'unmounted']) {
+      expect(form!.getFieldState(path).error).toBeUndefined();
+    }
+    await user.click(screen.getByLabelText('Blocked'));
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps an error until the last rule targeting the field clears, even after submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Main',
+            fields: [
+              { type: 'bool', name: 'first', label: 'First rule' },
+              { type: 'bool', name: 'second', label: 'Second rule' },
+              { type: 'string', name: 'target', label: 'Target' },
+            ],
+            fail_when: [
+              {
+                fail_when: { truthy: 'first' },
+                error_fields: ['target'],
+                message: 'First violation.',
+              },
+              {
+                fail_when: { truthy: 'second' },
+                error_fields: ['target'],
+                message: 'Second violation.',
+              },
+            ],
+          },
+        ]}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByLabelText('First rule'));
+    await user.click(screen.getByLabelText('Second rule'));
+    const target = screen.getByRole('textbox', { name: 'Target' });
+    expect(target).toHaveAccessibleDescription('First violation.');
+    await user.type(target, 'does not change either predicate');
+    await waitFor(() => expect(target).toHaveAccessibleDescription('First violation.'));
+    await user.click(screen.getByLabelText('First rule'));
+    expect(target).toHaveAccessibleDescription('Second violation.');
+    await user.click(screen.getByLabelText('Second rule'));
+    expect(target).toHaveAttribute('aria-invalid', 'false');
+  });
+
+  it('does not clear a server error that replaces a fail-rule error', async () => {
+    const user = userEvent.setup();
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'blocked', label: 'Blocked' },
+          { type: 'string', name: 'target', label: 'Target' },
+        ],
+        fail_when: [
+          {
+            fail_when: { truthy: 'blocked' },
+            error_fields: ['target'],
+            message: 'Rule violation.',
+          },
+        ],
+      },
+    ];
+    function Wrapper() {
+      const [errors, setErrors] = useState<FieldValidationError[]>([]);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => setErrors([{ path: 'target', message: 'Server rejection.' }])}
+          >
+            Server response
+          </button>
+          <SchemaFormRenderer sections={sections} onSubmit={() => {}} fieldErrors={errors} />
+        </>
+      );
+    }
+    renderWithProviders(<Wrapper />);
+    await user.click(screen.getByLabelText('Blocked'));
+    expect(screen.getByRole('textbox', { name: 'Target' })).toHaveAccessibleDescription(
+      'Rule violation.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Server response' }));
+    await user.click(screen.getByLabelText('Blocked'));
+    expect(screen.getByRole('textbox', { name: 'Target' })).toHaveAccessibleDescription(
+      'Server rejection.',
+    );
+  });
+
   it('applies fieldErrors inline on helperText-based fields and shows the banner', async () => {
     renderWithProviders(
       <SchemaFormRenderer
