@@ -35,14 +35,14 @@
 | app/core/celery/utils.py                                                                                                     |       35 |        0 |       12 |        0 |    100% |           |
 | app/core/config.py                                                                                                           |      277 |        7 |       54 |        6 |     96% |259-\>exit, 336, 621, 799, 879, 955, 968, 1006-\>1008, 1011 |
 | app/core/db/config.py                                                                                                        |       39 |        0 |        8 |        0 |    100% |           |
-| app/core/db/crud.py                                                                                                          |      291 |        8 |       80 |        8 |     96% |250, 343-\>345, 345-\>347, 347-\>349, 356-\>372, 442, 589-592, 1001, 1005, 1192-\>1186, 1302-1303 |
+| app/core/db/crud.py                                                                                                          |      287 |        7 |       74 |        7 |     96% |250, 343-\>345, 345-\>347, 347-\>349, 356-\>372, 442, 589-592, 1013, 1017, 1263 |
 | app/core/db/deps.py                                                                                                          |        8 |        0 |        0 |        0 |    100% |           |
 | app/core/db/exception\_handlers.py                                                                                           |       37 |        1 |       10 |        1 |     96% |        82 |
 | app/core/db/in\_memory\_list\_query.py                                                                                       |       73 |        0 |       14 |        0 |    100% |           |
 | app/core/db/list\_query.py                                                                                                   |       87 |        0 |       24 |        0 |    100% |           |
 | app/core/db/models.py                                                                                                        |       14 |        0 |        0 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                                    |       37 |        0 |       12 |        0 |    100% |           |
-| app/core/db/utils.py                                                                                                         |      125 |        3 |       34 |        3 |     96% |122, 272, 301 |
+| app/core/db/utils.py                                                                                                         |      148 |       10 |       46 |        5 |     90% |130, 229-240, 258, 279, 348, 377 |
 | app/core/encryption.py                                                                                                       |       32 |        0 |        0 |        0 |    100% |           |
 | app/core/exceptions.py                                                                                                       |       26 |        0 |        0 |        0 |    100% |           |
 | app/core/health.py                                                                                                           |       79 |        0 |       12 |        0 |    100% |           |
@@ -486,7 +486,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30640** | **1690** | **7510** |  **644** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30659** | **1696** | **7516** |  **645** | **93%** |           |
 
 
 ## Setup coverage badge
