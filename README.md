@@ -267,7 +267,7 @@
 | app/sep/apps/inventory/constants.py                                                                                          |        2 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/inventory/deps.py                                                                                               |       77 |        1 |       12 |        0 |     99% |       290 |
 | app/sep/apps/inventory/models.py                                                                                             |       31 |        7 |        8 |        3 |     69% |109, 111, 112-\>114, 130-138 |
-| app/sep/apps/inventory/sync.py                                                                                               |       30 |        0 |       12 |        0 |    100% |           |
+| app/sep/apps/inventory/sync.py                                                                                               |       76 |        0 |       24 |        0 |    100% |           |
 | app/sep/apps/labels.py                                                                                                       |        1 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/meta\_keys.py                                                                                                   |        2 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/api\_routes.py                                                                                   |       23 |        0 |        2 |        0 |    100% |           |
@@ -325,7 +325,7 @@
 | app/sep/clients/pmm.py                                                                                                       |      292 |        2 |       74 |        3 |     99% |565, 567, 980-\>982 |
 | app/sep/config.py                                                                                                            |      241 |        4 |       58 |        4 |     97% |181, 230, 439, 747 |
 | app/sep/connectivity.py                                                                                                      |       39 |        4 |        2 |        1 |     88% |84, 163-169 |
-| app/sep/crud.py                                                                                                              |      153 |        0 |       28 |        0 |    100% |           |
+| app/sep/crud.py                                                                                                              |      157 |        0 |       28 |        0 |    100% |           |
 | app/sep/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/db/seed.py                                                                                                           |       52 |        0 |       16 |        0 |    100% |           |
 | app/sep/deps.py                                                                                                              |      255 |        1 |       48 |        1 |     99% |695-\>700, 716 |
@@ -383,11 +383,11 @@
 | app/sep/sync/exceptions.py                                                                                                   |       32 |        0 |        0 |        0 |    100% |           |
 | app/sep/sync/fields.py                                                                                                       |       11 |        0 |        0 |        0 |    100% |           |
 | app/sep/sync/health.py                                                                                                       |       53 |        0 |        8 |        0 |    100% |           |
-| app/sep/sync/models.py                                                                                                       |      407 |       37 |      104 |       17 |     87% |117, 119-126, 140, 161, 167-\>169, 170-\>172, 255-\>272, 359-361, 390-\>388, 479-480, 868-\>exit, 886, 900, 1007, 1021, 1080-\>exit, 1131, 1144, 1168-1170, 1203-\>exit, 1248, 1261, 1318-\>exit, 1363, 1507-1509, 1617-1619, 1624-1630, 1634 |
-| app/sep/sync/syncers/mysql/payload.py                                                                                        |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
+| app/sep/sync/models.py                                                                                                       |      407 |       34 |      104 |       17 |     88% |117, 119-126, 140, 161, 167-\>169, 170-\>172, 255-\>272, 390-\>388, 479-480, 868-\>exit, 886, 900, 1007, 1021, 1080-\>exit, 1131, 1144, 1168-1170, 1203-\>exit, 1248, 1261, 1318-\>exit, 1363, 1507-1509, 1617-1619, 1624-1630, 1634 |
+| app/sep/sync/syncers/mysql/payload.py                                                                                        |      176 |       47 |       54 |        5 |     70% |158-\>166, 242-246, 251-256, 269-275, 279-302, 356-\>372, 375, 396-404, 423 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                                         |      241 |        2 |       94 |        5 |     98% |111, 604-\>605, 716, 819-\>823, 821-\>820 |
 | app/sep/sync/syncers/pmm.py                                                                                                  |      133 |        1 |       34 |        4 |     97% |107, 140-\>141, 430-\>437, 480-\>485 |
-| app/sep/sync/syncers/system\_facts/payload.py                                                                                |      242 |       19 |       82 |        9 |     91% |52-\>58, 150-151, 179, 225-227, 234, 236-\>232, 247-254, 308-310, 316-318, 342, 443-\>445, 445-\>447, 551, 562 |
+| app/sep/sync/syncers/system\_facts/payload.py                                                                                |      243 |       19 |       82 |        9 |     91% |54-\>60, 152-153, 181, 227-229, 236, 238-\>234, 249-256, 310-312, 318-320, 344, 445-\>447, 447-\>449, 553, 564 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                                 |      118 |        3 |       28 |        3 |     96% |170, 245, 256-\>254, 351 |
 | app/sep/tasks.py                                                                                                             |       31 |        0 |       12 |        2 |     95% |69-\>84, 73-\>76 |
 | app/sep/utils/forms.py                                                                                                       |       16 |        0 |        4 |        0 |    100% |           |
@@ -401,12 +401,12 @@
 | app/tasks/config.py                                                                                                          |       67 |        0 |       12 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                                          |        5 |        0 |        0 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                                             |       11 |        0 |        0 |        0 |    100% |           |
-| app/tasks/connectivity/payload.py                                                                                            |       69 |        1 |        8 |        1 |     97% |       168 |
+| app/tasks/connectivity/payload.py                                                                                            |       70 |        1 |        8 |        1 |     97% |       170 |
 | app/tasks/connectivity/routes.py                                                                                             |       16 |        0 |        2 |        0 |    100% |           |
 | app/tasks/connectivity/service.py                                                                                            |      146 |        2 |       54 |        6 |     96% |173, 432-\>431, 452-\>451, 458-\>457, 473, 485-\>484 |
 | app/tasks/crud.py                                                                                                            |      302 |        5 |       80 |        6 |     97% |191, 600-\>602, 603, 605, 730, 920 |
 | app/tasks/db/engine.py                                                                                                       |        7 |        0 |        0 |        0 |    100% |           |
-| app/tasks/db/seed.py                                                                                                         |      145 |       11 |       40 |        6 |     89% |824-\>837, 838-\>852, 1064-1085, 1096, 1108, 1141 |
+| app/tasks/db/seed.py                                                                                                         |      149 |       11 |       38 |        6 |     89% |828-\>841, 842-\>856, 1104-1125, 1136, 1148, 1181 |
 | app/tasks/deps.py                                                                                                            |      110 |        3 |       30 |        0 |     98% |     64-66 |
 | app/tasks/execution/exceptions.py                                                                                            |        8 |        0 |        0 |        0 |    100% |           |
 | app/tasks/execution/executors/celery/models.py                                                                               |       90 |        0 |       16 |        0 |    100% |           |
@@ -476,7 +476,7 @@
 | app/tasks/migrations/versions/2026\_09\_07\_1500-c4b8e1f7a2d9\_add\_taskhistory\_failure\_reason.py                          |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_09\_1930-f3b71c0d9a45\_encrypt\_execution\_request\_leaves.py                        |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_14\_2243-b5e17f6b3bc7\_encrypt\_credential\_url\_setting\_overrides.py               |       12 |        0 |        0 |        0 |    100% |           |
-| app/tasks/models.py                                                                                                          |      375 |        4 |       82 |        6 |     98% |363, 661-\>664, 668, 685-\>698, 1314-\>1316, 1325-\>1327, 1350-1351 |
+| app/tasks/models.py                                                                                                          |      379 |        4 |       82 |        6 |     98% |363, 661-\>664, 668, 685-\>698, 1322-\>1324, 1333-\>1335, 1358-1359 |
 | app/tasks/periodic/crud.py                                                                                                   |       31 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/models.py                                                                                                 |      124 |        4 |       26 |        4 |     95% |299, 346, 360, 407 |
@@ -486,7 +486,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30562** | **1693** | **7494** |  **644** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30623** | **1690** | **7504** |  **644** | **93%** |           |
 
 
 ## Setup coverage badge
