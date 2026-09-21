@@ -36,7 +36,6 @@ from app.sep.apps.mysql_backups.forms import (
     OWNER,
     UploadProvider,
 )
-from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY as RESTORE_FORM_BACKFILL_ENTRY,
 )
@@ -241,8 +240,7 @@ def repair_mysql_backups_stamp(
         return None
 
     stored_form["encryption_format"] = encryption_format_for_passes(
-        aes256=stored_form.get("backup_type") == BackupType.XTRABACKUP
-        and bool(stored_form.get("xtrabackup_aes256_keyfile")),
+        aes256=bool(stored_form.get("xtrabackup_aes256_keyfile")),
         gpg=bool(stored_form.get("encrypt") or stored_form.get("post_run_encrypt")),
     )
     return stored_form

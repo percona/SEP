@@ -34,88 +34,6 @@
       "advanced": false,
       "collapsed_by_default": false,
       "collapsible": false,
-      "fail_when": [
-        {
-          "error_fields": [
-            "source_encryption"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "equals": {
-                  "backup_type": "M"
-                }
-              },
-              {
-                "equals": {
-                  "source_encryption": "aes256"
-                }
-              }
-            ]
-          },
-          "message": "Invalid 'source_encryption' 'aes256' for a Mydumper restore. Options are none or gpg."
-        },
-        {
-          "error_fields": [
-            "source_encryption"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "equals": {
-                  "backup_type": "M"
-                }
-              },
-              {
-                "equals": {
-                  "source_encryption": "dual"
-                }
-              }
-            ]
-          },
-          "message": "Invalid 'source_encryption' 'dual' for a Mydumper restore. Options are none or gpg."
-        },
-        {
-          "error_fields": [
-            "source_encryption"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "equals": {
-                  "backup_type": "B"
-                }
-              },
-              {
-                "equals": {
-                  "source_encryption": "aes256"
-                }
-              }
-            ]
-          },
-          "message": "Invalid 'source_encryption' 'aes256' for a Binlog restore. Options are none or gpg."
-        },
-        {
-          "error_fields": [
-            "source_encryption"
-          ],
-          "fail_when": {
-            "all": [
-              {
-                "equals": {
-                  "backup_type": "B"
-                }
-              },
-              {
-                "equals": {
-                  "source_encryption": "dual"
-                }
-              }
-            ]
-          },
-          "message": "Invalid 'source_encryption' 'dual' for a Binlog restore. Options are none or gpg."
-        }
-      ],
       "fields": [
         {
           "label": "Task Name",
@@ -220,16 +138,16 @@
               "value": "gpg"
             },
             {
-              "label": "AES-256 (XtraBackup only)",
+              "label": "AES-256",
               "value": "aes256"
             },
             {
-              "label": "AES-256 + GPG (XtraBackup only)",
+              "label": "AES-256 + GPG",
               "value": "dual"
             }
           ],
           "default": "none",
-          "description": "Which encryption the backup being restored was written with. The GPG formats reveal the password file used to decrypt it.",
+          "description": "Which encryption the backup being restored was written with. The GPG formats reveal the password file used to decrypt it; the AES-256 formats reveal the key file.",
           "label": "Backup encryption",
           "name": "source_encryption",
           "required": false,
@@ -421,54 +339,6 @@
           "min_length": 1,
           "name": "keyring_file_data",
           "required": false,
-          "type": "string"
-        },
-        {
-          "description": "AES-256 key file the backup was encrypted with, needed to decrypt it before the prepare. Revealed by the AES-256 encryption formats, which XtraBackup alone can write.",
-          "forbidden": [
-            {
-              "message": "'xtrabackup_aes256_keyfile' must not be set when 'source_encryption' does not include AES-256.",
-              "when": {
-                "not": {
-                  "any": [
-                    {
-                      "equals": {
-                        "source_encryption": "aes256"
-                      }
-                    },
-                    {
-                      "equals": {
-                        "source_encryption": "dual"
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          ],
-          "label": "XtraBackup AES-256 keyfile",
-          "min_length": 1,
-          "name": "xtrabackup_aes256_keyfile",
-          "required": false,
-          "requires": [
-            {
-              "message": "'xtrabackup_aes256_keyfile' is required when 'source_encryption' includes AES-256.",
-              "when": {
-                "any": [
-                  {
-                    "equals": {
-                      "source_encryption": "aes256"
-                    }
-                  },
-                  {
-                    "equals": {
-                      "source_encryption": "dual"
-                    }
-                  }
-                ]
-              }
-            }
-          ],
           "type": "string"
         },
         {
@@ -730,6 +600,54 @@
           "min_length": 1,
           "name": "gpg_password_file",
           "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Path on the target host to the AES-256 key file the backup was encrypted with, needed to decrypt .xbcrypt files before restore",
+          "forbidden": [
+            {
+              "message": "'xtrabackup_aes256_keyfile' must not be set when 'source_encryption' does not include AES-256.",
+              "when": {
+                "not": {
+                  "any": [
+                    {
+                      "equals": {
+                        "source_encryption": "aes256"
+                      }
+                    },
+                    {
+                      "equals": {
+                        "source_encryption": "dual"
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "label": "AES-256 key file",
+          "min_length": 1,
+          "name": "xtrabackup_aes256_keyfile",
+          "required": false,
+          "requires": [
+            {
+              "message": "'xtrabackup_aes256_keyfile' is required when 'source_encryption' includes AES-256.",
+              "when": {
+                "any": [
+                  {
+                    "equals": {
+                      "source_encryption": "aes256"
+                    }
+                  },
+                  {
+                    "equals": {
+                      "source_encryption": "dual"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
           "type": "string"
         }
       ],
