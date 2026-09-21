@@ -177,22 +177,77 @@ describe('SchemaFormRenderer field errors', () => {
     );
 
     await user.click(screen.getByLabelText('Blocked'));
-    expect(screen.getByRole('alert')).toHaveTextContent('Blocked combination.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Blocked combination.');
     expect(screen.queryByRole('textbox', { name: 'Hidden' })).not.toBeInTheDocument();
     expect(form).toBeDefined();
-    for (const path of ['ghost', 'hidden', 'unmounted']) {
+    for (const path of ['ghost', 'hidden']) {
       expect(form?.getFieldState(path).error).toBeUndefined();
     }
-    await user.click(screen.getByRole('button', { name: 'Unopened' }));
-    expect(screen.getByRole('textbox', { name: 'Unmounted' })).toHaveAccessibleDescription(
-      'Blocked combination.',
+    // `unmounted` lives in a different section than the rule that targets it,
+    // and the section auto-expands to reveal it — no manual click needed.
+    expect(screen.getByRole('button', { name: 'Unopened' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
     );
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Unmounted' })).toHaveAccessibleDescription(
+        'Blocked combination.',
+      ),
+    );
+    // Collapsing it back unmounts the field; its inline error clears with it.
     await user.click(screen.getByRole('button', { name: 'Unopened' }));
     await waitFor(() => expect(form?.getFieldState('unmounted').error).toBeUndefined());
     await user.click(screen.getByLabelText('Blocked'));
     await user.click(screen.getByRole('button', { name: 'Run' }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
   });
+
+  it.each([false, true])(
+    "reveals a fail rule's target section across sections even when it starts collapsed (advanced=%s)",
+    async (advanced) => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <SchemaFormRenderer
+          sections={[
+            {
+              title: 'Main',
+              fields: [{ type: 'bool', name: 'blocked', label: 'Blocked' }],
+              fail_when: [
+                {
+                  fail_when: { truthy: 'blocked' },
+                  error_fields: ['target'],
+                  message: 'Cross-section violation.',
+                },
+              ],
+            },
+            {
+              title: 'Options',
+              advanced,
+              collapsible: true,
+              collapsed_by_default: true,
+              fields: [{ type: 'string', name: 'target', label: 'Target' }],
+            },
+          ]}
+          onSubmit={() => {}}
+        />,
+      );
+
+      expect(screen.queryByRole('textbox', { name: 'Target' })).not.toBeInTheDocument();
+      await user.click(screen.getByLabelText('Blocked'));
+
+      expect(screen.queryByTestId('show-advanced-options')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Options' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      const target = await screen.findByRole('textbox', { name: 'Target' });
+      await waitFor(() => expect(target).toHaveAttribute('aria-invalid', 'true'));
+      expect(target).toHaveAccessibleDescription('Cross-section violation.');
+
+      await user.click(screen.getByLabelText('Blocked'));
+      await waitFor(() => expect(target).toHaveAttribute('aria-invalid', 'false'));
+    },
+  );
 
   it('applies an active fail rule after native validation clears', async () => {
     const user = userEvent.setup();
@@ -439,5 +494,48 @@ describe('SchemaFormRenderer field errors', () => {
     await user.click(screen.getByRole('button', { name: 'Run' }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not re-invoke the fail-error render override on an unrelated re-render', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const onSubmit = () => {};
+    const renderFieldSpy = vi.fn(({ renderDefault }) => renderDefault());
+    const sections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'blocked', label: 'Blocked' },
+          { type: 'string', name: 'target', label: 'Target' },
+        ],
+        fail_when: [
+          {
+            fail_when: { truthy: 'blocked' },
+            error_fields: ['target'],
+            message: 'Violation.',
+          },
+        ],
+      },
+    ];
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <SchemaFormRenderer sections={sections} onSubmit={onSubmit} renderField={renderFieldSpy} />
+      </QueryClientProvider>,
+    );
+    const callsAfterMount = renderFieldSpy.mock.calls.length;
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <SchemaFormRenderer
+          sections={sections}
+          onSubmit={onSubmit}
+          renderField={renderFieldSpy}
+          loading
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(renderFieldSpy.mock.calls.length).toBe(callsAfterMount);
   });
 });

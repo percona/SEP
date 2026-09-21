@@ -541,10 +541,17 @@ function SchemaFormBody({
     return messages;
   }, [failViolations]);
 
-  const renderFieldWithFailError: RenderFieldOverride = (props) => (
-    <FailRuleFieldError name={props.field.name} message={failFieldMessages.get(props.field.name)}>
-      {renderField?.(props) ?? props.renderDefault()}
-    </FailRuleFieldError>
+  const hasFailRules = useMemo(
+    () => sections.some((section) => section.fail_when?.length),
+    [sections],
+  );
+  const renderFieldWithFailError: RenderFieldOverride = useCallback(
+    (props) => (
+      <FailRuleFieldError name={props.field.name} message={failFieldMessages.get(props.field.name)}>
+        {renderField?.(props) ?? props.renderDefault()}
+      </FailRuleFieldError>
+    ),
+    [renderField, failFieldMessages],
   );
 
   // Merge cardinality and fail violations per section into a flat list for SectionRenderer.
@@ -556,13 +563,29 @@ function SchemaFormBody({
     return map;
   }, [sections, cardinalityViolations, failViolations]);
 
+  // A rule's error_fields may name a field in any section, not only its own; the
+  // section holding that field has to open too, or the field never mounts to
+  // show its error.
+  const sectionsWithFailTargets = useMemo(() => {
+    const set = new Set<FormSection>();
+    for (const section of sections) {
+      if (flattenSectionFields([section]).some((field) => failFieldMessages.has(field.name))) {
+        set.add(section);
+      }
+    }
+    return set;
+  }, [sections, failFieldMessages]);
+
+  const sectionNeedsReveal = (section: FormSection) =>
+    (violationsBySection.get(section)?.length ?? 0) > 0 || sectionsWithFailTargets.has(section);
+
   // Reveal, never re-hide: pulling the section back once the reader fixes it
   // would move the ground under them.
   const showAdvanced =
     advancedRevealed ||
     seededAdvanced.size > 0 ||
     erroredAdvanced.size > 0 ||
-    advancedEntries.some(({ section }) => (violationsBySection.get(section)?.length ?? 0) > 0);
+    advancedEntries.some(({ section }) => sectionNeedsReveal(section));
   useEffect(() => {
     if (showAdvanced) {
       setAdvancedRevealed(true);
@@ -582,15 +605,11 @@ function SchemaFormBody({
       idx={idx}
       isHidden={hiddenSections[entry.index] ?? false}
       violations={violationsBySection.get(entry.section) ?? []}
-      renderField={
-        sections.some((section) => section.fail_when?.length)
-          ? renderFieldWithFailError
-          : renderField
-      }
+      renderField={hasFailRules ? renderFieldWithFailError : renderField}
       forceExpanded={
         seededAdvanced.has(entry.index) ||
         erroredAdvanced.has(entry.index) ||
-        (violationsBySection.get(entry.section)?.length ?? 0) > 0
+        sectionNeedsReveal(entry.section)
       }
     />
   );
