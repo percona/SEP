@@ -22,15 +22,18 @@ each catches what the other misses: :func:`load_under` loads each file under a
 real 3.9 interpreter, which catches syntax, module-level APIs and annotations
 evaluated at definition time; :func:`static_violations` runs ``vermin`` over the
 same files, which catches standard-library APIs used only inside function bodies,
-which loading never executes. Both read the unminified source, so neither depends
-on ``TASKS.NOMAD.MINIFY_PAYLOAD``.
+which loading never executes. Neither sees a ``X | Y`` type union evaluated
+inside a function body, so :func:`runtime_union_violations` looks for those. All
+three read the unminified source, so none depends on
+``TASKS.NOMAD.MINIFY_PAYLOAD``.
 
 The file set is derived rather than listed. :func:`discover_host_payloads` takes
 the payload naming conventions, every literal ``payload_uri(__file__, "...")``
 target, and the artifact directories, and :func:`drift_violations` then checks
-the packages that reference payloads for a file the derivation missed. A new
-``.py`` payload beside ordinary package modules, chosen by a computed rather than
-literal name, is the one case the tree cannot reveal: give such a payload a
+the packages that reference payloads for a file the derivation missed. What the
+tree cannot reveal is a ``.py`` payload beside ordinary package modules that is
+referenced other than through ``payload_uri`` or a ``file://`` f-string, or
+chosen by a computed rather than literal name: give such a payload a
 ``payloads/`` directory, as topology and Dipper do, or name it with a literal
 ``payload_uri`` argument.
 """
@@ -492,3 +495,80 @@ def static_violations(paths: Sequence[Path]) -> str | None:
     if result.returncode == 0:
         return None
     return (result.stdout + result.stderr).strip()
+
+
+def _annotation_node_ids(tree: ast.Module) -> set[int]:
+    """Return the ids of every node inside an annotation in ``tree``.
+
+    :param tree: A parsed module.
+    :return: The ``id()`` of each node under a parameter, return or variable
+        annotation.
+    """
+    annotations: list[ast.expr] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            args = node.args
+            parameters = [*args.posonlyargs, *args.args, *args.kwonlyargs]
+            parameters.extend(arg for arg in (args.vararg, args.kwarg) if arg)
+            annotations.extend(p.annotation for p in parameters if p.annotation)
+            if node.returns is not None:
+                annotations.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            annotations.append(node.annotation)
+    return {id(sub) for annotation in annotations for sub in ast.walk(annotation)}
+
+
+def _union_operands(node: ast.expr) -> Iterator[ast.BinOp]:
+    """Yield every ``|`` expression within ``node``, ``node`` included.
+
+    :param node: The expression to search.
+    :return: The ``BinOp`` nodes whose operator is ``|``.
+    """
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.BinOp) and isinstance(sub.op, ast.BitOr):
+            yield sub
+
+
+def runtime_union_violations(paths: Sequence[Path]) -> list[str]:
+    """Return every ``X | Y`` type union ``paths`` evaluate outside an annotation.
+
+    Python 3.9 has no ``|`` on types, so ``isinstance(value, int | str)`` raises
+    ``TypeError`` when the function runs. Loading never runs a function body and
+    ``vermin`` does not flag the expression. An ``|`` counts as a type union when
+    it is part of the type argument of ``isinstance`` or ``issubclass``, or has
+    ``None`` as an operand; integer and set ``|`` fit neither. Annotations are left
+    to the load branch, which evaluates the ones Python evaluates.
+
+    :param paths: The files to analyse.
+    :return: One line per union, naming the file and line.
+    """
+    violations: list[str] = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        in_annotation = _annotation_node_ids(tree)
+        unions: dict[int, ast.BinOp] = {}
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in {"isinstance", "issubclass"}
+                and len(node.args) > 1
+            ):
+                unions.update((id(u), u) for u in _union_operands(node.args[1]))
+            elif (
+                isinstance(node, ast.BinOp)
+                and isinstance(node.op, ast.BitOr)
+                and any(
+                    isinstance(side, ast.Constant) and side.value is None
+                    for side in (node.left, node.right)
+                )
+            ):
+                unions[id(node)] = node
+        nested = {id(side) for u in unions.values() for side in (u.left, u.right)}
+        violations.extend(
+            f"{path}:{union.lineno}: {ast.unparse(union)} is a type union Python "
+            f"{_MINIMUM_VERSION} cannot evaluate"
+            for key, union in sorted(unions.items(), key=lambda item: item[1].lineno)
+            if key not in in_annotation and key not in nested
+        )
+    return violations

@@ -39,6 +39,7 @@ from tests.app.host_payloads import (
     MINIMUM_HOST_PYTHON,
     missing_interpreter_is_fatal,
     resolve_py39_interpreter,
+    runtime_union_violations,
     static_violations,
 )
 
@@ -77,6 +78,54 @@ def test_every_host_payload_loads_under_the_minimum_python(
 def test_no_host_payload_uses_a_newer_standard_library() -> None:
     """Find no API newer than the minimum host Python anywhere in a shipped file."""
     assert static_violations(DISCOVERED) is None
+
+
+def test_no_host_payload_evaluates_a_type_union_at_runtime() -> None:
+    """Find no ``X | Y`` type union a shipped file evaluates inside a function."""
+    assert runtime_union_violations(DISCOVERED) == []
+
+
+@pytest.mark.parametrize(
+    ("source", "count"),
+    [
+        pytest.param(
+            "def f(v):\n    return isinstance(v, int | str)\n", 1, id="isinstance"
+        ),
+        pytest.param(
+            "def f(v):\n    return issubclass(v, int | str | None)\n",
+            1,
+            id="nested-union-counts-once",
+        ),
+        pytest.param(
+            "from typing import cast\n\n\ndef f(v):\n    return cast(int | None, v)\n",
+            1,
+            id="none-operand",
+        ),
+        pytest.param(
+            "def f(v: int | None) -> str | None:\n    return None\n",
+            0,
+            id="annotations-left-to-the-load-branch",
+        ),
+        pytest.param(
+            "def f(a, b):\n    return a | b, 4 | 1\n", 0, id="set-and-integer-or"
+        ),
+        pytest.param(
+            "def f(v):\n    return isinstance(v, (int, str))\n", 0, id="tuple-form"
+        ),
+    ],
+)
+def test_the_union_check_flags_only_runtime_type_unions(
+    fixture_dir: Path, source: str, count: int
+) -> None:
+    """Flag a type union in a function body, and leave other ``|`` alone.
+
+    Python 3.9 raises ``TypeError`` on these only when the function runs, which
+    loading never does and ``vermin`` does not report.
+    """
+    payload = fixture_dir / "unions_payload"
+    payload.write_text(source, encoding="utf-8")
+
+    assert len(runtime_union_violations([payload])) == count
 
 
 def test_every_payload_reference_site_is_covered_by_discovery() -> None:
@@ -325,7 +374,7 @@ def test_the_check_interpreter_is_the_minimum_host_python(py39: str) -> None:
         check=True,
     ).stdout.strip()
 
-    assert reported == "(3, 9)"
+    assert reported == str(MINIMUM_HOST_PYTHON)
 
 
 @pytest.mark.parametrize(

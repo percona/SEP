@@ -361,10 +361,12 @@ def _follower_kick(follower: str, leader: str) -> dict[str, object]:
 async def test_a_follower_defers_until_the_leader_completes(
     sep_maker, mocker, mock_remote_api
 ):
-    """Skip the follower's run, opening no run at all, while the leader never finished.
+    """Skip the follower's run, opening no run and saying why, while the leader waits.
 
     A deferred run must not leave a ``SyncInstance`` behind: the kick starts only
     followers with none, so a stray row would stop the follower ever being started.
+    The returned note is what the executor writes to the run's log, so a skipped
+    run does not read as a sync that succeeded.
     """
     _route_sessions(mocker, sep_maker)
     mocker.patch(
@@ -372,8 +374,10 @@ async def test_a_follower_defers_until_the_leader_completes(
         return_value=[_FollowerSyncer(inventory_api=mock_remote_api)],
     )
 
-    await run_scheduled_inventory_sync(syncer=_FOLLOWER, after_syncer=_LEADER)
+    note = await run_scheduled_inventory_sync(syncer=_FOLLOWER, after_syncer=_LEADER)
 
+    assert note is not None
+    assert _LEADER in note
     async with sep_maker() as session:
         assert await SyncInstanceManager.list(session) == []
 
@@ -421,16 +425,24 @@ class TestStartFollowerFirstRuns:
         )
 
     @pytest.mark.asyncio
-    async def test_leaves_a_follower_that_already_ran(self, sep_maker, send_task):
-        """Leave a follower alone once it has any run, even a failed one."""
+    async def test_leaves_a_follower_that_already_ran(
+        self, sep_maker, send_task, mocker
+    ):
+        """Leave a follower alone once it has any run, without reading the leader.
+
+        Once every follower has run, the leader's pass is not looked up, so a
+        steady-state leader run adds no scan over its sync items.
+        """
         await _record_run(sep_maker, _PMM_STUB_NAME)
         await _record_run(sep_maker, _MYSQL_STUB_NAME, SyncStatusEnum.FAILED)
+        leader_lookup = mocker.spy(SyncItemManager, "inventory_sync_completed")
 
         await start_follower_first_runs(
             _PMM_STUB_NAME, [_MYSQL_STUB_NAME], [_StubPMMSyncer(), _StubMySQLSyncer()]
         )
 
         send_task.assert_not_called()
+        leader_lookup.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_waits_for_a_completed_leader_pass(self, sep_maker, send_task):

@@ -43,7 +43,7 @@ async def run_scheduled_inventory_sync(
     syncer: str | None = None,
     after_syncer: str | None = None,
     follower_syncers: Sequence[str] = (),
-) -> None:
+) -> str | None:
     """Execute scheduled inventory sync using configured internal token and syncers.
 
     Read the internal token from ``settings.SEP_INTERNAL_TOKEN`` and construct
@@ -60,7 +60,9 @@ async def run_scheduled_inventory_sync(
     default's first completed sync through two meta keys, forwarded here as
     keyword arguments: a follower's run is skipped while ``after_syncer`` has
     never completed a whole-inventory pass, and the default's run then starts
-    each follower that has never run.
+    each follower that has never run. A skipped run returns a note saying so,
+    which the executor writes to that run's log, so a run that synced nothing
+    does not read as one that synced.
 
     :param syncer: Fully qualified syncer name (e.g.
         ``"app.sep.sync.syncers.pmm.PMMSyncer"``), or ``None`` / empty for the
@@ -69,9 +71,13 @@ async def run_scheduled_inventory_sync(
         run unconditionally.
     :param follower_syncers: The per-syncer schedules to start once after this
         run, each only if it has never run. Defaults to none.
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if
-        ``syncer`` is set but does not match any configured syncer that can
-        sync inventory.
+    :return: The note naming the syncer the run waits on when it was skipped,
+        otherwise ``None``.
+    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if a run
+        that is not skipped names a ``syncer`` that matches no configured syncer
+        able to sync inventory.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read
+        to decide the ordering.
     """
     if (api_key := get_internal_token()) is None:
         raise ValueError(
@@ -80,12 +86,12 @@ async def run_scheduled_inventory_sync(
             "(e.g. `openssl rand -hex 32`)."
         )
     if after_syncer and not await _inventory_sync_completed(after_syncer):
-        logger.info(
-            "Deferring %s until %s completes its first inventory sync",
-            syncer,
-            after_syncer,
+        deferral = (
+            f"Skipped {syncer}: it waits until {after_syncer} completes its first "
+            "inventory sync."
         )
-        return
+        logger.info("%s", deferral)
+        return deferral
     syncers = await get_syncers_standalone()
     selected = filter_syncers_by_name(
         syncers,
@@ -95,6 +101,7 @@ async def run_scheduled_inventory_sync(
     await run_inventory_sync(api_key, *selected)
     if syncer and follower_syncers:
         await start_follower_first_runs(syncer, follower_syncers, syncers)
+    return None
 
 
 async def _inventory_sync_completed(syncer: str) -> bool:
@@ -102,6 +109,7 @@ async def _inventory_sync_completed(syncer: str) -> bool:
 
     :param syncer: The fully qualified syncer name.
     :return: Whether such a pass is recorded.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read.
     """
     async with get_async_session_maker()() as session:
         return await SyncItemManager.inventory_sync_completed(session, syncer)
@@ -114,23 +122,27 @@ async def start_follower_first_runs(
 
     Nothing starts until ``leader`` has completed a whole-inventory pass, so a
     follower's first run reads the inventory that pass produced. A follower with
-    any recorded run is left to its own schedule. The start goes through the same
-    task and meta as the follower's beat row, so the identical-task guard refuses
-    it while that row's own fire is in flight. An enqueue failure is logged rather
+    any recorded run is left to its own schedule, and once every follower has one
+    the leader's pass is no longer looked up. The start carries the same task and
+    meta as a seeded follower's beat row, so the identical-task guard refuses it
+    while that row's own fire is in flight. An enqueue failure is logged rather
     than raised: the follower's next beat fire runs it instead.
 
     :param leader: The fully qualified name of the syncer the followers wait on.
     :param followers: The fully qualified names of the followers to consider.
     :param syncers: The configured syncers, which a follower must resolve against.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read.
     """
     async with get_async_session_maker()() as session:
-        if not await SyncItemManager.inventory_sync_completed(session, leader):
-            return
         never_run = [
             follower
             for follower in followers
             if await SyncInstanceManager.first(session, syncer=follower) is None
         ]
+        if not never_run or not await SyncItemManager.inventory_sync_completed(
+            session, leader
+        ):
+            return
     for follower in never_run:
         try:
             filter_syncers_by_name(

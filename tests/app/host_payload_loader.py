@@ -176,7 +176,8 @@ def main(argv: list[str]) -> int:
 
     :param argv: This script's argv: the payload path, then the argv it needs.
     :return: ``0`` when the payload loaded, ``1`` when it called ``sys.exit``.
-        Any other failure propagates, which exits non-zero with its traceback.
+        Any other failure propagates, which exits non-zero with its traceback
+        after the output the payload printed.
     """
     payload = argv[1]
     sys.meta_path.insert(0, _StubFinder(frozenset(json.load(sys.stdin))))
@@ -191,6 +192,9 @@ def main(argv: list[str]) -> int:
             f"{output.getvalue()}"
         )
         return 1
+    except BaseException:
+        sys.stderr.write(output.getvalue())
+        raise
     return 0
 
 

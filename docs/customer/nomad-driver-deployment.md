@@ -185,11 +185,13 @@ SEP's Python payloads (backups, restores, pre-checks, connectivity checks, inven
 
 On Python 3.9, `pip` installs the newest driver releases that still support it, which can be older than on a newer host.
 
-**Customer action:** On each Nomad client, run this as the agent's user and confirm it prints a version of 3.9 or newer without an error:
+**Customer action:** On each Nomad client, run this as the agent's user. It builds a virtual environment the way SEP does and prints `pip`'s version line, which must end in `(python 3.9)` or newer; an error instead means the host lacks `venv` or its `pip` bootstrap:
 
 ```bash
-python3 -c 'import sys, venv; print(sys.version)'
+d=$(mktemp -d) && python3 -m venv --copies "$d/venv" && "$d/venv/bin/python" -m pip --version; rm -rf "$d"
 ```
+
+Importing the `venv` module is not enough of a check: on Debian and Ubuntu it imports without `python3-venv`, and only building an environment fails.
 
 ---
 
@@ -290,6 +292,6 @@ Common properties:
 | `GAS/automation/roles/sep/templates/prod-settings.yaml.j2` | SEP → Nomad endpoint or cert paths |
 | `SEP/app/tasks/db/seed.py` | Job templates or drivers |
 | `SEP/app/tasks/execution/executors/nomad/models.py` | Node selection / health filters |
-| `SEP/tests/app/host_payloads.py` (`MINIMUM_HOST_PYTHON`) | The executor-host Python floor in §4.4, which `tests/app/test_host_payloads.py` enforces on every shipped payload |
+| `SEP/tests/app/host_payloads.py` (`MINIMUM_HOST_PYTHON`) and the `python-version` of the Python 3.9 step in `SEP/.github/workflows/python.yaml` and `coverage-main.yml` | The executor-host Python floor in §4.4, which `tests/app/test_host_payloads.py` checks the shipped payloads against: each file loads under that Python, uses no newer standard-library API, and evaluates no `X \| Y` type union at runtime |
 
 **Automation repository:** Percona **GAS** repository, `automation/` directory (sibling to SEP in Percona’s source layout). Paths in §3 are relative to that tree.
