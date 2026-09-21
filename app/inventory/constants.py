@@ -24,10 +24,9 @@ DEFAULT_POSTGRESQL_PORT = 5432
 
 #: Discriminator carried by an active row inside every unique index, so a retired
 #: row (which carries its own primary key instead) never collides with its
-#: replacement. It has to be non-NULL and outside the autoincrement range:
-#: ``BaseSQLModelManager.save`` guards its Python duplicate check with
-#: ``all(value is not None for value in equal_filters.values())``, which a
-#: ``NULL`` sentinel would silently disable.
+#: replacement. It has to be non-NULL and outside the autoincrement range: a NULL
+#: never compares equal to another, so a NULL sentinel would silently stop the
+#: index constraining active rows at all.
 ACTIVE_RETIREMENT_KEY: Final = -1
 
 #: Part of the API contract: callers tell an uncollected observation apart from a

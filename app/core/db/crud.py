@@ -17,7 +17,6 @@
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from itertools import chain
 from typing import Any, Generic, Literal, NamedTuple, overload, TypeVar
 
 from pydantic import BaseModel
@@ -30,10 +29,9 @@ from sqlalchemy import (
     inspect,
     ScalarResult,
     Select,
-    UniqueConstraint,
 )
 from sqlalchemy.engine import TupleResult
-from sqlalchemy.exc import DatabaseError, NoResultFound
+from sqlalchemy.exc import DatabaseError, IntegrityError, NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql import ColumnExpressionArgument
@@ -45,7 +43,7 @@ from sqlmodel.sql.expression import SelectOfScalar
 
 from app.core.db import BaseSQLModel
 from app.core.db.list_query import ListQuery, ListQuerySpec
-from app.core.db.utils import idempotent_insert
+from app.core.db.utils import idempotent_insert, unique_violation_columns
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -885,20 +883,32 @@ class BaseManager:
 
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
-        :type session: AsyncSession
         :param instance: The model instance to be saved.
-        :type instance: T
         :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :type flag_modified_fields: Sequence[str]
         :return: The saved instance.
-        :rtype: T
-        :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
+        :raises HTTPConflictException: If the write violates one of the Model's
+            unique keys, whether declared as a unique index or a
+            ``UniqueConstraint``.
+        :raises HTTPBadRequestException: If any other DatabaseError occurs during
+            commit.
         """
         for field in flag_modified_fields:
             flag_modified(instance, field)
         session.add(instance)
         try:
             await session.commit()
+        except IntegrityError as error:
+            # The failed statement leaves the transaction unusable, so the session
+            # has to be released before the caller can act on the conflict.
+            await session.rollback()
+            duplicate_columns = unique_violation_columns(cls.Model.__table__, error)
+            if duplicate_columns is None:
+                logger.exception("DatabaseError saving instance %s", instance)
+                raise HTTPBadRequestException from None
+            raise HTTPConflictException(
+                f"{cls.Model.__name__} with the same "
+                f"{', '.join(duplicate_columns)} already exists."
+            ) from None
         except DatabaseError:
             logger.exception("DatabaseError saving instance %s", instance)
             raise HTTPBadRequestException from None
@@ -1151,68 +1161,6 @@ class BaseSQLModelManager(BaseManager):
         ):
             extra_fields[pk_column.name] = None
         return cls.Model.model_validate(instance_create, update=extra_fields)
-
-    @classmethod
-    async def save(
-        cls,
-        session: AsyncSession,
-        instance: T,
-        *,
-        flag_modified_fields: Sequence[str] = (),
-    ) -> T:
-        """Save a model instance to the database.
-
-        This method overrides ``BaseManager.save()`` to check for duplicate errors
-        for each unique key of the Model, whether it is declared as a unique index
-        or as a ``UniqueConstraint``.
-
-        The duplicate lookup runs with autoflush suppressed: it matches against rows
-        already written to the database and never flushes ``instance``'s own pending
-        change first. A sibling whose colliding change is still pending is therefore
-        not seen as a duplicate, and surfaces at commit as a
-        ``HTTPBadRequestException`` instead.
-
-        :param session: The SQLAlchemy asynchronous session to use for database
-            operations.
-        :param instance: The model instance to be saved.
-        :param flag_modified_fields: Fields to be flagged as modified before saving.
-        :return: The saved instance.
-        :raises HTTPConflictException: If saving the instance would cause a duplicate
-            entry database error.
-        :raises HTTPBadRequestException: If a DatabaseError occurs during commit.
-        """
-        local_table = inspect(cls.Model).local_table
-        unique_column_sets = chain(
-            (index.columns for index in local_table.indexes if index.unique),
-            (
-                constraint.columns
-                for constraint in local_table.constraints
-                if isinstance(constraint, UniqueConstraint)
-            ),
-        )
-        # On the update path the write autoflush would perform here is the
-        # colliding one, so without the suppression IntegrityError escapes
-        # from inside first() -- ahead of both the duplicate check and
-        # save()'s DatabaseError handling, as a 500 rather than the 409 below.
-        with session.no_autoflush:
-            for unique_columns in unique_column_sets:
-                equal_filters = {
-                    column.name: getattr(instance, column.name, None)
-                    for column in unique_columns
-                }
-                # Presence, not truthiness: a legitimate 0, "" or False is a
-                # filled key member, and skipping it would miss the collision.
-                if all(value is not None for value in equal_filters.values()):
-                    duplicate = await cls.first(
-                        session, col(cls.Model.id) != instance.id, **equal_filters
-                    )
-                    if duplicate is not None:
-                        raise HTTPConflictException(
-                            f"{cls.Model.__name__} with the same {', '.join(equal_filters)} already exists."
-                        )
-        return await super().save(
-            session, instance, flag_modified_fields=flag_modified_fields
-        )
 
     @classmethod
     async def update(

@@ -187,11 +187,11 @@ class TestServiceTypeEnum:
 class TestRetirementKeyUniqueness:
     """Test how ``retirement_key`` scopes the composite unique indexes.
 
-    Uniqueness is enforced twice: by the database index, and by the Python
-    duplicate check ``BaseSQLModelManager.save`` rebuilds from the model's unique
-    keys. The Python half only keeps running while every key column is non-NULL —
-    which is why these tests distinguish ``HTTPConflictException`` (Python check)
-    from the ``HTTPBadRequestException`` a bare index violation would produce.
+    The database index is the only thing enforcing uniqueness; ``BaseManager.save``
+    reports a breach of it as ``HTTPConflictException``, keeping
+    ``HTTPBadRequestException`` for a violation that is not a duplicate. The
+    discriminator only scopes the index while it stays non-NULL, since a NULL
+    never compares equal to another.
     """
 
     @pytest.mark.asyncio
