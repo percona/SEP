@@ -5,6 +5,8 @@ It creates Mydumper backup, can encrypt it and upload to Amazon S3 bucket,
 purges old backups.
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import hashlib

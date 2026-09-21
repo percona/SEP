@@ -75,7 +75,7 @@ def _replica_backup_flags(replica_info: bool, stop_replica: bool) -> list[str]:
 ENCRYPTION_FORMATS = ('none', 'gpg', 'aes256', 'dual')
 
 
-def _resolve_encryption(selected: str | None, keyfile: str | None, *,
+def _resolve_encryption(selected: "str | None", keyfile: "str | None", *,
                         gpg: bool) -> tuple[str, bool, bool]:
     """Return ``(format, aes256, gpg)`` for the encryption this run must apply.
 
@@ -220,8 +220,8 @@ def md5sum_file(filename: str) -> str:
 
 
 def get_dir_dict(
-    path: str, md5: bool = False, json_cache_file: str | None = None
-) -> dict[str, dict[str, int | str | None]]:
+    path: str, md5: bool = False, json_cache_file: "str | None" = None
+) -> "dict[str, dict[str, int | str | None]]":
     """Create a dictionary of files in a directory, including inode, size, and optional MD5.
 
     :param path: Directory path.
@@ -250,8 +250,8 @@ def get_dir_dict(
 
 
 def load_dir_dict(
-    dir_path: str, json_file: str | None = None
-) -> dict[str, dict[str, int | str | None]]:
+    dir_path: str, json_file: "str | None" = None
+) -> "dict[str, dict[str, int | str | None]]":
     """Load a directory dictionary from a JSON file if it exists, otherwise create it.
 
     :param dir_path: Directory path.
@@ -342,7 +342,7 @@ def hardlink_dirs(
     return ret
 
 
-def get_dir_size(start_path: str, unit: str = "text") -> int | str:
+def get_dir_size(start_path: str, unit: str = "text") -> "int | str":
     """Get the size of a directory.
 
     :param start_path: Directory path.
@@ -378,7 +378,7 @@ def get_dir_size(start_path: str, unit: str = "text") -> int | str:
 
 
 def _write_run_result(
-    backup_dir: str, size_bytes: int, upload_destination: str | None
+    backup_dir: str, size_bytes: int, upload_destination: "str | None"
 ) -> None:
     """Write the run-result JSON file for a produced backup.
 
@@ -463,7 +463,7 @@ def logging_setup(
     return logger
 
 
-def logging_set_host(alias: str | None, log_name: str) -> None:
+def logging_set_host(alias: "str | None", log_name: str) -> None:
     """Prepend a server alias to the logging messages until unset.
 
     :param alias: Alias to prepend.
@@ -480,9 +480,9 @@ def logging_set_host(alias: str | None, log_name: str) -> None:
 
 
 def upload_logging_setup(
-    logging_dir: str | Path,
+    logging_dir: "str | Path",
     log_name: str,
-    alias: str | None = None,
+    alias: "str | None" = None,
     level: int = logging.INFO,
 ) -> logging.Logger:
     """Return a logger dedicated to upload messages with ``propagate=False``.
@@ -513,7 +513,7 @@ def upload_logging_setup(
     return logger
 
 
-def format_seconds_to_hhmmss(seconds: int | float) -> str:
+def format_seconds_to_hhmmss(seconds: "int | float") -> str:
     """Format seconds into HH:MM:SS format.
 
     :param seconds: Number of seconds.
@@ -565,8 +565,8 @@ def get_max_subdir_size(start_path: str, unit: str = "m") -> int:
 def is_free_space(
     dir_path: str,
     double_space_needed: bool = False,
-    threshold_pct: float | None = None,
-    logger: logging.Logger | None = None,
+    threshold_pct: "float | None" = None,
+    logger: "logging.Logger | None" = None,
 ) -> tuple[bool, str]:
     """Check if there is enough disk space for the backup.
 
@@ -606,7 +606,7 @@ def is_free_space(
     return space_ok, output
 
 
-def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> None:
+def encrypt_dir(path: str, logger: "logging.Logger | None" = None, **cfg: Any) -> None:
     """Encrypt a directory using GPG.
 
     :param path: Directory path to encrypt.
@@ -632,7 +632,7 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
 def is_encrypted_dir(
     path: str,
     exclude_files: tuple[str, ...] = PLAINTEXT_METADATA_FILES,
-    logger: logging.Logger | None = None,
+    logger: "logging.Logger | None" = None,
     method: str = "gpg",
 ) -> bool:
     """Check if all files in the directory are encrypted.
@@ -890,7 +890,7 @@ class BaseBackup:
         self,
         server_data: dict[str, Any],
         backup_code: str,
-        logger: logging.Logger | None = None,
+        logger: "logging.Logger | None" = None,
     ) -> None:
         """Initialize the BaseBackup object.
 
@@ -935,7 +935,7 @@ class BaseBackup:
         self.is_replica = False
         self.last_backup_dir = ""
 
-    def get_compression_ext(self) -> str | None:
+    def get_compression_ext(self) -> "str | None":
         """Get the expected file extension for the current compression algorithm.
 
         :return: The file extension or None if no compression is used.
@@ -946,7 +946,7 @@ class BaseBackup:
             "zstd": ".zst",
         }.get(self.compression_algorithm)
 
-    def get_compression_tool(self) -> str | None:
+    def get_compression_tool(self) -> "str | None":
         """Get the compression tool path for the current compression algorithm.
 
         :return: The path to the compression tool binary or None.
@@ -1010,10 +1010,10 @@ class BaseBackup:
     def textfile_collector_write_status(
         self,
         backup_status: int,
-        backup_code: str | None = None,
-        alias: str | None = None,
-        upload: bool | None = None,
-        backup_running: int | None = None,
+        backup_code: "str | None" = None,
+        alias: "str | None" = None,
+        upload: "bool | None" = None,
+        backup_running: "int | None" = None,
     ) -> None:
         """Write backup or restore status to textfile collector for Prometheus.
 
@@ -1129,7 +1129,7 @@ class Backup(BaseBackup):
         server_data: dict[str, Any],
         backup_code: str,
         native_upload: bool = False,
-        logger: logging.Logger | None = None,
+        logger: "logging.Logger | None" = None,
     ) -> None:
         """Initialize the Backup object with server data and backup code.
 
@@ -2051,7 +2051,7 @@ class Xtrabackup(Backup):
             except Exception:
                 self.logger.exception("Failed to write the run-result file.")
 
-    def encrypt_files_aes256(self, dir_path: str | None) -> None:
+    def encrypt_files_aes256(self, dir_path: "str | None") -> None:
         """Encrypt plaintext files under a directory with xbcrypt/AES-256.
 
         Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
@@ -2076,7 +2076,7 @@ class Xtrabackup(Backup):
             if p.is_file() and p.suffix != '.xbcrypt' and p.name not in PLAINTEXT_METADATA_FILES
         ])
 
-    def _run_xbcrypt(self, cmd: list[str], remove_path: str | Path) -> None:
+    def _run_xbcrypt(self, cmd: list[str], remove_path: "str | Path") -> None:
         """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
 
         :param cmd: The ``xbcrypt`` argument list to execute.
@@ -2095,7 +2095,7 @@ class Xtrabackup(Backup):
             raise BackupError('xbcrypt failed on %s: %s' % (remove_path, err))
         os.remove(remove_path)
 
-    def _run_encrypt_file_aes256(self, file_path: str | Path) -> None:
+    def _run_encrypt_file_aes256(self, file_path: "str | Path") -> None:
         """Encrypt a single file in place with xbcrypt/AES-256.
 
         :param file_path: Plaintext file to encrypt; no-ops when it is absent.

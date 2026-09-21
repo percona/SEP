@@ -1,5 +1,7 @@
 """ PBM List Payload """
 
+from __future__ import annotations
+
 import subprocess
 import os
 import sys
@@ -100,4 +102,5 @@ def pbm():
     if ret_code != 0:
         sys.exit(ret_code)
 
-pbm()
+if __name__ == "__main__":
+    pbm()

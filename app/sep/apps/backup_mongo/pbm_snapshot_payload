@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import subprocess
 import getpass
 import os
@@ -210,4 +212,5 @@ def pbm():
         write_backup_status(PBM_METRIC_TYPE, 1)
         print(f"Failed to run snapshot script: {e}")
 
-pbm()
+if __name__ == "__main__":
+    pbm()

@@ -1,5 +1,7 @@
 """ PBM Incremental Payload """
 
+from __future__ import annotations
+
 import json
 import subprocess
 import os
@@ -258,4 +260,5 @@ def pbm():
         print(f'Failed to run pbm: {err}', file=sys.stderr)
         sys.exit(1)
 
-pbm()
+if __name__ == "__main__":
+    pbm()
