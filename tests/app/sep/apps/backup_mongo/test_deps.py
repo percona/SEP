@@ -20,13 +20,38 @@ import pytest
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import (
+    build_backup_mongo_api_task_response,
     build_backup_task_payload,
     ensure_backup_group_update_preserves_names,
 )
-from app.sep.apps.backup_mongo.models import BackupCreate, BackupTaskWrite
+from app.sep.apps.backup_mongo.models import (
+    BackupCreate,
+    BackupTaskWrite,
+    BackupType,
+)
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskWrite
+from app.tasks.models import Task, TaskWrite
+from tests.app.factories import (
+    MOCK_ACTOR_USERNAMES,
+    MOCK_CREATOR_ID,
+    MOCK_UPDATER_ID,
+    TaskFactory,
+)
+
+
+def _backup_mongo_task() -> Task:
+    """Build a parent ``pbm_config`` task recorded by two known users."""
+    return TaskFactory.build(
+        name="mongo-backup",
+        owner="BACKUP_MONGO",
+        data={
+            "meta": {"target": "mongo-host"},
+            "backup_type": BackupType.PBM_CONFIG.value,
+        },
+        created_by=MOCK_CREATOR_ID,
+        last_updated_by=MOCK_UPDATER_ID,
+    )
 
 
 @pytest.mark.asyncio
@@ -111,3 +136,28 @@ class TestBackupFormRoundTrip:
         assert body.task_name == backup_create.task_name
         assert body.service_id == backup_create.service_id
         assert not hasattr(body, "backup_type")
+
+
+class TestBuildBackupMongoApiTaskResponse:
+    """Cover the backup_mongo list-row builder's actor resolution."""
+
+    def test_resolves_actors_through_the_context(self):
+        """Render both actors as usernames and keep the app's own extras."""
+        response = build_backup_mongo_api_task_response(
+            _backup_mongo_task(), context=MOCK_ACTOR_USERNAMES
+        )
+
+        assert (response.created_by, response.last_updated_by) == ("alice", "bob")
+        assert (response.hostname, response.backup_type) == (
+            "mongo-host",
+            BackupType.PBM_CONFIG.value,
+        )
+
+    def test_keeps_raw_ids_without_a_context(self):
+        """Serve the stored identifiers when no username map is bound."""
+        response = build_backup_mongo_api_task_response(_backup_mongo_task())
+
+        assert (response.created_by, response.last_updated_by) == (
+            MOCK_CREATOR_ID,
+            MOCK_UPDATER_ID,
+        )

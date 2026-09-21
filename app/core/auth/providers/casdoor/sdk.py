@@ -30,7 +30,7 @@ from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPUnauthorizedException,
 )
-from app.core.requests import as_json_object, JSONBody, RemoteAPI
+from app.core.requests import as_json_array, as_json_object, JSONBody, RemoteAPI
 from app.core.utils.fields import NonEmptyStr, RelativeFilePathField, StrHttpUrl, URL
 
 
@@ -391,13 +391,19 @@ class CasdoorSDK(RemoteAPI):
         """Retrieve a list of users from Casdoor.
 
         Fetches all users associated with the configured organization from Casdoor.
+        Casdoor reports a denied or failed listing as HTTP 200 with ``"data": null``,
+        so the payload is parsed rather than trusted: that body raises instead of
+        returning ``None``, and a raised call is not cached.
 
         :return: A list of user data.
+        :raises HTTPBadGatewayException: If the payload is not a JSON object or its
+            ``data`` is not a list of JSON objects, which includes Casdoor's error
+            body.
         """
         users = as_json_object(
             await self.get("/api/get-users", params={"owner": self.organization_name})
         )
-        return users["data"]
+        return as_json_array(users["data"])
 
     async def get_user(self, username: str) -> dict[str, Any]:
         """Retrieve a specific user's information from Casdoor.

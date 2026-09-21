@@ -52,15 +52,9 @@ def _postgres_inventory() -> MockInventoryAPI:
 
 
 class TestBackupPgContract(DerivedRouterContractTests):
-    """Assert the backup_pg app's full derived HTTP surface, knob by knob.
-
-    ``remapped_username`` is ``None``: backup_pg wires no response context
-    provider, so the username-remap and injected-``service_type`` assertions are
-    skipped (its responses carry neither).
-    """
+    """Assert the backup_pg app's full derived HTTP surface, knob by knob."""
 
     app_def = backup_pg_app
-    remapped_username = None
 
     def test_detail_returns_detail_model(self, contract_client) -> None:
         """Assert ``GET /{name}`` carries the detail-only ``host`` field."""

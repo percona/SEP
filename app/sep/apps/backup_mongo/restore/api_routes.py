@@ -51,6 +51,7 @@ from app.sep.apps.backup_mongo.restore.models import (
 from app.sep.apps.framework import get_task_latest_history
 from app.sep.apps.framework.api import derive_cascade_create_route
 from app.sep.deps import (
+    get_username_mapping,
     InventoryAPI,
     TaskAPI,
 )
@@ -127,7 +128,10 @@ async def restore_mongo_api_update(
     updated_task = await get_restores_task(parent_task.name, tasks_api)
     latest = await get_task_latest_history(tasks_api, updated_task.name)
     return build_restore_mongo_api_task_response(
-        updated_task, status=latest.status, last_executed_at=latest.finished_at
+        updated_task,
+        status=latest.status,
+        last_executed_at=latest.finished_at,
+        context=await get_username_mapping(),
     )
 
 

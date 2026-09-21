@@ -90,7 +90,7 @@ SEEDED_TASK_NAME = "contract-seeded-task"
 #: ``SUCCESS`` -- so asserting them tells a forwarded field from a defaulted one.
 EXECUTE_STATUS = TaskHistoryStatusEnum.RUNNING
 EXECUTE_CREATED_AT = "2026-01-02T03:04:05Z"
-SYNTH_CREATED_BY = "synth-user-id"
+SYNTH_CREATED_BY = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
 SYNTH_CREATED_BY_NAME = "synth-username"
 
 _SYNTH_LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))

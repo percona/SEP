@@ -35,6 +35,7 @@ __all__ = [
     "dump_field_value",
     "field_materializer",
     "fire_change_callbacks",
+    "fire_on_boot",
     "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
@@ -59,6 +60,7 @@ from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     fire_change_callbacks,
+    fire_on_boot,
     publish_snapshot,
     refresh_all,
     RefreshCallback,

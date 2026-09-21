@@ -1,5 +1,7 @@
 """ PBM Restore Config Payload """
 
+from __future__ import annotations
+
 import subprocess
 import os
 import sys
@@ -199,4 +201,5 @@ def pbm():
     else:
         print("No restore configuration provided, skipping update")
 
-pbm()
+if __name__ == "__main__":
+    pbm()
