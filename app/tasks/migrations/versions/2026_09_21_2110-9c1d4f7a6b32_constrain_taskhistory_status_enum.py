@@ -19,11 +19,13 @@ Revision ID: 9c1d4f7a6b32
 Revises: b5e17f6b3bc7
 Create Date: 2026-09-21 21:10:00.000000
 
-``taskhistory.status`` pre-dates the convention every other non-native enum
-column follows — ``native_enum=False`` paired with ``create_constraint=True`` —
-so the column has always accepted any string at the database level, with only
+``taskhistory.status`` pre-dates the convention newer non-native enum columns
+follow — ``native_enum=False`` paired with ``create_constraint=True`` — so the
+column has always accepted any string at the database level, with only
 application-side enum validation keeping it to the real status names. This
 revision brings it in line by attaching the CHECK the model now declares.
+``Task.backend``, ``TaskHistoryLog.stream``, and ``TaskHistoryLogState.stream``
+remain exceptions to that convention and are unaffected by this revision.
 """
 from typing import Sequence, Union
 
@@ -56,7 +58,7 @@ _STATUS_NAMES = (
 
 
 def upgrade() -> None:
-    """Constrain ``taskhistory.status`` to the enum's member names.
+    """Attach the CHECK constraining ``taskhistory.status`` to its member names.
 
     Batch mode, not a bare ``ALTER``: SQLite cannot attach a CHECK constraint to
     an existing table in place. A row holding a value outside the member set
