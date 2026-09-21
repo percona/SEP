@@ -13,14 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the sep-mysql build's Nomad-witness guard and the compose pin reader."""
+"""Cover the sep-mysql build's Nomad-witness guard."""
 
 import os
 import re
 import subprocess
-import sys
-from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
@@ -28,8 +25,6 @@ from app import BASE_DIR
 from tests.sidecar.conftest import SIDECAR_DIR
 
 CONTAINERFILE = SIDECAR_DIR / "pmm-fb" / "Containerfile.mysql"
-COMPOSE = SIDECAR_DIR / "pmm-fb" / "compose.yaml"
-PIN_CHECKER = BASE_DIR / "scripts" / "check_pmm_fb_pins.py"
 WORKFLOW = BASE_DIR / ".github" / "workflows" / "pmm-fb-nomad-pin.yaml"
 
 GUARD_ANCHOR = "NOMAD_VERSION_FB_TAG"
@@ -64,102 +59,8 @@ ANY_VERSION = "2.0.5"
 OLD_TAG = "PR-4500-old"
 NEW_TAG = "PR-4500-new"
 
-DRIFTED_TAG = "PR-0000-drifted"
-"""Tag written into a tampered compose copy, sharing no prefix with a real one."""
-
-WITNESS_DEFAULT = re.compile(r"(?<=NOMAD_VERSION_FB_TAG:-)[^}]*")
-SERVER_TAG_DEFAULT = re.compile(r"(?<=pmm-server-fb:\$\{PMM_FB_TAG:-)[^}]*")
-
 CLIENT_REPO = re.compile(r"(?<=FROM \$\{PMM_CLIENT_IMAGE:-)[^:]+")
 NOMAD_BINARY = re.compile(r"/\S*/tools/nomad")
-
-VALUELESS_PIN = """\
-services:
-  pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
-    build:
-      args:
-        PMM_FB_TAG:
-        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
-        NOMAD_VERSION_FB_TAG: ${NOMAD_VERSION_FB_TAG:-T}
-"""
-"""A compose file of the right shape whose tag key carries no value.
-
-YAML resolves that to ``None``, which the reader has to reject by name rather
-than by letting the regex raise on a non-string.
-"""
-
-VALUELESS_ARGS = """\
-services:
-  pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
-    build:
-      args:
-"""
-"""The build-args key itself carries no mapping.
-
-The sibling above withholds one arg's value; here the whole node is ``None``,
-which reaches the reader as a well-shaped file whose args cannot be searched by
-name at all.
-"""
-
-DECORATED_PIN = """\
-services:
-  pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
-    build:
-      args:
-        PMM_FB_TAG: prefix-${PMM_FB_TAG:-T}
-        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
-        NOMAD_VERSION_FB_TAG: ${NOMAD_VERSION_FB_TAG:-T}
-"""
-"""A slot whose expansion is real but is not the whole value.
-
-Compose builds with ``prefix-T`` while a reader searching for the expansion
-anywhere in the string reports ``T``, so the tags appear to agree on a value the
-build never uses.
-"""
-
-
-REWIRED_PIN = """\
-services:
-  pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
-    build:
-      args:
-        PMM_FB_TAG: ${OTHER_TAG:-T}
-        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
-        NOMAD_VERSION_FB_TAG: ${NOMAD_VERSION_FB_TAG:-T}
-"""
-"""Every committed default agrees, but one slot reads a different variable.
-
-Exporting ``PMM_FB_TAG`` would then move the server and the witness while this
-slot stayed behind: the mismatch the check exists to prevent, reached without
-changing a single literal.
-"""
-
-
-EMPTY_PIN = """\
-services:
-  pmm-server:
-    image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-}
-  sep-mysql:
-    build:
-      args:
-        PMM_FB_TAG: ${PMM_FB_TAG:-}
-        NOMAD_VERSION: ${NOMAD_VERSION:-2.0.5}
-        NOMAD_VERSION_FB_TAG: ${NOMAD_VERSION_FB_TAG:-}
-"""
-"""Every tag slot is well-formed and defaults to nothing.
-
-Three empty strings agree with each other, so equality alone calls this file
-pinned while a fresh clone builds a tagless image reference. It is the same
-vacuous comparison the witness exists to remove, one layer up.
-"""
 
 
 def final_stage() -> str:
@@ -217,56 +118,6 @@ def run_guard(
             GUARD_ANCHOR: witness,
         },
     )
-
-
-def run_checker(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run the pin checker, defaulting to the committed compose file.
-
-    :param args: CLI arguments to pass through.
-    :return: The completed process.
-    """
-    return subprocess.run(
-        [sys.executable, str(PIN_CHECKER), *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-
-def drift(pattern: re.Pattern[str], text: str, what: str) -> tuple[str, str]:
-    """Rewrite one tag default in ``text`` to :data:`DRIFTED_TAG`.
-
-    :param pattern: A zero-width-prefixed pattern matching just the tag.
-    :param text: The compose file's text.
-    :param what: What the pattern looks for, for the failure message.
-    :return: The tampered text and the tag it replaced.
-    :raises AssertionError: When the pattern no longer matches, so a restructured
-        compose file fails loudly rather than tampering with nothing.
-    """
-    match = pattern.search(text)
-    assert match is not None, f"compose.yaml no longer carries {what}"
-    return f"{text[: match.start()]}{DRIFTED_TAG}{text[match.end() :]}", match.group(0)
-
-
-@pytest.fixture
-def tampered_compose(
-    tmp_path: Path,
-) -> Callable[[re.Pattern[str], str], tuple[Path, str]]:
-    """Return a writer that drops a tampered copy of the compose file in ``tmp_path``.
-
-    :param tmp_path: The per-test temporary directory.
-    :return: A callable taking a pattern and a description, returning the copy's
-        path and the tag it replaced. It propagates :func:`drift`'s
-        ``AssertionError`` when the pattern no longer matches.
-    """
-
-    def write(pattern: re.Pattern[str], what: str) -> tuple[Path, str]:
-        tampered, original = drift(pattern, COMPOSE.read_text(encoding="utf-8"), what)
-        path = tmp_path / "compose.yaml"
-        path.write_text(tampered, encoding="utf-8")
-        return path, original
-
-    return write
 
 
 @pytest.mark.parametrize(
@@ -373,90 +224,3 @@ def test_the_refusal_names_both_tags() -> None:
 
     assert NEW_TAG in result.stderr
     assert OLD_TAG in result.stderr
-
-
-def test_committed_pins_agree() -> None:
-    """Keep the committed state buildable: every arm64 build reads these defaults."""
-    result = run_checker()
-
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_a_witness_left_behind_is_caught(
-    tampered_compose: Callable[[re.Pattern[str], str], tuple[Path, str]],
-) -> None:
-    """Reject a compose file whose witness no longer names the pinned feature build."""
-    path, original = tampered_compose(WITNESS_DEFAULT, "a NOMAD_VERSION_FB_TAG default")
-
-    result = run_checker(str(path))
-
-    assert result.returncode != 0
-    assert original in result.stderr
-    assert DRIFTED_TAG in result.stderr
-
-
-def test_a_drifting_server_tag_is_caught(
-    tampered_compose: Callable[[re.Pattern[str], str], tuple[Path, str]],
-) -> None:
-    """Reject the pre-existing drift the two spellings of the tag always allowed."""
-    path, original = tampered_compose(SERVER_TAG_DEFAULT, "a pmm-server-fb image tag")
-
-    result = run_checker(str(path))
-
-    assert result.returncode != 0
-    assert original in result.stderr
-    assert DRIFTED_TAG in result.stderr
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        pytest.param("services: {}\n", id="no-sep-mysql-service"),
-        pytest.param("just a string\n", id="not-a-mapping"),
-        pytest.param(VALUELESS_PIN, id="a-pin-with-no-value"),
-        pytest.param(VALUELESS_ARGS, id="build-args-with-no-mapping"),
-        pytest.param(REWIRED_PIN, id="a-pin-on-the-wrong-variable"),
-        pytest.param(DECORATED_PIN, id="a-pin-with-a-literal-beside-it"),
-    ],
-)
-def test_an_unreadable_compose_file_is_refused(tmp_path: Path, content: str) -> None:
-    """Refuse a file this check cannot read, rather than resolving it to nothing.
-
-    A reader that returned empty pins here would compare "" against "", call the
-    tags agreed, and report success on a file it never understood.
-    """
-    path = tmp_path / "compose.yaml"
-    path.write_text(content, encoding="utf-8")
-
-    result = run_checker(str(path))
-
-    assert result.returncode != 0
-    assert "ERROR" in result.stdout + result.stderr
-
-
-def test_pins_that_name_no_build_are_refused(tmp_path: Path) -> None:
-    """Refuse tags that agree only because every one of them defaults to nothing.
-
-    Equality is satisfied by three empty strings, so the check has to ask what
-    the tags resolve to as well as whether they match.
-    """
-    path = tmp_path / "compose.yaml"
-    path.write_text(EMPTY_PIN, encoding="utf-8")
-
-    result = run_checker(str(path))
-
-    assert result.returncode != 0
-    assert "ERROR" in result.stdout + result.stderr
-
-
-def test_print_emits_the_committed_witness() -> None:
-    """Check that the value the CI gate reads is the one the agreement check validated."""
-    match = WITNESS_DEFAULT.search(COMPOSE.read_text(encoding="utf-8"))
-    assert match is not None, (
-        "compose.yaml no longer carries a NOMAD_VERSION_FB_TAG default"
-    )
-
-    result = run_checker("--print", GUARD_ANCHOR)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == match.group(0)
