@@ -738,10 +738,10 @@ async def test_refresh_all_isolates_callback_exception(
 
 
 @pytest.mark.asyncio
-async def test_start_refresh_task_initial_does_not_fire_callbacks(
+async def test_start_refresh_task_initial_does_not_fire_unmarked_callbacks(
     session_maker: async_sessionmaker,
 ) -> None:
-    """The initial inline refresh publishes the snapshot but fires no callback."""
+    """The initial inline refresh publishes the snapshot but fires no unmarked callback."""
     proxy, registry = _make_proxies()
     override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
     await seed_connectivity_override(session_maker, value=override_value)
@@ -956,20 +956,20 @@ class TestFireBootCallbacks:
         self, session_maker: async_sessionmaker, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Skip the marked callback when the proxy's publish failed and its snapshot stayed put."""
-        _proxy, registry = _make_proxies()
+        proxy, registry = _make_proxies()
         override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         fired: list[SnapshotChange] = []
 
         async def _boom(
-            _proxy: OverridableSettingsProxy,
             _session: AsyncSession,
             _settings_cls: type[BaseYamlSettings],
+            _base_settings: object = None,
         ) -> None:
             raise RuntimeError("publish failed")
 
         monkeypatch.setattr(
-            "app.core.settings_override.lifecycle.publish_snapshot", _boom
+            "app.core.settings_override.lifecycle.build_snapshot", _boom
         )
 
         seeded, _pending = await bounded_seed(
@@ -981,6 +981,7 @@ class TestFireBootCallbacks:
 
         assert seeded is True
         assert fired == []
+        assert proxy.CONNECTIVITY_CHECK_DEFAULT is not override_value
 
     @pytest.mark.asyncio
     async def test_a_raising_marked_callback_is_logged_and_the_seed_completes(

@@ -152,6 +152,7 @@ def recording_bounded_seed(
         session_maker_factory: object,
         proxies: object,
         seed_timeout: float | None,
+        *,
         callbacks: object = None,
     ) -> tuple[bool, asyncio.Task | None]:
         recorded["seed_timeout"] = seed_timeout

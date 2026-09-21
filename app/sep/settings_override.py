@@ -164,7 +164,7 @@ async def apply_logging_dictconfig(_: SnapshotChange) -> None:
     starts with a ``LOGGING`` override already stored would otherwise keep the
     YAML/env level until the override next changed.
 
-    :param _: The snapshots on either side of the republish (unused -- the
+    :param _: The snapshots on either side of the republish (unused; the
         level is re-read from the proxy).
     """
     try:

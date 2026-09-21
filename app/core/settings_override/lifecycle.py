@@ -131,7 +131,7 @@ def fire_on_boot(callback: RefreshCallback) -> RefreshCallback:
 
     A rebind callback is normally fired only on a *change* between refresh
     cycles, because the boot path reproduces its effect from the seeded
-    snapshot on its own -- a fresh process key-misses its caches into
+    snapshot on its own: a fresh process key-misses its caches into
     override-aware objects. Marked callbacks are the exception: their effect
     lives in process-wide state the snapshot does not carry, so booting with
     an override already in the database would leave that state stale until
@@ -593,7 +593,8 @@ async def settings_override_refresher(
         default, reads ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
     :param callbacks: Optional rebind callbacks forwarded to
         :func:`start_refresh_task`, fired by the periodic loop when a watched
-        override changes value.
+        override changes. The initial refresh fires only those marked with
+        :func:`fire_on_boot`.
     :return: None
     """
     interval, enabled = resolve_refresher_options(interval, enabled=enabled)
