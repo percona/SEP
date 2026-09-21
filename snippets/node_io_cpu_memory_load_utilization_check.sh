@@ -5,6 +5,10 @@
 # description: "This script outputs I/O, CPU, load, and memory utilization of system to assist in troubleshooting high system load scenarios."
 # allow_extra_args: false
 # sudo: always
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - TEMPORARY_STALLS
 # service_type: generic
 # alerts:
 #   - HighCPUUsage

@@ -118,6 +118,7 @@ COPY --chown=0:1001 --chmod=440 ./sidecar/settings-env.sh ./settings-env.sh
 # runtime image on its own.
 COPY --chown=0:1001 --chmod=440 ./sidecar/encryption_key.py ./encryption_key.py
 COPY --chown=0:1001 --chmod=440 ./sidecar/grafana_service_account.py ./grafana_service_account.py
+COPY --chown=0:1001 --chmod=440 ./sidecar/runtime.py ./sidecar/runtime.py
 COPY --chown=0:1001 --chmod=440 ./sidecar/wait_for_api.py ./wait_for_api.py
 
 ADD --chown=0:1001 --chmod=440 bundle.tgz $APP_HOME

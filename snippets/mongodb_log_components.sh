@@ -31,6 +31,7 @@
 #    label: Authentication database
 #    description: Database used for authenticating the user.
 #    default: admin
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

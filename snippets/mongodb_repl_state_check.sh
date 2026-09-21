@@ -5,6 +5,7 @@
 # description: "This script checks replica set health and member states to diagnose members in UNKNOWN, RECOVERING, or REMOVED state, or loss of primary in a MongoDB cluster."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBReplicaState

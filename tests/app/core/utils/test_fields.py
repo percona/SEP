@@ -22,6 +22,8 @@ from app.core.utils.fields import (
     AuthSchemeStr,
     bounded_int_from_empty_str_factory,
     dsn_safe,
+    NON_WHITESPACE_PATTERN,
+    StrippedNonEmptyStr,
     TCP_PORT_MAX,
     TCP_PORT_MIN,
     TcpPort,
@@ -184,3 +186,46 @@ class TestUriPathPrefix:
         """Reject a trailing slash, a relative value, whitespace, and query or fragment."""
         with pytest.raises(ValidationError):
             TypeAdapter(URIPathPrefix).validate_python(value)
+
+
+class TestStrippedNonEmptyStr:
+    """Cover the ``StrippedNonEmptyStr`` trimmed non-blank string field type."""
+
+    @pytest.mark.parametrize("value", ["", " ", "\t", "\n", "   \t\n "])
+    def test_rejects_whitespace_only_values(self, value: str) -> None:
+        """Reject a blank or whitespace-only value as a length violation.
+
+        The published pattern rejects such a value independently, so pin the error
+        type too: a client reading the error code has to keep seeing the length
+        violation it always saw, not a pattern mismatch.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            TypeAdapter(StrippedNonEmptyStr).validate_python(value)
+
+        assert [error["type"] for error in excinfo.value.errors()] == [
+            "string_too_short"
+        ]
+
+    @pytest.mark.parametrize(
+        "value", ["/var/my backups", "a b", "schema name with spaces"]
+    )
+    def test_accepts_interior_whitespace(self, value: str) -> None:
+        """Accept interior whitespace when the edges carry non-whitespace."""
+        assert TypeAdapter(StrippedNonEmptyStr).validate_python(value) == value
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("  /var/backups  ", "/var/backups"),
+            ("\t/var/my backups\n", "/var/my backups"),
+        ],
+    )
+    def test_strips_surrounding_whitespace(self, value: str, expected: str) -> None:
+        """Strip leading and trailing whitespace before the constraints apply."""
+        assert TypeAdapter(StrippedNonEmptyStr).validate_python(value) == expected
+
+    def test_publishes_the_non_whitespace_pattern(self) -> None:
+        """Publish the non-whitespace constraint the validator already enforces."""
+        schema = TypeAdapter(StrippedNonEmptyStr).json_schema()
+        assert schema["pattern"] == NON_WHITESPACE_PATTERN
+        assert schema["minLength"] == 1

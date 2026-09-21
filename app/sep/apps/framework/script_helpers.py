@@ -195,6 +195,8 @@ async def execute_script(
     script: S,
     body: ScriptExecuteWrite,
     tasks_api: RemoteAPI,
+    *,
+    execution_task_name: str | None = None,
 ) -> ScriptExecutionResponse:
     """Validate the args, assemble the meta, and dispatch one script execution.
 
@@ -210,6 +212,10 @@ async def execute_script(
     :param body: The execute request carrying the executor host, sudo choice, and
         per-parameter arguments.
     :param tasks_api: The authenticated Tasks API client.
+    :param execution_task_name: A task to dispatch under instead of the script's
+        own ``execution_task_name``, for a caller that wraps the interpreter root
+        in an app-owned proxy. ``None`` (the default) keeps the script's own task,
+        so every existing caller is unaffected.
     :return: The dispatched task name, the created task-history id, and the
         script's filename.
     :raises HTTPUnprocessableEntityException: When ``body.args`` fails validation
@@ -226,9 +232,10 @@ async def execute_script(
     meta = source.build_execution_meta(
         script, body.model_copy(update={"args": validated.model_dump()})
     )
-    task_id = await post_task_execution(tasks_api, script.execution_task_name, meta)
+    task_name = execution_task_name or script.execution_task_name
+    task_id = await post_task_execution(tasks_api, task_name, meta)
     return ScriptExecutionResponse(
-        task_name=script.execution_task_name,
+        task_name=task_name,
         task_id=task_id,
         snippet_filename=script.filename,
     )

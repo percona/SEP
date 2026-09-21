@@ -684,6 +684,26 @@ class TestDerivedRouteHTTP:
         assert call.args[0] == f"/{_TASK_NAME}/history/"
         assert call.kwargs["params"] == {"snippet_filename": "report.sh"}
 
+    def test_history_is_scoped_to_the_scripts_own_task_only(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Query exactly one task's history — the script's own, never a proxy's.
+
+        Pins a deliberately accepted consequence of app-owned proxy dispatch: the
+        upstream filters history by the named task, so a run dispatched under an
+        app's proxy carries a different ``task_id`` and does not appear in this pane.
+        Teaching the route to union an app's proxies is a design decision with its own
+        trade-offs, not a drift to make silently — so this asserts the single-task
+        scope rather than leaving it implicit.
+        """
+        tasks_api = _make_tasks_api(history={"items": [], "total": 0})
+        client = _client(_script_app(source), tasks_api, regular_user)
+
+        client.get(f"{_BASE}/snippet/history", params={"snippet_filename": "report.sh"})
+
+        assert tasks_api.get.await_count == 1
+        assert tasks_api.get.await_args.args[0] == f"/{_TASK_NAME}/history/"
+
     def test_history_upstream_error_propagates(
         self, source: ScriptSource, regular_user: CasdoorUser
     ) -> None:

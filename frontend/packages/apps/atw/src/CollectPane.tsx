@@ -18,11 +18,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Autocomplete, Box, CircularProgress, TextField, Typography } from '@mui/material';
 import {
+  HostElevationWarning,
   ReadOnlyNotice,
   SchemaFormRenderer,
   SNIPPET_FORM_RESERVED_FIELD_NAMES,
   useDebouncedValue,
   buildFieldLabelMap,
+  type RenderFieldOverride,
 } from '@sep/framework';
 import { parseFieldErrors, useAuth, type FormSection, type SectionField } from '@sep/api';
 import { CategoryBrowser } from './CategoryBrowser';
@@ -375,6 +377,17 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
 
   const labelByPath = useMemo(() => buildFieldLabelMap(sections), [sections]);
 
+  const renderField = useCallback<RenderFieldOverride>(
+    ({ field, renderDefault }) =>
+      field.name === 'executor_host' ? (
+        <>
+          {renderDefault()}
+          <HostElevationWarning name="executor_host" sudoName="sudo" snippets={selected} />
+        </>
+      ) : null,
+    [selected],
+  );
+
   const handleSubmit = (values: Record<string, unknown>) => {
     setBatchOutcome(null);
     batchMutation.mutate(buildBatchPayload(values, selected), {
@@ -524,6 +537,7 @@ export function CollectPane({ incidentId, isClosed = false }: CollectPaneProps) 
             key={formKey}
             sections={sections}
             onSubmit={handleSubmit}
+            renderField={renderField}
             submitLabel="Execute batch"
             loading={batchMutation.isPending}
             submitError={submitError}

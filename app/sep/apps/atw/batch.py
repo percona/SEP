@@ -357,6 +357,8 @@ async def dispatch_batch_item(
     item: ATWBatchExecuteItemWrite,
     script: SnippetScript,
     tasks_api: RemoteAPI,
+    *,
+    execution_task_name: str | None = None,
 ) -> ScriptExecutionResponse:
     """Narrow the shared args to one already-resolved batch item and dispatch it.
 
@@ -372,6 +374,9 @@ async def dispatch_batch_item(
     :param item: The item naming its own argument overrides.
     :param script: The snippet resolved for ``item.snippet_filename``.
     :param tasks_api: The authenticated Tasks API client.
+    :param execution_task_name: ATW's proxy for this snippet's interpreter, resolved
+        once per batch by the caller. ``None`` dispatches under the interpreter
+        unchanged, which is the documented degradation when the proxy cannot be used.
     :return: The dispatched task name, the created task-history id (``None`` when
         the Tasks API returned none), and the resolved snippet filename.
     :raises HTTPException: When the snippet's arguments fail validation, it is not
@@ -391,6 +396,7 @@ async def dispatch_batch_item(
         script,
         ScriptExecuteWrite(executor_host=body.executor_host, sudo=body.sudo, args=args),
         tasks_api,
+        execution_task_name=execution_task_name,
     )
 
 

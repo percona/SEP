@@ -24,6 +24,7 @@ from fastapi import Depends, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.api.task_history_merge import fetch_task_history_window
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.deps import make_task_dep
@@ -323,9 +324,9 @@ def build_mysql_backups_api_task_response(
     :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
-    :param context: The username map bound by ``response_context_provider``,
-        used to remap ``created_by`` / ``last_updated_by`` user-ids to
-        usernames; falls back to the raw id when the map lacks an entry.
+    :param context: The username map bound by ``response_context_provider``, used
+        to resolve ``created_by`` / ``last_updated_by`` to system labels or
+        provider usernames; falls back to the raw id when neither resolves it.
     :type context: dict[str, str] | None
     :return: A validated backup task API response object.
     """
@@ -343,7 +344,6 @@ def build_mysql_backups_api_task_response(
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
             "service_type": ServiceTypeEnum.MYSQL,
-            "created_by": mapping.get(task.created_by, task.created_by),
-            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
+            **task_actor_fields(task, mapping),
         },
     )

@@ -10,6 +10,7 @@
 #    type: str
 #    label: MySQL defaults file
 #    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - ProxySQLNotRunning
@@ -44,9 +45,15 @@ echo ""
 echo "********* ProxySQL admin connectivity and runtime servers *********"
 ADMIN_ARGS=(-u admin -h 127.0.0.1 -P 6032 -e "SELECT * FROM runtime_mysql_servers;")
 if [[ -n $DEFAULTS_FILE ]]; then
-    mysql "$DEFAULTS_FILE" "${ADMIN_ARGS[@]}" 2> /dev/null ||
-        echo "Cannot connect to ProxySQL admin interface on port 6032."
+    if ! admin_servers=$(mysql "$DEFAULTS_FILE" "${ADMIN_ARGS[@]}" 2>&1); then
+        echo "Could not connect to the ProxySQL admin interface on port 6032 (check --defaults-file): $admin_servers"
+    else
+        printf '%s\n' "$admin_servers"
+    fi
 else
-    mysql "${ADMIN_ARGS[@]}" 2> /dev/null ||
-        echo "Cannot connect to ProxySQL admin interface on port 6032."
+    if ! admin_servers=$(mysql "${ADMIN_ARGS[@]}" 2>&1); then
+        echo "Could not connect to the ProxySQL admin interface on port 6032 with the built-in admin credentials: $admin_servers"
+    else
+        printf '%s\n' "$admin_servers"
+    fi
 fi
