@@ -27,6 +27,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.backup_mongo.deps import _gathered_latest_history
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.models import (
@@ -58,6 +59,7 @@ from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     check_group_for_conflicted_running_tasks,
     get_created_entity,
+    get_username_mapping,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
@@ -352,17 +354,18 @@ def build_restore_mongo_api_task_response(
     *,
     status: TaskHistoryStatusEnum | None = None,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> RestoreTaskResponse:
     """Build a restore task response object for the JSON API.
 
     :param task: The restore task retrieved from the Tasks API.
-    :type task: Task
     :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map used to resolve ``created_by`` /
+        ``last_updated_by`` to system labels or provider usernames; falls back to
+        the raw id when neither resolves it.
     :return: A validated restore task API response object.
-    :rtype: RestoreTaskResponse
     """
     config = _parse_restore_task_config(task)
     meta = task.data.get("meta") or {}
@@ -377,6 +380,7 @@ def build_restore_mongo_api_task_response(
             "backup_type": str(backup_type) if backup_type is not None else "",
             "backup_source": str(config.get("backupSource", "")),
             "service_type": ServiceTypeEnum.MONGODB,
+            **task_actor_fields(task, context or {}),
         },
     )
 
@@ -390,20 +394,18 @@ async def get_restore_mongo_api_task_responses(
     """Retrieve a page of restore task responses for the JSON API.
 
     Uses two filtered upstream task lists (null-parent config rows plus legacy
-    self-parent rows) and one batch latest-status lookup per page. When
+    self-parent rows), one batch latest-status lookup per page, and one
+    username-map lookup per page to resolve each row's actor fields. When
     ``status`` is set, ``total`` reflects the parent count after the status
     filter.
 
     :param tasks_api: The TaskAPI instance used to query restore tasks.
-    :type tasks_api: TaskAPI
     :param pagination: Validated offset/limit window for this page.
-    :type pagination: Pagination
     :param status: Optional latest-history status filter for the list.
-    :type status: TaskHistoryStatusEnum | None
     :return: The paginated restore task responses matching the requested filters.
-    :rtype: PaginatedResponse[RestoreTaskResponse]
     """
     parents = await _fetch_restore_parent_tasks(tasks_api)
+    username_map = await get_username_mapping()
 
     if status is None:
         page_parents = pagination.slice(parents)
@@ -416,6 +418,7 @@ async def get_restore_mongo_api_task_responses(
                 task,
                 status=(latest := status_map.get(task.name)) and latest.status,
                 last_executed_at=latest.finished_at if latest else None,
+                context=username_map,
             )
             for task in page_parents
         ]
@@ -433,7 +436,10 @@ async def get_restore_mongo_api_task_responses(
     page_pairs = pagination.slice(task_latest_pairs)
     items = [
         build_restore_mongo_api_task_response(
-            task, status=latest.status, last_executed_at=latest.finished_at
+            task,
+            status=latest.status,
+            last_executed_at=latest.finished_at,
+            context=username_map,
         )
         for task, latest in page_pairs
     ]
@@ -464,14 +470,12 @@ async def build_restore_mongo_api_detail_response(
     """Build a restore task detail response for the JSON API.
 
     Aggregates latest execution status for the parent config task and each
-    restore, pbm-list, and optional force-resync child.
+    restore, pbm-list, and optional force-resync child, and resolves the parent's
+    actor fields through the active provider's username map.
 
     :param task: The parent restore config task.
-    :type task: Task
     :param tasks_api: The TaskAPI instance used to query tasks and history.
-    :type tasks_api: TaskAPI
     :return: A validated restore task detail API response object.
-    :rtype: RestoreTaskDetailResponse
     """
     backup_type = _backup_type_from_parent(task)
     child_names = restore_child_task_names(task.name, backup_type)
@@ -499,6 +503,7 @@ async def build_restore_mongo_api_detail_response(
         task,
         status=parent_latest.status if parent_latest else None,
         last_executed_at=parent_latest.finished_at if parent_latest else None,
+        context=await get_username_mapping(),
     )
     return RestoreTaskDetailResponse(
         **base.model_dump_with_excluded_fields(),

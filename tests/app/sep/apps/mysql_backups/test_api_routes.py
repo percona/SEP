@@ -23,6 +23,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.deps import BEARER_REQUIRED_DETAIL
@@ -187,6 +188,7 @@ class TestListEndpoint:
     def test_list_returns_data(self, test_client, mock_task_api_dep):
         """The list endpoint returns the registered backups tasks."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_task_api_dep.get = AsyncMock(
             return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
         )
@@ -208,6 +210,7 @@ class TestListEndpoint:
         assert len(items) == 1
         row = items[0]
         assert row["name"] == task["name"]
+        assert row["created_by"] == "Service account"
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert row["backup_type"] == BackupType.MYDUMPER.value
         assert "service_type" not in row
@@ -268,6 +271,7 @@ class TestDetailEndpoint:
     def test_detail_returns_task(self, test_client, mock_task_api_dep):
         """The detail endpoint returns a single backup task."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_task_api_dep.get = AsyncMock(
             side_effect=[
                 task,
@@ -278,6 +282,7 @@ class TestDetailEndpoint:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == task["name"]
+        assert body["created_by"] == "Service account"
         assert body["backup_type"] == BackupType.MYDUMPER.value
         assert "service_type" not in body
         assert "owner" not in body
@@ -305,6 +310,7 @@ class TestCreateEndpoint:
     ):
         """Happy path: backup_type=M creates a task with 201."""
         task = build_backup_task()
+        task["created_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -317,6 +323,7 @@ class TestCreateEndpoint:
         )
         assert response.status_code == status.HTTP_201_CREATED, response.text
         assert response.json()["name"] == task["name"]
+        assert response.json()["created_by"] == "Service account"
 
     def test_create_xtrabackup_happy_path(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -865,6 +872,7 @@ class TestUpdateReselectsThePayloadVariant:
     ):
         """Assert the PUT body's upload selection, not the stored one, picks the variant."""
         task = build_backup_task(backup_type=BackupType.XTRABACKUP)
+        task["last_updated_by"] = str(SERVICE_PRINCIPAL_ID)
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()
         )
@@ -884,4 +892,5 @@ class TestUpdateReselectsThePayloadVariant:
             f"/api/apps/mysql_backups/{task['name']}", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_200_OK, response.text
+        assert response.json()["last_updated_by"] == "Service account"
         assert self._sent_payload(mock_task_api_dep).endswith(f"/{expected}")

@@ -26,6 +26,7 @@ from app.core.exceptions import HTTPConflictException
 from app.core.requests import as_json_object
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.backup_pg.models import BackupTaskDetailResponse, BackupTaskResponse
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.shared.backups.edit_form import parse_server_list_config
@@ -108,21 +109,21 @@ def build_backup_pg_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     last_executed_at: datetime | None = None,
     server_config: dict[str, Any] | None = None,
+    context: dict[str, str] | None = None,
 ) -> BackupTaskResponse:
     """Build a backup_pg task response for the JSON API.
 
     :param task: The task retrieved from the Tasks API.
-    :type task: Task
     :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
     :param server_config: Pre-parsed first ``SERVER_LIST`` entry. When ``None``
         (the default) the YAML config is parsed here; callers that already
         parsed it can pass it through to avoid a second ``yaml.safe_load``.
-    :type server_config: dict[str, Any] | None
+    :param context: The username map bound by ``response_context_provider``, used
+        to resolve ``created_by`` / ``last_updated_by`` to system labels or
+        provider usernames; falls back to the raw id when neither resolves it.
     :return: A validated backup_pg task API response.
-    :rtype: BackupTaskResponse
     """
     meta = (task.data or {}).get("meta") or {}
     if server_config is None:
@@ -137,6 +138,7 @@ def build_backup_pg_api_task_response(
             "hostname": meta.get("target"),
             "backup_type": backup_type,
             "service_type": ServiceTypeEnum.POSTGRESQL,
+            **task_actor_fields(task, context or {}),
         },
     )
 
@@ -146,18 +148,23 @@ def build_backup_pg_api_detail_response(
     *,
     status: TaskHistoryStatusEnum | None = None,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> BackupTaskDetailResponse:
     """Build a backup_pg task detail response for the JSON API.
 
-    The latest status and finish time are supplied by the framework's
-    detail/create pipeline rather than fetched here, so this builder stays a
-    sync ``(task, *, status, last_executed_at) -> BackupTaskDetailResponse``
-    consumed directly by the derived detail, create, and update routes.
+    The latest status, finish time and username map are supplied by the
+    framework's detail/create pipeline rather than fetched here, so this builder
+    stays a sync ``(task, *, status, last_executed_at, context) ->
+    BackupTaskDetailResponse`` consumed directly by the derived detail, create,
+    and update routes.
 
     :param task: The task to render.
     :param status: The latest known execution status for the task.
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map bound by ``response_context_provider``,
+        forwarded to :func:`build_backup_pg_api_task_response` to resolve the
+        actor fields.
     :return: A validated backup_pg task detail API response.
     """
     meta = (task.data or {}).get("meta") or {}
@@ -167,6 +174,7 @@ def build_backup_pg_api_detail_response(
         status=status,
         last_executed_at=last_executed_at,
         server_config=server_config,
+        context=context,
     )
     return BackupTaskDetailResponse(
         **base.model_dump_with_excluded_fields(),

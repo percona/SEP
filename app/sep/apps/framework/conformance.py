@@ -35,6 +35,7 @@ from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from app.sep.api.task_history_actors import TASK_ACTOR_FIELDS
 from app.sep.apps.framework.form_dsl import (
     check_form_conformance,
     derive_form_sections,
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "CAPABILITY_RENDERED_CONTROLS",
+    "check_actor_fields_resolvable",
     "check_capability_route_consistency",
     "check_child_app_registration",
     "check_form_conformance",
@@ -243,6 +245,52 @@ def _detail_response_model(app: "TaskExecutionApp") -> type[BaseModel]:
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             return annotation
     return app.response_model
+
+
+def _rendered_names(model: type[BaseModel]) -> frozenset[str]:
+    """Return every name a field on ``model`` could render under.
+
+    Unions :func:`~app.sep.apps.framework.responses.serialized_field_names` (the
+    wire names a ``model_dump(by_alias=True)`` emits) with each non-excluded
+    field's own attribute name, so a field declaring a ``serialization_alias``
+    still matches by the name a builder or caller would look it up under.
+
+    :param model: The Pydantic response model class to inspect.
+    :return: The frozenset of attribute and serialized names ``model`` exposes.
+    """
+    attribute_names = {
+        name for name, field in model.model_fields.items() if not field.exclude
+    }
+    attribute_names.update(model.model_computed_fields)
+    return serialized_field_names(model) | attribute_names
+
+
+def check_actor_fields_resolvable(app: "TaskExecutionApp") -> list[str]:
+    """Return a violation when an app renders actor fields with no username map.
+
+    A list or detail response model that renders any of
+    :data:`~app.sep.api.task_history_actors.TASK_ACTOR_FIELDS` — whether under
+    its own name or a ``serialization_alias`` — shows the stored user identifier
+    unless ``response_context_provider`` resolves it, so an app that sets the
+    provider to ``None`` while rendering one is flagged.
+
+    :param app: The migrated app whose response models and provider are checked.
+    :return: A single message naming the unresolved actor fields; empty when the
+        app binds a provider, renders no actor field, or is a script-source app
+        (it derives no model-first CRUD responses).
+    """
+    if app.script_source is not None or app.response_context_provider is not None:
+        return []
+    rendered = _rendered_names(app.response_model) | _rendered_names(
+        _detail_response_model(app)
+    )
+    unresolved = [field for field in TASK_ACTOR_FIELDS if field in rendered]
+    if not unresolved:
+        return []
+    return [
+        f"response_context_provider is None, so {unresolved} render the stored "
+        "user id instead of a display name"
+    ]
 
 
 def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str]:

@@ -10,7 +10,7 @@
 #    label: MySQL defaults file
 #    description: MySQL option file the client reads for connection settings.
 #    arg_format: --defaults-file=${value}
-# atw:
+# diagnostic_categories:
 #  - GROUP_REPLICATION
 # service_type: mysql
 # alerts:

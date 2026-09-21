@@ -25,6 +25,7 @@ import pytest
 import yaml
 from fastapi import HTTPException, status
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.apps.backup_mongo.models import BackupType
@@ -452,6 +453,44 @@ class TestRestoreMongoApiList:
             json={"names": ["parent-restore-a", "parent-restore-b"]},
         )
 
+    @pytest.mark.parametrize(
+        "query",
+        ["", f"?status={TaskHistoryStatusEnum.SUCCESS.value}"],
+        ids=["unfiltered", "status-filtered"],
+    )
+    def test_list_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+        query: str,
+    ) -> None:
+        """Render both actors' usernames on list rows on either list branch."""
+        creator, updater = known_actors
+        parent = build_restore_task(
+            "parent-restore",
+            created_by=str(creator.id),
+            last_updated_by=str(updater.id),
+        )
+        mock_task_api_dep.get = mock_task_api_parent_list(parent)
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-restore": {
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "finished_at": None,
+                }
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/{query}")
+
+        assert response.status_code == status.HTTP_200_OK
+        item = response.json()["items"][0]
+        assert (item["created_by"], item["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
+
 
 class TestRestoreMongoApiCreate:
     """Tests for POST /api/apps/backup_mongo/restore/."""
@@ -515,6 +554,49 @@ class TestRestoreMongoApiCreate:
         assert body["connectivity_warning"] is None
         assert "service_type" not in body
         assert "owner" not in body
+
+    def test_create_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+    ) -> None:
+        """Render both actors' usernames on the cascade-create response."""
+        creator, updater = known_actors
+        parent = build_restore_task(
+            "mongo-restore-task",
+            created_by=str(creator.id),
+            last_updated_by=str(updater.id),
+        )
+        restore_leg = build_restore_task(
+            "mongo-restore-task-pbm_logical", data={"parent": "mongo-restore-task"}
+        )
+        pbm_list = build_restore_task(
+            "mongo-restore-task-pbm-list", data={"parent": "mongo-restore-task"}
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.post = AsyncMock(side_effect=[parent, restore_leg, pbm_list])
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/mongo-restore-task": parent,
+                "/mongo-restore-task-pbm_logical": restore_leg,
+                "/mongo-restore-task-pbm-list": pbm_list,
+            }
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_restore_write_body(service_id=mongo_service.id),
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        body = response.json()
+        assert (body["created_by"], body["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
 
     def test_create_physical_posts_four_tasks(
         self,
@@ -705,6 +787,40 @@ class TestRestoreMongoApiDetail:
         assert body["backup_source"] == "2026-04-29T10:00:00"
         assert "derived_tasks" in body
 
+    def test_detail_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+    ) -> None:
+        """Render both actors' usernames on the sibling-aggregating detail."""
+        creator, updater = known_actors
+        parent = build_restore_task(
+            "parent-restore",
+            created_by=str(creator.id),
+            last_updated_by=str(updater.id),
+        )
+        mock_task_api_dep.get = mock_task_api_get_by_path(
+            {
+                "/parent-restore": parent,
+                "/parent-restore-pbm_logical": build_restore_task(
+                    "parent-restore-pbm_logical", data={"parent": "parent-restore"}
+                ),
+                "/parent-restore-pbm-list": build_restore_task(
+                    "parent-restore-pbm-list", data={"parent": "parent-restore"}
+                ),
+            }
+        )
+
+        response = test_client.get(f"{API_BASE}/parent-restore")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert (body["created_by"], body["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
+
     def test_detail_anonymized_entities_falls_back_when_mask_none(
         self, test_client, mock_task_api_dep
     ) -> None:
@@ -839,6 +955,39 @@ class TestRestoreMongoApiUpdate:
         restore_payload = restore_put.kwargs["json"]
         assert restore_payload["name"] == "parent-restore-pbm_logical"
         assert restore_payload["data"]["parent"] == "parent-restore"
+
+    def test_update_resolves_actor_usernames(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        mongo_service: CreatedService,
+        known_actors: tuple[CasdoorUser, CasdoorUser],
+    ) -> None:
+        """Render both actors' usernames on the update response."""
+        creator, updater = known_actors
+        parent = build_restore_task(
+            "parent-restore",
+            created_by=str(creator.id),
+            last_updated_by=str(updater.id),
+        )
+        mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
+        mock_task_api_dep.get = mock_task_api_get_by_path({"/parent-restore": parent})
+        mock_task_api_dep.put = AsyncMock(return_value=parent)
+
+        response = test_client.put(
+            f"{API_BASE}/parent-restore",
+            json=build_restore_write_body(
+                task_name="parent-restore", service_id=mongo_service.id
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert (body["created_by"], body["last_updated_by"]) == (
+            creator.username,
+            updater.username,
+        )
 
     def test_update_pins_backup_type_to_path_parent(
         self,

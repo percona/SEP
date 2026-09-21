@@ -44,6 +44,10 @@
 #    placeholder: e.g. /home/user/folder/; file.zip
 #    positional: true
 #    required: true
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
+#  - OVERALL_SLOWNESS
+#  - WRITES_ARE_BLOCKED
 # service_type: generic
 # alerts:
 #   - HighDiskUsage
@@ -133,7 +137,7 @@ target="$1"
 shift
 
 if [ ! -e "$target" ]; then
-    >&2 echo "Error: '$target' does not exist."
+    >&2 echo "Error: Target '$target' does not exist."
     exit 1
 fi
 

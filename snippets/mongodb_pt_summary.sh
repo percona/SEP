@@ -43,6 +43,12 @@
 #    type: bool
 #    label: Show help message
 #    description: Print the script's usage text instead of running it.
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - PERFORMANCE_OTHER
+#  - TEMPORARY_STALLS
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

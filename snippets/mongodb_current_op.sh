@@ -43,6 +43,10 @@
 #    label: Active operations only
 #    description: Exclude idle connections and idle system operations from the output.
 #    default: false
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - WRITES_ARE_BLOCKED
+#  - TEMPORARY_STALLS
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

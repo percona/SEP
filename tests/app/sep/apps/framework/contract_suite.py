@@ -35,6 +35,7 @@ from collections.abc import Iterator
 from types import NoneType, UnionType
 from typing import Any, ClassVar, get_args, get_origin, Union
 from unittest.mock import AsyncMock
+from uuid import UUID
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
@@ -67,6 +68,7 @@ from app.sep.deps import (
 )
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
+    CasdoorUserFactory,
     MOCK_CREATED_SCHEMA_ID,
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
@@ -75,6 +77,7 @@ from tests.app.sep.apps.framework.kit import (
     EXECUTE_CREATED_AT,
     EXECUTE_STATUS,
     SEEDED_TASK_NAME,
+    SYNTH_CREATED_BY,
     SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
 )
@@ -488,10 +491,12 @@ class DerivedRouterContractTests:
     Each capability-gated method either exercises the enabled route or asserts the
     disabled route's absence, reading the contract from the definition.
 
-    Set :attr:`remapped_username` to the username the bound app's response context
-    provider remaps the seeded ``created_by`` to; leave it ``None`` for an app whose
-    provider is not deterministic under test (for example a real Casdoor lookup), so
-    the injected-extras tests assert only the deterministic ``service_type`` extra.
+    The seeded task's ``created_by`` resolves to :data:`SYNTH_CREATED_BY_NAME` for
+    every app: the stubbed provider lists that user for an app on the default
+    provider, and the synthetic apps' own provider maps the same id. An app left
+    with no response context provider fails
+    :meth:`test_response_context_provider_bound`, and also fails — rather than
+    skips — every injected-extras test its capabilities enable.
 
     Set :attr:`create_body_overrides` to pin fields the generic body generator cannot
     satisfy on its own — a scalar a ``__form_rules__`` rule or a model validator
@@ -500,8 +505,19 @@ class DerivedRouterContractTests:
     """
 
     app_def: ClassVar[TaskExecutionApp]
-    remapped_username: ClassVar[str | None] = SYNTH_CREATED_BY_NAME
     create_body_overrides: ClassVar[dict[str, Any]] = {}
+
+    @pytest.fixture(autouse=True)
+    def _provider_lists_the_seeded_creator(self, provider_users: AsyncMock) -> None:
+        """Seed the stubbed provider with the user every seeded task is created by.
+
+        :param provider_users: The autouse user-listing stub, configured here.
+        """
+        provider_users.return_value = [
+            CasdoorUserFactory.build(
+                id=UUID(SYNTH_CREATED_BY), username=SYNTH_CREATED_BY_NAME
+            )
+        ]
 
     def test_schema_200(self, contract_client: TestClient) -> None:
         """Assert ``GET /schema`` serves the derived plugin schema."""
@@ -808,12 +824,17 @@ class DerivedRouterContractTests:
         assert SEEDED_TASK_NAME in names
         assert "contract-extra-mismatch" not in names
 
+    def test_response_context_provider_bound(self) -> None:
+        """Assert the app resolves actor ids through a response context provider."""
+        assert self.app_def.response_context_provider is not None, (
+            f"{self.app_def.name!r} binds no response_context_provider, so its actor "
+            "fields render the stored user id instead of a display name"
+        )
+
     def test_list_injects_extras_and_resolves_username(
         self, contract_client: TestClient
     ) -> None:
         """Assert list rows omit internal fields and carry the resolved username."""
-        if self.app_def.response_context_provider is None:
-            pytest.skip("no response context provider")
         base = app_base_url(self.app_def)
 
         response = contract_client.get(f"{base}/")
@@ -827,13 +848,10 @@ class DerivedRouterContractTests:
         assert row["name"] == SEEDED_TASK_NAME
         assert "service_type" not in row
         assert "owner" not in row
-        if self.remapped_username is not None:
-            assert row["created_by"] == self.remapped_username
+        assert row["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_detail_injects_extras(self, contract_client: TestClient) -> None:
         """Assert ``GET /{name}`` carries the remapped username without internal fields."""
-        if self.app_def.response_context_provider is None:
-            pytest.skip("no response context provider")
         base = app_base_url(self.app_def)
 
         response = contract_client.get(f"{base}/{SEEDED_TASK_NAME}")
@@ -842,8 +860,7 @@ class DerivedRouterContractTests:
         body = response.json()
         assert "service_type" not in body
         assert "owner" not in body
-        if self.remapped_username is not None:
-            assert body["created_by"] == self.remapped_username
+        assert body["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_detail_reflects_injected_status(
         self, contract_client: TestClient, mock_task_api: Any
@@ -894,8 +911,6 @@ class DerivedRouterContractTests:
         """Assert the create response binds context without internal classification fields."""
         if not self.app_def.capabilities.create:
             pytest.skip("create capability disabled")
-        if self.app_def.response_context_provider is None:
-            pytest.skip("no response context provider")
         body = build_valid_create_body(
             self.app_def, create_body_overrides=self.create_body_overrides
         )
@@ -909,8 +924,7 @@ class DerivedRouterContractTests:
         payload = response.json()
         assert "service_type" not in payload
         assert "owner" not in payload
-        if self.remapped_username is not None:
-            assert payload["created_by"] == self.remapped_username
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_create_extra_dep_enforced(
         self, contract_client: TestClient, mock_task_api: Any
@@ -1100,8 +1114,6 @@ class DerivedRouterContractTests:
             self.app_def.capabilities.update and self.app_def.update_handler is None
         ):
             pytest.skip("no derived update route")
-        if self.app_def.response_context_provider is None:
-            pytest.skip("no response context provider")
         body = build_valid_create_body(
             self.app_def,
             task_name=SEEDED_TASK_NAME,
@@ -1117,8 +1129,7 @@ class DerivedRouterContractTests:
         payload = response.json()
         assert "service_type" not in payload
         assert "owner" not in payload
-        if self.remapped_username is not None:
-            assert payload["created_by"] == self.remapped_username
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def _valid_update_body(self, *, task_name: str) -> dict[str, Any] | None:
         """Return a valid derived-PUT body for the guard tests.
