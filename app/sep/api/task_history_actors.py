@@ -245,51 +245,51 @@ def resolve_task_history_actors(
 
 
 def _resolve_payload_actor_key(
-    row: dict[str, Any], key: str, username_map: Mapping[str, str]
+    row: _HistoryPassthroughModel, key: str, username_map: Mapping[str, str]
 ) -> None:
-    """Resolve one actor key of an unvalidated row in place.
+    """Resolve one actor key of a passthrough row or nested task in place.
 
-    Leave the value alone unless it is a string or ``None``: the row has not been
-    through model validation, so a key can hold any JSON shape, and an unhashable
-    one would raise from the map lookup rather than degrade.
+    Leave the value alone unless it was supplied and is a string or ``None``: the
+    permissive models accept any JSON shape, and an unhashable one would raise
+    from the map lookup rather than degrade. Skip keys that were never set so
+    serialization does not invent an absent actor field.
 
-    :param row: The unvalidated row or nested task, rewritten in place.
+    :param row: The typed row or nested task, rewritten in place.
     :param key: The actor key to resolve, ignored when the row does not carry it.
     :param username_map: The active provider's identifier-to-username map.
     """
-    if key not in row:
+    if key not in row.model_fields_set:
         return
-    value = row[key]
+    value = getattr(row, key)
     if value is not None and not isinstance(value, str):
         return
-    row[key] = resolve_actor(value, username_map)
+    setattr(row, key, resolve_actor(value, username_map))
 
 
 def resolve_history_payload_actors(
-    payload: dict[str, Any], username_map: Mapping[str, str]
-) -> dict[str, Any]:
-    """Rewrite actor identifiers inside an untyped task-history payload.
+    payload: SepHistoryPayload, username_map: Mapping[str, str]
+) -> SepHistoryPayload:
+    """Rewrite actor identifiers inside a typed task-history payload.
 
-    Operate on the raw mapping rather than validating it, so a passthrough
-    surface keeps every upstream key it was given. Skip any row, any nested task,
-    and any actor value whose shape is not the expected one: an unexpected
-    upstream shape degrades that row to raw identifiers rather than failing the
-    whole page.
+    Skip any row, any nested task, and any actor value whose shape is not the
+    expected one: an unexpected upstream shape degrades that field to its raw
+    value rather than failing the whole page. Unknown upstream keys survive on
+    the envelope and each row via ``extra="allow"``.
 
-    :param payload: The upstream page, rewritten in place.
+    :param payload: The validated upstream page, rewritten in place.
     :param username_map: The active provider's identifier-to-username map.
-    :return: The same mapping, for use as a call site's expression.
+    :return: The same payload, for use as a call site's expression.
     """
-    items = payload.get("items")
-    if not isinstance(items, list):
+    if "items" not in payload.model_fields_set or not isinstance(payload.items, list):
         return payload
-    for item in items:
-        if not isinstance(item, dict):
+    for item in payload.items:
+        if not isinstance(item, SepHistoryPayloadRow):
             continue
         _resolve_payload_actor_key(item, "executed_by", username_map)
-        task = item.get("task")
-        if not isinstance(task, dict):
+        if "task" not in item.model_fields_set or not isinstance(
+            item.task, SepHistoryPayloadTask
+        ):
             continue
         for key in TASK_ACTOR_FIELDS:
-            _resolve_payload_actor_key(task, key, username_map)
+            _resolve_payload_actor_key(item.task, key, username_map)
     return payload
