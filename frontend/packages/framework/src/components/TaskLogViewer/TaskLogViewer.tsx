@@ -345,8 +345,9 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
   };
 
   const handleLogTailChange = (choice: LogTailLineChoice) => {
-    // Only a cap needs a fresh fetch. "All" keeps the live log tracked, so a
-    // stream still open after the run ends is reloaded if it ends cut short.
+    // Only a cap has to clear the live-log record to be fetched again. "All"
+    // keeps it tracked, so a stream still open after the run ends is reloaded
+    // if it ends cut short.
     if (logTailChoiceToParam(choice) !== undefined) {
       setLiveLog(null);
     }
