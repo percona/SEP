@@ -33,9 +33,12 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    GetJsonSchemaHandler,
     model_serializer,
     SerializerFunctionWrapHandler,
 )
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.pagination import PaginatedResponse
@@ -129,6 +132,21 @@ class _HistoryPassthroughModel(BaseModel):
             for key, value in dumped.items()
             if key in self.model_fields_set or key in extras
         }
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        """Keep OpenAPI on the validation shape despite the wrap serializer.
+
+        The serializer's ``dict`` return type collapses the serialization schema
+        to a bare object. Prefer the validation schema so the route documents
+        ``items``, typed rows, and non-mapping fallbacks.
+        """
+        json_schema = handler(core_schema)
+        if "properties" in json_schema or "$ref" in json_schema:
+            return json_schema
+        return cls.model_json_schema(mode="validation")
 
 
 class SepHistoryPayloadTask(_HistoryPassthroughModel):

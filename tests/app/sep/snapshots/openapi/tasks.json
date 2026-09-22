@@ -14,6 +14,67 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "SepHistoryPayload": {
+        "$defs": {
+          "SepHistoryPayloadRow": {
+            "additionalProperties": true,
+            "description": "Carry one history-page row's fields the actor rewrite may resolve.\n\nA non-mapping ``task`` stays on the ``Any`` arm so the row still validates\nand its own ``executed_by`` can resolve. Unknown upstream keys survive via\n``extra=\"allow\"``.\n\n:param executed_by: Actor that ran the task. Typed as ``Any`` so an\n    unexpected shape validates and is left alone by the rewrite.\n:param task: Nested task carrying actor fields when it is a mapping;\n    otherwise the raw upstream value.",
+            "properties": {
+              "executed_by": {
+                "title": "Executed By"
+              },
+              "task": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SepHistoryPayloadTask"
+                  },
+                  {}
+                ],
+                "title": "Task"
+              }
+            },
+            "title": "SepHistoryPayloadRow",
+            "type": "object"
+          },
+          "SepHistoryPayloadTask": {
+            "additionalProperties": true,
+            "description": "Carry the nested-task actor fields the history rewrite may resolve.\n\n:param created_by: Actor for the nested task's creator. Typed as ``Any`` so\n    an unexpected upstream shape validates and round-trips unchanged.\n:param last_updated_by: Actor for the nested task's last updater, on the\n    same permissive terms as ``created_by``.",
+            "properties": {
+              "created_by": {
+                "title": "Created By"
+              },
+              "last_updated_by": {
+                "title": "Last Updated By"
+              }
+            },
+            "title": "SepHistoryPayloadTask",
+            "type": "object"
+          }
+        },
+        "additionalProperties": true,
+        "description": "Represent the SEP task-history page envelope with passthrough extras.\n\nDeclare only ``items``: ``total``, ``offset``, ``limit``, and any other\nupstream keys round-trip through ``extra=\"allow\"`` without int coercion.\n``items`` accepts a list of typed rows or non-mapping fallbacks, or any\nnon-list upstream value so a bad page shape does not fail validation.\n\n:param items: The page's rows when upstream sent a list; otherwise the raw\n    upstream value (including absence, via unset omission on serialize).",
+        "properties": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/SepHistoryPayloadRow"
+                    },
+                    {}
+                  ]
+                },
+                "type": "array"
+              },
+              {}
+            ],
+            "title": "Items"
+          }
+        },
+        "title": "SepHistoryPayload",
+        "type": "object"
+      },
       "SepTaskResponse": {
         "description": "Represent a task definition as SEP serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
         "properties": {
@@ -4480,12 +4541,10 @@
         "type": "object"
       },
       "tasks__TaskDetailResponse": {
-        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API, with its\n    actor fields carrying display names rather than user identifiers.\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``), passed through\n    unvalidated so every upstream key survives. Carries whatever actor text\n    the constructing route supplied; the model itself imposes no shape.\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.",
+        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API, with its\n    actor fields carrying display names rather than user identifiers.\n:param execution_history: Paginated task history from the tasks API as a\n    permissive envelope (``items`` plus passthrough extras such as\n    ``total``/``offset``/``limit``). Actor fields on well-formed rows carry\n    display names after the constructing route's rewrite.\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.",
         "properties": {
           "execution_history": {
-            "additionalProperties": true,
-            "title": "Execution History",
-            "type": "object"
+            "$ref": "#/components/schemas/SepHistoryPayload"
           },
           "executor_hosts": {
             "items": {
