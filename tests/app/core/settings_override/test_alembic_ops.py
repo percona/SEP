@@ -49,10 +49,17 @@ from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.config import BaseYamlSettings, Settings
-from app.core.encryption import decrypt, encrypt, is_encrypted
+from app.core.encryption import (
+    decrypt,
+    encrypt,
+    is_encrypted,
+    mark_ciphertext,
+    marked_ciphertext,
+)
 from app.core.settings_override.alembic_ops import (
     downgrade_decrypt_credential_url_override_values,
     downgrade_decrypt_secret_override_values,
+    downgrade_unmark_secret_override_values,
     upgrade_encrypt_credential_url_override_values,
     upgrade_encrypt_secret_override_values,
 )
@@ -84,6 +91,7 @@ from tests.app.core.settings_override.conftest import (
     SNIPPETS_SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
+from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 
 _SEP_TRACK_CLASSES = (Settings, AlertSettings, SEPSettings)
 _TASKS_TRACK_CLASSES = (TasksSettings,)
@@ -238,15 +246,15 @@ class TestUpgradeEncryptSecretOverrideValues:
 
         stored = _stored(engine)
         pmm = stored[(SETTINGS_TOKEN, "PMM")]
-        assert decrypt(pmm["api_key"]) == PMM_API_KEY
+        assert stored_plaintext(pmm["api_key"]) == PMM_API_KEY
         assert pmm["endpoint"] == "https://pmm.example.com"
-        assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
+        assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
         provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
-        assert decrypt(provider["routing_key"]) == ROUTING_KEY
+        assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
         assert provider["PROVIDER"] == "pagerduty"
         inputs = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
         assert {
-            name: decrypt(value) for name, value in inputs["secrets"].items()
+            name: stored_plaintext(value) for name, value in inputs["secrets"].items()
         } == _DELIVERY_SECRETS
         assert inputs["endpoint"] == "https://intake.example.com/"
 
@@ -380,10 +388,12 @@ def test_encrypted_rows_are_not_plaintext(engine: Engine) -> None:
     _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
 
     stored = _stored(engine)
-    assert is_encrypted(stored[(SETTINGS_TOKEN, "PMM")]["api_key"])
-    assert is_encrypted(stored[(SETTINGS_TOKEN, "PMM__api_key")])
-    assert is_encrypted(stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]["routing_key"])
-    assert is_encrypted(
+    assert is_stored_ciphertext(stored[(SETTINGS_TOKEN, "PMM")]["api_key"])
+    assert is_stored_ciphertext(stored[(SETTINGS_TOKEN, "PMM__api_key")])
+    assert is_stored_ciphertext(
+        stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]["routing_key"]
+    )
+    assert is_stored_ciphertext(
         stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]["secrets"][
             "sn_api_key"
         ]
@@ -649,6 +659,67 @@ def test_migration_settings_classes_cover_every_secret_bearing_class() -> None:
     assert needs_migrating <= covered
 
 
+def test_unmark_migrations_cover_every_secret_bearing_class() -> None:
+    """Assert the rollback revisions' class lists reach every class that can hold a secret.
+
+    The omission this catches is the worst of the hand-written families. A
+    class missing from an *encrypt* revision's tuple leaves its rows in the
+    clear, which the encrypt-coverage checks catch. A class missing from the
+    tuples here is reached by the write path — so its rows are encrypted *and
+    marked* — and then skipped by the rollback, leaving a marked value for a
+    release predating the envelope. That release's structural check answers
+    ``False`` for a marked value, so it reads the ciphertext as the plaintext
+    credential and presents it to a remote.
+
+    Before the envelope the same omission was benign: a class missing from a
+    decrypt-downgrade tuple merely stayed encrypted, and the older release
+    decrypted it correctly. Marking is what turned it into a disclosure, which
+    is why the rollback revisions need a coverage check of their own rather
+    than inheriting confidence from the encrypt-coverage ones.
+    """
+    revisions = sorted(
+        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
+    )
+    assert len(revisions) == len(_TRACKS), "one rollback revision per track"
+    covered = {
+        settings_cls
+        for revision in revisions
+        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
+    }
+    needs_migrating = {
+        settings_cls for settings_cls, _key in _secret_bearing_overridable_fields()
+    }
+
+    assert needs_migrating, "the check is vacuous if no class can hold a secret"
+    assert needs_migrating <= covered
+
+
+def test_unmark_migrations_cover_every_encrypting_class() -> None:
+    """Assert the rollback reaches every class the write path can mark.
+
+    Stronger than the secret-bearing check above and deliberately so: the marker
+    is applied by :func:`encrypt_secret_leaves`, which covers credential-URL
+    leaves as well as ``SecretStr`` ones. A class whose only credential is an
+    endpoint password is marked by the write path and must therefore be
+    unmarked by the rollback, even though it holds no secret-typed field.
+    """
+    revisions = sorted(
+        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
+    )
+    covered = {
+        settings_cls
+        for revision in revisions
+        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
+    }
+    needs_migrating = {
+        settings_cls
+        for settings_cls, _key in _credential_url_bearing_overridable_fields()
+    }
+
+    assert needs_migrating, "the check is vacuous if no class can hold a credential URL"
+    assert needs_migrating <= covered
+
+
 def test_secret_bearing_overridable_fields_are_pinned() -> None:
     """Assert no overridable field turned secret-typed without its own data migration.
 
@@ -801,7 +872,7 @@ class TestCredentialUrlOverrideValues:
 
         stored = _stored(engine)[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
         parsed = urlparse(stored)
-        assert is_encrypted(parsed.password)
+        assert is_stored_ciphertext(parsed.password)
         assert parsed.hostname == _CREDENTIAL_HOST
         assert parsed.port == _CREDENTIAL_PORT
         assert parsed.path == _CREDENTIAL_PATH
@@ -878,7 +949,7 @@ class TestCredentialUrlOverrideValues:
         )
 
         row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
-        assert is_encrypted(urlparse(row["endpoint"]).password)
+        assert is_stored_ciphertext(urlparse(row["endpoint"]).password)
         assert row["api_key"] == PMM_API_KEY
 
     def test_a_second_upgrade_run_rewrites_nothing(self, engine: Engine) -> None:
@@ -929,8 +1000,8 @@ class TestCredentialUrlOverrideValues:
         )
 
         stored = _stored(engine)[(TASKS_SETTINGS_TOKEN, "NOMAD__endpoint")]
-        assert is_encrypted(urlparse(stored).password)
-        assert decrypt(urlparse(stored).password) == "hunter2"
+        assert is_stored_ciphertext(urlparse(stored).password)
+        assert stored_plaintext(urlparse(stored).password) == "hunter2"
 
     def test_missing_table_is_a_no_op(self) -> None:
         """Return without touching anything when another track already dropped the table."""
@@ -1114,8 +1185,8 @@ def _decrypted_leaves(value: Any) -> Any:
         return {name: _decrypted_leaves(item) for name, item in value.items()}
     if isinstance(value, list):
         return [_decrypted_leaves(item) for item in value]
-    if isinstance(value, str) and is_encrypted(value):
-        return decrypt(value)
+    if isinstance(value, str) and is_stored_ciphertext(value):
+        return stored_plaintext(value)
     return value
 
 
@@ -1223,10 +1294,10 @@ class TestFrozenSecretRevisionOutcomes:
 
         stored = _stored(engine)[(token, key)]
         if kind == _SECRET_LEAF:
-            assert decrypt(stored) == seeded
+            assert stored_plaintext(stored) == seeded
         else:
             parsed = urlparse(stored)
-            assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+            assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
             assert parsed.port == _CREDENTIAL_PORT
 
@@ -1240,7 +1311,7 @@ class TestFrozenSecretRevisionOutcomes:
 
         These keys hold a mapping or a list whose members carry the credential,
         so the stored value is not itself a leaf and the scalar table's
-        ``decrypt(stored) == seeded`` shape cannot express them.
+        ``stored_plaintext(stored) == seeded`` shape cannot express them.
         """
         _seed(engine, [(token, key, seeded)])
 
@@ -1266,15 +1337,15 @@ class TestFrozenSecretRevisionOutcomes:
 
         stored = _stored(engine)
         pmm = stored[(SETTINGS_TOKEN, "PMM")]
-        assert decrypt(pmm["api_key"]) == PMM_API_KEY
+        assert stored_plaintext(pmm["api_key"]) == PMM_API_KEY
         assert pmm["endpoint"] == PMM_ENDPOINT
-        assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
+        assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
         provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
-        assert decrypt(provider["routing_key"]) == ROUTING_KEY
+        assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
         assert provider["PROVIDER"] == "pagerduty"
         inputs = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
         assert {
-            name: decrypt(value) for name, value in inputs["secrets"].items()
+            name: stored_plaintext(value) for name, value in inputs["secrets"].items()
         } == _DELIVERY_SECRETS
         assert inputs["endpoint"] == "https://intake.example.com/"
 
@@ -1317,7 +1388,7 @@ class TestFrozenSecretRevisionOutcomes:
         )
 
         parsed = urlparse(_stored(engine)[(SETTINGS_TOKEN, "PMM__endpoint")])
-        assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+        assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
         assert parsed.hostname == _CREDENTIAL_HOST
         assert parsed.port == _CREDENTIAL_PORT
 
@@ -1346,10 +1417,10 @@ class TestFrozenSecretRevisionOutcomes:
         )
 
         stored = _stored(engine)
-        assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
+        assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
         secrets = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS__secrets")]
         assert {
-            name: decrypt(value) for name, value in secrets.items()
+            name: stored_plaintext(value) for name, value in secrets.items()
         } == _DELIVERY_SECRETS
 
     def test_the_tasks_track_encrypts_its_nomad_leaves(self, engine: Engine) -> None:
@@ -1369,9 +1440,12 @@ class TestFrozenSecretRevisionOutcomes:
         )
 
         stored = _stored(engine)
-        assert decrypt(stored[(TASKS_SETTINGS_TOKEN, "NOMAD__api_key")]) == PMM_API_KEY
+        assert (
+            stored_plaintext(stored[(TASKS_SETTINGS_TOKEN, "NOMAD__api_key")])
+            == PMM_API_KEY
+        )
         parsed = urlparse(stored[(TASKS_SETTINGS_TOKEN, "NOMAD__endpoint")])
-        assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+        assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
 
     def test_a_class_with_no_covered_keys_still_resolves_its_rows(
         self, engine: Engine, caplog: pytest.LogCaptureFixture
@@ -1445,7 +1519,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         stored = _stored(engine)[(token, key)]
         if kind == _CREDENTIAL_URL_LEAF:
             parsed = urlparse(stored)
-            assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+            assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
         else:
             assert stored == seeded
@@ -1465,12 +1539,12 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         stored = _stored(engine)
         for key in ("INVENTORY_ENDPOINT", "TASKS_ENDPOINT"):
             parsed = urlparse(stored[(SEP_SETTINGS_TOKEN, key)])
-            assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+            assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
             assert parsed.port == _CREDENTIAL_PORT
             assert parsed.path == _CREDENTIAL_PATH
         nested = urlparse(stored[(SETTINGS_TOKEN, "PMM__endpoint")])
-        assert decrypt(nested.password) == _CREDENTIAL_PASSWORD
+        assert stored_plaintext(nested.password) == _CREDENTIAL_PASSWORD
 
     def test_leaves_a_secret_leaf_byte_identical(self, engine: Engine) -> None:
         """Leave a ``SecretStr`` leaf alone: it belongs to the earlier revision.
@@ -1496,7 +1570,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         )
 
         row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
-        assert is_encrypted(urlparse(row["endpoint"]).password)
+        assert is_stored_ciphertext(urlparse(row["endpoint"]).password)
         assert row["api_key"] == PMM_API_KEY
 
     def test_round_trips_back_to_the_seeded_plaintext(self, engine: Engine) -> None:
@@ -1521,7 +1595,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         )
 
         parsed = urlparse(_stored(engine)[(TASKS_SETTINGS_TOKEN, "NOMAD__endpoint")])
-        assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
+        assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
 
 
 class _DriftedPMM(BaseModel):
@@ -1594,7 +1668,10 @@ def test_a_frozen_revision_still_covers_a_renamed_legacy_leaf(engine: Engine) ->
         _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
     )
 
-    assert decrypt(_stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
+    assert (
+        stored_plaintext(_stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"])
+        == PMM_API_KEY
+    )
 
 
 def test_frozen_replicas_never_enter_live_subclass_discovery() -> None:
@@ -1627,3 +1704,142 @@ def test_frozen_replicas_never_enter_live_subclass_discovery() -> None:
             f"{replica.__name__} inherits a live model and would join its subclass walk"
         )
     assert not replicas.intersection(reached)
+
+
+class TestDowngradeUnmarkSecretOverrideValues:
+    """Cover the rollback op the envelope revisions' ``downgrade()`` calls."""
+
+    def test_unmarks_both_leaf_kinds_and_keeps_them_encrypted(
+        self, engine: Engine
+    ) -> None:
+        """Strip the marker from a secret leaf and a URL password, decrypting neither.
+
+        What the older release needs to find: a bare Fernet token its own
+        ``is_encrypted`` path reads. The rollback removes the envelope, not the
+        encryption.
+        """
+        _seed(engine, _SECRET_ROWS + _CREDENTIAL_URL_ROWS)
+        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        seeded = _stored(engine)
+        assert (
+            marked_ciphertext(seeded[(SETTINGS_TOKEN, "PMM")]["api_key"]) is not None
+        ), (
+            "the upgrade must mark, or the unmark below is a no-op and this test "
+            "passes even with marking removed from the write path"
+        )
+
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        stored = _stored(engine)
+        api_key = stored[(SETTINGS_TOKEN, "PMM")]["api_key"]
+        password = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]).password
+        assert marked_ciphertext(api_key) is None
+        assert is_encrypted(api_key)
+        assert decrypt(api_key) == PMM_API_KEY
+        assert password is not None
+        assert marked_ciphertext(password) is None
+        assert is_encrypted(password)
+        assert decrypt(password) == _CREDENTIAL_PASSWORD
+
+    def test_needs_no_encryption_key(self, engine: Engine) -> None:
+        """Strip the marker off a row minted under a key this process lacks.
+
+        The property that separates this rollback from
+        ``downgrade_decrypt_secret_override_values``: a decrypt-based downgrade
+        skips exactly the foreign-key rows the older release would otherwise
+        have kept reading.
+        """
+        token = _foreign_token()
+        _seed(
+            engine,
+            [(SETTINGS_TOKEN, "PMM", {"endpoint": PMM_ENDPOINT, "api_key": token})],
+        )
+
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == token
+
+    def test_unmarks_a_foreign_key_token_behind_the_marker(
+        self, engine: Engine
+    ) -> None:
+        """Strip the marker off undecryptable ciphertext instead of skipping the row."""
+        token = _foreign_token()
+        _seed(
+            engine,
+            [
+                (
+                    SETTINGS_TOKEN,
+                    "PMM",
+                    {"endpoint": PMM_ENDPOINT, "api_key": mark_ciphertext(token)},
+                )
+            ],
+        )
+
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == token
+
+    def test_leaves_legacy_unmarked_rows_byte_identical(self, engine: Engine) -> None:
+        """Leave a row written before the envelope shipped byte-identical."""
+        _seed(
+            engine,
+            [
+                (
+                    SETTINGS_TOKEN,
+                    "PMM",
+                    {"endpoint": PMM_ENDPOINT, "api_key": encrypt(PMM_API_KEY)},
+                )
+            ],
+        )
+        before = _stored(engine)
+
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        assert _stored(engine) == before
+
+    def test_is_idempotent(self, engine: Engine) -> None:
+        """Leave a second run with nothing to rewrite."""
+        _seed(engine, _SECRET_ROWS)
+        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        once = _stored(engine)
+
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        assert _stored(engine) == once
+
+    def test_leaves_rows_this_track_cannot_resolve_alone(self, engine: Engine) -> None:
+        """Skip another track's rows, so two tracks sharing one database never collide."""
+        _seed(engine, _SECRET_ROWS)
+        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        before = _stored(engine)
+
+        _run(engine, downgrade_unmark_secret_override_values, _TASKS_TRACK_CLASSES)
+
+        assert _stored(engine) == before
+
+    def test_missing_table_is_a_no_op(self) -> None:
+        """Return without touching anything when another track already dropped the table."""
+        engine = create_engine("sqlite://", json_serializer=json_serializer)
+        try:
+            _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+            assert not inspect(engine).has_table("settingoverride")
+        finally:
+            engine.dispose()
+
+    def test_rows_stay_readable_after_a_rollback_and_roll_forward(
+        self, engine: Engine
+    ) -> None:
+        """Keep unmarked rows decryptable, since the envelope's ``upgrade()`` is inert.
+
+        Nothing re-marks them; they read through the structural fallback and are
+        marked again only when next written.
+        """
+        _seed(engine, _SECRET_ROWS)
+        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+
+        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+
+        assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == PMM_API_KEY

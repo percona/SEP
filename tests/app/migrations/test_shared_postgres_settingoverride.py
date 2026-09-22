@@ -58,7 +58,7 @@ from app.core.db.utils import (
     check_constraint_name,
     column_exists,
 )
-from app.core.encryption import decrypt
+from app.core.encryption import marked_ciphertext
 from app.core.settings_override.constants import (
     SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
     SETTINGOVERRIDE_UPDATED_BY_COLUMN,
@@ -79,6 +79,7 @@ from tests.app.core.settings_override.conftest import (
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
+from tests.app.encryption_fixtures import stored_plaintext
 
 _SETTING_CLASS_VARCHAR_LENGTH = 255
 #: The ``SYNC_REFRESH_TIME`` value seeded before a downgrade, read back through
@@ -559,16 +560,18 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
     command.upgrade(sep_cfg, "heads")
 
     stored = _stored_override_values(sync_url)
-    assert decrypt(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
+    assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
+    assert marked_ciphertext(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) is not None
     pmm_endpoint = urlparse(stored[(SETTINGS_TOKEN, "PMM")]["endpoint"])
-    assert decrypt(pmm_endpoint.password) == "pmm-secret"
+    assert stored_plaintext(pmm_endpoint.password) == "pmm-secret"
+    assert marked_ciphertext(pmm_endpoint.password) is not None
     assert pmm_endpoint.hostname == "pmm.example.com"
-    assert decrypt(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
+    assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
     provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
-    assert decrypt(provider["routing_key"]) == ROUTING_KEY
+    assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
     assert provider["PROVIDER"] == "pagerduty"
     endpoint = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
-    assert decrypt(endpoint.password) == _CREDENTIAL_PASSWORD
+    assert stored_plaintext(endpoint.password) == _CREDENTIAL_PASSWORD
     assert endpoint.username == "inv-user"
     assert endpoint.hostname == "inventory.internal"
     assert endpoint.path == "/api"
