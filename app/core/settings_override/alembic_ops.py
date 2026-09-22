@@ -49,9 +49,8 @@ from app.core.settings_override.secret_storage import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from pydantic import BaseModel
     from sqlalchemy.engine import Connection
-
-    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +175,7 @@ def downgrade_drop_updated_by() -> None:
 
 
 def upgrade_encrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted secret leaf stored in ``settingoverride``.
 
@@ -187,7 +186,8 @@ def upgrade_encrypt_secret_override_values(
     rows. A leaf encrypted before the envelope shipped carries no marker and is
     short-circuited by the structural check instead.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -196,7 +196,7 @@ def upgrade_encrypt_secret_override_values(
 
 
 def downgrade_decrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted secret leaf to the plaintext the previous code reads.
 
@@ -205,7 +205,8 @@ def downgrade_decrypt_secret_override_values(
     downgrade, and refusing to complete would block the rollback the operator is
     performing.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -214,7 +215,7 @@ def downgrade_decrypt_secret_override_values(
 
 
 def upgrade_encrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted credential-URL password in ``settingoverride``.
 
@@ -227,7 +228,8 @@ def upgrade_encrypt_credential_url_override_values(
     Only the userinfo password is rewritten, so the endpoint an operator reads
     out of a raw dump stays legible.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -236,7 +238,7 @@ def upgrade_encrypt_credential_url_override_values(
 
 
 def downgrade_decrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted credential-URL password to plaintext.
 
@@ -247,7 +249,8 @@ def downgrade_decrypt_credential_url_override_values(
     would stay in the clear while the release being rolled back to still reads
     them as ciphertext.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -256,7 +259,7 @@ def downgrade_decrypt_credential_url_override_values(
 
 
 def downgrade_unmark_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Strip the envelope marker from every stored secret leaf this track owns.
 
@@ -300,15 +303,16 @@ def _settingoverride_value_table() -> sa.TableClause:
 
 def _rewrite_secret_leaves(
     bind: Connection,
-    settings_classes: Iterable[type[BaseYamlSettings]],
-    rewrite: Callable[[type[BaseYamlSettings], str, Any], Any],
+    settings_classes: Iterable[type[BaseModel]],
+    rewrite: Callable[[type[BaseModel], str, Any], Any],
 ) -> None:
     """Apply ``rewrite`` to every resolvable row's value, updating only what changed.
 
     :param bind: The migration's bound connection.
-    :param settings_classes: The settings classes this track can resolve.
-    :param rewrite: The per-row transformation, taking the owning settings class,
-        the row key and the stored value.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
+    :param rewrite: The per-row transformation, taking the coverage declaration
+        owning the row, the row key and the stored value.
     """
     classes_by_token = {
         setting_class_token(settings_cls): settings_cls
