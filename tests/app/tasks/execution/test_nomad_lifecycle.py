@@ -287,7 +287,9 @@ async def test_the_config_fingerprint_keeps_the_endpoint_password() -> None:
     """Fingerprint the real credential, which the JSON dump otherwise masks."""
     _override_nomad(_NOMAD_WITH_CREDS)
     async with NomadLifecycle(FastAPI()) as holder:
-        assert "nomad-secret" in holder._current_config["base_url"]
+        fingerprint = holder._current_config
+        assert fingerprint is not None
+        assert "nomad-secret" in fingerprint["base_url"]
         assert holder.current._endpoint_credential_header is not None
 
 
