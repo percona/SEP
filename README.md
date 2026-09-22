@@ -359,7 +359,7 @@
 | app/sep/migrations/versions/2026\_09\_04\_1852-c9880f0ac1bd\_add\_settingoverride\_updated\_by.py                            |        9 |        0 |        0 |        0 |    100% |           |
 | app/sep/migrations/versions/2026\_09\_14\_2243-a833d33359d7\_encrypt\_credential\_url\_setting\_overrides.py                 |       14 |        0 |        0 |        0 |    100% |           |
 | app/sep/models.py                                                                                                            |       75 |        1 |        2 |        1 |     97% |       254 |
-| app/sep/periodic\_tasks.py                                                                                                   |       95 |        0 |       38 |        0 |    100% |           |
+| app/sep/periodic\_tasks.py                                                                                                   |      111 |        0 |       42 |        0 |    100% |           |
 | app/sep/routes/artifacts.py                                                                                                  |       38 |        1 |       14 |        1 |     96% |        87 |
 | app/sep/routes/download\_files.py                                                                                            |       68 |        0 |       14 |        2 |     98% |109-\>exit, 173-\>179 |
 | app/sep/routes/execution\_events.py                                                                                          |       12 |        0 |        2 |        0 |    100% |           |
@@ -406,7 +406,7 @@
 | app/tasks/connectivity/payload.py                                                                                            |       70 |        1 |        8 |        1 |     97% |       170 |
 | app/tasks/connectivity/routes.py                                                                                             |       16 |        0 |        2 |        0 |    100% |           |
 | app/tasks/connectivity/service.py                                                                                            |      146 |        2 |       54 |        6 |     96% |173, 432-\>431, 452-\>451, 458-\>457, 473, 485-\>484 |
-| app/tasks/crud.py                                                                                                            |      302 |        5 |       80 |        6 |     97% |191, 600-\>602, 603, 605, 730, 920 |
+| app/tasks/crud.py                                                                                                            |      303 |        5 |       80 |        6 |     97% |199, 608-\>610, 611, 613, 738, 928 |
 | app/tasks/db/engine.py                                                                                                       |        7 |        0 |        0 |        0 |    100% |           |
 | app/tasks/db/seed.py                                                                                                         |      149 |       11 |       38 |        6 |     89% |828-\>841, 842-\>856, 1104-1125, 1136, 1148, 1181 |
 | app/tasks/deps.py                                                                                                            |      110 |        3 |       30 |        0 |     98% |     64-66 |
@@ -488,7 +488,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30662** | **1668** | **7512** |  **626** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30679** | **1668** | **7516** |  **626** | **93%** |           |
 
 
 ## Setup coverage badge
