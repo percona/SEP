@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Shared helpers for the snippet test suites.
+"""Shared helpers for seeding snippet frontmatter in the tests.
 
 Any suite that mutates a persisted snippet's metadata directly needs the same
 two-step seed: write the metadata to the database, because the routes reload the row

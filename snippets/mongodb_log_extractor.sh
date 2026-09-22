@@ -168,7 +168,7 @@ if [[ ! -f $MONGODB_LOG ]]; then
 fi
 
 if [[ ! -r $MONGODB_LOG ]]; then
-    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG' (check --log-file)." >&2
+    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG'. Pass --log-file." >&2
     exit 1
 fi
 

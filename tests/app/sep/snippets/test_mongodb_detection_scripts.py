@@ -32,6 +32,7 @@ covered only by the not-found branch, which stands down on a host that has one.
 """
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -46,6 +47,9 @@ FAKE_MONGOD_PID = "4242"
 GNU_GETOPT_TEST_STATUS = 4
 DEFAULT_MONGODB_LOG = Path("/var/log/mongodb/mongod.log")
 FIRST_WELL_KNOWN_CONFIG = "/etc/mongod.conf"
+FIRST_WELL_KNOWN_CONFIG_RE = re.compile(
+    rf"(?<=[\"'\s]){re.escape(FIRST_WELL_KNOWN_CONFIG)}(?![\w./])"
+)
 WELL_KNOWN_CONFIG_PATHS = (
     Path(FIRST_WELL_KNOWN_CONFIG),
     Path("/etc/mongodb.conf"),
@@ -203,9 +207,12 @@ def run_snippet_with_staged_config(
 
     The config-file step of the detection chain reads absolute paths under ``/etc``
     that a test cannot create, so exercising that step means running a copy whose
-    first candidate names a staged file instead. Only that one string changes, and
-    the substitution is asserted, so a script that stops consulting the well-known
-    location fails this test rather than silently covering nothing.
+    first candidate names a staged file instead. Only whole-path occurrences of that
+    candidate are rewritten, so the longer candidates ending in the same characters —
+    ``/usr/local/etc/mongod.conf`` and ``/opt/homebrew/etc/mongod.conf`` — keep
+    pointing where they did. A substitution is asserted, so a script that stops
+    consulting the well-known location fails this test rather than silently covering
+    nothing.
 
     :param name: The script filename under the snippets directory.
     :param args: The command-line arguments for the script.
@@ -215,13 +222,10 @@ def run_snippet_with_staged_config(
     :return: The completed process.
     """
     source = (snippets_settings.SNIPPETS_DIR / name).read_text(encoding="utf-8")
-    assert FIRST_WELL_KNOWN_CONFIG in source, (
-        f"{name} no longer reads {FIRST_WELL_KNOWN_CONFIG}"
-    )
+    staged, substitutions = FIRST_WELL_KNOWN_CONFIG_RE.subn(str(conf), source)
+    assert substitutions, f"{name} no longer reads {FIRST_WELL_KNOWN_CONFIG}"
     copy = cwd / f"staged-{name}"
-    copy.write_text(
-        source.replace(FIRST_WELL_KNOWN_CONFIG, str(conf)), encoding="utf-8"
-    )
+    copy.write_text(staged, encoding="utf-8")
     return _run_bash(copy, args, env, cwd)
 
 

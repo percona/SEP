@@ -33,7 +33,9 @@ inside the substitution, so only the substitution's status is swallowed and the
 consumer still tests the value it received. Any construct bash itself treats as
 guarded also counts: a ``||`` branch ending the substitution, an ``||`` or ``&&``
 list continuing the statement, or the assignment sitting in an ``if``, ``elif``,
-``while`` or ``until`` condition.
+``while`` or ``until`` condition. The guard has to cover the *last* statement the
+body runs, because that statement's status is the substitution's: a body ending in
+a bare command is unguarded however the statements above it are written.
 
 A declaration builtin is the one shape that cannot abort. ``local x=$(a | b)``,
 and the same with ``declare``, ``readonly``, ``export`` or ``typeset``, exits with
@@ -65,7 +67,8 @@ from app.sep.snippets.config import snippets_settings
 from tests.app.sep.snippets.snippet_corpus import SHELL_SNIPPET_FILENAMES
 
 ERREXIT_RE = re.compile(
-    r"^[ \t]*set[ \t]+(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o[ \t]+errexit\b)", re.MULTILINE
+    r"^[ \t]*set[ \t]+(?:\S+[ \t]+)*?(?:-[a-zA-Z]*e[a-zA-Z]*\b|-o[ \t]+errexit\b)",
+    re.MULTILINE,
 )
 PIPEFAIL_RE = re.compile(
     r"^[ \t]*set[ \t]+-\S*(?:[ \t]+\S+)*?[ \t]*\bpipefail\b", re.MULTILINE
@@ -78,6 +81,49 @@ ASSIGNMENT_RE = re.compile(
     re.MULTILINE,
 )
 SINGLE_PIPE_RE = re.compile(r"(?<!\|)\|(?!\|)")
+CONTINUING_OPERATORS = ("|", "&&")
+
+
+def _continues_the_statement(body: str, index: int) -> bool:
+    """Return whether the separator at ``index`` is a line break inside a statement.
+
+    A newline that follows a pipe or a list operator carries the statement on to the
+    next line rather than ending it.
+
+    :param body: The bare substitution body.
+    :param index: The index of the ``;`` or newline to classify.
+    :return: ``True`` when the statement continues past it.
+    """
+    return body[index] == "\n" and body[:index].rstrip(" \t").endswith(
+        CONTINUING_OPERATORS
+    )
+
+
+def last_statement(body: str) -> str:
+    """Return the last statement a substitution body runs.
+
+    The substitution's status is that statement's, so a guard on an earlier one does
+    not cover the assignment: a body that guards ``a | b`` and then runs a bare
+    ``c`` on the next line still exits on ``c``.
+
+    :param body: The bare substitution body.
+    :return: The last non-blank statement, or an empty string for a blank body.
+    """
+    depth = 0
+    start = 0
+    statements: list[str] = []
+    for index, char in enumerate(body):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif depth == 0 and char in ";\n" and not _continues_the_statement(body, index):
+            statements.append(body[start:index])
+            start = index + 1
+    statements.append(body[start:])
+    return next(
+        (statement for statement in reversed(statements) if statement.strip()), ""
+    )
 
 
 @dataclass(frozen=True)
@@ -103,6 +149,9 @@ class PipedAssignment:
     def is_guarded(self) -> bool:
         """Return whether bash would let this assignment fail without exiting.
 
+        A body whose last statement runs no pipeline is unguarded: either its status
+        reaches ``set -e`` directly, or the shape is one this check does not model.
+
         :return: ``True`` when the pipeline's status cannot reach ``set -e``.
         """
         if self.in_condition:
@@ -110,8 +159,11 @@ class PipedAssignment:
         tail = self.tail.lstrip().lstrip("\"'").lstrip()
         if tail.startswith(("||", "&&")):
             return True
-        last_pipe = max(match.end() for match in SINGLE_PIPE_RE.finditer(self.body))
-        return "||" in self.body[last_pipe:]
+        statement = last_statement(self.body)
+        pipes = [match.end() for match in SINGLE_PIPE_RE.finditer(statement)]
+        if not pipes:
+            return False
+        return "||" in statement[max(pipes) :]
 
 
 @dataclass(frozen=True)
@@ -366,6 +418,9 @@ class TestDeclaresErrexitAndPipefail:
             "set -e\nset -o pipefail",
             "set -o errexit\nset -o pipefail",
             "set -xe\nset -uo pipefail",
+            "set -o pipefail -e",
+            "set -o pipefail -eu",
+            "set -o pipefail; set -e",
         ],
     )
     def test_both_options_are_recognised(self, options):
@@ -550,6 +605,30 @@ class TestGuards:
     def test_pipeline_still_last_is_flagged(self, line):
         """Flag a body whose final status is still a pipeline's."""
         assert _offending_lines(_script(line + "\n")) == [3], line
+
+    def test_guard_on_an_earlier_statement_does_not_cover_the_body(self):
+        """Flag a body whose guarded pipeline is followed by another statement."""
+        text = _script(
+            """
+            X=$(
+                true | false || true
+                false
+            )
+            """
+        )
+        assert _offending_lines(text) == [4]
+
+    def test_a_guard_on_the_last_of_several_statements_counts(self):
+        """Accept a body whose closing statement carries the guard."""
+        text = _script(
+            """
+            X=$(
+                echo start
+                true | false || true
+            )
+            """
+        )
+        assert _offending_lines(text) == []
 
 
 class TestExemptionMarker:
