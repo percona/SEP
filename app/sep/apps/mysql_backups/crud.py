@@ -18,8 +18,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
-from sqlalchemy import case, column, func, Integer, or_, select, String, Values
-from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
+from sqlalchemy import case, func, Integer, literal, or_, select, String, union_all
+from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument, Subquery
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql.expression import Select as SQLModelSelect
@@ -106,6 +106,30 @@ def _matches_preferred_source(
         ColumnExpressionArgument[bool],
         _preferred_backup_source_expr() == backup_source,
     )
+
+
+def _catalog_transport_lookup_subquery(
+    pending: Sequence[CatalogTransportLookupKey],
+) -> Subquery:
+    """Build a portable subquery of ``(service_id, service_name, backup_source)`` rows.
+
+    Uses ``UNION ALL`` of labeled literals rather than ``VALUES (...) AS alias
+    (cols)``, which PostgreSQL accepts but SQLite rejects with a syntax error
+    near the column-list parentheses.
+
+    :param pending: Non-empty lookup keys to materialise as rows.
+    :return: A subquery selectable with ``lk_service_id``, ``lk_service_name``,
+        and ``lk_backup_source`` columns.
+    """
+    rows = [
+        select(
+            literal(service_id, Integer).label("lk_service_id"),
+            literal(service_name, String).label("lk_service_name"),
+            literal(backup_source, String).label("lk_backup_source"),
+        )
+        for service_id, service_name, backup_source in pending
+    ]
+    return union_all(*rows).subquery("catalog_transport_lookups")
 
 
 class MysqlBackupRunManager(BaseSQLModelManager):
@@ -317,16 +341,7 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         if not pending:
             return results
 
-        lookup_values = (
-            Values(
-                column("lk_service_id", Integer),
-                column("lk_service_name", String),
-                column("lk_backup_source", String),
-                name="catalog_transport_lookups",
-            )
-            .data(list(pending))
-            .alias("catalog_transport_lookups")
-        )
+        lookup_values = _catalog_transport_lookup_subquery(pending)
         # Mirror :meth:`_service_predicate` against each lookup row: a keyed id
         # matches that id or a name-only legacy row; a null id matches by name.
         service_match = or_(
