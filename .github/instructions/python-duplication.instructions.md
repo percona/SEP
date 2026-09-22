@@ -43,6 +43,7 @@ Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL
 | `.strip().lower()` `field_validator` | `Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True)]` or `LowercaseStr` |
 | `field_validator` doing a string-*shape* check (split on a separator, reject empty halves, reject stray whitespace) | `Annotated[str, StringConstraints(pattern=...)]` field type |
 | `.nulls_last()` on an `ORDER BY` term | `app/core/db/utils.py::NullsLastOrdering(column, *, descending=False)` — one shared cache-keyed construct; pass the bare column plus `descending=`, never a pre-`desc()`-ed expression (which would render `<expr> DESC ASC NULLS LAST`) |
+| A version prefix or envelope hand-rolled around ciphertext (`f"v1:{encrypt(s)}"`, `s.startswith("enc:")`) | `app/core/encryption.py::mark_ciphertext()` / `marked_ciphertext()` — the marker's character set is load-bearing (outside base64 so `is_encrypted` cannot also claim the value, RFC 3986 unreserved so it survives a URL userinfo segment), and the accessor pairs the prefix with a payload check so a plaintext that merely starts with it is not misread as ciphertext |
 
 **Rule of thumb.** If a new decorator or class has 15+ lines of state management (timestamps, eviction, key hashing, TTL math), ask "why isn't this `@alru_cache` or `@ttl_cache`?" Flag as **Important**.
 

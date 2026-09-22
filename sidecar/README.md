@@ -24,7 +24,7 @@ the app packages the settings profile activates — see [App set](#app-set).
 | `clear_sentinels.sh` | Never run by `supervisord`; an operator runs it before a `supervisorctl` re-run of a schema step, to invalidate that step's sentinel. See [Re-running a schema step inside a running container](#re-running-a-schema-step-inside-a-running-container). |
 | `healthcheck.sh` | Aggregate probe wired as the image `HEALTHCHECK`. |
 | `settings-env.sh` | Sourced by `entrypoint.sh`; expands the per-deployment inputs into the canonical `__`-nested settings variables, leaving unexported any name a file under `SECRETS_DIR` already supplies. |
-| `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values. |
+| `encryption_key.py` | Run by `entrypoint.sh` before `supervisord`; resolves `ENCRYPTION_KEY`, minting and persisting one only where no service database holds encrypted values — under either the `sep.enc.v1.` envelope or the bare-token shape predating it. |
 | `grafana_service_account.py` | Run by `entrypoint.sh` before `supervisord`; resolves SEP's Grafana service-account token, minting one when no source supplies it. |
 | `runtime.py` | Imported by `encryption_key.py` and `grafana_service_account.py`; resolves `SEP_STATE_DIR`, the retry interval and the positive-timeout inputs, and writes their diagnostics. Copied under `sidecar/` rather than beside the two scripts, so their `from sidecar.runtime import ...` resolves when `entrypoint.sh` runs each one standalone. |
 | `settings.yaml` | The PMM-embedded settings profile, baked at `/home/sep/app/settings.yaml`. |
@@ -62,7 +62,9 @@ name. What a file supplies is a *canonical destination*:
 | `ENCRYPTION_KEY` | **Yes.** A file suppresses the mint below it and is never exported, so each process reads it from the file. Mount it only carrying a value: the deferral is on the file *existing*, so a blank one pins the key empty and the container refuses to start. |
 | `DATABASE__PASSWORD` | **Yes.** One file supplies all three services. A per-service `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file or variable overrides it for that service only. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` | **Yes.** Per-service names; host and port reach every service through the `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs (see below), not through a global name in this image. |
-| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY`, `TASKS__NOMAD__API_KEY`, `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
+| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | **Yes.** A file supplies that mint-gate name and suppresses exporting a derived value *over it*. It does not block the Grafana helper from resolving the mounted value and exporting it to every other unset destination among the three. An explicitly-set variable of the same name still wins over the file. |
+| `TASKS__NOMAD__API_KEY` | **Yes.** Destination only: a file (or explicit variable) suppresses the derived export for Nomad itself. Mounting a mint-gate token does *not* prevent the other unset destinations — including Nomad — from receiving that export. |
+| `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from the resolved SEP database, which a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD` outranks. |
 | `CELERY__BROKER_URL`, `CELERY__RESULT_BACKEND` | **No.** `entrypoint.sh` mints the bundled Valkey credential per container run and exports both unconditionally, so a file has nothing to supply. |
@@ -299,9 +301,14 @@ So before minting, the helper reads the `settingoverride` table in all three
 service databases (`sep`, `inventory` and `tasks`, whose endpoints may differ),
 walking each stored value's JSON *leaves* rather than the row — the ciphertext
 sits inside lists and nested mappings, where a check against the row's own
-value finds nothing. It mints only if none of the three holds a Fernet token.
-Anything else refuses: a token found, a value it cannot parse, or a database it
-cannot reach — freshness unproven is treated exactly like freshness disproven.
+value finds nothing. It mints only if none of the three holds ciphertext under
+either at-rest shape: a leaf carrying the `sep.enc.v1.` envelope marker, or a
+bare Fernet token from before that envelope shipped. Testing only the bare shape
+would read a deployment whose overrides were all written under the envelope as
+holding none, because the marker's leading `.` puts the value outside base64 and
+so outside the structural check. Anything else refuses: ciphertext found, a value
+it cannot parse, or a database it cannot reach — freshness unproven is treated
+exactly like freshness disproven.
 The probe runs *only* on the mint path, so an ordinary restart opens no database
 connection and pays no startup latency.
 
@@ -344,12 +351,13 @@ alphabets are accepted.
 
 `SEP_GRAFANA_TOKEN` is the last value an operator supplies. Below it,
 `entrypoint.sh` runs `grafana_service_account.py` once, before supervisord, and
-fans its answer out to all three canonical names — the Grafana provider's
-`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, the PMM client's
-`PMM__API_KEY`, and the Nomad executor's `TASKS__NOMAD__API_KEY` — through the
-same `export_grafana_token` the `SEP_GRAFANA_TOKEN` guard uses, so all five
-programs inherit one resolved value and nothing in the application copies one
-setting into the other.
+feeds its answer through the same `export_grafana_token` the `SEP_GRAFANA_TOKEN`
+guard uses. That helper fills each unset destination among the Grafana
+provider's `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, the PMM client's
+`PMM__API_KEY`, and the Nomad executor's `TASKS__NOMAD__API_KEY`; an explicit or
+mounted value already present for a name is left alone. When every destination
+was empty, all five programs therefore inherit one resolved value and nothing in
+the application copies one setting into the other.
 
 `TASKS__NOMAD__API_KEY` is what lets the executor reach PMM's `/nomad/` location,
 whose server-level `auth_request` the embedded profile's credential-free endpoint
@@ -359,22 +367,30 @@ embedded in `TASKS__NOMAD__ENDPOINT`: while a key is set the endpoint's userinfo
 is stripped, because both HTTP clients would otherwise derive basic auth from it
 and override the header.
 
-The helper does nothing at all when either the Grafana service-account token or
+The helper skips minting when either the Grafana service-account token or
 `PMM__API_KEY` already resolves, from an explicit variable or from a file under
 `SECRETS_DIR`, or when the active auth provider is not Grafana. A blank value
 counts as absent at every rank the helper reads.
 
-**Those two names are the mint gate, and the gate controls the whole fan-out.**
-Supplying either of them suppresses minting, and `entrypoint.sh` calls
-`export_grafana_token` only when a token was actually minted — so a deployment
-that mounts `PMM__API_KEY` (or the Grafana token) and leaves `SEP_GRAFANA_TOKEN`
-unset gets **no** `TASKS__NOMAD__API_KEY` at all, and the Nomad executor falls
-back to whatever `TASKS__NOMAD__ENDPOINT` carries. `TASKS__NOMAD__API_KEY` is a
-destination only: mounting *it* alone does not suppress minting, but it also
-cannot make the fan-out run. Supply all three explicitly whenever you supply any
-of the mint-gate two. The same applies to a non-Grafana deployment, which mints
-nothing and must set `TASKS__NOMAD__API_KEY` itself if its Nomad requires a
-credential.
+**Those two names are the mint gate only.** Supplying either of them suppresses
+minting, but `entrypoint.sh` still calls `export_grafana_token` with the
+already-resolved value, so every unset destination among the three — the sibling
+mint-gate name and `TASKS__NOMAD__API_KEY` — is set to the same credential
+without a fresh Grafana request. When that value came from a `SECRETS_DIR`-mounted
+mint-gate file, the sibling has no value and no file of its own, so it takes the
+derived export too: mounting only
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` leaves `PMM__API_KEY` and
+`TASKS__NOMAD__API_KEY` both set to the mounted value, and mounting only
+`PMM__API_KEY` does the mirror image. That turns on the PMM client and PMM
+annotations where a mount-only mint-gate deployment previously got neither; it
+also means a mounted credential reaches every supervised program's environment
+under names it was not mounted as — the reason the `ENCRYPTION_KEY` path never
+exports a file-supplied value. When both mint-gate names resolve to different
+values, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` wins.
+`TASKS__NOMAD__API_KEY` is a destination only: mounting *it* alone does not
+suppress minting, and an explicit or mounted Nomad key is left alone by the
+export. A non-Grafana deployment mints nothing and must set
+`TASKS__NOMAD__API_KEY` itself if its Nomad requires a credential.
 
 One caveat on the rank above it: `settings-env.sh` defers to a `SECRETS_DIR` file
 on the file *existing*, not on it holding a value, because the settings source

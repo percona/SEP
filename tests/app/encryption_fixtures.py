@@ -13,20 +13,35 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Share the two fixtures every at-rest-encryption test suite needs.
+"""Share what every at-rest-encryption test suite needs to read a stored value.
 
-Both exist to exercise the seam between what
+The two fixtures exercise the seam between what
 :func:`~app.core.encryption.is_encrypted` can tell structurally and what only a
 decrypt attempt could: a plaintext it accepts, and ciphertext it accepts that
 the configured key cannot read. Every consumer of the encryption primitive has
 the same pair of cases, so they live here rather than being copied per suite.
+
+:func:`stored_plaintext` beside them reads a leaf back out of storage without the
+calling test having to know which envelope carried it — the marked one
+:mod:`app.core.settings_override.secret_storage` writes today, or the bare token
+a row predating it still holds.
+:func:`~app.core.encryption.is_stored_ciphertext` is re-exported here rather than
+reimplemented, so a suite importing it gets the production discriminator and not
+a test-local copy that could disagree with it.
 """
 
-__all__ = ["FERNET_SHAPED_PLAINTEXT", "foreign_token"]
+__all__ = [
+    "FERNET_SHAPED_PLAINTEXT",
+    "foreign_token",
+    "is_stored_ciphertext",
+    "stored_plaintext",
+]
 
 import base64
 
 from cryptography.fernet import Fernet
+
+from app.core.encryption import decrypt, is_stored_ciphertext, marked_ciphertext
 
 #: A plaintext credential ``is_encrypted`` misreads as a Fernet token, because it
 #: satisfies every structural test one can pass without being decryptable: the
@@ -51,3 +66,20 @@ def foreign_token(value: str = "written under another key") -> str:
     :return: The foreign Fernet token.
     """
     return Fernet(Fernet.generate_key()).encrypt(value.encode()).decode("ascii")
+
+
+def stored_plaintext(value: str) -> str:
+    """Return the plaintext behind a stored leaf, marked or legacy-unmarked.
+
+    Shared rather than spelled out per assertion because a stored leaf's
+    envelope is not the assertion's subject: a test pinning *what* was stored
+    should not also have to decide *which* envelope carried it, and one that
+    hardcodes a bare :func:`~app.core.encryption.decrypt` stops working the
+    moment the writer starts marking.
+
+    :param value: The leaf as the column holds it.
+    :return: The decrypted plaintext.
+    :raises DecryptionError: If the leaf is ciphertext the configured
+        ``ENCRYPTION_KEY`` cannot decrypt.
+    """
+    return decrypt(marked_ciphertext(value) or value)
