@@ -121,7 +121,7 @@ fi
 if [[ -z $LOG_FILE_ARG ]]; then
     # Auto-detect log path from mongod config, same discovery chain as mongodb_ftdc_collect.sh
     MONGOD_CMD=""
-    MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1)
+    MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1 || true)
     if [[ -n $MONGOD_PID ]]; then
         MONGOD_CMD=$(ps -p "$MONGOD_PID" -o args= 2> /dev/null || true)
     fi
@@ -163,12 +163,12 @@ fi
 MONGODB_LOG="${LOG_FILE_ARG:-$DEFAULT_MONGODB_LOG}"
 
 if [[ ! -f $MONGODB_LOG ]]; then
-    echo "Error: MongoDB log file not found at '$MONGODB_LOG' (check --log-file)." >&2
+    echo "Error: MongoDB log file not found at '$MONGODB_LOG'. Pass --log-file." >&2
     exit 1
 fi
 
 if [[ ! -r $MONGODB_LOG ]]; then
-    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG' (check --log-file)." >&2
+    echo "Error: Cannot read MongoDB log file at '$MONGODB_LOG'. Pass --log-file." >&2
     exit 1
 fi
 
