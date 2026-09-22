@@ -227,6 +227,7 @@ if [[ -z $EXPLAIN_OPTS_ARG ]]; then
         exit 1
     fi
     rm -f "$VER_ERR"
+    # pipefail-safe: echo and tr cannot fail on an in-memory string
     VER_NUM=$(echo "$VER_NUM" | tr -d '[:space:]')
     if ! [[ $VER_NUM =~ ^[0-9]+$ ]]; then
         echo "Error: unexpected server_version_num value: '$VER_NUM'." >&2

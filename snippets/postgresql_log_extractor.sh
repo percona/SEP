@@ -167,6 +167,7 @@ detect_postgresql_log() {
         fi
         if [[ -n $log_dir ]]; then
             local log_pattern candidate
+            # pipefail-safe: printf and sed cannot fail on an in-memory string
             log_pattern=$(printf '%s' "$log_filename" | sed 's/%[A-Za-z]/*/g')
             candidate=$(find "$log_dir" -maxdepth 1 -type f -name "$log_pattern" -printf '%T@ %p\n' 2> /dev/null | sort -n | tail -n1 | cut -d' ' -f2- || true)
             if [[ -n $candidate && -f $candidate ]]; then

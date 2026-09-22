@@ -100,7 +100,7 @@ if [[ -n $DATA_DIR ]]; then
 else
     # Try to detect --dbpath from the running mongod process
     MONGOD_CMD=""
-    MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1)
+    MONGOD_PID=$(pgrep -x mongod 2> /dev/null | head -1 || true)
     if [[ -n $MONGOD_PID ]]; then
         MONGOD_CMD=$(ps -p "$MONGOD_PID" -o args= 2> /dev/null || true)
     fi
@@ -171,7 +171,7 @@ echo ""
 echo "=== FTDC directory: $FTDC_DIR ==="
 echo ""
 
-FTDC_FILES=$(find "$FTDC_DIR" -maxdepth 1 -type f | sort)
+FTDC_FILES=$(find "$FTDC_DIR" -maxdepth 1 -type f | sort || true)
 
 if [[ -z $FTDC_FILES ]]; then
     echo "No FTDC files found in '$FTDC_DIR'."
@@ -182,8 +182,8 @@ echo "Files:"
 ls -lh "$FTDC_DIR"
 echo ""
 
-TOTAL_SIZE=$(du -sh "$FTDC_DIR" | cut -f1)
-FILE_COUNT=$(find "$FTDC_DIR" -maxdepth 1 -type f | wc -l)
+TOTAL_SIZE=$(du -sh "$FTDC_DIR" | cut -f1 || true)
+FILE_COUNT=$(find "$FTDC_DIR" -maxdepth 1 -type f | wc -l || true)
 echo "Total: $FILE_COUNT file(s), $TOTAL_SIZE"
 echo ""
 
