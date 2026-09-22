@@ -312,17 +312,23 @@ def test_a_supplied_mint_gate_token_still_fills_nomad(
 def test_a_mounted_mint_gate_token_still_fills_nomad(
     container: FakeContainer, tmp_path: Path, mounted: str
 ):
-    """Export a SECRETS_DIR-mounted mint-gate value to Nomad, leaving the file alone."""
+    """Export a SECRETS_DIR-mounted mint-gate value to every unset sibling, leaving the file alone."""
     token = "glsa_mounted"
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir()
     (secrets_dir / mounted).write_text(f"{token}\n", encoding="utf-8")
+    sibling = (
+        "PMM__API_KEY"
+        if mounted == "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"
+        else "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"
+    )
 
     result = container.start(token=token, SECRETS_DIR=str(secrets_dir))
 
     assert result.returncode == 0, result.stderr
     supervised = container.supervised_environment
     assert mounted not in supervised
+    assert supervised[sibling] == token
     assert supervised["TASKS__NOMAD__API_KEY"] == token
 
 

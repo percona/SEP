@@ -526,7 +526,7 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
 
 
 async def resolve_token() -> str | None:
-    """Resolve the token for the three ranks below the mounted secrets channel.
+    """Resolve the token to export: an already-configured mint-gate name, or the three ranks below the mounted secrets channel.
 
     An already-configured token under either mint-gate name is returned as-is,
     with no Grafana call. When a token is minted onto a reused service account,
