@@ -180,6 +180,40 @@ class TestTriggerRun:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_rejects_a_repeated_host(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A duplicated host would plan two states no dispatch route could ever tell apart."""
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs",
+            json={
+                "hosts": ["node00", "node00"],
+                "install_method": "packages",
+                "os": "ubuntu",
+                "mongodb_version": "8.0",
+                "replica_set_name": "rs-test",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_rejects_an_install_method_with_no_registered_strategy(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """DOCKER/PODMAN are declared on the enum for later -- not implemented yet."""
+        response = _client(regular_user, session).post(
+            f"{_BASE}/runs",
+            json={
+                "hosts": ["node00"],
+                "install_method": "docker",
+                "os": "ubuntu",
+                "mongodb_version": "8.0",
+                "replica_set_name": "rs-test",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 class TestListBootstrapRuns:
     """Assert GET /runs discovers runs by status, newest first."""
@@ -524,6 +558,24 @@ class TestDispatchRunStep:
         assert response.status_code == status.HTTP_202_ACCEPTED
         build_step.assert_called_once()
         assert build_step.call_args.args[-1] == {"key_file_content": "secret-bytes"}
+
+    @pytest.mark.asyncio
+    async def test_400s_when_the_strategy_rejects_the_params(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A strategy's ValueError for bad params is the caller's mistake, not a 500."""
+        run = await self._seed_run(session)
+        build_step = MagicMock(side_effect=ValueError("missing required param"))
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes.strategy_for",
+            return_value=MagicMock(build_step=build_step),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
 class TestDispatchRunRunStep:

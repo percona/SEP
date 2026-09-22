@@ -31,6 +31,7 @@ decided gate (PMM-15347/questions.md Q6) is admin-only, so both mutating routes
 register :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 """
 
+from collections.abc import Callable
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -50,7 +51,7 @@ from app.core.security import require_internal_token
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
-from app.sep.apps.om_bootstrap.crud import BootstrapRunManager, get_run, list_runs
+from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
 from app.sep.apps.om_bootstrap.dispatch import dispatch_step
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -173,10 +174,20 @@ class RunResponse(BaseModel):
     error: str | None
 
 
-def _run_response(run: BootstrapRun) -> RunResponse:
+def _run_response(
+    run: BootstrapRun,
+    *,
+    hosts: list[HostBootstrapState] | None = None,
+    run_steps: list[StepRecord] | None = None,
+) -> RunResponse:
     """Build the response DTO from a persisted run.
 
     :param run: The run to serialize.
+    :param hosts: The run's host states, when the caller already parsed them
+        (e.g. it just built and dumped them) -- avoids re-parsing the JSON it
+        just dumped from the very same typed value. Parsed from ``run.hosts``
+        when omitted.
+    :param run_steps: See ``hosts`` -- the run-level counterpart.
     :return: The run's full state.
     """
     return RunResponse(
@@ -188,8 +199,8 @@ def _run_response(run: BootstrapRun) -> RunResponse:
         replica_set_name=run.replica_set_name,
         started_at=run.started_at,
         finished_at=run.finished_at,
-        hosts=parse_host_states(run),
-        run_steps=parse_run_steps(run),
+        hosts=hosts if hosts is not None else parse_host_states(run),
+        run_steps=run_steps if run_steps is not None else parse_run_steps(run),
         error=run.error,
     )
 
@@ -328,11 +339,14 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
 
     :param session: The database session.
     :param request: The requested run.
-    :raises HTTPBadRequestException: When ``request.hosts`` is empty.
+    :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
+        same host twice, or names an install method with no registered strategy.
     :return: The created run, every host's steps ``pending``.
     """
     if not request.hosts:
         raise HTTPBadRequestException(detail="At least one host is required")
+    if len(set(request.hosts)) != len(request.hosts):
+        raise HTTPBadRequestException(detail="hosts must not repeat the same host")
 
     spec = BootstrapSpec(
         install_method=request.install_method,
@@ -340,7 +354,7 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
         mongodb_version=request.mongodb_version,
         replica_set_name=request.replica_set_name,
     )
-    strategy = strategy_for(request.install_method)
+    strategy = _strategy_for(request.install_method)
     host_states = [
         HostBootstrapState(
             host=host,
@@ -363,7 +377,7 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
             run_steps=dump_run_steps(run_steps),
         ),
     )
-    return _run_response(run)
+    return _run_response(run, hosts=host_states, run_steps=run_steps)
 
 
 @router.get("/runs")
@@ -389,7 +403,9 @@ async def list_bootstrap_runs(
     """
     return [
         _run_response(run)
-        for run in await list_runs(session, status=status, limit=limit)
+        for run in await BootstrapRunManager.list_runs(
+            session, status=status, limit=limit
+        )
     ]
 
 
@@ -406,9 +422,7 @@ async def get_bootstrap_run(run_id: UUID, session: SessionDep) -> RunResponse:
     :raises HTTPNotFoundException: When there is no such run.
     :return: The run, with current step status.
     """
-    run = await get_run(session, run_id)
-    if run is None:
-        raise HTTPNotFoundException(detail=f"Bootstrap run {run_id} not found")
+    run = await BootstrapRunManager.get_run(session, run_id)
 
     tasks_api = await _tasks_api_client()
     with tasks_api.auth(require_internal_token()):
@@ -418,15 +432,40 @@ async def get_bootstrap_run(run_id: UUID, session: SessionDep) -> RunResponse:
     return _run_response(run)
 
 
-async def _get_run_or_404(session: SessionDep, run_id: UUID) -> BootstrapRun:
-    """Return the run, or 404.
+def _strategy_for(install_method: InstallMethod) -> InstallStrategy:
+    """Return the strategy for ``install_method``, or 400 if none is registered yet.
 
-    :raises HTTPNotFoundException: When there is no such run.
+    :func:`~app.sep.apps.om_bootstrap.strategies.strategy_for` raises a bare
+    ``ValueError`` for an :class:`InstallMethod` declared on the enum but not yet
+    implemented (``DOCKER``/``PODMAN``, today) -- a caller's request, not a
+    server bug, so this turns it into a 400 instead of an opaque 500.
+
+    :param install_method: The install method to look up a strategy for.
+    :raises HTTPBadRequestException: When no strategy implements ``install_method``.
+    :return: The matching strategy.
     """
-    run = await get_run(session, run_id)
-    if run is None:
-        raise HTTPNotFoundException(detail=f"Bootstrap run {run_id} not found")
-    return run
+    try:
+        return strategy_for(install_method)
+    except ValueError as exc:
+        raise HTTPBadRequestException(detail=str(exc)) from exc
+
+
+def _build_step_action(builder: Callable[[], StepAction]) -> StepAction:
+    """Call a strategy's ``build_*`` method, turning a bad-params ``ValueError`` into 400.
+
+    Every ``InstallStrategy.build_*`` method raises a bare ``ValueError`` when
+    ``params`` is missing something the step needs (e.g. ``distribute_keyfile``
+    without ``key_file_content``) -- the caller's mistake, not a server bug, so
+    this turns it into a 400 naming the problem instead of an opaque 500.
+
+    :param builder: A zero-argument callable invoking one ``build_*`` method.
+    :raises HTTPBadRequestException: When ``builder`` rejects its params.
+    :return: The built step action.
+    """
+    try:
+        return builder()
+    except ValueError as exc:
+        raise HTTPBadRequestException(detail=str(exc)) from exc
 
 
 def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
@@ -442,7 +481,7 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         mongodb_version=run.mongodb_version,
         replica_set_name=run.replica_set_name,
     )
-    return strategy_for(install_method), spec
+    return _strategy_for(install_method), spec
 
 
 @router.post(
@@ -480,7 +519,7 @@ async def dispatch_run_step(
     :raises HTTPConflictException: When the step is already running.
     :return: The run, with the dispatched step now ``running``.
     """
-    run = await _get_run_or_404(session, run_id)
+    run = await BootstrapRunManager.get_run(session, run_id)
 
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
@@ -492,8 +531,9 @@ async def dispatch_run_step(
     _require_not_running(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
-    action = strategy.build_step(
-        step_name, host, spec, body.params if body is not None else None
+    params = body.params if body is not None else None
+    action = _build_step_action(
+        lambda: strategy.build_step(step_name, host, spec, params)
     )
 
     tasks_api = await _tasks_api_client()
@@ -504,7 +544,7 @@ async def dispatch_run_step(
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
-    return _run_response(run)
+    return _run_response(run, hosts=states)
 
 
 @router.post(
@@ -541,7 +581,7 @@ async def dispatch_run_run_step(
     :raises HTTPConflictException: When the step is already running.
     :return: The run, with the dispatched run-level step now ``running``.
     """
-    run = await _get_run_or_404(session, run_id)
+    run = await BootstrapRunManager.get_run(session, run_id)
 
     states = parse_host_states(run)
     if not states:
@@ -556,8 +596,9 @@ async def dispatch_run_run_step(
 
     strategy, spec = _spec_for(run)
     hosts = [state.host for state in states]
-    action = strategy.build_run_step(
-        step_name, hosts, spec, body.params if body is not None else None
+    params = body.params if body is not None else None
+    action = _build_step_action(
+        lambda: strategy.build_run_step(step_name, hosts, spec, params)
     )
 
     tasks_api = await _tasks_api_client()
@@ -568,7 +609,7 @@ async def dispatch_run_run_step(
 
     run.run_steps = dump_run_steps(run_steps)
     run = await BootstrapRunManager.save(session, run)
-    return _run_response(run)
+    return _run_response(run, hosts=states, run_steps=run_steps)
 
 
 @router.post(
@@ -605,7 +646,7 @@ async def dispatch_rollback_step(
     :raises HTTPConflictException: When the step is already running.
     :return: The run, with the dispatched rollback step now ``running``.
     """
-    run = await _get_run_or_404(session, run_id)
+    run = await BootstrapRunManager.get_run(session, run_id)
 
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
@@ -616,10 +657,10 @@ async def dispatch_rollback_step(
     step = host_state.rollback_steps[step_index]
     _require_not_running(step, step_name, what=what)
 
-    _, spec = _spec_for(run)
-    action = strategy_for(
-        to_strategy_install_method(run.install_method)
-    ).build_rollback_step(step_name, host, spec)
+    strategy, spec = _spec_for(run)
+    action = _build_step_action(
+        lambda: strategy.build_rollback_step(step_name, host, spec)
+    )
 
     tasks_api = await _tasks_api_client()
     with tasks_api.auth(require_internal_token()):
@@ -629,7 +670,7 @@ async def dispatch_rollback_step(
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
-    return _run_response(run)
+    return _run_response(run, hosts=states)
 
 
 @router.post("/runs/{run_id}:finish")
@@ -655,7 +696,7 @@ async def finish_run(
     :raises HTTPConflictException: When the run is already terminal.
     :return: The run, now terminal.
     """
-    run = await _get_run_or_404(session, run_id)
+    run = await BootstrapRunManager.get_run(session, run_id)
     if body.status not in _FINISHABLE_STATUSES:
         raise HTTPBadRequestException(
             detail=f"status must be one of {sorted(_FINISHABLE_STATUSES)}"
