@@ -527,7 +527,7 @@ class TestAuthCredentialSecretStr:
 
 
 class TestCredentialUrlStrJsonSerializer:
-    """Serialization behaviour for :data:`CREDENTIAL_URL_STR_JSON_SERIALIZER`."""
+    """Cover JSON redaction through :data:`CREDENTIAL_URL_STR_JSON_SERIALIZER`."""
 
     @pytest.fixture
     def adapter(self) -> TypeAdapter[str]:

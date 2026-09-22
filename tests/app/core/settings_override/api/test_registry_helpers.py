@@ -214,7 +214,7 @@ def test_dump_field_value_redacts_credential_http_url() -> None:
 
 
 def test_dump_field_value_redacts_a_computed_credential_url() -> None:
-    """The derived base URL of a client setting is redacted alongside its endpoint.
+    """Redact the derived base URL of a client setting alongside its endpoint.
 
     The settings LIST, DETAIL, and export responses all serialize through this
     helper, and a computed field carries no annotation for the credential-URL

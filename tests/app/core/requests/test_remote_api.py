@@ -25,8 +25,14 @@ import pytest
 from aiohttp import encode_basic_auth, web
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
-from pydantic import HttpUrl
+from pydantic import computed_field, HttpUrl
 
+# Imported for their side effect of registering each production client as a
+# subclass, which the base-URL redaction walk below discovers.
+import app.core.auth.providers.casdoor.sdk
+import app.core.auth.providers.grafana.sdk
+import app.sep.clients.pmm
+import app.tasks.execution.executors.nomad.models  # noqa: F401
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPConflictException,
@@ -1142,16 +1148,12 @@ class TestEndpointCredentialAndExplicitAuthHeader:
 def _client_classes() -> list[type[BaseRemoteAPI]]:
     """Return every client class that inherits the computed base URL.
 
-    Imports the modules that define the production clients first: a subclass is
-    only reachable through ``__subclasses__`` once its module has been
-    imported, so a guard built on the walk alone would silently cover nothing.
+    Relies on the production client modules imported at the top of this file: a
+    subclass is only reachable through ``__subclasses__`` once its module has
+    been imported, so the walk alone would silently cover nothing.
 
     :return: The discovered subclasses, deduplicated, in discovery order.
     """
-    import app.core.auth.providers.casdoor.sdk
-    import app.core.auth.providers.grafana.sdk
-    import app.sep.clients.pmm
-    import app.tasks.execution.executors.nomad.models  # noqa: F401
 
     def walk(cls: type[BaseRemoteAPI]) -> Iterator[type[BaseRemoteAPI]]:
         for subclass in cls.__subclasses__():
@@ -1273,17 +1275,29 @@ class _UnparseableRemoteAPI(RemoteAPI):
 class TestBaseUrlSubclassing:
     """Cover how a subclass customises the base URL without dropping redaction."""
 
-    @pytest.mark.parametrize("client_class", _client_classes())
-    def test_no_subclass_redeclares_the_computed_field(
-        self, client_class: type[BaseRemoteAPI]
-    ) -> None:
-        """Keep ``base_url`` declared once, where the redaction annotation lives.
+    def test_redeclaring_the_computed_field_is_rejected(self) -> None:
+        """Refuse a subclass that redeclares ``base_url`` at class creation.
 
-        A subclass redeclaring it as its own computed field shadows the return
-        annotation the serializer rides on, so the password returns to every
-        dump of that class while every other class stays clean.
+        A redeclared computed field shadows the return annotation the serializer
+        rides on, so the password would return to every dump of that class while
+        every other class stays clean.
         """
-        assert "base_url" not in vars(client_class)
+        with pytest.raises(TypeError, match="_compute_base_url"):
+
+            class _RedeclaringRemoteAPI(RemoteAPI):
+                @computed_field
+                @property
+                def base_url(self) -> str:
+                    return str(self.endpoint)
+
+    def test_a_plain_attribute_named_base_url_is_rejected(self) -> None:
+        """Refuse any class-level ``base_url``, not only a computed field."""
+        with pytest.raises(TypeError, match="_compute_base_url"):
+
+            class _ShadowingRemoteAPI(RemoteAPI):
+                @property
+                def base_url(self) -> str:
+                    return str(self.endpoint)
 
     def test_a_hook_override_is_still_masked(self) -> None:
         """Redact a subclass's derived value through the inherited computed field."""

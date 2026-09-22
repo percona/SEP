@@ -416,6 +416,25 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         default_factory=lambda: ContextVar("api_suppress_response_log", default=False)
     )
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """Reject a subclass that declares its own ``base_url``.
+
+        The JSON redaction rides on the return annotation of the computed field
+        declared here. A redeclaration shadows it and puts the endpoint password
+        back into every dump of that class, so the failure is raised at import
+        rather than left for a dump to discover.
+
+        :param kwargs: Class keyword arguments, forwarded unchanged.
+        :raises TypeError: When the subclass body defines ``base_url``.
+        """
+        if "base_url" in cls.__dict__:
+            msg = (
+                f"{cls.__qualname__} must override _compute_base_url, not "
+                "base_url: redeclaring base_url drops its credential redaction."
+            )
+            raise TypeError(msg)
+        super().__init_subclass__(**kwargs)
+
     def __hash__(self) -> int:
         """Compute the hash based on the endpoint and SSL configuration.
 
@@ -738,10 +757,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """Compute and return the base URL without the base path.
 
         The live value keeps whatever credential the endpoint embeds, because
-        :attr:`session_base_url` and :attr:`_endpoint_credential_header` are
-        both derived from it. Only the JSON rendering is masked, and a dump
-        passing :data:`~app.core.utils.fields.PRESERVE_CREDENTIALS_CONTEXT` —
-        the Nomad config fingerprint — still sees the real one.
+        outbound authentication is derived from it. Only the JSON rendering is
+        masked, and a dump passing
+        :data:`~app.core.utils.fields.PRESERVE_CREDENTIALS_CONTEXT` still sees
+        the real one.
 
         Subclasses customise :meth:`_compute_base_url`, never this property.
 
@@ -753,11 +772,11 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     def redacted_base_url(self) -> str:
         """Return :attr:`base_url` with any embedded password masked, for logging.
 
-        A redaction failure collapses to the bare mask rather than propagating.
-        Two callers are the post-``gather`` error loops in
-        :class:`~app.core.requests.registry.ClientRegistry`, where raising
-        would replace the close failure being reported with a parse error and
-        abandon the clients still to report on.
+        A redaction failure collapses to the bare mask rather than propagating,
+        so this is safe to call from an error-reporting path, where raising
+        would replace the failure being reported with a parse error. Unlike
+        :attr:`endpoint`, which is validated on the way in, this value comes
+        from an overridable hook and is not guaranteed to parse.
 
         :return: The base URL with its password replaced by
             :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK`, or the mask

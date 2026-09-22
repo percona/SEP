@@ -763,10 +763,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
 
         Overriding the hook rather than the ``base_url`` computed field keeps
-        the base class's JSON redaction in force, and ``base_url`` is still
-        inherited as a computed field, so it continues to appear in
-        ``model_dump`` and therefore in the config fingerprint
-        :class:`~app.tasks.execution.nomad_lifecycle.NomadLifecycle` compares.
+        the base class's JSON redaction in force, and ``base_url`` still appears
+        in ``model_dump`` as the inherited computed field.
 
         :return: The base URL of the Nomad endpoint.
         """
