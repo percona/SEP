@@ -19,8 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.utils.fields import ARBITRARY_ARGS_SCHEMA, UTCDatetime
-from app.sep.api.task_history_actors import SepTaskResponse
+from app.core.utils.fields import UTCDatetime
+from app.sep.api.task_history_actors import SepHistoryPayload, SepTaskResponse
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 
 
@@ -124,10 +124,10 @@ class TaskDetailResponse(BaseModel):
 
     :param task: The task definition as returned by the tasks API, with its
         actor fields carrying display names rather than user identifiers.
-    :param execution_history: Paginated task history from the tasks API
-        (``items``, ``total``, ``offset``, ``limit``), passed through
-        unvalidated so every upstream key survives. Carries whatever actor text
-        the constructing route supplied; the model itself imposes no shape.
+    :param execution_history: Paginated task history from the tasks API as a
+        permissive envelope (``items`` plus passthrough extras such as
+        ``total``/``offset``/``limit``). Actor fields on well-formed rows carry
+        display names after the constructing route's rewrite.
     :param periodic_summary: Read-only summaries of periodic schedules
         attached to this task.
     :param executor_hosts: Executor hosts available for display, with
@@ -135,9 +135,10 @@ class TaskDetailResponse(BaseModel):
     """
 
     task: SepTaskResponse
-    execution_history: dict[str, Any] = Field(
-        default_factory=lambda: {"items": [], "total": 0, "offset": 0, "limit": 0},
-        json_schema_extra=ARBITRARY_ARGS_SCHEMA,
+    execution_history: SepHistoryPayload = Field(
+        default_factory=lambda: SepHistoryPayload.model_validate(
+            {"items": [], "total": 0, "offset": 0, "limit": 0}
+        )
     )
     periodic_summary: list[PeriodicTaskSummary] = Field(default_factory=list)
     executor_hosts: list[ExecutorHostMetadata] = Field(default_factory=list)

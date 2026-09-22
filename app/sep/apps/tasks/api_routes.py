@@ -31,6 +31,7 @@ from app.sep.api.task_history_actors import (
     resolve_actor,
     resolve_history_payload_actors,
     resolve_task_actors,
+    SepHistoryPayload,
     SepTaskResponse,
 )
 from app.sep.apps.framework.api import schema_endpoint
@@ -99,12 +100,9 @@ async def tasks_api_detail(
         with every actor identifier on the task and inside the history rows
         resolved to the name a reader should see.
     """
-    execution_history: dict[str, object] = {
-        "items": [],
-        "total": 0,
-        "offset": 0,
-        "limit": 0,
-    }
+    execution_history = SepHistoryPayload.model_validate(
+        {"items": [], "total": 0, "offset": 0, "limit": 0}
+    )
     periodic_summary: list[PeriodicTaskSummary] = []
 
     if not task.is_template:
@@ -114,8 +112,8 @@ async def tasks_api_detail(
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
-        execution_history = as_json_object(
-            await tasks_api.get(f"/{task.name}/history/")
+        execution_history = SepHistoryPayload.model_validate(
+            as_json_object(await tasks_api.get(f"/{task.name}/history/"))
         )
 
     executor_hosts = [
