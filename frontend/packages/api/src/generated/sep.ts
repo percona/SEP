@@ -2216,6 +2216,8 @@ export interface paths {
      *
      *     :param session: The database session.
      *     :param request: The optional scope. Absent, or an empty list, means everything.
+     *     :raises HTTPServiceUnavailableException: When PMM's OpenManager switch has
+     *         ``ENABLED`` off.
      *     :raises HTTPNotFoundException: When a requested node id is not in the estate.
      *     :raises HTTPConflictException: When a requested host is already being refreshed.
      *     :return: The queued sweep.

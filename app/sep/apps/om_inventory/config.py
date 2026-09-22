@@ -57,13 +57,13 @@ class OmInventorySettings(BaseYamlSettings):
     deployment.
 
     :cvar SETTINGS_PREFIXES: Places this section under ``SEP.OM_INVENTORY``.
-    :param ENABLED: Whether the periodic sweep may run at all, independent of
-        ``SCHEDULE``. Mirrors PMM's OpenManager on/off switch: pmm-managed flips this
-        (not ``SCHEDULE``) when an operator toggles OpenManager, so the configured
-        cadence survives being turned off and back on rather than being overwritten
-        each time. Defaults to ``False`` -- matching PMM's own default for that
-        switch -- so a fresh deployment's estate does not start sweeping until
-        OpenManager is actually turned on somewhere.
+    :param ENABLED: Whether the sweep may run at all -- scheduled *or* manually
+        triggered -- independent of ``SCHEDULE``. Mirrors PMM's OpenManager on/off
+        switch: pmm-managed flips this (not ``SCHEDULE``) when an operator toggles
+        OpenManager, so the configured cadence survives being turned off and back on
+        rather than being overwritten each time. Defaults to ``False`` -- matching
+        PMM's own default for that switch -- so a fresh deployment's estate does not
+        start sweeping until OpenManager is actually turned on somewhere.
     :param SCHEDULE: How often the probe sweeps the estate, while ``ENABLED``. ``None``
         unregisters the periodic job regardless of ``ENABLED``, leaving the trigger
         endpoint as the only way facts are refreshed.
