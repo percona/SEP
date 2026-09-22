@@ -54,6 +54,7 @@ from app.sep.apps.framework.registry import (
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
+from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.routes.artifacts import router as artifacts_router
 from app.sep.settings_override import (
     apply_logging_dictconfig,
@@ -203,7 +204,9 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     :param _: The override snapshots on either side of the republish (unused; the
         interval is re-read from the proxy by the task-set builder).
     """
-    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+    system_tasks = get_system_periodic_tasks()
+    await init_periodic_tasks_db(system_tasks, "sep__")
+    await sync_app_periodic_task_gating(system_tasks)
 
 
 @asynccontextmanager
