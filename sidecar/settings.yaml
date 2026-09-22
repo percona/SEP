@@ -60,15 +60,12 @@ default:
       - OmInventorySettings.MAX_CONCURRENT_PROBES
       - OmInventorySettings.RUN_RETENTION
       - OmInventorySettings.STALE_RUN_AFTER
-      # ENABLED is declared on this branch (it gates the periodic estate sweep on
-      # PMM's OpenManager switch), so its allowlist entry lives here rather than
-      # on PMM-15326-om-inventory. patchConfig (pmm-managed's sep_client.go) PATCHes
-      # this same /config endpoint to sync PMM's switch state - is_hot_reloadable's
-      # policy gate applies to that call exactly as it does to a UI-driven one, so
-      # leaving ENABLED out blocks the sweep from ever turning on regardless of
-      # which side asks. Confirmed the hard way: PATCHing ENABLED=true with PMM's
-      # own internal service token got the identical 422 "Setting cannot be
-      # overridden from the API" a UI request would.
+      # ENABLED gates the periodic estate sweep on PMM's OpenManager switch.
+      # patchConfig (pmm-managed's sep_client.go) PATCHes this same /config
+      # endpoint to sync PMM's switch state, and is_hot_reloadable's policy gate
+      # applies to that call exactly as it does to a UI-driven one: leaving
+      # ENABLED out of this allowlist blocks the sweep from ever turning on,
+      # regardless of which side asks.
       - OmInventorySettings.ENABLED
 
   AUTH:

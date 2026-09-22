@@ -98,10 +98,9 @@ ALLOWLIST_SIZE = 25
 """13 pre-existing entries plus the 12 OmInventorySettings fields this profile
 allows overriding (ENABLED, SCHEDULE's two __-delimited leaves,
 PROBE_DATABASE, REPO_URL, REPO_TIMEOUT, CONNECT_TIMEOUT, TASK_TIMEOUT,
-POLL_INTERVAL, MAX_CONCURRENT_PROBES, RUN_RETENTION, STALE_RUN_AFTER) -
-confirmed missing by testing the deployed image's Settings tab (which had
-nothing to show without them) and, separately, pmm-managed's own sync PATCH
-(which got the identical 422 an operator would without ENABLED specifically).
+POLL_INTERVAL, MAX_CONCURRENT_PROBES, RUN_RETENTION, STALE_RUN_AFTER). A field
+missing from this allowlist is not hot-reloadable through the profile, whether
+the caller is a UI request or pmm-managed's own settings sync.
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.
