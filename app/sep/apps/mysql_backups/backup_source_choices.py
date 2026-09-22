@@ -105,7 +105,9 @@ async def choices_for_service(
     run that resolves to it: a rerun that republishes into the directory an
     earlier run wrote to leaves both rows in the catalog, but only the newer
     run's dump is still there, so an older row's label would name data the
-    restore would not write.
+    restore would not write. The surviving row is the first the catalog yields
+    for a value, so this rests on ``MysqlBackupRunManager.list_for_service``
+    ordering by ``finished_at`` descending.
 
     Pages catalog rows until ``DEFAULT_PAGINATION_LIMIT`` distinct values are
     collected (or rows/pages are exhausted), so runs that are filtered out or
