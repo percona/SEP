@@ -278,7 +278,7 @@
 | app/sep/apps/mysql\_backups/crud.py                                                                                          |       29 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/deps.py                                                                                          |       93 |        0 |       22 |        1 |     99% | 335-\>338 |
 | app/sep/apps/mysql\_backups/form\_backfill.py                                                                                |       66 |        6 |       22 |        6 |     86% |129-\>151, 132-133, 134-\>151, 136-\>151, 138-\>151, 145, 175-176, 186 |
-| app/sep/apps/mysql\_backups/forms.py                                                                                         |      228 |        3 |       20 |        3 |     98% |371, 1356, 1371 |
+| app/sep/apps/mysql\_backups/forms.py                                                                                         |      228 |        3 |       20 |        3 |     98% |371, 1355, 1370 |
 | app/sep/apps/mysql\_backups/inventory\_references.py                                                                         |        8 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_07\_29\_1200-f0a1b2c3d4e5\_create\_mysql\_backup\_run\_table.py        |       22 |        6 |        4 |        1 |     65% |40-\>exit, 89-98 |
 | app/sep/apps/mysql\_backups/migrations/versions/2026\_08\_06\_1200-b7c8d9e0f1a2\_add\_service\_id\_to\_mysql\_backup\_run.py |       30 |        0 |       12 |        2 |     95% |66-\>exit, 74-\>exit |
