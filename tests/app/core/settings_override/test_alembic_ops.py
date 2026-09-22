@@ -163,14 +163,14 @@ def _stored(engine: Engine) -> dict[tuple[str, str], Any]:
 
 def _run(
     engine: Engine,
-    operation: Callable[[Iterable[type[BaseYamlSettings]]], None],
-    settings_classes: tuple[type[BaseYamlSettings], ...],
+    operation: Callable[[Iterable[type[BaseModel]]], None],
+    settings_classes: tuple[type[BaseModel], ...],
 ) -> None:
     """Run a migration helper against ``engine`` inside a real Alembic context.
 
     :param engine: The engine the helper's ``op.get_bind()`` resolves to.
     :param operation: The upgrade or downgrade helper to invoke.
-    :param settings_classes: The settings classes the simulated track owns.
+    :param settings_classes: The settings classes, or frozen replicas, the simulated track owns.
     """
     with engine.begin() as connection:
         context = MigrationContext.configure(connection=connection)
