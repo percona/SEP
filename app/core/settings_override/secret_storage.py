@@ -22,6 +22,13 @@ credential would otherwise reach the database in the clear. The walker here maps
 a settings field's *annotation* onto the stored JSON positionally and transforms
 the leaves that carry a credential.
 
+That annotation comes from one of two sources. The read and write paths pass the
+live settings class, so they always track the current field set. A re-encryption
+data migration passes a frozen replica model declaring the shapes that revision
+was authored to cover, so its reach cannot drift with a later rename. Both are
+plain :class:`~pydantic.BaseModel` subclasses as far as this module is
+concerned, and nothing below distinguishes them.
+
 Two leaf kinds qualify, and they differ in how much of the leaf is rewritten. A
 **Pydantic secret** leaf is the credential, so the whole value is transformed. A
 **credential-bearing URL** leaf — recognized from the ``WrapSerializer`` marker
@@ -73,7 +80,7 @@ import typing
 from collections.abc import Callable, Collection, Mapping
 from enum import Enum
 from types import UnionType
-from typing import Any, TYPE_CHECKING, Union
+from typing import Any, Union
 
 from pydantic import BaseModel, SecretBytes, SecretStr
 from pydantic_core import Url
@@ -98,16 +105,13 @@ from app.core.utils.fields import (
     map_credential_url_password,
 )
 
-if TYPE_CHECKING:
-    from app.core.config import BaseYamlSettings
-
 logger = logging.getLogger(__name__)
 
 _SECRET_TYPES = (SecretStr, SecretBytes)
 
 
 def encrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -127,7 +131,8 @@ def encrypt_secret_leaves(
     Covers both leaf kinds: a Pydantic secret leaf is encrypted whole, and a
     credential-bearing URL has only its userinfo password encrypted.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The JSON-storable value about to be persisted.
     :return: A value of the same shape with its credential leaves encrypted.
@@ -136,7 +141,7 @@ def encrypt_secret_leaves(
 
 
 def reencrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -164,7 +169,8 @@ def reencrypt_secret_leaves(
     no marker of its own — so testing the leaf would re-encrypt an
     already-encrypted password on every run and destroy the plaintext.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its plaintext credentials encrypted.
@@ -173,7 +179,7 @@ def reencrypt_secret_leaves(
 
 
 def decrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -186,7 +192,8 @@ def decrypt_secret_leaves(
     would hand the snapshot a still-encrypted value for whichever kind it
     dropped.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The JSON value read out of the override row.
     :return: A value of the same shape with its credential leaves in plaintext.
@@ -197,7 +204,7 @@ def decrypt_secret_leaves(
 
 
 def reencrypt_credential_url_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -208,7 +215,8 @@ def reencrypt_credential_url_leaves(
     :class:`~pydantic.SecretStr` leaf an earlier revision encrypted is not this
     revision's to rewrite in either direction.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its plaintext URL passwords encrypted.
@@ -219,7 +227,7 @@ def reencrypt_credential_url_leaves(
 
 
 def decrypt_credential_url_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -230,7 +238,8 @@ def decrypt_credential_url_leaves(
     object, so rolling this revision back does not undo the one before it —
     which Alembic would never re-run to put back.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its URL passwords in plaintext.
@@ -243,7 +252,7 @@ def decrypt_credential_url_leaves(
 
 
 def unmark_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -274,7 +283,7 @@ def unmark_secret_leaves(
 
 
 def _rewrite_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
     transform: Callable[[str], str],
@@ -369,7 +378,7 @@ def _unmark_leaf(leaf: str) -> str:
     return token if token is not None else leaf
 
 
-def _annotation_for_key(settings_cls: type[BaseYamlSettings], key: str) -> Any:
+def _annotation_for_key(settings_cls: type[BaseModel], key: str) -> Any:
     """Return the annotation of the field ``key`` overrides, or ``None``.
 
     Resolved through :func:`~app.core.settings_override.registry.annotated_type`
@@ -377,7 +386,8 @@ def _annotation_for_key(settings_cls: type[BaseYamlSettings], key: str) -> Any:
     field's ``Annotated`` metadata onto ``FieldInfo``, and the credential-URL
     marker lives in exactly that metadata.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :return: The leaf annotation, or ``None`` when ``key`` resolves to no field.
     """

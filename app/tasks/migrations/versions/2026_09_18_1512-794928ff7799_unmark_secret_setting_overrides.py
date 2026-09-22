@@ -37,13 +37,29 @@ earlier release reads correctly through its own structural check.
 The envelope covers the ``settingoverride`` rows this track owns and nothing
 else. ``taskhistory.execution_request``, encrypted by ``f3b71c0d9a45``, uses the
 unwrapped primitive and is untouched in both directions.
+Coverage is **frozen** as the replica models below, on the same terms as the
+encrypt revisions this one rolls back. Importing the live settings classes
+instead would resolve coverage against whatever they look like on the release
+the revision happens to execute against, and an omission here is worse than in
+an encrypt revision: a class the rollback misses keeps its marker, and a release
+predating the envelope reads a marked value as the plaintext credential and
+presents it to a remote.
+
+**Never edit a replica below to track a later rename.** The correct response to
+a renamed or retyped field is a new data migration carrying its own frozen
+shapes.
+
+``unmark_secret_leaves`` covers both leaf kinds, exactly as the marking write
+path does, so the credential-URL fields are declared here alongside the
+``SecretStr`` ones.
 """
+
+from pydantic import BaseModel, SecretStr
 
 from app.core.settings_override.alembic_ops import (
     downgrade_unmark_secret_override_values,
 )
-from app.tasks.anonymizer.config import AnonymizerSettings
-from app.tasks.config import TasksSettings
+from app.core.utils.fields import CredentialHttpUrl
 
 # revision identifiers, used by Alembic.
 revision = "794928ff7799"
@@ -51,7 +67,45 @@ down_revision = "b5e17f6b3bc7"
 branch_labels = None
 depends_on = None
 
-SETTINGS_CLASSES = (TasksSettings, AnonymizerSettings)
+#: The ``settingoverride.setting_class`` values these replicas answer for,
+#: matching the tokens ``setting_class_token`` derives for the live classes.
+_TASKS_SETTINGS_CLASS = "TASKS_SETTINGS"
+_ANONYMIZER_SETTINGS_CLASS = "ANONYMIZER_SETTINGS"
+
+
+class _FrozenNomadExecutor(BaseModel):
+    """Declare the frozen credential leaves of ``NomadExecutor``."""
+
+    endpoint: CredentialHttpUrl | None = None
+    api_key: SecretStr | None = None
+
+
+class _FrozenDatabaseOptions(BaseModel):
+    """Declare the frozen credential leaves of ``DatabaseOptions``."""
+
+    PASSWORD: SecretStr | None = None
+
+
+class _FrozenTasksSettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``TasksSettings``."""
+
+    __setting_class_token__ = _TASKS_SETTINGS_CLASS
+
+    NOMAD: _FrozenNomadExecutor | None = None
+    DATABASE: _FrozenDatabaseOptions | None = None
+
+
+class _FrozenAnonymizerSettings(BaseModel):
+    """Stand in for ``AnonymizerSettings``, which reaches no credential leaf.
+
+    Field-less rather than absent: dropping it would reclassify its rows as
+    unresolved, which changes the rewrite's log line.
+    """
+
+    __setting_class_token__ = _ANONYMIZER_SETTINGS_CLASS
+
+
+SETTINGS_CLASSES = (_FrozenTasksSettings, _FrozenAnonymizerSettings)
 
 
 def upgrade() -> None:

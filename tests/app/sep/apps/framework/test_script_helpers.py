@@ -58,6 +58,7 @@ from app.sep.snippets.models.snippet import (
     SUDO_INPUT_NAME,
 )
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 _MD5 = "a" * 32
 _CREATED_TASK_ID = 42
@@ -580,5 +581,29 @@ class TestExecuteScript:
                 ScriptExecuteWrite(executor_host="host1", args={"minutes": "abc"}),
                 tasks_api,
             )
+
+        tasks_api.post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestPostTaskExecutionPathGuard:
+    """Test that a configured execution task name cannot reshape the POST."""
+
+    @pytest.mark.parametrize("execution_task_name", PATH_UNSAFE_TASKS)
+    async def test_refuses_an_unsafe_execution_task_name(
+        self, execution_task_name: str
+    ) -> None:
+        """Refuse an unsafe name and issue no POST."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        meta = SnippetExecutionMeta(
+            target="host1",
+            interpreter="bash",
+            snippet_source="https://x/y",
+            snippet_filename="x.sh",
+            md5_checksum=_MD5,
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await post_task_execution(tasks_api, execution_task_name, meta)
 
         tasks_api.post.assert_not_awaited()

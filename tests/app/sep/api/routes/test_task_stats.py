@@ -16,6 +16,7 @@
 """Tests for the SEP task-stats JSON API route at ``/api/sep/task-stats/{task_name}``."""
 
 from collections.abc import Iterator
+from urllib.parse import quote
 
 import pytest
 from fastapi import status
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from app.core.exceptions import HTTPBadGatewayException
 from app.sep.main import sep_app
+from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
 
 
 class TestSepTaskStatsEndpoint:
@@ -106,3 +108,19 @@ class TestSepTaskStatsAuth:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
+
+
+class TestSepTaskStatsPathGuard:
+    """Test that a task name is refused before it composes the stats path."""
+
+    @pytest.mark.parametrize("task_name", PATH_PARAM_UNSAFE_TASKS)
+    def test_refuses_a_name_that_is_not_one_path_segment(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep,
+        task_name: str,
+    ) -> None:
+        """Reject a name that would restructure the upstream stats path."""
+        response = test_client.get(f"/api/sep/task-stats/{quote(task_name, safe='')}")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()

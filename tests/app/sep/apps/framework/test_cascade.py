@@ -23,7 +23,11 @@ import pytest
 from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
-from app.core.exceptions import HTTPInternalServerErrorException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
@@ -41,6 +45,7 @@ from app.sep.apps.framework.cascade import (
 )
 from app.sep.apps.framework.schema import ChainedPredecessor, DerivedTask
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 def _parent_payload(**overrides: Any) -> dict[str, Any]:
@@ -1272,3 +1277,157 @@ class TestCascadeDeletePredecessors:
         assert not result.success
         assert result.failures[0].task_name == "t1-a"
         assert result.failures[0].exception is connection_error
+
+
+@pytest.mark.asyncio
+class TestCascadePathGuard:
+    """Test that a stored name is refused before it composes an outbound path."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_delete_records_an_unsafe_name_as_a_failure(
+        self, task_name: str
+    ) -> None:
+        """Record the refusal as a leg failure and issue no DELETE."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        result = await cascade_delete_tasks(tasks_api, task_name, [])
+
+        assert not result.success
+        assert isinstance(
+            result.failures[0].exception, HTTPUnprocessableEntityException
+        )
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_update_records_an_unsafe_existing_name_as_a_failure(
+        self, task_name: str
+    ) -> None:
+        """Record the refusal as a leg failure and issue no PUT.
+
+        The planned name is safe here, so the prevalidation pass admits the
+        update and the refusal comes from composing the *existing* name into
+        the PUT path — the one leg the caller cannot fix by editing the form.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        result = await cascade_update_tasks(
+            tasks_api, task_name, {"name": "renamed"}, [], []
+        )
+
+        assert not result.success
+        assert isinstance(
+            result.failures[0].exception, HTTPUnprocessableEntityException
+        )
+        tasks_api.put.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestCascadeCreatePrevalidation:
+    """Test that every planned name is checked before the first create."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_refuses_an_unsafe_parent_name(self, task_name: str) -> None:
+        """Refuse an unsafe parent name and POST nothing."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_tasks(tasks_api, _parent_payload(name=task_name), [])
+
+        tasks_api.post.assert_not_awaited()
+
+    async def test_create_refuses_an_unsafe_derived_name(self) -> None:
+        """Refuse a derived name the suffix makes unsafe, leaving no parent behind."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_tasks(
+                tasks_api, _parent_payload(), [DerivedTask(name_suffix="?q=1")]
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_predecessors_refuses_an_unsafe_parent_name(
+        self, task_name: str
+    ) -> None:
+        """Refuse an unsafe parent name before the predecessor chain is POSTed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_predecessors(
+                tasks_api,
+                _parent_payload(name=task_name),
+                [(ChainedPredecessor(name_suffix="-pre"), {"name": "ignored"})],
+            )
+
+        tasks_api.post.assert_not_awaited()
+
+    async def test_create_predecessors_refuses_an_unsafe_predecessor_name(
+        self,
+    ) -> None:
+        """Refuse a predecessor name the suffix makes unsafe, POSTing no parent."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_predecessors(
+                tasks_api,
+                _parent_payload(),
+                [(ChainedPredecessor(name_suffix="?q=1"), {"name": "ignored"})],
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_create_independent_refuses_an_unsafe_child_name(
+        self, task_name: str
+    ) -> None:
+        """Refuse an unsafe child name before the parent is POSTed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_create_independent_tasks(
+                tasks_api, _parent_payload(), [{"name": task_name}]
+            )
+
+        tasks_api.post.assert_not_awaited()
+        tasks_api.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+class TestCascadeUpdatePrevalidation:
+    """Test that a rename is checked before the first leg is PUT."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_update_refuses_an_unsafe_rename(self, task_name: str) -> None:
+        """Refuse a rename to an unsafe name and PUT nothing.
+
+        The PUT path carries the *existing* name, so the guard on the outbound
+        path cannot see the rename; and every leg collects its own exception
+        into the result, so a check inside the loop would be recorded rather
+        than raised. Both make the check belong before the first PUT.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_update_tasks(
+                tasks_api, "t1", _parent_payload(name=task_name), [], []
+            )
+
+        tasks_api.put.assert_not_awaited()
+
+    async def test_update_refuses_a_rename_an_unsafe_derived_suffix_makes(self) -> None:
+        """Refuse when the rename is safe but a derived name built from it is not."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await cascade_update_tasks(
+                tasks_api,
+                "t1",
+                _parent_payload(name="t2"),
+                ["t1-child"],
+                [DerivedTask(name_suffix="?q=1")],
+            )
+
+        tasks_api.put.assert_not_awaited()

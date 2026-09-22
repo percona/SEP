@@ -40,6 +40,7 @@ from app.core.pagination import fetch_all_dict_items
 from app.core.requests import as_json_object, RemoteAPI
 from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.db import get_async_session_maker
+from app.sep.deps import task_path
 from app.sep.inventory import (
     CreatedEntity,
     CreatedEntityBase,
@@ -1583,10 +1584,12 @@ class BaseTaskSyncer(BaseSyncer):
         :rtype: TaskRunResult
         :raises TimeoutError: If the task times out.
         :raises ValueError: If the task fails.
+        :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+            plain URL path segment.
         """
         task_history = as_json_object(
             await self.tasks_api.post(
-                f"/execute/{task_name}",
+                f"/execute{task_path(task_name)}",
                 json={"meta": meta, "payload": payload, "anonymize_mask": 0},
             )
         )
