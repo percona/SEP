@@ -1514,8 +1514,9 @@ class TestGetHostStates:
             states["broken-driver"].driver_healthy,
         ) == (True, False)
         assert states["broken-driver"].detail == "Failed to find raw_exec"
-        # Nomad says "Healthy" on a working driver; a field for explaining failures
-        # full of the word "Healthy" gives a reader nothing to scan by.
+        # No StatusDescription in this fixture, so nothing to report; see
+        # test_unreachable_node_detail_comes_from_status_description for the case
+        # where Nomad does supply one.
         assert states["down"].detail is None
 
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
@@ -1538,6 +1539,35 @@ class TestGetHostStates:
         assert states["bare"].driver_healthy is False
         assert states["no-key"].driver_healthy is False
         assert all(state.reachable for state in states.values())
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_unreachable_node_detail_comes_from_status_description(
+        self, mock_nomad_cls
+    ):
+        """Assert a down node explains itself instead of reporting nothing.
+
+        The driver fields are a stale pre-disconnect snapshot once the node itself
+        is unreachable, so ``detail`` has to come from the node's own status text,
+        not from a driver reading that predates the outage.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "down",
+                "Address": "10.0.0.1",
+                "Status": "down",
+                "StatusDescription": "Node heartbeat missed",
+                "Drivers": {
+                    "raw_exec": {"Healthy": True, "HealthDescription": "Healthy"}
+                },
+            }
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["down"].reachable is False
+        assert states["down"].detail == "Node heartbeat missed"
 
 
 class TestGetAllocationForTaskHistory:

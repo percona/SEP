@@ -1115,19 +1115,28 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             # never-onboarded case worth telling apart. An identity check, not a
             # truthiness one, so a malformed upstream value cannot read as healthy.
             healthy = driver.get("Healthy") is True
+            reachable = node.get("Status") == NODE_STATUS_READY
+            if not reachable:
+                # The driver fields are a stale pre-disconnect snapshot once the
+                # node itself is unreachable, so explain the outage from the node
+                # stub's own status text instead of a driver detail that predates it.
+                detail = node.get("StatusDescription") or None
+            elif healthy:
+                detail = None
+            else:
+                # Only when it is a problem. Nomad sets HealthDescription to
+                # the literal "Healthy" on a working driver, and a field that
+                # explains failures must not be full of the word "Healthy" - a
+                # reader scanning for the broken ones would find nothing to scan by.
+                detail = driver.get("HealthDescription") or None
             states.append(
                 ExecutorHostState(
-                    name=node["Name"],
-                    address=node["Address"],
-                    reachable=node.get("Status") == NODE_STATUS_READY,
+                    name=node.get("Name", ""),
+                    address=node.get("Address", ""),
+                    reachable=reachable,
                     driver_healthy=healthy,
                     status=node.get("Status"),
-                    # Only when it is a problem. Nomad sets HealthDescription to
-                    # the literal "Healthy" on a working driver, and a field that
-                    # explains failures must not be full of the word "Healthy" --
-                    # a reader scanning for the broken ones would find nothing to
-                    # scan by.
-                    detail=None if healthy else driver.get("HealthDescription") or None,
+                    detail=detail,
                 )
             )
         return states
