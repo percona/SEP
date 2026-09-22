@@ -66,6 +66,27 @@ def test_upgrade_constrains_status_to_the_enum_domain(tasks_alembic_config):
         engine.dispose()
 
 
+def test_upgrade_aborts_on_a_pre_existing_out_of_enum_row(tasks_alembic_config):
+    """Assert a stored value outside the domain stops the upgrade, unremapped.
+
+    The migration deliberately carries no cleanup branch, so the only thing
+    standing between a bad row and a silent coercion is that the CHECK-adding
+    ALTER refuses it.
+    """
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, _PRE_CONSTRAINT_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(_INSERT_HISTORY_ROW, (1, _OUT_OF_ENUM_STATUS))
+    finally:
+        engine.dispose()
+
+    with pytest.raises(IntegrityError):
+        command.upgrade(cfg, "heads")
+
+
 def test_downgrade_drops_the_constraint(tasks_alembic_config):
     """Assert the downgrade returns the column to its unconstrained state."""
     cfg, sync_url = tasks_alembic_config
