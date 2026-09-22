@@ -18,6 +18,7 @@ import shutil
 import sys
 from collections.abc import Iterable
 from configparser import ConfigParser
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -46,11 +47,21 @@ ships cannot quietly turn the synthetic-tree assertions into tautologies.
 """
 
 
+@cache
 def _real_package_names() -> frozenset[str]:
     """Return the app package directory names present in the repository.
 
     The bytecode cache is excluded so a synthetic tree built from this set is
     the same whether or not the suite has already run against the real one.
+
+    Read once per session rather than per call, because the tree is not stable
+    while the suite runs: the ``make startapp`` tests in
+    ``tests/app/sep/apps/framework/test_scaffold.py`` render into the real
+    ``app/sep/apps/`` and remove it again, so under ``xdist`` a scaffold package
+    can exist for one call here and not the next. A test that reads this twice
+    — once to build its synthetic tree, once to decide what that tree should
+    have reported — then compares two different trees and fails on a package
+    name neither it nor this module created.
 
     :return: Every package directory under ``app/sep/apps``.
     """

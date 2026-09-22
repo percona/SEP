@@ -269,6 +269,7 @@ unresolved-attribute = "ignore"
 include = [
     "app/sep/apps/alerts/celery.py",
     "app/sep/apps/atw/celery.py",
+    "app/sep/apps/om_inventory/celery.py",
     "app/sep/apps/report/celery.py",
     "app/sep/settings_override.py",
     "tests/app/sep/test_app_drain.py",
@@ -329,6 +330,7 @@ unknown-argument = "ignore"
 # ty cannot resolve against these call sites.
 include = [
     "app/core/db/crud.py",
+    "app/sep/apps/om_inventory/crud.py",
     "app/sep/apps/framework/responses.py",
     "app/sep/snippets/models/snippet.py",
     "tests/app/core/db/test_utils.py",
@@ -348,6 +350,7 @@ include = [
     "app/inventory/models.py",
     "app/sep/apps/atw/models.py",
     "app/sep/apps/mysql_backups/models.py",
+    "app/sep/apps/om_inventory/models.py",
 ]
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
@@ -379,6 +382,7 @@ invalid-parameter-default = "ignore"
 # `unresolved-import` rather than excluding the files, because they carry
 # first-party diagnostics under other rules.
 include = [
+    "app/sep/apps/om_inventory/payload/probe.py",
     "app/sep/sync/syncers/system_facts/payload.py",
     "tests/app/sep/apps/framework/golden/base/app.py",
     "tests/app/sep/apps/framework/golden/script/app.py",

@@ -53,6 +53,7 @@ from app.core.settings_override.resolution import (
 )
 from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
+from app.sep.apps.om_inventory.config import OmInventorySettings
 from app.sep.apps.report.config import HealthReportSettings
 from app.sep.config import SEPSettings
 from app.sep.snippets.config import SnippetsSettings
@@ -72,6 +73,7 @@ SETTINGS_CLASSES: dict[str, type] = {
     HealthReportSettings.__name__: HealthReportSettings,
     AnonymizerSettings.__name__: AnonymizerSettings,
     InventorySettings.__name__: InventorySettings,
+    OmInventorySettings.__name__: OmInventorySettings,
 }
 
 #: Keys the ticket names as provisioned topology that the embedded image must
