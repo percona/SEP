@@ -27,11 +27,22 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
 )
-from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.sep.apps.mysql_backups.backup_source_choices import backup_run_to_choice
+from app.core.pagination import (
+    DEFAULT_PAGINATION_LIMIT,
+    PaginatedResponse,
+    Pagination,
+)
+from app.sep.apps.framework.schema import Choice
+from app.sep.apps.mysql_backups.backup_source_choices import (
+    _MAX_CHOICE_SCAN_PAGES,
+    backup_run_to_choice,
+    backup_source_label,
+    choices_for_service,
+)
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import (
     BackupType,
+    CatalogServiceKey,
     MysqlBackupRun,
     preferred_backup_source,
     restore_valid_backup_source,
@@ -44,6 +55,36 @@ from tests.app.sep.apps.mysql_backups.conftest import (
 )
 
 _URL = "/api/apps/mysql_backups/backup-sources/choices"
+
+
+def _catalog_run(
+    task_history_id: int,
+    location: str | None,
+    *,
+    finished_at: datetime | None = None,
+    upload_destination: str | None = None,
+    size_bytes: int | None = None,
+    backup_type: str = "M",
+) -> MysqlBackupRun:
+    """Build an unsaved catalog row for service ``svc-a``.
+
+    :param task_history_id: The task-history id recorded on the row.
+    :param location: The recorded location, or ``None`` for an unusable row.
+    :param finished_at: When the run finished, or ``None`` if never reported.
+    :param upload_destination: The uploaded copy's destination, if any.
+    :param size_bytes: The recorded dump size, if any.
+    :param backup_type: The catalogued backup type code.
+    :return: An unsaved catalog row.
+    """
+    return MysqlBackupRun(
+        task_history_id=task_history_id,
+        service_name="svc-a",
+        backup_type=backup_type,
+        location=location,
+        finished_at=finished_at,
+        upload_destination=upload_destination,
+        size_bytes=size_bytes,
+    )
 
 
 class TestBackupSourceMapper:
@@ -209,6 +250,23 @@ class TestBackupSourceChoicesRoute:
             user=regular_user,
             params=params,
         )
+
+    @staticmethod
+    async def _newest_run(session: AsyncSession) -> MysqlBackupRun:
+        """Return the newest catalogued run as the selector's own query reads it.
+
+        Reading the row back keeps the expected label free of assumptions about
+        how the session backend renders a stored timestamp.
+
+        :param session: The database session the catalog is queried on.
+        :return: The first row of the service's newest-first catalog page.
+        """
+        page = await MysqlBackupRunManager.list_for_service(
+            session,
+            CatalogServiceKey(service_name="svc-a", service_id=1),
+            pagination=Pagination(offset=0, limit=1),
+        )
+        return page.items[0]
 
     @pytest.mark.asyncio
     async def test_returns_choices_newest_first(self, session, regular_user) -> None:
@@ -495,3 +553,342 @@ class TestBackupSourceChoicesRoute:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    @pytest.mark.asyncio
+    async def test_runs_sharing_a_location_are_offered_once(
+        self, session, regular_user
+    ) -> None:
+        """Offer a reused location once, labelled with its newest finished run.
+
+        A same-day rerun republishes the dump into the day directory it already
+        owns, so the earlier run's row resolves to a location that now holds the
+        later run's dump. Offering both would restore data the label does not name.
+        """
+        shared = "/backups/mydumper/172.28.9.40/20260921"
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                1,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 44, tzinfo=UTC),
+                size_bytes=100,
+            ),
+        )
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                2,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 46, tzinfo=UTC),
+                size_bytes=200,
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [shared]
+        newest = await self._newest_run(session)
+        assert body[0]["label"] == backup_source_label(newest, value=shared)
+        assert "200 B" in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_collapses_on_the_resolved_value_not_the_raw_column(
+        self, session, regular_user
+    ) -> None:
+        """Collapse rows whose different columns resolve to one restore value.
+
+        An uploaded run carries its destination and a local path; a later row may
+        record the same destination as its only source. Both submit the same
+        ``backup_source``, so the selector must treat them as one.
+        """
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                1,
+                "s3://bucket/base",
+                finished_at=datetime(2026, 7, 1, 12, 0, tzinfo=UTC),
+                backup_type="X",
+            ),
+        )
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                2,
+                "/data/xtrabackup/base",
+                finished_at=datetime(2026, 7, 29, 12, 0, tzinfo=UTC),
+                upload_destination="s3://bucket/base",
+                backup_type="X",
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == ["s3://bucket/base"]
+        assert "2026-07-29" in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_finished_duplicate_outranks_one_with_no_finish_time(
+        self, session, regular_user
+    ) -> None:
+        """Keep the finished run's label when a duplicate reports no finish time.
+
+        A row with no ``finished_at`` sorts last, so it never supplies the label
+        for a value a finished run also resolves to.
+        """
+        shared = "/backups/mydumper/20260921"
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                1, shared, finished_at=datetime(2026, 9, 21, 17, 46, tzinfo=UTC)
+            ),
+        )
+        await MysqlBackupRunManager.save(session, _catalog_run(2, shared))
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [shared]
+        assert "unknown time" not in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_duplicates_finishing_together_resolve_deterministically(
+        self, session, regular_user
+    ) -> None:
+        """Break a duplicate tie on the catalog's own ordering, not on chance.
+
+        Two runs can report the same finish time; the newest-first ordering falls
+        through to ``created_at`` and ``id``, so the last row recorded wins.
+        """
+        shared = "/backups/mydumper/20260921"
+        finished = datetime(2026, 9, 21, 17, 46, tzinfo=UTC)
+        for task_history_id, size_bytes in ((1, 100), (2, 200)):
+            await MysqlBackupRunManager.save(
+                session,
+                _catalog_run(
+                    task_history_id,
+                    shared,
+                    finished_at=finished,
+                    size_bytes=size_bytes,
+                ),
+            )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [shared]
+        assert "200 B" in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_late_catalogued_duplicate_does_not_supply_the_label(
+        self, session, regular_user
+    ) -> None:
+        """Label a reused location by finish time, not by when it was recorded.
+
+        A run catalogued after an already-recorded later run carries the higher
+        ``id``, so collapsing on insertion order would hand the label to the run
+        whose dump the rerun replaced.
+        """
+        shared = "/backups/mydumper/20260921"
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                1,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 46, tzinfo=UTC),
+                size_bytes=200,
+            ),
+        )
+        await MysqlBackupRunManager.save(
+            session,
+            _catalog_run(
+                2,
+                shared,
+                finished_at=datetime(2026, 9, 21, 17, 44, tzinfo=UTC),
+                size_bytes=100,
+            ),
+        )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [shared]
+        # Size, not the rendered time, tells the two runs apart without
+        # assuming how the session backend stores a timestamp's offset.
+        assert "200 B" in body[0]["label"]
+
+    @pytest.mark.asyncio
+    async def test_distinct_locations_keep_their_order_around_a_collapse(
+        self, session, regular_user
+    ) -> None:
+        """Keep distinct locations newest-first when a collapse falls between them.
+
+        The duplicate is older than one distinct location and newer than another,
+        so dropping it must not reorder the values it sits between or relabel them.
+        """
+        reused = "/backups/mydumper/20260921"
+        middle = "/backups/mydumper/20260920"
+        oldest = "/backups/mydumper/20260919"
+        rows = (
+            (1, reused, datetime(2026, 9, 21, 17, 46, tzinfo=UTC), 300),
+            (2, middle, datetime(2026, 9, 20, 17, 0, tzinfo=UTC), 200),
+            (3, reused, datetime(2026, 9, 20, 9, 0, tzinfo=UTC), 150),
+            (4, oldest, datetime(2026, 9, 19, 17, 0, tzinfo=UTC), 100),
+        )
+        for task_history_id, location, finished_at, size_bytes in rows:
+            await MysqlBackupRunManager.save(
+                session,
+                _catalog_run(
+                    task_history_id,
+                    location,
+                    finished_at=finished_at,
+                    size_bytes=size_bytes,
+                ),
+            )
+
+        response = await self._get(
+            session, 1, inventory_mock(service_payload("svc-a")), regular_user
+        )
+
+        body = response.json()
+        assert [item["value"] for item in body] == [reused, middle, oldest]
+        assert "300 B" in body[0]["label"]
+        assert "200 B" in body[1]["label"]
+        assert "100 B" in body[2]["label"]
+
+
+class TestBackupSourceChoicesScan:
+    """Page the catalog for distinct restore values within the scan bound.
+
+    The catalog is stubbed rather than seeded here: it gives these cases direct
+    control over the page arithmetic and over the ordering they turn on, which
+    is the route tests' own subject. The scan-bound case additionally needs more
+    rows than a DB-backed test would pay for one insert at a time.
+    """
+
+    @staticmethod
+    def _pager(runs: list[MysqlBackupRun]) -> AsyncMock:
+        """Return a ``list_for_service`` stub paging ``runs`` in catalog order.
+
+        :param runs: The rows the catalog holds, newest first.
+        :return: An ``AsyncMock`` serving offset/limit windows over ``runs``.
+        """
+
+        async def _list_for_service(
+            session: AsyncSession, key: CatalogServiceKey, *, pagination: Pagination
+        ) -> PaginatedResponse[MysqlBackupRun]:
+            window = runs[pagination.offset : pagination.offset + pagination.limit]
+            return PaginatedResponse.from_pagination(window, len(runs), pagination)
+
+        return AsyncMock(side_effect=_list_for_service)
+
+    async def _choices(
+        self, monkeypatch: pytest.MonkeyPatch, runs: list[MysqlBackupRun]
+    ) -> tuple[list[Choice], AsyncMock]:
+        """Collect choices over a stubbed catalog and return them with the stub.
+
+        :param monkeypatch: The fixture patching the catalog manager.
+        :param runs: The rows the stubbed catalog holds, newest first.
+        :return: The collected choices and the stub that served the pages.
+        """
+        pager = self._pager(runs)
+        monkeypatch.setattr(MysqlBackupRunManager, "list_for_service", pager)
+        choices = await choices_for_service(
+            AsyncMock(spec=AsyncSession),
+            CatalogServiceKey(service_name="svc-a", service_id=1),
+        )
+        return choices, pager
+
+    @pytest.mark.asyncio
+    async def test_duplicates_spanning_a_page_do_not_consume_the_cap(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Collapse a value whose rows fall on both sides of a page boundary.
+
+        Counting collapsed rows against the cap, or tracking offered values per
+        page instead of per scan, would hide older backups behind the location a
+        rerun reused.
+        """
+        reused = "/backups/mydumper/20260921"
+        runs = [
+            _catalog_run(
+                index,
+                reused,
+                finished_at=datetime(2026, 9, 21, 12, 59 - index, tzinfo=UTC),
+            )
+            for index in range(DEFAULT_PAGINATION_LIMIT - 1)
+        ]
+        runs.append(_catalog_run(90, "/backups/mydumper/20260920"))
+        runs.append(_catalog_run(91, reused))
+        runs.append(_catalog_run(92, "/backups/mydumper/20260919"))
+
+        choices, _ = await self._choices(monkeypatch, runs)
+
+        # The third value is reachable only on page 2, so its presence is what
+        # proves the scan carried the offered values across the page fetch.
+        assert [choice.value for choice in choices] == [
+            reused,
+            "/backups/mydumper/20260920",
+            "/backups/mydumper/20260919",
+        ]
+        assert "12:59" in choices[0].label
+
+    @pytest.mark.asyncio
+    async def test_cap_counts_distinct_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stop at the cap once that many distinct values are collected."""
+        runs = [
+            _catalog_run(index, f"/backups/mydumper/{index}")
+            for index in range(DEFAULT_PAGINATION_LIMIT + 10)
+        ]
+
+        choices, pager = await self._choices(monkeypatch, runs)
+
+        assert len(choices) == DEFAULT_PAGINATION_LIMIT
+        assert len({choice.value for choice in choices}) == DEFAULT_PAGINATION_LIMIT
+        assert pager.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_scan_bound_still_caps_database_work(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Give up after the scan bound rather than paging on for distinct values."""
+        runs = [
+            _catalog_run(index, "/backups/mydumper/20260921")
+            for index in range(DEFAULT_PAGINATION_LIMIT * (_MAX_CHOICE_SCAN_PAGES + 2))
+        ]
+
+        choices, pager = await self._choices(monkeypatch, runs)
+
+        assert [choice.value for choice in choices] == ["/backups/mydumper/20260921"]
+        assert pager.await_count == _MAX_CHOICE_SCAN_PAGES
+
+    @pytest.mark.asyncio
+    async def test_duplicate_and_unusable_rows_are_both_skipped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reach an older distinct value past a page of duplicates and unusable rows."""
+        runs = [
+            _catalog_run(index, "/backups/mydumper/20260921" if index % 2 else None)
+            for index in range(DEFAULT_PAGINATION_LIMIT)
+        ]
+        runs.append(_catalog_run(99, "/backups/mydumper/20260920"))
+
+        choices, _ = await self._choices(monkeypatch, runs)
+
+        assert [choice.value for choice in choices] == [
+            "/backups/mydumper/20260921",
+            "/backups/mydumper/20260920",
+        ]
