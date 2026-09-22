@@ -763,8 +763,6 @@ class TestBackupSourceChoicesRoute:
 
         body = response.json()
         assert [item["value"] for item in body] == [reused, middle, oldest]
-        # Each row carries its own size, so a label naming the wrong run shows up
-        # here even where the rendered finish time would not.
         assert "300 B" in body[0]["label"]
         assert "200 B" in body[1]["label"]
         assert "100 B" in body[2]["label"]
@@ -773,9 +771,10 @@ class TestBackupSourceChoicesRoute:
 class TestBackupSourceChoicesScan:
     """Page the catalog for distinct restore values within the scan bound.
 
-    The catalog is stubbed rather than seeded here: these cases turn on page
-    arithmetic at row counts the DB-backed route tests would pay for one insert
-    at a time, and the ordering they rely on is the route tests' subject.
+    The catalog is stubbed rather than seeded here: it gives these cases direct
+    control over the page arithmetic and over the ordering they turn on, which
+    is the route tests' own subject. The scan-bound case additionally needs more
+    rows than a DB-backed test would pay for one insert at a time.
     """
 
     @staticmethod
@@ -806,7 +805,8 @@ class TestBackupSourceChoicesScan:
         pager = self._pager(runs)
         monkeypatch.setattr(MysqlBackupRunManager, "list_for_service", pager)
         choices = await choices_for_service(
-            AsyncMock(), CatalogServiceKey(service_name="svc-a", service_id=1)
+            AsyncMock(spec=AsyncSession),
+            CatalogServiceKey(service_name="svc-a", service_id=1),
         )
         return choices, pager
 
