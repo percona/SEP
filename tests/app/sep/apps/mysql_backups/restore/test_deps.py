@@ -454,6 +454,7 @@ async def test_catalogued_transport_bridges_under_a_running_event_loop(
     assert create_kwargs
     assert all(call.get("poolclass") is NullPool for call in create_kwargs)
 
+
 class TestBuildRestoreApiTaskResponse:
     """Cover the MySQL restore builder's actor resolution."""
 

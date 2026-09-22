@@ -22,6 +22,7 @@ from sqlalchemy import case, column, func, Integer, or_, select, String, Values
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument
 from sqlmodel import and_, col
 from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel.sql.expression import Select as SQLModelSelect
 
 from app.core.db.crud import BaseSQLModelManager
 from app.core.db.utils import NullsLastOrdering
@@ -372,12 +373,18 @@ class MysqlBackupRunManager(BaseSQLModelManager):
             )
             .subquery("ranked_catalog_transports")
         )
-        query = select(
-            ranked.c.lk_service_id,
-            ranked.c.lk_service_name,
-            ranked.c.lk_backup_source,
-            ranked.c.source_transport,
-        ).where(ranked.c.rn == 1)
+        # ``sqlalchemy.select`` of bare columns is not a sqlmodel ``Select``, so
+        # cast into the shape ``BaseManager._exec``'s overload accepts. Runtime
+        # execution is unchanged.
+        query = cast(
+            SQLModelSelect[Any],
+            select(
+                ranked.c.lk_service_id,
+                ranked.c.lk_service_name,
+                ranked.c.lk_backup_source,
+                ranked.c.source_transport,
+            ).where(ranked.c.rn == 1),
+        )
 
         results.update(dict.fromkeys(pending, None))
         for row in (await cls._exec(session, query)).all():
