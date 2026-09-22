@@ -182,3 +182,28 @@ async def test_close_all_survives_a_base_url_it_cannot_redact(
     assert CREDENTIAL_URL_MASK in caplog.text
     assert _CLOSE_FAILURE in caplog.text
     assert registry._clients == {}
+
+
+@pytest.mark.asyncio
+async def test_invalidate_survives_a_base_url_it_cannot_redact(
+    caplog, monkeypatch
+) -> None:
+    """Report an eviction close failure even when the base URL defeats the redaction."""
+    registry = ClientRegistry()
+    try:
+        await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+        monkeypatch.setattr(
+            _FailingCloseRemoteAPI,
+            "_compute_base_url",
+            lambda _self: "http://svcuser:svcpass@[::1:4646/",
+        )
+
+        with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+            await registry.invalidate(_CREDENTIAL_ENDPOINT)
+    finally:
+        monkeypatch.undo()
+        await registry.close_all()
+
+    assert _CREDENTIAL_SECRET not in caplog.text
+    assert CREDENTIAL_URL_MASK in caplog.text
+    assert _CLOSE_FAILURE in caplog.text
