@@ -149,20 +149,23 @@ class TestBuildStep:
         assert "psmdb-80" in command
 
     def test_configure_repository_accepts_a_full_patch_version(self) -> None:
-        """Only major.minor selects the channel, not the full patch version.
+        """A full patch version like "7.0.14" must not leak into the channel name.
 
-        Exactly like the request field's own "only the major version selects
-        the install source" comment (TriggerHostBootstrapRequest.mongodb_version)
-        promises - a full patch version like "7.0.14" must not leak into the
-        channel name. Confirmed against a live host: this used to produce the
-        nonexistent channel "psmdb-7014" and configure_repository failed with
-        "Specified repository does not exist".
+        Only major.minor selects the channel, exactly like the request field's own
+        "only the major version selects the install source" comment
+        (TriggerHostBootstrapRequest.mongodb_version) promises. Confirmed against a
+        live host: this used to produce the nonexistent channel "psmdb-7014" and
+        configure_repository failed with "Specified repository does not exist".
         """
         spec = BootstrapSpec(
             install_method=InstallMethod.PACKAGES,
             os=OperatingSystem.ROCKY,
             mongodb_version="7.0.14",
             replica_set_name="rs-test",
+            data_path="/var/lib/mongo",
+            log_path="/var/log/mongodb/mongod.log",
+            port=27017,
+            bind_ip="0.0.0.0",
         )
         action = PackagesInstallStrategy().build_step(
             "configure_repository", "node00", spec
