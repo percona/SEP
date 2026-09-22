@@ -115,71 +115,74 @@ def _fast_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(om_inventory_settings, "POLL_INTERVAL", 1)
 
 
-@pytest.mark.asyncio
-async def test_a_run_we_stop_waiting_for_is_released() -> None:
-    """Stop a dispatch that never reached a terminal status."""
-    api = make_api(["running"])
+class TestReleaseOnAbandonedDispatch:
+    """Pin the release, and the two ways it must not misfire."""
 
-    result = await probe_host(api, HOST, entries())
+    @pytest.mark.asyncio
+    async def test_a_run_we_stop_waiting_for_is_released(self) -> None:
+        """Stop a dispatch that never reached a terminal status."""
+        api = make_api(["running"])
 
-    assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
-    assert "TimeoutError" in (result.error or "")
-    # The sweep still reports the probe as failed — releasing the queue item is
-    # cleanup, not a rescue of the data this host owed.
-    assert result.records == {}
+        result = await probe_host(api, HOST, entries())
 
+        assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
+        assert "TimeoutError" in (result.error or "")
+        # The sweep still reports the probe as failed — releasing the queue item is
+        # cleanup, not a rescue of the data this host owed.
+        assert result.records == {}
 
-@pytest.mark.asyncio
-async def test_a_release_failure_is_reported_and_not_raised() -> None:
-    """Say the queue item was left behind, rather than failing the sweep over it."""
-    api = make_api(["running"], stop_raises=RuntimeError("500: KeyError TaskStates"))
+    @pytest.mark.asyncio
+    async def test_a_release_failure_is_reported_and_not_raised(self) -> None:
+        """Say the queue item was left behind, rather than failing the sweep over it."""
+        api = make_api(
+            ["running"], stop_raises=RuntimeError("500: KeyError TaskStates")
+        )
 
-    result = await probe_host(api, HOST, entries())
+        result = await probe_host(api, HOST, entries())
 
-    assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
-    assert "TimeoutError" in (result.error or "")
-    # The operator needs to know which id is now blocking this host: the stop route
-    # raises exactly where the allocation is gone, which is the case most likely to
-    # have caused the abandonment.
-    assert f"task history {HISTORY_ID} could not be released" in (result.error or "")
-    assert "block this host's next probe" in (result.error or "")
+        assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
+        assert "TimeoutError" in (result.error or "")
+        # The operator needs to know which id is now blocking this host: the stop
+        # route raises exactly where the allocation is gone, which is the case most
+        # likely to have caused the abandonment.
+        assert f"task history {HISTORY_ID} could not be released" in (
+            result.error or ""
+        )
+        assert "block this host's next probe" in (result.error or "")
 
+    @pytest.mark.asyncio
+    async def test_a_finished_run_is_not_stopped(self) -> None:
+        """Leave a terminal queue item alone when collection failed after it finished."""
+        api = make_api(["success"])
+        # The run finished; reading its logs is what failed.
+        api.stream = MagicMock(side_effect=RuntimeError("log stream closed"))
 
-@pytest.mark.asyncio
-async def test_a_finished_run_is_not_stopped() -> None:
-    """Leave a terminal queue item alone when collection failed after it finished."""
-    api = make_api(["success"])
-    # The run finished; reading its logs is what failed.
-    api.stream = MagicMock(side_effect=RuntimeError("log stream closed"))
+        result = await probe_host(api, HOST, entries())
 
-    result = await probe_host(api, HOST, entries())
+        assert stop_calls(api) == []
+        assert "log stream closed" in (result.error or "")
+        assert "could not be released" not in (result.error or "")
 
-    assert stop_calls(api) == []
-    assert "log stream closed" in (result.error or "")
-    assert "could not be released" not in (result.error or "")
+    @pytest.mark.asyncio
+    async def test_a_dispatch_that_never_queued_releases_nothing(self) -> None:
+        """Skip the release when no queue item was ever created."""
+        api = MagicMock()
+        api.post = AsyncMock(side_effect=RuntimeError("connection refused"))
 
+        result = await probe_host(api, HOST, entries())
 
-@pytest.mark.asyncio
-async def test_a_dispatch_that_never_queued_releases_nothing() -> None:
-    """Skip the release when no queue item was ever created."""
-    api = MagicMock()
-    api.post = AsyncMock(side_effect=RuntimeError("connection refused"))
+        assert stop_calls(api) == []
+        assert "connection refused" in (result.error or "")
 
-    result = await probe_host(api, HOST, entries())
+    @pytest.mark.asyncio
+    async def test_an_unreadable_status_still_releases(self) -> None:
+        """Stop the run anyway when its status cannot be read.
 
-    assert stop_calls(api) == []
-    assert "connection refused" in (result.error or "")
+        Not knowing whether an item is in flight is not a reason to leave it there;
+        an unnecessary stop costs one refused request, a missed one costs the host.
+        """
+        api = make_api(["running"], get_raises=RuntimeError("gateway timeout"))
 
+        await probe_host(api, HOST, entries())
 
-@pytest.mark.asyncio
-async def test_an_unreadable_status_still_releases() -> None:
-    """Stop the run anyway when its status cannot be read.
-
-    Not knowing whether an item is in flight is not a reason to leave it there; an
-    unnecessary stop costs one refused request, a missed one costs the host.
-    """
-    api = make_api(["running"], get_raises=RuntimeError("gateway timeout"))
-
-    await probe_host(api, HOST, entries())
-
-    assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]
+        assert stop_calls(api) == [f"/history/{HISTORY_ID}/stop/"]

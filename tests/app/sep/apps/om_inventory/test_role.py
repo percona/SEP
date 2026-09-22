@@ -65,62 +65,61 @@ def record(
     }
 
 
-def test_an_arbiter_is_not_classified_as_a_plain_mongod() -> None:
-    """Classify an arbiter as arbiter even though it is itself a mongod process."""
-    assert classify_role(record(is_arbiter=True)) == "arbiter"
+class TestClassifyRole:
+    """Pin the precedence table :func:`classify_role` implements."""
 
+    def test_an_arbiter_is_not_classified_as_a_plain_mongod(self) -> None:
+        """Classify an arbiter as arbiter even though it is itself a mongod process."""
+        assert classify_role(record(is_arbiter=True)) == "arbiter"
 
-def test_a_router_is_mongos_by_its_own_program() -> None:
-    """Classify a router as mongos when its own process says so."""
-    assert classify_role(record(program="mongos", argv="/usr/bin/mongos")) == "mongos"
+    def test_a_router_is_mongos_by_its_own_program(self) -> None:
+        """Classify a router as mongos when its own process says so."""
+        assert (
+            classify_role(record(program="mongos", argv="/usr/bin/mongos")) == "mongos"
+        )
 
+    def test_a_router_is_mongos_by_hello_when_the_program_cannot_say(self) -> None:
+        """Catch a mongos via ``hello.msg`` when its process facts came back empty."""
+        assert (
+            classify_role(record(msg="isdbgrid", program=None, running=False))
+            == "mongos"
+        )
 
-def test_a_router_is_mongos_by_hello_when_the_program_cannot_say() -> None:
-    """Catch a mongos via ``hello.msg`` when its process facts came back empty."""
-    assert (
-        classify_role(record(msg="isdbgrid", program=None, running=False)) == "mongos"
-    )
+    def test_a_config_server_is_read_from_get_cmd_line_opts(self) -> None:
+        """Read a config server's role from ``getCmdLineOpts`` rather than argv.
 
-
-def test_a_config_server_is_read_from_get_cmd_line_opts() -> None:
-    """Read a config server's role from ``getCmdLineOpts`` rather than argv.
-
-    Measured against this workspace's sharded sandbox, where every config server
-    runs as ``mongod --config /etc/mongod-node.conf`` and reports
-    ``parsed.sharding.clusterRole == "configsvr"``. Reading argv alone labelled all
-    three of them ``mongod``.
-    """
-    assert (
-        classify_role(
-            record(
-                cluster_role="configsvr",
-                argv="/usr/bin/mongod --config /etc/mongod-node.conf",
+        Measured against this workspace's sharded sandbox, where every config server
+        runs as ``mongod --config /etc/mongod-node.conf`` and reports
+        ``parsed.sharding.clusterRole == "configsvr"``. Reading argv alone labelled
+        all three of them ``mongod``.
+        """
+        assert (
+            classify_role(
+                record(
+                    cluster_role="configsvr",
+                    argv="/usr/bin/mongod --config /etc/mongod-node.conf",
+                )
             )
+            == "config"
         )
-        == "config"
-    )
 
-
-def test_a_config_server_started_with_the_flag_is_still_config() -> None:
-    """Fall back to argv's ``--configsvr`` flag when database facts never came back."""
-    assert (
-        classify_role(
-            record(argv="/usr/bin/mongod --configsvr --config /etc/mongod.conf")
+    def test_a_config_server_started_with_the_flag_is_still_config(self) -> None:
+        """Fall back to argv's ``--configsvr`` flag when database facts never came back."""
+        assert (
+            classify_role(
+                record(argv="/usr/bin/mongod --configsvr --config /etc/mongod.conf")
+            )
+            == "config"
         )
-        == "config"
-    )
 
+    def test_a_shard_member_is_not_a_config_server(self) -> None:
+        """Treat a shardsvr's ``clusterRole`` as mongod, not as a config server."""
+        assert classify_role(record(cluster_role="shardsvr")) == "mongod"
 
-def test_a_shard_member_is_not_a_config_server() -> None:
-    """Treat a shardsvr's ``clusterRole`` as mongod, not as a config server."""
-    assert classify_role(record(cluster_role="shardsvr")) == "mongod"
+    def test_an_ordinary_member_is_mongod(self) -> None:
+        """Classify a running server process as mongod when none of the above match."""
+        assert classify_role(record()) == "mongod"
 
-
-def test_an_ordinary_member_is_mongod() -> None:
-    """Classify a running server process as mongod when none of the above match."""
-    assert classify_role(record()) == "mongod"
-
-
-def test_no_server_process_found_classifies_as_nothing() -> None:
-    """Keep a previously good role rather than blanking it on absence."""
-    assert classify_role(record(program=None, running=False)) is None
+    def test_no_server_process_found_classifies_as_nothing(self) -> None:
+        """Keep a previously good role rather than blanking it on absence."""
+        assert classify_role(record(program=None, running=False)) is None

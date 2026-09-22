@@ -52,86 +52,85 @@ async def record_run(session: AsyncSession, started_at: datetime) -> ProbeRun:
     return await ProbeRunManager.save(session, run)
 
 
-@pytest.mark.asyncio
-async def test_list_runs_filters_started_at_before_limit(
-    api: AsyncClient, session: AsyncSession
-) -> None:
-    """Keep the in-window runs, then apply limit, so an older in-window run survives.
+class TestRunsListDateRangeFilter:
+    """Pin ``GET /runs``'s date-range filtering."""
 
-    Three runs a day apart, ``since`` on the oldest, ``limit=2``: without the
-    window the newest two would win and the oldest would drop. With it, the two
-    oldest are the ones in range once the newest is excluded by ``until``.
-    """
-    oldest = await record_run(session, T0)
-    middle = await record_run(session, T1)
-    await record_run(session, T2)
+    @pytest.mark.asyncio
+    async def test_list_runs_filters_started_at_before_limit(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Keep the in-window runs, then apply limit, so an older in-window run survives.
 
-    response = await api.get(
-        f"{BASE}/runs",
-        params={
-            "since": T0.isoformat(),
-            "until": T1.isoformat(),
-            "limit": 2,
-        },
-    )
+        Three runs a day apart, ``since`` on the oldest, ``limit=2``: without the
+        window the newest two would win and the oldest would drop. With it, the two
+        oldest are the ones in range once the newest is excluded by ``until``.
+        """
+        oldest = await record_run(session, T0)
+        middle = await record_run(session, T1)
+        await record_run(session, T2)
 
-    assert response.status_code == status.HTTP_200_OK
-    ids = [row["run_id"] for row in response.json()]
-    assert ids == [str(middle.id), str(oldest.id)]
+        response = await api.get(
+            f"{BASE}/runs",
+            params={
+                "since": T0.isoformat(),
+                "until": T1.isoformat(),
+                "limit": 2,
+            },
+        )
 
+        assert response.status_code == status.HTTP_200_OK
+        ids = [row["run_id"] for row in response.json()]
+        assert ids == [str(middle.id), str(oldest.id)]
 
-@pytest.mark.asyncio
-async def test_list_runs_since_excludes_older(
-    api: AsyncClient, session: AsyncSession
-) -> None:
-    """Drop runs that started before a lower bound."""
-    await record_run(session, T0)
-    kept = await record_run(session, T2)
+    @pytest.mark.asyncio
+    async def test_list_runs_since_excludes_older(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Drop runs that started before a lower bound."""
+        await record_run(session, T0)
+        kept = await record_run(session, T2)
 
-    response = await api.get(f"{BASE}/runs", params={"since": T1.isoformat()})
+        response = await api.get(f"{BASE}/runs", params={"since": T1.isoformat()})
 
-    assert response.status_code == status.HTTP_200_OK
-    assert [row["run_id"] for row in response.json()] == [str(kept.id)]
+        assert response.status_code == status.HTTP_200_OK
+        assert [row["run_id"] for row in response.json()] == [str(kept.id)]
 
+    @pytest.mark.asyncio
+    async def test_list_runs_until_excludes_newer(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Drop runs that started after the upper bound."""
+        kept = await record_run(session, T0)
+        await record_run(session, T2)
 
-@pytest.mark.asyncio
-async def test_list_runs_until_excludes_newer(
-    api: AsyncClient, session: AsyncSession
-) -> None:
-    """Drop runs that started after the upper bound."""
-    kept = await record_run(session, T0)
-    await record_run(session, T2)
+        response = await api.get(f"{BASE}/runs", params={"until": T1.isoformat()})
 
-    response = await api.get(f"{BASE}/runs", params={"until": T1.isoformat()})
+        assert response.status_code == status.HTTP_200_OK
+        assert [row["run_id"] for row in response.json()] == [str(kept.id)]
 
-    assert response.status_code == status.HTTP_200_OK
-    assert [row["run_id"] for row in response.json()] == [str(kept.id)]
+    @pytest.mark.asyncio
+    async def test_list_runs_rejects_until_before_since(self, api: AsyncClient) -> None:
+        """Reject an inverted window as a validation failure, not an empty page."""
+        response = await api.get(
+            f"{BASE}/runs",
+            params={"since": T2.isoformat(), "until": T0.isoformat()},
+        )
 
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert response.json()["detail"] == "until must not be before since"
 
-@pytest.mark.asyncio
-async def test_list_runs_rejects_until_before_since(api: AsyncClient) -> None:
-    """Reject an inverted window as a validation failure, not an empty page."""
-    response = await api.get(
-        f"{BASE}/runs",
-        params={"since": T2.isoformat(), "until": T0.isoformat()},
-    )
+    @pytest.mark.asyncio
+    async def test_list_runs_omits_window_when_unset(
+        self, api: AsyncClient, session: AsyncSession
+    ) -> None:
+        """Return newest first with no date params, including the oldest row."""
+        oldest = await record_run(session, T0)
+        newest = await record_run(session, T2)
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-    assert response.json()["detail"] == "until must not be before since"
+        response = await api.get(f"{BASE}/runs")
 
-
-@pytest.mark.asyncio
-async def test_list_runs_omits_window_when_unset(
-    api: AsyncClient, session: AsyncSession
-) -> None:
-    """Return newest first with no date params, including the oldest row."""
-    oldest = await record_run(session, T0)
-    newest = await record_run(session, T2)
-
-    response = await api.get(f"{BASE}/runs")
-
-    assert response.status_code == status.HTTP_200_OK
-    assert [row["run_id"] for row in response.json()] == [
-        str(newest.id),
-        str(oldest.id),
-    ]
+        assert response.status_code == status.HTTP_200_OK
+        assert [row["run_id"] for row in response.json()] == [
+            str(newest.id),
+            str(oldest.id),
+        ]
