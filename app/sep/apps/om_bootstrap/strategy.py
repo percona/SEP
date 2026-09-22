@@ -197,13 +197,16 @@ class HostBootstrapState(BaseModel):
             :attr:`StepStatus.RUNNING` if any step is running or still pending
             with an earlier step done, :attr:`StepStatus.SUCCEEDED` once every
             step has succeeded or been skipped, else :attr:`StepStatus.PENDING`.
+            ``PENDING`` for an empty ``steps`` list too -- ``all()`` over an
+            empty sequence is vacuously true, which would otherwise report a
+            host with nothing planned as already done.
         """
         statuses = [step.status for step in self.steps]
         if StepStatus.FAILED in statuses:
             return StepStatus.FAILED
         if StepStatus.RUNNING in statuses:
             return StepStatus.RUNNING
-        if all(
+        if statuses and all(
             status in (StepStatus.SUCCEEDED, StepStatus.SKIPPED) for status in statuses
         ):
             return StepStatus.SUCCEEDED

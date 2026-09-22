@@ -70,3 +70,7 @@ class TestHostBootstrapStateStatus:
         state = _state(StepStatus.SUCCEEDED, StepStatus.FAILED, StepStatus.PENDING)
 
         assert state.status == StepStatus.FAILED
+
+    def test_no_steps_is_pending_not_succeeded(self) -> None:
+        """all() over an empty steps list is vacuously true -- must not read as done."""
+        assert _state().status == StepStatus.PENDING
