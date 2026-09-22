@@ -536,6 +536,32 @@ def collect_database_facts(target, userinfo, auth_source, connect_timeout_ms):
     return summarise_database_facts(facts)
 
 
+def determine_vendor(build_info):
+    """Return who built this binary, from ``buildInfo``'s own fields.
+
+    ``psmdbVersion`` is a field Percona's fork adds to ``buildInfo`` that upstream
+    MongoDB has no code to emit, so its presence is a positive identification, not
+    a heuristic -- confirmed against a running Percona Server for MongoDB node
+    (``psmdbVersion`` present, ``modules: []``) and a running MongoDB Enterprise
+    node (no ``psmdbVersion`` key at all, ``modules: ["enterprise"]``). Without
+    that field, ``modules`` is the documented signal for Enterprise versus
+    Community -- but on its own it cannot tell Percona from Community, since
+    Percona's ``modules`` is also empty.
+
+    :param build_info: The ``buildInfo`` command's output, or ``{}`` when it
+        was not collected.
+    :return: ``"Percona"``, ``"MongoDB Enterprise"``, ``"MongoDB Community"``,
+        or ``None`` when ``build_info`` is empty.
+    """
+    if not build_info:
+        return None
+    if build_info.get("psmdbVersion"):
+        return "Percona"
+    if "enterprise" in (build_info.get("modules") or []):
+        return "MongoDB Enterprise"
+    return "MongoDB Community"
+
+
 def summarise_database_facts(facts):
     """Copy the few fields worth having to the top level of the record.
 
@@ -552,6 +578,7 @@ def summarise_database_facts(facts):
     summary = {
         "db_version": build_info.get("version"),
         "git_version": build_info.get("gitVersion"),
+        "vendor": determine_vendor(build_info),
         "storage_engine": (facts.get("cmd_line_opts") or {})
         .get("parsed", {})
         .get("storage", {})

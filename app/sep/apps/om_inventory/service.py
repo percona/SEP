@@ -240,6 +240,7 @@ SERVICE_FIELDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("installed_version", ("binary_version",)),
     ("version", ("database", "db_version")),
     ("git_version", ("database", "git_version")),
+    ("vendor", ("database", "vendor")),
     ("storage_engine", ("database", "storage_engine")),
     ("replication_set", ("database", "set_name")),
     ("config_path", ("process", "config_path")),
