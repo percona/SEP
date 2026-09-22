@@ -172,11 +172,12 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
-    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``) and
-    ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``,
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``),
+    ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``)
+    and ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``) — each of
     which the rebuild seeds or drops as the interval is set or cleared, since
-    the app's schedule thunk contributes nothing while it is unset).
-    Rebuilds the system periodic-task set via
+    the app's schedule thunk contributes nothing while it is unset. Rebuilds
+    the system periodic-task set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -186,6 +187,15 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` is preserved.
     Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
     Celery beat reloads the schedule on its next scheduler tick without a restart.
+
+    Gating is then re-applied, because preserving it is only true of the **update**
+    path. A schedule an app may set to ``None`` — which is how an app-owned sweep is
+    turned off, and how ``OmInventorySettings.SCHEDULE`` turns off the estate probe
+    — contributes no task at all while it is null, and the orphan cleanup in
+    ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
+    path, which builds a fresh row at the model's default ``enabled``, so a disabled
+    app would start running on the next beat tick. This is the same pair
+    :func:`app.sep.db.seed.init_sep_db` runs at startup, for the same reason.
 
     :param _: The override snapshots on either side of the republish (unused; the
         interval is re-read from the proxy by the task-set builder).

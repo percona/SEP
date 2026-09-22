@@ -42,6 +42,7 @@ from app.sep.apps.framework.registry import (
     get_app_registry,
 )
 from app.sep.apps.inventory.config import InventoryAppSettings
+from app.sep.apps.om_inventory.config import OmInventorySettings
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.config import App, sep_settings, SEPSettings
@@ -371,6 +372,7 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
         AlertsSettings.__name__,
         HealthReportSettings.__name__,
         InventoryAppSettings.__name__,
+        OmInventorySettings.__name__,
     }
     alerts_entry = proxies[AlertsSettings.__name__]
     assert alerts_entry.proxy is alerts_settings

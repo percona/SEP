@@ -23,9 +23,13 @@ any misconfigured ``version_locations`` or plugin-discovery regression.
 
 import io
 import logging
+import os
+import subprocess
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from logging.config import dictConfig, fileConfig
+from pathlib import Path
 
 import pytest
 from alembic import command
@@ -41,7 +45,7 @@ from app.core.celery.migrations import BEAT_TABLE_NAMES
 from app.core.config import LOGGING_CONFIG, settings
 from app.core.db.utils import check_constraint_name
 from app.sep.apps.alerts.models import AlertBackup
-from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.alembic_paths import ALEMBIC_INI, REPO_ROOT
 from tests.app.beat_autogenerate import (
     autogenerate_diffs,
     create_beat_tables,
@@ -933,3 +937,30 @@ def test_bootstrap_after_upgrade_leaves_the_beat_tables_unproposed(
 
     assert _get_table_names(sync_url) >= BEAT_TABLE_NAMES
     assert tables_mentioned(autogenerate_diffs(cfg), BEAT_TABLE_NAMES) == []
+
+
+def test_check_is_clean_after_upgrade_to_heads(tmp_path: Path) -> None:
+    """Report models and migrations in sync once every branch is applied.
+
+    Run the CLI in a subprocess rather than ``command.check`` in-process: this
+    process imports every service's models into the one ``SQLModel.metadata``,
+    so an in-process check on the sep track would report the tasks and inventory
+    tables as missing. The CLI process imports only what ``env.py`` imports,
+    which is exactly what ``make checkmigrations`` runs. OM's tables declare a
+    symbolic schema, so this is also where the translated comparison is proven.
+    """
+    env = {
+        **os.environ,
+        "SEP__DATABASE__HOST": "",
+        "SEP__DATABASE__NAME": str(tmp_path / "sep.sqlite"),
+    }
+    for verb in (("upgrade", "heads"), ("check",)):
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "--name", "sep", *verb],
+            cwd=REPO_ROOT,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
