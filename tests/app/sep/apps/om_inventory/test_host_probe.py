@@ -246,11 +246,16 @@ class TestThePayloadRunsOnOldPython:
         Minifies the *whole file*, which is what dispatch does: ``hoist_literals``
         lifts every function's ``"pid"`` and ``"port"`` into shared module globals,
         and ``rename_globals`` then reuses those same short names as comprehension
-        iteration variables. The reuse is safe, because a comprehension carries its
-        own scope on every Python that can run this payload — this test is what
-        keeps that true across a minifier upgrade rather than an argument that it
-        is, and it is why the assertions run the minified function rather than
-        inspecting its text.
+        iteration variables. That reuse is not safe everywhere — on the 3.12 builds
+        named in :func:`~app.sep.apps.om_inventory.payload.probe.find_unregistered`'s
+        own comment the collision raises ``UnboundLocalError``, which is why that
+        function is written with loops.
+
+        So what this covers is narrower than the failure it was written after: the
+        minified function runs in *this* interpreter, which catches a minifier
+        upgrade that breaks the shipped form here. It cannot catch a payload that
+        breaks on the interpreter a monitored host happens to run — that needs the
+        same round trip under an affected build.
 
         The renamed top-level name is found by signature (``rename_globals``
         renames it away, unpredictably across minifier versions) rather than by

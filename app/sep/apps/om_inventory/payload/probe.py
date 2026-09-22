@@ -368,6 +368,16 @@ def find_unregistered(processes, targets, matched_pids=frozenset()):
         excluded regardless of what the port filter below would otherwise say.
     :return: The processes that matched no target.
     """
+    # Explicit loops rather than comprehensions: the Tasks layer minifies this file
+    # before dispatch (see build_uri's note above), and ``hoist_literals`` aliases a
+    # comprehension's loop variable onto the hoisted "pid" literal this function also
+    # reads. From 3.12 a comprehension is inlined into the enclosing function (PEP
+    # 709), which turns that name into a function local left unbound once the
+    # comprehension ends, so the later read raises ``UnboundLocalError``. Measured on
+    # the whole-file minified payload: 3.12.2 and 3.12.3 raise, 3.12.4 onwards do
+    # not, and neither do 3.9, 3.11, 3.13 or 3.14. Ubuntu 24.04 ships 3.12.3 as its
+    # system python, and this runs on whatever the monitored host has. A generator
+    # expression is unaffected — PEP 709 inlines comprehensions only.
     registered_ports = set()
     for target in targets:
         port = target.get("port")
