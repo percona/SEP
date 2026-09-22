@@ -1891,6 +1891,22 @@ async def test_get_executor_host_states_unreachable(test_client, mock_executor):
 
 
 @pytest.mark.asyncio
+async def test_get_executor_host_states_nomad_returns_non_json(
+    test_client, mock_executor
+):
+    """Assert /hosts/states/ returns 502 JSON when executor raises JSONDecodeError."""
+    mock_executor.get_host_states.side_effect = requests.exceptions.JSONDecodeError(
+        "Expecting value", "doc", 0
+    )
+    response = test_client.get("/hosts/states/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
+
+
+@pytest.mark.asyncio
 async def test_get_executor_hosts_nomad_returns_non_json(test_client, mock_executor):
     """Assert /hosts/ returns 502 JSON when executor raises JSONDecodeError."""
     mock_executor.get_hosts.side_effect = requests.exceptions.JSONDecodeError(
