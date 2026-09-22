@@ -142,6 +142,18 @@ class ObservedEntity(SQLModel):
     because a Column instance binds to exactly one Table and sharing one across two
     models fails at import.
 
+    Deliberately **not** :class:`~app.core.db.models.BaseSQLModel`: that base
+    mandates an auto-incrementing integer ``id`` as the primary key, and both
+    tables here are keyed on a natural id PMM already assigns (``node_id`` /
+    ``service_id`` on :class:`OmHost` / :class:`OmService`) so a row can be
+    looked up by the same id every other caller already has, with nothing to
+    translate. A second, unused surrogate ``id`` column would only invite a
+    query that joins on the wrong one. ``updated_at`` is declared here instead
+    of inherited for the same reason: :class:`~app.core.db.models.BaseSQLModel`
+    pairs it with a database-managed ``created_at`` this mixin has no use for --
+    ``first_seen_at`` already is that column, under the name the freshness
+    lifecycle uses elsewhere on this class.
+
     The lifecycle these implement is four rules, each cheap now and expensive to
     discover later:
 
@@ -586,7 +598,35 @@ class ProbeRunAccepted(BaseModel):
     scope: list[str] | None = None
 
 
-class ServiceResponse(BaseModel):
+class FreshnessResponse(BaseModel):
+    """Carry the freshness columns every probed entity's response reports.
+
+    Shared by :class:`ServiceResponse` and :class:`HostResponse` so the two cannot
+    report the freshness lifecycle differently, the same reason :class:`ObservedEntity`
+    is a mixin rather than duplicated on :class:`OmHost` and :class:`OmService`.
+
+    :param observed: Everything collected, with its own ``collected_at``. Empty when
+        this entity has never been successfully probed.
+    :param first_seen_at: When OM first wrote a row for it.
+    :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
+        has, which is different from having tried and failed.
+    :param last_success_at: When it last answered. This is the data's age.
+    :param failing_since: The first failure after the last success; ``None`` while
+        healthy.
+    :param consecutive_failures: Failures since the last success.
+    :param last_error: The most recent failure detail.
+    """
+
+    observed: dict[str, Any] = Field(default_factory=dict)
+    first_seen_at: UTCDatetime
+    last_attempt_at: UTCDatetime | None = None
+    last_success_at: UTCDatetime | None = None
+    failing_since: UTCDatetime | None = None
+    consecutive_failures: int = 0
+    last_error: str | None = None
+
+
+class ServiceResponse(FreshnessResponse):
     """Report one MongoDB service PMM has registered, as OM currently holds it.
 
     Keyed on **PMM's** service id, which is the whole benefit of storing it that way:
@@ -598,16 +638,6 @@ class ServiceResponse(BaseModel):
     :param name: The service name as PMM registered it.
     :param port: The port it listens on.
     :param role: What the probe found it to be, when a probe determined one.
-    :param observed: Everything collected, with its own ``collected_at``. Empty when
-        this service has never been successfully probed.
-    :param first_seen_at: When OM first wrote a row for it.
-    :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
-        has, which is different from having tried and failed.
-    :param last_success_at: When it last answered. This is the data's age.
-    :param failing_since: The first failure after the last success; ``None`` while
-        healthy.
-    :param consecutive_failures: Failures since the last success.
-    :param last_error: The most recent failure detail.
     """
 
     service_id: str
@@ -615,36 +645,24 @@ class ServiceResponse(BaseModel):
     name: str | None = None
     port: int | None = None
     role: str | None = None
-    observed: dict[str, Any] = Field(default_factory=dict)
-    first_seen_at: UTCDatetime
-    last_attempt_at: UTCDatetime | None = None
-    last_success_at: UTCDatetime | None = None
-    failing_since: UTCDatetime | None = None
-    consecutive_failures: int = 0
-    last_error: str | None = None
 
 
-class HostResponse(BaseModel):
+class HostResponse(FreshnessResponse):
     """Report one host, with the services OM knows are on it.
 
     A host is a row whether or not any MongoDB was found on it: that is what makes
     "which hosts have no database" a query rather than an absence, and it is the only
     way a machine that has never run one appears at all.
 
+    ``observed`` (from :class:`FreshnessResponse`) additionally carries
+    ``unregistered_mongods`` here, where the probe found a database PMM has no
+    service for.
+
     :param node_id: PMM's node id.
     :param name: The node's registered name.
     :param address: The node's registered address.
     :param executor_host: The Nomad client serving it. ``None`` means nothing can be
         run there, which is a fact about the estate rather than a probe failure.
-    :param observed: Everything collected about the host, including
-        ``unregistered_mongods`` where the probe found a database PMM has no service
-        for. Empty when the host has never been successfully probed.
-    :param first_seen_at: When OM first wrote a row for it.
-    :param last_attempt_at: When a run last probed it.
-    :param last_success_at: When it last answered.
-    :param failing_since: The first failure after the last success.
-    :param consecutive_failures: Failures since the last success.
-    :param last_error: The most recent failure detail.
     :param services: The services on it. Empty is a meaningful answer, not a gap.
     """
 
@@ -652,11 +670,4 @@ class HostResponse(BaseModel):
     name: str
     address: str | None = None
     executor_host: str | None = None
-    observed: dict[str, Any] = Field(default_factory=dict)
-    first_seen_at: UTCDatetime
-    last_attempt_at: UTCDatetime | None = None
-    last_success_at: UTCDatetime | None = None
-    failing_since: UTCDatetime | None = None
-    consecutive_failures: int = 0
-    last_error: str | None = None
     services: list[ServiceResponse] = Field(default_factory=list)

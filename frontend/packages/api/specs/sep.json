@@ -13263,7 +13263,7 @@
         "type": "string"
       },
       "om_inventory__HostResponse": {
-        "description": "Report one host, with the services OM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param observed: Everything collected about the host, including\n    ``unregistered_mongods`` where the probe found a database PMM has no service\n    for. Empty when the host has never been successfully probed.\n:param first_seen_at: When OM first wrote a row for it.\n:param last_attempt_at: When a run last probed it.\n:param last_success_at: When it last answered.\n:param failing_since: The first failure after the last success.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
+        "description": "Report one host, with the services OM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n``observed`` (from :class:`FreshnessResponse`) additionally carries\n``unregistered_mongods`` here, where the probe found a database PMM has no\nservice for.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
         "properties": {
           "address": {
             "anyOf": [
@@ -13365,9 +13365,9 @@
           }
         },
         "required": [
+          "first_seen_at",
           "node_id",
-          "name",
-          "first_seen_at"
+          "name"
         ],
         "title": "HostResponse",
         "type": "object"
@@ -13791,7 +13791,7 @@
         "type": "object"
       },
       "om_inventory__ServiceResponse": {
-        "description": "Report one MongoDB service PMM has registered, as OM currently holds it.\n\nKeyed on **PMM's** service id, which is the whole benefit of storing it that way:\nthe path and the payload carry the id every consumer already has, with nothing to\ntranslate on either side.\n\n:param service_id: PMM's service id.\n:param node_id: The host it runs on.\n:param name: The service name as PMM registered it.\n:param port: The port it listens on.\n:param role: What the probe found it to be, when a probe determined one.\n:param observed: Everything collected, with its own ``collected_at``. Empty when\n    this service has never been successfully probed.\n:param first_seen_at: When OM first wrote a row for it.\n:param last_attempt_at: When a run last targeted it. ``None`` means no run ever\n    has, which is different from having tried and failed.\n:param last_success_at: When it last answered. This is the data's age.\n:param failing_since: The first failure after the last success; ``None`` while\n    healthy.\n:param consecutive_failures: Failures since the last success.\n:param last_error: The most recent failure detail.",
+        "description": "Report one MongoDB service PMM has registered, as OM currently holds it.\n\nKeyed on **PMM's** service id, which is the whole benefit of storing it that way:\nthe path and the payload carry the id every consumer already has, with nothing to\ntranslate on either side.\n\n:param service_id: PMM's service id.\n:param node_id: The host it runs on.\n:param name: The service name as PMM registered it.\n:param port: The port it listens on.\n:param role: What the probe found it to be, when a probe determined one.",
         "properties": {
           "consecutive_failures": {
             "default": 0,
@@ -13897,9 +13897,9 @@
           }
         },
         "required": [
+          "first_seen_at",
           "service_id",
-          "node_id",
-          "first_seen_at"
+          "node_id"
         ],
         "title": "ServiceResponse",
         "type": "object"

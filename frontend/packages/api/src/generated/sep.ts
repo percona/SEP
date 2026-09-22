@@ -10237,20 +10237,15 @@ export interface components {
      *     "which hosts have no database" a query rather than an absence, and it is the only
      *     way a machine that has never run one appears at all.
      *
+     *     ``observed`` (from :class:`FreshnessResponse`) additionally carries
+     *     ``unregistered_mongods`` here, where the probe found a database PMM has no
+     *     service for.
+     *
      *     :param node_id: PMM's node id.
      *     :param name: The node's registered name.
      *     :param address: The node's registered address.
      *     :param executor_host: The Nomad client serving it. ``None`` means nothing can be
      *         run there, which is a fact about the estate rather than a probe failure.
-     *     :param observed: Everything collected about the host, including
-     *         ``unregistered_mongods`` where the probe found a database PMM has no service
-     *         for. Empty when the host has never been successfully probed.
-     *     :param first_seen_at: When OM first wrote a row for it.
-     *     :param last_attempt_at: When a run last probed it.
-     *     :param last_success_at: When it last answered.
-     *     :param failing_since: The first failure after the last success.
-     *     :param consecutive_failures: Failures since the last success.
-     *     :param last_error: The most recent failure detail.
      *     :param services: The services on it. Empty is a meaningful answer, not a gap.
      */
     om_inventory__HostResponse: {
@@ -10529,16 +10524,6 @@ export interface components {
      *     :param name: The service name as PMM registered it.
      *     :param port: The port it listens on.
      *     :param role: What the probe found it to be, when a probe determined one.
-     *     :param observed: Everything collected, with its own ``collected_at``. Empty when
-     *         this service has never been successfully probed.
-     *     :param first_seen_at: When OM first wrote a row for it.
-     *     :param last_attempt_at: When a run last targeted it. ``None`` means no run ever
-     *         has, which is different from having tried and failed.
-     *     :param last_success_at: When it last answered. This is the data's age.
-     *     :param failing_since: The first failure after the last success; ``None`` while
-     *         healthy.
-     *     :param consecutive_failures: Failures since the last success.
-     *     :param last_error: The most recent failure detail.
      */
     om_inventory__ServiceResponse: {
       /**
