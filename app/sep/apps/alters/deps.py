@@ -51,6 +51,7 @@ from app.sep.apps.framework.cascade import (
     cascade_update_tasks,
     CascadeFailure,
     CascadeResult,
+    require_addressable_names,
 )
 from app.sep.apps.framework.form_dsl import (
     derive_arg_parser_from_model,
@@ -66,6 +67,7 @@ from app.sep.deps import (
     get_username_mapping,
     InventoryAPI,
     reject_if_protected,
+    task_path,
     TaskAPI,
 )
 from app.tasks.models import (
@@ -371,15 +373,14 @@ async def cascade_create_alters_group(
     :func:`~app.sep.apps.framework.cascade.build_predecessor_chain_execute_body`).
 
     :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
     :param parent_task: The parent execute task payload.
-    :type parent_task: TaskWrite
     :param pre_checks_template: The imperative pre-checks payload from
         :func:`build_pre_checks_task_payload`.
-    :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``
         when resolving the predecessor spec).
-    :type body: AltersCreate
+    :raises HTTPUnprocessableEntityException: If any of the three planned names
+        is not a single plain path segment. Raised before the first POST, so no
+        task is created.
     :raises Exception: Re-raises the underlying Tasks API error after rollback
         when one of the three task POSTs fails.
     """
@@ -387,28 +388,32 @@ async def cascade_create_alters_group(
     derived_specs = alters_schema.derived or []
     predecessor_spec = resolve_predecessor_specs(body)[0]
 
+    child_payloads = [
+        build_derived_payload(parent_payload, derived_spec)
+        for derived_spec in derived_specs
+    ]
+    predecessor_payload = build_predecessor_payload(
+        parent_payload,
+        pre_checks_template.model_dump(),
+        predecessor_spec,
+    )
+    require_addressable_names([parent_payload, *child_payloads, predecessor_payload])
+
     created_names: list[str] = []
-    predecessor_payload: dict[str, Any]
     try:
         await tasks_api.post("/", json=parent_payload)
         created_names.append(parent_payload["name"])
 
-        for derived_spec in derived_specs:
-            child_payload = build_derived_payload(parent_payload, derived_spec)
+        for child_payload in child_payloads:
             await tasks_api.post("/", json=child_payload)
             created_names.append(child_payload["name"])
 
-        predecessor_payload = build_predecessor_payload(
-            parent_payload,
-            pre_checks_template.model_dump(),
-            predecessor_spec,
-        )
         await tasks_api.post("/", json=predecessor_payload)
         created_names.append(predecessor_payload["name"])
     except Exception:
         for task_name in reversed(created_names):
             try:
-                await tasks_api.delete(f"/{task_name}")
+                await tasks_api.delete(task_path(task_name))
             except Exception as rollback_exc:  # noqa: BLE001
                 logger.warning(
                     "Rollback DELETE failed for %r during "
@@ -570,7 +575,7 @@ async def cascade_update_alters_group(
             spec,
         )
         try:
-            await tasks_api.put(f"/{existing_name}", json=built)
+            await tasks_api.put(task_path(existing_name), json=built)
             predecessor_result.successes.append(built["name"])
         except Exception as exc:  # noqa: BLE001
             predecessor_result.failures.append(CascadeFailure(existing_name, exc))

@@ -39,7 +39,7 @@ from app.sep.api.openapi import (
     UPSTREAM_TASKS_502_RESPONSE,
 )
 from app.sep.api.proxy import reraise_upstream_tasks_errors
-from app.sep.deps import TaskAPI
+from app.sep.deps import task_path, TaskAPI
 
 router = APIRouter()
 
@@ -124,7 +124,9 @@ async def create_periodic_task(
     """
     with reraise_upstream_tasks_errors():
         return ArbitraryMapping(
-            as_json_object(await tasks_api.post(f"/{task_name}/periodic/", json=body))
+            as_json_object(
+                await tasks_api.post(task_path(task_name, "/periodic/"), json=body)
+            )
         )
 
 

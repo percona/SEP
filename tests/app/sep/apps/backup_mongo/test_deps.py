@@ -15,13 +15,21 @@
 
 """Define tests for the app.sep.apps.backup_mongo.deps module."""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPNotFoundException,
+    HTTPUnprocessableEntityException,
+)
+from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import (
     build_backup_mongo_api_task_response,
     build_backup_task_payload,
+    ensure_backup_derived_siblings,
     ensure_backup_group_update_preserves_names,
 )
 from app.sep.apps.backup_mongo.models import (
@@ -29,6 +37,7 @@ from app.sep.apps.backup_mongo.models import (
     BackupTaskWrite,
     BackupType,
 )
+from app.sep.apps.framework.schema import DerivedTask
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskWrite
@@ -38,6 +47,7 @@ from tests.app.factories import (
     MOCK_UPDATER_ID,
     TaskFactory,
 )
+from tests.app.sep.path_unsafe_task_names import SUFFIXED_UNSAFE_TASKS
 
 
 def _backup_mongo_task() -> Task:
@@ -161,3 +171,66 @@ class TestBuildBackupMongoApiTaskResponse:
             MOCK_CREATOR_ID,
             MOCK_UPDATER_ID,
         )
+
+
+@pytest.mark.asyncio
+class TestEnsureMissingDerivedChildrenPathGuard:
+    """Test that a parent name cannot reshape the derived-sibling lookup."""
+
+    @pytest.mark.parametrize("parent_name", SUFFIXED_UNSAFE_TASKS)
+    async def test_refuses_an_unsafe_parent_name(self, parent_name: str) -> None:
+        """Refuse an unsafe parent name and issue no GET."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(tasks_api, parent_name, {})
+
+        tasks_api.get.assert_not_awaited()
+        tasks_api.post.assert_not_awaited()
+
+    @pytest.mark.parametrize("renamed", SUFFIXED_UNSAFE_TASKS)
+    async def test_refuses_a_rename_before_creating_a_missing_sibling(
+        self, renamed: str
+    ) -> None:
+        """Refuse a sibling built from an unsafe rename before the first request.
+
+        The sibling this backfill creates is built from the updated payload, so
+        a rename travelling in that payload is what makes the name unsafe; a
+        sibling created under an unaddressable name could never be updated or
+        deleted again. Both name sources are checked before the probe GET, so
+        neither leg of the backfill runs.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.get = AsyncMock(side_effect=HTTPNotFoundException)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(
+                tasks_api, "parent", {"name": renamed, "data": {"meta": {}}}
+            )
+
+        tasks_api.get.assert_not_awaited()
+        tasks_api.post.assert_not_awaited()
+
+    async def test_refuses_every_sibling_before_creating_any_of_them(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refuse a later spec's unsafe name before an earlier sibling is POSTed.
+
+        Today every ``BACKUP_MONGO_DERIVED`` suffix is a plain segment, so the
+        first spec would raise anyway. A spec added with an empty or unsafe
+        suffix is what this pins: the check covers the whole list before the
+        first POST, so a part-created group cannot be left behind.
+        """
+        monkeypatch.setattr(
+            "app.sep.apps.backup_mongo.deps.BACKUP_MONGO_DERIVED",
+            [DerivedTask(name_suffix="-logical"), DerivedTask(name_suffix="/evil")],
+        )
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.get = AsyncMock(side_effect=HTTPNotFoundException)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(
+                tasks_api, "parent", {"name": "parent", "data": {"meta": {}}}
+            )
+
+        tasks_api.post.assert_not_awaited()

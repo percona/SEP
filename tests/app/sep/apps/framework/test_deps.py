@@ -22,11 +22,13 @@ import pytest
 from fastapi import Depends, FastAPI, status
 from fastapi.testclient import TestClient
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.requests import RemoteAPI
 from app.sep.apps.framework import make_parent_resolver, make_task_dep
 from app.sep.deps import get_tasks_api
 from app.tasks.models import Task
 from tests.app.factories import TaskFactory
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 class TestMakeTaskDep:
@@ -47,6 +49,20 @@ class TestMakeTaskDep:
 
         assert result is task
         get_task_by_name.assert_awaited_once_with(tasks_api, "task-1", "ARCHIVER")
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    @pytest.mark.asyncio
+    async def test_name_that_is_not_one_path_segment_is_refused(
+        self, task_name: str
+    ) -> None:
+        """Inherit the composition-point guard without a per-plugin check."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        dep = make_task_dep("ARCHIVER")
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await dep(task_name, tasks_api)
+
+        tasks_api.get.assert_not_awaited()
 
     def test_distinct_owners_produce_distinct_callables(self) -> None:
         """Build a distinct callable identity per owner for cache/override scoping."""
@@ -99,6 +115,28 @@ class TestMakeParentResolver:
         assert result is parent
         assert get_task.await_args_list[0].args == ("child-1", tasks_api)
         assert get_task.await_args_list[1].args == ("parent-1", tasks_api)
+
+    @pytest.mark.parametrize("parent_name", PATH_UNSAFE_TASKS)
+    @pytest.mark.asyncio
+    async def test_unsafe_stored_parent_is_refused(self, parent_name: str) -> None:
+        """Refuse a stored parent link that is not one path segment.
+
+        A parent name comes from task data rather than a path parameter, so it
+        can carry shapes a route convertor filters out, a slash included.
+        """
+        satellite = TaskFactory.build(
+            name="child-1",
+            owner="ARCHIVER",
+            data={"parent": parent_name},
+        )
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        resolve = make_parent_resolver(make_task_dep("ARCHIVER"))
+        tasks_api.get.return_value = satellite.model_dump(mode="json")
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await resolve("child-1", tasks_api)
+
+        tasks_api.get.assert_awaited_once_with("/child-1")
 
     @pytest.mark.asyncio
     async def test_parent_absent_returns_original(self) -> None:
