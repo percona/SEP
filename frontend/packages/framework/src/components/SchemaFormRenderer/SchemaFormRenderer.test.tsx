@@ -2626,6 +2626,60 @@ describe('SchemaFormRenderer — one_of groups', () => {
       host: { mode: 'service', dest_service: 'svc-1' },
     });
   });
+
+  // A clone of a delete-only run opens with the flag already on, so both
+  // sections are gated out before they ever mount — a different path from the
+  // toggle, and the one where `buildFormDefaults` has already seeded every
+  // discriminator and leaf default into form state with no unmount to drop them.
+  it('omits a one_of whose section is gated out before its first render', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedOneOfSections()}
+        defaultValues={{ delete_data: true }}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    expect(screen.queryByTestId('one-of-destination')).toBeNull();
+    expect(screen.queryByTestId('one-of-host')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ delete_data: true });
+    expect(payload).not.toHaveProperty('destination');
+    expect(payload).not.toHaveProperty('host');
+  });
+
+  // Re-showing resets the branch choice as well as the leaves, so the value a
+  // reader last saw on the non-default branch cannot ship under the default
+  // branch's tag — an object the backend would discriminate as the wrong member.
+  it('returns a re-shown one_of to its default branch with the prior branch dropped', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={gatedOneOfSections()} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByTestId('one-of-option-file'));
+    await user.type(screen.getByTestId('text-input-destination.dest_file'), '/tmp/dump.csv');
+
+    const toggle = screen.getByLabelText('Delete Without Archiving');
+    await user.click(toggle);
+    await waitFor(() => expect(screen.queryByTestId('one-of-destination')).toBeNull());
+    await user.click(toggle);
+    await waitFor(() => expect(screen.getByTestId('one-of-destination')).toBeInTheDocument());
+
+    expect(screen.getByTestId('one-of-option-table')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('text-input-destination.dest_table')).toHaveValue('');
+
+    await user.type(screen.getByTestId('text-input-destination.dest_table'), 'archive_tbl');
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0] as { destination: Record<string, unknown> };
+    expect(payload.destination).toEqual({ mode: 'table', dest_table: 'archive_tbl' });
+  });
 });
 
 // ── Advanced sections ─────────────────────────────────────────────────────

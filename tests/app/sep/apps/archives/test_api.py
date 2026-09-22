@@ -26,6 +26,7 @@ from collections.abc import Iterator, Sequence
 from typing import Any
 
 import pytest
+import yaml
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -217,6 +218,34 @@ class TestArchivesApiCreate:
         del body["destination"]
         response = client.post(f"{_BASE}/", json=body)
         assert response.status_code == status.HTTP_201_CREATED
+
+    def test_create_delete_only_emits_a_purge_config_with_no_destination(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Generate a delete-only purge config: the flag set, no destination keys.
+
+        The delete-only run only became reachable from the form once the
+        destination sections were gated, so pin what the generated config
+        actually carries — ``pt-archiver`` purges in place, and any destination
+        key surviving here would send the rows somewhere instead.
+        """
+        tasks_api = MockTaskAPI()
+        client = build_contract_client(
+            archives_app,
+            user=regular_user,
+            tasks_api=tasks_api,
+            inventory_api=_inventory(),
+        )
+        body = _create_body(delete_data=True)
+        del body["destination"]
+
+        response = client.post(f"{_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        config = yaml.safe_load(tasks_api.last_create_payload["data"]["meta"]["config"])
+        purge_item = config["PURGE_LIST"][0]
+        assert purge_item["DELETE_DATA"] == 1
+        assert not {"DEST_TABLE", "DEST_DB", "DEST_FILE"} & purge_item.keys()
 
     def test_create_rejects_destination_with_delete_data(self, client: Any) -> None:
         """Reject a create that both deletes without archiving and names a destination."""
