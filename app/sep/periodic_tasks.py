@@ -40,6 +40,7 @@ which owns the ``Task.owner`` those schedules resolve against.
 import logging
 from collections.abc import Collection
 
+from sqlalchemy.orm import load_only
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -55,13 +56,15 @@ from app.sep.models import (
     SEPPluginPeriodicTask,
     SEPPluginPeriodicTaskBase,
 )
-from app.tasks.crud import TaskManager
+from app.tasks.crud import ACTIVE_TASK_BATCH_SIZE, TaskManager
 from app.tasks.db import get_async_session_maker as get_tasks_session_maker
 from app.tasks.models import Task
 from app.tasks.periodic.crud import PeriodicTaskManager
 from app.tasks.periodic.utils import resolve_schedule_task_name
 
 logger = logging.getLogger(__name__)
+
+SCHEDULE_BATCH_SIZE = 500
 
 
 async def seed_app_periodic_task_rows(
@@ -201,6 +204,68 @@ async def sync_app_periodic_task_gating(
         await apply_effective_enabled(sep_session, celery_beat_session)
 
 
+async def _collect_owned_task_names(
+    session: AsyncSession, owners: Collection[str]
+) -> set[str]:
+    """Collect the names of the active tasks owned by the given apps.
+
+    Loads only ``Task.name``, one keyset batch at a time, so no row's ``data``
+    payload is transferred: schedules are matched by name alone.
+
+    :param session: The Tasks database session.
+    :param owners: The ``Task.owner`` values whose tasks to collect.
+    :return: The names of every active task owned by ``owners``.
+    """
+    owned_names: set[str] = set()
+    batches = TaskManager.iter_active_batches(
+        session,
+        col(Task.owner).in_(owners),
+        batch_size=ACTIVE_TASK_BATCH_SIZE,
+        query_options=[load_only(Task.name)],  # ty: ignore[invalid-argument-type]
+    )
+    async for batch in batches:
+        owned_names.update(task.name for task in batch)
+    return owned_names
+
+
+async def _collect_owned_schedules(
+    session: AsyncSession, owned_names: set[str]
+) -> list[PeriodicTask]:
+    """Collect the enabled schedules whose task is one of ``owned_names``.
+
+    Pages by primary key rather than by offset so the batches stay disjoint and
+    exhaustive while other writers insert, delete or switch off schedules, and
+    holds only the matches across batches.
+
+    :param session: The celery-beat database session.
+    :param owned_names: The task names a schedule must resolve to.
+    :return: The matching enabled schedules, in ascending id order.
+    """
+    schedules: list[PeriodicTask] = []
+    last_schedule_id = 0
+    while True:
+        candidates = await PeriodicTaskManager.list(
+            session,
+            col(PeriodicTask.id) > last_schedule_id,
+            enabled=True,
+            order_by=[col(PeriodicTask.id)],
+            limit=SCHEDULE_BATCH_SIZE,
+        )
+        for candidate in candidates:
+            task_name = resolve_schedule_task_name(candidate)
+            if task_name is None:
+                logger.warning(
+                    "Skipped periodic task %r: its args/kwargs do not name a task.",
+                    candidate.name,
+                )
+            elif task_name in owned_names:
+                schedules.append(candidate)
+        if len(candidates) < SCHEDULE_BATCH_SIZE:
+            break
+        last_schedule_id = candidates[-1].id
+    return schedules
+
+
 async def disable_schedules_for_owners(
     tasks_session: AsyncSession,
     celery_beat_session: AsyncSession,
@@ -224,24 +289,10 @@ async def disable_schedules_for_owners(
     """
     if not owners:
         return []
-    tasks = await TaskManager.list(
-        tasks_session,
-        col(Task.owner).in_(owners),
-        col(Task.deleted_at).is_(None),
-    )
-    owned_names = {task.name for task in tasks}
+    owned_names = await _collect_owned_task_names(tasks_session, owners)
     if not owned_names:
         return []
-    schedules: list[PeriodicTask] = []
-    for candidate in await PeriodicTaskManager.list(celery_beat_session, enabled=True):
-        task_name = resolve_schedule_task_name(candidate)
-        if task_name is None:
-            logger.warning(
-                "Skipped periodic task %r: its args/kwargs do not name a task.",
-                candidate.name,
-            )
-        elif task_name in owned_names:
-            schedules.append(candidate)
+    schedules = await _collect_owned_schedules(celery_beat_session, owned_names)
     if not schedules:
         return []
     names: list[str] = [  # ty: ignore[invalid-assignment]
