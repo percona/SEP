@@ -26,6 +26,7 @@ from app.sep.api.task_history_actors import (
     resolve_history_payload_actors,
     resolve_task_actors,
     resolve_task_history_actors,
+    SepHistoryPayload,
     SepTaskHistoryResponse,
     SepTaskResponse,
     SYSTEM_ACTOR_LABELS,
@@ -259,13 +260,18 @@ class TestResolveTaskHistoryActors:
 
 
 class TestResolveHistoryPayloadActors:
-    """Cover the untyped passthrough resolver and its wrong-shape guards."""
+    """Cover the typed passthrough resolver and its wrong-shape guards."""
+
+    @staticmethod
+    def _payload(raw: dict[str, Any]) -> SepHistoryPayload:
+        """Validate a raw history page into the typed envelope under test."""
+        return SepHistoryPayload.model_validate(raw)
 
     def test_resolves_all_three_fields_on_a_well_formed_page(self):
         """Rewrite the executor and both nested task actors on each row."""
-        payload = {"items": [_history_payload()]}
+        payload = self._payload({"items": [_history_payload()]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         row = resolved["items"][0]
         assert row["executed_by"] == "carol"
@@ -274,40 +280,46 @@ class TestResolveHistoryPayloadActors:
 
     def test_renders_a_system_executed_row(self):
         """Render a system-initiated row's executor as its display label."""
-        payload = {"items": [_history_payload(executed_by=str(SERVICE_PRINCIPAL_ID))]}
+        payload = self._payload(
+            {"items": [_history_payload(executed_by=str(SERVICE_PRINCIPAL_ID))]}
+        )
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0]["executed_by"] == "Service account"
 
     @pytest.mark.parametrize(
-        "payload",
+        "raw",
         [
             pytest.param({}, id="items-missing"),
             pytest.param({"items": "nope"}, id="items-not-a-list"),
             pytest.param({"items": None}, id="items-none"),
         ],
     )
-    def test_returns_a_page_without_usable_items_unchanged(
-        self, payload: dict[str, Any]
-    ):
+    def test_returns_a_page_without_usable_items_unchanged(self, raw: dict[str, Any]):
         """Leave a page whose ``items`` is absent or not a list untouched."""
-        assert resolve_history_payload_actors(dict(payload), USERNAME_MAP) == payload
+        payload = self._payload(raw)
+        before = payload.model_dump()
+
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+
+        assert resolved is payload
+        assert resolved.model_dump() == before
 
     def test_skips_a_row_that_is_not_a_mapping(self):
         """Degrade one malformed row rather than failing the whole page."""
-        payload = {"items": [None, _history_payload()]}
+        payload = self._payload({"items": [None, _history_payload()]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0] is None
         assert resolved["items"][1]["executed_by"] == "carol"
 
     def test_resolves_the_executor_when_the_nested_task_is_not_a_mapping(self):
         """Resolve the row's own executor even when its task is unusable."""
-        payload = {"items": [_history_payload(task=None)]}
+        payload = self._payload({"items": [_history_payload(task=None)]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0]["executed_by"] == "carol"
 
@@ -315,16 +327,17 @@ class TestResolveHistoryPayloadActors:
         """Leave a row that carries no ``executed_by`` key without one."""
         row = _history_payload()
         del row["executed_by"]
+        payload = self._payload({"items": [row]})
 
-        resolved = resolve_history_payload_actors({"items": [row]}, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert "executed_by" not in resolved["items"][0]
 
     def test_preserves_keys_the_typed_model_does_not_declare(self):
-        """Keep an unknown upstream key that validation would have dropped."""
-        payload = {"items": [_history_payload(future_field="kept")]}
+        """Keep an unknown upstream key that a strict model would have dropped."""
+        payload = self._payload({"items": [_history_payload(future_field="kept")]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0]["future_field"] == "kept"
 
@@ -338,9 +351,9 @@ class TestResolveHistoryPayloadActors:
     )
     def test_leaves_a_non_string_actor_untouched(self, actor: Any):
         """Degrade an actor of an unexpected type rather than failing the page."""
-        payload = {"items": [_history_payload(executed_by=actor)]}
+        payload = self._payload({"items": [_history_payload(executed_by=actor)]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0]["executed_by"] == actor
 
@@ -348,16 +361,29 @@ class TestResolveHistoryPayloadActors:
         """Apply the same tolerance to the actors on a nested task."""
         row = _history_payload()
         row["task"]["created_by"] = {"nested": "object"}
-        payload = {"items": [row]}
+        payload = self._payload({"items": [row]})
 
-        resolved = resolve_history_payload_actors(payload, USERNAME_MAP)
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
 
         assert resolved["items"][0]["task"]["created_by"] == {"nested": "object"}
         assert resolved["items"][0]["task"]["last_updated_by"] == "bob"
 
-    def test_returns_the_same_mapping(self):
+    def test_resolves_nested_actors_when_executed_by_has_an_unexpected_shape(self):
+        """Keep a bad executor raw while still resolving both nested task actors."""
+        payload = self._payload(
+            {"items": [_history_payload(executed_by={"nested": "object"})]}
+        )
+
+        resolved = resolve_history_payload_actors(payload, USERNAME_MAP).model_dump()
+
+        row = resolved["items"][0]
+        assert row["executed_by"] == {"nested": "object"}
+        assert row["task"]["created_by"] == "alice"
+        assert row["task"]["last_updated_by"] == "bob"
+
+    def test_returns_the_same_payload(self):
         """Rewrite in place so a call site can use the return as an expression."""
-        payload = {"items": [_history_payload()]}
+        payload = self._payload({"items": [_history_payload()]})
 
         assert resolve_history_payload_actors(payload, USERNAME_MAP) is payload
 
