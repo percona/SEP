@@ -70,12 +70,13 @@ class TestStepScriptFilename:
 class TestWriteAndCleanupStepScript:
     """Assert the scratch-file lifecycle: written, readable, then removable."""
 
-    def test_write_then_cleanup_round_trip(self) -> None:
+    @pytest.mark.asyncio
+    async def test_write_then_cleanup_round_trip(self) -> None:
         """A written script is readable at the scratch dir, then gone after cleanup."""
         action = StepAction(command=["true"])
         run_id, host, step_name = "run-test", "node00", "verify"
 
-        path, digest = dispatch.write_step_script(run_id, host, step_name, action)
+        path, digest = await dispatch.write_step_script(run_id, host, step_name, action)
         try:
             content = path.read_text()
             assert content == dispatch.build_step_script(action)

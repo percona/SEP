@@ -53,6 +53,7 @@ opinion about whether the step has started, let alone finished. Polling
 task's job, not this module's -- not yet built.
 """
 
+import asyncio
 import hashlib
 import shlex
 from pathlib import Path
@@ -137,10 +138,15 @@ def build_step_script(action: StepAction) -> str:
     return f"#!/bin/sh\nset -eu\n{shlex.join(action.command)}\n"
 
 
-def write_step_script(
+async def write_step_script(
     run_id: str, host: str, step_name: str, action: StepAction
 ) -> tuple[Path, str]:
     """Write a step's script into the scratch directory.
+
+    The write itself runs off the event loop (:func:`asyncio.to_thread`): this
+    is awaited directly from every ``:dispatch`` route handler, and a blocking
+    disk write here would stall every other request that worker is serving for
+    its duration.
 
     :param run_id: The bootstrap run this step belongs to.
     :param host: The node name being bootstrapped.
@@ -152,7 +158,7 @@ def write_step_script(
     """
     content = build_step_script(action)
     path = step_scripts_dir() / step_script_filename(run_id, host, step_name)
-    path.write_text(content)
+    await asyncio.to_thread(path.write_text, content)
     digest = hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()
     return path, digest
 
@@ -201,7 +207,7 @@ async def dispatch_step(
         history id.
     """
     filename = step_script_filename(run_id, host, step_name)
-    _, digest = write_step_script(run_id, host, step_name, action)
+    _, digest = await write_step_script(run_id, host, step_name, action)
     snippet_source = build_artifact_download_url(
         request, artifact_type=ARTIFACT_TYPE, filename=filename, md5_digest=digest
     )
