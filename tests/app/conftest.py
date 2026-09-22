@@ -198,12 +198,12 @@ def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> N
     """Make every declared symbolic schema a real one on every SQLite connection.
 
     An app's tables declare a token under ``sep_settings.DATABASE.
-    SCHEMA_TRANSLATE_MAP`` (OM's is ``om_schema``, ``app/sep/apps/shared/om/
-    config.py``) and the application engine translates it — to a real schema on
-    PostgreSQL, to the default schema on SQLite, where SEP and inventory are
-    separate database files and cannot collide. This suite is the one place they
-    *can*: it creates every service's metadata in a single in-memory database,
-    where an OM table called ``service`` would be SEP inventory's ``service``.
+    SCHEMA_TRANSLATE_MAP`` and the application engine translates it — to a real
+    schema on PostgreSQL, to the default schema on SQLite, where SEP and inventory
+    are separate database files and cannot collide. This suite is the one place
+    they *can*: it creates every service's metadata in a single in-memory
+    database, where a token-scoped ``service`` table would be SEP inventory's
+    ``service``.
 
     So rather than translate the token here, satisfy it: SQLite has no schemas but it
     has ``ATTACH``, and an attached in-memory database *is* a schema as far as SQL is

@@ -46,21 +46,9 @@ default:
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
       - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
-      # CREDENTIALS_PATH is deliberately absent - its own docstring says it stays
-      # YAML/env-only, since it names a file read off the *monitored* host, not a
-      # setting of SEP's own behavior. Every other OmInventorySettings field is
-      # product behaviour (cadence, timeouts, retention), the same category the
-      # entries above already cover for other apps - confirmed missing by
-      # testing: without these, GET /v1/om/inventory/config reports every field
-      # SETTING_RELOAD_NOT_OVERRIDABLE and the Settings tab has nothing to show.
-      # SCHEDULE is a nested IntervalSchedule submodel, so the canonical override
-      # key is the __-delimited leaf path, not the parent field name - naming
-      # just "SCHEDULE" matches nothing (confirmed: it stays
-      # SETTING_RELOAD_NOT_OVERRIDABLE with only that entry).
-      #
-      # ENABLED is not listed here: this branch doesn't declare that field at all
-      # (it's added by PMM-15326-om-switch-gate, stacked on top of this branch),
-      # so the entry belongs on that branch's own settings.yaml, not this one.
+      # CREDENTIALS_PATH is deliberately absent: it names a file read off the
+      # *monitored* host, not a setting of SEP's own behavior. SCHEDULE is a nested
+      # submodel, so each overridable leaf is listed under its __-delimited path.
       - OmInventorySettings.SCHEDULE__every
       - OmInventorySettings.SCHEDULE__period
       - OmInventorySettings.PROBE_DATABASE

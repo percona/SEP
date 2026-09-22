@@ -76,9 +76,9 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
 
-    Note for OM: Alembic applies no ``schema_translate_map`` offline — there is no
-    connection to carry one — so a generated script names ``om_schema`` literally
-    and has to be edited before it is run. Online mode is what ``make migrate`` uses.
+    Alembic applies no ``schema_translate_map`` offline — there is no connection to
+    carry one — so a generated script names any declared schema token literally and
+    has to be edited before it is run. Online mode is what ``make migrate`` uses.
 
     """
     url = sep_settings.DATABASE.URL
@@ -136,12 +136,8 @@ async def run_async_migrations() -> None:
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    # An app's migrations may name a symbolic schema token, exactly as its models
-    # do (OM's ``om_schema``, translated per ``sep_settings.DATABASE.
-    # SCHEMA_TRANSLATE_MAP``), so the connection that runs them has to translate
-    # it the way the application engine does. Without this such a migration
-    # creates a literal token-named schema on a PostgreSQL bind and fails
-    # outright on SQLite.
+    # Without this a migration naming a symbolic schema token creates a literal
+    # token-named schema on PostgreSQL and fails outright on SQLite.
     connectable = connectable.execution_options(
         schema_translate_map=sep_settings.DATABASE.SCHEMA_TRANSLATE_MAP
     )
