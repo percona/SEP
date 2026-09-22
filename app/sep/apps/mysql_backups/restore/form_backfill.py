@@ -28,8 +28,8 @@ from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
 from app.sep.apps.mysql_backups.restore.models import (
-    normalize_source_declaration,
     OWNER,
+    repair_source_declaration,
     RestoreCreate,
 )
 
@@ -180,7 +180,9 @@ def reconstruct_mysql_restores_form(
         body["service_id"] = service_id
     if schema_id is not None:
         body["schema_id"] = schema_id
-    return normalize_source_declaration(body)
+    # A reconstruction is stored state, not a submission, so it takes the same
+    # repair a stamp does rather than only the inference.
+    return repair_source_declaration(body) or body
 
 
 def repair_mysql_restores_stamp(
@@ -188,18 +190,18 @@ def repair_mysql_restores_stamp(
     _task: Task,
     _ctx: FormBackfillContext,
 ) -> dict[str, Any] | None:
-    """Declare the source controls on a stamp written before they existed.
+    """Declare the source of a stamp that does not describe its own values.
 
     The stamp is a full model dump, so one predating the controls carries the
-    ``percona`` / ``22`` / ``s3cmd`` defaults the gates now reject. Running the
-    shared normalizer declares the source and drops those values together, which
-    is what makes the returned body valid on its own terms: a body that named a
-    transport while still carrying values that transport forbids would fail
-    validation, and the orchestrator records that as ``skipped_invalid`` rather
-    than surfacing it.
+    ``percona`` / ``22`` / ``s3cmd`` defaults the gates now reject, and one
+    predating the key-file gate can name a key file its declared format does not
+    admit. The shared repair settles both, which is what makes the returned body
+    valid on its own terms: a body still carrying values its declarations forbid
+    would fail validation, and the orchestrator records that as
+    ``skipped_invalid`` rather than surfacing it.
 
     What this adds over the re-validation the orchestrator performs anyway is the
-    decision of whether a repair is owed at all; the normalizer call keeps the
+    decision of whether a repair is owed at all; the repair call keeps the
     returned dict correct without relying on that downstream pass.
 
     Neither the task row nor the backfill context is read: the stamp carries every
@@ -208,12 +210,10 @@ def repair_mysql_restores_stamp(
     :param stored_form: A copy of the task's existing ``data['_form']``.
     :param _task: The stamped task row.
     :param _ctx: Shared backfill context.
-    :return: The repaired form, or ``None`` when the stamp already declares a source.
+    :return: The repaired form, or ``None`` when the stamp already describes its
+        source.
     """
-    if stored_form.get("source_transport") is not None:
-        return None
-
-    return normalize_source_declaration(stored_form)
+    return repair_source_declaration(stored_form)
 
 
 FORM_BACKFILL_ENTRY = FormBackfillEntry(

@@ -293,9 +293,11 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     inventory and tasks services, ensuring they are properly managed during the
     application's startup and shutdown phases. The override refresher publishes
     its initial snapshot *before* the ``app.state`` clients are constructed, so
-    they read the effective (override-aware) endpoint; because the initial
-    refresh fires no callbacks, the endpoint rebinders never dereference
-    not-yet-built ``app.state``.
+    they read the effective (override-aware) endpoint. The initial refresh
+    fires only callbacks marked with :func:`fire_on_boot`, and the endpoint
+    rebinders built by ``_make_remote_api_rebinder`` are unmarked, so they
+    never dereference not-yet-built ``app.state``. Any callback marked for
+    boot must therefore not touch ``app.state``.
 
     The clients are closed via ``app.state`` (not via the originals captured
     at startup) on shutdown, so a client a rebind callback swapped in mid-run is

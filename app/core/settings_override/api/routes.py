@@ -51,6 +51,7 @@ from app.core.settings_override.api.models import (
     SettingsListResponse,
     SettingsPatch,
 )
+from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.lifecycle import (
     fire_change_callbacks,
     publish_snapshot,
@@ -59,8 +60,6 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
-    _resolve_field_in_model,
-    canonical_override_key,
     chain_has_explicit_not_overridable,
     chain_is_locked,
     coerce_field_value,
@@ -71,17 +70,22 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     iter_class_fields,
     materialize_override_value,
-    NESTED_VALUE_MISSING,
-    override_provenance_for_rows,
-    override_rows_for_key,
-    preserve_patch_credential_url_value,
     ReloadClassification,
     rendered_leaf_keys,
+    unwrap_secrets_for_storage,
+)
+from app.core.settings_override.resolution import (
+    canonical_override_key,
+    override_provenance_for_rows,
+    override_rows_for_key,
+    resolve_field_in_model,
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
     SettingProvenance,
-    unwrap_secrets_for_storage,
+)
+from app.core.settings_override.secret_preservation import (
+    preserve_patch_credential_url_value,
 )
 from app.core.settings_override.secret_storage import encrypt_secret_leaves
 from app.core.utils.date_time import utc_now
@@ -613,7 +617,7 @@ def _validate_nested_key(
     :param to_apply: The running list of ``(key, coerced_value)`` tuples,
         mutated in place.
     """
-    top_resolved = _resolve_field_in_model(settings_cls, key.split("__", 1)[0])
+    top_resolved = resolve_field_in_model(settings_cls, key.split("__", 1)[0])
     if top_resolved is None:
         errors.append(
             {

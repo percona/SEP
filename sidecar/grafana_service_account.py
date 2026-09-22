@@ -35,7 +35,6 @@ Deployment inputs, all optional: ``GF_SECURITY_ADMIN_USER`` and
 
 import asyncio
 import logging
-import math
 import os
 import secrets
 import sys
@@ -43,6 +42,7 @@ import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager, redirect_stdout
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 
 from aiohttp import ClientError
@@ -54,15 +54,30 @@ from app.core.requests.connectivity import PROBE_TIMEOUT_SECONDS
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.core.utils.strings import b64encode_str
+from sidecar.runtime import (
+    DEFAULT_STATE_DIR,
+    positive_timeout,
+    RETRY_INTERVAL_SECONDS,
+    state_dir,
+)
+from sidecar.runtime import warn as runtime_warn
+
+__all__ = [
+    "DEFAULT_STATE_DIR",
+    "RETRY_INTERVAL_SECONDS",
+    "mint_timeout",
+    "state_dir",
+    "warn",
+]
+
+warn = partial(runtime_warn, "grafana-mint")
 
 SERVICE_ACCOUNT_NAME = "sep"
 SERVICE_ACCOUNT_ROLE = "Admin"
 
-DEFAULT_STATE_DIR = Path("/home/sep/state")
 PERSISTED_FILENAME = "grafana_service_account_token"
 
 DEFAULT_MINT_TIMEOUT_SECONDS = 60.0
-RETRY_INTERVAL_SECONDS = 3.0
 
 DEFAULT_ADMIN_CREDENTIAL = "admin"
 
@@ -100,14 +115,6 @@ class TokenStateEnum(StrEnum):
     UNREACHABLE = "unreachable"
 
 
-def warn(message: str) -> None:
-    """Write one diagnostic line, leaving stdout as the token channel alone.
-
-    :param message: The line to write.
-    """
-    sys.stderr.write(f"[grafana-mint] {message}\n")
-
-
 def admin_credentials() -> str:
     """Return the Base64 admin pair the mint calls authenticate with.
 
@@ -125,34 +132,14 @@ def admin_credentials() -> str:
     return b64encode_str(f"{user}:{password}")
 
 
-def state_dir() -> Path:
-    """Return the directory SEP persists its minted token in.
-
-    :return: The configured directory, or the image's own.
-    """
-    configured = os.environ.get("SEP_STATE_DIR") or ""
-    return Path(configured) if configured.strip() else DEFAULT_STATE_DIR
-
-
 def mint_timeout() -> float:
     """Return how long minting may keep retrying before it gives up.
 
     :return: The bound in seconds.
     """
-    raw = (os.environ.get("SEP_GRAFANA_MINT_TIMEOUT") or "").strip()
-    if not raw:
-        return DEFAULT_MINT_TIMEOUT_SECONDS
-    try:
-        seconds = float(raw)
-    except ValueError:
-        seconds = 0.0
-    if not math.isfinite(seconds) or seconds <= 0:
-        warn(
-            f"SEP_GRAFANA_MINT_TIMEOUT={raw!r} is not a finite positive number "
-            f"of seconds; waiting {DEFAULT_MINT_TIMEOUT_SECONDS:g}s instead."
-        )
-        return DEFAULT_MINT_TIMEOUT_SECONDS
-    return seconds
+    return positive_timeout(
+        "SEP_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
+    )
 
 
 def read_persisted_token(directory: Path) -> str | None:

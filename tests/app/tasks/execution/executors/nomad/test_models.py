@@ -36,10 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from yarl import URL
 
 from app.core.exceptions import HTTPBadRequestException
-from app.core.settings_override.registry import (
-    ReloadClassification,
-    resolve_nested_field_metadata,
-)
+from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils import slugify, utc_now
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings, TasksSettings
@@ -92,6 +90,7 @@ from app.tasks.models import (
     TaskLog,
     TaskLogType,
 )
+from app.tasks.routes import stream_task_history_logs
 from app.tasks.run_result import RUN_RESULT_FILENAME
 
 EXPECTED_ALLOC_STATUS_COUNT = 6
@@ -4573,6 +4572,110 @@ class TestNomadLogStreaming:
 
         assert emitted == [None]
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("anonymize_mask", "expected_card"),
+        [(0, "4111111111111111"), (PIIEntity.CREDIT_CARD.value, "[REDACTED]")],
+    )
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text", autospec=True)
+    @patch("app.tasks.execution.executors.nomad.models.Nomad", autospec=True)
+    async def test_completed_live_stream_matches_stored_text(
+        self,
+        mock_nomad_cls,
+        mock_anonymize,
+        session: AsyncSession,
+        created_task_with_history: TaskHistory,
+        anonymize_mask: int,
+        expected_card: str,
+    ):
+        """Preserve each stream's stored text through live completion and tail flush."""
+        mock_anonymize.side_effect = _redact_card_token
+        payloads = {
+            ("run-script", TaskLogType.STDOUT): [
+                "card=41111111",
+                "11111111\nfinal\n",
+                "\n",
+            ],
+            ("run-script", TaskLogType.STDERR): ["warning\n", "final partial"],
+            ("setup", TaskLogType.STDOUT): ["café\n", "literal\x00\n"],
+            ("setup", TaskLogType.STDERR): [],
+        }
+        alloc = self._alloc_for_logs("run-script")
+        alloc["CreateIndex"] = ALLOCATION_CREATE_INDEX
+        alloc["TaskStates"].update(self._alloc_for_logs("setup")["TaskStates"])
+        backend = mock_nomad_cls.return_value
+        backend.allocations.get_allocations.return_value = [alloc]
+        executor = _build_executor(
+            log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT,
+            terminal_log_drain_max_attempts=0,
+        )
+        history = created_task_with_history
+        history.status = TaskHistoryStatusEnum.RUNNING
+        history.anonymize_mask = anonymize_mask
+        history.execution_request.tracking.update(
+            job_id=alloc["JobID"], evaluation_id=alloc["EvalID"]
+        )
+
+        def follow_response(_session, _method, _url, *, params, **_kwargs):
+            assert params["follow"] == "true"
+            step = params["task"]
+            frames = self._frames_with_running_offsets(payloads[step, params["type"]])
+
+            async def iter_chunks():
+                for frame in frames:
+                    yield frame, None
+                alloc["TaskStates"][step]["State"] = "dead"
+                for _ in range(executor.log_socket_read_timeout + 1):
+                    yield b"{}", None
+
+            return self._stream_response(iter_chunks)
+
+        live_text: dict[tuple[str, TaskLogType], str] = dict.fromkeys(payloads, "")
+        with patch(
+            "aiohttp.ClientSession.request", autospec=True, side_effect=follow_response
+        ):
+            async with executor, asyncio.timeout(NOMAD_DEFAULT_TIMEOUT):
+                response = await stream_task_history_logs(
+                    session, executor, history, {}
+                )
+                async for entry in response.body_iterator:
+                    log = TaskLog.model_validate_json(entry)
+                    assert log.msg is not None
+                    live_text[log.step, log.type] += log.msg
+
+        def stored_response(_alloc_id, *, task, type_, offset):
+            content = "".join(payloads[task, type_]).encode()
+            return json.dumps(
+                {
+                    "Data": b64encode(content[offset:]).decode(),
+                    "Offset": len(content),
+                }
+            )
+
+        backend.client.stream_logs.stream.side_effect = stored_response
+        history.status = TaskHistoryStatusEnum.SUCCESS
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id=alloc["ID"],
+        )
+        stored_text: dict[tuple[str, TaskLogType], str] = dict.fromkeys(payloads, "")
+        response = await stream_task_history_logs(session, executor, history, {})
+        async for entry in response.body_iterator:
+            log = TaskLog.model_validate_json(entry)
+            assert log.msg is not None
+            stored_text[log.step, log.type] += log.msg
+
+        assert live_text == stored_text
+        assert live_text["run-script", TaskLogType.STDOUT].endswith("final\n\n")
+        assert live_text["run-script", TaskLogType.STDERR] == "warning\nfinal partial"
+        assert live_text["setup", TaskLogType.STDOUT] == "café\nliteral\x00\n"
+        assert live_text["setup", TaskLogType.STDERR] == ""
+        assert live_text["run-script", TaskLogType.STDOUT] == (
+            f"card={expected_card}\nfinal\n\n"
+        )
+
     @staticmethod
     def _frames_with_running_offsets(payloads: list[str]) -> list[bytes]:
         """Build framed payloads carrying the raw EOF offset each one reaches.
@@ -5085,24 +5188,41 @@ class TestStreamFile:
         assert chunks == [b""]
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("history_mask", "task_mask", "expected_entities"),
+        [
+            (int(PIIEntity.CREDIT_CARD), None, {PIIEntity.CREDIT_CARD}),
+            (None, int(PIIEntity.PERSON), {PIIEntity.PERSON}),
+        ],
+    )
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
-    async def test_stream_file_with_anonymization(self, mock_nomad_cls, mock_anonymize):
-        """Assert stream_file applies anonymization when entities are set."""
+    async def test_stream_file_with_anonymization(
+        self,
+        mock_nomad_cls,
+        mock_anonymize,
+        history_mask,
+        task_mask,
+        expected_entities,
+    ):
+        """Assert stream_file anonymizes via history mask, or task mask when history is ``None``."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
         mock_anonymize.return_value = "REDACTED"
 
+        task = _build_task()
+        task.anonymize_mask = task_mask
         executor = _build_executor()
         queue_item = _build_queue_item(
+            task=task,
             tracking={
                 "allocation_id": "alloc-1",
                 "evaluation_id": "eval-1",
                 "job_id": "job-1",
-            }
+            },
         )
-        queue_item.anonymize_mask = 1
+        queue_item.anonymize_mask = history_mask
 
         file_content = b"sensitive data"
         stat_response = AsyncMock()
@@ -5131,7 +5251,7 @@ class TestStreamFile:
             ]
 
         assert b"".join(chunks) == b"REDACTED"
-        mock_anonymize.assert_called_once()
+        mock_anonymize.assert_called_once_with("sensitive data", expected_entities)
 
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.anonymize_text")

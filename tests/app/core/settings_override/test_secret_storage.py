@@ -36,8 +36,8 @@ from app.core.settings_override.registry import (
     annotated_type,
     annotation_is_credential_url,
     coerce_field_value,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field
 from app.core.settings_override.secret_storage import (
     _ALL_LEAF_KINDS,
     _positional_args,

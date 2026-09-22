@@ -17,7 +17,8 @@
 
 /**
  * Drive the schema-driven renderer with the MySQL Restores schema, the form
- * that carries three `destructive` marks — more than any other app.
+ * that carries three `destructive` marks — more than any other app — and the
+ * encryption-format gates that reveal the key file only for the AES formats.
  *
  * The schema is read from the committed backend snapshot rather than inlined,
  * so the renderer is exercised against the contract the API actually serves and
@@ -34,6 +35,11 @@
  * - The marks are asserted to be *inert*. Nothing consumes the attribute yet, so
  *   pinning that is what turns wiring a confirmation into a deliberate edit of
  *   this file rather than a silent behaviour change.
+ *
+ * The encryption suite covers the other direction: the AES-256 formats reveal
+ * the key file every engine can decrypt with, and a format that does not carry
+ * a key file keeps that field hidden. The browser is what shows the gate firing
+ * before submit.
  */
 
 import { readFileSync } from 'node:fs';
@@ -52,12 +58,25 @@ interface SchemaField {
   destructive?: string | null;
 }
 
+/** One `fail_when` rule as the schema serves it: an all-of over equality terms. */
+interface FailRule {
+  error_fields: string[];
+  fail_when: { all: { equals: Record<string, string> }[] };
+  message: string;
+}
+
+interface RestoreSchema {
+  display_name: string;
+  fail_when?: FailRule[];
+  forms: { title: string; fail_when?: FailRule[]; fields: SchemaField[] }[];
+}
+
 const RESTORE_SCHEMA = JSON.parse(
   readFileSync(
     join(REPO_ROOT, 'tests/app/sep/snapshots/schema/mysql_backups__restore.json'),
     'utf8',
   ),
-) as { display_name: string; forms: { title: string; fields: SchemaField[] }[] };
+) as RestoreSchema;
 
 const MARKED_FIELDS: SchemaField[] = RESTORE_SCHEMA.forms
   .flatMap((form) => form.fields)
@@ -65,6 +84,10 @@ const MARKED_FIELDS: SchemaField[] = RESTORE_SCHEMA.forms
 
 /** The `Ui(destructive=...)` consequence sentences, as the API serves them. */
 const CONSEQUENCE_TEXTS = MARKED_FIELDS.map((field) => field.destructive as string);
+
+/** Section-scoped fail rules the renderer evaluates; restores currently serve none. */
+const TASK_SECTION_RULES: FailRule[] =
+  RESTORE_SCHEMA.forms.find((form) => form.title === 'Task')?.fail_when ?? [];
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -77,9 +100,20 @@ const MOCK_USER = {
   isAdmin: true,
 };
 
-async function mockRestoreSchemaApis(page: Page): Promise<void> {
+const CREATE_PATH = '/api/apps/mysql_backups/';
+
+/** Restores the create endpoint accepted, so the list view has rows to show. */
+const createdRestores: Array<Record<string, unknown>> = [];
+
+interface RestoreMockOptions {
+  /** Every body the create endpoint received, in order. */
+  capturePosts?: Array<Record<string, unknown>>;
+}
+
+async function mockRestoreSchemaApis(page: Page, options: RestoreMockOptions = {}): Promise<void> {
   await page.route('**/api/**', (route) => {
-    const { pathname } = new URL(route.request().url());
+    const request = route.request();
+    const { pathname } = new URL(request.url());
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
@@ -114,6 +148,68 @@ async function mockRestoreSchemaApis(page: Page): Promise<void> {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(RESTORE_SCHEMA),
+      });
+    }
+
+    if (pathname === CREATE_PATH && request.method() === 'POST') {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      options.capturePosts?.push(body);
+      const created = {
+        name: body.task_name,
+        backup_type: body.backup_type,
+        hostname: body.hostname,
+        status: null,
+        created_at: '2026-05-22T10:00:00Z',
+      };
+      createdRestores.push(created);
+      return route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+    }
+
+    if (pathname === CREATE_PATH && request.method() === 'GET') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: createdRestores,
+          total: createdRestores.length,
+          offset: 0,
+          limit: 50,
+        }),
+      });
+    }
+
+    if (pathname.endsWith('/sep/hosts/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([{ id: 'host1', name: 'host1', address: '127.0.0.1' }]),
+      });
+    }
+
+    if (pathname.endsWith('/sep/services/')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [{ id: 1, name: 'svc1', type: 'mysql' }],
+          total: 1,
+          offset: 0,
+          limit: 200,
+        }),
+      });
+    }
+
+    if (pathname.includes('/backup-sources/choices')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { value: '/backups/mydumper/latest', label: '/backups/mydumper/latest' },
+        ]),
       });
     }
 
@@ -186,5 +282,102 @@ test.describe('MySQL Restores destructive marks', () => {
     for (const text of CONSEQUENCE_TEXTS) {
       await expect(page.getByText(text, { exact: false })).toHaveCount(0);
     }
+  });
+});
+
+// ── Encryption-format gates ───────────────────────────────────────────────────
+//
+// Every engine may declare any encryption format. The AES formats reveal the
+// key file; formats that do not carry one keep it hidden.
+
+/** Pick an encryption format by its option label; the field has too many choices for radios. */
+async function chooseEncryption(page: Page, optionLabel: string): Promise<void> {
+  await page.getByTestId('select-source_encryption-button').click();
+  await page.getByRole('option', { name: optionLabel, exact: true }).click();
+}
+
+/**
+ * Open the create form and fill everything the Task section requires.
+ *
+ * The destination service is filled for every engine even though only Mydumper
+ * requires it, so the only thing that can hold a submit back in these tests is
+ * the encryption gate under test.
+ */
+async function openFilledRestoreForm(page: Page, taskName: string): Promise<void> {
+  await page.goto('/apps/mysql_backups');
+  await expect(page.getByRole('heading', { name: RESTORE_SCHEMA.display_name })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page
+    .getByRole('button', { name: /^New (MySQL Restores|restore|task)/i })
+    .first()
+    .click();
+
+  await page.getByLabel('Task Name').fill(taskName);
+  await page.getByRole('combobox', { name: /Destination Database Service/ }).click();
+  await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
+  await page.getByRole('combobox', { name: /Execution Host/ }).click();
+  await page.getByRole('option', { name: 'host1' }).click();
+  await page
+    .getByRole('combobox', { name: /Backup Source/ })
+    .fill('/backups/mydumper/20240101/latest');
+}
+
+function submitButton(page: Page) {
+  return page.getByRole('button', { name: /submit|create|save/i }).last();
+}
+
+test.describe('MySQL Restores encryption format', () => {
+  let posts: Array<Record<string, unknown>>;
+
+  test.beforeEach(async ({ page }) => {
+    createdRestores.length = 0;
+    posts = [];
+    await mockRestoreSchemaApis(page, { capturePosts: posts });
+  });
+
+  test('the schema serves no engine/format pairing rules', () => {
+    // AES-256 is available for every engine, so the Task section carries no
+    // fail_when that refuses a format by backup_type. Pinning the empty set
+    // keeps a regressive reintroduction of those rules from shipping unnoticed.
+    expect(RESTORE_SCHEMA.fail_when ?? []).toEqual([]);
+    expect(TASK_SECTION_RULES).toEqual([]);
+  });
+
+  test('a Mydumper restore accepts AES-256 when it names a key file', async ({ page }) => {
+    await openFilledRestoreForm(page, 'e2e-mydumper-aes256');
+    await page.getByRole('radio', { name: 'Mydumper' }).check();
+    await chooseEncryption(page, 'AES-256');
+
+    await page.getByRole('button', { name: 'General', exact: true }).click();
+    const keyfile = page.getByRole('textbox', { name: /AES-256 key file/ });
+    await expect(keyfile).toBeVisible();
+    await keyfile.fill('/etc/xb/aes.key');
+
+    await submitButton(page).click();
+
+    await expect.poll(() => posts).toHaveLength(1);
+    expect(posts[0]).toMatchObject({
+      backup_type: 'M',
+      source_encryption: 'aes256',
+      xtrabackup_aes256_keyfile: '/etc/xb/aes.key',
+    });
+  });
+
+  test('the key file is offered only by the formats that carry one', async ({ page }) => {
+    await openFilledRestoreForm(page, 'e2e-keyfile-gate');
+    await page.getByRole('radio', { name: 'XtraBackup' }).check();
+    await page.getByRole('button', { name: 'General', exact: true }).click();
+
+    const keyfile = page.getByRole('textbox', { name: /AES-256 key file/ });
+    await expect(keyfile).toHaveCount(0);
+
+    await chooseEncryption(page, 'AES-256 + GPG');
+    await expect(keyfile).toBeVisible();
+
+    await chooseEncryption(page, 'GPG');
+    await expect(keyfile).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: /GPG password file/ })).toBeVisible();
   });
 });

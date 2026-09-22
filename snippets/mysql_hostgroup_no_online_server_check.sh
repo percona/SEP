@@ -10,6 +10,7 @@
 #    type: str
 #    label: MySQL defaults file
 #    description: MySQL option file the client reads for connection settings.
+# diagnostic_categories: []
 # service_type: mysql
 # alerts:
 #   - ProxySQLHostGroupNoOnlineServer
@@ -31,5 +32,8 @@ fi
 PROXYSQL="mysql $DEFAULTS_FILE -u admin -h 127.0.0.1 -P 6032"
 
 echo "********* ProxySQL runtime server status *********"
-$PROXYSQL -e "SELECT * FROM runtime_mysql_servers;" 2> /dev/null ||
-    echo "Cannot connect to ProxySQL admin interface."
+if ! runtime_servers=$($PROXYSQL -e "SELECT * FROM runtime_mysql_servers;" 2>&1); then
+    echo "Could not query the ProxySQL admin interface (check --defaults-file): $runtime_servers"
+else
+    printf '%s\n' "$runtime_servers"
+fi

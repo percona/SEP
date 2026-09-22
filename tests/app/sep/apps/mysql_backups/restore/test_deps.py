@@ -28,6 +28,11 @@ from app.sep.apps.mysql_backups.restore.deps import (
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, SourceTransport
 from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskBackendEnum
+from tests.app.factories import (
+    MOCK_ACTOR_USERNAMES,
+    MOCK_CREATOR_ID,
+    MOCK_UPDATER_ID,
+)
 
 _SCHEMA_ID = 42
 
@@ -312,3 +317,32 @@ def test_a_task_without_a_stamp_is_served_unchanged():
     served = build_restore_api_task_response(_restore_task(None)).data
 
     assert RESERVED_FORM_KEY not in served
+
+
+class TestBuildRestoreApiTaskResponse:
+    """Cover the MySQL restore builder's actor resolution."""
+
+    @staticmethod
+    def _recorded_task() -> Task:
+        """Build a restore task recorded by two known users."""
+        return _restore_task(None).model_copy(
+            update={"created_by": MOCK_CREATOR_ID, "last_updated_by": MOCK_UPDATER_ID}
+        )
+
+    def test_resolves_actors_through_the_context(self):
+        """Render both actors as usernames and keep the app's own extras."""
+        response = build_restore_api_task_response(
+            self._recorded_task(), context=MOCK_ACTOR_USERNAMES
+        )
+
+        assert (response.created_by, response.last_updated_by) == ("alice", "bob")
+        assert response.hostname == "executor-1"
+
+    def test_keeps_raw_ids_without_a_context(self):
+        """Serve the stored identifiers when no username map is bound."""
+        response = build_restore_api_task_response(self._recorded_task())
+
+        assert (response.created_by, response.last_updated_by) == (
+            MOCK_CREATOR_ID,
+            MOCK_UPDATER_ID,
+        )

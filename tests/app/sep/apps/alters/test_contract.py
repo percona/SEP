@@ -20,12 +20,6 @@ from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTes
 
 
 class TestAltersContract(DerivedRouterContractTests):
-    """Bind the alters ``TaskExecutionApp`` to the shared contract suite.
-
-    ``remapped_username`` is ``None`` because alters wires the real
-    ``get_username_mapping`` as its response context provider, which does not remap
-    the synthetic seed user to the synth display name the suite's default expects.
-    """
+    """Bind the alters ``TaskExecutionApp`` to the shared contract suite."""
 
     app_def = alters_app
-    remapped_username = None

@@ -1,5 +1,7 @@
 """ PBM Status Payload """
 
+from __future__ import annotations
+
 import subprocess
 import os
 import sys
@@ -104,4 +106,5 @@ def pbm():
         print(f'Failed to run pbm: {err}', file=sys.stderr)
         sys.exit(1)
 
-pbm()
+if __name__ == "__main__":
+    pbm()

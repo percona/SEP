@@ -15,6 +15,8 @@
 
 """Define the payload for MySQL Sync tasks."""
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
