@@ -825,6 +825,25 @@ _CREDENTIAL_URL_JSON_SERIALIZER = WrapSerializer(
     when_used="json",
 )
 
+CREDENTIAL_URL_STR_JSON_SERIALIZER = WrapSerializer(
+    _credential_url_serializer,
+    when_used="json",
+    return_type=str,
+)
+"""Redact an embedded URL password on JSON dumps of a plain string value.
+
+Written for the return annotation of a ``computed_field`` whose value is a URL
+string. A ``field_serializer`` cannot be used there: pydantic rejects
+:func:`_credential_url_serializer`'s three-argument signature on a computed
+field, so the annotation is the only shape that reaches it.
+
+Kept separate from the marker the annotated field types share because it
+carries ``return_type``: a bare wrap serializer erases ``"type": "string"``
+from the serialization schema, and pinning it here leaves those types' own
+schemas alone. It carries no validator either, which suits a derived value —
+there is nothing to validate on the way in.
+"""
+
 
 def _reject_credential_url_mask(value: Any, info: ValidationInfo) -> Any:
     """Reject a URL whose embedded password is the redaction mask.

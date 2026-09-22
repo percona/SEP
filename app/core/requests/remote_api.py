@@ -41,8 +41,8 @@ from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
-from typing import Any, BinaryIO, ClassVar, NoReturn, Self
-from urllib.parse import unquote, urljoin, urlparse
+from typing import Annotated, Any, BinaryIO, ClassVar, NoReturn, Self
+from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 from aiohttp import (
     ClientResponse,
@@ -78,6 +78,8 @@ from app.core.requests.connectivity import (
 )
 from app.core.utils import json_serializer
 from app.core.utils.fields import (
+    CREDENTIAL_URL_MASK,
+    CREDENTIAL_URL_STR_JSON_SERIALIZER,
     CredentialHttpUrl,
     NonEmptyStr,
     redact_credential_url,
@@ -439,7 +441,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :rtype: BaseRemoteAPI
         """
         if getattr(self, "_session", None) is None:
-            self.logger.debug("Opening ClientSession for %s", self.base_url)
+            self.logger.debug("Opening ClientSession for %s", self.redacted_base_url)
             connector = TCPConnector(
                 ssl=self.ssl_context,
                 enable_cleanup_closed=True,
@@ -476,10 +478,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         :type exc_tb: TracebackType | None
         """
         if self._session and not self._session.closed:
-            self.logger.debug("Closing ClientSession for %s", self.base_url)
+            self.logger.debug("Closing ClientSession for %s", self.redacted_base_url)
             await self._session.close()
         else:
-            self.logger.debug("ClientSession already closed for %s", self.base_url)
+            self.logger.debug(
+                "ClientSession already closed for %s", self.redacted_base_url
+            )
         self._session = None
 
     async def open(self) -> Self:
@@ -696,20 +700,74 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         """
         return "/" + self.endpoint.path.strip("/")
 
+    def _compute_base_url(self) -> str:
+        """Return the endpoint URL with the base path removed.
+
+        The extension point for a subclass whose base URL is derived
+        differently. Overriding this rather than :attr:`base_url` is what keeps
+        the redaction in one place: a subclass that redeclared ``base_url`` as
+        its own computed field would shadow the return annotation the
+        serializer rides on, putting the endpoint password back into every
+        dump.
+
+        The base path is removed from the path component alone. Removing every
+        occurrence of it from the whole URL also rewrites a query value that
+        repeats it, and a mangled URL is one the redaction helper can refuse to
+        parse.
+
+        :return: The base URL of the API endpoint, credential included.
+        """
+        parsed = urlparse(str(self.endpoint))
+        path = parsed.path.rstrip("/")
+        if self.base_path.strip("/") and path.endswith(self.base_path):
+            path = path[: -len(self.base_path)]
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment,
+            )
+        ).rstrip("/")
+
     @computed_field
     @property
-    def base_url(self) -> str:
+    def base_url(self) -> Annotated[str, CREDENTIAL_URL_STR_JSON_SERIALIZER]:
         """Compute and return the base URL without the base path.
 
-        Removes the base path from the endpoint URL if present.
+        The live value keeps whatever credential the endpoint embeds, because
+        :attr:`session_base_url` and :attr:`_endpoint_credential_header` are
+        both derived from it. Only the JSON rendering is masked, and a dump
+        passing :data:`~app.core.utils.fields.PRESERVE_CREDENTIALS_CONTEXT` —
+        the Nomad config fingerprint — still sees the real one.
+
+        Subclasses customise :meth:`_compute_base_url`, never this property.
 
         :return: The base URL of the API endpoint.
-        :rtype: str
         """
-        url = str(self.endpoint)
-        if self.base_path.strip("/"):
-            url = url.replace(self.base_path, "")
-        return url.rstrip("/")
+        return self._compute_base_url()
+
+    @property
+    def redacted_base_url(self) -> str:
+        """Return :attr:`base_url` with any embedded password masked, for logging.
+
+        A redaction failure collapses to the bare mask rather than propagating.
+        Two callers are the post-``gather`` error loops in
+        :class:`~app.core.requests.registry.ClientRegistry`, where raising
+        would replace the close failure being reported with a parse error and
+        abandon the clients still to report on.
+
+        :return: The base URL with its password replaced by
+            :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK`, or the mask
+            alone when the URL cannot be parsed.
+        """
+        url = self.base_url
+        try:
+            return redact_credential_url(url)
+        except ValueError:
+            return CREDENTIAL_URL_MASK
 
     @property
     def session_base_url(self) -> str:
