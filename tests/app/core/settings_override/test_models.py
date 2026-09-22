@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+import pytest_asyncio
 from alembic.migration import MigrationContext
 from sqlalchemy import Column, VARCHAR
 from sqlalchemy.orm.attributes import flag_modified
@@ -175,6 +176,21 @@ async def test_long_updated_by_round_trips(session: AsyncSession) -> None:
 class TestActorStampGuard:
     """Pin the ``before_update`` guard that rejects a tracked-column change left unstamped."""
 
+    @pytest_asyncio.fixture(name="persisted_row")
+    async def persisted_row_fixture(self, session: AsyncSession) -> SettingOverride:
+        """Return a committed row last written by ``original-actor``.
+
+        :param session: The in-memory database session.
+        :return: The persisted ``SettingOverride`` row.
+        """
+        return await insert_override_row(
+            session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="SYNC_REFRESH_TIME",
+            value=_GUARD_ORIGINAL_VALUE,
+            updated_by="original-actor",
+        )
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("field", "new_value"),
@@ -186,7 +202,11 @@ class TestActorStampGuard:
         ],
     )
     async def test_direct_mutation_without_actor_is_rejected(
-        self, session: AsyncSession, field: str, new_value: object
+        self,
+        session: AsyncSession,
+        persisted_row: SettingOverride,
+        field: str,
+        new_value: object,
     ) -> None:
         """Reject a flush that changes a tracked column without restamping ``updated_by``.
 
@@ -194,15 +214,8 @@ class TestActorStampGuard:
         already-persisted row's attributes directly, ``session.add`` it back, and
         commit -- no manager involved.
         """
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
-        setattr(row, field, new_value)
-        session.add(row)
+        setattr(persisted_row, field, new_value)
+        session.add(persisted_row)
 
         with pytest.raises(StaleActorUpdateError):
             await session.commit()
@@ -214,69 +227,70 @@ class TestActorStampGuard:
         assert stored.value == _GUARD_ORIGINAL_VALUE
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("actor", ["new-actor", "original-actor"])
     async def test_direct_mutation_with_actor_stamp_succeeds(
-        self, session: AsyncSession
+        self, session: AsyncSession, persisted_row: SettingOverride, actor: str
     ) -> None:
-        """Accept a flush that changes a tracked column and restamps ``updated_by`` together."""
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
-        row.value = _GUARD_UPDATED_VALUE
-        row.updated_by = "new-actor"
-        session.add(row)
+        """Accept a flush that changes a tracked column and restamps ``updated_by`` together.
+
+        The ``original-actor`` case is the same admin saving twice in a row: the
+        restamp equals the stored value, which SQLAlchemy's history alone would
+        report as unchanged.
+        """
+        persisted_row.value = _GUARD_UPDATED_VALUE
+        persisted_row.updated_by = actor
+        session.add(persisted_row)
 
         await session.commit()
 
         session.expunge_all()
         stored = await SettingsOverrideManager.get(session, key="SYNC_REFRESH_TIME")
         assert stored.value == _GUARD_UPDATED_VALUE
-        assert stored.updated_by == "new-actor"
+        assert stored.updated_by == actor
+
+    @pytest.mark.asyncio
+    async def test_clearing_actor_alongside_tracked_change_is_rejected(
+        self, session: AsyncSession, persisted_row: SettingOverride
+    ) -> None:
+        """Reject a tracked-column change whose ``updated_by`` restamp is ``None``.
+
+        Clearing the actor is an assignment, so history alone would accept it,
+        yet it leaves the change attributed to nobody.
+        """
+        persisted_row.value = _GUARD_UPDATED_VALUE
+        persisted_row.updated_by = None
+        session.add(persisted_row)
+
+        with pytest.raises(StaleActorUpdateError):
+            await session.commit()
 
     @pytest.mark.asyncio
     async def test_manager_update_without_actor_is_rejected(
-        self, session: AsyncSession
+        self, session: AsyncSession, persisted_row: SettingOverride
     ) -> None:
         """Reject a ``SettingsOverrideManager.update`` call that omits ``updated_by``."""
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
         patch = SettingOverride(
             setting_class=SettingClassEnum.SEP_SETTINGS,
-            key=row.key,
+            key=persisted_row.key,
             value=_GUARD_UPDATED_VALUE,
         )
 
         with pytest.raises(StaleActorUpdateError):
-            await SettingsOverrideManager.update(session, row, patch)
+            await SettingsOverrideManager.update(session, persisted_row, patch)
 
     @pytest.mark.asyncio
     async def test_manager_update_with_actor_stamp_succeeds(
-        self, session: AsyncSession
+        self, session: AsyncSession, persisted_row: SettingOverride
     ) -> None:
         """Accept a ``SettingsOverrideManager.update`` call that also restamps ``updated_by``."""
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
         patch = SettingOverride(
             setting_class=SettingClassEnum.SEP_SETTINGS,
-            key=row.key,
+            key=persisted_row.key,
             value=_GUARD_UPDATED_VALUE,
             updated_by="new-actor",
         )
 
-        updated = await SettingsOverrideManager.update(session, row, patch)
+        updated = await SettingsOverrideManager.update(session, persisted_row, patch)
 
         assert updated.value == _GUARD_UPDATED_VALUE
         assert updated.updated_by == "new-actor"
@@ -297,8 +311,27 @@ class TestActorStampGuard:
         assert row.updated_by is None
 
     @pytest.mark.asyncio
-    async def test_unrelated_dirty_flush_is_not_rejected(
+    async def test_actor_reassigned_before_insert_is_persisted(
         self, session: AsyncSession
+    ) -> None:
+        """Persist an ``updated_by`` reassigned on a not-yet-added instance."""
+        row = SettingOverride(
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="SYNC_REFRESH_TIME",
+            value=_GUARD_ORIGINAL_VALUE,
+            updated_by="first-actor",
+        )
+        row.updated_by = "second-actor"
+
+        await SettingsOverrideManager.save(session, row)
+
+        session.expunge_all()
+        stored = await SettingsOverrideManager.get(session, key="SYNC_REFRESH_TIME")
+        assert stored.updated_by == "second-actor"
+
+    @pytest.mark.asyncio
+    async def test_unrelated_dirty_flush_is_not_rejected(
+        self, session: AsyncSession, persisted_row: SettingOverride
     ) -> None:
         """Leave a flush unrejected when the instance is dirty but no tracked column changed.
 
@@ -307,15 +340,8 @@ class TestActorStampGuard:
         ``created_at`` to be seen as modified, without actually changing it,
         must not trip the guard.
         """
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
-        flag_modified(row, "created_at")
-        session.add(row)
+        flag_modified(persisted_row, "created_at")
+        session.add(persisted_row)
 
         await session.commit()
 
@@ -325,7 +351,7 @@ class TestActorStampGuard:
 
     @pytest.mark.asyncio
     async def test_expired_instance_same_value_reassignment_is_still_rejected(
-        self, session: AsyncSession
+        self, session: AsyncSession, persisted_row: SettingOverride
     ) -> None:
         """Reject a same-value reassignment on an expired instance, not silently accept it.
 
@@ -334,17 +360,32 @@ class TestActorStampGuard:
         fail-closed bias, not a bug: it only ever asks for a stamp it might not
         strictly need, never the reverse.
         """
-        row = await insert_override_row(
-            session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
-            key="SYNC_REFRESH_TIME",
-            value=_GUARD_ORIGINAL_VALUE,
-            updated_by="original-actor",
-        )
-        session.expire(row)
+        session.expire(persisted_row)
 
-        row.value = _GUARD_ORIGINAL_VALUE
-        session.add(row)
+        persisted_row.value = _GUARD_ORIGINAL_VALUE
+        session.add(persisted_row)
 
         with pytest.raises(StaleActorUpdateError):
             await session.commit()
+
+    @pytest.mark.asyncio
+    async def test_expired_instance_stamped_write_succeeds(
+        self, session: AsyncSession, persisted_row: SettingOverride
+    ) -> None:
+        """Accept a correctly-stamped write on an expired instance.
+
+        Expiry unloads ``updated_by``, so the restamp is assigned to an
+        attribute absent from the instance state.
+        """
+        session.expire(persisted_row)
+
+        persisted_row.value = _GUARD_UPDATED_VALUE
+        persisted_row.updated_by = "new-actor"
+        session.add(persisted_row)
+
+        await session.commit()
+
+        session.expunge_all()
+        stored = await SettingsOverrideManager.get(session, key="SYNC_REFRESH_TIME")
+        assert stored.value == _GUARD_UPDATED_VALUE
+        assert stored.updated_by == "new-actor"

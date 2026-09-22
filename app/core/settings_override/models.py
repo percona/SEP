@@ -239,6 +239,10 @@ def _mark_updated_by_touched(
     :func:`_reject_unstamped_update` and be rejected despite being exactly
     the restamp that guard requires.
 
+    A consequence: an ``updated_by``-only assignment of the stored value still
+    emits an UPDATE and advances ``updated_at``, which is the re-save
+    semantics ``_stage_and_commit_overrides`` already relies on.
+
     :param target: The ``SettingOverride`` instance being assigned to.
     :param value: The value being assigned (unused).
     :param oldvalue: The previously loaded value, or a SQLAlchemy sentinel
@@ -246,7 +250,10 @@ def _mark_updated_by_touched(
     :param initiator: The event token describing the originating assignment
         (unused).
     """
-    if inspect(target).transient:
+    # An absent attribute -- first assignment during construction, or unloaded
+    # by expiry -- already records any assignment as a change, and
+    # ``flag_modified`` raises on it.
+    if "updated_by" not in inspect(target).dict:
         return
     flag_modified(target, "updated_by")
 
@@ -266,18 +273,24 @@ def _reject_unstamped_update(
     :class:`~sqlalchemy.orm.attributes.History` rather than inferred from the
     event alone. Relies on :func:`_mark_updated_by_touched` to make a
     same-value restamp of ``updated_by`` visible as a change in that history.
+    A restamp to ``None`` does not count: it leaves the change attributed to
+    nobody.
 
     :param mapper: The mapper for ``target`` (unused).
     :param connection: The connection the flush runs on (unused).
     :param target: The ``SettingOverride`` instance being flushed.
     :raises StaleActorUpdateError: When a tracked column changed but
-        ``updated_by`` did not change in the same flush.
+        ``updated_by`` was not restamped to an actor in the same flush.
     """
     state = inspect(target)
     tracked_changed = any(
         state.attrs[column].history.has_changes() for column in _ACTOR_TRACKED_COLUMNS
     )
-    if tracked_changed and not state.attrs["updated_by"].history.has_changes():
+    restamped = (
+        state.attrs["updated_by"].history.has_changes()
+        and target.updated_by is not None
+    )
+    if tracked_changed and not restamped:
         raise StaleActorUpdateError(
             f"SettingOverride {target.id} changed without restamping updated_by"
         )
