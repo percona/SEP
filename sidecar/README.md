@@ -61,8 +61,8 @@ name. What a file supplies is a *canonical destination*:
 | `ENCRYPTION_KEY` | **Yes.** A file suppresses the mint below it and is never exported, so each process reads it from the file. Mount it only carrying a value: the deferral is on the file *existing*, so a blank one pins the key empty and the container refuses to start. |
 | `DATABASE__PASSWORD` | **Yes.** One file supplies all three services. A per-service `{SEP,INVENTORY,TASKS}__DATABASE__PASSWORD` file or variable overrides it for that service only. |
 | `{SEP,INVENTORY,TASKS}__DATABASE__HOST` / `__PORT` | **Yes.** Per-service names; host and port reach every service through the `SEP_DB_HOST` / `SEP_DB_PORT` shell inputs (see below), not through a global name in this image. |
-| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | **Yes.** A file supplies that mint-gate name and suppresses exporting a derived value *over it*. It does not block the Grafana helper from resolving the mounted value and exporting it to unset destinations — notably `TASKS__NOMAD__API_KEY`. An explicitly-set variable of the same name still wins over the file. |
-| `TASKS__NOMAD__API_KEY` | **Yes.** Destination only: a file (or explicit variable) suppresses the derived export for Nomad itself. Mounting a mint-gate token does *not* prevent Nomad from receiving that export when this name is unset. |
+| `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`, `PMM__API_KEY` | **Yes.** A file supplies that mint-gate name and suppresses exporting a derived value *over it*. It does not block the Grafana helper from resolving the mounted value and exporting it to every other unset destination among the three. An explicitly-set variable of the same name still wins over the file. |
+| `TASKS__NOMAD__API_KEY` | **Yes.** Destination only: a file (or explicit variable) suppresses the derived export for Nomad itself. Mounting a mint-gate token does *not* prevent the other unset destinations — including Nomad — from receiving that export. |
 | `PMM__ENDPOINT`, `AUTH__PROVIDER__GRAFANA__ENDPOINT`, `TASKS__NOMAD__ENDPOINT` | **Yes.** A file suppresses the derived export. An explicitly-set variable of the same name still wins over both. |
 | `SEP_INTERNAL_TOKEN`, `BASE_URL` | **Yes.** Already canonical; the script clears only a blank inherited value and otherwise leaves either alone. |
 | `CELERY__BEAT_DBURI` | **Yes.** The script only clears a blank inherited value, which would otherwise outrank the file; the setting itself carries a default derived from the resolved SEP database, which a mounted `DATABASE__PASSWORD` or `SEP__DATABASE__PASSWORD` outranks. |
@@ -368,8 +368,18 @@ counts as absent at every rank the helper reads.
 
 **Those two names are the mint gate only.** Supplying either of them suppresses
 minting, but `entrypoint.sh` still calls `export_grafana_token` with the
-already-resolved value, so `TASKS__NOMAD__API_KEY` is set to the same credential
-without a fresh Grafana request. When both mint-gate names resolve to different
+already-resolved value, so every unset destination among the three — the sibling
+mint-gate name and `TASKS__NOMAD__API_KEY` — is set to the same credential
+without a fresh Grafana request. When that value came from a `SECRETS_DIR`-mounted
+mint-gate file, the sibling has no value and no file of its own, so it takes the
+derived export too: mounting only
+`AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` leaves `PMM__API_KEY` and
+`TASKS__NOMAD__API_KEY` both set to the mounted value, and mounting only
+`PMM__API_KEY` does the mirror image. That turns on the PMM client and PMM
+annotations where a mount-only mint-gate deployment previously got neither; it
+also means a mounted credential reaches every supervised program's environment
+under names it was not mounted as — the reason the `ENCRYPTION_KEY` path never
+exports a file-supplied value. When both mint-gate names resolve to different
 values, `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` wins.
 `TASKS__NOMAD__API_KEY` is a destination only: mounting *it* alone does not
 suppress minting, and an explicit or mounted Nomad key is left alone by the
