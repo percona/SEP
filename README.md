@@ -274,7 +274,7 @@
 | app/sep/apps/meta\_keys.py                                                                                                   |        2 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/api\_routes.py                                                                                   |       23 |        0 |        2 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/app.py                                                                                           |       13 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/mysql\_backups/backup\_source\_choices.py                                                                       |       51 |       11 |       20 |        1 |     72% |   121-131 |
+| app/sep/apps/mysql\_backups/backup\_source\_choices.py                                                                       |       51 |        0 |       20 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/crud.py                                                                                          |       29 |        0 |        4 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/deps.py                                                                                          |       93 |        0 |       22 |        1 |     99% | 335-\>338 |
 | app/sep/apps/mysql\_backups/form\_backfill.py                                                                                |       66 |        6 |       22 |        6 |     86% |129-\>151, 132-133, 134-\>151, 136-\>151, 138-\>151, 145, 175-176, 186 |
@@ -488,7 +488,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **30679** | **1668** | **7516** |  **626** | **93%** |           |
+| **TOTAL**                                                                                                                    | **30679** | **1657** | **7516** |  **625** | **93%** |           |
 
 
 ## Setup coverage badge
