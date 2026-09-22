@@ -19,6 +19,7 @@ import asyncio
 import logging
 from collections.abc import Coroutine, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Annotated, Any, TypeVar
 
@@ -34,6 +35,7 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.apps.meta_keys import SERVICE_NAME_META_KEY
@@ -45,7 +47,7 @@ from app.sep.apps.mysql_backups.models import (
     UNKNOWN_SERVICE_SENTINEL,
 )
 from app.sep.apps.mysql_backups.restore.models import (
-    normalize_source_declaration,
+    repair_source_declaration,
     RestoreCreate,
     RestoresResponse,
 )
@@ -55,7 +57,7 @@ from app.sep.apps.mysql_backups.restore.spec import (
 )
 from app.sep.db import get_async_session_maker
 from app.sep.db.engine import engine as sep_engine
-from app.sep.deps import get_created_entity, InventoryAPI
+from app.sep.deps import get_created_entity, get_username_mapping, InventoryAPI
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
@@ -66,6 +68,18 @@ _T = TypeVar("_T")
 CatalogTransportContext = Mapping[
     tuple[int | None, str, str], CataloguedSourceTransport | None
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreResponseContext:
+    """Bound once per list/detail/create build for the restore response builder.
+
+    Carries the username map every task app resolves actors through, plus the
+    catalog transport prefetch this app batches for undeclared stamps.
+    """
+
+    usernames: Mapping[str, str] = field(default_factory=dict)
+    transports: CatalogTransportContext = field(default_factory=dict)
 
 
 async def resolve_restore_entities(
@@ -328,21 +342,48 @@ async def _fetch_catalogued_transport(
         await lookup_engine.dispose()
 
 
+def _split_restore_context(
+    context: RestoreResponseContext | Mapping[Any, Any] | None,
+) -> tuple[Mapping[str, str], CatalogTransportContext | None]:
+    """Split a bound context into the username map and optional transport prefetch.
+
+    Accepts the composite :class:`RestoreResponseContext` the provider returns,
+    a plain username map (actor-resolution unit tests), or a transport prefetch
+    keyed by ``(service_id, service_name, backup_source)`` tuples (catalog unit
+    tests). A plain username map yields ``transports=None`` so catalog lookups
+    fall back to the sync bridge.
+
+    :param context: The value bound as the builder's ``context`` keyword.
+    :return: ``(usernames, transports)``; ``transports`` is ``None`` when the
+        caller did not supply a prefetch map.
+    """
+    if context is None:
+        return {}, None
+    if isinstance(context, RestoreResponseContext):
+        return context.usernames, context.transports
+    if context and all(isinstance(key, tuple) for key in context):
+        return {}, context  # type: ignore[return-value]
+    return context, None
+
+
 async def restore_response_context(
     *, tasks: Sequence[Task] = ()
-) -> CatalogTransportContext:
-    """Prefetch catalogued transports for undeclared stamps on the request loop.
+) -> RestoreResponseContext:
+    """Resolve usernames and prefetch catalogued transports for the request.
 
-    Bound once per list/detail/create build as the builders' ``context``. Runs on
-    the request event loop against the shared sep session maker — one session and
-    one batched SELECT for the whole page — so the sync builder never pays a
-    per-row thread+loop+NullPool spin-up. A session/query failure is recorded as
-    ``None`` for every pending key so the builder falls through to inference
-    without re-querying.
+    Bound once per list/detail/create build as the builders' ``context``. The
+    username map is the same resolution every task app applies to actor fields.
+    Catalog transports run on the request event loop against the shared sep
+    session maker — one session and one batched SELECT for the whole page — so
+    the sync builder never pays a per-row thread+loop+NullPool spin-up. A
+    session/query failure is recorded as ``None`` for every pending key so the
+    builder falls through to inference without re-querying.
 
     :param tasks: The page (list) or singleton (detail/create) being rendered.
-    :return: A map from :func:`_transport_cache_key` to catalogued transport.
+    :return: The username map plus a map from :func:`_transport_cache_key` to
+        catalogued transport.
     """
+    usernames = await get_username_mapping()
     pending: dict[tuple[int | None, str, str], CatalogServiceKey] = {}
     for task in tasks:
         data = task.data if isinstance(task.data, dict) else None
@@ -360,11 +401,11 @@ async def restore_response_context(
             pending[cache_key] = service_key
 
     if not pending:
-        return {}
+        return RestoreResponseContext(usernames=usernames, transports={})
 
     try:
         async with get_async_session_maker()() as session:
-            return await MysqlBackupRunManager.catalogued_source_transports(
+            transports = await MysqlBackupRunManager.catalogued_source_transports(
                 session, pending
             )
     except Exception:  # noqa: BLE001 — session/query failure must not take out the page
@@ -372,7 +413,8 @@ async def restore_response_context(
             "Catalog source_transport session failed; falling back to inference",
             exc_info=True,
         )
-        return dict.fromkeys(pending, None)
+        transports = dict.fromkeys(pending, None)
+    return RestoreResponseContext(usernames=usernames, transports=transports)
 
 
 def catalogued_transport_for_stamp(
@@ -421,50 +463,51 @@ def catalogued_transport_for_stamp(
 def _declared_source_override(
     task: Task, *, context: CatalogTransportContext | None = None
 ) -> dict[str, Any]:
-    """Return a ``data`` override declaring the source of a stamp that predates it.
+    """Return a ``data`` override declaring the source of a stamp that describes it poorly.
 
     The edit form seeds each field from the served stamp and falls back to the
     schema default where the stamp has no value, so a stamp written before the
     source controls existed would seed ``source_transport`` to ``local``. The
     gates then hide the SSH and object-store fields, and a hidden field is
     dropped from the submission entirely, so saving that form would discard
-    credentials the restore still needs. Declaring the inferred source here means
-    the form opens on the transport the stored values imply and keeps them
-    visible.
+    credentials the restore still needs. The same holds for an AES-256 key file a
+    stamp names without declaring the format that reveals it. Repairing the stamp
+    here means the form opens on the source its stored values imply, keeping a key
+    file the engine can read and dropping one it cannot.
 
     When a matching :class:`~app.sep.apps.mysql_backups.models.MysqlBackupRun`
     recorded an object-store ``source_transport``, that value is preferred over
     field inference — the same catalog-first path
-    :func:`~app.sep.apps.mysql_backups.restore.models.normalize_source_declaration`
+    :func:`~app.sep.apps.mysql_backups.restore.models.repair_source_declaration`
     accepts via ``catalogued_transport``.
 
-    Re-validating through :class:`RestoreCreate` after normalizing keeps the
-    served stamp exactly what a subsequent ``PUT`` would accept. It is tolerant
-    of a stamp that cannot be validated at all, because this builder also serves
-    the list route, where one unparseable task must not take out the whole page.
+    Re-validating through :class:`RestoreCreate` rather than serving the repair
+    directly keeps the served stamp exactly what a subsequent ``PUT`` would
+    accept. It is tolerant of a stamp that cannot be validated at all, because
+    this builder also serves the list route, where one unparseable task must not
+    take out the whole page.
 
     :param task: The restore task being serialized.
     :param context: Optional prefetch map from :func:`restore_response_context`.
     :return: A single-key ``data`` override, or an empty mapping when the stamp
-        already declares a source, is absent, or does not validate.
+        already describes its source, is absent, or does not validate.
     """
     data = task.data
     if not data:
         return {}
     stored_form = data.get(RESERVED_FORM_KEY)
-    if (
-        not isinstance(stored_form, dict)
-        or stored_form.get("source_transport") is not None
-    ):
+    if not isinstance(stored_form, dict):
+        return {}
+    repaired = repair_source_declaration(
+        stored_form,
+        catalogued_transport=catalogued_transport_for_stamp(
+            task, stored_form, context=context
+        ),
+    )
+    if repaired is None:
         return {}
     try:
-        normalized = normalize_source_declaration(
-            stored_form,
-            catalogued_transport=catalogued_transport_for_stamp(
-                task, stored_form, context=context
-            ),
-        )
-        declared = RestoreCreate.model_validate(normalized).model_dump(mode="json")
+        declared = RestoreCreate.model_validate(repaired).model_dump(mode="json")
     except ValidationError:
         return {}
     return {"data": {**data, RESERVED_FORM_KEY: declared}}
@@ -475,7 +518,7 @@ def build_restore_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
-    context: CatalogTransportContext | None = None,
+    context: RestoreResponseContext | Mapping[Any, Any] | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
@@ -483,10 +526,13 @@ def build_restore_api_task_response(
     :param status: The latest known execution status for the task.
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
-    :param context: Prefetched catalog transports from
-        :func:`restore_response_context`, or ``None`` outside the JSON routes.
+    :param context: The :class:`RestoreResponseContext` bound by
+        ``response_context_provider`` (usernames plus catalog transports), a
+        plain username map, a catalog prefetch map, or ``None`` outside the
+        JSON routes.
     :return: A validated restore task API response object.
     """
+    usernames, transports = _split_restore_context(context)
     backup_type, host, port = _extract_restore_config(task)
     meta = task.data.get("meta") if task.data else None
     return build_default_task_response(
@@ -499,7 +545,8 @@ def build_restore_api_task_response(
             "host": host,
             "port": port,
             "hostname": meta.get("target") if meta else None,
-            **_declared_source_override(task, context=context),
+            **task_actor_fields(task, usernames),
+            **_declared_source_override(task, context=transports),
         },
     )
 

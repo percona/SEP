@@ -84,7 +84,7 @@ const getHostOptionLabel = (opt: HostOption) => opt.name;
 
 const isOptionEqualToValue = (a: HostOption, b: HostOption) => a.id === b.id;
 
-function hostValueId(value: unknown): string | undefined {
+export function hostValueId(value: unknown): string | undefined {
   if (typeof value === 'string' && value !== '') {
     return value;
   }

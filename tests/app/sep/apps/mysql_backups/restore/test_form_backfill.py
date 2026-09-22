@@ -27,6 +27,7 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
 from app.sep.apps.mysql_backups.restore.form_backfill import (
     FORM_BACKFILL_ENTRY,
@@ -99,6 +100,7 @@ def _legacy_restore_task(
     service_port: int = 3306,
     service_name: str = "mysql-prod",
     all_servers: dict[str, object] | None = None,
+    server_extra: dict[str, object] | None = None,
     alert_on_fail: bool = False,
 ) -> Task:
     """Build a legacy mysql restores task row without ``data['_form']``."""
@@ -106,6 +108,7 @@ def _legacy_restore_task(
         "ALIAS": "restore-job",
         "BACKUP_TYPE": backup_type.value,
         "BACKUP_SOURCE": backup_source,
+        **(server_extra or {}),
     }
     if dest_host is not None:
         server_list_entry["DEST_HOST"] = dest_host
@@ -414,7 +417,11 @@ def test_repair_keeps_credentials_the_inferred_transport_can_use():
 
 
 def test_repair_skips_a_stamp_that_already_declares_its_source():
-    """Leave an operator's own declaration untouched."""
+    """Leave a stamp that already describes its own source untouched.
+
+    Both halves have to be present for the stamp to need nothing: a stamp naming
+    only its transport is still owed the encryption the edit form reads.
+    """
     service_lookup, schema_lookup = _lookups(
         _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
     )
@@ -425,6 +432,7 @@ def test_repair_skips_a_stamp_that_already_declares_its_source():
             "backup_type": BackupType.MYDUMPER.value,
             "backup_source": "/backups/mydumper/latest",
             "source_transport": SourceTransport.LOCAL.value,
+            "source_encryption": EncryptionFormat.NONE.value,
         }
     )
 
@@ -474,4 +482,28 @@ def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():
 
     assert body is not None
     assert body["source_transport"] == SourceTransport.SSH.value
+    RestoreCreate.model_validate(body)
+
+
+def test_reconstructed_body_declares_the_aes_format_of_a_stored_key_file():
+    """Declare AES-256 for a restore whose config names a key file.
+
+    The key file is what the restore decrypts with, so the reconstructed body has
+    to name the format that admits it rather than leave it for the gate to reject.
+    """
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_restore_task(
+        backup_type=BackupType.MYDUMPER,
+        dest_host="10.0.0.5",
+        dest_port=3306,
+        server_extra={"XTRABACKUP_AES256_KEYFILE": "/etc/xb/aes.key"},
+    )
+
+    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+
+    assert body is not None
+    assert body["source_encryption"] == EncryptionFormat.AES256
+    assert body["xtrabackup_aes256_keyfile"] == "/etc/xb/aes.key"
     RestoreCreate.model_validate(body)

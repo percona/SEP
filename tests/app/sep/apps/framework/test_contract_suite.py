@@ -803,6 +803,49 @@ def test_shared_mount_clears_overrides_between_tests(pytester: pytest.Pytester) 
     result.assert_outcomes(passed=2)
 
 
+_PROVIDERLESS_SUITE = """
+from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTests
+from tests.app.sep.apps.framework.kit import synth_app
+
+
+class TestProviderless(DerivedRouterContractTests):
+    app_def = synth_app(response_context_provider=None)
+"""
+
+
+def test_providerless_app_fails_its_contract_rather_than_skipping(
+    pytester: pytest.Pytester,
+) -> None:
+    """Prove an app left with no response context provider fails, never skips.
+
+    The child suite binds a definition that opts out of the provider. Its bound
+    check must fail, and the list, detail and create injected-extras tests must
+    run and fail on the raw id rather than skipping for want of a provider. The
+    one skip is the update test, because the synthetic app derives no PUT.
+    """
+    pytester.makeconftest(
+        'pytest_plugins = ["tests.app.conftest", "tests.app.sep.apps.conftest"]'
+    )
+    pytester.makepyfile(test_providerless=_PROVIDERLESS_SUITE)
+
+    result = pytester.runpytest(
+        "-p",
+        "no:cacheprovider",
+        "-n0",
+        "-rfs",
+        "-k",
+        "provider_bound or injects_extras or resolves_username",
+    )
+
+    username_assertion = r'>\s+assert \w+\["created_by"\] == SYNTH_CREATED_BY_NAME$'
+    result.assert_outcomes(failed=4, skipped=1)
+    result.stdout.re_match_lines([username_assertion] * 3)
+    result.stdout.fnmatch_lines(
+        ["FAILED *TestProviderless::test_response_context_provider_bound*"]
+    )
+    result.stdout.no_fnmatch_line("*no response context provider*")
+
+
 def test_borrowing_a_shared_mount_twice_is_rejected() -> None:
     """Reject a second borrow of one shared mount while the first still holds it.
 

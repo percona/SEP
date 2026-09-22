@@ -24,6 +24,7 @@ from fastapi import Depends, Query
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.api.task_history_merge import fetch_task_history_window
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.deps import make_task_dep
@@ -56,30 +57,23 @@ MAX_TASK_RUN_SCAN = 500
 _NEWEST_HISTORY_FIRST = "-created_at"
 
 
-def _infer_encryption_format(
-    backup_type: str | None, all_servers: dict[str, Any]
-) -> EncryptionFormat:
+def _infer_encryption_format(all_servers: dict[str, Any]) -> EncryptionFormat:
     """Return the encryption format a task stored before the selector was running.
 
     Derived from the fields that used to be the only signal, so a task keeps the
-    encryption it already ran when its edit form reloads.
+    encryption it already ran when its edit form reloads. A key file on any engine
+    infers AES-256; GPG follows ``ENCRYPT`` / ``POST_RUN_ENCRYPT``.
 
     An absent ``ENCRYPT`` reads as disabled. The payload treats the same absence as
     *enabled*, but that fail-safe guards a standalone run against hand-authored
     config, which never reaches this function: every config SEP itself writes names
     ``ENCRYPT`` explicitly, an invariant its own contract test pins.
 
-    A key file left on a Mydumper or Binlog task is ignored: AES-256 is
-    XtraBackup-only, so inferring it would produce a format that backup type
-    rejects and a form that could never validate.
-
-    :param backup_type: The stored ``BACKUP_TYPE``, if any.
     :param all_servers: The stored ``ALL_SERVERS`` config block.
     :return: The inferred format.
     """
     return encryption_format_for_passes(
-        aes256=backup_type == BackupType.XTRABACKUP
-        and bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
+        aes256=bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
         gpg=bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT")),
     )
 
@@ -141,9 +135,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     if recipient is not None:
         extra_fields["encryption_recipient"] = recipient
     if "ENCRYPTION_FORMAT" not in all_servers_config:
-        extra_fields["encryption_format"] = _infer_encryption_format(
-            server_config.get("BACKUP_TYPE"), all_servers_config
-        )
+        extra_fields["encryption_format"] = _infer_encryption_format(all_servers_config)
     extra_fields["binlog_alternative_host"] = all_servers_config.get(
         "BINLOG_ALTERNATIVE_HOST"
     )
@@ -332,9 +324,9 @@ def build_mysql_backups_api_task_response(
     :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
-    :param context: The username map bound by ``response_context_provider``,
-        used to remap ``created_by`` / ``last_updated_by`` user-ids to
-        usernames; falls back to the raw id when the map lacks an entry.
+    :param context: The username map bound by ``response_context_provider``, used
+        to resolve ``created_by`` / ``last_updated_by`` to system labels or
+        provider usernames; falls back to the raw id when neither resolves it.
     :type context: dict[str, str] | None
     :return: A validated backup task API response object.
     """
@@ -352,7 +344,6 @@ def build_mysql_backups_api_task_response(
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
             "service_type": ServiceTypeEnum.MYSQL,
-            "created_by": mapping.get(task.created_by, task.created_by),
-            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
+            **task_actor_fields(task, mapping),
         },
     )

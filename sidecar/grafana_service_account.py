@@ -17,9 +17,10 @@
 ``entrypoint.sh`` runs this once, after ``settings-env.sh`` has expanded the
 deployment inputs and before it execs supervisord, and captures stdout. Stdout
 carries the resolved token and nothing else; every diagnostic goes to stderr.
-Printing nothing means there was nothing to resolve: a token already
-configured, a provider other than Grafana, or settings that did not
-resolve. None of those is a failure.
+An already-configured token under either mint-gate name is printed so
+``entrypoint.sh`` can export it, with no Grafana mint. Printing nothing means
+there was genuinely nothing to resolve: a provider other than Grafana, or
+settings that did not resolve. Neither of those is a failure.
 
 Configuration is read from the application's own settings classes rather than
 re-derived, so the endpoint, the TLS setting and the two canonical token names
@@ -34,7 +35,6 @@ Deployment inputs, all optional: ``GF_SECURITY_ADMIN_USER`` and
 
 import asyncio
 import logging
-import math
 import os
 import secrets
 import sys
@@ -42,6 +42,7 @@ import time
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager, redirect_stdout
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 
 from aiohttp import ClientError
@@ -53,15 +54,30 @@ from app.core.requests.connectivity import PROBE_TIMEOUT_SECONDS
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.core.utils.strings import b64encode_str
+from sidecar.runtime import (
+    DEFAULT_STATE_DIR,
+    positive_timeout,
+    RETRY_INTERVAL_SECONDS,
+    state_dir,
+)
+from sidecar.runtime import warn as runtime_warn
+
+__all__ = [
+    "DEFAULT_STATE_DIR",
+    "RETRY_INTERVAL_SECONDS",
+    "mint_timeout",
+    "state_dir",
+    "warn",
+]
+
+warn = partial(runtime_warn, "grafana-mint")
 
 SERVICE_ACCOUNT_NAME = "sep"
 SERVICE_ACCOUNT_ROLE = "Admin"
 
-DEFAULT_STATE_DIR = Path("/home/sep/state")
 PERSISTED_FILENAME = "grafana_service_account_token"
 
 DEFAULT_MINT_TIMEOUT_SECONDS = 60.0
-RETRY_INTERVAL_SECONDS = 3.0
 
 DEFAULT_ADMIN_CREDENTIAL = "admin"
 
@@ -99,14 +115,6 @@ class TokenStateEnum(StrEnum):
     UNREACHABLE = "unreachable"
 
 
-def warn(message: str) -> None:
-    """Write one diagnostic line, leaving stdout as the token channel alone.
-
-    :param message: The line to write.
-    """
-    sys.stderr.write(f"[grafana-mint] {message}\n")
-
-
 def admin_credentials() -> str:
     """Return the Base64 admin pair the mint calls authenticate with.
 
@@ -124,34 +132,14 @@ def admin_credentials() -> str:
     return b64encode_str(f"{user}:{password}")
 
 
-def state_dir() -> Path:
-    """Return the directory SEP persists its minted token in.
-
-    :return: The configured directory, or the image's own.
-    """
-    configured = os.environ.get("SEP_STATE_DIR") or ""
-    return Path(configured) if configured.strip() else DEFAULT_STATE_DIR
-
-
 def mint_timeout() -> float:
     """Return how long minting may keep retrying before it gives up.
 
     :return: The bound in seconds.
     """
-    raw = (os.environ.get("SEP_GRAFANA_MINT_TIMEOUT") or "").strip()
-    if not raw:
-        return DEFAULT_MINT_TIMEOUT_SECONDS
-    try:
-        seconds = float(raw)
-    except ValueError:
-        seconds = 0.0
-    if not math.isfinite(seconds) or seconds <= 0:
-        warn(
-            f"SEP_GRAFANA_MINT_TIMEOUT={raw!r} is not a finite positive number "
-            f"of seconds; waiting {DEFAULT_MINT_TIMEOUT_SECONDS:g}s instead."
-        )
-        return DEFAULT_MINT_TIMEOUT_SECONDS
-    return seconds
+    return positive_timeout(
+        "SEP_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
+    )
 
 
 def read_persisted_token(directory: Path) -> str | None:
@@ -431,27 +419,38 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
     )
 
 
-def already_supplied(service_account_token: str, pmm_api_key: str) -> bool:
-    """Return whether a token is already configured for either canonical name.
+def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
+    """Return the already-configured token under either canonical name, or ``None``.
 
-    A blank value counts as absent at every layer, which is why the profile's
-    baked empty token does not read as a configured one.
+    ``AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`` wins when both resolve to
+    different values. A blank value counts as absent at every layer, which is
+    why the profile's baked empty token does not read as a configured one.
+    Strip is used only to detect blank input; the original non-blank value is
+    returned so export matches what the operator configured.
 
     :param service_account_token: The resolved Grafana service-account token.
     :param pmm_api_key: The resolved ``PMM.API_KEY``.
-    :return: Whether minting must be skipped.
+    :return: The non-blank token to export, or ``None`` when neither name
+        carries one.
     """
-    return bool(service_account_token.strip() or pmm_api_key.strip())
+    if service_account_token.strip():
+        return service_account_token
+    if pmm_api_key.strip():
+        return pmm_api_key
+    return None
 
 
-def resolve_provider() -> GrafanaSDK | None:
-    """Return the Grafana client to resolve a token through, if there is one.
+def resolve_provider() -> GrafanaSDK | str | None:
+    """Return a Grafana client to mint against, an already-resolved token, or ``None``.
 
-    Answers ``None`` for each case with nothing to do: settings that did not
-    resolve, a provider other than Grafana, and a token already configured under
-    either canonical name.
+    Distinguishes the two former ``None`` cases: a token already configured under
+    either canonical name is returned as that value so ``entrypoint.sh`` can
+    export it without minting, while settings that did not resolve and a
+    provider other than Grafana still answer ``None`` (genuinely nothing to
+    export).
 
-    :return: The open-able Grafana provider, or ``None``.
+    :return: The open-able Grafana provider, an already-resolved token, or
+        ``None``.
     """
     try:
         # import-time-settings: `auth_settings = AuthSettings()` runs at import
@@ -473,11 +472,12 @@ def resolve_provider() -> GrafanaSDK | None:
         return None
     if not isinstance(provider, GrafanaAuthProvider):
         return None
-    if already_supplied(
+    configured = supplied_token(
         provider.service_account_token.get_secret_value(),
         pmm_api_key.get_secret_value() if pmm_api_key else "",
-    ):
-        return None
+    )
+    if configured is not None:
+        return configured
     return provider
 
 
@@ -513,21 +513,25 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
 
 
 async def resolve_token() -> str | None:
-    """Resolve the token for the three ranks below the mounted secrets channel.
+    """Resolve the token to export: an already-configured mint-gate name, or the three ranks below the mounted secrets channel.
 
-    When a token is minted onto a reused service account, the token is probed
-    with :func:`validate_token`. A ``FORBIDDEN`` answer means the account's
-    org role ranks below ``Admin``; a diagnostic is written and the token is
-    still returned, because a re-mint cannot raise the role. An
-    ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
+    An already-configured token under either mint-gate name is returned as-is,
+    with no Grafana call. When a token is minted onto a reused service account,
+    the token is probed with :func:`validate_token`. A ``FORBIDDEN`` answer
+    means the account's org role ranks below ``Admin``; a diagnostic is written
+    and the token is still returned, because a re-mint cannot raise the role.
+    An ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
     reachability diagnostic, matching :func:`keep_persisted_token`.
 
     :return: The resolved token, or ``None`` when there is nothing to resolve.
     :raises MintError: When a token is needed and cannot be minted.
     """
-    provider = resolve_provider()
-    if provider is None:
+    resolved = resolve_provider()
+    if resolved is None:
         return None
+    if isinstance(resolved, str):
+        return resolved
+    provider = resolved
 
     directory = state_dir()
     persisted = read_persisted_token(directory)

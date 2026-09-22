@@ -35,6 +35,7 @@ __all__ = [
     "dump_field_value",
     "field_materializer",
     "fire_change_callbacks",
+    "fire_on_boot",
     "hot_field",
     "hot_field_names",
     "is_hot_reloadable",
@@ -55,9 +56,11 @@ __all__ = [
 ]
 
 from app.core.settings_override.cache import build_snapshot
+from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     fire_change_callbacks,
+    fire_on_boot,
     publish_snapshot,
     refresh_all,
     RefreshCallback,
@@ -91,8 +94,7 @@ from app.core.settings_override.registry import (
     MaterializerPurpose,
     nested_overridable_field,
     nested_overridable_field_names,
-    NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field

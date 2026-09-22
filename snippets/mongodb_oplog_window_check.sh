@@ -5,6 +5,7 @@
 # description: "This script checks the oplog window size and current oplog configuration to diagnose undersized oplog issues."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBOplogWindowLow

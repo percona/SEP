@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Annotated
 from unittest.mock import AsyncMock
 
+import aiohttp
 import pytest
 from fastapi import APIRouter, Body, Depends, FastAPI, status
 from fastapi.dependencies.utils import get_flat_dependant
@@ -40,7 +41,7 @@ from sqlalchemy import column
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.in_memory_list_query import InMemoryListQueryApplier
 from app.core.db.list_query import ListQuerySpec
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import HTTPBadGatewayException, HTTPConflictException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
@@ -110,6 +111,7 @@ from app.sep.deps import (
     get_current_user,
     get_task_by_name,
     get_tasks_api,
+    get_username_mapping,
     IsApiAuthenticated,
     TaskAPI,
 )
@@ -2909,6 +2911,43 @@ class TestDeriveCrudRoutesCreateContext:
         """Assert a context-less builder with a provider fails fast at registration."""
         with pytest.raises(TypeError, match="context"):
             _crud_router(context_provider=_context_provider)
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(aiohttp.ClientConnectionError(), id="connection-error"),
+            pytest.param(TimeoutError(), id="timeout"),
+            pytest.param(HTTPBadGatewayException(), id="provider-http-error"),
+        ],
+    )
+    def test_create_keeps_the_raw_id_when_the_user_listing_fails(
+        self,
+        regular_user: CasdoorUser,
+        provider_users: AsyncMock,
+        failure: Exception,
+    ) -> None:
+        """Assert create still writes and degrades to the raw id on a provider outage.
+
+        The real default provider, ``get_username_mapping``, turns these listing
+        failures into an empty map, so the response renders the stored id; the
+        upstream write has already landed by the time the map is fetched.
+        """
+        provider_users.side_effect = failure
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_created_by("new-task", _CONTEXT_USER_ID)
+        )
+        router = _crud_router(
+            context_provider=get_username_mapping,
+            response_builder=_build_context_response,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["resolved_by"] == _CONTEXT_USER_ID
+        tasks_api.post.assert_awaited_once()
+        assert tasks_api.post.await_args.args[0] == "/"
 
 
 # ── derive_execute_route() helper ───────────────────────────────────────

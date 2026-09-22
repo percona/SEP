@@ -136,7 +136,9 @@ class WorkerRefresher:
             ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
         :param callbacks: Optional rebind callbacks fired by a boundary
             :func:`~app.core.settings_override.lifecycle.refresh_all` when a
-            watched override changes value. Not applied to the inline seed.
+            watched override changes value. The inline seed fires only those
+            marked with :func:`~app.core.settings_override.lifecycle.fire_on_boot`,
+            for keys it published an override for.
         :param proc_alive_timeout: The prefork pool's child-liveness deadline
             in seconds. ``None`` (the default) leaves the inline seed
             unbounded.
@@ -160,7 +162,12 @@ class WorkerRefresher:
             else proc_alive_timeout * SEED_TIMEOUT_FRACTION
         )
         seeded, pending = self._loop_getter().run_until_complete(
-            bounded_seed(self._session_maker_factory, proxies, seed_timeout)
+            bounded_seed(
+                self._session_maker_factory,
+                proxies,
+                seed_timeout,
+                callbacks=callbacks,
+            )
         )
         now = self._now()
         self._last_refresh = now if seeded else now - interval.total_seconds()

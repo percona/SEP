@@ -42,7 +42,6 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
 )
 from app.sep.apps.nav_icons import NavIcon
-from app.sep.deps import get_username_mapping
 
 app = TaskExecutionApp(
     name="alters",
@@ -55,7 +54,6 @@ app = TaskExecutionApp(
     schema=alters_schema,
     response_model=AltersTaskResponse,
     response_builder=build_alters_api_list_response,
-    response_context_provider=get_username_mapping,
     get_task=get_alters_task,
     pagination=make_pagination_dep(max_limit=DEFAULT_PAGINATION_LIMIT),
     service_type=ServiceTypeEnum.MYSQL,

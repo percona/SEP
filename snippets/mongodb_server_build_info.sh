@@ -31,6 +31,9 @@
 #    label: Authentication database
 #    description: Database used for authenticating the user.
 #    default: admin
+# diagnostic_categories:
+#  - SERVER_CRASHED_RESTART_SUCCESSFUL
+#  - SERVER_CRASHED_RESTART_NOT_SUCCESSFUL
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

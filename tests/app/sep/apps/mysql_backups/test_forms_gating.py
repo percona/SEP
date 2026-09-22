@@ -407,17 +407,28 @@ class TestEncryptionFormatGate:
         )
 
     @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
-    @pytest.mark.parametrize(
-        "encryption_format", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
-    )
-    def test_aes_formats_rejected_outside_xtrabackup(
-        self, backup_type, encryption_format
-    ):
-        """Reject the AES-bearing formats for backup types with no AES-256 path."""
-        with pytest.raises(ValidationError, match="encryption_format"):
-            BackupCreate(
-                **_base_payload(backup_type, encryption_format=encryption_format)
+    def test_aes256_accepted_for_mydumper_and_binlog(self, backup_type):
+        """Accept ``aes256`` with a key file for Mydumper and Binlog."""
+        BackupCreate(
+            **_base_payload(
+                backup_type,
+                encryption_format=EncryptionFormat.AES256,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
             )
+        )
+
+    @pytest.mark.parametrize("backup_type", [BackupType.MYDUMPER, BackupType.BINLOG])
+    def test_dual_accepted_for_mydumper_and_binlog(self, backup_type):
+        """Accept ``dual`` with a key file and GPG timing for Mydumper and Binlog."""
+        BackupCreate(
+            **_base_payload(
+                backup_type,
+                encryption_format=EncryptionFormat.DUAL,
+                xtrabackup_aes256_keyfile="/etc/keyfile",
+                post_run_encrypt=True,
+                encryption_recipient="ops@example.com",
+            )
+        )
 
     @pytest.mark.parametrize(
         "backup_type", [BackupType.MYDUMPER, BackupType.XTRABACKUP, BackupType.BINLOG]
@@ -704,21 +715,24 @@ class TestMydumperVerbose:
 
 
 class TestEncryptionNeedsAReachableRuntime:
-    """Refuse a GPG timing no backup script would reach.
+    """Refuse an encryption format no backup script would reach.
 
     In-place GPG happens inside the upload provider loop, so with no target the
     ``Upload`` that would apply it is never constructed. A Binlog backup has no
-    host-side pass either, so its post-run timing is upload-bound too. Accepted
-    without a target, both make the reported format a claim rather than a fact:
-    the task finishes green with a plaintext backup.
+    host-side pass either, so its post-run GPG timing and its AES-256 formats are
+    upload-bound too. Accepted without a target, those make the reported format a
+    claim rather than a fact: the task finishes green with a plaintext backup.
 
-    Scoped to the pure GPG format: ``dual`` encrypts with AES-256 whatever the
-    GPG timing says, so no plaintext backup ships there and the rule's remedies
-    would not change what runs.
+    The GPG pair is scoped to the pure GPG format: under ``dual`` Mydumper and
+    XtraBackup encrypt with AES-256 on the host whatever the GPG timing says, so
+    no plaintext backup ships there and the rule's remedies would not change what
+    runs. Binlog AES is gated separately because that engine has no host-side
+    AES pass.
     """
 
     _IN_PLACE_MESSAGE = "encrypts the backup in place as part of an upload"
     _BINLOG_MESSAGE = "Binlog backup encrypts only as part of an upload"
+    _BINLOG_AES_MESSAGE = "AES-256 format requires at least one upload provider"
 
     def test_the_lenient_bundle_differs_by_the_reachability_rules_alone(self):
         """Pin what the backfill's model gives up by reusing the lenient bundle.
@@ -920,10 +934,53 @@ class TestEncryptionNeedsAReachableRuntime:
         )
 
     def test_aes256_needs_no_upload_target(self):
-        """Accept AES-256 with no target: XtraBackup encrypts as it writes."""
+        """Accept AES-256 with no target where the host applies it.
+
+        Mydumper and XtraBackup encrypt with xbcrypt after the backup finishes,
+        before any upload, so requiring a target would reject the configuration
+        that works without one. Binlog is the opposite and is gated separately.
+        """
+        for backup_type in (BackupType.MYDUMPER, BackupType.XTRABACKUP):
+            BackupCreate(
+                **self._no_upload(
+                    backup_type,
+                    encryption_format=EncryptionFormat.AES256,
+                    xtrabackup_aes256_keyfile="/keys/aes.key",
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "encryption_format", [EncryptionFormat.AES256, EncryptionFormat.DUAL]
+    )
+    def test_binlog_aes_without_an_upload_target_fails(
+        self, encryption_format: EncryptionFormat
+    ):
+        """Reject a Binlog AES format with no upload target.
+
+        Binlog AES runs only inside ``Upload._encrypt``, which is reached only
+        when ``UPLOAD`` is non-empty — without a target the task would collect a
+        key file, show AES-256 in the UI, and write plaintext.
+        """
+        with pytest.raises(ValidationError, match=self._BINLOG_AES_MESSAGE):
+            BackupCreate(
+                **self._no_upload(
+                    BackupType.BINLOG,
+                    encryption_format=encryption_format,
+                    xtrabackup_aes256_keyfile="/keys/aes.key",
+                    post_run_encrypt=encryption_format is EncryptionFormat.DUAL,
+                    encryption_recipient=(
+                        "ops@example.com"
+                        if encryption_format is EncryptionFormat.DUAL
+                        else None
+                    ),
+                )
+            )
+
+    def test_binlog_aes_with_an_upload_target_validates(self):
+        """Accept a Binlog AES format once a target exists for encrypt-on-upload."""
         BackupCreate(
-            **self._no_upload(
-                BackupType.XTRABACKUP,
+            **_base_payload(
+                BackupType.BINLOG,
                 encryption_format=EncryptionFormat.AES256,
                 xtrabackup_aes256_keyfile="/keys/aes.key",
             )

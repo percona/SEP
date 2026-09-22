@@ -51,8 +51,10 @@ from app.core.settings_override.registry import (
     iter_class_fields,
     iter_nested_leaf_keys,
     nested_overridable_field,
-    override_provenance_for_rows,
     ReloadClassification,
+)
+from app.core.settings_override.resolution import (
+    override_provenance_for_rows,
     resolve_nested_field_metadata,
     SettingProvenance,
 )
@@ -416,6 +418,46 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     assert response.value == "**********"
     assert response.is_secret is True
     assert response.key_path == ["GROUP", "TOKEN"]
+
+
+def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
+    """LIST projection maps a missing nested segment to JSON ``null``."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SEPSettings.__name__
+    )
+    proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
+    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
+    assert leaf_meta is not None
+    response = _settings_response_from_field(
+        setting_class=SEPSettings.__name__,
+        settings_cls=_SecretLeafParent,
+        proxy=proxy,
+        field_meta=leaf_meta,
+        provenance=None,
+    )
+    assert response.value is None
+    assert response.is_secret is True
+
+
+def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
+    """LIST projection renders an unresolved secret leaf as JSON ``null``."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SEPSettings.__name__
+    )
+    proxy._set_snapshot(
+        {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
+    )
+    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
+    assert leaf_meta is not None
+    response = _settings_response_from_field(
+        setting_class=SEPSettings.__name__,
+        settings_cls=_SecretLeafParent,
+        proxy=proxy,
+        field_meta=leaf_meta,
+        provenance=None,
+    )
+    assert response.value is None
+    assert response.is_secret is True
 
 
 def test_settings_response_applicable_defaults_true() -> None:

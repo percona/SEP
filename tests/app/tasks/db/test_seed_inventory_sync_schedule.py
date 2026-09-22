@@ -22,9 +22,11 @@ lookup resolves ``app.tasks.db.seed``'s alias, so patching only one would leave
 the read path and the write path on different databases.
 """
 
+import inspect
 import json
 from collections.abc import AsyncIterator
 from datetime import datetime
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -35,14 +37,34 @@ from sqlalchemy_celery_beat.models import IntervalSchedule, Period, PeriodicTask
 from sqlmodel import SQLModel
 
 import app.tasks.db.seed as seed_module
+from app.celery import celery
 from app.core.celery import utils as celery_utils
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.models import IntervalSchedule as IntervalScheduleOption
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
+from app.sep.apps.inventory.sync import (
+    run_scheduled_inventory_sync,
+    start_follower_first_runs,
+)
+from app.sep.crud import SyncInstanceManager, SyncItemManager
+from app.sep.models import (
+    SyncInstanceWrite,
+    SyncInventoryEntityTypeEnum,
+    SyncItemWrite,
+    SyncStatusEnum,
+)
+from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.tasks.celery import execute_task_by_name
 from app.tasks.config import InventorySyncSchedule, tasks_settings
-from app.tasks.models import INVENTORY_SYNC_TASK_NAME
+from app.tasks.models import (
+    EXECUTE_TASK_BY_NAME_TASK,
+    INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_FIRST_RUN_KEY,
+    INVENTORY_SYNC_FOLLOWERS_KEY,
+    INVENTORY_SYNC_TASK_NAME,
+)
 from tests.app.db_schema import apply_schema
 from tests.app.tasks.conftest import (
     MYSQL_SYNCER,
@@ -587,6 +609,237 @@ async def test_removing_an_entry_orphan_cleans_only_its_row(
 
     assert await _rows_named(beat_maker, with_system_facts_schedule) == []
     assert len(await _seeded_rows(beat_maker)) == 1
+
+
+def _meta(row: PeriodicTask) -> dict[str, Any]:
+    """Return the ``execution_data.meta`` a beat row hands the executor."""
+    return json.loads(row.kwargs)["execution_data"]["meta"]
+
+
+@pytest.mark.asyncio
+async def test_the_pinned_default_names_its_followers(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert the default lists each per-syncer schedule and each names the default.
+
+    Both rows stay due at first seed: the ordering is carried by the meta the
+    callable reads, not by delaying either row.
+    """
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert _meta(primary) == {
+        "syncer": PMM_SYNCER,
+        INVENTORY_SYNC_FOLLOWERS_KEY: [SYSTEM_FACTS_SYNCER],
+    }
+    assert _meta(follower) == {
+        "syncer": SYSTEM_FACTS_SYNCER,
+        INVENTORY_SYNC_AFTER_KEY: PMM_SYNCER,
+    }
+    assert primary.start_time is not None
+    assert follower.start_time is not None
+
+
+@pytest.mark.asyncio
+async def test_a_default_without_schedules_carries_no_followers(
+    configured, beat_maker
+) -> None:
+    """Assert the default's meta gains no follower key when nothing follows it."""
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    assert _meta(primary) == {"syncer": PMM_SYNCER}
+
+
+@pytest.mark.asyncio
+async def test_a_follower_without_a_seeded_default_is_not_gated(
+    with_system_facts_schedule, mocker, beat_maker
+) -> None:
+    """Assert a standalone install's schedule runs at first seed, waiting on nothing."""
+    mocker.patch.object(tasks_settings, "INVENTORY_SYNC_INTERVAL", None)
+
+    await seed_module.seed_system_periodic_tasks()
+
+    assert await _seeded_rows(beat_maker) == []
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert _meta(follower) == {"syncer": SYSTEM_FACTS_SYNCER}
+    assert follower.start_time is not None
+
+
+@pytest.mark.asyncio
+async def test_an_operator_covered_default_leaves_the_follower_ungated(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert no follower waits on a default this seeder does not own.
+
+    The operator's row is authoritative and carries no ordering, so nothing would
+    ever start a follower gated on it.
+    """
+    async with beat_maker() as session:
+        await _insert_operator_row(session, _operator_kwargs(PMM_SYNCER))
+
+    await seed_module.seed_system_periodic_tasks()
+
+    assert await _seeded_rows(beat_maker) == []
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert _meta(follower) == {"syncer": SYSTEM_FACTS_SYNCER}
+
+
+@pytest.mark.asyncio
+async def test_an_operator_covered_follower_stays_listed_on_the_default(
+    configured, mocker, beat_maker
+) -> None:
+    """Assert the default still names a follower whose own schedule is the operator's.
+
+    The kick starts it only if it has never run, so the operator's schedule sees
+    at most one extra first run.
+    """
+    mocker.patch.object(
+        tasks_settings,
+        "INVENTORY_SYNC_SCHEDULES",
+        [InventorySyncSchedule(syncer=SYSTEM_FACTS_SYNCER, interval=ONE_DAY)],
+    )
+    async with beat_maker() as session:
+        await _insert_operator_row(session, _operator_kwargs(SYSTEM_FACTS_SYNCER))
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    assert _meta(primary)[INVENTORY_SYNC_FOLLOWERS_KEY] == [SYSTEM_FACTS_SYNCER]
+
+
+@pytest.mark.asyncio
+async def test_reseeding_adds_the_ordering_to_existing_rows_only(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert an upgrade reconciles the system rows and leaves the operator's alone.
+
+    The existing system rows keep their recorded timing, so gaining the ordering
+    does not move either schedule's next run.
+    """
+    dispatched_at = utc_now()
+    operator_kwargs = _operator_kwargs(MYSQL_SYNCER)
+    async with beat_maker() as session:
+        await _insert_operator_row(
+            session,
+            json.dumps(
+                {
+                    "task_name": INVENTORY_SYNC_TASK_NAME,
+                    "execution_data": {"meta": {"syncer": PMM_SYNCER}},
+                }
+            ),
+            name=seed_module.INVENTORY_SYNC_SCHEDULE_NAME,
+        )
+        await _insert_operator_row(
+            session,
+            json.dumps(
+                {
+                    "task_name": INVENTORY_SYNC_TASK_NAME,
+                    "execution_data": {"meta": {"syncer": SYSTEM_FACTS_SYNCER}},
+                }
+            ),
+            name=with_system_facts_schedule,
+        )
+        await _insert_operator_row(session, operator_kwargs)
+    async with beat_maker() as session:
+        for row in await BasePeriodicTaskManager.list(session):
+            row.last_run_at = dispatched_at
+            session.add(row)
+        await session.commit()
+
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    (operator_row,) = await _rows_named(beat_maker, OPERATOR_TASK_NAME)
+    assert _meta(primary)[INVENTORY_SYNC_FOLLOWERS_KEY] == [SYSTEM_FACTS_SYNCER]
+    assert _meta(follower)[INVENTORY_SYNC_AFTER_KEY] == PMM_SYNCER
+    assert operator_row.kwargs == operator_kwargs
+    for row in (primary, follower):
+        assert make_datetime_utc(row.last_run_at) == dispatched_at
+        assert row.start_time is None
+
+
+@pytest.mark.asyncio
+async def test_seeded_rows_run_the_registered_celery_task(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert both rows and the kick name the Celery task that actually exists."""
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    assert execute_task_by_name.name == EXECUTE_TASK_BY_NAME_TASK
+    assert primary.task == EXECUTE_TASK_BY_NAME_TASK
+    assert follower.task == EXECUTE_TASK_BY_NAME_TASK
+
+
+@pytest.mark.asyncio
+async def test_the_seeded_meta_binds_to_the_scheduled_callable(
+    with_system_facts_schedule, beat_maker
+) -> None:
+    """Assert every seeded meta key is a parameter of the callable it is forwarded to.
+
+    The CeleryExecutor hands the meta to ``run_scheduled_inventory_sync`` as
+    keyword arguments, so a key that names no parameter fails every run with
+    ``TypeError`` in the worker, which neither side's unit tests would see.
+    """
+    await seed_module.seed_system_periodic_tasks()
+
+    (primary,) = await _seeded_rows(beat_maker)
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    signature = inspect.signature(run_scheduled_inventory_sync)
+    signature.bind(**_meta(primary))
+    signature.bind(**_meta(follower))
+
+
+@pytest.mark.asyncio
+async def test_the_leader_kick_is_the_seeded_follower_request_as_a_first_run(
+    with_system_facts_schedule, beat_maker, tasks_maker, mocker, mock_remote_api
+) -> None:
+    """Assert a kicked first run is the follower row's request plus the first-run flag.
+
+    The row's meta carries the ordering the run must honour, and the flag makes
+    the started run skip itself if the follower has run by the time it executes.
+    Every key is forwarded to the callable as a keyword argument, so each must
+    bind to it.
+    """
+    await seed_module.seed_system_periodic_tasks()
+    (primary,) = await _seeded_rows(beat_maker)
+    (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
+    mocker.patch(
+        "app.sep.apps.inventory.sync.get_async_session_maker", return_value=tasks_maker
+    )
+    async with tasks_maker() as session:
+        run = await SyncInstanceManager.create(
+            session, SyncInstanceWrite(syncer=PMM_SYNCER, status=SyncStatusEnum.SUCCESS)
+        )
+        await SyncItemManager.create(
+            session,
+            SyncItemWrite(
+                entity_type=SyncInventoryEntityTypeEnum.INVENTORY,
+                entity_id=None,
+                sync_instance_id=run.id,
+                status=SyncStatusEnum.SUCCESS,
+            ),
+        )
+    send_task = mocker.patch.object(celery, "send_task")
+
+    await start_follower_first_runs(
+        PMM_SYNCER,
+        _meta(primary)[INVENTORY_SYNC_FOLLOWERS_KEY],
+        [SystemFactsSyncer(inventory_api=mock_remote_api, tasks_api=mock_remote_api)],
+    )
+
+    (kick,) = send_task.call_args_list
+    assert kick.args == (follower.task,)
+    assert (
+        kick.kwargs["kwargs"]["task_name"] == json.loads(follower.kwargs)["task_name"]
+    )
+    kicked_meta = kick.kwargs["kwargs"]["execution_data"]["meta"]
+    assert kicked_meta == {**_meta(follower), INVENTORY_SYNC_FIRST_RUN_KEY: True}
+    inspect.signature(run_scheduled_inventory_sync).bind(**kicked_meta)
 
 
 @pytest.mark.asyncio

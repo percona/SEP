@@ -21,12 +21,13 @@ status-filter, route presence/absence, auth) against the real
 ``mysql_backups.restore`` definition. The create/update methods are overridden
 here with a hand-built body because the generic Polyfactory pass over the create
 model trips the ``backup_source`` shell-safe validator. Restore declares no
-``connectivity_check`` / ``detail_response_builder``, so those suite methods
-skip; ``response_context_provider`` batches catalog transports (not usernames).
+``connectivity_check`` / ``detail_response_builder``, so the connectivity and
+detail-model suite methods skip.
 """
 
 from typing import Any
 
+import yaml
 from fastapi import status
 from pytest_mock import MockerFixture
 
@@ -46,6 +47,7 @@ from tests.app.sep.apps.framework.contract_suite import (
 )
 from tests.app.sep.apps.framework.kit import (
     SEEDED_TASK_NAME,
+    SYNTH_CREATED_BY_NAME,
     SYNTH_EXECUTOR_HOST,
     SYNTH_SERVICE_HOST,
     SYNTH_SERVICE_PORT,
@@ -84,15 +86,11 @@ def _valid_restore_body(
 class TestRestoreContract(DerivedRouterContractTests):
     """Assert the restore app's derived HTTP surface, knob by knob.
 
-    ``remapped_username`` is ``None``: the context provider batches catalog
-    transports rather than remapping usernames, so the injected-extras tests
-    assert only the absence of internal classification fields. ``create_body_overrides``
-    pins a declared local source so polyfactory cannot plant SSH/S3 values the
-    gates forbid.
+    ``create_body_overrides`` pins a declared local source so polyfactory cannot
+    plant SSH/S3 values the gates forbid.
     """
 
     app_def = restore_app
-    remapped_username = None
     create_body_overrides = {
         "backup_source": "/var/backups/latest",
         "datadir": "/var/lib/mysql",
@@ -253,6 +251,41 @@ class TestRestoreContract(DerivedRouterContractTests):
         )
 
         assert response.status_code == status.HTTP_200_OK, response.text
+
+    def test_create_injects_extras(self, contract_client: Any) -> None:
+        """Assert create resolves the creator and omits internal fields.
+
+        Overrides the generic suite method: the Polyfactory body trips the create
+        model's per-``backup_type`` rules, so the hand-built body is used.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.post(f"{base}/", json=_valid_restore_body())
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_update_derived_injects_extras(self, contract_client: Any) -> None:
+        """Assert the derived PUT resolves the creator and omits internal fields.
+
+        Overrides the generic suite method for the same body reason as
+        :meth:`test_create_injects_extras`.
+        """
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(
+            f"{base}/{SEEDED_TASK_NAME}",
+            json=_valid_restore_body(task_name=SEEDED_TASK_NAME),
+        )
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        payload = response.json()
+        assert "service_type" not in payload
+        assert "owner" not in payload
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
 
     def test_update_404(self, contract_client: Any) -> None:
         """``PUT /{task_name}`` 404s for an unknown task name."""
@@ -627,3 +660,104 @@ class TestRestoreContract(DerivedRouterContractTests):
                 }
             }
         ]
+        assert fields["xtrabackup_aes256_keyfile"]["forbidden"] == [
+            {
+                "when": {
+                    "not": {
+                        "any": [
+                            {"equals": {"source_encryption": "aes256"}},
+                            {"equals": {"source_encryption": "dual"}},
+                        ]
+                    }
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' must not be set when "
+                    "'source_encryption' does not include AES-256."
+                ),
+            }
+        ]
+        assert fields["xtrabackup_aes256_keyfile"]["requires"] == [
+            {
+                "when": {
+                    "any": [
+                        {"equals": {"source_encryption": "aes256"}},
+                        {"equals": {"source_encryption": "dual"}},
+                    ]
+                },
+                "message": (
+                    "'xtrabackup_aes256_keyfile' is required when "
+                    "'source_encryption' includes AES-256."
+                ),
+            }
+        ]
+
+    def test_create_422_on_a_key_file_no_declared_format_admits(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Reject a key file on a restore that declares no AES-256 encryption."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.XTRABACKUP)
+        body.update(
+            source_encryption=EncryptionFormat.NONE.value,
+            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        assert "'xtrabackup_aes256_keyfile' must not be set" in response.text
+        assert mock_task_api.create_count == 0
+
+    def test_create_201_for_a_declared_aes_restore(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Accept a restore that declares AES-256 and names its key file."""
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body(backup_type=BackupType.MYDUMPER)
+        body.update(
+            source_encryption=EncryptionFormat.AES256.value,
+            xtrabackup_aes256_keyfile="/etc/xb/aes.key",
+        )
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        config = yaml.safe_load(
+            mock_task_api.last_create_payload["data"]["meta"]["config"]
+        )
+        assert (
+            config["SERVER_LIST"][0]["XTRABACKUP_AES256_KEYFILE"] == "/etc/xb/aes.key"
+        )
+
+    def test_detail_reveals_a_key_file_its_stamp_hid(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Serve a stamp that names no AES format beside its key file with one declared.
+
+        The edit form drops a field its gates hide, so serving such a stamp
+        unrepaired would strip the key the restore decrypts with on save.
+        """
+        task_name = "contract-hidden-aes-keyfile"
+        stored_form = {
+            **_valid_restore_body(task_name=task_name, backup_type=BackupType.MYDUMPER),
+            "source_transport": SourceTransport.LOCAL.value,
+            "source_encryption": EncryptionFormat.NONE.value,
+            "xtrabackup_aes256_keyfile": "/etc/xb/aes.key",
+        }
+        mock_task_api.seed_task(
+            task_name,
+            owner=self.app_def.owner,
+            data_extra={RESERVED_FORM_KEY: stored_form},
+        )
+        base = app_base_url(self.app_def)
+
+        detail = contract_client.get(f"{base}/{task_name}")
+
+        assert detail.status_code == status.HTTP_200_OK, detail.text
+        served = detail.json()["data"][RESERVED_FORM_KEY]
+        assert served["source_encryption"] == EncryptionFormat.AES256.value
+        assert served["xtrabackup_aes256_keyfile"] == "/etc/xb/aes.key"
+
+        resubmit = contract_client.put(f"{base}/{task_name}", json=served)
+
+        assert resubmit.status_code == status.HTTP_200_OK, resubmit.text

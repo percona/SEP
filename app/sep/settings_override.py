@@ -26,7 +26,6 @@ receivers register at worker startup even in an image that ships no app with a
 """
 
 import logging.config
-from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any, cast
 
@@ -38,6 +37,7 @@ from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.config import PMMSettings, Settings, settings
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
+    fire_on_boot,
     previous_or_base,
     ProxyEntry,
     ProxyRegistry,
@@ -142,7 +142,8 @@ async def invalidate_pmm_clients(change: SnapshotChange) -> None:
         await settings.invalidate_client(endpoint)
 
 
-async def apply_logging_dictconfig(_: Mapping[str, object]) -> None:
+@fire_on_boot
+async def apply_logging_dictconfig(_: SnapshotChange) -> None:
     """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
 
     ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
@@ -158,8 +159,13 @@ async def apply_logging_dictconfig(_: Mapping[str, object]) -> None:
     Celery created at runtime enabled, and re-creates the ones the config names
     -- ``celery`` among them -- with their handlers.
 
-    :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
-        is re-read from the proxy).
+    Marked ``fire_on_boot`` because the boot-time ``dictConfig`` call reads the
+    process-wide ``LOGGING_CONFIG``, which no snapshot carries: a process that
+    starts with a ``LOGGING`` override already stored would otherwise keep the
+    YAML/env level until the override next changed.
+
+    :param _: The snapshots on either side of the republish (unused; the
+        level is re-read from the proxy).
     """
     try:
         config = deepcopy(settings.LOGGING_CONFIG)

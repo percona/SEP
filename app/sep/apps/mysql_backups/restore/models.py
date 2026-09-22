@@ -258,6 +258,21 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     server_list: list[RestoreConfigServer]
 
 
+_SSH_SOURCE_FIELDS = ("ssh_user", "ssh_port", "ssh_key")
+_S3_SOURCE_FIELDS = ("s3_tool",)
+_GPG_SOURCE_FIELDS = ("gpg_password_file",)
+_AES_KEYFILE_FIELD = "xtrabackup_aes256_keyfile"
+#: Every field a source declaration governs. The inference below needs a
+#: pre-declaration default for the transport fields it decides from; the key file
+#: is read for presence alone, and is listed here because a declaration gates it
+#: too.
+_GATED_SOURCE_FIELDS = (
+    *_SSH_SOURCE_FIELDS,
+    *_S3_SOURCE_FIELDS,
+    *_GPG_SOURCE_FIELDS,
+    _AES_KEYFILE_FIELD,
+)
+
 # ``forbidden`` (not ``requires``): these fields are optional within the source
 # that reads them, only forbidden outside it.
 _TRANSPORT = F("source_transport")
@@ -266,41 +281,67 @@ _SSH_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.SSH)
 # ``gs_copy``'s ``gcloud storage rsync``, which never consults ``s3_tool``.
 _S3_ONLY = Forbidden(when=_TRANSPORT != SourceTransport.S3)
 _SRC_ENCRYPTION = F("source_encryption")
-_GPG_SOURCE_ONLY = Forbidden(
-    when=not_(
-        any_(
-            _SRC_ENCRYPTION == EncryptionFormat.GPG,
-            _SRC_ENCRYPTION == EncryptionFormat.DUAL,
-        )
-    )
+_SRC_HAS_AES = any_(
+    _SRC_ENCRYPTION == EncryptionFormat.AES256,
+    _SRC_ENCRYPTION == EncryptionFormat.DUAL,
 )
+_SRC_HAS_GPG = any_(
+    _SRC_ENCRYPTION == EncryptionFormat.GPG,
+    _SRC_ENCRYPTION == EncryptionFormat.DUAL,
+)
+_GPG_SOURCE_ONLY = Forbidden(when=not_(_SRC_HAS_GPG))
 
-_SSH_SOURCE_FIELDS = ("ssh_user", "ssh_port", "ssh_key")
-_S3_SOURCE_FIELDS = ("s3_tool",)
-_GPG_SOURCE_FIELDS = ("gpg_password_file",)
+# The key file is the AES-256 formats' own parameter rather than an optional
+# extra of the source that reads it, so it is the one gated field that also
+# carries a ``Requires``: an AES restore with no key has nothing to decrypt with.
+_AES_KEYFILE_REQUIRED = Requires(
+    when=_SRC_HAS_AES,
+    message=(
+        f"{_AES_KEYFILE_FIELD!r} is required when 'source_encryption' includes AES-256."
+    ),
+)
+_AES_SOURCE_ONLY = Forbidden(
+    when=not_(_SRC_HAS_AES),
+    message=(
+        f"{_AES_KEYFILE_FIELD!r} must not be set when 'source_encryption' "
+        "does not include AES-256."
+    ),
+)
+_AES_SOURCE_FIELDS = (_AES_KEYFILE_FIELD,)
 _OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.GCS}
+
+#: The gated fields' pre-declaration defaults, read from the config models that
+#: still declare them so the inference keeps no second copy of the table it
+#: matches against. Both models contribute: the transport fields are global to a
+#: restore, the key file is per-server. ``_holds_a_non_default`` subscripts this
+#: table rather than reading it with ``.get``, so a field renamed on one side
+#: alone raises there instead of reading as "no default" and reporting every
+#: value as operator-chosen.
+_PRE_DECLARATION_DEFAULTS = {
+    name: field.default
+    for model in (RestoreConfigAll, BaseRestoreConfigServer)
+    for name, field in model.model_fields.items()
+    if name in _GATED_SOURCE_FIELDS
+}
 
 
 def _holds_a_non_default(data: Mapping[str, Any], field_name: str) -> bool:
     """Report whether a pre-declaration body carries an operator-chosen value.
 
-    The pre-declaration defaults are read from :class:`RestoreConfigAll`, which
-    still declares them, so the inference does not keep a second copy of the
-    table it is matching against. Both sides are compared as strings because this
-    runs before field coercion, where a JSON client's ``"22"`` and the declared
-    ``22`` are the same choice spelled two ways.
+    Both sides are compared as strings because this runs before field coercion,
+    where a JSON client's ``"22"`` and the declared ``22`` are the same choice
+    spelled two ways.
 
     :param data: The body being normalized.
     :param field_name: The field to test.
     :return: ``True`` when the field holds something other than its old default.
+    :raises KeyError: If the field is not one of the gated fields.
     """
     value = data.get(field_name)
     if value is None:
         return False
-    default = RestoreConfigAll.model_fields[field_name].default
-    if default is None:
-        return True
-    return str(value) != str(default)
+    default = _PRE_DECLARATION_DEFAULTS[field_name]
+    return default is None or str(value) != str(default)
 
 
 def _infer_source_transport(data: Mapping[str, Any]) -> SourceTransport:
@@ -384,6 +425,13 @@ def normalize_source_declaration(
     holding a colon — but a branch reached that way cannot succeed for the source
     that was inferred, so no working restore depends on the dropped value.
 
+    The AES-256 key file is deliberately never dropped here, unlike the fields an
+    inferred transport governs. It is the one gated field an operator sets on
+    purpose to name a secret, so a body that carries one under a format that does
+    not admit it has to reach the gate and be rejected. Only a stored stamp, which
+    no operator is submitting, is repaired instead — see
+    :func:`repair_source_declaration`.
+
     :param data: The body to normalize.
     :param catalogued_transport: Optional object-store transport from the backup
         catalog; ignored when the body already declares ``source_transport``.
@@ -407,13 +455,14 @@ def normalize_source_declaration(
             forbidden_fields.update(dict.fromkeys(_S3_SOURCE_FIELDS, transport))
     if not encryption_declared:
         encryption = encryption_format_for_passes(
-            aes256=normalized.get("backup_type") == BackupType.XTRABACKUP
-            and bool(normalized.get("xtrabackup_aes256_keyfile")),
+            aes256=bool(normalized.get(_AES_KEYFILE_FIELD)),
             gpg=bool(normalized.get("gpg_password_file")),
         )
         normalized["source_encryption"] = encryption
         if encryption not in (EncryptionFormat.GPG, EncryptionFormat.DUAL):
             forbidden_fields.update(dict.fromkeys(_GPG_SOURCE_FIELDS, encryption))
+        if encryption not in (EncryptionFormat.AES256, EncryptionFormat.DUAL):
+            forbidden_fields.update(dict.fromkeys(_AES_SOURCE_FIELDS, encryption))
 
     for field_name, declaration in forbidden_fields.items():
         normalized.pop(field_name, None)
@@ -424,6 +473,83 @@ def normalize_source_declaration(
                 declaration,
             )
     return normalized
+
+
+def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the body with its stored key file and its declared format in agreement.
+
+    Only a *declared* format needs this; an inferred one already follows the
+    body's own fields. An AES-256 pass is real when the body holds a key file —
+    every engine can write one — so the declaration is rebuilt from that fact
+    rather than trusted, in either direction:
+
+    - A body holding a key file gains the format that reveals it. The edit form
+      drops a field its gates hide, so a narrower declaration would strip the
+      key the next save needs.
+    - A body whose declaration claims an AES-256 pass with no key file loses
+      that claim: an AES-256 format naming no key file has nothing to decrypt
+      with. That shape predates the key-file gate, and leaving it intact would
+      fail the re-validation the read paths perform and leave the form
+      unopenable.
+
+    The GPG pass is carried across untouched, read from the declaration as well as
+    the password file: that file is optional under a GPG declaration, so the
+    declaration is the only place a file-less GPG pass is recorded.
+
+    :param data: The body being repaired.
+    :return: The body with the key file and the format in agreement.
+    """
+    declared = data.get("source_encryption")
+    declares_aes = declared in (EncryptionFormat.AES256, EncryptionFormat.DUAL)
+    key_file = data.get(_AES_KEYFILE_FIELD)
+    if not key_file and not declares_aes:
+        return dict(data)
+
+    aes256 = bool(key_file)
+    return {
+        **data,
+        "source_encryption": encryption_format_for_passes(
+            aes256=aes256,
+            gpg=declared in (EncryptionFormat.GPG, EncryptionFormat.DUAL)
+            or bool(data.get("gpg_password_file")),
+        ),
+    }
+
+
+def repair_source_declaration(
+    stamp: Mapping[str, Any],
+    *,
+    catalogued_transport: SourceTransport
+    | CataloguedSourceTransport
+    | str
+    | None = None,
+) -> dict[str, Any] | None:
+    """Return the stamp describing its own source, or ``None`` when it already does.
+
+    Serves the read paths that hand a stored stamp back to the edit form. Two
+    stamps are owed a repair: one written before the source controls existed,
+    which :func:`normalize_source_declaration` declares from the body's own
+    fields, and one written while the key file was ungated, whose declaration can
+    name a format that does not admit the key file it stores.
+
+    When ``source_transport`` is undeclared, ``catalogued_transport`` is forwarded
+    to :func:`normalize_source_declaration` so a matching catalog S3/GCS value
+    wins over field inference — the same preference the edit-form response
+    builder applies.
+
+    Kept out of validation deliberately. Widening a declaration a client
+    submitted would void the gate the declaration exists to drive, so a live
+    submission is rejected where a stamp is repaired.
+
+    :param stamp: The stored form stamp.
+    :param catalogued_transport: Optional object-store transport from the backup
+        catalog; ignored when the stamp already declares ``source_transport``.
+    :return: The repaired stamp, or ``None`` when no repair is owed.
+    """
+    repaired = _aligned_aes_declaration(
+        normalize_source_declaration(stamp, catalogued_transport=catalogued_transport)
+    )
+    return repaired if repaired != dict(stamp) else None
 
 
 class RestoreCreate(TaskFormModel):
@@ -445,12 +571,14 @@ class RestoreCreate(TaskFormModel):
 
     The transport and decryption fields are the exception, and they pay that
     price deliberately: ``source_transport`` and ``source_encryption`` declare
-    where the backup lives and how it was encrypted, and the five fields those
+    where the backup lives and how it was encrypted, and the six fields those
     declarations govern are gated on them. Because a field-level ``Forbidden``
     rejects a field that is merely *present*, ``ssh_user`` / ``ssh_port`` /
     ``s3_tool`` had to give up their defaults; :class:`RestoreConfigAll` still
     declares them and ``build_restore_spec`` applies them from there, so the
-    emitted config is unchanged.
+    emitted config is unchanged. ``xtrabackup_aes256_keyfile`` is the sixth and
+    the only one also carrying a ``Requires``, since an AES-256 format with no
+    key file has nothing to decrypt with.
 
     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
@@ -536,8 +664,8 @@ class RestoreCreate(TaskFormModel):
             (
                 (EncryptionFormat.NONE, "No encryption"),
                 (EncryptionFormat.GPG, "GPG"),
-                (EncryptionFormat.AES256, "AES-256 (XtraBackup only)"),
-                (EncryptionFormat.DUAL, "AES-256 + GPG (XtraBackup only)"),
+                (EncryptionFormat.AES256, "AES-256"),
+                (EncryptionFormat.DUAL, "AES-256 + GPG"),
             )
         ),
         Ui(
@@ -545,7 +673,8 @@ class RestoreCreate(TaskFormModel):
             section="Task",
             description=(
                 "Which encryption the backup being restored was written with. "
-                "The GPG formats reveal the password file used to decrypt it."
+                "The GPG formats reveal the password file used to decrypt it; the "
+                "AES-256 formats reveal the key file."
             ),
         ),
     ] = EncryptionFormat.NONE
@@ -769,17 +898,6 @@ class RestoreCreate(TaskFormModel):
             ),
         ),
     ] = None
-    xtrabackup_aes256_keyfile: Annotated[
-        NonEmptyStr | EmptyStrToNone,
-        Ui(
-            label="XtraBackup AES-256 keyfile",
-            section="XtraBackup",
-            description=(
-                "AES-256 key file the backup was encrypted with, needed to decrypt it "
-                "before the prepare"
-            ),
-        ),
-    ] = None
     slave_from_master: Annotated[
         bool,
         Ui(
@@ -997,6 +1115,19 @@ class RestoreCreate(TaskFormModel):
             description=(
                 "Path on the target host to the file holding the passphrase for a "
                 "GPG-encrypted backup"
+            ),
+        ),
+    ] = None
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _AES_KEYFILE_REQUIRED,
+        _AES_SOURCE_ONLY,
+        Ui(
+            label="AES-256 key file",
+            section="General",
+            description=(
+                "Path on the target host to the AES-256 key file the backup was "
+                "encrypted with, needed to decrypt .xbcrypt files before restore"
             ),
         ),
     ] = None
