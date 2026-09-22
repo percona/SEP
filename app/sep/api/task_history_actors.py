@@ -29,16 +29,7 @@ edge into the SEP request layer or a cycle back through it.
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Field,
-    GetJsonSchemaHandler,
-    model_serializer,
-    SerializerFunctionWrapHandler,
-)
-from pydantic.json_schema import JsonSchemaValue
-from pydantic_core import CoreSchema
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.pagination import PaginatedResponse
@@ -110,43 +101,16 @@ class SepTaskHistoryResponse(TaskHistoryResponse):
 
 
 class _HistoryPassthroughModel(BaseModel):
-    """Keep unrecognized upstream keys and omit declared fields that were never set.
+    """Keep unrecognized upstream keys on the history passthrough models.
 
     History passthrough models declare only the keys the actor rewrite reads.
-    ``extra="allow"`` preserves every other upstream key. Serializing with
-    unset declared fields omitted matches today's dict behavior: an absent
-    actor key stays absent rather than becoming ``null``.
+    ``extra="allow"`` preserves every other upstream key. Call sites dump with
+    ``exclude_unset=True`` (and the detail route sets
+    ``response_model_exclude_unset``) so an absent actor key stays absent
+    rather than becoming ``null``.
     """
 
     model_config = ConfigDict(extra="allow")
-
-    @model_serializer(mode="wrap")
-    def _omit_unset_declared_fields(
-        self, handler: SerializerFunctionWrapHandler
-    ) -> dict[str, Any]:
-        """Drop declared defaults that upstream never supplied; keep extras."""
-        dumped = handler(self)
-        extras = self.__pydantic_extra__ or {}
-        return {
-            key: value
-            for key, value in dumped.items()
-            if key in self.model_fields_set or key in extras
-        }
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        """Keep OpenAPI on the validation shape despite the wrap serializer.
-
-        The serializer's ``dict`` return type collapses the serialization schema
-        to a bare object. Prefer the validation schema so the route documents
-        ``items``, typed rows, and non-mapping fallbacks.
-        """
-        json_schema = handler(core_schema)
-        if "properties" in json_schema or "$ref" in json_schema:
-            return json_schema
-        return cls.model_json_schema(mode="validation")
 
 
 class SepHistoryPayloadTask(_HistoryPassthroughModel):
@@ -188,7 +152,7 @@ class SepHistoryPayload(_HistoryPassthroughModel):
     non-list upstream value so a bad page shape does not fail validation.
 
     :param items: The page's rows when upstream sent a list; otherwise the raw
-        upstream value (including absence, via unset omission on serialize).
+        upstream value (including absence, via ``exclude_unset`` on dump).
     """
 
     items: list[SepHistoryPayloadRow | Any] | Any = None

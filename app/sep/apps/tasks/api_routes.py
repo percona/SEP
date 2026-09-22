@@ -85,7 +85,7 @@ async def tasks_api_list(
     return build_proxied_page(items, response, pagination, client_side_filtered=False)
 
 
-@router.get("/{task_name}")
+@router.get("/{task_name}", response_model_exclude_unset=True)
 async def tasks_api_detail(
     task: TaskDep,
     tasks_api: TaskAPI,

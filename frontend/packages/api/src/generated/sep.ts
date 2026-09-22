@@ -4104,6 +4104,62 @@ export interface components {
       updated_at?: string | null;
     };
     /**
+     * SepHistoryPayload
+     * @description Represent the SEP task-history page envelope with passthrough extras.
+     *
+     *     Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
+     *     upstream keys round-trip through ``extra="allow"`` without int coercion.
+     *     ``items`` accepts a list of typed rows or non-mapping fallbacks, or any
+     *     non-list upstream value so a bad page shape does not fail validation.
+     *
+     *     :param items: The page's rows when upstream sent a list; otherwise the raw
+     *         upstream value (including absence, via ``exclude_unset`` on dump).
+     */
+    SepHistoryPayload: {
+      /** Items */
+      items?: (components['schemas']['SepHistoryPayloadRow'] | unknown)[] | unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
+     * SepHistoryPayloadRow
+     * @description Carry one history-page row's fields the actor rewrite may resolve.
+     *
+     *     A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
+     *     and its own ``executed_by`` can resolve. Unknown upstream keys survive via
+     *     ``extra="allow"``.
+     *
+     *     :param executed_by: Actor that ran the task. Typed as ``Any`` so an
+     *         unexpected shape validates and is left alone by the rewrite.
+     *     :param task: Nested task carrying actor fields when it is a mapping;
+     *         otherwise the raw upstream value.
+     */
+    SepHistoryPayloadRow: {
+      /** Executed By */
+      executed_by?: unknown;
+      /** Task */
+      task?: components['schemas']['SepHistoryPayloadTask'] | unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
+     * SepHistoryPayloadTask
+     * @description Carry the nested-task actor fields the history rewrite may resolve.
+     *
+     *     :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
+     *         an unexpected upstream shape validates and round-trips unchanged.
+     *     :param last_updated_by: Actor for the nested task's last updater, on the
+     *         same permissive terms as ``created_by``.
+     */
+    SepHistoryPayloadTask: {
+      /** Created By */
+      created_by?: unknown;
+      /** Last Updated By */
+      last_updated_by?: unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
      * SepTaskHistoryResponse
      * @description Represent a task-history row as SEP serves it, with actors resolved.
      *
@@ -10561,20 +10617,17 @@ export interface components {
      *
      *     :param task: The task definition as returned by the tasks API, with its
      *         actor fields carrying display names rather than user identifiers.
-     *     :param execution_history: Paginated task history from the tasks API
-     *         (``items``, ``total``, ``offset``, ``limit``), passed through
-     *         unvalidated so every upstream key survives. Carries whatever actor text
-     *         the constructing route supplied; the model itself imposes no shape.
+     *     :param execution_history: Paginated task history from the tasks API as a
+     *         permissive envelope (``items`` plus passthrough extras such as
+     *         ``total``/``offset``/``limit``). Actor fields on well-formed rows carry
+     *         display names after the constructing route's rewrite.
      *     :param periodic_summary: Read-only summaries of periodic schedules
      *         attached to this task.
      *     :param executor_hosts: Executor hosts available for display, with
      *         inventory-resolved labels when possible.
      */
     tasks__TaskDetailResponse: {
-      /** Execution History */
-      execution_history?: {
-        [key: string]: unknown;
-      };
+      execution_history?: components['schemas']['SepHistoryPayload'];
       /** Executor Hosts */
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */
