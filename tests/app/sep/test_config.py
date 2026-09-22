@@ -441,6 +441,24 @@ class TestPluginModuleNameResolution:
         assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_not_called()
 
+    @pytest.mark.parametrize(
+        ("sibling_value", "expected_module"),
+        [
+            ("backup_mongo", "app.sep.apps.backup_mongo"),
+            ("backup_pg", "app.sep.apps.backup_pg"),
+        ],
+    )
+    def test_sibling_backup_module_resolves(
+        self, sibling_value: str, expected_module: str
+    ):
+        """Resolve a sibling ``backup``-prefixed plugin without remapping it."""
+        plugin = App(name="Backups", module_name=sibling_value)
+        assert plugin.module_name == expected_module
+
+
+class TestAppsModuleExistenceAtLoad:
+    """Cover the ``APPS`` module-existence probe at full-settings construction."""
+
     def test_missing_module_rejects_full_settings(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -454,20 +472,6 @@ class TestPluginModuleNameResolution:
             match=r"No module named app\.sep\.apps\._scaffold_missing_package",
         ):
             SEPSettings()
-
-    @pytest.mark.parametrize(
-        ("sibling_value", "expected_module"),
-        [
-            ("backup_mongo", "app.sep.apps.backup_mongo"),
-            ("backup_pg", "app.sep.apps.backup_pg"),
-        ],
-    )
-    def test_sibling_backup_module_resolves(
-        self, sibling_value: str, expected_module: str
-    ):
-        """Sibling plugins whose names begin with ``backup`` resolve unchanged."""
-        plugin = App(name="Backups", module_name=sibling_value)
-        assert plugin.module_name == expected_module
 
 
 class TestPluginNameOptional:
