@@ -1064,10 +1064,13 @@ HOST_OBSERVATION_MIN_CONTENT_CONSTRAINT = "ck_hostsystemobservation_at_least_one
 def host_observation_min_content_check() -> CheckConstraint:
     """Build the table-level guard mirroring the at-least-one-fact validator.
 
-    The columns come from :data:`HOST_OBSERVATION_FIELD_NAMES`, so the database
-    guard and the Pydantic one stay in lockstep as fields are added. Sorting
-    makes the rendered expression deterministic across interpreter runs, which a
-    frozenset's iteration order is not.
+    The columns come from :data:`HOST_OBSERVATION_FIELD_NAMES`, so this
+    declaration and the Pydantic validator stay in lockstep as fields are added.
+    A migrated database does not: the revision that creates the CHECK spells its
+    columns out, so a new fact column reaches an existing deployment only
+    through a revision of its own. Sorting makes the rendered expression
+    deterministic across interpreter runs, which a frozenset's iteration order
+    is not.
 
     A plain ``IS NOT NULL`` disjunction covers the JSON-typed facts only because
     they are declared ``JSON(none_as_null=True)``. SQLAlchemy's default persists

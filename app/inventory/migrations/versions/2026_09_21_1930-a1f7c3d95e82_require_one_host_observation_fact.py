@@ -92,7 +92,6 @@ _CONSTRAINT_NAME = "ck_hostsystemobservation_at_least_one_fact"
 #: row so a deletion can be reported before it happens.
 _OBSERVATION = sa.table(
     _TABLE_NAME,
-    sa.column("id", sa.Integer()),
     sa.column("node_id", sa.Integer()),
     sa.column("observed_at", sa.DateTime(timezone=True)),
     sa.column("os_version", sa.String()),
@@ -116,7 +115,7 @@ _JSON_FACT_COLUMNS = (
 )
 
 _HAS_NO_FACT = sa.and_(*(fact.is_(None) for fact in _FACT_COLUMNS))
-_HAS_A_FACT = sa.or_(*(sa.column(fact.name).is_not(None) for fact in _FACT_COLUMNS))
+_HAS_A_FACT = sa.or_(*(fact.is_not(None) for fact in _FACT_COLUMNS))
 
 
 def _holds_json_null(fact: sa.ColumnClause) -> sa.ColumnElement[bool]:
