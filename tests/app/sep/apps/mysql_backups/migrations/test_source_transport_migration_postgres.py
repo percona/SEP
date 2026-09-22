@@ -53,7 +53,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-import app.sep.migrations.env as sep_alembic_env
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.sep.config import sep_settings
 from tests.app.alembic_paths import ALEMBIC_INI
@@ -91,8 +90,10 @@ def sep_postgres_alembic_config(
 
     ``command.upgrade`` builds its own engine inside the track's ``env.py`` from
     ``sep_settings.DATABASE``, so settings are redirected and
-    ``async_engine_from_config`` is patched to set ``search_path`` to
-    :func:`postgres_worker_schema`. Teardown drops only that schema.
+    ``sqlalchemy.ext.asyncio.async_engine_from_config`` is patched before Alembic
+    loads ``env.py`` (which cannot be imported outside a migration context) so the
+    engine it builds sets ``search_path`` to :func:`postgres_worker_schema`.
+    Teardown drops only that schema.
     """
     schema = postgres_worker_schema()
     database = sep_settings.DATABASE
@@ -115,8 +116,13 @@ def sep_postgres_alembic_config(
         kwargs["connect_args"] = connect_args
         return real_async_engine_from_config(*args, **kwargs)
 
+    # Patch the sqlalchemy symbol ``env.py`` imports; do not import
+    # ``app.sep.migrations.env`` here — ``context.config`` only exists inside
+    # an Alembic run, and a top-level import breaks ``pytest -m 'not postgres'``
+    # collection of this module.
     monkeypatch.setattr(
-        sep_alembic_env, "async_engine_from_config", _engine_with_worker_search_path
+        "sqlalchemy.ext.asyncio.async_engine_from_config",
+        _engine_with_worker_search_path,
     )
 
     cfg = Config(str(ALEMBIC_INI), ini_section="sep")
