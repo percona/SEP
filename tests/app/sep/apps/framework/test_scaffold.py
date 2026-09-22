@@ -33,11 +33,11 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
-from threading import Barrier, Event
+from threading import Barrier, BrokenBarrierError, Event
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -1179,7 +1179,7 @@ def test_settings_file_environment_override(
             "-S",
             "-c",
             "import runpy, sys; print(runpy.run_path(sys.argv[1])['SETTINGS_FILE'])",
-            str(Path(scaffold.__file__)),
+            scaffold.__file__,
         ],
         env=env,
         capture_output=True,
@@ -1286,10 +1286,10 @@ def test_concurrent_makefile_tests_leave_settings_valid(
     run = subprocess.run
 
     def run_until_registered(
-        args: list[str], **kwargs: Any
-    ) -> subprocess.CompletedProcess[str]:
+        args: Sequence[str], **kwargs: Any
+    ) -> subprocess.CompletedProcess[Any]:
         result = run(args, **kwargs)
-        if args[:2] == ["make", "startapp"]:
+        if list(args[:2]) == ["make", "startapp"]:
             registered.wait()
             assert inspected.wait(timeout=30), "Settings inspection did not finish"
         return result
@@ -1305,9 +1305,15 @@ def test_concurrent_makefile_tests_leave_settings_valid(
             directory.mkdir()
             futures.append(executor.submit(test, directory))
         try:
-            # Both genuine make subprocesses have registered their apps; neither
-            # test can restore settings or remove its package before inspection.
-            registered.wait()
+            try:
+                # The patched run holds both workers here, so neither can
+                # restore settings or remove its package before the
+                # inspection below.
+                registered.wait()
+            except BrokenBarrierError:
+                for future in futures:
+                    future.result()
+                raise
             assert settings_file.read_bytes() == original
             assert original_apps == SEPSettings().APPS
         finally:
