@@ -235,11 +235,8 @@ async def cascade_create_tasks(
     to the caller.
 
     :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param parent_payload: The parent task's serialised payload.
-    :type parent_payload: dict[str, Any]
     :param derived_specs: The list of derived-task specs to cascade.
-    :type derived_specs: Sequence[DerivedTask]
     :raises HTTPUnprocessableEntityException: If any planned task name is
         not a single plain path segment. Raised before the first POST, so no
         task is created.
@@ -302,20 +299,14 @@ async def cascade_update_tasks(
     with :class:`ValueError` rather than silently zipping to the shorter list.
 
     :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param parent_existing_name: The current name of the parent task (used in
         the PUT URL; any rename goes in ``parent_updated["name"]``).
-    :type parent_existing_name: str
     :param parent_updated: The updated parent payload (may include a new
         ``name``).
-    :type parent_updated: dict[str, Any]
     :param derived_existing_names: Current derived task names, aligned with
         ``derived_specs`` by index.
-    :type derived_existing_names: Sequence[str]
     :param derived_specs: The derived-task specs to cascade.
-    :type derived_specs: Sequence[DerivedTask]
     :return: A :class:`CascadeResult` recording per-leg outcomes.
-    :rtype: CascadeResult
     :raises ValueError: When ``len(derived_existing_names) != len(derived_specs)``.
     :raises HTTPUnprocessableEntityException: If the rename, or a derived name
         built from it, is not a single plain path segment. Raised before the
@@ -517,16 +508,12 @@ async def cascade_create_predecessors(
     single-task POST.
 
     :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param parent_payload: The parent task's serialised payload. The
         ``name`` key must be set before invocation — it is read to derive
         the predecessor names in step 2.
-    :type parent_payload: dict[str, Any]
     :param predecessor_specs_with_payloads: Ordered list of
         ``(spec, predecessor_payload)`` tuples; the consuming plugin
         builds each predecessor payload.
-    :type predecessor_specs_with_payloads:
-        Sequence[tuple[ChainedPredecessor, dict[str, Any]]]
     :raises ValueError: When ``predecessor_specs_with_payloads`` is empty.
     :raises HTTPUnprocessableEntityException: If any planned task name is
         not a single plain path segment. Raised before the first POST, so no
@@ -587,12 +574,9 @@ async def cascade_create_independent_tasks(
     what surfaces to the caller.
 
     :param tasks_api: The :class:`RemoteAPI` for the tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param parent_payload: The parent task's serialised payload.
-    :type parent_payload: dict[str, Any]
     :param child_payloads: The list of independently-built child
         payloads, POSTed in declared order.
-    :type child_payloads: Sequence[dict[str, Any]]
     :raises HTTPUnprocessableEntityException: If any planned task name is
         not a single plain path segment. Raised before the first POST, so no
         task is created.

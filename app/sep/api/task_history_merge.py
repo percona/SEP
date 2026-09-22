@@ -136,6 +136,7 @@ async def fetch_task_history_window(
     :raises HTTPException: The error the Tasks API itself answered with, mapped by
         the remote client.
     """
+    history_path = task_path(task_name, "/history/")
     base_params: dict[str, Any] = {}
     if status is not None:
         base_params["status"] = status.value
@@ -148,7 +149,7 @@ async def fetch_task_history_window(
     while len(all_items) < window_size:
         page_limit = min(MAX_PAGINATION_LIMIT, window_size - len(all_items))
         raw = await tasks_api.get(
-            task_path(task_name, "/history/"),
+            history_path,
             params={
                 **base_params,
                 "offset": upstream_offset,

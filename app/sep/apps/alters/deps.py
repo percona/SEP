@@ -373,15 +373,11 @@ async def cascade_create_alters_group(
     :func:`~app.sep.apps.framework.cascade.build_predecessor_chain_execute_body`).
 
     :param tasks_api: The Tasks API client.
-    :type tasks_api: RemoteAPI
     :param parent_task: The parent execute task payload.
-    :type parent_task: TaskWrite
     :param pre_checks_template: The imperative pre-checks payload from
         :func:`build_pre_checks_task_payload`.
-    :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``
         when resolving the predecessor spec).
-    :type body: AltersCreate
     :raises HTTPUnprocessableEntityException: If any of the three planned names
         is not a single plain path segment. Raised before the first POST, so no
         task is created.

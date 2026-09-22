@@ -18,12 +18,14 @@
 import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import unquote
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
+from yarl import URL
 
 from app.core.auth.exceptions import (
     HTTPForbiddenException,
@@ -44,6 +46,7 @@ from app.core.exceptions import (
     HTTPUnprocessableEntityException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -92,7 +95,11 @@ from tests.app.factories import (
     TaskHistoryResponseFactory,
     TaskResponseFactory,
 )
-from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS, SAFE_TASK_NAMES
+from tests.app.sep.path_unsafe_task_names import (
+    PATH_UNSAFE_TASKS,
+    ROUND_TRIP_BASE_PATHS,
+    SAFE_TASK_NAMES,
+)
 
 PENDING_HISTORY_ID = 10
 RUNNING_HISTORY_ID = 11
@@ -1419,3 +1426,50 @@ class TestTaskPath:
         """Refuse to compose a name that would restructure the outbound path."""
         with pytest.raises(HTTPUnprocessableEntityException):
             task_path(task_name, "/history/")
+
+
+class TestTaskPathRoundTrip:
+    """Test that every name the guard admits addresses the task it names."""
+
+    @staticmethod
+    def _compose(base: str, task_name: str) -> str:
+        """Return the upstream path a guarded name composes to, decoded.
+
+        Walks the same layers a real request does — :func:`task_path`, then
+        :meth:`~app.core.requests.remote_api.BaseRemoteAPI.prepare_path`, then the
+        join aiohttp performs against the session base URL — so a character either
+        layer interprets or drops shows up as a path that is not the name.
+
+        :param base: The Tasks API endpoint to compose against.
+        :param task_name: The name to compose.
+        :return: The composed path with percent-escapes decoded.
+        """
+        api = RemoteAPI(endpoint=base)
+        return unquote(URL(base).join(URL(api.prepare_path(task_path(task_name)))).path)
+
+    @pytest.mark.parametrize("base", ROUND_TRIP_BASE_PATHS)
+    def test_every_admitted_code_point_survives_composition(self, base: str) -> None:
+        """Sweep the BMP and refuse to let an admitted name compose another path.
+
+        A character-by-character list is what let ``;`` and a leading space through:
+        both are admitted by name and then removed during composition, so the
+        request addresses a shorter name instead of failing. Pinning the guard to
+        the round trip rather than to a list means the next such character fails
+        here instead of reaching the Tasks API.
+        """
+        base_path = RemoteAPI(endpoint=base).base_path.rstrip("/")
+        mismatches = []
+        for code in range(0x10000):
+            character = chr(code)
+            for task_name in (
+                f"{character}task",
+                f"ta{character}sk",
+                f"task{character}",
+            ):
+                try:
+                    composed = self._compose(base, task_name)
+                except HTTPUnprocessableEntityException:
+                    continue
+                if composed != f"{base_path}/{task_name}":
+                    mismatches.append((hex(code), task_name, composed))
+        assert not mismatches

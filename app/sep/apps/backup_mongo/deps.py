@@ -411,15 +411,20 @@ async def ensure_backup_derived_siblings(
     :param parent_payload: The updated parent payload used to build missing children.
     :raises HTTPUnprocessableEntityException: If a derived sibling's name — the
         one probed, or the one an update's rename would create — is not a single
-        plain URL path segment.
+        plain URL path segment. Raised before the first request, so a later
+        sibling's refusal cannot leave an earlier one created.
     """
-    for spec in BACKUP_MONGO_DERIVED:
-        derived_name = f"{parent_name}{spec.name_suffix}"
+    derived_paths = [
+        task_path(f"{parent_name}{spec.name_suffix}") for spec in BACKUP_MONGO_DERIVED
+    ]
+    child_payloads = [
+        build_derived_payload(parent_payload, spec) for spec in BACKUP_MONGO_DERIVED
+    ]
+    require_addressable_names(child_payloads)
+    for derived_path, child_payload in zip(derived_paths, child_payloads, strict=True):
         try:
-            await tasks_api.get(task_path(derived_name))
+            await tasks_api.get(derived_path)
         except HTTPNotFoundException:
-            child_payload = build_derived_payload(parent_payload, spec)
-            require_addressable_names([child_payload])
             await tasks_api.post("/", json=child_payload)
 
 

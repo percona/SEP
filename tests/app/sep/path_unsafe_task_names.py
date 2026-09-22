@@ -35,6 +35,10 @@ PATH_UNSAFE_TASKS = [
     "a\nb",
     "a\rb",
     "a\tb",
+    "a\x0bb",
+    "a\x7fb",
+    "foo;",
+    " foo",
 ]
 
 PATH_PARAM_UNSAFE_TASKS = [
@@ -55,6 +59,18 @@ request body or a stored name, which the dependency-level tests cover.
 
 A name carrying a control character does survive as a path parameter — sent
 percent-encoded it arrives decoded — so it stays in this list.
+"""
+
+ROUND_TRIP_BASE_PATHS = (
+    "http://tasks.example.org",
+    "http://tasks.example.org/api/tasks",
+)
+"""The two ``prepare_path`` branches an accepted name must survive.
+
+A root endpoint hands ``urljoin`` an absolute reference; an endpoint carrying a
+path (the ``development`` profile's ``…/api/tasks``, or any sub-path an operator
+points SEP at) strips the leading slash first, so the name reaches ``urljoin`` as
+a relative reference and a different set of characters is interpreted there.
 """
 
 SUFFIXED_UNSAFE_TASKS = [task for task in PATH_UNSAFE_TASKS if task != ".."]

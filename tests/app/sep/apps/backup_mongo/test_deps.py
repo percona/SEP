@@ -37,6 +37,7 @@ from app.sep.apps.backup_mongo.models import (
     BackupTaskWrite,
     BackupType,
 )
+from app.sep.apps.framework.schema import DerivedTask
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import Task, TaskWrite
@@ -191,12 +192,13 @@ class TestEnsureMissingDerivedChildrenPathGuard:
     async def test_refuses_a_rename_before_creating_a_missing_sibling(
         self, renamed: str
     ) -> None:
-        """Refuse a sibling built from an unsafe rename before it is POSTed.
+        """Refuse a sibling built from an unsafe rename before the first request.
 
-        The probe GET composes the *existing* parent name, so it passes; the
-        sibling this backfill creates is built from the updated payload, and a
+        The sibling this backfill creates is built from the updated payload, so
+        a rename travelling in that payload is what makes the name unsafe; a
         sibling created under an unaddressable name could never be updated or
-        deleted again.
+        deleted again. Both name sources are checked before the probe GET, so
+        neither leg of the backfill runs.
         """
         tasks_api = AsyncMock(spec=RemoteAPI)
         tasks_api.get = AsyncMock(side_effect=HTTPNotFoundException)
@@ -204,6 +206,31 @@ class TestEnsureMissingDerivedChildrenPathGuard:
         with pytest.raises(HTTPUnprocessableEntityException):
             await ensure_backup_derived_siblings(
                 tasks_api, "parent", {"name": renamed, "data": {"meta": {}}}
+            )
+
+        tasks_api.get.assert_not_awaited()
+        tasks_api.post.assert_not_awaited()
+
+    async def test_refuses_every_sibling_before_creating_any_of_them(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refuse a later spec's unsafe name before an earlier sibling is POSTed.
+
+        Today every ``BACKUP_MONGO_DERIVED`` suffix is a plain segment, so the
+        first spec would raise anyway. A spec added with an empty or unsafe
+        suffix is what this pins: the check covers the whole list before the
+        first POST, so a part-created group cannot be left behind.
+        """
+        monkeypatch.setattr(
+            "app.sep.apps.backup_mongo.deps.BACKUP_MONGO_DERIVED",
+            [DerivedTask(name_suffix="-logical"), DerivedTask(name_suffix="/evil")],
+        )
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.get = AsyncMock(side_effect=HTTPNotFoundException)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await ensure_backup_derived_siblings(
+                tasks_api, "parent", {"name": "parent", "data": {"meta": {}}}
             )
 
         tasks_api.post.assert_not_awaited()

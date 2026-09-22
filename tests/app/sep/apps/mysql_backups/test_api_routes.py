@@ -896,7 +896,7 @@ class TestBearerAuthGate:
 
 
 class TestUpdateRenameGuard:
-    """Tests that PUT refuses a rename to a name no later route could address."""
+    """Test that PUT refuses a rename to a name no later route could address."""
 
     @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
     def test_update_refuses_a_rename_that_is_not_one_path_segment(
