@@ -750,8 +750,8 @@ const MOCK_SCHEMA_WITH_ENCRYPTION = {
           choices: [
             { label: 'None', value: 'none' },
             { label: 'GPG', value: 'gpg' },
-            { label: 'AES-256 (XtraBackup only)', value: 'aes256' },
-            { label: 'AES-256 + GPG (XtraBackup only)', value: 'dual' },
+            { label: 'AES-256', value: 'aes256' },
+            { label: 'AES-256 + GPG', value: 'dual' },
           ],
         },
         {
