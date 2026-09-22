@@ -30,6 +30,7 @@ import { RUNNING_STATUSES } from '@sep/framework';
 import {
   TASKS_APP_NAME,
   TASKS_APPS_API_BASE,
+  taskHistoryItems,
   type TaskDetailBundle,
   type TaskListRow,
 } from './types';
@@ -72,7 +73,7 @@ export function useTaskDetail(taskName: string | undefined) {
       return data;
     },
     refetchInterval: (query) => {
-      const historyItems = query.state.data?.execution_history.items ?? [];
+      const historyItems = taskHistoryItems(query.state.data?.execution_history);
       return historyItems.some((item) => RUNNING_STATUSES.has(item.status))
         ? TASK_DETAIL_POLL_MS
         : false;

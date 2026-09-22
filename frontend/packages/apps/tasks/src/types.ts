@@ -15,7 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { TasksComponents } from '@sep/api';
+import type { SepComponents, TasksComponents } from '@sep/api';
+import type { TaskHistoryEntry } from '@sep/framework';
 
 /** App key used for ``/api/apps/{name}/`` routes and schema fetching. */
 export const TASKS_APP_NAME = 'tasks';
@@ -50,8 +51,20 @@ export interface ExecutorHostRow {
 }
 
 export type TaskDetailTask = TasksComponents['schemas']['TaskResponse'];
-export type TaskExecutionHistory =
-  TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+
+/** History envelope from ``GET /api/apps/tasks/{task_name}`` (SEP-typed). */
+export type TaskExecutionHistory = SepComponents['schemas']['SepHistoryPayload'];
+
+/**
+ * Return well-formed history rows for the detail UI, or ``[]`` when ``items``
+ * is absent or not a list (matching the backend's field-level degrade).
+ */
+export function taskHistoryItems(
+  history: TaskExecutionHistory | undefined | null,
+): TaskHistoryEntry[] {
+  const items = history?.items;
+  return Array.isArray(items) ? (items as TaskHistoryEntry[]) : [];
+}
 
 /** Payload from ``GET /api/apps/tasks/{task_name}``. */
 export interface TaskDetailBundle {

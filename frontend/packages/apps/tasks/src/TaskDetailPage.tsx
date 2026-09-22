@@ -50,7 +50,7 @@ import {
 } from '@sep/framework';
 import { useTaskDetail } from './hooks';
 import { TaskSpecificationSection } from './TaskSpecificationSection';
-import type { PeriodicTaskSummaryRow } from './types';
+import { taskHistoryItems, type PeriodicTaskSummaryRow } from './types';
 
 function formatTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -150,7 +150,7 @@ export function TaskDetailPage() {
 
   const task = data?.task;
   const isTemplate = task?.is_template ?? false;
-  const historyItems = data?.execution_history.items ?? [];
+  const historyItems = taskHistoryItems(data?.execution_history);
   const runningTasks = historyItems.filter((item) => RUNNING_STATUSES.has(item.status));
   const periodicSummary = data?.periodic_summary ?? [];
 
