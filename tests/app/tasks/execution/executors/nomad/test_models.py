@@ -67,10 +67,12 @@ from app.tasks.execution.executors.nomad.models import (
     _should_anonymize,
     _STALE_SKIP_TASK_NAME,
     _status_from_step_states,
+    NODE_STATUS_READY,
     NOMAD_DEAD_JOB_STATUS,
     nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
     NomadExecutor,
+    RAW_EXEC_DRIVER,
 )
 from app.tasks.execution.executors.nomad.steps import (
     LAUNCH_CHECK_EXIT_CODE,
@@ -1426,6 +1428,14 @@ class TestGetHosts:
 
         assert result == {"node-a": "10.0.0.1", "node-b": "10.0.0.2"}
         mock_backend.nodes.get_nodes.assert_called_once()
+        # A dropped clause or flipped operator here changes only the filter
+        # expression, which the fixture above never exercises - pin its structure
+        # directly rather than relying on the healthy-node fixtures to catch it.
+        assert mock_backend.nodes.get_nodes.call_args.kwargs["filter_"] == (
+            f"Status == {NODE_STATUS_READY} "
+            f"and {RAW_EXEC_DRIVER} in Drivers "
+            f"and Drivers.{RAW_EXEC_DRIVER}.Healthy == true"
+        )
 
 
 class TestGetHostStates:
@@ -1568,6 +1578,37 @@ class TestGetHostStates:
 
         assert states["down"].reachable is False
         assert states["down"].detail == "Node heartbeat missed"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_malformed_healthy_value_is_not_healthy(self, mock_nomad_cls):
+        """Assert a non-boolean ``Healthy`` value cannot read as healthy.
+
+        ``bool()`` would turn any non-empty malformed value - including the string
+        ``"false"`` - into ``True``. The identity check guards against exactly this
+        regression, to ``bool(driver.get("Healthy"))``, which would otherwise keep
+        the whole suite green.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "string-false",
+                "Address": "10.0.0.1",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": "false"}},
+            },
+            {
+                "Name": "truthy-int",
+                "Address": "10.0.0.2",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": 1}},
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["string-false"].driver_healthy is False
+        assert states["truthy-int"].driver_healthy is False
 
 
 class TestGetAllocationForTaskHistory:
