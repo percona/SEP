@@ -49,6 +49,10 @@
 #    type: str
 #    label: Sections
 #    description: Comma-separated top-level serverStatus sections to include (e.g. connections,opcounters,globalLock,wiredTiger). Names are case-sensitive; an unknown name is reported as a warning. Leave empty for the full document.
+# diagnostic_categories:
+#  - OVERALL_SLOWNESS
+#  - NOT_RESPONDING
+#  - PERFORMANCE_OTHER
 # service_type: mongodb
 # alerts:
 #   - MongoDBInstanceNotAvailable

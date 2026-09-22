@@ -37,12 +37,10 @@ from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTes
 class TestArchivesContract(DerivedRouterContractTests):
     """Assert the archives app's full derived HTTP surface, knob by knob.
 
-    ``remapped_username`` is ``None``: the app's context provider is the real
-    Casdoor ``get_username_mapping``, which is not deterministic under test, so the
-    injected-extras tests assert only the deterministic ``service_type`` — matching
-    the ``alters`` and ``checksums`` subclasses.
+    Archives binds no response context provider of its own, so it resolves actors
+    through the framework default, and the injected-extras tests assert the
+    resolved username the suite's stubbed provider lists.
     """
 
     app_def = archives_app
-    remapped_username = None
     create_body_overrides = ARCHIVES_DELETE_PINS

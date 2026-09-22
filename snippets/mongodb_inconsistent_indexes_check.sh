@@ -5,6 +5,7 @@
 # description: "This script checks for inconsistent indexes across shards in a sharded MongoDB cluster."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBInconsistentIndexes

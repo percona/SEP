@@ -4,10 +4,13 @@
 It creates Binlog backup and purges old backups.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging
 import multiprocessing
+import multiprocessing.pool as thread_pool
 import os
 import pwd
 import re
@@ -100,8 +103,46 @@ DIR_ENCRYPT_CFG_PATH = DEFAULT_CFG_DIR / "dir_encrypt.yml"
 MD5SUM_FILE = "md5sum"
 XTRABACKUP_INFO = "xtrabackup_info"
 XTRABACKUP_CHECKPOINTS = "xtrabackup_checkpoints"
+# Backup metadata SEP keeps in plaintext to read post-backup; excluded from
+# every encryption/verification pass regardless of method.
+PLAINTEXT_METADATA_FILES = (
+    MD5SUM_FILE,
+    UPLOADME_FILE,
+    XTRABACKUP_INFO,
+    XTRABACKUP_CHECKPOINTS,
+)
+ENCRYPTION_FORMATS = ("none", "gpg", "aes256", "dual")
 GPG_BIN = os.getenv("PERCONA_BACKUP_GPG_BIN", "/usr/bin/gpg")
+XBCRYPT_BIN = os.getenv("PERCONA_BACKUP_XBCRYPT_BIN", "/usr/bin/xbcrypt")
 
+
+def _resolve_encryption(
+    selected: str | None, keyfile: str | None, *, gpg: bool
+) -> tuple[str, bool, bool]:
+    """Return ``(format, aes256, gpg)`` for the encryption this run must apply.
+
+    ``ENCRYPTION_FORMAT`` is authoritative: it, not which fields happen to be
+    populated, decides whether AES-256 and GPG run, so a key file or post-run flag
+    left behind by an earlier config cannot add an encryption pass of its own.
+
+    A config predating the selector — or carrying a value this payload does not
+    know — falls back to the historical inference so its behaviour is unchanged.
+    The unknown-value case deliberately shares that branch: silently reading it as
+    "no encryption" would ship a plaintext backup for a job that asked to be
+    encrypted.
+
+    :data:`ENCRYPTION_FORMATS` is ordered so a format's index encodes its passes —
+    bit 1 is AES-256, bit 0 is GPG — which is what makes the inference a lookup
+    rather than a second copy of the mode table.
+
+    :param selected: The configured ``ENCRYPTION_FORMAT``, if any.
+    :param keyfile: Path to the AES-256 keyfile, or falsy if not configured.
+    :param gpg: Whether any GPG timing is configured.
+    :return: The resolved format name and whether it runs AES-256 and GPG.
+    """
+    if selected not in ENCRYPTION_FORMATS:
+        selected = ENCRYPTION_FORMATS[bool(keyfile) * 2 + bool(gpg)]
+    return selected, selected in ("aes256", "dual"), selected in ("gpg", "dual")
 
 
 class BackupNotifyStatus(IntEnum):
@@ -249,17 +290,34 @@ def encrypt_dir(path: str, logger: logging.Logger | None = None, **cfg: Any) -> 
 
 def is_encrypted_dir(
     path: str,
-    exclude_files: tuple[str, ...] = (
-        MD5SUM_FILE,
-        UPLOADME_FILE,
-        XTRABACKUP_INFO,
-        XTRABACKUP_CHECKPOINTS,
-    ),
+    exclude_files: tuple[str, ...] = PLAINTEXT_METADATA_FILES,
     logger: logging.Logger | None = None,
+    method: str = "gpg",
 ) -> bool:
+    """Check if all files in the directory are encrypted.
+
+    For ``method == "gpg"`` every non-excluded file is probed with
+    ``gpg --list-only --decrypt``. For ``method == "aes256"`` verification is by
+    file extension (every non-excluded file must end in ``.xbcrypt``).
+
+    :param path: Directory path.
+    :param exclude_files: Files to exclude from the check.
+    :param logger: Logger instance.
+    :param method: Encryption format to verify against (``"gpg"`` or ``"aes256"``).
+    :return: True if all files are encrypted, False otherwise.
+    :raises BackupError: If ``method`` is not ``"gpg"`` or ``"aes256"``.
+    """
+    if method not in ("gpg", "aes256"):
+        raise BackupError("Unknown encryption method: %s" % (method,))
     ppath = Path(path)
     for p in ppath.rglob("*"):
         if p.is_file() and p.name not in exclude_files:
+            if method == "aes256":
+                if p.suffix != ".xbcrypt":
+                    if logger:
+                        logger.error("Not encrypted: %s", p.name)
+                    return False
+                continue
             cmd = [
                 GPG_BIN,
                 "--batch",
@@ -1611,13 +1669,28 @@ class Upload(Backup):
         # the form/config model default (False, an unchecked box); do not align
         # the two.
         self.encrypt = settings.get("ENCRYPT", True)
-        self.encrypt_using_tmpdir = settings.get("ENCRYPT_USING_TMPDIR", False)
         self.post_run_encrypt = settings.get("POST_RUN_ENCRYPT", False)
         self.prepare_backup = settings.get("XTRABACKUP_PREPARE")
         self.xtrabackup_aes256 = settings.get("XTRABACKUP_AES256_KEYFILE", False)
 
-        if self.post_run_encrypt or not self.encrypt:
-            self.encrypt_using_tmpdir = False
+        # The upload phase resolves the format itself rather than inheriting a
+        # decision. Without this an ``aes256`` selection that still carries a stale
+        # in-place flag would GPG-encrypt on the way out, and a ``gpg`` selection
+        # that still carries a stale key file would not GPG-encrypt at all.
+        encryption_format, aes256, gpg = _resolve_encryption(
+            settings.get("ENCRYPTION_FORMAT"),
+            self.xtrabackup_aes256,
+            gpg=self.encrypt or self.post_run_encrypt,
+        )
+        self.encrypt = gpg and self.encrypt
+        self.post_run_encrypt = gpg and self.post_run_encrypt
+        if not aes256:
+            self.xtrabackup_aes256 = False
+        # Fully derived for the base Upload path; BinaryLogUpload forces tmpdir
+        # on afterwards because binlogs always encrypt a copy before upload.
+        self.encrypt_using_tmpdir = self.encrypt and not (
+            self.post_run_encrypt or aes256
+        )
 
         self.cdba_report = {}
         self.cdba_report["upload"] = 1
@@ -1625,9 +1698,7 @@ class Upload(Backup):
             "upload_to": self.upload_type,
             "encrypt": self.encrypt or self.post_run_encrypt,
         }
-
-        if self.encrypt or self.post_run_encrypt:
-            self.report_options["encryption"] = "gpg"
+        self.report_options["encryption"] = encryption_format
 
         root_backup_dir = settings["BACKUP_DIR"]
         root_backup_path = Path(root_backup_dir)
@@ -1692,6 +1763,23 @@ class Upload(Backup):
         self.logger.info("OK Copy complete.")
 
     def _encrypt(self) -> None:
+        """Encrypt backup directories prior to upload if encryption is enabled.
+
+        Binlog encryption runs here (not as a separate post-backup pass): mysqlbinlog
+        has no inline ``--encrypt``, so AES-256 is applied to the upload tmpdir with
+        xbcrypt the same way GPG is.
+        """
+        if self.xtrabackup_aes256:
+            for path in self.paths:
+                dir_ = Path(
+                    path["tmpdir"] if self.encrypt_using_tmpdir else path["source"]
+                )
+                self.encrypt_files_aes256(str(dir_))
+                if not is_encrypted_dir(
+                    str(dir_), method="aes256", logger=self.logger
+                ):
+                    raise BackupError("AES-256 verify failed: %s" % (dir_,))
+            return
 
         if not (self.encrypt or self.post_run_encrypt):
             self.logger.warning("UPLOADING UNENCRYPTED BACKUP!!!")
@@ -1700,6 +1788,70 @@ class Upload(Backup):
         for path in self.paths:
             dir_ = Path(path["tmpdir"] if self.encrypt_using_tmpdir else path["source"])
             encrypt_dir(str(dir_), self.logger, **self.dir_encrypt_config)
+
+    def encrypt_files_aes256(self, dir_path: str | None) -> None:
+        """Encrypt plaintext files under a directory with xbcrypt/AES-256.
+
+        Recurses ``dir_path``, skipping files already carrying a ``.xbcrypt``
+        suffix and the backup metadata SEP keeps in plaintext. Files are
+        encrypted a handful at a time, mirroring :meth:`DirectoryEncryptor.encrypt_dir`.
+        Standalone Nomad payloads cannot share a Python module, so this mirrors
+        the XtraBackup/Mydumper helper.
+
+        :param dir_path: Directory whose plaintext files are encrypted.
+        :raises BackupError: If any file fails to encrypt.
+        """
+        if not dir_path:
+            return
+        # A list comprehension (not a generator) fully drains rglob() before any
+        # file is touched, so the walk can't re-yield the .xbcrypt files the pool
+        # is creating underneath it. Bounded by CPU count so xbcrypt can't starve
+        # the host on small hosts.
+        with thread_pool.ThreadPool(min(5, os.cpu_count() or 5)) as pool:
+            pool.map(
+                self._run_encrypt_file_aes256,
+                [
+                    p
+                    for p in Path(dir_path).rglob("*")
+                    if p.is_file()
+                    and p.suffix != ".xbcrypt"
+                    and p.name not in PLAINTEXT_METADATA_FILES
+                ],
+            )
+
+    def _run_xbcrypt(self, cmd: list[str], remove_path: str | Path) -> None:
+        """Run an ``xbcrypt`` command, then delete ``remove_path`` on success.
+
+        :param cmd: The ``xbcrypt`` argument list to execute.
+        :param remove_path: File removed once the command succeeds (the plaintext
+            input on encrypt).
+        :raises BackupError: If the command exits non-zero.
+        """
+        self.logger.info("Running: %s", " ".join(cmd))
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _, err = proc.communicate()
+        if proc.returncode != 0:
+            raise BackupError("xbcrypt failed on %s: %s" % (remove_path, err))
+        os.remove(remove_path)
+
+    def _run_encrypt_file_aes256(self, file_path: str | Path) -> None:
+        """Encrypt a single file in place with xbcrypt/AES-256.
+
+        :param file_path: Plaintext file to encrypt; no-ops when it is absent.
+        :raises BackupError: If the underlying xbcrypt run fails (propagated
+            from :meth:`_run_xbcrypt`).
+        """
+        if os.path.exists(file_path):
+            self._run_xbcrypt(
+                [
+                    XBCRYPT_BIN,
+                    "--encrypt-algo=AES256",
+                    "--encrypt-key-file=%s" % (self.xtrabackup_aes256,),
+                    "--input=%s" % (file_path,),
+                    "--output=%s.xbcrypt" % (file_path,),
+                ],
+                file_path,
+            )
 
     def _upload(self) -> None:
         for path in self.paths:
@@ -1745,10 +1897,15 @@ class Upload(Backup):
 
         #self.textfile_collector_write_status(-1, self.backup_code, self.alias, True)
 
+        # Cleanup must run even when a pool.map chunk aborts mid-encrypt, or the
+        # upload tmpdir can retain plaintext beside any .xbcrypt files already
+        # written.
         self._copy_to_tmpdir()
-        self._encrypt()
-        self._upload()
-        self._cleanup()
+        try:
+            self._encrypt()
+            self._upload()
+        finally:
+            self._cleanup()
 
         time_spent = format_seconds_to_hhmmss(time.time() - start_time)
         msg = f"OK {self.upload_type} upload complete. Duration: {time_spent}."

@@ -13,24 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the nested-override helpers in the classification registry."""
+"""Test how ``__``-delimited override keys resolve against nested models."""
 
-import functools
 from collections.abc import Callable
 from datetime import timedelta
-from typing import ClassVar
+from types import SimpleNamespace
+from typing import cast, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field, SecretStr, ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.middleware.security_headers import SecurityHeadersOptions
-from app.core.settings_override.api.routes import _settings_response_from_field
+from app.core.settings_override.constants import NESTED_VALUE_MISSING
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
-    _clear_cached_properties,
-    _resolve_field_in_model,
-    canonical_override_key,
     chain_has_advanced,
     chain_has_explicit_not_overridable,
     coerce_nested_field_value,
@@ -39,11 +36,15 @@ from app.core.settings_override.registry import (
     iter_nested_leaf_keys,
     nested_overridable_field,
     nested_overridable_field_names,
-    NESTED_VALUE_MISSING,
     not_overridable_field,
-    override_provenance_for_rows,
     ReloadClassification,
     rendered_leaf_keys,
+)
+from app.core.settings_override.resolution import (
+    canonical_override_key,
+    override_provenance_for_rows,
+    override_rows_for_key,
+    resolve_field_in_model,
     resolve_nested_field,
     resolve_nested_field_metadata,
     resolve_nested_value,
@@ -52,6 +53,7 @@ from app.sep.config import CookieOptions, SEPSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     insert_override_row,
+    SEP_SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 
@@ -77,20 +79,9 @@ class _Outer(BaseModel):
     PLAIN: int = 5
 
 
-class _CachedModel(BaseModel):
-    """Model with a ``cached_property`` to exercise the memo-clearing helper."""
-
-    value: int = 1
-
-    @functools.cached_property
-    def derived(self) -> int:
-        """Return a value derived from ``value`` (memoised)."""
-        return self.value * 10
-
-
 def test_resolve_field_in_model_exact_match() -> None:
     """An exact attribute-name match returns the canonical name and field."""
-    resolved = _resolve_field_in_model(CookieOptions, "MAX_AGE")
+    resolved = resolve_field_in_model(CookieOptions, "MAX_AGE")
     assert resolved is not None
     canonical, _ = resolved
     assert canonical == "MAX_AGE"
@@ -102,7 +93,7 @@ def test_resolve_field_in_model_uppercase_alias_match() -> None:
     ``SecurityHeadersOptions`` is a ``BaseCaseInsensitiveModel`` whose
     attribute names are lowercase but whose aliases are uppercase.
     """
-    resolved = _resolve_field_in_model(SecurityHeadersOptions, "X_FRAME_OPTIONS_DENY")
+    resolved = resolve_field_in_model(SecurityHeadersOptions, "X_FRAME_OPTIONS_DENY")
     assert resolved is not None
     canonical, _ = resolved
     assert canonical == "x_frame_options_deny"
@@ -110,7 +101,7 @@ def test_resolve_field_in_model_uppercase_alias_match() -> None:
 
 def test_resolve_field_in_model_lowercase_fallback() -> None:
     """A lowercase segment resolves to the lowercase canonical attribute name."""
-    resolved = _resolve_field_in_model(SecurityHeadersOptions, "x_frame_options_deny")
+    resolved = resolve_field_in_model(SecurityHeadersOptions, "x_frame_options_deny")
     assert resolved is not None
     canonical, _ = resolved
     assert canonical == "x_frame_options_deny"
@@ -118,7 +109,7 @@ def test_resolve_field_in_model_lowercase_fallback() -> None:
 
 def test_resolve_field_in_model_missing_segment() -> None:
     """An unknown segment returns ``None``."""
-    assert _resolve_field_in_model(CookieOptions, "NOPE") is None
+    assert resolve_field_in_model(CookieOptions, "NOPE") is None
 
 
 @pytest.mark.parametrize("segment", ["External", "Incoming", "Outgoing"])
@@ -133,7 +124,7 @@ def test_resolve_field_in_model_alias_only_match(segment: str) -> None:
             serialization_alias="outgoing",
         )
 
-    resolved = _resolve_field_in_model(_AliasedModel, segment)
+    resolved = resolve_field_in_model(_AliasedModel, segment)
 
     assert resolved is not None
     canonical, field = resolved
@@ -244,22 +235,6 @@ def test_chain_has_explicit_not_overridable_false_for_open_path() -> None:
 def test_chain_has_explicit_not_overridable_false_for_unresolvable() -> None:
     """An unresolvable path reports ``False`` (resolution failure surfaces elsewhere)."""
     assert not chain_has_explicit_not_overridable(_Outer, "NESTED__BOGUS")
-
-
-def test_clear_cached_properties_removes_memo() -> None:
-    """A populated ``cached_property`` memo is removed from ``__dict__``."""
-    instance = _CachedModel(value=2)
-    assert instance.derived == instance.value * 10  # populate the memo
-    assert "derived" in instance.__dict__
-    _clear_cached_properties(instance)
-    assert "derived" not in instance.__dict__
-
-
-def test_clear_cached_properties_noop_when_unpopulated() -> None:
-    """Clearing an instance with no populated memo is a no-op."""
-    instance = _CachedModel(value=2)
-    _clear_cached_properties(instance)
-    assert "derived" not in instance.__dict__
 
 
 def test_not_overridable_field_detected_as_not_hot() -> None:
@@ -491,46 +466,6 @@ def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
     assert value is not NESTED_VALUE_MISSING
 
 
-def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
-    """LIST projection maps a missing nested segment to JSON ``null``."""
-    proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
-    )
-    proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
-    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
-    assert leaf_meta is not None
-    response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
-        settings_cls=_SecretLeafParent,
-        proxy=proxy,
-        field_meta=leaf_meta,
-        provenance=None,
-    )
-    assert response.value is None
-    assert response.is_secret is True
-
-
-def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
-    """LIST projection renders an unresolved secret leaf as JSON ``null``."""
-    proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
-    )
-    proxy._set_snapshot(
-        {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
-    )
-    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
-    assert leaf_meta is not None
-    response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
-        settings_cls=_SecretLeafParent,
-        proxy=proxy,
-        field_meta=leaf_meta,
-        provenance=None,
-    )
-    assert response.value is None
-    assert response.is_secret is True
-
-
 class _OverlayLeafOwner(BaseModel):
     """Define a submodel whose overlay promotes one bare leaf; a sibling stays unmarked.
 
@@ -632,3 +567,218 @@ def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
     assert dict(rendered_leaf_keys(SEPSettings, "SESSION_REFRESH")) == dict(
         iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH")
     )
+
+
+class TestNestedValueTraversalGaps:
+    """Cover chains the snapshot cannot walk to the end."""
+
+    def test_missing_attribute_segment_returns_sentinel(self) -> None:
+        """Return the sentinel when an intermediate object lacks the next segment."""
+        proxy = cast(
+            "OverridableSettingsProxy",
+            SimpleNamespace(NESTED=SimpleNamespace()),
+        )
+
+        _, value = resolve_nested_value(
+            settings_cls=_OptionalIntermediateParent,
+            proxy=proxy,
+            key="NESTED__INNER__DEEP",
+        )
+
+        assert value is NESTED_VALUE_MISSING
+
+
+class TestProvenanceKeys:
+    """Cover which keys one override row reports a provenance stamp for."""
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_nested_row_reports_only_its_stored_key(
+        self, session: AsyncSession
+    ) -> None:
+        """Report no ancestor keys for a nested row that no longer resolves.
+
+        A row whose field was renamed or removed still has to report itself, so
+        an admin can see and delete it, without inventing parent keys.
+
+        :param session: The async DB session the row is written through.
+        :return: ``None``.
+        """
+        row = await insert_override_row(
+            session,
+            setting_class=TASKS_SETTINGS_TOKEN,
+            key="GONE__missing_leaf",
+            value=1,
+        )
+
+        provenance = override_provenance_for_rows(TasksSettings, [row])
+
+        assert set(provenance) == {row.key}
+
+
+_CANONICAL_NESTED = "NOMAD__timeout"
+_LEGACY_NESTED = "nomad__TIMEOUT"
+_TOP_LEVEL = "INVENTORY_ENDPOINT"
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_resolves_legacy_nested_casing(
+    session: AsyncSession,
+) -> None:
+    """Assert a mixed-case nested row is found under its canonical key."""
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
+    session: AsyncSession,
+) -> None:
+    """Assert every row that canonicalizes to the requested key is returned."""
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_CANONICAL_NESTED,
+        value=45,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_CANONICAL_NESTED,
+    )
+    assert {row.key for row in rows} == {_LEGACY_NESTED, _CANONICAL_NESTED}
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_excludes_other_setting_class(
+    session: AsyncSession,
+) -> None:
+    """Assert a matching stored key on another class is not returned."""
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=True,
+    )
+    await insert_override_row(
+        session,
+        setting_class=SEP_SETTINGS_TOKEN,
+        key=_LEGACY_NESTED,
+        value=99,
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+    assert rows[0].setting_class == TASKS_SETTINGS_TOKEN
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_includes_inactive_row(
+    session: AsyncSession,
+) -> None:
+    """Assert an inactive row is still resolved (write paths match on key alone)."""
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_LEGACY_NESTED,
+        value=30,
+        is_active=False,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=TasksSettings,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key=_CANONICAL_NESTED,
+    )
+    assert [row.key for row in rows] == [_LEGACY_NESTED]
+    assert rows[0].is_active is False
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_returns_empty_for_no_match(
+    session: AsyncSession,
+) -> None:
+    """Assert a missing key or an unresolvable stored key yields no rows."""
+    await insert_override_row(
+        session,
+        setting_class=TASKS_SETTINGS_TOKEN,
+        key="NOMAD__does_not_exist",
+        value=1,
+        is_active=True,
+    )
+    assert (
+        await override_rows_for_key(
+            session,
+            settings_cls=TasksSettings,
+            setting_class=TASKS_SETTINGS_TOKEN,
+            key=_CANONICAL_NESTED,
+        )
+        == []
+    )
+    assert (
+        await override_rows_for_key(
+            session,
+            settings_cls=TasksSettings,
+            setting_class=TASKS_SETTINGS_TOKEN,
+            key="NOMAD__unknown_leaf",
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_override_rows_for_key_matches_top_level_case_insensitively(
+    session: AsyncSession,
+) -> None:
+    """Assert a top-level key also matches a mixed-case stored spelling.
+
+    Keeps mixed-case stored keys reachable by DELETE/PATCH now that the ``key``
+    match moved from SQL into Python.
+    """
+    await insert_override_row(
+        session,
+        setting_class=SEP_SETTINGS_TOKEN,
+        key=_TOP_LEVEL,
+        value="https://canonical.example.com",
+        is_active=True,
+    )
+    await insert_override_row(
+        session,
+        setting_class=SEP_SETTINGS_TOKEN,
+        key=_TOP_LEVEL.lower(),
+        value="https://legacy.example.com",
+        is_active=True,
+    )
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=SEPSettings,
+        setting_class=SEP_SETTINGS_TOKEN,
+        key=_TOP_LEVEL,
+    )
+    assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}

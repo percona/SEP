@@ -27,6 +27,7 @@ from fastapi import Depends
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.requests import as_json_object
 from app.inventory.models import ServiceTypeEnum
+from app.sep.api.task_history_actors import task_actor_fields
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
     BackupDerivedTaskSummary,
@@ -59,6 +60,7 @@ from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     check_group_for_conflicted_running_tasks,
     get_created_entity,
+    get_username_mapping,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
@@ -179,17 +181,18 @@ def build_backup_mongo_api_task_response(
     *,
     status: TaskHistoryStatusEnum | None = None,
     last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
 ) -> BackupTaskResponse:
     """Build a backup task response object for the JSON API.
 
     :param task: The backup task retrieved from the Tasks API.
-    :type task: Task
     :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map used to resolve ``created_by`` /
+        ``last_updated_by`` to system labels or provider usernames; falls back to
+        the raw id when neither resolves it.
     :return: A validated backup task API response object.
-    :rtype: BackupTaskResponse
     """
     data = task.data
     meta = data.get("meta") or {}
@@ -202,6 +205,7 @@ def build_backup_mongo_api_task_response(
             "hostname": meta.get("target"),
             "backup_type": str(data.get("backup_type", "")),
             "service_type": ServiceTypeEnum.MONGODB,
+            **task_actor_fields(task, context or {}),
         },
     )
 
@@ -282,13 +286,11 @@ async def build_backup_mongo_api_detail_response(
     Aggregates latest execution status for the parent ``pbm_config`` task and
     each derived logical, physical, status, and incremental sibling. When a status
     sibling exists, includes a tail of its latest stdout for the PBM status panel.
+    Resolves the parent's actor fields through the active provider's username map.
 
     :param task: The parent backup config task.
-    :type task: Task
     :param tasks_api: The TaskAPI instance used to query tasks and history.
-    :type tasks_api: TaskAPI
     :return: A validated backup task detail API response object.
-    :rtype: BackupTaskDetailResponse
     """
     derived_names = backup_derived_task_names(task.name)
     gather_results = await asyncio.gather(
@@ -320,6 +322,7 @@ async def build_backup_mongo_api_detail_response(
         task,
         status=parent_latest.status if parent_latest else None,
         last_executed_at=parent_latest.finished_at if parent_latest else None,
+        context=await get_username_mapping(),
     )
     return BackupTaskDetailResponse(
         **base.model_dump_with_excluded_fields(),

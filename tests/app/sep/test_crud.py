@@ -222,6 +222,127 @@ class TestSyncItemManagerSyncIsRunning:
 
 
 # ---------------------------------------------------------------------------
+# SyncItemManager.inventory_sync_completed (real session)
+# ---------------------------------------------------------------------------
+
+_LEADER = "leader-syncer"
+_OTHER_SYNCER = "other-syncer"
+
+
+async def _record_run(
+    session,
+    syncer: str,
+    items: list[tuple[SyncInventoryEntityTypeEnum, SyncStatusEnum]],
+    *,
+    run_status: SyncStatusEnum = SyncStatusEnum.SUCCESS,
+) -> None:
+    """Persist one run of ``syncer`` carrying ``items``, as a finished sync leaves it.
+
+    :param session: The real SEP session the rows are written through.
+    :param syncer: The ``get_name()`` form stored on the run.
+    :param items: The ``(entity_type, status)`` of each item the run recorded.
+    :param run_status: The run-level verdict ``finalize_run`` would have written.
+    """
+    instance = SyncInstance(syncer=syncer, status=run_status)
+    session.add(instance)
+    await session.commit()
+    await session.refresh(instance)
+    for entity_id, (entity_type, status) in enumerate(items, start=1):
+        session.add(
+            SyncItem(
+                entity_id=(
+                    None
+                    if entity_type == SyncInventoryEntityTypeEnum.INVENTORY
+                    else entity_id
+                ),
+                entity_type=entity_type,
+                status=status,
+                sync_instance_id=instance.id,
+            )
+        )
+    await session.commit()
+
+
+class TestSyncItemManagerInventorySyncCompleted:
+    """Test SyncItemManager.inventory_sync_completed against persisted runs."""
+
+    @pytest.mark.asyncio
+    async def test_true_once_the_inventory_item_succeeded(self, session) -> None:
+        """Report a completed pass when the syncer's INVENTORY item reached SUCCESS."""
+        await _record_run(
+            session,
+            _LEADER,
+            [
+                (SyncInventoryEntityTypeEnum.INVENTORY, SyncStatusEnum.SUCCESS),
+                (SyncInventoryEntityTypeEnum.NODE, SyncStatusEnum.SUCCESS),
+            ],
+        )
+
+        assert await SyncItemManager.inventory_sync_completed(session, _LEADER) is True
+
+    @pytest.mark.asyncio
+    async def test_true_when_only_an_entity_failed(self, session) -> None:
+        """Count a pass whose run is FAILED only because one node failed.
+
+        ``finalize_run`` marks the run ``FAILED`` for any failed item, so gating on
+        the run-level status would defer the follower forever on an install where
+        one PMM entity always fails.
+        """
+        await _record_run(
+            session,
+            _LEADER,
+            [
+                (SyncInventoryEntityTypeEnum.INVENTORY, SyncStatusEnum.SUCCESS),
+                (SyncInventoryEntityTypeEnum.NODE, SyncStatusEnum.FAILED),
+            ],
+            run_status=SyncStatusEnum.FAILED,
+        )
+
+        assert await SyncItemManager.inventory_sync_completed(session, _LEADER) is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("recorded_syncer", "items"),
+        [
+            (_LEADER, []),
+            (
+                _LEADER,
+                [(SyncInventoryEntityTypeEnum.NODE, SyncStatusEnum.SUCCESS)],
+            ),
+            (
+                _LEADER,
+                [(SyncInventoryEntityTypeEnum.INVENTORY, SyncStatusEnum.FAILED)],
+            ),
+            (
+                _LEADER,
+                [(SyncInventoryEntityTypeEnum.INVENTORY, SyncStatusEnum.RUNNING)],
+            ),
+            (
+                _OTHER_SYNCER,
+                [(SyncInventoryEntityTypeEnum.INVENTORY, SyncStatusEnum.SUCCESS)],
+            ),
+        ],
+        ids=[
+            "run-without-items",
+            "only-a-node-succeeded",
+            "inventory-item-failed",
+            "inventory-item-still-running",
+            "another-syncer-completed",
+        ],
+    )
+    async def test_false_without_a_successful_inventory_item_for_the_syncer(
+        self,
+        session,
+        recorded_syncer: str,
+        items: list[tuple[SyncInventoryEntityTypeEnum, SyncStatusEnum]],
+    ) -> None:
+        """Report no completed pass unless this syncer's INVENTORY item succeeded."""
+        await _record_run(session, recorded_syncer, items)
+
+        assert await SyncItemManager.inventory_sync_completed(session, _LEADER) is False
+
+
+# ---------------------------------------------------------------------------
 # SyncItemManager.start_sync
 # ---------------------------------------------------------------------------
 

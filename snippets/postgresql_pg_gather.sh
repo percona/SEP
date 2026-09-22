@@ -49,7 +49,7 @@
 #    label: Masquerade PII
 #    description: Redact IPv4 / IPv6 addresses and email-like values in the captured output before writing it.
 #    default: false
-# atw:
+# diagnostic_categories:
 #  - OVERALL_SLOWNESS
 #  - NOT_RESPONDING
 #  - WRITES_ARE_BLOCKED

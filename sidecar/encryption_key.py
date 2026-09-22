@@ -43,13 +43,13 @@ Deployment inputs, all optional: ``SEP_STATE_DIR`` and
 import asyncio
 import base64
 import fcntl
-import math
 import os
 import sys
 import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
+from functools import partial
 from pathlib import Path
 from typing import Any, ClassVar, TextIO
 
@@ -63,8 +63,24 @@ from app.core.db.config import DatabaseOptions
 from app.core.encryption import is_stored_ciphertext
 from app.core.settings_override.models import SettingOverride
 from app.core.utils.fields import credential_url_password
+from sidecar.runtime import (
+    DEFAULT_STATE_DIR,
+    positive_timeout,
+    RETRY_INTERVAL_SECONDS,
+    state_dir,
+)
+from sidecar.runtime import warn as runtime_warn
 
-DEFAULT_STATE_DIR = Path("/home/sep/state")
+__all__ = [
+    "DEFAULT_STATE_DIR",
+    "RETRY_INTERVAL_SECONDS",
+    "probe_timeout",
+    "state_dir",
+    "warn",
+]
+
+warn = partial(runtime_warn, "encryption-key")
+
 PERSISTED_FILENAME = "ENCRYPTION_KEY"
 LOCK_FILENAME = ".ENCRYPTION_KEY.lock"
 
@@ -77,8 +93,6 @@ start the databases are routinely not up yet, which is exactly when the mint
 path runs. A probe that refused on the first connection error would make PID 1
 die on the ordinary cold start this feature exists to serve.
 """
-
-RETRY_INTERVAL_SECONDS = 3.0
 
 LOCK_POLL_INTERVAL_SECONDS = 0.2
 """How often a start re-tries the state lock while a peer holds it."""
@@ -167,42 +181,14 @@ the lost key can sit in any one of the three.
 """
 
 
-def warn(message: str) -> None:
-    """Write one diagnostic line, leaving stdout as the key channel alone.
-
-    :param message: The line to write.
-    """
-    sys.stderr.write(f"[encryption-key] {message}\n")
-
-
-def state_dir() -> Path:
-    """Return the directory SEP persists its minted key in.
-
-    :return: The configured directory, or the image's own.
-    """
-    configured = os.environ.get("SEP_STATE_DIR") or ""
-    return Path(configured) if configured.strip() else DEFAULT_STATE_DIR
-
-
 def probe_timeout() -> float:
     """Return how long each freshness probe may wait for its database.
 
     :return: The bound in seconds.
     """
-    raw = (os.environ.get("SEP_ENCRYPTION_PROBE_TIMEOUT") or "").strip()
-    if not raw:
-        return DEFAULT_PROBE_TIMEOUT_SECONDS
-    try:
-        seconds = float(raw)
-    except ValueError:
-        seconds = 0.0
-    if not math.isfinite(seconds) or seconds <= 0:
-        warn(
-            f"SEP_ENCRYPTION_PROBE_TIMEOUT={raw!r} is not a finite positive "
-            f"number of seconds; waiting {DEFAULT_PROBE_TIMEOUT_SECONDS:g}s instead."
-        )
-        return DEFAULT_PROBE_TIMEOUT_SECONDS
-    return seconds
+    return positive_timeout(
+        "SEP_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
+    )
 
 
 def lock_timeout() -> float:

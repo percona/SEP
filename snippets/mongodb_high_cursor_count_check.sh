@@ -5,6 +5,7 @@
 # description: "This script checks open cursor counts and identifies potential cursor leaks to diagnose high cursor count alerts."
 # allow_extra_args: false
 # sudo: optional
+# diagnostic_categories: []
 # service_type: mongodb
 # alerts:
 #   - MongoDBHighCursorCount

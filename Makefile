@@ -194,9 +194,14 @@ endif
 
 migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
 	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
-	@for app in $(APPS); do \
-		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
-	done
+	@ret=0; \
+	for app in $(APPS); do \
+		"${VENV_BIN}"/alembic --name $$app upgrade heads || ret=1; \
+	done; \
+	if [ $$ret -ne 0 ]; then \
+	  echo "Error: One or more Alembic upgrades failed."; \
+	  exit $$ret; \
+	fi
 	@"${VENV_BIN}"/python -m app.core.celery.bootstrap
 
 checkmigrations: migrate

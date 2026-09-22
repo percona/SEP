@@ -91,8 +91,8 @@ from app.core.settings_override.registry import (
     annotation_contains_credential_url,
     annotation_contains_secret,
     annotation_is_credential_url,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field
 from app.core.utils.fields import (
     credential_url_password,
     map_credential_url_password,

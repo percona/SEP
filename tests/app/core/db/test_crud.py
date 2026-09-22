@@ -15,14 +15,13 @@
 
 """Define tests for CRUD pagination helpers."""
 
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, UTC
-from typing import Any
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event, Index
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import Index, UniqueConstraint
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import col, Relationship, SQLModel
 from sqlmodel import Field as SQLField
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -46,11 +45,9 @@ INVALID_PAGINATION_VALUE = -1
 UNPAGINATED_ITEM_TOTAL = 55
 # first() is invoked twice on the conflict path: existence check, then refetch.
 CONFLICT_PATH_FIRST_CALLS = 2
-# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a truthy sentinel, so the save
-# precheck's all() guard does not skip the index it takes part in.
+# Mirrors inventory's ACTIVE_RETIREMENT_KEY: a non-NULL sentinel, so the index it
+# takes part in still constrains the rows carrying it.
 ACTIVE_DISCRIMINATOR = -1
-# The precheck may only read; any of these reaching the driver means a write escaped.
-WRITE_STATEMENT_PREFIXES = ("UPDATE", "INSERT", "DELETE")
 
 
 class PaginationParent(BaseSQLModel, table=True):
@@ -187,9 +184,44 @@ class CompositeUniqueManager(BaseSQLModelManager):
     Model = CompositeUniqueModel
 
 
-@pytest_asyncio.fixture(name="session")
-async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
-    """Create an isolated async database session for CRUD pagination tests."""
+class ConstraintUniqueModel(BaseSQLModel, table=True):
+    """Model a unique key declared as a constraint, as ``taskhistory_log`` does.
+
+    :param external_id: The identifier the origin system assigns.
+    :param source: The origin system the row came from.
+    :param start_offset: The offset the chunk starts at, legitimately ``0`` for the
+        first chunk of a stream.
+    :param label: A value outside every unique key.
+    """
+
+    __tablename__ = "test_constraint_unique"
+    __table_args__ = (
+        UniqueConstraint("external_id", name="uq_test_constraint_unique_external_id"),
+        UniqueConstraint(
+            "source",
+            "start_offset",
+            name="uq_test_constraint_unique_source_offset",
+        ),
+    )
+
+    external_id: str
+    source: str
+    start_offset: int = 0
+    label: str = "default"
+
+
+class ConstraintUniqueManager(BaseSQLModelManager):
+    """Manage the constraint-unique test model."""
+
+    Model = ConstraintUniqueModel
+
+
+@pytest_asyncio.fixture(name="session_engine")
+async def session_engine_fixture() -> AsyncGenerator[AsyncEngine, None]:
+    """Create the schema-loaded engine every CRUD session in this module shares.
+
+    :return: An in-memory engine with every ``SQLModel`` table created.
+    """
     # scaffolding-dup-ok: this duplication predates the change that
     # re-annotated the fixture's return type; promoting it against
     # its sibling bootstrap is a cross-tree refactor of its own.
@@ -201,32 +233,24 @@ async def session_fixture() -> AsyncGenerator[AsyncSession, None]:
     )
     async with engine.begin() as conn:
         await apply_schema(conn, SQLModel.metadata)
-    async_session_maker = get_async_session_maker_from_engine(engine)
     try:
-        async with async_session_maker() as session:
-            yield session
+        yield engine
     finally:
         await engine.dispose()
 
 
-@pytest.fixture(name="emitted_sql")
-def emitted_sql_fixture(session: AsyncSession) -> Iterator[list[str]]:
-    """Record every SQL statement the session's engine sends to the database.
+@pytest_asyncio.fixture(name="session")
+async def session_fixture(
+    session_engine: AsyncEngine,
+) -> AsyncGenerator[AsyncSession, None]:
+    """Create an isolated async database session for CRUD pagination tests.
 
-    :param session: The session whose engine is instrumented for the test's duration.
-    :return: The statements recorded so far, appended to as the test runs.
+    :param session_engine: The engine the session is bound to.
+    :return: A session for the test to use.
     """
-    statements: list[str] = []
-    engine = session.bind.sync_engine
-
-    def record(_conn: Any, _cursor: Any, statement: str, *_rest: Any) -> None:
-        statements.append(statement)
-
-    event.listen(engine, "before_cursor_execute", record)
-    try:
-        yield statements
-    finally:
-        event.remove(engine, "before_cursor_execute", record)
+    async_session_maker = get_async_session_maker_from_engine(session_engine)
+    async with async_session_maker() as session:
+        yield session
 
 
 async def _create_parent(session: AsyncSession, name: str) -> PaginationParent:
@@ -265,6 +289,29 @@ async def _two_keyed_rows(session: AsyncSession) -> UniqueKeyModel:
     """
     await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
     return await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+
+
+async def _two_constraint_rows(
+    session: AsyncSession,
+    *,
+    claimed_offset: int = 1,
+) -> ConstraintUniqueModel:
+    """Persist two rows whose unique keys are constraint-declared.
+
+    :param session: The session the rows are persisted through.
+    :param claimed_offset: The ``start_offset`` the first row claims on ``pmm``.
+    :return: The second row, leaving the first row's keys claimed.
+    """
+    await ConstraintUniqueManager.save(
+        session,
+        ConstraintUniqueModel(
+            external_id="ext-a", source="pmm", start_offset=claimed_offset
+        ),
+    )
+    return await ConstraintUniqueManager.save(
+        session,
+        ConstraintUniqueModel(external_id="ext-b", source="other", start_offset=5),
+    )
 
 
 class TestBaseSQLModelManagerPagination:
@@ -1137,8 +1184,8 @@ class TestDMLWhereGuards:
         assert returned == ["after"]
 
 
-class TestSaveDuplicatePrecheck:
-    """Test ``BaseSQLModelManager.save``'s unique-index duplicate precheck."""
+class TestSaveUniqueViolation:
+    """Test how ``BaseManager.save`` answers a unique-key violation."""
 
     @pytest.mark.asyncio
     async def test_update_colliding_with_committed_row_raises_conflict(
@@ -1156,14 +1203,17 @@ class TestSaveDuplicatePrecheck:
             await UniqueKeyManager.save(session, row)
 
     @pytest.mark.asyncio
-    async def test_update_conflict_emits_no_write(
+    async def test_conflict_rolls_back_and_leaves_session_usable(
         self,
         session: AsyncSession,
-        emitted_sql: list[str],
     ) -> None:
-        """Assert the precheck rejects the update before any write is sent."""
+        """Assert the rejected write is undone and the session can be reused.
+
+        The violation aborts the transaction, so releasing it is what lets the
+        caller keep reading on the same session instead of meeting a second,
+        unrelated failure on its next statement.
+        """
         row = await _two_keyed_rows(session)
-        emitted_sql.clear()
         row.key = "alpha"
 
         with pytest.raises(
@@ -1172,11 +1222,9 @@ class TestSaveDuplicatePrecheck:
         ):
             await UniqueKeyManager.save(session, row)
 
-        assert not [
-            statement
-            for statement in emitted_sql
-            if statement.lstrip().upper().startswith(WRITE_STATEMENT_PREFIXES)
-        ]
+        assert not session.dirty
+        assert await UniqueKeyManager.first(session, key="alpha") is not None
+        assert await UniqueKeyManager.first(session, key="beta") is not None
 
     @pytest.mark.asyncio
     async def test_update_through_manager_update_raises_conflict(
@@ -1213,6 +1261,164 @@ class TestSaveDuplicatePrecheck:
             match="CompositeUniqueModel with the same external_id, source",
         ):
             await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_index_collision_on_falsy_key_member_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the presence test reaches the index path, not only constraints."""
+        await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-a", source="pmm", discriminator=0),
+        )
+        row = await CompositeUniqueManager.save(
+            session,
+            CompositeUniqueModel(external_id="ext-b", source="pmm", discriminator=0),
+        )
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="CompositeUniqueModel with the same external_id, source",
+        ):
+            await CompositeUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_constraint_update_collision_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a collision on a constraint-declared unique key raises a conflict."""
+        row = await _two_constraint_rows(session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_composite_constraint_update_collision_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert every column of a composite constraint must match to conflict."""
+        row = await _two_constraint_rows(session)
+        row.source = "pmm"
+
+        # Only the leading column matches so far, so the key is still free.
+        saved = await ConstraintUniqueManager.save(session, row)
+        assert saved.source == "pmm"
+
+        saved.start_offset = 1
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same source, start_offset",
+        ):
+            await ConstraintUniqueManager.save(session, saved)
+
+    @pytest.mark.asyncio
+    async def test_constraint_collision_on_falsy_key_member_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a present-but-falsy key column is not read as a missing one."""
+        row = await _two_constraint_rows(session, claimed_offset=0)
+        row.source = "pmm"
+        row.start_offset = 0
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same source, start_offset",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_constraint_conflict_rolls_back_and_leaves_session_usable(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert the constraint path releases the transaction the same way."""
+        row = await _two_constraint_rows(session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(session, row)
+
+        assert not session.dirty
+        assert (
+            await ConstraintUniqueManager.first(session, external_id="ext-a")
+            is not None
+        )
+        assert (
+            await ConstraintUniqueManager.first(session, external_id="ext-b")
+            is not None
+        )
+
+    @pytest.mark.asyncio
+    async def test_collision_committed_by_another_session_raises_conflict(
+        self,
+        session: AsyncSession,
+        session_engine: AsyncEngine,
+    ) -> None:
+        """Assert a key claimed after this row was read still answers a conflict.
+
+        This is the collision no pre-write lookup can catch: the competing row is
+        committed by a rival session on the same engine, inside the window a
+        lookup would leave open, so the violation is only knowable once the write
+        reaches the database.
+        """
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+
+        rival_session_maker = get_async_session_maker_from_engine(session_engine)
+        async with rival_session_maker() as rival_session:
+            rival_session.add(UniqueKeyModel(key="alpha"))
+            await rival_session.commit()
+
+        row.key = "alpha"
+        with pytest.raises(
+            HTTPConflictException,
+            match="UniqueKeyModel with the same key already exists",
+        ):
+            await UniqueKeyManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_non_unique_integrity_error_still_raises_bad_request(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a violation that is not a duplicate keeps its bad-request answer.
+
+        Only a unique key resolves to a column list, so a ``NOT NULL`` breach is
+        reported as the malformed row it is rather than as a conflict.
+        """
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+        row.key = None
+
+        with pytest.raises(HTTPBadRequestException):
+            await UniqueKeyManager.save(session, row)
+
+    @pytest.mark.asyncio
+    async def test_constraint_update_to_free_value_succeeds(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert an update to an unclaimed constraint-declared key is persisted."""
+        row = await _two_constraint_rows(session)
+        row.external_id = "ext-c"
+
+        saved = await ConstraintUniqueManager.save(session, row)
+
+        assert saved.external_id == "ext-c"
+        assert (
+            await ConstraintUniqueManager.first(session, external_id="ext-c")
+            is not None
+        )
 
     @pytest.mark.asyncio
     async def test_update_to_free_unique_value_succeeds(
@@ -1263,12 +1469,10 @@ class TestSaveDuplicatePrecheck:
     ) -> None:
         """Assert a rejected update leaves the stored row untouched.
 
-        ``save`` does not roll back on conflict, so the rejected change stays pending
-        on the instance and it is the caller's session teardown that discards it.
+        ``save`` rolls back on conflict, so the rejected change is discarded with
+        the transaction rather than left pending for the caller to clean up.
         """
         row = await _two_keyed_rows(session)
-        # Read before the rollback expires the instance: touching it afterwards would
-        # need a lazy load, which an async session cannot service.
         row_id = row.id
         row.key = "alpha"
         with pytest.raises(
@@ -1277,27 +1481,44 @@ class TestSaveDuplicatePrecheck:
         ):
             await UniqueKeyManager.save(session, row)
 
-        assert row in session.dirty
-        await session.rollback()
-
         stored = await UniqueKeyManager.get(session, id=row_id)
         assert stored.key == "beta"
 
     @pytest.mark.asyncio
-    async def test_sibling_vacating_its_value_in_session_still_conflicts(
+    async def test_sibling_vacating_its_value_in_session_frees_it(
         self,
         session: AsyncSession,
     ) -> None:
-        """Assert a vacancy that was never written still reads as occupied.
+        """Assert a retarget onto a value a pending sibling is vacating succeeds.
 
-        The sibling's move off ``alpha`` is pending, and the precheck does not flush
-        it, so the lookup still finds the sibling's stored row and rejects the
-        retarget. Freeing the value takes persisting the sibling's move first.
+        Both moves flush in the same transaction, and the sibling's move off
+        ``alpha`` is written first, so the value is genuinely free by the time the
+        retarget lands. Only the database's own view of the final state decides.
         """
         sibling = await UniqueKeyManager.save(session, UniqueKeyModel(key="alpha"))
         row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
 
         sibling.key = "gamma"
+        row.key = "alpha"
+
+        saved = await UniqueKeyManager.save(session, row)
+
+        assert saved.key == "alpha"
+        assert await UniqueKeyManager.first(session, key="gamma") is not None
+
+    @pytest.mark.asyncio
+    async def test_collision_with_unflushed_sibling_raises_conflict(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert a collision against an unwritten sibling is a conflict too.
+
+        A sibling added to the session but not yet written is invisible to any
+        pre-write lookup, so this collision can only be known at flush. It is the
+        same duplicate, answered the same way as one against a stored row.
+        """
+        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
+        session.add(UniqueKeyModel(key="alpha"))
         row.key = "alpha"
 
         with pytest.raises(
@@ -1306,43 +1527,22 @@ class TestSaveDuplicatePrecheck:
         ):
             await UniqueKeyManager.save(session, row)
 
-    @pytest.mark.asyncio
-    async def test_collision_with_unflushed_sibling_raises_bad_request(
-        self,
-        session: AsyncSession,
-    ) -> None:
-        """Assert a collision the precheck cannot see still fails as a bad request.
-
-        The precheck's lookup never flushes, so a sibling that was added to the
-        session but not yet written is invisible to it. The collision then surfaces
-        at commit, where ``DatabaseError`` handling turns it into a bad request
-        rather than letting a bare ``IntegrityError`` escape.
-        """
-        row = await UniqueKeyManager.save(session, UniqueKeyModel(key="beta"))
-        session.add(UniqueKeyModel(key="alpha"))
-        row.key = "alpha"
-
-        # Unmatched, unlike the conflict raises above: this exception carries no
-        # detail, so its only message is the status phrase.
-        with pytest.raises(HTTPBadRequestException):
-            await UniqueKeyManager.save(session, row)
-
 
 @pytest.mark.postgres
-class TestSaveDuplicatePrecheckPostgres:
-    """Cover the duplicate precheck against a real PostgreSQL bind."""
+class TestSaveUniqueViolationPostgres:
+    """Cover unique-violation handling against a real PostgreSQL bind."""
 
     @pytest.mark.asyncio
-    async def test_update_collision_raises_conflict_before_any_write(
+    async def test_index_collision_names_the_index_columns(
         self,
         postgres_session: AsyncSession,
     ) -> None:
-        """Reject a retarget with a conflict and leave the transaction usable.
+        """Reject a retarget with a conflict naming the unique index's columns.
 
-        The suppression is ORM-level, so the conflict itself is engine-independent.
-        What only a real PostgreSQL bind shows is that nothing reached the driver:
-        had the precheck flushed the colliding write, the failed statement would have
-        aborted the transaction and neither read below could run at all.
+        Only a real PostgreSQL bind exercises this resolution: the driver reports
+        the violated key by name and nothing else, so the columns in the message
+        come from matching that name against the model's declared keys. SQLite
+        spells the columns out instead and never reaches this path.
         """
         row = await _two_keyed_rows(postgres_session)
         row.key = "alpha"
@@ -1353,13 +1553,61 @@ class TestSaveDuplicatePrecheckPostgres:
         ):
             await UniqueKeyManager.save(postgres_session, row)
 
-        # The rejected change is still pending on the instance, so these reads
-        # suppress autoflush as well: flushing here would perform the very write
-        # the precheck refused, rather than exercise the state under test.
-        with postgres_session.no_autoflush:
-            assert (
-                await UniqueKeyManager.first(postgres_session, key="alpha") is not None
-            )
-            assert (
-                await UniqueKeyManager.first(postgres_session, key="beta") is not None
-            )
+        assert await UniqueKeyManager.first(postgres_session, key="alpha") is not None
+        assert await UniqueKeyManager.first(postgres_session, key="beta") is not None
+
+    @pytest.mark.asyncio
+    async def test_constraint_collision_names_the_constraint_columns(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Resolve a constraint-declared key's name to its columns on a real bind."""
+        row = await _two_constraint_rows(postgres_session)
+        row.external_id = "ext-a"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same external_id already exists",
+        ):
+            await ConstraintUniqueManager.save(postgres_session, row)
+
+        assert (
+            await ConstraintUniqueManager.first(postgres_session, external_id="ext-a")
+            is not None
+        )
+        assert (
+            await ConstraintUniqueManager.first(postgres_session, external_id="ext-b")
+            is not None
+        )
+
+    @pytest.mark.asyncio
+    async def test_composite_constraint_collision_names_every_column(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Name every column of a composite constraint, in declaration order."""
+        row = await _two_constraint_rows(postgres_session, claimed_offset=0)
+        row.source = "pmm"
+        row.start_offset = 0
+
+        with pytest.raises(
+            HTTPConflictException,
+            match="ConstraintUniqueModel with the same source, start_offset",
+        ):
+            await ConstraintUniqueManager.save(postgres_session, row)
+
+    @pytest.mark.asyncio
+    async def test_non_unique_integrity_error_still_raises_bad_request(
+        self,
+        postgres_session: AsyncSession,
+    ) -> None:
+        """Keep a non-duplicate violation on its bad-request answer on a real bind.
+
+        PostgreSQL names the breached constraint whatever its kind, so this pins
+        that a name resolving to no declared unique key is not read as a conflict.
+        """
+        row = await UniqueKeyManager.save(postgres_session, UniqueKeyModel(key="beta"))
+        row.key = None
+
+        with pytest.raises(HTTPBadRequestException):
+            await UniqueKeyManager.save(postgres_session, row)

@@ -51,6 +51,7 @@ from app.sep.apps.framework import scaffold
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
+    check_actor_fields_resolvable,
     check_capability_route_consistency,
     check_item_display_names_declared,
     check_route_collisions,
@@ -225,6 +226,7 @@ def _task_conformance(app: TaskExecutionApp) -> list[str]:
         *check_capability_route_consistency(app),
         *check_view_fields_reference_real_fields(app),
         *check_schema_derivation_succeeds(app),
+        *check_actor_fields_resolvable(app),
     ]
 
 

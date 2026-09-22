@@ -15,16 +15,39 @@
 
 """Provide synchronization functions for the SEP inventory."""
 
+import logging
+from collections.abc import Sequence
+
+from kombu.exceptions import KombuError
+
+from app.celery import celery
 from app.core.security import get_internal_token
 from app.sep.apps.inventory.deps import (
     filter_syncers_by_name,
     get_syncers_standalone,
 )
+from app.sep.crud import SyncInstanceManager, SyncItemManager
+from app.sep.db import get_async_session_maker
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
+from app.sep.sync.exceptions import SyncInstanceAlreadyInProgressError
 from app.sep.sync.models import BaseSyncer
+from app.tasks.models import (
+    EXECUTE_TASK_BY_NAME_TASK,
+    INVENTORY_SYNC_AFTER_KEY,
+    INVENTORY_SYNC_FIRST_RUN_KEY,
+    INVENTORY_SYNC_TASK_NAME,
+)
+
+logger = logging.getLogger(__name__)
 
 
-async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
+async def run_scheduled_inventory_sync(
+    syncer: str | None = None,
+    after_syncer: str | None = None,
+    follower_syncers: Sequence[str] = (),
+    *,
+    first_run_only: bool = False,
+) -> str | None:
     """Execute scheduled inventory sync using configured internal token and syncers.
 
     Read the internal token from ``settings.SEP_INTERNAL_TOKEN`` and construct
@@ -37,13 +60,37 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
     single-syncer path while a row with empty meta resolves to the sync-all
     path.
 
+    The tasks seeder orders a per-syncer schedule's first run after the pinned
+    default's first completed sync through two meta keys, forwarded here as
+    keyword arguments: a follower's run is skipped while ``after_syncer`` has
+    never completed a whole-inventory pass, and the default's run then starts
+    each follower that has never run. A skipped run returns a note saying so,
+    which the executor writes to that run's log, so a run that synced nothing
+    does not read as one that synced.
+
+    A started first run is checked again when it executes, because a beat fire
+    of the follower may have been queued behind the default and run first. It is
+    skipped once the follower has any run, and when an overlapping run of the
+    follower claims the syncer before it does.
+
     :param syncer: Fully qualified syncer name (e.g.
         ``"app.sep.sync.syncers.pmm.PMMSyncer"``), or ``None`` / empty for the
         sync-all path.
-    :type syncer: str | None
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if
-        ``syncer`` is set but does not match any configured syncer that can
-        sync inventory.
+    :param after_syncer: The pinned syncer this schedule waits on, or ``None`` to
+        run unconditionally.
+    :param follower_syncers: The per-syncer schedules to start once after this
+        run, each only if it has never run. Defaults to none.
+    :param first_run_only: Whether this run was started as ``syncer``'s first,
+        and so goes ahead only while ``syncer`` has no run of its own. Defaults
+        to ``False``.
+    :return: The note saying why the run was skipped, otherwise ``None``.
+    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if a run
+        that is not skipped names a ``syncer`` that matches no configured syncer
+        able to sync inventory.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read
+        to decide the ordering.
+    :raises app.sep.sync.exceptions.SyncInstanceAlreadyInProgressError: If a run
+        that is not a started first run overlaps another run of its syncer.
     """
     if (api_key := get_internal_token()) is None:
         raise ValueError(
@@ -51,13 +98,126 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
             "sync. Set it in .env to a long random secret "
             "(e.g. `openssl rand -hex 32`)."
         )
+    if after_syncer and not await _inventory_sync_completed(after_syncer):
+        return _report_skip(
+            f"Skipped {syncer}: it waits until {after_syncer} completes its first "
+            "inventory sync."
+        )
+    first_run_taken = (
+        f"Skipped the started first run of {syncer}: another of its runs has "
+        "already started."
+    )
+    if first_run_only and syncer and await _has_run(syncer):
+        return _report_skip(first_run_taken)
     syncers = await get_syncers_standalone()
     selected = filter_syncers_by_name(
         syncers,
         syncer,
         lambda candidate: candidate.can_sync_inventory(),
     )
-    await run_inventory_sync(api_key, *selected)
+    try:
+        await run_inventory_sync(api_key, *selected)
+    except SyncInstanceAlreadyInProgressError:
+        if not first_run_only:
+            raise
+        return _report_skip(first_run_taken)
+    if syncer and follower_syncers:
+        await start_follower_first_runs(syncer, follower_syncers, syncers)
+    return None
+
+
+def _report_skip(note: str) -> str:
+    """Log why a scheduled run was skipped and return the note for its task log.
+
+    :param note: Why the run was skipped.
+    :return: ``note``, which the executor writes to the run's log.
+    """
+    logger.info("%s", note)
+    return note
+
+
+async def _inventory_sync_completed(syncer: str) -> bool:
+    """Return whether ``syncer`` has ever completed a whole-inventory pass.
+
+    :param syncer: The fully qualified syncer name.
+    :return: Whether such a pass is recorded.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read.
+    """
+    async with get_async_session_maker()() as session:
+        return await SyncItemManager.inventory_sync_completed(session, syncer)
+
+
+async def _has_run(syncer: str) -> bool:
+    """Return whether ``syncer`` has any recorded run, finished or not.
+
+    :param syncer: The fully qualified syncer name.
+    :return: Whether such a run is recorded.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read.
+    """
+    async with get_async_session_maker()() as session:
+        return await SyncInstanceManager.first(session, syncer=syncer) is not None
+
+
+async def start_follower_first_runs(
+    leader: str, followers: Sequence[str], syncers: list[BaseSyncer]
+) -> None:
+    """Start once each follower of ``leader`` that has never run.
+
+    Nothing starts until ``leader`` has completed a whole-inventory pass, so a
+    follower's first run reads the inventory that pass produced. A follower with
+    any recorded run is left to its own schedule, and once every follower has one
+    the leader's pass is no longer looked up. The start carries a seeded
+    follower's task and meta plus the first-run flag, so it checks again when it
+    executes and is skipped if the follower has run by then, as it has when a
+    beat fire of the follower was already queued behind the leader. An enqueue
+    failure is logged rather than raised: the follower's next beat fire runs it
+    instead.
+
+    :param leader: The fully qualified name of the syncer the followers wait on.
+    :param followers: The fully qualified names of the followers to consider.
+    :param syncers: The configured syncers, which a follower must resolve against.
+    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read.
+    """
+    async with get_async_session_maker()() as session:
+        never_run = [
+            follower
+            for follower in followers
+            if await SyncInstanceManager.first(session, syncer=follower) is None
+        ]
+        if not never_run or not await SyncItemManager.inventory_sync_completed(
+            session, leader
+        ):
+            return
+    for follower in never_run:
+        try:
+            filter_syncers_by_name(
+                syncers, follower, lambda candidate: candidate.can_sync_inventory()
+            )
+        except ValueError:
+            logger.warning(
+                "Not starting %s after %s: it is not a configured inventory syncer",
+                follower,
+                leader,
+            )
+            continue
+        try:
+            celery.send_task(
+                EXECUTE_TASK_BY_NAME_TASK,
+                kwargs={
+                    "task_name": INVENTORY_SYNC_TASK_NAME,
+                    "execution_data": {
+                        "meta": {
+                            "syncer": follower,
+                            INVENTORY_SYNC_AFTER_KEY: leader,
+                            INVENTORY_SYNC_FIRST_RUN_KEY: True,
+                        }
+                    },
+                },
+            )
+        except (OSError, KombuError):
+            logger.exception(
+                "Could not start %s after %s's first inventory sync", follower, leader
+            )
 
 
 async def run_inventory_sync(api_key: str, *syncers: BaseSyncer) -> None:

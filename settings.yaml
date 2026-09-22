@@ -328,6 +328,12 @@ default:
     #       period: minutes
     #     stale_send_after: 3600           # seconds a send may stall before it is failed;
     #                                      # must exceed the slowest legitimate send
+    #     reconcile_interval:              # cadence of the run-outcome reconcile sweep;
+    #       every: 10                      # `null` unregisters it, which leaves the
+    #       period: minutes                # incident list's failed count blind to
+    #                                      # historical runs and to the terminal paths
+    #                                      # the run-result hook never observes
+    #     reconcile_batch_size: 100        # executions examined per reconcile tick
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, postgresql
       USER: null
@@ -378,7 +384,11 @@ default:
     # cadence differs from it. SYNCER takes the full BaseSyncer.get_name() form,
     # not the short SEP.SYNCERS spelling. Rejected at validation if an entry
     # duplicates INVENTORY_SYNC_SYNCER, repeats another entry's syncer, or sits
-    # beside a sync-all default (an interval with no syncer pinned). Example:
+    # beside a sync-all default (an interval with no syncer pinned). While the pinned
+    # default above is seeded, an entry's first run waits for that syncer's first
+    # completed inventory sync, which then starts it if it has never run. An entry
+    # an operator-managed schedule already covers is not seeded, and that schedule
+    # does not wait. Example:
     #   INVENTORY_SYNC_SCHEDULES:
     #     - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
     #       INTERVAL: 1 days
