@@ -36,6 +36,9 @@ BASE = "/api/apps/om_inventory"
 #: A host's free data-directory space, as ``collect_install_readiness`` would report it.
 FREE_BYTES = 107374182400
 
+#: The Nomad client the dispatch suites probe, named as PMM registers it.
+HOST = "replicaset-cluster-node00"
+
 
 @pytest_asyncio.fixture
 async def api(

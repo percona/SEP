@@ -32,9 +32,9 @@ from app.sep.apps.om_inventory.dispatch import probe_host
 from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
+from tests.app.sep.apps.om_inventory.conftest import HOST
 
 HISTORY_ID = 779
-HOST = "replicaset-cluster-node00"
 
 
 def entries() -> list[MappedService]:

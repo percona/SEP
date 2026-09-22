@@ -42,20 +42,20 @@ COMMUNITY_BUILD_INFO = {
 
 
 def test_a_psmdb_version_field_identifies_percona() -> None:
-    """A live PSMDB node carries psmdbVersion; nothing else does."""
+    """Detect Percona from psmdbVersion, which nothing else carries."""
     assert determine_vendor(PSMDB_BUILD_INFO) == "Percona"
 
 
 def test_the_enterprise_module_identifies_enterprise() -> None:
-    """No psmdbVersion, but the documented enterprise module marker."""
+    """Detect Enterprise from the documented module marker, with no psmdbVersion."""
     assert determine_vendor(ENTERPRISE_BUILD_INFO) == "MongoDB Enterprise"
 
 
 def test_neither_marker_is_community() -> None:
-    """Neither psmdbVersion nor the enterprise module: community."""
+    """Detect Community when neither marker is present."""
     assert determine_vendor(COMMUNITY_BUILD_INFO) == "MongoDB Community"
 
 
 def test_no_build_info_collected_is_none() -> None:
-    """A failed buildInfo command reports no vendor, not a guess."""
+    """Report no vendor when the buildInfo command failed, rather than guessing."""
     assert determine_vendor({}) is None

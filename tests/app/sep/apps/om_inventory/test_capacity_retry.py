@@ -41,9 +41,9 @@ from app.sep.apps.om_inventory.dispatch import (
 from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import MappedService
 from app.sep.apps.om_inventory.models import NodeResolution
+from tests.app.sep.apps.om_inventory.conftest import HOST
 
 HISTORY_ID = 901
-HOST = "replicaset-cluster-node00"
 
 
 def entries() -> list[MappedService]:
@@ -82,7 +82,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_succeeds_once_the_pool_frees_up(self) -> None:
-        """A 503 that clears within the attempt budget is invisible to the caller."""
+        """Hide a 503 that clears within the attempt budget from the caller."""
         calls = 0
 
         async def flaky() -> str:
@@ -97,7 +97,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_gives_up_after_the_bounded_number_of_attempts(self) -> None:
-        """A pool that never frees up still fails, rather than retrying forever."""
+        """Give up on a pool that never frees up, rather than retrying forever."""
         calls = 0
 
         async def always_full() -> str:
@@ -113,7 +113,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_a_different_error_is_not_retried(self) -> None:
-        """Only a recognised transient signal is absorbed -- everything else fails fast."""
+        """Absorb only a recognised transient signal, and fail everything else fast."""
         calls = 0
 
         async def broken() -> str:
@@ -128,7 +128,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_a_dispatch_lock_race_clears_on_retry(self) -> None:
-        """The same-content dispatch-lock collision is retried, not just the 503."""
+        """Retry the same-content dispatch-lock collision, not just the 503."""
         calls = 0
 
         async def flaky() -> str:
@@ -145,7 +145,7 @@ class TestWithCapacityRetry:
 
     @pytest.mark.asyncio
     async def test_an_unrelated_409_is_not_retried(self) -> None:
-        """A conflict that is not the dispatch lock still fails on the first try.
+        """Fail on the first try for a conflict that is not the dispatch lock.
 
         ``_dispatch_queue_item`` also raises 409 for "Queue item is not in a
         pending state" -- a real conflict, not a queueing accident, and nothing
@@ -165,11 +165,11 @@ class TestWithCapacityRetry:
 
 
 class TestProbeHostAbsorbsATransientRefusal:
-    """The end-to-end shape: a host's probe survives a queueing accident."""
+    """Cover the end-to-end shape: a host's probe survives a queueing accident."""
 
     @pytest.mark.asyncio
     async def test_a_dispatch_lock_race_still_succeeds(self) -> None:
-        """A same-content lock collision on the dispatch is not this host's failure."""
+        """Treat a same-content lock collision as not this host's failure."""
         post_calls = 0
 
         async def post(_path: str, **_: Any) -> dict[str, Any]:
@@ -203,7 +203,7 @@ class TestProbeHostAbsorbsATransientRefusal:
 
     @pytest.mark.asyncio
     async def test_a_dispatch_that_clears_on_retry_still_succeeds(self) -> None:
-        """One 503 on the initial dispatch is not counted as this host's failure."""
+        """Treat one 503 on the initial dispatch as not this host's failure."""
         post_calls = 0
 
         async def post(_path: str, **_: Any) -> dict[str, Any]:
@@ -235,7 +235,7 @@ class TestProbeHostAbsorbsATransientRefusal:
 
     @pytest.mark.asyncio
     async def test_a_pool_that_stays_saturated_is_recorded_as_a_failure(self) -> None:
-        """Exhausting the retry budget still fails the host -- it does not hang."""
+        """Record a host that exhausts the retry budget as failed, not hanging."""
         post_calls = 0
 
         async def always_full(_path: str, **_: Any) -> dict[str, Any]:
