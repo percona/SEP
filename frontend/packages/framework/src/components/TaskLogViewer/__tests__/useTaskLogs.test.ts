@@ -102,6 +102,26 @@ describe('useTaskLogs', () => {
     expect(urlStr).toBe('/stream-logs/1?tail=5000');
   });
 
+  it('starts the stream over when the attempt changes', async () => {
+    const { rerender } = renderHook(
+      ({ attempt }: { attempt: number }) => useTaskLogs(1, undefined, attempt),
+      { initialProps: { attempt: 0 } },
+    );
+    await flushPromises();
+    rerender({ attempt: 0 });
+    await flushPromises();
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(1);
+
+    rerender({ attempt: 1 });
+    await flushPromises();
+
+    expect(mock.fetchSpy).toHaveBeenCalledTimes(2);
+    const urls = mock.fetchSpy.mock.calls.map(([url]) =>
+      typeof url === 'string' ? url : (url as URL).href,
+    );
+    expect(urls).toEqual(['/stream-logs/1', '/stream-logs/1']);
+  });
+
   it('omits Authorization header when no token is available', async () => {
     _tokenProvider = () => null;
     renderHook(() => useTaskLogs(42));
