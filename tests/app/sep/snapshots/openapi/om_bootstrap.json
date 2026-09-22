@@ -4532,7 +4532,7 @@
         ]
       },
       "post": {
-        "description": "Create a bootstrap run, planning every host's steps up front.\n\nDispatches nothing: creating a run only plans it, so the caller (PMM's\ndriver) sees the full step list for every host before anything is touched.\nActually starting a host's first step is a separate call to\n:func:`dispatch_run_step`.\n\n:param session: The database session.\n:param request: The requested run.\n:raises HTTPBadRequestException: When ``request.hosts`` is empty.\n:return: The created run, every host's steps ``pending``.",
+        "description": "Create a bootstrap run, planning every host's steps up front.\n\nDispatches nothing: creating a run only plans it, so the caller (PMM's\ndriver) sees the full step list for every host before anything is touched.\nActually starting a host's first step is a separate call to\n:func:`dispatch_run_step`.\n\n:param session: The database session.\n:param request: The requested run.\n:raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the\n    same host twice, or names an install method with no registered strategy.\n:return: The created run, every host's steps ``pending``.",
         "operationId": "om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post",
         "requestBody": {
           "content": {

@@ -2021,7 +2021,8 @@ export interface paths {
      *
      *     :param session: The database session.
      *     :param request: The requested run.
-     *     :raises HTTPBadRequestException: When ``request.hosts`` is empty.
+     *     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
+     *         same host twice, or names an install method with no registered strategy.
      *     :return: The created run, every host's steps ``pending``.
      */
     post: operations['om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post'];
