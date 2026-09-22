@@ -27,16 +27,20 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.requests import RemoteAPI
 from app.sep.apps.atw.proxy_tasks import (
+    _fetch_task,
+    _sync_proxy_task,
     atw_proxy_task_name,
     ATW_PROXY_TASK_PREFIX,
     resolve_atw_proxy_tasks,
 )
 from app.sep.apps.atw.recorder import RUN_RESULT_RECORDER
 from app.tasks.execution.executors.nomad.steps import RUN_SCRIPT_OUTPUT_FILES_PATH
-from app.tasks.models import ANY_OWNER, TaskBackendEnum
+from app.tasks.models import ANY_OWNER, TaskBackendEnum, TaskWrite
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 _ROOT_TASK_NAME = "exec-artifact"
 _PROXY_NAME = f"{ATW_PROXY_TASK_PREFIX}{_ROOT_TASK_NAME}"
@@ -562,3 +566,34 @@ class TestCreateRace:
         tasks_api.post.side_effect = _post
 
         assert await _resolve() is None
+
+
+@pytest.mark.asyncio
+class TestProxyTaskPathGuard:
+    """Test that a task name cannot reshape an outbound proxy request."""
+
+    @pytest.mark.parametrize("name", PATH_UNSAFE_TASKS)
+    async def test_fetch_refuses_an_unsafe_name(self, name: str) -> None:
+        """Refuse an unsafe name rather than GET a reshaped path."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _fetch_task(tasks_api, name)
+
+        tasks_api.get.assert_not_awaited()
+
+    @pytest.mark.parametrize("name", PATH_UNSAFE_TASKS)
+    async def test_sync_refuses_an_unsafe_name(self, name: str) -> None:
+        """Refuse an unsafe proxy name rather than PUT a reshaped path."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        task_write = TaskWrite(
+            name=name,
+            owner="ATW",
+            backend=TaskBackendEnum.PROXY,
+            data={"task": "run-python"},
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await _sync_proxy_task(tasks_api, "root", task_write)
+
+        tasks_api.put.assert_not_awaited()

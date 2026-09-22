@@ -51,7 +51,7 @@ from app.sep.apps.framework.script_source import (
 )
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
 from app.sep.config import warn_if_base_url_lacks_root_path
-from app.sep.deps import get_base_url
+from app.sep.deps import get_base_url, task_path
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     BaseSnippet,
@@ -180,11 +180,13 @@ async def post_task_execution(
     :param meta: The execution meta posted inside the ``meta`` envelope.
     :return: The created task-history id, or ``None`` when the upstream response
         carries none.
+    :raises HTTPUnprocessableEntityException: If ``execution_task_name`` is not a
+        single plain URL path segment.
     :raises HTTPException: Propagated from ``tasks_api.post`` when the Tasks API
         returns an error status.
     """
     created = await tasks_api.post(
-        f"/execute/{execution_task_name}",
+        f"/execute{task_path(execution_task_name)}",
         json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
     )
     return created.get("id") if isinstance(created, dict) else None

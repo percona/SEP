@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.requests import RemoteAPI
 from app.sep.apps.framework import (
     batch_get_latest_statuses,
@@ -33,6 +34,7 @@ from app.tasks.models import (
     TaskHistoryLatestStatus,
     TaskHistoryStatusEnum,
 )
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 
 def _wire(status: str | None, finished_at: str | None = None) -> dict:
@@ -335,3 +337,29 @@ class TestGetTaskLatestHistory:
         result = await get_task_latest_history(tasks_api, "task-1")
 
         assert result == TaskHistoryLatestStatus(status=None, finished_at=None)
+
+
+class TestTaskStatusPathGuard:
+    """Test that the history helpers refuse a name that is not one path segment."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_latest_status_refuses_an_unsafe_name(self, task_name: str) -> None:
+        """Refuse before the history GET is composed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await get_task_latest_status(tasks_api, task_name)
+
+        tasks_api.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_latest_history_refuses_an_unsafe_name(self, task_name: str) -> None:
+        """Refuse before the history GET is composed."""
+        tasks_api = AsyncMock(spec=RemoteAPI)
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await get_task_latest_history(tasks_api, task_name)
+
+        tasks_api.get.assert_not_awaited()

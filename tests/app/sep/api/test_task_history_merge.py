@@ -20,7 +20,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
     DEFAULT_PAGINATION_OFFSET,
@@ -34,6 +37,7 @@ from app.sep.api.task_history_merge import (
 )
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 
 TWO_MERGED_HISTORY_ROWS = 2
 MERGED_PAGE_TEST_LIMIT = 2
@@ -423,3 +427,22 @@ class TestFetchTaskHistoryWindow:
 
         assert window["items"] == [{"id": 1}]
         assert window["total"] == 1
+
+
+class TestTaskHistoryWindowPathGuard:
+    """Test that the history pager refuses a name that is not one path segment."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_refuses_a_name_that_is_not_one_path_segment(
+        self, task_name: str
+    ) -> None:
+        """Refuse before the first upstream page is requested."""
+        tasks_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await fetch_task_history_window(
+                tasks_api, task_name, window_size=DEFAULT_PAGINATION_LIMIT
+            )
+
+        tasks_api.get.assert_not_awaited()

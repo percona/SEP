@@ -56,6 +56,7 @@ from app.core.security import require_internal_token
 from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.atw.recorder import RUN_RESULT_RECORDER
 from app.sep.apps.atw.send import get_tasks_api
+from app.sep.deps import task_path
 from app.tasks.models import TaskBackendEnum, TaskWrite
 
 logger = logging.getLogger(__name__)
@@ -202,13 +203,15 @@ async def _fetch_task(tasks_api: RemoteAPI, name: str) -> dict[str, Any] | None:
     :param tasks_api: The authenticated Tasks API client.
     :param name: The task name to fetch.
     :return: The task payload, or ``None`` when no such task exists.
+    :raises HTTPUnprocessableEntityException: If ``name`` is not a single plain URL
+        path segment.
     :raises HTTPException: Propagated for any upstream error status other than a
         JSON ``404`` — including a non-JSON ``404``, which signals a proxy or
         gateway failure rather than a missing task.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
     try:
-        return as_json_object(await tasks_api.get(f"/{name}"))
+        return as_json_object(await tasks_api.get(task_path(name)))
     except HTTPNotFoundException:
         return None
 
@@ -254,6 +257,8 @@ async def _sync_proxy_task(
     :param root_task_name: The interpreter task the proxy dispatches through.
     :param task_write: The proxy payload built from the root's current policy.
     :return: The updated task.
+    :raises HTTPUnprocessableEntityException: If the proxy name is not a single
+        plain URL path segment.
     :raises HTTPException: Propagated from an upstream error status.
     :raises OSError: Propagated from the Tasks API when the transport itself fails.
     """
@@ -263,7 +268,7 @@ async def _sync_proxy_task(
         root_task_name,
     )
     return as_json_object(
-        await tasks_api.put(f"/{task_write.name}", json=task_write.model_dump())
+        await tasks_api.put(task_path(task_write.name), json=task_write.model_dump())
     )
 
 
