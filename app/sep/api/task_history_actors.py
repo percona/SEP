@@ -29,7 +29,13 @@ edge into the SEP request layer or a cycle back through it.
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    model_serializer,
+    SerializerFunctionWrapHandler,
+)
 
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.pagination import PaginatedResponse
@@ -38,6 +44,9 @@ from app.tasks.models import SYSTEM_USER, Task, TaskHistoryResponse, TaskRespons
 __all__ = [
     "SYSTEM_ACTOR_LABELS",
     "TASK_ACTOR_FIELDS",
+    "SepHistoryPayload",
+    "SepHistoryPayloadRow",
+    "SepHistoryPayloadTask",
     "SepTaskHistoryResponse",
     "SepTaskResponse",
     "resolve_actor",
@@ -95,6 +104,76 @@ class SepTaskHistoryResponse(TaskHistoryResponse):
 
     task: SepTaskResponse
     executed_by: str | None = Field(default=None, description=_ACTOR_DESCRIPTION)
+
+
+class _HistoryPassthroughModel(BaseModel):
+    """Keep unrecognized upstream keys and omit declared fields that were never set.
+
+    History passthrough models declare only the keys the actor rewrite reads.
+    ``extra="allow"`` preserves every other upstream key. Serializing with
+    unset declared fields omitted matches today's dict behavior: an absent
+    actor key stays absent rather than becoming ``null``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_declared_fields(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        """Drop declared defaults that upstream never supplied; keep extras."""
+        dumped = handler(self)
+        extras = self.__pydantic_extra__ or {}
+        return {
+            key: value
+            for key, value in dumped.items()
+            if key in self.model_fields_set or key in extras
+        }
+
+
+class SepHistoryPayloadTask(_HistoryPassthroughModel):
+    """Carry the nested-task actor fields the history rewrite may resolve.
+
+    :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
+        an unexpected upstream shape validates and round-trips unchanged.
+    :param last_updated_by: Actor for the nested task's last updater, on the
+        same permissive terms as ``created_by``.
+    """
+
+    created_by: Any = None
+    last_updated_by: Any = None
+
+
+class SepHistoryPayloadRow(_HistoryPassthroughModel):
+    """Carry one history-page row's fields the actor rewrite may resolve.
+
+    A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
+    and its own ``executed_by`` can resolve. Unknown upstream keys survive via
+    ``extra="allow"``.
+
+    :param executed_by: Actor that ran the task. Typed as ``Any`` so an
+        unexpected shape validates and is left alone by the rewrite.
+    :param task: Nested task carrying actor fields when it is a mapping;
+        otherwise the raw upstream value.
+    """
+
+    executed_by: Any = None
+    task: SepHistoryPayloadTask | Any = None
+
+
+class SepHistoryPayload(_HistoryPassthroughModel):
+    """Represent the SEP task-history page envelope with passthrough extras.
+
+    Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
+    upstream keys round-trip through ``extra="allow"`` without int coercion.
+    ``items`` accepts a list of typed rows or non-mapping fallbacks, or any
+    non-list upstream value so a bad page shape does not fail validation.
+
+    :param items: The page's rows when upstream sent a list; otherwise the raw
+        upstream value (including absence, via unset omission on serialize).
+    """
+
+    items: list[SepHistoryPayloadRow | Any] | Any = None
 
 
 def resolve_actor(actor: str | None, username_map: Mapping[str, str]) -> str | None:
