@@ -130,7 +130,7 @@ class OmInventorySettings(BaseYamlSettings):
         50, advanced=True
     )
     STALE_RUN_AFTER: _PositiveSeconds = hot_field(  # ty: ignore[invalid-assignment]
-        timedelta(hours=2), advanced=True
+        timedelta(hours=4), advanced=True
     )
 
 
