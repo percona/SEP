@@ -170,7 +170,8 @@ def _run(
 
     :param engine: The engine the helper's ``op.get_bind()`` resolves to.
     :param operation: The upgrade or downgrade helper to invoke.
-    :param settings_classes: The settings classes, or frozen replicas, the simulated track owns.
+    :param settings_classes: The settings classes, or frozen replicas, the
+        simulated track owns.
     """
     with engine.begin() as connection:
         context = MigrationContext.configure(connection=connection)
@@ -990,14 +991,16 @@ def _replica_classes(glob: str, track: str) -> set[type[BaseModel]]:
 
 
 #: One stored row per scalar credential leaf the replicas declare, as
-#: ``(track, token, key, seeded value, leaf kind)``. Every leaf a ``__``-key can
-#: address appears here, across all three tracks, because nothing else guards a
-#: transcription typo in one: the pinned-shape tests read the *live* classes and
-#: the coverage tests compare class membership, so a replica leaf misspelled at
-#: authoring time would otherwise stop being encrypted in silence. The container
-#: shapes — ``PMM``, ``PROVIDERS``, ``DIAGNOSTICS_DELIVERY_INPUTS`` — are not
-#: ``__``-addressable and are covered by the cases around this table.
-_FROZEN_LEAF_CASES: list[tuple[str, str, str, Any, str]] = [
+#: ``(track, token, key, seeded value, leaf kind)``. This table and
+#: :data:`_FROZEN_CONTAINER_CASES` together are the only guard against a
+#: transcription typo in a replica: the pinned-shape tests read the *live*
+#: classes and the coverage tests compare class membership, so a replica leaf
+#: misspelled at authoring time would otherwise stop being encrypted in silence.
+#: Completeness across the two is asserted by
+#: :func:`test_every_declared_replica_leaf_has_an_outcome_case` rather than
+#: claimed here, because a hand-written table cannot fail for a leaf it was
+#: never told about.
+_FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
     ("sep", SETTINGS_TOKEN, "SECRET_KEY", "settings-secret-key", _SECRET_LEAF),
     ("sep", SETTINGS_TOKEN, "SEP_INTERNAL_TOKEN", "internal-token", _SECRET_LEAF),
     ("sep", SETTINGS_TOKEN, "ENCRYPTION_KEY", "encryption-key", _SECRET_LEAF),
@@ -1070,6 +1073,125 @@ _FROZEN_LEAF_CASES: list[tuple[str, str, str, Any, str]] = [
     ),
 ]
 
+#: One stored row per ``__``-addressable **container** leaf the replicas
+#: declare — a mapping or a list whose *members* carry the credential. The
+#: scalar table above cannot express these: its cases decrypt the stored value
+#: itself, while here the credential sits one level inside it.
+_FROZEN_CONTAINER_CASES: list[tuple[str, str, str, Any]] = [
+    (
+        "sep",
+        ALERT_SETTINGS_TOKEN,
+        "PROVIDERS",
+        [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
+    ),
+    (
+        "sep",
+        SEP_SETTINGS_TOKEN,
+        "DIAGNOSTICS_DELIVERY__secrets",
+        dict(_DELIVERY_SECRETS),
+    ),
+    (
+        "sep",
+        SEP_SETTINGS_TOKEN,
+        "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
+        dict(_DELIVERY_SECRETS),
+    ),
+]
+
+
+def _decrypted_leaves(value: Any) -> Any:
+    """Return ``value`` with every encrypted string leaf decrypted in place.
+
+    Decrypts by inspection rather than by resolving an annotation, so a
+    container case can assert the round trip without reproducing the walker's
+    own traversal — which would make the test ratify the implementation it
+    exists to check.
+
+    :param value: The stored value read back after a rewrite.
+    :return: The same shape with its ciphertext leaves in plaintext.
+    """
+    if isinstance(value, Mapping):
+        return {name: _decrypted_leaves(item) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_decrypted_leaves(item) for item in value]
+    if isinstance(value, str) and is_encrypted(value):
+        return decrypt(value)
+    return value
+
+
+def _declared_leaf_keys(
+    frozen_cls: type[BaseModel],
+    track: str,
+    token: str,
+    prefix: str = "",
+    seen: frozenset[type[BaseModel]] = frozenset(),
+) -> set[tuple[str, str, str]]:
+    """Return the deepest ``__``-addressable keys ``frozen_cls`` reaches a credential at.
+
+    "Deepest" is what makes the result comparable to the case tables. A case
+    seeded at ``PMM__api_key`` exercises the same leaf a case at ``PMM`` would,
+    so requiring both would force redundant rows, while accepting only the
+    parent would let a renamed child pass unnoticed. Descending until no
+    addressable child reaches a credential picks exactly the keys a case has to
+    exist for.
+
+    :param frozen_cls: The replica to walk.
+    :param track: The Alembic track owning it, carried into each triple.
+    :param token: The storage token of the top-level replica this descends from.
+    :param prefix: The ``__``-delimited path already walked, for recursion.
+    :param seen: Replicas already descended into, so a self-referential
+        declaration terminates — the same guard :func:`_derive_shape` uses.
+    :return: The ``(track, token, key)`` triples a case has to cover.
+    """
+    keys: set[tuple[str, str, str]] = set()
+    for name, field_info in frozen_cls.model_fields.items():
+        annotation = annotated_type(field_info)
+        if not _derive_shape(annotation):
+            continue
+        key = f"{prefix}{name}"
+        children: set[tuple[str, str, str]] = set()
+        for arg in _positional_args(annotation):
+            if isinstance(arg, type) and issubclass(arg, BaseModel) and arg not in seen:
+                children |= _declared_leaf_keys(
+                    arg, track, token, f"{key}__", seen | {frozen_cls}
+                )
+        keys |= children or {(track, token, key)}
+    return keys
+
+
+def test_every_declared_replica_leaf_has_an_outcome_case() -> None:
+    """Assert every credential key the replicas declare is seeded by a case above.
+
+    Both case tables are hand-written, so on their own they guard only the rows
+    someone remembered to add — and they are the *only* guard against a replica
+    leaf misspelled at authoring time, because the pinned-shape tests read the
+    live classes and the coverage tests compare class membership. Deriving the
+    required set from the shipped declarations is what makes the tables fail for
+    a leaf they were never told about.
+
+    Nothing here reads a live settings class, so a later rename moves both sides
+    together and this stays green: the divergence
+    :func:`test_a_frozen_revision_still_covers_a_renamed_legacy_leaf` pins
+    remains allowed rather than forbidden.
+    """
+    declared: set[tuple[str, str, str]] = set()
+    for glob in (_SECRET_REVISION_GLOB, _CREDENTIAL_URL_REVISION_GLOB):
+        for track in _TRACKS:
+            for frozen_cls in _frozen_classes(glob, track):
+                declared |= _declared_leaf_keys(
+                    frozen_cls, track, setting_class_token(frozen_cls)
+                )
+
+    covered = {
+        (track, token, key) for track, token, key, _seeded, _kind in _FROZEN_LEAF_CASES
+    }
+    covered |= {
+        (track, token, key) for track, token, key, _seeded in _FROZEN_CONTAINER_CASES
+    }
+
+    assert declared, "the check is vacuous if no replica declares a leaf"
+    assert declared == covered
+
 
 class TestFrozenSecretRevisionOutcomes:
     """Cover the secret family driven by the revisions' own frozen declarations.
@@ -1084,7 +1206,7 @@ class TestFrozenSecretRevisionOutcomes:
         ("track", "token", "key", "seeded", "kind"), _FROZEN_LEAF_CASES
     )
     def test_rewrites_every_declared_leaf(
-        self, engine: Engine, track: str, token: str, key: str, seeded: Any, kind: str
+        self, engine: Engine, track: str, token: str, key: str, seeded: str, kind: str
     ) -> None:
         """Rewrite each leaf the track's replicas declare, one stored row at a time.
 
@@ -1107,6 +1229,30 @@ class TestFrozenSecretRevisionOutcomes:
             assert decrypt(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
             assert parsed.port == _CREDENTIAL_PORT
+
+    @pytest.mark.parametrize(
+        ("track", "token", "key", "seeded"), _FROZEN_CONTAINER_CASES
+    )
+    def test_rewrites_every_declared_container_leaf(
+        self, engine: Engine, track: str, token: str, key: str, seeded: Any
+    ) -> None:
+        """Rewrite the credential inside each container leaf the replicas declare.
+
+        These keys hold a mapping or a list whose members carry the credential,
+        so the stored value is not itself a leaf and the scalar table's
+        ``decrypt(stored) == seeded`` shape cannot express them.
+        """
+        _seed(engine, [(token, key, seeded)])
+
+        _run(
+            engine,
+            upgrade_encrypt_secret_override_values,
+            _frozen_classes(_SECRET_REVISION_GLOB, track),
+        )
+
+        stored = _stored(engine)[(token, key)]
+        assert stored != seeded, "nothing inside the container was rewritten"
+        assert _decrypted_leaves(stored) == seeded
 
     def test_encrypts_every_secret_shape(self, engine: Engine) -> None:
         """Encrypt each stored shape's secret leaf exactly as the live classes did."""
@@ -1176,7 +1322,11 @@ class TestFrozenSecretRevisionOutcomes:
         assert parsed.port == _CREDENTIAL_PORT
 
     def test_resolves_every_nested_key_shape(self, engine: Engine) -> None:
-        """Resolve each ``__``-delimited row the frozen replicas declare a leaf for."""
+        """Resolve a scalar and a nested-mapping row in the same rewrite pass.
+
+        Per-key coverage is the two case tables' job; what this adds is that
+        both shapes resolve when several rows are walked together.
+        """
         _seed(
             engine,
             [
@@ -1276,7 +1426,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         ("track", "token", "key", "seeded", "kind"), _FROZEN_LEAF_CASES
     )
     def test_rewrites_every_declared_url_leaf_and_only_those(
-        self, engine: Engine, track: str, token: str, key: str, seeded: Any, kind: str
+        self, engine: Engine, track: str, token: str, key: str, seeded: str, kind: str
     ) -> None:
         """Rewrite each declared URL leaf and leave each declared secret leaf alone.
 
