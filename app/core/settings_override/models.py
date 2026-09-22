@@ -17,14 +17,20 @@
 
 from __future__ import annotations
 
-__all__ = ["SettingClassEnum", "SettingOverride", "setting_class_token"]
+__all__ = [
+    "SettingClassEnum",
+    "SettingOverride",
+    "StaleActorUpdateError",
+    "setting_class_token",
+]
 
 import re
 from enum import StrEnum
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, field_validator, JsonValue
-from sqlalchemy import Column, Index, String
+from sqlalchemy import Column, event, Index, inspect, String
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
 
@@ -33,7 +39,17 @@ from app.core.db.sql_types import AutoJSON
 from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
     from sqlalchemy.engine.interfaces import Dialect
+    from sqlalchemy.orm import Mapper
+    from sqlalchemy.orm.attributes import AttributeEventToken
+
+#: Columns whose change on an already-persisted row must be accompanied by a
+#: matching ``updated_by`` restamp in the same flush. Excludes ``updated_at``:
+#: it is the timestamp this guard exists to keep trustworthy, not tracked
+#: content in its own right, so it carries no independent restamp
+#: requirement.
+_ACTOR_TRACKED_COLUMNS = ("value", "is_active", "key", "setting_class")
 
 #: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
 #: ``HealthReportSettings`` -> ``Health_Report_Settings``.
@@ -192,3 +208,76 @@ class SettingOverride(BaseSQLModel, table=True):
         if isinstance(value, SettingClassEnum):
             return value.name
         return value
+
+
+class StaleActorUpdateError(RuntimeError):
+    """Raise when a ``SettingOverride`` update changes a tracked column without restamping ``updated_by``.
+
+    Signals a write path that bypassed the ``updated_by``-alongside-every-change
+    convention :func:`_reject_unstamped_update` enforces. Not an
+    :class:`~sqlalchemy.exc.DatabaseError`, so it is never mistaken for one by
+    :meth:`~app.core.db.crud.BaseSQLModelManager.save`, which only translates
+    that family into an HTTP response -- this error propagates unchanged
+    through the manager instead.
+    """
+
+
+@event.listens_for(SettingOverride.updated_by, "set")
+def _mark_updated_by_touched(
+    target: SettingOverride,
+    value: Any,  # noqa: ARG001
+    oldvalue: Any,  # noqa: ARG001
+    initiator: AttributeEventToken,  # noqa: ARG001
+) -> None:
+    """Force every ``updated_by`` assignment to register as a history change.
+
+    SQLAlchemy classifies a scalar assignment as unchanged whenever the new
+    value equals the value already loaded, which is indistinguishable from
+    never assigning it at all. Left alone, restamping ``updated_by`` to the
+    same actor who wrote the row's current value -- an admin saving the same
+    setting twice in a row, the common case -- would read as untouched to
+    :func:`_reject_unstamped_update` and be rejected despite being exactly
+    the restamp that guard requires.
+
+    :param target: The ``SettingOverride`` instance being assigned to.
+    :param value: The value being assigned (unused).
+    :param oldvalue: The previously loaded value, or a SQLAlchemy sentinel
+        when none was loaded yet (unused).
+    :param initiator: The event token describing the originating assignment
+        (unused).
+    """
+    if inspect(target).transient:
+        return
+    flag_modified(target, "updated_by")
+
+
+@event.listens_for(SettingOverride, "before_update")
+def _reject_unstamped_update(
+    mapper: Mapper,  # noqa: ARG001
+    connection: Connection,  # noqa: ARG001
+    target: SettingOverride,
+) -> None:
+    """Reject a flush that changes a tracked column on ``target`` without restamping ``updated_by``.
+
+    Fires only for the UPDATE branch of a flush, never for a fresh insert, so
+    a freshly-constructed row's documented ``updated_by = None`` is never
+    rejected. Also fires for every dirty instance even when no mapped column
+    actually changed, so a genuine change is confirmed per column via
+    :class:`~sqlalchemy.orm.attributes.History` rather than inferred from the
+    event alone. Relies on :func:`_mark_updated_by_touched` to make a
+    same-value restamp of ``updated_by`` visible as a change in that history.
+
+    :param mapper: The mapper for ``target`` (unused).
+    :param connection: The connection the flush runs on (unused).
+    :param target: The ``SettingOverride`` instance being flushed.
+    :raises StaleActorUpdateError: When a tracked column changed but
+        ``updated_by`` did not change in the same flush.
+    """
+    state = inspect(target)
+    tracked_changed = any(
+        state.attrs[column].history.has_changes() for column in _ACTOR_TRACKED_COLUMNS
+    )
+    if tracked_changed and not state.attrs["updated_by"].history.has_changes():
+        raise StaleActorUpdateError(
+            f"SettingOverride {target.id} changed without restamping updated_by"
+        )
