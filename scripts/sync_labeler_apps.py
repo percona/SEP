@@ -63,16 +63,24 @@ _REGEN_HINT = (
 def discover_apps(apps_root: Path) -> list[str]:
     """Return the sorted app-slice names found under ``apps_root``.
 
+    Any leading underscore disqualifies a directory, not just a dunder. An app's
+    name is public by construction — it is a ``MODULE_NAME`` in the settings
+    profile and a path segment under ``/api/apps/`` — so no real app carries
+    one, while the ``make startapp`` tests render ``_scaffold_*`` packages into
+    this very directory and delete them again. Under ``xdist`` that leaves a
+    window in which this walk sees a package that is not an app, and the check
+    reports the committed file as stale against a tree that no longer exists.
+
     :param apps_root: The ``app/sep/apps`` directory to scan.
-    :return: Sorted directory names, excluding framework internals and
-        dunder/cache directories.
+    :return: Sorted directory names, excluding framework internals, private
+        directories and the bytecode cache.
     """
     names = [
         entry.name
         for entry in apps_root.iterdir()
         if entry.is_dir()
         and entry.name not in EXCLUDED_APPS
-        and not entry.name.startswith("__")
+        and not entry.name.startswith("_")
         and (entry / "__init__.py").is_file()
     ]
     return sorted(names)

@@ -46,6 +46,20 @@ default:
       - TasksSettings.PRE_EXECUTION_CONNECTIVITY_CHECK
       - TasksSettings.LOG_RETENTION_DAYS
       - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
+      # CREDENTIALS_PATH is deliberately absent: it names a file read off the
+      # *monitored* host, not a setting of SEP's own behavior. SCHEDULE is a nested
+      # submodel, so each overridable leaf is listed under its __-delimited path.
+      - OmInventorySettings.SCHEDULE__every
+      - OmInventorySettings.SCHEDULE__period
+      - OmInventorySettings.PROBE_DATABASE
+      - OmInventorySettings.REPO_URL
+      - OmInventorySettings.REPO_TIMEOUT
+      - OmInventorySettings.CONNECT_TIMEOUT
+      - OmInventorySettings.TASK_TIMEOUT
+      - OmInventorySettings.POLL_INTERVAL
+      - OmInventorySettings.MAX_CONCURRENT_PROBES
+      - OmInventorySettings.RUN_RETENTION
+      - OmInventorySettings.STALE_RUN_AFTER
 
   AUTH:
     PROVIDER:
@@ -123,6 +137,11 @@ default:
     POOL_SIZE: 3
     MAX_OVERFLOW: 2
     POOL_TIMEOUT: 10.0
+    # `om_schema` is OM's shared symbolic schema token (app/sep/apps/shared/om/
+    # __init__.py); see the equivalent block in the repo-root settings.yaml for the
+    # full explanation of SCHEMA_TRANSLATE_MAP.
+    SCHEMA_TRANSLATE_MAP:
+      om_schema: om
 
   SEP:
     AMBIENT_SESSION_SSO_ENABLED: true
@@ -239,6 +258,12 @@ default:
         SIDEBAR: false
       - MODULE_NAME: atw
       - MODULE_NAME: mysql_backups
+      # OM's on-host half. It sweeps the MongoDB estate over Nomad for the facts
+      # no metric carries and serves them at /api/apps/om_inventory/services,
+      # which pmm-managed pulls. The topology and health half is in pmm-managed,
+      # so a PMM that ships this app also needs a build carrying
+      # managed/services/om.
+      - MODULE_NAME: om_inventory
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync
