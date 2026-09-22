@@ -195,6 +195,17 @@ _SECRET_REVISION_GLOB = "app/*/migrations/versions/*encrypt_secret_setting_overr
 _CREDENTIAL_URL_REVISION_GLOB = (
     "app/*/migrations/versions/*encrypt_credential_url_setting_overrides.py"
 )
+_UNMARK_REVISION_GLOB = "app/*/migrations/versions/*unmark_secret_setting_overrides.py"
+
+#: Every family whose revisions declare frozen coverage. The rollback family
+#: belongs here for the same reason as the other two, and more urgently: a leaf
+#: its replicas stop reaching keeps its envelope marker, and a release predating
+#: the envelope reads a marked value as the plaintext credential.
+_FROZEN_REVISION_GLOBS = (
+    _SECRET_REVISION_GLOB,
+    _CREDENTIAL_URL_REVISION_GLOB,
+    _UNMARK_REVISION_GLOB,
+)
 
 
 def _load_revision(path: Path) -> ModuleType:
@@ -676,19 +687,14 @@ def test_unmark_migrations_cover_every_secret_bearing_class() -> None:
     decrypted it correctly. Marking is what turned it into a disclosure, which
     is why the rollback revisions need a coverage check of their own rather
     than inheriting confidence from the encrypt-coverage ones.
+
+    Compared by storage token, in the ``live ⊆ frozen`` direction only, for the
+    same reasons as its two siblings: these revisions hold frozen replicas
+    rather than the live classes, so class identity is not a join key, and a
+    later rename must be reported rather than forbidden.
     """
-    revisions = sorted(
-        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
-    )
-    assert len(revisions) == len(_TRACKS), "one rollback revision per track"
-    covered = {
-        settings_cls
-        for revision in revisions
-        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
-    }
-    needs_migrating = {
-        settings_cls for settings_cls, _key in _secret_bearing_overridable_fields()
-    }
+    covered = _frozen_coverage(_UNMARK_REVISION_GLOB)
+    needs_migrating = _live_coverage(_secret_bearing_overridable_fields())
 
     assert needs_migrating, "the check is vacuous if no class can hold a secret"
     assert needs_migrating <= covered
@@ -703,18 +709,8 @@ def test_unmark_migrations_cover_every_encrypting_class() -> None:
     endpoint password is marked by the write path and must therefore be
     unmarked by the rollback, even though it holds no secret-typed field.
     """
-    revisions = sorted(
-        BASE_DIR.glob("app/*/migrations/versions/*unmark_secret_setting_overrides.py")
-    )
-    covered = {
-        settings_cls
-        for revision in revisions
-        for settings_cls in _load_revision(revision).SETTINGS_CLASSES
-    }
-    needs_migrating = {
-        settings_cls
-        for settings_cls, _key in _credential_url_bearing_overridable_fields()
-    }
+    covered = _frozen_coverage(_UNMARK_REVISION_GLOB)
+    needs_migrating = _live_coverage(_credential_url_bearing_overridable_fields())
 
     assert needs_migrating, "the check is vacuous if no class can hold a credential URL"
     assert needs_migrating <= covered
@@ -1230,6 +1226,46 @@ def _declared_leaf_keys(
     return keys
 
 
+def _declared_keys_for(glob: str) -> set[tuple[str, str, str]]:
+    """Return every credential key one family's replicas declare, across all tracks.
+
+    :param glob: The revision-filename glob selecting one family.
+    :return: The ``(track, token, key)`` triples that family reaches.
+    """
+    return {
+        triple
+        for track in _TRACKS
+        for frozen_cls in _frozen_classes(glob, track)
+        for triple in _declared_leaf_keys(
+            frozen_cls, track, setting_class_token(frozen_cls)
+        )
+    }
+
+
+def test_every_family_declares_the_same_leaf_keys() -> None:
+    """Assert the three families' replicas reach exactly the same keys per track.
+
+    They must, and for a reason that is a property of the walker rather than a
+    convention: all three declare the *full* shape each class reached at the
+    freeze, and the narrowing to one leaf kind happens at the entry point's
+    ``kinds`` argument, never in the declaration. So a key present in one
+    family's replicas and absent from another's is a transcription slip, not a
+    deliberate difference.
+
+    This is what :func:`test_every_declared_replica_leaf_has_an_outcome_case`
+    cannot see. That check unions the families before comparing, so a leaf
+    *dropped* from one family is still contributed by the other two and the
+    union is unchanged — while the dropped leaf silently stops being rewritten
+    by the family that lost it. Comparing the families against each other is the
+    only shape that fails on a drop.
+    """
+    per_family = {glob: _declared_keys_for(glob) for glob in _FROZEN_REVISION_GLOBS}
+
+    assert per_family.values(), "the check is vacuous if no family ships revisions"
+    assert all(per_family.values()), "the check is vacuous if a family declares nothing"
+    assert len(set(map(frozenset, per_family.values()))) == 1
+
+
 def test_every_declared_replica_leaf_has_an_outcome_case() -> None:
     """Assert every credential key the replicas declare is seeded by a case above.
 
@@ -1246,12 +1282,8 @@ def test_every_declared_replica_leaf_has_an_outcome_case() -> None:
     remains allowed rather than forbidden.
     """
     declared: set[tuple[str, str, str]] = set()
-    for glob in (_SECRET_REVISION_GLOB, _CREDENTIAL_URL_REVISION_GLOB):
-        for track in _TRACKS:
-            for frozen_cls in _frozen_classes(glob, track):
-                declared |= _declared_leaf_keys(
-                    frozen_cls, track, setting_class_token(frozen_cls)
-                )
+    for glob in _FROZEN_REVISION_GLOBS:
+        declared |= _declared_keys_for(glob)
 
     covered = {
         (track, token, key) for track, token, key, _seeded, _kind in _FROZEN_LEAF_CASES
@@ -1629,7 +1661,7 @@ def test_every_revision_declares_replicas_rather_than_live_settings_classes() ->
         "the check is vacuous unless a live settings class would fail it"
     )
 
-    for glob in (_SECRET_REVISION_GLOB, _CREDENTIAL_URL_REVISION_GLOB):
+    for glob in _FROZEN_REVISION_GLOBS:
         for track in _TRACKS:
             frozen_classes = _frozen_classes(glob, track)
             assert frozen_classes, f"{track} ships no coverage declarations"
@@ -1690,7 +1722,7 @@ def test_frozen_replicas_never_enter_live_subclass_discovery() -> None:
     """
     replicas = {
         replica
-        for glob in (_SECRET_REVISION_GLOB, _CREDENTIAL_URL_REVISION_GLOB)
+        for glob in _FROZEN_REVISION_GLOBS
         for track in _TRACKS
         for replica in _replica_classes(glob, track)
     }
