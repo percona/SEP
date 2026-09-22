@@ -17,6 +17,8 @@
 
 import json
 import re
+from collections.abc import Callable
+from copy import deepcopy
 from datetime import timedelta
 from string import Template
 from typing import Any
@@ -700,6 +702,35 @@ class TestSyncerRetirementThresholdsOverConfig:
             )
 
 
+_MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
+_PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
+
+
+def _build_via_model_validate(data: dict[str, Any]) -> SEPSettings:
+    """Return settings built through ``SEPSettings.model_validate``.
+
+    :param data: The settings payload to validate.
+    :return: The constructed settings object.
+    """
+    return SEPSettings.model_validate(deepcopy(data))
+
+
+def _build_via_constructor(data: dict[str, Any]) -> SEPSettings:
+    """Return settings built through the ordinary ``SEPSettings`` constructor.
+
+    :param data: The settings payload to pass as keyword arguments.
+    :return: The constructed settings object.
+    """
+    return SEPSettings(**deepcopy(data), _env_file=None)  # ty: ignore[unknown-argument]
+
+
+_BUILDERS = pytest.mark.parametrize(
+    "build",
+    [_build_via_model_validate, _build_via_constructor],
+    ids=["model_validate", "constructor"],
+)
+
+
 class TestSyncerExtrasValidatedAtLoad:
     """Reject an unusable syncer threshold at settings load, not per request.
 
@@ -709,8 +740,6 @@ class TestSyncerExtrasValidatedAtLoad:
     typed field once a syncer is constructed, which for the request-scoped
     ``get_syncers`` dependency means a fresh error on every sync trigger.
     """
-
-    _PMM = "app.sep.sync.syncers.pmm.PMMSyncer"
 
     @staticmethod
     def _syncers_env(*syncers: str) -> str:
@@ -725,7 +754,7 @@ class TestSyncerExtrasValidatedAtLoad:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a bare-integer-seconds ``STALE_RUN_AFTER`` from the env leaf form."""
-        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(self._PMM))
+        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(_PMM_SYNCER))
         monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER", "60")
 
         with pytest.raises(ValidationError, match="STALE_RUN_AFTER") as excinfo:
@@ -739,7 +768,7 @@ class TestSyncerExtrasValidatedAtLoad:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a grace counter that collapses to single-absence retirement."""
-        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(self._PMM))
+        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(_PMM_SYNCER))
         monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__MISSING_GRACE_GENERATIONS", "0")
 
         with pytest.raises(ValidationError, match="MISSING_GRACE_GENERATIONS"):
@@ -764,7 +793,7 @@ class TestSyncerExtrasValidatedAtLoad:
         """
         with pytest.raises(ValidationError, match=field):
             SEPSettings.model_validate(
-                {"SYNCERS": [{"SYNCER": self._PMM, field: value}]}
+                {"SYNCERS": [{"SYNCER": _PMM_SYNCER, field: value}]}
             )
 
     def test_env_hint_is_offered_but_not_asserted_for_an_extras_string(self) -> None:
@@ -776,7 +805,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError) as excinfo:
             SEPSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
                 }
             )
@@ -790,7 +819,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError) as excinfo:
             SEPSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": 0},
                 }
             )
@@ -805,31 +834,37 @@ class TestSyncerExtrasValidatedAtLoad:
         """
         with pytest.raises(ValidationError) as excinfo:
             SEPSettings.model_validate(
-                {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": "abc"}]}
+                {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": "abc"}]}
             )
 
         assert "If this came from" not in str(excinfo.value)
 
+    @_BUILDERS
     @pytest.mark.parametrize(
         "value", ["60", "60.5", "-60", "abc", "", 0, -1, [60], {"seconds": 60}]
     )
-    def test_unusable_stale_run_after_is_rejected_at_load(self, value: Any) -> None:
+    def test_unusable_stale_run_after_is_rejected_at_load(
+        self, build: Callable[[dict[str, Any]], SEPSettings], value: Any
+    ) -> None:
         """Reject every shape ``stale_run_after`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
-            SEPSettings.model_validate(
+            build(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": value},
                 }
             )
 
+    @_BUILDERS
     @pytest.mark.parametrize("value", ["0", "1", 0, 1, "abc", 2.5, ""])
-    def test_unusable_grace_generations_is_rejected_at_load(self, value: Any) -> None:
+    def test_unusable_grace_generations_is_rejected_at_load(
+        self, build: Callable[[dict[str, Any]], SEPSettings], value: Any
+    ) -> None:
         """Reject every shape ``missing_grace_generations`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
-            SEPSettings.model_validate(
+            build(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": value},
                 }
             )
@@ -849,7 +884,7 @@ class TestSyncerExtrasValidatedAtLoad:
     ) -> None:
         """Keep every form pydantic reads as a duration working end to end."""
         settings = SEPSettings.model_validate(
-            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": value}]}
+            {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": value}]}
         )
         mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
 
@@ -870,7 +905,7 @@ class TestSyncerExtrasValidatedAtLoad:
             json.dumps(
                 [
                     {
-                        "SYNCER": self._PMM,
+                        "SYNCER": _PMM_SYNCER,
                         "STALE_RUN_AFTER": 60,
                         "MISSING_GRACE_GENERATIONS": grace,
                     }
@@ -889,58 +924,28 @@ class TestSyncerExtrasValidatedAtLoad:
         assert isinstance(syncer, PMMSyncer)
         assert syncer.missing_grace_generations == grace
 
-    def test_null_threshold_falls_back_to_the_field_default(
-        self, mocker: MockerFixture
-    ) -> None:
-        """Read an explicit ``null`` as "unset" rather than refusing to load."""
-        settings = SEPSettings.model_validate(
-            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": None}]}
-        )
-        mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
-
-        syncers = get_syncers(
-            inventory_api=MagicMock(spec=RemoteAPI),
-            tasks_api=MagicMock(spec=RemoteAPI),
-        )
-
-        assert syncers[0].stale_run_after == timedelta(hours=1)
-
-    def test_extra_kwargs_win_the_merge_and_are_still_checked(self) -> None:
-        """Check the merged value, not the per-syncer one the extras displace."""
-        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
-            SEPSettings.model_validate(
-                {
-                    "SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600}],
-                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
-                }
-            )
-
     def test_error_names_the_offending_syncer(self) -> None:
         """Point the operator at the entry to fix when several are configured."""
-        mysql = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
-        with pytest.raises(ValidationError, match=re.escape(mysql)):
+        with pytest.raises(ValidationError, match=re.escape(_MYSQL_SYNCER)):
             SEPSettings.model_validate(
                 {
                     "SYNCERS": [
-                        {"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600},
-                        {"SYNCER": mysql, "STALE_RUN_AFTER": "60"},
+                        {"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": 3600},
+                        {"SYNCER": _MYSQL_SYNCER, "STALE_RUN_AFTER": "60"},
                     ]
                 }
             )
 
     def test_unconstrained_extras_are_forwarded_untouched(self) -> None:
-        """Keep the check a floor on known thresholds, not an allowlist of keys.
-
-        Built through the constructor rather than ``model_validate``, which runs the
-        merge twice and so concatenates a list-valued extra with itself.
-        """
-        settings = SEPSettings(
-            SYNCERS=[{"SYNCER": "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"}],
-            SYNCER_EXTRA_KWARGS={
-                "IGNORE_SCHEMAS": ["sys"],
-                "DEFAULT_EXECUTOR_HOST": "node-1",
-            },
-            _env_file=None,  # ty: ignore[unknown-argument]
+        """Keep the check a floor on known thresholds, not an allowlist of keys."""
+        settings = SEPSettings.model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {
+                    "IGNORE_SCHEMAS": ["sys"],
+                    "DEFAULT_EXECUTOR_HOST": "node-1",
+                },
+            }
         )
 
         dumped = settings.SYNCERS[0].model_dump()
@@ -953,7 +958,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
             SEPSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {key: "60"},
                 }
             )
@@ -966,29 +971,229 @@ class TestSyncerExtrasValidatedAtLoad:
         entry that would silently drop it. A usable one still loads, and is still
         ignored.
         """
-        mysql = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
             SEPSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": mysql}],
+                    "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": 0},
                 }
             )
 
-    def test_unusable_extra_loads_when_no_syncer_is_configured(self) -> None:
+    @_BUILDERS
+    def test_extra_kwargs_win_the_merge_and_are_still_checked(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Check the merged threshold, not the per-entry one the extras displace."""
+        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
+            build(
+                {
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": 3600}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
+                }
+            )
+
+    @_BUILDERS
+    def test_removed_pmm_key_on_the_extras_is_still_rejected(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Refuse a dead per-syncer ``pmm`` override carried by the extras."""
+        with pytest.raises(ValidationError, match="(?i)pmm"):
+            build(
+                {
+                    "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                    "SYNCER_EXTRA_KWARGS": {"PMM": {"URL": "http://pmm"}},
+                }
+            )
+
+    @_BUILDERS
+    def test_unusable_extra_loads_when_no_syncer_is_configured(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
         """Leave a deployment that runs no syncer alone.
 
         The check walks configured syncers, so with none there is nothing an extra
         can reach and nothing to refuse.
         """
-        settings = SEPSettings.model_validate(
+        settings = build(
             {"SYNCERS": [], "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"}}
         )
 
         assert settings.SYNCERS == []
+
+    @_BUILDERS
+    def test_null_threshold_falls_back_to_the_field_default(
+        self, build: Callable[[dict[str, Any]], SEPSettings], mocker: MockerFixture
+    ) -> None:
+        """Read an explicit ``null`` as "unset" rather than refusing to load."""
+        settings = build(
+            {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": None}]}
+        )
+        mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
+
+        syncers = get_syncers(
+            inventory_api=MagicMock(spec=RemoteAPI),
+            tasks_api=MagicMock(spec=RemoteAPI),
+        )
+
+        assert syncers[0].stale_run_after == timedelta(hours=1)
 
     @pytest.mark.parametrize("field", ["SYNCERS", "SYNCER_EXTRA_KWARGS"])
     def test_syncer_settings_are_not_database_overridable(self, field: str) -> None:
         """Keep the load-time check unbypassable by a DB-backed override."""
         assert not is_hot_reloadable(SEPSettings, field)
         assert not is_nested_overridable_parent(SEPSettings, field)
+
+
+class TestSyncerExtrasMergeParity:
+    """Merge ``SYNCER_EXTRA_KWARGS`` into each syncer exactly once, however built.
+
+    ``model_validate`` and the ordinary constructor have to agree: a list-valued
+    extra reaches a syncer once on either path, never concatenated with itself.
+    """
+
+    @_BUILDERS
+    def test_list_extra_is_forwarded_once(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Forward a list-valued extra without duplicating its entries."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    @_BUILDERS
+    def test_list_extra_precedes_the_syncers_own_entries(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Keep the overlay ahead of the entry's own list, prepended only once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys", "mine"]
+
+    def test_both_construction_paths_agree(self) -> None:
+        """Produce identical syncers whichever construction path was taken."""
+        data = {
+            "SYNCERS": [
+                {"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]},
+                {"SYNCER": _PMM_SYNCER},
+            ],
+            "SYNCER_EXTRA_KWARGS": {
+                "IGNORE_SCHEMAS": ["sys"],
+                "DEFAULT_EXECUTOR_HOST": "node-1",
+            },
+        }
+
+        validated = _build_via_model_validate(data)
+        constructed = _build_via_constructor(data)
+
+        assert [syncer.model_dump() for syncer in validated.SYNCERS] == [
+            syncer.model_dump() for syncer in constructed.SYNCERS
+        ]
+
+    @_BUILDERS
+    def test_scalar_extra_reaches_every_syncer(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Merge a scalar extra into each configured syncer."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}, {"SYNCER": _PMM_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"DEFAULT_EXECUTOR_HOST": "node-1"},
+            }
+        )
+
+        assert [s.model_dump()["default_executor_host"] for s in settings.SYNCERS] == [
+            "node-1",
+            "node-1",
+        ]
+
+    @_BUILDERS
+    def test_nested_list_extra_is_merged_once(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Merge a list nested inside a mapping extra exactly once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "OPTS": {"schemas": ["mine"]}}],
+                "SYNCER_EXTRA_KWARGS": {"OPTS": {"schemas": ["sys"]}},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["opts"] == {"schemas": ["sys", "mine"]}
+
+    @_BUILDERS
+    def test_empty_overlay_clears_the_syncers_list(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Read an empty list overlay as "drop the entry's own value"."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": []},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == []
+
+    @_BUILDERS
+    def test_repeated_syncer_entry_collapses_to_one(
+        self, build: Callable[[dict[str, Any]], SEPSettings]
+    ) -> None:
+        """Keep one entry per syncer path, still carrying the extras once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}, {"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert len(settings.SYNCERS) == 1
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    def test_re_merging_reads_the_syncers_currently_configured(self) -> None:
+        """Merge over whatever ``SYNCERS`` holds now, and still only once."""
+        settings = _build_via_constructor(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+        merged_once = [syncer.model_dump() for syncer in settings.SYNCERS]
+
+        settings.add_syncer_extra_kwargs()  # ty: ignore[call-non-callable]
+
+        assert [syncer.model_dump() for syncer in settings.SYNCERS] == merged_once
+
+        settings.SYNCERS = [SyncOptions(syncer=_PMM_SYNCER)]
+        settings.add_syncer_extra_kwargs()  # ty: ignore[call-non-callable]
+
+        assert settings.SYNCERS[0].syncer == _PMM_SYNCER
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    def test_each_settings_object_keeps_its_own_syncers(self) -> None:
+        """Keep one object's merge out of another's, whatever is cached per instance."""
+        first = _build_via_model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+        second = _build_via_model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["other"]},
+            }
+        )
+
+        assert first.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+        assert second.SYNCERS[0].model_dump()["ignore_schemas"] == ["other"]
+        assert first.SYNCERS[0].syncer == _MYSQL_SYNCER
