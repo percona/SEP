@@ -23,7 +23,7 @@ import re
 from enum import StrEnum
 from typing import Any, TYPE_CHECKING
 
-from pydantic import field_validator, JsonValue
+from pydantic import BaseModel, field_validator, JsonValue
 from sqlalchemy import Column, Index, String
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
@@ -35,14 +35,12 @@ from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
-    from app.core.config import BaseYamlSettings
-
 #: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
 #: ``HealthReportSettings`` -> ``Health_Report_Settings``.
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
-def setting_class_token(settings_cls: type[BaseYamlSettings]) -> str:
+def setting_class_token(settings_cls: type[BaseModel]) -> str:
     """Return the storage token written to ``settingoverride.setting_class``.
 
     The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
@@ -51,7 +49,13 @@ def setting_class_token(settings_cls: type[BaseYamlSettings]) -> str:
     A class may pin a different token by declaring ``__setting_class_token__``,
     the same escape hatch shape as SQLAlchemy's ``__tablename__``.
 
-    :param settings_cls: The settings class whose override rows are stored.
+    The bound is :class:`~pydantic.BaseModel` rather than ``BaseYamlSettings``
+    because the re-encryption revisions pass frozen replica models that declare
+    their token through that escape hatch instead of inheriting the settings
+    base; those replicas and the live settings classes share no tighter base.
+
+    :param settings_cls: The settings class or frozen replica whose override
+        rows are stored.
     :return: The token written to ``settingoverride.setting_class``.
     """
     override = getattr(settings_cls, "__setting_class_token__", None)

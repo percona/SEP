@@ -55,6 +55,7 @@ from app.sep.apps.framework.cascade import (
     cascade_create_tasks,
     cascade_update_tasks,
     CascadeResult,
+    require_addressable_names,
 )
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
@@ -63,6 +64,7 @@ from app.sep.deps import (
     get_username_mapping,
     InventoryAPI,
     reject_if_protected,
+    task_path,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -273,7 +275,9 @@ async def _fetch_backup_derived_detail(
         derived = await get_backups_task(derived_name, tasks_api)
     except HTTPNotFoundException:
         return None
-    history_response = as_json_object(await tasks_api.get(f"/{derived.name}/history/"))
+    history_response = as_json_object(
+        await tasks_api.get(task_path(derived.name, "/history/"))
+    )
     return derived, history_response["items"]
 
 
@@ -405,13 +409,22 @@ async def ensure_backup_derived_siblings(
     :param tasks_api: The TaskAPI used to GET existing legs and POST missing ones.
     :param parent_name: The parent ``pbm_config`` task name.
     :param parent_payload: The updated parent payload used to build missing children.
+    :raises HTTPUnprocessableEntityException: If a derived sibling's name — the
+        one probed, or the one an update's rename would create — is not a single
+        plain URL path segment. Raised before the first request, so a later
+        sibling's refusal cannot leave an earlier one created.
     """
-    for spec in BACKUP_MONGO_DERIVED:
-        derived_name = f"{parent_name}{spec.name_suffix}"
+    derived_paths = [
+        task_path(f"{parent_name}{spec.name_suffix}") for spec in BACKUP_MONGO_DERIVED
+    ]
+    child_payloads = [
+        build_derived_payload(parent_payload, spec) for spec in BACKUP_MONGO_DERIVED
+    ]
+    require_addressable_names(child_payloads)
+    for derived_path, child_payload in zip(derived_paths, child_payloads, strict=True):
         try:
-            await tasks_api.get(f"/{derived_name}")
+            await tasks_api.get(derived_path)
         except HTTPNotFoundException:
-            child_payload = build_derived_payload(parent_payload, spec)
             await tasks_api.post("/", json=child_payload)
 
 

@@ -18,12 +18,14 @@
 import inspect
 from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import unquote
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from sqlalchemy.exc import SQLAlchemyError
+from yarl import URL
 
 from app.core.auth.exceptions import (
     HTTPForbiddenException,
@@ -41,8 +43,10 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import AppRegistry, build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
@@ -76,6 +80,7 @@ from app.sep.deps import (
     resolve_ambient_exchange_token,
     resolve_ambient_session_token,
     resolve_pmm_api,
+    task_path,
 )
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
@@ -89,6 +94,11 @@ from tests.app.factories import (
     TaskFactory,
     TaskHistoryResponseFactory,
     TaskResponseFactory,
+)
+from tests.app.sep.path_unsafe_task_names import (
+    PATH_UNSAFE_TASKS,
+    ROUND_TRIP_BASE_PATHS,
+    SAFE_TASK_NAMES,
 )
 
 PENDING_HISTORY_ID = 10
@@ -710,6 +720,52 @@ class TestGetTaskByName:
         assert isinstance(result, Task)
         assert result.name == task.name
 
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    @pytest.mark.asyncio
+    async def test_name_that_is_not_one_path_segment_is_refused(
+        self, task_name: str
+    ) -> None:
+        """Refuse a name that would restructure the outbound request URL."""
+        mock_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await get_task_by_name(mock_api, task_name)
+
+        mock_api.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unsafe_name_is_refused_before_the_owner_filter(self) -> None:
+        """Refuse an unsafe name whatever owner the caller filters by."""
+        mock_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await get_task_by_name(mock_api, "x?q=1", owner="BACKUPS")
+
+        mock_api.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_name_is_refused(self) -> None:
+        """Refuse an empty name, which composes the upstream list endpoint."""
+        mock_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await get_task_by_name(mock_api, "")
+
+        mock_api.get.assert_not_awaited()
+
+    @pytest.mark.parametrize("task_name", SAFE_TASK_NAMES)
+    @pytest.mark.asyncio
+    async def test_safe_name_reaches_the_upstream_request(self, task_name: str) -> None:
+        """Admit an ordinary name, dots inside it included."""
+        task = TaskFactory.build(name=task_name, owner="BACKUPS")
+        mock_api = AsyncMock()
+        mock_api.get.return_value = task.model_dump(mode="json")
+
+        result = await get_task_by_name(mock_api, task_name)
+
+        assert result.name == task_name
+        mock_api.get.assert_awaited_once_with(f"/{task_name}")
+
 
 class TestGetTaskHistory:
     """Test get_task_history dependency."""
@@ -794,6 +850,28 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+        assert [call.args[0] for call in mock_api.get.await_args_list] == [
+            "/test-task/history/",
+            "/test-task/history/",
+        ]
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    @pytest.mark.asyncio
+    async def test_name_that_is_not_one_path_segment_is_refused(
+        self, task_name: str
+    ) -> None:
+        """Refuse an unsafe name before either history lookup is composed.
+
+        The check is a route-level dependency on the derived execute routes, so
+        it runs before the task-by-name dependency and needs its own guard.
+        """
+        mock_api = AsyncMock()
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await check_for_conflicted_running_tasks(task_name, mock_api)
+
+        mock_api.get.assert_not_awaited()
 
 
 class TestRejectIfProtected:
@@ -1329,3 +1407,69 @@ class TestGetToggleableAppKey:
         )
         with pytest.raises(HTTPNotFoundException):
             get_toggleable_app_key("unknown")
+
+
+class TestTaskPath:
+    """Test ``task_path`` composition and its guard."""
+
+    @pytest.mark.parametrize("task_name", SAFE_TASK_NAMES)
+    def test_safe_name_composes_the_task_path(self, task_name: str) -> None:
+        """Compose a plain name into the task's own upstream path."""
+        assert task_path(task_name) == f"/{task_name}"
+
+    def test_suffix_is_appended_after_the_name(self) -> None:
+        """Append the suffix after the name so sub-resources compose in one call."""
+        assert task_path("backup-task", "/history/") == "/backup-task/history/"
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    def test_name_that_is_not_one_path_segment_is_refused(self, task_name: str) -> None:
+        """Refuse to compose a name that would restructure the outbound path."""
+        with pytest.raises(HTTPUnprocessableEntityException):
+            task_path(task_name, "/history/")
+
+
+class TestTaskPathRoundTrip:
+    """Test that every name the guard admits addresses the task it names."""
+
+    @staticmethod
+    def _compose(base: str, task_name: str) -> str:
+        """Return the upstream path a guarded name composes to, decoded.
+
+        Walks the same layers a real request does — :func:`task_path`, then
+        :meth:`~app.core.requests.remote_api.BaseRemoteAPI.prepare_path`, then the
+        join aiohttp performs against the session base URL — so a character either
+        layer interprets or drops shows up as a path that is not the name.
+
+        :param base: The Tasks API endpoint to compose against.
+        :param task_name: The name to compose.
+        :return: The composed path with percent-escapes decoded.
+        """
+        api = RemoteAPI(endpoint=base)
+        return unquote(URL(base).join(URL(api.prepare_path(task_path(task_name)))).path)
+
+    @pytest.mark.parametrize("base", ROUND_TRIP_BASE_PATHS)
+    def test_every_admitted_code_point_survives_composition(self, base: str) -> None:
+        """Sweep the BMP and refuse to let an admitted name compose another path.
+
+        A character-by-character list is what let ``;`` and a leading space through:
+        both are admitted by name and then removed during composition, so the
+        request addresses a shorter name instead of failing. Pinning the guard to
+        the round trip rather than to a list means the next such character fails
+        here instead of reaching the Tasks API.
+        """
+        base_path = RemoteAPI(endpoint=base).base_path.rstrip("/")
+        mismatches = []
+        for code in range(0x10000):
+            character = chr(code)
+            for task_name in (
+                f"{character}task",
+                f"ta{character}sk",
+                f"task{character}",
+            ):
+                try:
+                    composed = self._compose(base, task_name)
+                except HTTPUnprocessableEntityException:
+                    continue
+                if composed != f"{base_path}/{task_name}":
+                    mismatches.append((hex(code), task_name, composed))
+        assert not mismatches

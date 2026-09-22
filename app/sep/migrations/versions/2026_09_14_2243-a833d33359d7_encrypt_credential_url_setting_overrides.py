@@ -24,14 +24,27 @@ a ``settingoverride`` row this track can resolve, which the write path stored in
 the clear before this release. Only the password segment is rewritten, so the
 endpoint an operator reads out of a raw database dump stays legible.
 
-The settings classes are passed in rather than discovered: resolving them
-through ``build_sep_override_proxies()`` would import app packages, and every
-app ``__init__`` pulls a route graph with a cycle the migration cannot survive.
+Coverage is **frozen** as the replica models below, which transcribe the shapes
+the live settings classes reach today, at the moment of the freeze. Importing those
+classes instead would resolve coverage against whatever they look like on the
+release the revision happens to execute against: a deployment skipping a release
+between two renames would run this revision against a field set no longer
+containing the renamed field, leaving its legacy plaintext password in the
+clear. The replicas also keep this revision's imports inside ``app.core``,
+which is what lets it run in a migration process at all: resolving coverage
+through the override registry would import app packages, whose ``__init__``
+pulls a route graph with a cycle the migration cannot survive.
 
-The list below is complete because no *overridable* field reaches a
-credential-bearing URL outside these classes.
-``test_credential_url_migrations_cover_every_credential_url_bearing_class``
-holds that invariant from the test side, where the registry *can* be imported.
+**Never edit a replica below to track a later rename.** Doing so restores
+exactly the coupling the freeze removes. The correct response to a renamed or
+retyped field is a new data migration carrying its own frozen shapes;
+``test_credential_url_overridable_fields_are_pinned`` is what surfaces the
+rename so that stays a decision rather than an omission.
+
+The replicas carry the ``SecretStr`` fields as well, mirroring the shapes
+``e4b3754984d8`` froze, even though ``reencrypt_credential_url_leaves`` never
+transforms them. Declaring the whole shape is what the live classes did on both
+families, so nothing here depends on proving a narrower replica inert.
 
 Completeness is claimed as of this revision only. Alembic never re-runs an
 applied revision, so a deployment already carrying this one is not covered by it
@@ -48,14 +61,17 @@ put them back — so those credentials would be left in the clear while the
 release being rolled back to still reads them as ciphertext.
 """
 
-from app.core.alerts.config import AlertSettings
-from app.core.config import Settings
+from pydantic import BaseModel, SecretStr
+
 from app.core.settings_override.alembic_ops import (
     downgrade_decrypt_credential_url_override_values,
     upgrade_encrypt_credential_url_override_values,
 )
-from app.sep.config import SEPSettings
-from app.sep.snippets.config import SnippetsSettings
+from app.core.utils.fields import (
+    CredentialHttpUrl,
+    StrCredentialAnyUrl,
+    StrCredentialHttpUrl,
+)
 
 # revision identifiers, used by Alembic.
 revision = "a833d33359d7"
@@ -63,14 +79,125 @@ down_revision = "e4b3754984d8"
 branch_labels = None
 depends_on = None
 
-SETTINGS_CLASSES = (Settings, AlertSettings, SEPSettings, SnippetsSettings)
+#: The ``settingoverride.setting_class`` values these replicas answer for,
+#: matching the tokens ``setting_class_token`` derives for the live classes.
+_SETTINGS_CLASS = "SETTINGS"
+_ALERT_SETTINGS_CLASS = "ALERT_SETTINGS"
+_SEP_SETTINGS_CLASS = "SEP_SETTINGS"
+_SNIPPETS_SETTINGS_CLASS = "SNIPPETS_SETTINGS"
+
+
+class _FrozenPMM(BaseModel):
+    """Declare the frozen credential leaves of ``PMMSettings``."""
+
+    endpoint: StrCredentialHttpUrl | None = None
+    api_key: SecretStr | None = None
+
+
+class _FrozenCeleryOptions(BaseModel):
+    """Declare the frozen credential leaves of ``CeleryOptions``."""
+
+    broker_url: StrCredentialAnyUrl | None = None
+    result_backend: StrCredentialAnyUrl | None = None
+
+
+class _FrozenSettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``Settings``."""
+
+    __setting_class_token__ = _SETTINGS_CLASS
+
+    PMM: _FrozenPMM | None = None
+    CELERY: _FrozenCeleryOptions | None = None
+    SECRET_KEY: SecretStr | None = None
+    SEP_INTERNAL_TOKEN: SecretStr | None = None
+    ENCRYPTION_KEY: SecretStr | None = None
+
+
+class _FrozenAlertProvider(BaseModel):
+    """Declare the credential leaf every ``BaseAlertProvider`` subclass carried."""
+
+    routing_key: SecretStr | None = None
+
+
+class _FrozenAlertSettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``AlertSettings``.
+
+    ``PROVIDERS`` is a ``list`` where the live field is a ``set``. The walker
+    branches on ``_is_collection_origin``, which accepts either, and reads only
+    the element type, so the choice is free; ``list`` matches the JSON array
+    actually stored.
+    """
+
+    __setting_class_token__ = _ALERT_SETTINGS_CLASS
+
+    PROVIDERS: list[_FrozenAlertProvider] | None = None
+
+
+class _FrozenDatabaseOptions(BaseModel):
+    """Declare the frozen credential leaves of ``DatabaseOptions``."""
+
+    PASSWORD: SecretStr | None = None
+
+
+class _FrozenDeliveryPlan(BaseModel):
+    """Declare the frozen credential leaves of ``DeliveryPlan``."""
+
+    endpoint: CredentialHttpUrl | None = None
+    secrets: dict[str, SecretStr] | None = None
+
+
+class _FrozenDeliveryPlanInputs(BaseModel):
+    """Declare the frozen credential leaves of ``DeliveryPlanInputs``."""
+
+    endpoint: CredentialHttpUrl | None = None
+    secrets: dict[str, SecretStr] | None = None
+
+
+class _FrozenSEPSettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``SEPSettings``."""
+
+    __setting_class_token__ = _SEP_SETTINGS_CLASS
+
+    INVENTORY_ENDPOINT: CredentialHttpUrl | None = None
+    TASKS_ENDPOINT: CredentialHttpUrl | None = None
+    DATABASE: _FrozenDatabaseOptions | None = None
+    DIAGNOSTICS_DELIVERY: _FrozenDeliveryPlan | None = None
+    DIAGNOSTICS_DELIVERY_INPUTS: _FrozenDeliveryPlanInputs | None = None
+
+
+class _FrozenSnippetsSettings(BaseModel):
+    """Stand in for ``SnippetsSettings``, which reaches no credential leaf.
+
+    Field-less rather than absent: dropping it would reclassify its rows as
+    unresolved, which changes the rewrite's log line.
+    """
+
+    __setting_class_token__ = _SNIPPETS_SETTINGS_CLASS
+
+
+SETTINGS_CLASSES = (
+    _FrozenSettings,
+    _FrozenAlertSettings,
+    _FrozenSEPSettings,
+    _FrozenSnippetsSettings,
+)
 
 
 def upgrade() -> None:
-    """Encrypt every not-yet-encrypted credential-URL password this track owns."""
+    """Encrypt every not-yet-encrypted credential-URL password this track owns.
+
+    Coverage comes from the frozen replicas above rather than the live
+    settings classes, so this revision's reach cannot drift with a later rename
+    of a field it covers.
+    """
     upgrade_encrypt_credential_url_override_values(SETTINGS_CLASSES)
 
 
 def downgrade() -> None:
-    """Restore every encrypted credential-URL password this track owns."""
+    """Restore every encrypted credential-URL password this track owns.
+
+    Coverage comes from the frozen replicas above rather than the live
+    settings classes, so this revision's reach cannot drift with a later rename
+    of a field it covers.
+    """
     downgrade_decrypt_credential_url_override_values(SETTINGS_CLASSES)

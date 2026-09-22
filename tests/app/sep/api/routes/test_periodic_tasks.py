@@ -31,6 +31,10 @@ from app.sep.apps.mysql_backups.forms import OWNER as BACKUPS_OWNER
 from app.sep.apps.mysql_backups.restore.models import OWNER as RESTORES_OWNER
 from app.tasks.models import ANY_OWNER
 from tests.app.factories import TaskResponseFactory
+from tests.app.sep.path_unsafe_task_names import (
+    PATH_PARAM_UNSAFE_TASKS,
+    PATH_UNSAFE_TASKS,
+)
 
 PREVIEW_CASE = pytest.param(
     "post", "/api/sep/periodic-tasks/schedule/preview/", "post", {}, id="preview"
@@ -360,36 +364,6 @@ GUARD_READ_CASES = [
 
 NON_STRING_TASKS = [None, 5, 0, False, [], {}, ["r1"]]
 
-PATH_UNSAFE_TASKS = [
-    "/evil.example.com:80/x",
-    "//evil.example.com/x",
-    "../hosts",
-    "a/b",
-    "x?q=1",
-    "x#f",
-    "a%2Fb",
-    "..",
-    "foo:bar",
-    "http://evil.example.com/x",
-]
-
-CREATE_PATH_UNSAFE_TASKS = [
-    task
-    for task in PATH_UNSAFE_TASKS
-    if "/" not in task and "%" not in task and task != ".."
-]
-"""The unsafe names that can reach the create route's path parameter.
-
-Derived from the list above so a name added there is covered on both routes. Three
-shapes are excluded because they never reach the guard rather than because it
-would admit them: Starlette's default ``str`` convertor is ``[^/]+``, so a name
-carrying a slash cannot match; a bare dot-segment is normalised away before the
-request is sent; and the test transport unquotes the path twice, so a
-``%``-bearing name arrives split across two segments (``a%2Fb`` sent as
-``a%252Fb`` reaches the app as ``/api/sep/periodic-tasks/a/b/``) and matches no
-route. The update route covers all three through the request body.
-"""
-
 
 def _task_payload(name: str, owner: str) -> dict[str, Any]:
     """Build the upstream JSON for a task named ``name`` owned by ``owner``."""
@@ -487,7 +461,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_task_api_dep.post.assert_not_awaited()
 
-    @pytest.mark.parametrize("task", CREATE_PATH_UNSAFE_TASKS)
+    @pytest.mark.parametrize("task", PATH_PARAM_UNSAFE_TASKS)
     def test_create_refuses_a_task_name_that_is_not_one_path_segment(
         self, test_client: TestClient, mock_task_api_dep: AsyncMock, task: str
     ) -> None:

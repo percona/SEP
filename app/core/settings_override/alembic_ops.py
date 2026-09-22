@@ -43,14 +43,14 @@ from app.core.settings_override.secret_storage import (
     decrypt_secret_leaves,
     reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
+    unmark_secret_leaves,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from pydantic import BaseModel
     from sqlalchemy.engine import Connection
-
-    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -175,16 +175,19 @@ def downgrade_drop_updated_by() -> None:
 
 
 def upgrade_encrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted secret leaf stored in ``settingoverride``.
 
-    Idempotent in two directions: ``is_encrypted`` short-circuits a leaf an
-    earlier run already rewrote, and a row whose ``setting_class`` none of
-    ``settings_classes`` owns is left untouched, so a track sharing one physical
-    database with another never rewrites the other's rows.
+    Idempotent in two directions: a leaf an earlier run already rewrote carries
+    the envelope marker and is short-circuited on that, and a row whose
+    ``setting_class`` none of ``settings_classes`` owns is left untouched, so a
+    track sharing one physical database with another never rewrites the other's
+    rows. A leaf encrypted before the envelope shipped carries no marker and is
+    short-circuited by the structural check instead.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -193,7 +196,7 @@ def upgrade_encrypt_secret_override_values(
 
 
 def downgrade_decrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted secret leaf to the plaintext the previous code reads.
 
@@ -202,7 +205,8 @@ def downgrade_decrypt_secret_override_values(
     downgrade, and refusing to complete would block the rollback the operator is
     performing.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -211,7 +215,7 @@ def downgrade_decrypt_secret_override_values(
 
 
 def upgrade_encrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted credential-URL password in ``settingoverride``.
 
@@ -224,7 +228,8 @@ def upgrade_encrypt_credential_url_override_values(
     Only the userinfo password is rewritten, so the endpoint an operator reads
     out of a raw dump stays legible.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -233,7 +238,7 @@ def upgrade_encrypt_credential_url_override_values(
 
 
 def downgrade_decrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted credential-URL password to plaintext.
 
@@ -244,12 +249,37 @@ def downgrade_decrypt_credential_url_override_values(
     would stay in the clear while the release being rolled back to still reads
     them as ciphertext.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
         return
     _rewrite_secret_leaves(bind, settings_classes, decrypt_credential_url_leaves)
+
+
+def downgrade_unmark_secret_override_values(
+    settings_classes: Iterable[type[BaseModel]],
+) -> None:
+    """Strip the envelope marker from every stored secret leaf this track owns.
+
+    The rollback half of the ciphertext envelope. Its upgrade partner is a
+    no-op, because the envelope ships with the code rather than with the schema:
+    there is no forward work to do, and re-marking existing rows is not
+    something a migration can decide (see
+    :func:`~app.core.settings_override.secret_storage.unmark_secret_leaves`).
+
+    Needs no ``ENCRYPTION_KEY`` and never decrypts, so unlike
+    :func:`downgrade_decrypt_secret_override_values` it cannot fail on a row
+    encrypted under a key this process does not hold — that row is unmarked and
+    left encrypted, which is exactly what the older release expects.
+
+    :param settings_classes: The settings classes this track can resolve.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    _rewrite_secret_leaves(bind, settings_classes, unmark_secret_leaves)
 
 
 def _settingoverride_value_table() -> sa.TableClause:
@@ -273,15 +303,16 @@ def _settingoverride_value_table() -> sa.TableClause:
 
 def _rewrite_secret_leaves(
     bind: Connection,
-    settings_classes: Iterable[type[BaseYamlSettings]],
-    rewrite: Callable[[type[BaseYamlSettings], str, Any], Any],
+    settings_classes: Iterable[type[BaseModel]],
+    rewrite: Callable[[type[BaseModel], str, Any], Any],
 ) -> None:
     """Apply ``rewrite`` to every resolvable row's value, updating only what changed.
 
     :param bind: The migration's bound connection.
-    :param settings_classes: The settings classes this track can resolve.
-    :param rewrite: The per-row transformation, taking the owning settings class,
-        the row key and the stored value.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
+    :param rewrite: The per-row transformation, taking the coverage declaration
+        owning the row, the row key and the stored value.
     """
     classes_by_token = {
         setting_class_token(settings_cls): settings_cls
@@ -302,8 +333,9 @@ def _rewrite_secret_leaves(
         try:
             value = rewrite(settings_cls, row.key, row.value)
         except DecryptionError as exc:
-            # Only reachable on the downgrade: the encrypt direction decides
-            # with is_encrypted and never attempts a decrypt.
+            # Only reachable on the downgrade: the encrypt and unmark
+            # directions both decide from the stored shape and never attempt a
+            # decrypt.
             undecryptable += 1
             logger.warning(
                 "Left %s.%s as it stands, it could not be decrypted: %s",

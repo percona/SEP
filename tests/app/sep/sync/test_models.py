@@ -29,6 +29,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils.date_time import utc_now
 from app.inventory.models import ServiceTypeEnum, SyncOutcomeEnum
 from app.sep.crud import SyncInstanceManager, SyncItemManager
@@ -60,6 +61,7 @@ from tests.app.factories import (
     CreatedTableFactory,
     MOCK_CREATED_NODE_ID,
 )
+from tests.app.sep.path_unsafe_task_names import PATH_UNSAFE_TASKS
 from tests.app.sep.sync.conftest import sync_health_posts
 
 # Pinned verbatim rather than imported: the parameter name is the inventory API's
@@ -938,6 +940,32 @@ def _build_task_test_syncer(session, mock_remote_api, **kwargs):
         tasks_api=mock_remote_api,
         **kwargs,
     )
+
+
+@pytest.mark.asyncio
+class TestWaitForTaskOutputPathGuard:
+    """Test that a task name cannot reshape the execute request."""
+
+    @pytest.mark.parametrize("task_name", PATH_UNSAFE_TASKS)
+    async def test_refuses_a_name_that_is_not_one_path_segment(
+        self, session: AsyncSession, mock_remote_api, task_name: str
+    ) -> None:
+        """Refuse an unsafe name before the execute POST is issued.
+
+        No syncer passes a caller-supplied name today — both subclasses default
+        it to ``run-python`` — but the parameter is a required positional on this
+        base method, so nothing except the current call sites keeps it static.
+        """
+        task_syncer = _build_task_test_syncer(
+            session, mock_remote_api, tasks_execution_wait_interval=0
+        )
+
+        with pytest.raises(HTTPUnprocessableEntityException):
+            await task_syncer.wait_for_task_output(
+                task_name=task_name, stdout_step="step"
+            )
+
+        mock_remote_api.post.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -13,53 +13,49 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""encrypt secret setting overrides
+"""unmark secret setting overrides
 
-Revision ID: e4b3754984d8
-Revises: c9880f0ac1bd
-Create Date: 2026-09-04 18:41:55.073171
+Revision ID: cbc3026013de
+Revises: a833d33359d7
+Create Date: 2026-09-18 15:12:00.000000
 
-Re-encrypt the secret-typed leaves of every ``settingoverride`` row this track
-can resolve, which the write path stored in the clear before this release.
+Give the versioned ciphertext envelope a downgrade boundary of its own.
 
-Coverage is **frozen** as the replica models below, which transcribe the shapes
-the live settings classes reach today, at the moment of the freeze. Importing those
-classes instead would resolve coverage against whatever they look like on the
-release the revision happens to execute against: a deployment skipping a release
-between two renames would run this revision against a field set no longer
-containing the renamed field, leaving its legacy plaintext row in the clear. The
-replicas also keep this revision's imports inside ``app.core``, which is what
-lets it run in a migration process at all: resolving coverage through the
-override registry would import app packages, whose ``__init__`` pulls a route
-graph with a cycle the migration cannot survive.
+From this release, every secret leaf the settings-override write path stores
+carries an explicit marker naming its envelope version, so "is this already
+encrypted?" is read off the stored value's own format instead of guessed from
+its bytes. That is a code-level format with no schema change behind it, which is
+exactly why it needs a revision: without one there would be no boundary at which
+a rollback could strip the marker, and a release predating the envelope reads a
+marked value as *plaintext* and would present it to a remote as a credential.
 
-**Never edit a replica below to track a later rename.** Doing so restores
-exactly the coupling the freeze removes. The correct response to a renamed or
-retyped field is a new data migration carrying its own frozen shapes;
-``test_secret_bearing_overridable_fields_are_pinned`` is what surfaces the
-rename so that stays a decision rather than an omission.
+``upgrade()`` is therefore a documented no-op and ``downgrade()`` carries the
+work. Stripping the marker is a string operation over the stored text, so it
+needs no ``ENCRYPTION_KEY``, never decrypts, and leaves a bare Fernet token the
+earlier release reads correctly through its own structural check.
+Coverage is **frozen** as the replica models below, on the same terms as the
+encrypt revisions this one rolls back. Importing the live settings classes
+instead would resolve coverage against whatever they look like on the release
+the revision happens to execute against, and an omission here is worse than in
+an encrypt revision: a class the rollback misses keeps its marker, and a release
+predating the envelope reads a marked value as the plaintext credential and
+presents it to a remote.
 
-The replicas describe every credential-bearing field the classes reached, not
-only the overridable ones, because that is what passing the live classes did.
-``reencrypt_secret_leaves`` covers both leaf kinds, so the ``CredentialHttpUrl``
-fields are declared here too and this revision encrypts their embedded passwords
-as well as the ``SecretStr`` leaves.
+**Never edit a replica below to track a later rename.** The correct response to
+a renamed or retyped field is a new data migration carrying its own frozen
+shapes.
 
-Completeness is claimed as of this revision only. Alembic never re-runs an
-applied revision, so a deployment already carrying this one is not covered by it
-when a field it did not reach turns up later — a secret-bearing class becoming
-overridable, or a plain field being retyped to a secret. Rows written for such a
-field before the change stay in the clear until a new data migration rewrites
-them.
-
-Downgrade restores the plaintext the previous release reads.
+``unmark_secret_leaves`` covers both leaf kinds, exactly as the marking write
+path does, so the credential-URL fields are declared here alongside the
+``SecretStr`` ones.
 """
 
+from app.core.alerts.config import AlertSettings
+from app.core.config import Settings
 from pydantic import BaseModel, SecretStr
 
 from app.core.settings_override.alembic_ops import (
-    downgrade_decrypt_secret_override_values,
-    upgrade_encrypt_secret_override_values,
+    downgrade_unmark_secret_override_values,
 )
 from app.core.utils.fields import (
     CredentialHttpUrl,
@@ -68,8 +64,8 @@ from app.core.utils.fields import (
 )
 
 # revision identifiers, used by Alembic.
-revision = "e4b3754984d8"
-down_revision = "c9880f0ac1bd"
+revision = "cbc3026013de"
+down_revision = "a833d33359d7"
 branch_labels = None
 depends_on = None
 
@@ -178,20 +174,16 @@ SETTINGS_CLASSES = (
 
 
 def upgrade() -> None:
-    """Encrypt every not-yet-encrypted secret leaf this track owns.
+    """Do nothing: the ciphertext envelope ships with the code, not the schema.
 
-    Coverage comes from the frozen replicas above rather than the live
-    settings classes, so this revision's reach cannot drift with a later rename
-    of a field it covers.
+    Present so the rollback below has a revision to hang on. Re-marking rows an
+    earlier downgrade unmarked is deliberately not done here — nothing at
+    migration time can tell a legacy ciphertext from a legacy plaintext that
+    merely looks like one, and guessing wrong freezes the misclassification.
+    Those rows are marked again the next time they are written.
     """
-    upgrade_encrypt_secret_override_values(SETTINGS_CLASSES)
 
 
 def downgrade() -> None:
-    """Restore every encrypted secret leaf this track owns to plaintext.
-
-    Coverage comes from the frozen replicas above rather than the live
-    settings classes, so this revision's reach cannot drift with a later rename
-    of a field it covers.
-    """
-    downgrade_decrypt_secret_override_values(SETTINGS_CLASSES)
+    """Strip the envelope marker so a release predating it reads these rows."""
+    downgrade_unmark_secret_override_values(SETTINGS_CLASSES)

@@ -46,6 +46,7 @@ from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.deps import (
     ExecutorHostsCtx,
     get_username_mapping,
+    task_path,
     TaskAPI,
 )
 from app.tasks.models import TaskBackendEnum
@@ -107,13 +108,13 @@ async def tasks_api_detail(
 
     if not task.is_template:
         periodic_response = as_json_array(
-            await tasks_api.get(f"/{task.name}/periodic/")
+            await tasks_api.get(task_path(task.name, "/periodic/"))
         )
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
         execution_history = SepHistoryPayload.model_validate(
-            as_json_object(await tasks_api.get(f"/{task.name}/history/"))
+            as_json_object(await tasks_api.get(task_path(task.name, "/history/")))
         )
 
     executor_hosts = [

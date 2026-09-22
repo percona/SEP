@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Any
 
 from app.core.requests import as_json_object
-from app.sep.deps import TaskAPI
+from app.sep.deps import task_path, TaskAPI
 from app.tasks.models import (
     LATEST_HISTORY_STATUS_NAMES_MAX,
     TaskHistoryLatestStatus,
@@ -84,19 +84,17 @@ async def get_task_latest_status(
     """Fetch ``GET /{task_name}/history/`` and return its latest status.
 
     :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
     :param task_name: The name of the task whose history is queried.
-    :type task_name: str
     :param params: Optional query parameters forwarded verbatim to the GET.
-    :type params: dict[str, Any] | None
     :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
     :raises ValueError: If the latest status is outside ``TaskHistoryStatusEnum``.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
     :raises HTTPException: Propagated from ``tasks_api.get()`` on an upstream
         error response; callers that must tolerate it guard the call site.
     """
     response = as_json_object(
-        await tasks_api.get(f"/{task_name}/history/", params=params)
+        await tasks_api.get(task_path(task_name, "/history/"), params=params)
     )
     return extract_latest_task_status(response["items"])
 
@@ -136,11 +134,13 @@ async def get_task_latest_history(
     :return: The latest-history projection; both fields ``None`` when the task
         has no history.
     :raises ValueError: If the latest status is outside ``TaskHistoryStatusEnum``.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
     :raises HTTPException: Propagated from ``tasks_api.get()`` on an upstream
         error response; callers that must tolerate it guard the call site.
     """
     response = as_json_object(
-        await tasks_api.get(f"/{task_name}/history/", params=params)
+        await tasks_api.get(task_path(task_name, "/history/"), params=params)
     )
     return extract_latest_history(response["items"])
 

@@ -42,6 +42,7 @@ from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
     HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.pagination import fetch_all_dict_items
 from app.core.requests import as_json_object, RemoteAPI
@@ -848,6 +849,87 @@ async def get_executor_hosts(tasks_api: TaskAPI) -> dict[str, str]:
 ExecutorHosts = Annotated[dict[str, str], Depends(get_executor_hosts)]
 
 
+_PATH_UNSAFE_CHARACTERS = frozenset("/?#%:;")
+"""Characters that let a task name restructure an outbound request URL."""
+
+_PATH_UNSAFE_NAMES = frozenset({"", ".", ".."})
+"""Names that resolve to a different upstream path rather than a task."""
+
+_PATH_UNSAFE_CONTROL_CHARACTERS = frozenset(chr(code) for code in (*range(0x20), 0x7F))
+"""Characters that would be dropped from a composed path, or do not belong in one."""
+
+_PATH_UNSAFE_LEADING_CHARACTERS = frozenset(" ")
+"""Characters stripped from the front of a relative reference, so only there.
+
+``urlsplit`` left-strips the C0 range *and* the space; the C0 range is refused
+outright above, which leaves the space, and a space anywhere else in a name
+survives composition percent-encoded.
+"""
+
+
+def require_one_path_segment(task_name: str) -> None:
+    """Refuse a task name that is not exactly one URL path segment.
+
+    A task name is composed into an outbound path, and
+    :meth:`~app.core.requests.remote_api.BaseRemoteAPI.prepare_path` resolves that
+    with ``urljoin``, which interprets ``/``, ``?``, ``#``, ``:``, ``;`` and
+    dot-segments rather than encoding them: a leading ``/`` makes the composed path
+    ``//host/…``, which yarl reads as an absolute URL, so the request leaves the
+    Tasks API for another host carrying the caller's bearer token. Against an
+    endpoint whose ``base_path`` is not ``/``, ``prepare_path`` strips the leading
+    slash first, so a ``:`` is read as a URI scheme and reaches ``urljoin`` as a
+    scheme-relative reference. ``;`` opens the parameters of the last segment,
+    which ``urlunparse`` drops again when they are empty, so ``"foo;"`` composes the
+    path of ``foo``. An empty name composes the collection endpoint instead of a
+    task. ``%`` is refused with them because a percent-escape re-encodes any of the
+    above past this check. None of these are escapable at that layer, and a task
+    named with one is unreachable through those endpoints anyway, so the name is
+    refused here.
+
+    A control character is refused for the opposite reason: ``urlsplit`` deletes
+    tab, carriage return and newline outright rather than encoding or rejecting
+    them, so a name carrying one composes the path of the shorter name left once
+    it is gone, and the request succeeds against that other task instead of
+    failing. The whole C0 range and ``DEL`` go with them; none belongs in a name.
+    A *leading* space is refused for that reason too: ``urlsplit`` left-strips it
+    from the relative reference ``prepare_path`` builds against a non-root
+    ``base_path``, so ``" foo"`` composes the path of ``foo`` there.
+
+    :param task_name: The task name about to be composed into a request path.
+    :raises HTTPUnprocessableEntityException: If the name is empty, a dot-segment,
+        or carries a character that would restructure the outbound path or be
+        dropped from it.
+    """
+    if (
+        task_name in _PATH_UNSAFE_NAMES
+        or _PATH_UNSAFE_CHARACTERS.intersection(task_name)
+        or _PATH_UNSAFE_CONTROL_CHARACTERS.intersection(task_name)
+        or task_name[:1] in _PATH_UNSAFE_LEADING_CHARACTERS
+    ):
+        raise HTTPUnprocessableEntityException(
+            "The task name must be a single plain path segment."
+        )
+
+
+def task_path(task_name: str, suffix: str = "") -> str:
+    """Return the guarded outbound Tasks API path for ``task_name``.
+
+    Composing a name through here rather than through an f-string keeps
+    :func:`require_one_path_segment` impossible to forget at a new call site.
+    Call the check directly only where a name is validated without being composed
+    yet — a create that must refuse a name before it POSTs anything it would then
+    have to roll back.
+
+    :param task_name: The task name to compose into the path.
+    :param suffix: Trailing path appended after the name, e.g. ``"/history/"``.
+    :return: The path to pass to a Tasks API client method.
+    :raises HTTPUnprocessableEntityException: If the name is not a single plain
+        path segment.
+    """
+    require_one_path_segment(task_name)
+    return f"/{task_name}{suffix}"
+
+
 # TODO(yan): Put get_task in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_by_name(
@@ -864,11 +946,13 @@ async def get_task_by_name(
     :param owner: The owner filter for retrieving tasks. Defaults to ``None``, meaning
         no filter.
     :return: The retrieved task.
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
     :raises HTTPNotFoundException: If the task is not found or is not owned by the
         specified owner.
     """
     try:
-        task = Task.model_validate(await tasks_api.get(f"/{task_name}"))
+        task = Task.model_validate(await tasks_api.get(task_path(task_name)))
     except ValidationError:
         raise HTTPNotFoundException from None
     if owner is not None and owner != task.owner:
@@ -908,28 +992,25 @@ async def get_task_history(
 async def check_for_conflicted_running_tasks(
     task_name: str, tasks_api: TaskAPI
 ) -> None:
-    """Check for running or pending tasks with the same name.
-
-    This function checks if there are any running or pending tasks with the same name
-    as the provided `task_name`. If such tasks are found, it raises an
-    HTTPConflictException.
+    """Refuse a task that already has a running or pending execution.
 
     :param task_name: The name of the task to check for.
-    :type task_name: str
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
+    :raises HTTPUnprocessableEntityException: If ``task_name`` is not a single
+        plain URL path segment.
     :raises HTTPConflictException: If there are running or pending tasks with the same
         name.
     """
+    history_path = task_path(task_name, "/history/")
     response = as_json_object(
         await tasks_api.get(
-            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
+            history_path, params={"status": TaskHistoryStatusEnum.RUNNING}
         )
     )
     running_tasks = response["items"]
     response = as_json_object(
         await tasks_api.get(
-            f"/{task_name}/history/", params={"status": TaskHistoryStatusEnum.PENDING}
+            history_path, params={"status": TaskHistoryStatusEnum.PENDING}
         )
     )
     pending_tasks = response["items"]
