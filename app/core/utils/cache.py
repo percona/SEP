@@ -15,7 +15,7 @@
 
 """Define cache utilities."""
 
-__all__ = ["ttl_cache"]
+__all__ = ["TTLCache", "ttl_cache"]
 
 from collections import OrderedDict
 from collections.abc import Callable
@@ -45,7 +45,6 @@ def _make_key(
     :param kwargs: Keyword arguments.
     :type kwargs: dict[str, Any]
     :param typed: If `True`, include argument types in the key.
-    :type typed: bool
     :return: A hashable tuple key.
     :rtype: tuple[Any, ...]
     """
@@ -88,11 +87,9 @@ class CacheInfo(NamedTuple):
     :param misses: Number of cache misses.
     :type misses: int
     :param maxsize: The configured maximum size of the cache (`None` means unlimited).
-    :type maxsize: int | None
     :param currsize: Current number of entries stored in the cache.
     :type currsize: int
     :param ttl: Time-to-live, in seconds, for each cached entry.
-    :type ttl: float
     """
 
     hits: int
@@ -102,26 +99,23 @@ class CacheInfo(NamedTuple):
     ttl: float
 
 
-class _TTLCache(Generic[T]):
+class TTLCache(Generic[T]):
     """Encapsulate TTL cache logic with LRU eviction.
 
+    Use it directly only when the key or the TTL cannot be derived from a
+    decorated call's arguments; otherwise use :func:`ttl_cache`. A direct caller
+    follows the same discipline as that wrapper: read, and later set then evict,
+    each under :attr:`lock`.
+
     :param ttl: Time-to-live for each cached entry, in seconds.
-    :type ttl: float
     :param maxsize: Maximum number of entries to cache (LRU). `None` means unlimited.
-    :type maxsize: int | None
     :param typed: If `True`, treat arguments with different types as distinct.
-    :type typed: bool
-    :ivar: lock: A reentrant lock to ensure thread safety.
-    :vartype lock: RLock
+    :ivar lock: A reentrant lock to ensure thread safety.
     :ivar store: The underlying ordered dictionary used for caching.
-    :vartype store: OrderedDict[tuple[Any, ...], tuple[T, float]]
     :ivar hits: Number of cache hits.
-    :vartype hits: int
     :ivar misses: Number of cache misses.
-    :vartype misses: int
     :ivar prune_limit: Maximum number of expired entries to prune in a single eviction
         cycle.
-    :vartype prune_limit: int
     """
 
     def __init__(self, *, ttl: float, maxsize: int | None, typed: bool) -> None:
@@ -244,7 +238,6 @@ def ttl_cache(
     :type maxsize: PositiveInt | None
     :param typed: If `True`, treat arguments with different types as distinct. Defaults
         to `False`.
-    :type typed: bool
     :return: A decorator that applies a TTL/LRU cache to the target function.
     :rtype: Callable[[Callable[P, T]], Callable[P, T]]
     """
@@ -257,7 +250,7 @@ def ttl_cache(
         :return: The wrapped function with caching capabilities.
         :rtype: Callable[P, T]
         """
-        cache = _TTLCache(ttl=ttl, maxsize=maxsize, typed=typed)
+        cache = TTLCache(ttl=ttl, maxsize=maxsize, typed=typed)
 
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
