@@ -520,12 +520,11 @@ class BackupCreate(TaskFormModel):
     __form_rules__: ClassVar[FormRules] = FormRules(
         fail_when=(*_BACKUP_BOOL_FAIL_RULES, *UPLOAD_REACHABILITY_FAIL_RULES),
         # Section-scoped rather than app-scoped because ``useFailRules`` evaluates
-        # section rules only. It renders the message as an alert at the head of the
-        # section, not against the field: ``SectionRenderer`` takes the violation as
-        # ``{message}`` and drops ``error_fields``, so a message on a section
-        # collapsed by default stays unmounted until the operator expands it. The
-        # submit-time 422 carries no field path either, and surfaces above the
-        # submit button.
+        # section rules only. A firing rule reveals and expands the section, shows
+        # its message as an alert at the head of it, and marks
+        # ``compression_algorithm`` inline.
+        # The submit-time 422 carries no field path, and surfaces above the submit
+        # button.
         sections={"General": SectionRules(fail_when=_BINARY_COMPRESSION_FAIL_RULES)},
     )
 
