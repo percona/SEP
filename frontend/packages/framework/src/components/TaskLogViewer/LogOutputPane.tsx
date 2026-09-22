@@ -50,10 +50,23 @@ export function LogOutputPane({
   );
 }
 
+/**
+ * How the text handed to the log so far ends: on a newline, on a carriage
+ * return whose pairing newline may still arrive, or partway through a line.
+ */
+type LastLineEnd = 'closed' | 'afterCarriageReturn' | 'open';
+
 interface AppendedText {
   log: LazyLog | null;
   text: string;
-  endsMidLine: boolean;
+  lastLine: LastLineEnd;
+}
+
+function lastLineEnd(text: string): LastLineEnd {
+  if (text.endsWith('\n')) {
+    return 'closed';
+  }
+  return text.endsWith('\r') ? 'afterCarriageReturn' : 'open';
 }
 
 /**
@@ -63,9 +76,12 @@ interface AppendedText {
  * changes, and that cleared list paints (blank, then scrolled to the first
  * line) before `follow` brings it back to the end, so a streaming log
  * flickered on every chunk. Its external mode keeps the lines already shown.
- * Every append ends the log's last line, so text that stops mid-line is shown
- * as a whole line, and if more of that line arrives the log is rebuilt from
- * the full text.
+ *
+ * Every append ends the log's last line with a newline, which LazyLog pairs
+ * with a trailing carriage return, the other line end it recognises. So a
+ * newline arriving after a carriage return, or a line end arriving after an
+ * open line, is already accounted for and is dropped. More of an open line
+ * cannot be appended, so the log is rebuilt from the full text instead.
  */
 function AppendingLog({
   text,
@@ -73,7 +89,7 @@ function AppendingLog({
   enableSearch,
 }: Pick<LogOutputPaneProps, 'text' | 'wrap' | 'enableSearch'>) {
   const logRef = useRef<LazyLog>(null);
-  const appendedRef = useRef<AppendedText>({ log: null, text: '', endsMidLine: false });
+  const appendedRef = useRef<AppendedText>({ log: null, text: '', lastLine: 'closed' });
   const [generation, setGeneration] = useState(0);
 
   useLayoutEffect(() => {
@@ -81,27 +97,30 @@ function AppendingLog({
     if (!log) {
       return;
     }
-    const appended =
-      appendedRef.current.log === log ? appendedRef.current : { log, text: '', endsMidLine: false };
+    const appended: AppendedText =
+      appendedRef.current.log === log ? appendedRef.current : { log, text: '', lastLine: 'closed' };
     if (!text.startsWith(appended.text)) {
       setGeneration((value) => value + 1);
       return;
     }
     let added = text.slice(appended.text.length);
-    let { endsMidLine } = appended;
-    if (endsMidLine && added) {
-      if (!added.startsWith('\n')) {
-        setGeneration((value) => value + 1);
-        return;
-      }
+    let { lastLine } = appended;
+    if (lastLine === 'open' && added.startsWith('\r')) {
       added = added.slice(1);
-      endsMidLine = false;
+      lastLine = 'afterCarriageReturn';
+    }
+    if (lastLine !== 'closed' && added.startsWith('\n')) {
+      added = added.slice(1);
+      lastLine = 'closed';
+    } else if (lastLine === 'open' && added) {
+      setGeneration((value) => value + 1);
+      return;
     }
     if (added) {
       log.appendLines([added]);
-      endsMidLine = !added.endsWith('\n');
+      lastLine = lastLineEnd(added);
     }
-    appendedRef.current = { log, text, endsMidLine };
+    appendedRef.current = { log, text, lastLine };
   }, [text, generation]);
 
   return (
