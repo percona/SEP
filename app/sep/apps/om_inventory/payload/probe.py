@@ -551,11 +551,11 @@ def determine_vendor(build_info):
 
     ``psmdbVersion`` is a field Percona's fork adds to ``buildInfo`` that upstream
     MongoDB has no code to emit, so its presence is a positive identification, not
-    a heuristic -- confirmed against a running Percona Server for MongoDB node
+    a heuristic — confirmed against a running Percona Server for MongoDB node
     (``psmdbVersion`` present, ``modules: []``) and a running MongoDB Enterprise
     node (no ``psmdbVersion`` key at all, ``modules: ["enterprise"]``). Without
     that field, ``modules`` is the documented signal for Enterprise versus
-    Community -- but on its own it cannot tell Percona from Community, since
+    Community — but on its own it cannot tell Percona from Community, since
     Percona's ``modules`` is also empty.
 
     :param build_info: The ``buildInfo`` command's output, or ``{}`` when it

@@ -80,12 +80,12 @@ class OmInventorySettings(BaseYamlSettings):
     :param MAX_CONCURRENT_PROBES: Ceiling on probe tasks in flight at once. Every
         dispatch is a Nomad job, and a real estate has far more hosts than this
         workspace's sandbox. Bounded well under the Tasks API's own database pool
-        (``POOL_SIZE`` + ``MAX_OVERFLOW``, 5 by SEP-2026's default) on purpose: each
+        (``POOL_SIZE`` + ``MAX_OVERFLOW``, 5 by default) on purpose: each
         host in flight polls that same API on its own ``POLL_INTERVAL`` clock for
         the whole sweep, not just once at dispatch, so this is a sustained call
         volume against that pool, not a one-time burst. A value at or above the
         pool's own size guarantees queueing on every poll cycle regardless of any
-        other traffic sharing that pool -- dispatch.py's bounded capacity retry
+        other traffic sharing that pool — dispatch.py's bounded capacity retry
         absorbs a brief race, not a fan-out that structurally outnumbers the
         connections available to serve it.
     :param RUN_RETENTION: How many runs to keep. Each carries a per-host receipt, so

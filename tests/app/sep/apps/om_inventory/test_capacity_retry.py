@@ -16,12 +16,12 @@
 """Test that a transient Tasks API refusal does not fail a host's probe outright.
 
 A sweep dispatches up to ``MAX_CONCURRENT_PROBES`` hosts at once, each making its
-own requests to the Tasks API -- exactly the burst that can transiently exhaust
-that process's own database connection pool (SEP-2026 sized it at 5 connections,
-surfaced as a 503) or race two byte-identical dispatches against the same
-dispatch-lock row (surfaced as a 409 -- the lock's whole lifetime is one dispatch
+own requests to the Tasks API — exactly the burst that can transiently exhaust
+that process's own database connection pool (sized at 5 connections, surfaced as
+a 503) or race two byte-identical dispatches against the same
+dispatch-lock row (surfaced as a 409 — the lock's whole lifetime is one dispatch
 call, per ``_dispatch_queue_item``'s own ``finally``, not this probe's).
-``_with_capacity_retry`` absorbs either queueing accident with a bounded retry
+``with_capacity_retry`` absorbs either queueing accident with a bounded retry
 instead of letting it count as a dispatch or collection failure, and stays
 bounded both in attempt count and in total added wait so a refusal that does not
 clear still gives up and lets the ordinary failure path record it.
@@ -34,9 +34,9 @@ import pytest
 
 from app.core.exceptions import HTTPConflictException, HTTPServiceUnavailableException
 from app.sep.apps.om_inventory.dispatch import (
-    _CAPACITY_RETRY_ATTEMPTS,
-    _with_capacity_retry,
+    CAPACITY_RETRY_ATTEMPTS,
     probe_host,
+    with_capacity_retry,
 )
 from app.sep.apps.om_inventory.inventory import InventoryService
 from app.sep.apps.om_inventory.mapping import MappedService
@@ -88,12 +88,12 @@ class TestWithCapacityRetry:
         async def flaky() -> str:
             nonlocal calls
             calls += 1
-            if calls < _CAPACITY_RETRY_ATTEMPTS:
+            if calls < CAPACITY_RETRY_ATTEMPTS:
                 raise HTTPServiceUnavailableException
             return "ok"
 
-        assert await _with_capacity_retry(flaky) == "ok"
-        assert calls == _CAPACITY_RETRY_ATTEMPTS
+        assert await with_capacity_retry(flaky) == "ok"
+        assert calls == CAPACITY_RETRY_ATTEMPTS
 
     @pytest.mark.asyncio
     async def test_gives_up_after_the_bounded_number_of_attempts(self) -> None:
@@ -106,10 +106,10 @@ class TestWithCapacityRetry:
             raise HTTPServiceUnavailableException
 
         with pytest.raises(HTTPServiceUnavailableException):
-            await _with_capacity_retry(always_full)
+            await with_capacity_retry(always_full)
 
         # Bounded in count: exactly the configured number of tries, not one more.
-        assert calls == _CAPACITY_RETRY_ATTEMPTS
+        assert calls == CAPACITY_RETRY_ATTEMPTS
 
     @pytest.mark.asyncio
     async def test_a_different_error_is_not_retried(self) -> None:
@@ -122,7 +122,7 @@ class TestWithCapacityRetry:
             raise RuntimeError("not a capacity problem")
 
         with pytest.raises(RuntimeError):
-            await _with_capacity_retry(broken)
+            await with_capacity_retry(broken)
 
         assert calls == 1
 
@@ -134,21 +134,21 @@ class TestWithCapacityRetry:
         async def flaky() -> str:
             nonlocal calls
             calls += 1
-            if calls < _CAPACITY_RETRY_ATTEMPTS:
+            if calls < CAPACITY_RETRY_ATTEMPTS:
                 raise HTTPConflictException(
                     "409: DispatchLock with the same name already exists."
                 )
             return "ok"
 
-        assert await _with_capacity_retry(flaky) == "ok"
-        assert calls == _CAPACITY_RETRY_ATTEMPTS
+        assert await with_capacity_retry(flaky) == "ok"
+        assert calls == CAPACITY_RETRY_ATTEMPTS
 
     @pytest.mark.asyncio
     async def test_an_unrelated_409_is_not_retried(self) -> None:
         """Fail on the first try for a conflict that is not the dispatch lock.
 
         ``_dispatch_queue_item`` also raises 409 for "Queue item is not in a
-        pending state" -- a real conflict, not a queueing accident, and nothing
+        pending state" — a real conflict, not a queueing accident, and nothing
         a retry would resolve.
         """
         calls = 0
@@ -159,7 +159,7 @@ class TestWithCapacityRetry:
             raise HTTPConflictException("Queue item is not in a pending state.")
 
         with pytest.raises(HTTPConflictException):
-            await _with_capacity_retry(rejected)
+            await with_capacity_retry(rejected)
 
         assert calls == 1
 
@@ -248,7 +248,7 @@ class TestProbeHostAbsorbsATransientRefusal:
 
         result = await probe_host(api, HOST, entries())
 
-        assert post_calls == _CAPACITY_RETRY_ATTEMPTS
+        assert post_calls == CAPACITY_RETRY_ATTEMPTS
         assert "HTTPServiceUnavailableException" in (result.error or "")
         # Nothing reached the queue, so there is nothing for probe_host to release.
         assert result.task_history_id is None

@@ -150,7 +150,7 @@ class ObservedEntity(SQLModel):
     translate. A second, unused surrogate ``id`` column would only invite a
     query that joins on the wrong one. ``updated_at`` is declared here instead
     of inherited for the same reason: :class:`~app.core.db.models.BaseSQLModel`
-    pairs it with a database-managed ``created_at`` this mixin has no use for --
+    pairs it with a database-managed ``created_at`` this mixin has no use for —
     ``first_seen_at`` already is that column, under the name the freshness
     lifecycle uses elsewhere on this class.
 

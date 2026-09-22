@@ -64,6 +64,8 @@ class OmHostManager(BaseSQLModelManager):
     Model = OmHost
 
     @staticmethod
+    # pagination-ok: SQLAlchemy WHERE clauses, at most one per optional filter,
+    # consumed by the caller's own paginated query rather than returned to a client.
     def estate_clauses(*, has_service: bool | None, failing: bool | None) -> list[Any]:
         """Return the ``WHERE`` clauses for the estate list's optional filters.
 

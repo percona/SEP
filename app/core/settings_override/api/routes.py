@@ -1447,8 +1447,8 @@ async def apply_class_overrides(
     """Validate, persist and publish a batch of overrides for one local class.
 
     The whole of ``PATCH /{setting_class}`` for a locally-wired class, minus the
-    routing and the remote-class branch. It exists as a function -- not only
-    inlined in :func:`build_settings_router`'s ``patch_settings`` closure --
+    routing and the remote-class branch. It exists as a function — not only
+    inlined in :func:`build_settings_router`'s ``patch_settings`` closure —
     because an app that owns its settings class (:class:`AppOwnedClassEntry`)
     may also need to serve its *own* narrower ``/config`` endpoint: the shared
     settings router is admin-gated, and not every caller of an app's
@@ -1457,8 +1457,8 @@ async def apply_class_overrides(
     republish the snapshot, rebind" is exactly the kind of duplicate that
     drifts into two different validation rules.
 
-    Phase A validates every key -- existence on the class, HOT classification,
-    type and constraint coercion -- and rejects the whole batch on any failure,
+    Phase A validates every key — existence on the class, HOT classification,
+    type and constraint coercion — and rejects the whole batch on any failure,
     so a partial write is not a state this can reach. Phase B persists, publishes
     the new snapshot inline, and fires the rebind callbacks for the changed keys
     so a hot target rebinds without waiting for the background refresher.
@@ -1515,7 +1515,7 @@ async def clear_class_override(
     The counterpart to :func:`apply_class_overrides`, extracted for the same
     reason: an app serving its own ``/config`` needs "put this back the way the
     deployment configured it", and without it an operator who once set a value can
-    only ever set another one -- "no override" stops being reachable.
+    only ever set another one — "no override" stops being reachable.
 
     Idempotent: clearing a key with no row succeeds. A ``NOT_OVERRIDABLE`` field
     with no row answers 409, because the intent cannot be satisfied rather than

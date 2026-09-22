@@ -59,10 +59,10 @@ REQUIREMENTS = "pymongo>=4.6,<5"
 JOB_ID_PREFIX = "om"
 PROBE_PAYLOAD_PATH = Path(payload_pkg.__file__).parent / "probe.py"
 
-# Bounds _with_capacity_retry both ways: at most this many tries, and -- since the
+# Bounds with_capacity_retry both ways: at most this many tries, and -- since the
 # backoff is 1, 2, 4, ... seconds -- at most a handful of seconds of extra wait
 # before it gives up and lets the caller's own failure handling take over.
-_CAPACITY_RETRY_ATTEMPTS = 3
+CAPACITY_RETRY_ATTEMPTS = 3
 _CAPACITY_RETRY_BASE_DELAY_SECONDS = 1.0
 
 #: Substring `_dispatch_queue_item` (app/tasks/celery.py) puts in a 409's detail
@@ -88,7 +88,7 @@ def _is_dispatch_lock_race(err: Exception) -> bool:
 
     ``_dispatch_queue_item`` computes its lock name as a hash of exactly
     ``{task_id, task, target, payload, meta}`` and deletes the row in a
-    ``finally`` right after dispatching -- the lock's whole lifetime is one
+    ``finally`` right after dispatching — the lock's whole lifetime is one
     dispatch call, not this probe's. So a collision here means another request
     with byte-identical content (this same host, dispatched again before the
     first attempt's ``finally`` ran) is racing this one, not that a long-running
@@ -103,13 +103,13 @@ def _is_dispatch_lock_race(err: Exception) -> bool:
     ) and _DISPATCH_LOCK_CONFLICT_MARKER in str(err.detail)
 
 
-async def _with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
+async def with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
     """Retry ``call`` a bounded number of times on a known-transient refusal.
 
     A sweep dispatches up to ``MAX_CONCURRENT_PROBES`` hosts at once, each making
-    its own requests to the Tasks API -- exactly the burst that can transiently
-    exhaust that process's own database connection pool (SEP-2026 sized it at 5
-    connections, surfaced as a 503) or race two byte-identical dispatches against
+    its own requests to the Tasks API — exactly the burst that can transiently
+    exhaust that process's own database connection pool (sized at 5 connections,
+    surfaced as a 503) or race two byte-identical dispatches against
     the same dispatch-lock row (surfaced as a 409, see
     :func:`_is_dispatch_lock_race`). Either is a queueing accident, not a fact
     about this host's probe, so neither belongs counted alongside a real dispatch
@@ -118,8 +118,8 @@ async def _with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
     Left uncapped this would be indistinguishable from a hang: retrying forever
     on a pool that stays saturated blocks the semaphore slot this host holds,
     which is exactly what starves the *other* queued hosts of a turn. Bounded
-    both ways -- a fixed attempt count, and an exponential backoff that is itself
-    bounded by that count -- caps how long one host can hold its slot before this
+    both ways — a fixed attempt count, and an exponential backoff that is itself
+    bounded by that count — caps how long one host can hold its slot before this
     gives up and lets the ordinary failure path record it.
 
     :param call: Zero-argument async callable to retry.
@@ -127,12 +127,12 @@ async def _with_capacity_retry(call: Callable[[], Awaitable[T]]) -> T:
     :raises Exception: Whatever ``call`` last raised, once every attempt is spent,
         or immediately for any exception neither predicate recognises.
     """
-    for attempt in range(_CAPACITY_RETRY_ATTEMPTS):
+    for attempt in range(CAPACITY_RETRY_ATTEMPTS):
         try:
             return await call()
         except Exception as err:
             transient = _is_pool_capacity_error(err) or _is_dispatch_lock_race(err)
-            if not transient or attempt == _CAPACITY_RETRY_ATTEMPTS - 1:
+            if not transient or attempt == CAPACITY_RETRY_ATTEMPTS - 1:
                 raise
             await asyncio.sleep(_CAPACITY_RETRY_BASE_DELAY_SECONDS * 2**attempt)
     raise AssertionError("unreachable: the loop above always returns or raises")
@@ -289,7 +289,7 @@ async def _wait_for_terminal(tasks_api: RemoteAPI, task_history_id: int) -> str:
     while waited < om_inventory_settings.TASK_TIMEOUT:
         await asyncio.sleep(om_inventory_settings.POLL_INTERVAL)
         waited += om_inventory_settings.POLL_INTERVAL
-        history = await _with_capacity_retry(
+        history = await with_capacity_retry(
             lambda: tasks_api.get(f"/history/{task_history_id}")
         )
         if not isinstance(history, dict):
@@ -402,7 +402,7 @@ async def probe_host(
     # duration, and this number is only ever read as an interval.
     started = monotonic()
     try:
-        created = await _with_capacity_retry(
+        created = await with_capacity_retry(
             lambda: tasks_api.post(
                 f"/execute/{RUN_PYTHON_TASK}",
                 json={
@@ -430,7 +430,7 @@ async def probe_host(
 
         history_id = result.task_history_id
         status = await _wait_for_terminal(tasks_api, history_id)
-        stdout, stderr = await _with_capacity_retry(
+        stdout, stderr = await with_capacity_retry(
             lambda: _read_stdout(tasks_api, history_id)
         )
         result.records, result.host_record = parse_ndjson(stdout)
