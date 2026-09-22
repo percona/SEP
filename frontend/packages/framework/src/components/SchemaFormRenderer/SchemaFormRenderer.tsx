@@ -179,6 +179,15 @@ function sectionHasError(
   return flattenSectionFields([section]).some((field) => Boolean(get(errors, field.name)));
 }
 
+/**
+ * Mirror an active fail rule's message onto one field as a react-hook-form
+ * error, and remove it once no rule names the field any more.
+ *
+ * It only ever owns a `failRule`-typed error: a native or backend error already
+ * on the field wins and is neither overwritten nor cleared here. Its own error
+ * is also dropped on unmount, since an error left on a field with no mounted
+ * input is one nothing can clear, and `handleSubmit` refuses to step past it.
+ */
 function FailRuleFieldError({
   name,
   message,
@@ -309,7 +318,7 @@ const SectionRenderer = memo(function SectionRenderer({
       {section.collapsible ? (
         <Accordion
           expanded={expanded || violations.length > 0}
-          onChange={(_, isExpanded) => setExpanded(isExpanded)}
+          onChange={(_, isExpanded) => setExpanded(isExpanded || violations.length > 0)}
           disableGutters
           slotProps={{ transition: { unmountOnExit: true } }}
         >

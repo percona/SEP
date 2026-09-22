@@ -1199,6 +1199,7 @@ describe('SchemaFormRenderer — cardinality_rules', () => {
 
       await user.type(screen.getByRole('textbox', { name: 'Option' }), 'selected');
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(summary).toHaveAttribute('aria-expanded', 'true');
       await user.click(screen.getByRole('button', { name: 'Run' }));
       await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     },
