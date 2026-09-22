@@ -76,7 +76,6 @@ from app.sep.apps.om_inventory.crud import (
     get_host,
     get_run,
     get_service,
-    has_service_clause,
     list_services,
     OmHostManager,
     OmServiceManager,
@@ -267,16 +266,7 @@ async def list_estate_hosts(
     :param executor: Filter on whether an executor serves it.
     :return: One page of hosts, by name, with the matching total.
     """
-    clauses = []
-    if has_service is not None:
-        exists_clause = has_service_clause()
-        clauses.append(exists_clause if has_service else ~exists_clause)
-    if failing is not None:
-        clauses.append(
-            col(OmHost.failing_since).is_not(None)
-            if failing
-            else col(OmHost.failing_since).is_(None)
-        )
+    clauses = OmHostManager.estate_clauses(has_service=has_service, failing=failing)
 
     if executor is None:
         page = await OmHostManager.list_paginated(

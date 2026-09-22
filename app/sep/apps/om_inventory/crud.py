@@ -63,6 +63,33 @@ class OmHostManager(BaseSQLModelManager):
 
     Model = OmHost
 
+    @staticmethod
+    def estate_clauses(*, has_service: bool | None, failing: bool | None) -> list[Any]:
+        """Return the ``WHERE`` clauses for the estate list's optional filters.
+
+        Not ``executor``: that filter reads ``observed.executor``, a JSON
+        sub-document not worth a dialect-specific path expression for SQLite and
+        PostgreSQL each, so it stays a post-query pass over already-fetched rows
+        in the route rather than a clause here.
+
+        :param has_service: Filter on whether a MongoDB service is registered,
+            or ``None`` for no filter.
+        :param failing: Filter on whether the host is currently failing, or
+            ``None`` for no filter.
+        :return: The clauses, empty when both filters are unset.
+        """
+        clauses: list[Any] = []
+        if has_service is not None:
+            exists_clause = has_service_clause()
+            clauses.append(exists_clause if has_service else ~exists_clause)
+        if failing is not None:
+            clauses.append(
+                col(OmHost.failing_since).is_not(None)
+                if failing
+                else col(OmHost.failing_since).is_(None)
+            )
+        return clauses
+
 
 class OmServiceManager(BaseSQLModelManager):
     """Manage :class:`OmService` CRUD operations, including paginated estate reads.
@@ -177,9 +204,12 @@ async def upsert_host(
     :param attempted: Whether this run actually probed the host.
     :return: The stored row.
     """
-    host = await session.get(OmHost, node_id)
+    host = await OmHostManager.first(session, node_id=node_id)
     if host is None:
         host = OmHost(node_id=node_id, name=name)
+        # Staged, not OmHostManager.create(): every host and service in a sweep
+        # commits together in service.py's persist_estate, and the manager's
+        # create()/save() would each commit on their own.
         session.add(host)
 
     # Identity attributes are owned by inventory and refreshed every time the host is
@@ -237,9 +267,11 @@ async def upsert_service(
     :param attempted: Whether this run actually probed the service.
     :return: The stored row.
     """
-    service = await session.get(OmService, service_id)
+    service = await OmServiceManager.first(session, service_id=service_id)
     if service is None:
         service = OmService(service_id=service_id, node_id=node_id)
+        # Staged, not OmServiceManager.create(): see the matching comment in
+        # upsert_host.
         session.add(service)
 
     service.node_id = node_id
@@ -261,7 +293,7 @@ async def get_host(session: AsyncSession, node_id: str) -> OmHost | None:
     :param node_id: PMM's node id.
     :return: The host, or ``None``.
     """
-    return await session.get(OmHost, node_id)
+    return await OmHostManager.first(session, node_id=node_id)
 
 
 async def get_service(session: AsyncSession, service_id: str) -> OmService | None:
@@ -271,7 +303,7 @@ async def get_service(session: AsyncSession, service_id: str) -> OmService | Non
     :param service_id: PMM's service id.
     :return: The service, or ``None``.
     """
-    return await session.get(OmService, service_id)
+    return await OmServiceManager.first(session, service_id=service_id)
 
 
 async def delete_host(session: AsyncSession, host: OmHost) -> None:
@@ -292,9 +324,10 @@ async def delete_host(session: AsyncSession, host: OmHost) -> None:
     :param host: The row to delete.
     """
     for service in await list_services(session, node_id=host.node_id):
+        # Staged, not OmServiceManager.delete(): it commits per call, which
+        # would split "forget a host" into N+1 transactions instead of one.
         await session.delete(service)
-    await session.delete(host)
-    await session.commit()
+    await OmHostManager.delete(session, host)
 
 
 async def delete_service(session: AsyncSession, service: OmService) -> None:
@@ -303,8 +336,7 @@ async def delete_service(session: AsyncSession, service: OmService) -> None:
     :param session: The database session.
     :param service: The row to delete.
     """
-    await session.delete(service)
-    await session.commit()
+    await OmServiceManager.delete(session, service)
 
 
 async def list_hosts(session: AsyncSession) -> list[OmHost]:
@@ -313,8 +345,7 @@ async def list_hosts(session: AsyncSession) -> list[OmHost]:
     :param session: The database session.
     :return: The hosts.
     """
-    result = await session.exec(select(OmHost).order_by(col(OmHost.name)))
-    return list(result.all())
+    return await OmHostManager.list(session, order_by=[col(OmHost.name)])
 
 
 async def list_services(
@@ -326,11 +357,9 @@ async def list_services(
     :param node_id: Restrict to this host when given.
     :return: The services.
     """
-    statement = select(OmService).order_by(col(OmService.name))
-    if node_id is not None:
-        statement = statement.where(OmService.node_id == node_id)
-    result = await session.exec(statement)
-    return list(result.all())
+    return await OmServiceManager.list(
+        session, order_by=[col(OmService.name)], node_id=node_id
+    )
 
 
 async def recent_runs(
@@ -407,8 +436,10 @@ async def running_runs(session: AsyncSession) -> list[ProbeRun]:
 async def prune_runs(session: AsyncSession, keep: int) -> int:
     """Delete all but the newest ``keep`` runs, never one still in flight.
 
-    Every run carries its whole fact set, so the table grows by a few hundred
-    kilobytes per sweep and needs bounding here rather than by an operator.
+    ``ProbeRun`` is a receipt, not a copy of the estate — what the probe found
+    lives on ``OmHost``/``OmService`` instead — but its ``nodes`` column still
+    carries one record per host per sweep, so the table grows every run and
+    needs bounding here rather than by an operator.
 
     ``RUNNING`` is excluded regardless of age. Retention is by ``started_at``, and a
     long sweep is by definition the oldest row while it runs: enough newer rows — a
