@@ -84,8 +84,13 @@ class OmInventorySettings(BaseYamlSettings):
         this bounds the table rather than an operator having to.
     :param STALE_RUN_AFTER: How long a run may stay ``running`` before the trigger
         endpoint concludes its worker is gone. Must comfortably exceed the slowest
-        legitimate sweep: ``TASK_TIMEOUT`` per dispatch, ``MAX_CONCURRENT_PROBES`` at
-        a time.
+        legitimate sweep, which dispatches ``MAX_CONCURRENT_PROBES`` hosts at a time
+        and can take up to ``TASK_TIMEOUT`` per batch: for an estate of ``N`` hosts
+        that is roughly ``ceil(N / MAX_CONCURRENT_PROBES) * TASK_TIMEOUT``. The
+        default covers estates up to a few hundred hosts at the defaults above;
+        raising ``MAX_CONCURRENT_PROBES`` or targeting a much larger estate should
+        raise this too, or the trigger endpoint reaps a sweep that is still running
+        and reopens the single-flight race this check exists to close.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "OM_INVENTORY"]
@@ -117,7 +122,7 @@ class OmInventorySettings(BaseYamlSettings):
         50, advanced=True
     )
     STALE_RUN_AFTER: _PositiveSeconds = hot_field(  # ty: ignore[invalid-assignment]
-        timedelta(minutes=30), advanced=True
+        timedelta(hours=2), advanced=True
     )
 
 
