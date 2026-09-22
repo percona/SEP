@@ -353,14 +353,7 @@ class PackagesInstallStrategy:
     def _verify(self, spec: BootstrapSpec) -> StepAction:
         """Confirm ``mongod`` answers before declaring this host done."""
         del spec
-        return StepAction(
-            command=[
-                "sh",
-                "-c",
-                "mongosh --quiet --eval \"db.adminCommand('ping').ok\"",
-            ],
-            timeout_s=60,
-        )
+        return _mongosh_eval("db.adminCommand('ping').ok")
 
     def _require_package_manager(self, os_: OperatingSystem) -> str:
         """Map a supported OS to its package manager, or reject an unsupported one."""

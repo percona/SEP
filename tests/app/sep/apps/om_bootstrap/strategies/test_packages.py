@@ -18,6 +18,7 @@
 import pytest
 
 from app.sep.apps.om_bootstrap.strategies.packages import (
+    _mongosh_eval,
     DATA_PATH,
     LOG_PATH,
     PackagesInstallStrategy,
@@ -229,6 +230,14 @@ class TestBuildStep:
         command = " ".join(action.command)
         assert "super-secret-keyfile-bytes" in command
         assert "-m 400" in command
+
+    def test_verify_goes_through_mongosh_eval_too(self) -> None:
+        """``verify`` must not bypass the Atlas CLI probe suppression every mongosh call needs."""
+        action = PackagesInstallStrategy().build_step(
+            "verify", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        assert action == _mongosh_eval("db.adminCommand('ping').ok")
 
 
 class TestPlanRunSteps:
