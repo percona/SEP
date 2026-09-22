@@ -43,6 +43,7 @@ from app.core.settings_override.secret_storage import (
     decrypt_secret_leaves,
     reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
+    unmark_secret_leaves,
 )
 
 if TYPE_CHECKING:
@@ -179,10 +180,12 @@ def upgrade_encrypt_secret_override_values(
 ) -> None:
     """Encrypt every not-yet-encrypted secret leaf stored in ``settingoverride``.
 
-    Idempotent in two directions: ``is_encrypted`` short-circuits a leaf an
-    earlier run already rewrote, and a row whose ``setting_class`` none of
-    ``settings_classes`` owns is left untouched, so a track sharing one physical
-    database with another never rewrites the other's rows.
+    Idempotent in two directions: a leaf an earlier run already rewrote carries
+    the envelope marker and is short-circuited on that, and a row whose
+    ``setting_class`` none of ``settings_classes`` owns is left untouched, so a
+    track sharing one physical database with another never rewrites the other's
+    rows. A leaf encrypted before the envelope shipped carries no marker and is
+    short-circuited by the structural check instead.
 
     :param settings_classes: The settings classes this track can resolve.
     """
@@ -252,6 +255,30 @@ def downgrade_decrypt_credential_url_override_values(
     _rewrite_secret_leaves(bind, settings_classes, decrypt_credential_url_leaves)
 
 
+def downgrade_unmark_secret_override_values(
+    settings_classes: Iterable[type[BaseYamlSettings]],
+) -> None:
+    """Strip the envelope marker from every stored secret leaf this track owns.
+
+    The rollback half of the ciphertext envelope. Its upgrade partner is a
+    no-op, because the envelope ships with the code rather than with the schema:
+    there is no forward work to do, and re-marking existing rows is not
+    something a migration can decide (see
+    :func:`~app.core.settings_override.secret_storage.unmark_secret_leaves`).
+
+    Needs no ``ENCRYPTION_KEY`` and never decrypts, so unlike
+    :func:`downgrade_decrypt_secret_override_values` it cannot fail on a row
+    encrypted under a key this process does not hold — that row is unmarked and
+    left encrypted, which is exactly what the older release expects.
+
+    :param settings_classes: The settings classes this track can resolve.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    _rewrite_secret_leaves(bind, settings_classes, unmark_secret_leaves)
+
+
 def _settingoverride_value_table() -> sa.TableClause:
     """Return a lightweight ``settingoverride`` table carrying the JSON value type.
 
@@ -302,8 +329,9 @@ def _rewrite_secret_leaves(
         try:
             value = rewrite(settings_cls, row.key, row.value)
         except DecryptionError as exc:
-            # Only reachable on the downgrade: the encrypt direction decides
-            # with is_encrypted and never attempts a decrypt.
+            # Only reachable on the downgrade: the encrypt and unmark
+            # directions both decide from the stored shape and never attempt a
+            # decrypt.
             undecryptable += 1
             logger.warning(
                 "Left %s.%s as it stands, it could not be decrypted: %s",
