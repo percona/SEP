@@ -1460,8 +1460,14 @@ class TestGetHostStates:
         states = {state.name: state for state in _build_executor().get_host_states()}
 
         assert set(states) == {"healthy", "down"}
-        assert states["healthy"].usable is True
-        assert states["down"].usable is False
+        assert (states["healthy"].reachable, states["healthy"].driver_healthy) == (
+            True,
+            True,
+        )
+        assert (states["down"].reachable, states["down"].driver_healthy) == (
+            False,
+            True,
+        )
         # No filter: this call must see what get_hosts filters out.
         assert mock_backend.nodes.get_nodes.call_args.kwargs == {}
 

@@ -80,7 +80,7 @@ from app.tasks.execution.executors.nomad.steps import (
     LOG_CAPTURE_HOLD_DEFAULT_SECONDS,
     NomadStep,
 )
-from app.tasks.execution.models import BaseExecutor, ExecutorHostState
+from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution.utils import gzip_compress, minify_file_content
 from app.tasks.logs.line_split import split_complete_lines, WithheldLineBuffer
 from app.tasks.logs.log_reader import decompress_legacy_logs
@@ -90,6 +90,7 @@ from app.tasks.logs.log_writer import (
 )
 from app.tasks.models import (
     ExecutionEvent,
+    ExecutorHostState,
     FileMetadata,
     LogCaptureStatusEnum,
     Task,

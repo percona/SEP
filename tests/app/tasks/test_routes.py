@@ -55,7 +55,7 @@ from app.tasks.execution.executors.nomad.steps import (
     NomadStep,
     RUN_SCRIPT_OUTPUT_FILES_PATH,
 )
-from app.tasks.execution.models import BaseExecutor, ExecutorHostState
+from app.tasks.execution.models import BaseExecutor
 from app.tasks.execution_request_secrets import (
     ENCRYPTED_META_KEYS,
     PAYLOAD_LEAF,
@@ -65,6 +65,7 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    ExecutorHostState,
     LogCaptureStatusEnum,
     MAX_FAILURE_REASON_LENGTH,
     SYSTEM_USER,

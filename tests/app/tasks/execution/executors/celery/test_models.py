@@ -121,7 +121,8 @@ class TestCeleryExecutorGetHosts:
         states = executor.get_host_states()
 
         assert [state.name for state in states] == ["local"]
-        assert states[0].usable is True
+        assert states[0].reachable is True
+        assert states[0].driver_healthy is True
         assert states[0].status is None
 
 

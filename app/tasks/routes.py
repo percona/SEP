@@ -80,11 +80,11 @@ from app.tasks.deps import (
     TaskListQueryDep,
     validate_chain_task_names,
 )
-from app.tasks.execution.models import ExecutorHostState
 from app.tasks.execution.utils import parse_payload
 from app.tasks.logs.log_reader import has_legacy_logs, iter_task_history_logs
 from app.tasks.models import (
     ExecutionEvent,
+    ExecutorHostState,
     FileMetadata,
     LogCaptureStatusEnum,
     Task,

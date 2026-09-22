@@ -20,7 +20,6 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.models import BaseCaseInsensitiveModel
@@ -30,6 +29,7 @@ from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
     ExecutionEvent,
+    ExecutorHostState,
     FileMetadata,
     Task,
     TaskHistory,
@@ -47,44 +47,6 @@ _TERMINAL_STATUS_EVENT_MAP = {
     TaskHistoryStatusEnum.STALE: "STALE",
     TaskHistoryStatusEnum.UNLAUNCHABLE: "UNLAUNCHABLE",
 }
-
-
-class ExecutorHostState(BaseModel):
-    """Describe one executor host in more detail than "usable or absent".
-
-    :meth:`BaseExecutor.get_hosts` answers a yes/no question -- can a job be placed
-    here -- by collapsing several conditions into presence in a mapping. That is the
-    right answer for *dispatching*, and the wrong one for *reporting*: a host that is
-    missing from it may never have been onboarded, or may be onboarded and down, or up
-    with a broken driver, and those are three different jobs for whoever has to fix it.
-
-    :param name: The host's name as the backend knows it.
-    :param address: Its network address.
-    :param reachable: Whether the backend currently has contact with it. ``False``
-        means the machine is down, the agent is stopped, or it never registered.
-    :param driver_healthy: Whether it can actually run this executor's job type. A
-        reachable host with an unhealthy driver is onboarded but broken - a different
-        problem from one that was never onboarded, and the distinction this type
-        exists for.
-    :param status: The backend's own word for its state, passed through unmapped so a
-        reader can look it up in the backend's documentation.
-    :param detail: Why the driver is unhealthy, when the backend says.
-    """
-
-    name: str
-    address: str
-    reachable: bool
-    driver_healthy: bool
-    status: str | None = None
-    detail: str | None = None
-
-    @property
-    def usable(self) -> bool:
-        """Return whether a job can be placed here.
-
-        :return: ``True`` when the host is both reachable and driver-healthy.
-        """
-        return self.reachable and self.driver_healthy
 
 
 class BaseExecutor(BaseCaseInsensitiveModel, ABC):
