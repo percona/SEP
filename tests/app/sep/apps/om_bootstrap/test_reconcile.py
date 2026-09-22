@@ -20,6 +20,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.exceptions import HTTPBadGatewayException
 from app.sep.apps.om_bootstrap import reconcile
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -121,6 +122,22 @@ class TestReconcileStep:
         result = await reconcile.reconcile_step(_tasks_api("lost"), step)
 
         assert result.status == StepStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_a_malformed_history_payload_raises_instead_of_hanging_forever(
+        self,
+    ) -> None:
+        """A non-dict TaskHistory body is a bad upstream answer, not "still running"."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.return_value = None
+
+        with pytest.raises(HTTPBadGatewayException):
+            await reconcile.reconcile_step(tasks_api, step)
 
 
 class TestReconcileRun:

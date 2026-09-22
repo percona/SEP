@@ -45,7 +45,9 @@ does for its own purpose). A worthwhile follow-up, not done here to keep this
 module to exactly the one thing its docstring claims.
 """
 
-from app.core.requests import RemoteAPI
+import asyncio
+
+from app.core.requests import as_json_object, RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.sep.apps.om_bootstrap.dispatch import cleanup_step_script
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
@@ -91,9 +93,7 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
     """
     if step.status != StepStatus.RUNNING or step.task_history_id is None:
         return step
-    history = await tasks_api.get(f"/history/{step.task_history_id}")
-    if not isinstance(history, dict):
-        return step
+    history = as_json_object(await tasks_api.get(f"/history/{step.task_history_id}"))
     task_status = history["status"]
     if task_status in _IN_FLIGHT_STATUSES:
         return step
@@ -130,13 +130,14 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
         every step was still in flight.
     """
     states = parse_host_states(run)
-    changed = await _reconcile_step_list_per_host(tasks_api, run, states)
-    if changed:
-        run.hosts = dump_host_states(states)
-
     run_steps = parse_run_steps(run)
     seed_host = states[0].host if states else None
-    run_steps_changed = await _reconcile_step_list(tasks_api, run, seed_host, run_steps)
+    changed, run_steps_changed = await asyncio.gather(
+        _reconcile_step_list_per_host(tasks_api, run, states),
+        _reconcile_step_list(tasks_api, run, seed_host, run_steps),
+    )
+    if changed:
+        run.hosts = dump_host_states(states)
     if run_steps_changed:
         run.run_steps = dump_run_steps(run_steps)
 
@@ -158,12 +159,14 @@ async def _reconcile_step_list_per_host(
     :param states: The parsed host states to reconcile, mutated in place.
     :return: Whether anything changed.
     """
-    changed = False
-    for state in states:
-        for step_list in (state.steps, state.rollback_steps):
-            if await _reconcile_step_list(tasks_api, run, state.host, step_list):
-                changed = True
-    return changed
+    results = await asyncio.gather(
+        *(
+            _reconcile_step_list(tasks_api, run, state.host, step_list)
+            for state in states
+            for step_list in (state.steps, state.rollback_steps)
+        )
+    )
+    return any(results)
 
 
 async def _reconcile_step_list(
@@ -187,9 +190,13 @@ async def _reconcile_step_list(
     :param steps: The steps to reconcile, mutated in place.
     :return: Whether anything changed.
     """
+    reconciled_steps = await asyncio.gather(
+        *(reconcile_step(tasks_api, step) for step in steps)
+    )
     changed = False
-    for index, step in enumerate(steps):
-        reconciled = await reconcile_step(tasks_api, step)
+    for index, (step, reconciled) in enumerate(
+        zip(steps, reconciled_steps, strict=True)
+    ):
         if reconciled is step:
             continue
         steps[index] = reconciled
