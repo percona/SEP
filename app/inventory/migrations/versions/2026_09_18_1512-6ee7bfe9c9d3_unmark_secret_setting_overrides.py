@@ -33,12 +33,28 @@ marked value as *plaintext* and would present it to a remote as a credential.
 work. Stripping the marker is a string operation over the stored text, so it
 needs no ``ENCRYPTION_KEY``, never decrypts, and leaves a bare Fernet token the
 earlier release reads correctly through its own structural check.
+Coverage is **frozen** as the replica models below, on the same terms as the
+encrypt revisions this one rolls back. Importing the live settings classes
+instead would resolve coverage against whatever they look like on the release
+the revision happens to execute against, and an omission here is worse than in
+an encrypt revision: a class the rollback misses keeps its marker, and a release
+predating the envelope reads a marked value as the plaintext credential and
+presents it to a remote.
+
+**Never edit a replica below to track a later rename.** The correct response to
+a renamed or retyped field is a new data migration carrying its own frozen
+shapes.
+
+``unmark_secret_leaves`` covers both leaf kinds, exactly as the marking write
+path does, so the credential-URL fields are declared here alongside the
+``SecretStr`` ones.
 """
+
+from pydantic import BaseModel, SecretStr
 
 from app.core.settings_override.alembic_ops import (
     downgrade_unmark_secret_override_values,
 )
-from app.inventory.config import InventorySettings
 
 # revision identifiers, used by Alembic.
 revision = "6ee7bfe9c9d3"
@@ -46,7 +62,26 @@ down_revision = "b351dd0aaed8"
 branch_labels = None
 depends_on = None
 
-SETTINGS_CLASSES = (InventorySettings,)
+#: The ``settingoverride.setting_class`` values these replicas answer for,
+#: matching the tokens ``setting_class_token`` derives for the live classes.
+_INVENTORY_SETTINGS_CLASS = "INVENTORY_SETTINGS"
+
+
+class _FrozenDatabaseOptions(BaseModel):
+    """Declare the frozen credential leaves of ``DatabaseOptions``."""
+
+    PASSWORD: SecretStr | None = None
+
+
+class _FrozenInventorySettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``InventorySettings``."""
+
+    __setting_class_token__ = _INVENTORY_SETTINGS_CLASS
+
+    DATABASE: _FrozenDatabaseOptions | None = None
+
+
+SETTINGS_CLASSES = (_FrozenInventorySettings,)
 
 
 def upgrade() -> None:
