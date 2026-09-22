@@ -251,8 +251,6 @@ async def _collect_owned_schedules(
             order_by=[col(PeriodicTask.id)],
             limit=SCHEDULE_BATCH_SIZE,
         )
-        if not candidates:
-            break
         for candidate in candidates:
             task_name = resolve_schedule_task_name(candidate)
             if task_name is None:
@@ -265,8 +263,6 @@ async def _collect_owned_schedules(
         if len(candidates) < SCHEDULE_BATCH_SIZE:
             break
         last_schedule_id = candidates[-1].id
-        if last_schedule_id is None:
-            break
     return schedules
 
 

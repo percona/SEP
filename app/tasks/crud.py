@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import ChunkedIteratorResult, CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql import ColumnExpressionArgument
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -147,7 +148,7 @@ class TaskManager(BaseSQLModelManager):
     async def iter_active_batches(
         cls,
         session: AsyncSession,
-        *whereclause: ColumnElement[bool],
+        *whereclause: ColumnExpressionArgument[bool],
         owner: str | None = None,
         batch_size: int = ACTIVE_TASK_BATCH_SIZE,
         query_options: Sequence = (),
