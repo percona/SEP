@@ -36,11 +36,8 @@ from app.sep.apps.om_inventory import service as service_module
 from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.crud import ProbeRunManager
 from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
-from app.sep.apps.om_inventory.service import run_probe, SweepOutcome
-
-#: One resolved, one answered: ``terminal_status`` reads this as a clean SUCCESS,
-#: so a run that reaches it and is *not* rewritten afterwards is unambiguous.
-CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
+from app.sep.apps.om_inventory.service import run_probe
+from tests.app.sep.apps.om_inventory.conftest import CLEAN_OUTCOME
 
 
 @pytest.fixture(autouse=True)

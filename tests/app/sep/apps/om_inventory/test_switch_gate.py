@@ -32,15 +32,8 @@ from app.sep.apps.om_inventory import service as service_module
 from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.crud import ProbeRunManager
 from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
-from app.sep.apps.om_inventory.service import (
-    run_probe,
-    SweepOutcome,
-    SWITCHED_OFF_DETAIL,
-)
-
-#: What the stubbed sweep reports. A run that is *not* refused finalises to
-#: ``SUCCESS`` on it, so a ``SKIPPED`` row can only come from the switch.
-CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
+from app.sep.apps.om_inventory.service import run_probe, SWITCHED_OFF_DETAIL
+from tests.app.sep.apps.om_inventory.conftest import CLEAN_OUTCOME
 
 
 @pytest.fixture
