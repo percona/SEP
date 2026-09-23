@@ -18,6 +18,7 @@
 from types import SimpleNamespace
 
 import yaml
+from pytest_mock import MockerFixture
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import _backfill_single_task
@@ -465,7 +466,9 @@ def test_repair_prefers_catalogued_object_store_transport():
     assert repaired["source_transport"] == SourceTransport.S3.value
 
 
-def test_repair_skips_catalog_lookup_when_source_already_declared(mocker):
+def test_repair_skips_catalog_lookup_when_source_already_declared(
+    mocker: MockerFixture,
+):
     """Do not evaluate the catalog lookup for a stamp that already declares transport.
 
     ``repair_source_declaration`` would ignore a hit anyway; skipping the call

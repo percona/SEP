@@ -16,6 +16,7 @@
 """Tests for the shared JSON-API list-pipeline framework helpers."""
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -362,7 +363,7 @@ class TestBuildTaskListResponses:
         )
         seen_names: list[list[str]] = []
 
-        async def _provider(*, tasks):
+        async def _provider(*, tasks: Sequence[Task]):
             seen_names.append([task.name for task in tasks])
             return {"mapped": True}
 
