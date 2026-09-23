@@ -22,9 +22,8 @@ Create Date: 2026-09-09 11:00:00.000000
 Hand-written, matching this table's own prior migrations' note on why:
 autogenerate proposes a wrong diff against it.
 
-PMM-15347/plan.md §6 Phase B: an operator's abort request. Every existing row
-predates this column and never had a cancellation requested, so `false` is the
-only correct backfill value.
+Whether an operator has asked the run to stop. Defaults to `false`: no
+cancellation requested.
 """
 
 from typing import Sequence, Union

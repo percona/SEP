@@ -536,9 +536,6 @@ runtime-evaluated-base-classes = [
 "app/sep/sync/syncers/system_facts/payload.py" = [
     "S603", # host-run payload coordinates rpm/dpkg-query with literal arg lists
 ]
-"app/sep/apps/om_bootstrap/models.py" = [
-    "S104", # bind_ip's column default must match the pre-Phase-A fixed constant so old rows read back unchanged
-]
 
 
 [tool.ruff.format]

@@ -94,10 +94,8 @@ class OperatingSystem(StrEnum):
 class MemberConfig(BaseModel):
     """One host's replica-set election settings, for ``rs.initiate``.
 
-    MongoDB's own defaults for a member no entry names here -- priority 1,
-    votes on, not hidden, no delay -- so a run created before this field
-    existed, or one that never names a given host, behaves exactly as it did
-    in phase A (PMM-15347/plan.md §6 Phase B).
+    Defaults to MongoDB's own for a member -- priority 1, votes on, not
+    hidden, no delay -- so a host a run never names here gets exactly those.
 
     :param priority: Relative election priority, 0-1000. A member with 0 can
         never become primary.

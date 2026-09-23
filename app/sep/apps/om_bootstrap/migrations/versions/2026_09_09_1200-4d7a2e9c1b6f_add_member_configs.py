@@ -22,10 +22,9 @@ Create Date: 2026-09-09 12:00:00.000000
 Hand-written, matching this table's own prior migrations' note on why:
 autogenerate proposes a wrong diff against it.
 
-PMM-15347/plan.md §6 Phase B: per-member replica-set election settings
-(priority/votes/hidden/delay), keyed by host. Every existing row predates this
-column and named no per-host overrides, so `{}` -- MemberConfig's own defaults
-for every host -- is the only correct backfill value.
+Per-member replica-set election settings (priority/votes/hidden/delay), keyed
+by host. Defaults to `{}`: no per-host overrides, so every host gets
+MemberConfig's own defaults.
 """
 
 from typing import Sequence, Union

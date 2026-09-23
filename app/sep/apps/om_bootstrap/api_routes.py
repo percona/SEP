@@ -149,17 +149,14 @@ class TriggerRunRequest(BaseModel):
     :param data_path: Where mongod stores its data on every host. Defaults to
         the same value the column behind it carries
         (``migrations/versions/..._add_run_config_fields.py``), so a caller
-        written against 1533's fixed-path contract keeps working unchanged.
+        that omits it gets the path the fixed-path contract used.
     :param log_path: Where mongod writes its log file on every host. Same
         default story as ``data_path``.
     :param port: The port mongod listens on, on every host. Same default
         story as ``data_path``.
     :param bind_ip: The interface(s) mongod listens on, on every host.
-        Defaults to ``127.0.0.1``, not the column's ``0.0.0.0`` -- the column
-        default exists only so a pre-Phase-A row reads back as the fixed value
-        it actually used, and every *new* run always passes this explicitly
-        (PMM already does), so a new run that leaves it out gets the narrower
-        window rather than the historical one.
+        Defaults to ``127.0.0.1``, keeping mongod's pre-auth window local to
+        the host unless the caller passes a wider address.
     :param member_configs: Per-host election settings for ``rs.initiate``,
         keyed by entries of ``hosts``. A host missing from this mapping --
         including every host, when this is left empty -- gets

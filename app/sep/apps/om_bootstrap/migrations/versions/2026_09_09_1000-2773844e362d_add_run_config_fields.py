@@ -22,12 +22,10 @@ Create Date: 2026-09-09 10:00:00.000000
 Hand-written, matching ``130e97b1c430``'s own note on why: autogenerate proposes
 a wrong diff against this table.
 
-PMM-15347/plan.md §6 Phase A: these were fixed module constants in
-``strategies/packages.py`` (``/var/lib/mongo``, ``/var/log/mongodb/mongod.log``,
-``27017``, ``0.0.0.0``) until the Configure step grew fields for them. The
-``server_default`` values here are exactly those constants, so every row a
-pre-Phase-A run already wrote keeps reading back as the paths/port it actually
-used.
+Where mongod stores its data and log, the port it listens on and the
+interface(s) it binds to, per run. Each ``server_default`` is the value
+``TriggerRunRequest`` defaults the same field to (``/var/lib/mongo``,
+``/var/log/mongodb/mongod.log``, ``27017``, ``127.0.0.1``).
 """
 
 from typing import Sequence, Union
@@ -74,7 +72,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "bootstrap_run",
-        sa.Column("bind_ip", sa.Text(), nullable=False, server_default="0.0.0.0"),  # nosec B104 - matches the fixed pre-Phase-A constant
+        sa.Column("bind_ip", sa.Text(), nullable=False, server_default="127.0.0.1"),
         schema=schema,
     )
 
