@@ -38,8 +38,9 @@ import logging.config
 import sys
 from collections.abc import Sequence
 from time import monotonic, sleep
+from typing import Any
 
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy_celery_beat.session import SessionManager
 
@@ -49,6 +50,36 @@ logger = logging.getLogger(__name__)
 
 STORE_READINESS_POLL_INTERVAL = 1.0
 """Seconds between connection attempts while the beat store is unreachable."""
+
+STORE_CONNECT_TIMEOUT = 5
+"""Seconds for each TCP connect attempt when a readiness deadline is set.
+
+The deadline is only consulted after ``engine.connect()`` returns. A host that
+silently drops packets otherwise leaves the call blocked on the OS TCP timeout
+(often minutes), so ``make migrate`` would still hang well past its bound.
+``psycopg2``'s ``connect_timeout`` caps each attempt; kept strictly below the
+migrate recipe's 60s budget so several polls fit inside it. SQLite has no TCP
+connect and rejects the argument, so it is applied only for PostgreSQL.
+"""
+
+
+def _session_kwargs_for_deadline(
+    dburi: str, deadline_seconds: float | None
+) -> dict[str, Any]:
+    """Return ``create_session`` kwargs that bound each connect under a deadline.
+
+    :param dburi: The resolved beat-store URL.
+    :param deadline_seconds: The caller's wall-clock bound, or ``None`` when
+        unbounded (side-car).
+    :return: ``connect_args`` for PostgreSQL when a deadline is set; otherwise
+        an empty dict so the unbounded path is unchanged.
+    """
+    if deadline_seconds is None:
+        return {}
+    if make_url(dburi).get_backend_name() != "postgresql":
+        return {}
+    connect_timeout = max(1, min(STORE_CONNECT_TIMEOUT, int(deadline_seconds)))
+    return {"connect_args": {"connect_timeout": connect_timeout}}
 
 
 def _wait_for_store(engine: Engine, *, deadline_seconds: float | None = None) -> None:
@@ -67,6 +98,11 @@ def _wait_for_store(engine: Engine, *, deadline_seconds: float | None = None) ->
     ``make migrate`` — may pass ``deadline_seconds`` so a persistent
     ``OperationalError`` (including a rejected password) fails the command
     instead of hanging indefinitely.
+
+    When a deadline is set, the engine is built with a per-attempt
+    ``connect_timeout`` (see :data:`STORE_CONNECT_TIMEOUT`) so a firewalled or
+    unroutable host cannot block past the bound on a single TCP handshake.
+    ``prepare_models`` reuses that engine, so its connects inherit the same cap.
 
     ``prepare_models`` retries too, but only for the check-then-create race it was
     written for: ten attempts with sub-second backoff, which a database that has
@@ -117,6 +153,10 @@ def bootstrap_beat_schema(*, deadline_seconds: float | None = None) -> None:
     ``create_engine``. Neither outcome can configure anything, and the second
     would fail this step on a documented, validated setting.
 
+    A readiness ``deadline_seconds`` does forward a driver ``connect_timeout`` for
+    PostgreSQL so each dial is capped; that is unrelated to the pool options
+    above and is omitted when the wait is unbounded.
+
     :param deadline_seconds: Optional wall-clock bound forwarded to the store
         readiness wait. ``None`` leaves the wait unbounded (side-car one-shot).
     :raises TimeoutError: When a supplied ``deadline_seconds`` elapses while the
@@ -135,6 +175,7 @@ def bootstrap_beat_schema(*, deadline_seconds: float | None = None) -> None:
     engine, _ = manager.create_session(
         settings.CELERY.beat_dburi,
         schema=settings.CELERY.beat_schema,
+        **_session_kwargs_for_deadline(settings.CELERY.beat_dburi, deadline_seconds),
     )
     try:
         _wait_for_store(engine, deadline_seconds=deadline_seconds)

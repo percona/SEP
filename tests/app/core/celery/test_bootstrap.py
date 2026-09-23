@@ -270,6 +270,64 @@ def test_the_bootstrap_forwards_no_engine_options(
     assert options == {}
 
 
+def test_a_deadline_caps_each_postgres_connect_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    recording_manager: RecordingSessionManager,
+    store_accepts: None,
+):
+    """Bound each dial when a deadline is set so a dropped-packet host cannot hang.
+
+    The wall-clock deadline is only checked after ``connect`` returns; without a
+    driver ``connect_timeout`` a firewalled store blocks on the OS TCP timeout
+    (often minutes) and ``make migrate`` still outruns its 60s bound.
+    """
+    migrate_deadline_seconds = 60
+    monkeypatch.setattr(
+        settings.CELERY, "beat_dburi", OVERRIDDEN_STORE.format(password="pw")
+    )
+    monkeypatch.setattr(settings.CELERY, "beat_schema", None)
+
+    bootstrap.bootstrap_beat_schema(deadline_seconds=migrate_deadline_seconds)
+
+    _, _, options = recording_manager.create_session_calls[0]
+    assert options == {
+        "connect_args": {"connect_timeout": bootstrap.STORE_CONNECT_TIMEOUT}
+    }
+    assert migrate_deadline_seconds > bootstrap.STORE_CONNECT_TIMEOUT
+
+
+def test_a_deadline_does_not_pass_connect_timeout_to_sqlite(
+    sqlite_beat_store: str,
+    recording_manager: RecordingSessionManager,
+    store_accepts: None,
+):
+    """Omit ``connect_timeout`` for SQLite: the driver rejects the argument.
+
+    Development and CI ``make migrate`` resolve the beat store to a local SQLite
+    file; forwarding the Postgres-only kwarg would fail the step on the happy path.
+    """
+    bootstrap.bootstrap_beat_schema(deadline_seconds=60)
+
+    _, _, options = recording_manager.create_session_calls[0]
+    assert options == {}
+
+
+def test_an_unbounded_wait_forwards_no_connect_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    recording_manager: RecordingSessionManager,
+    store_accepts: None,
+):
+    """Leave the side-car's engine creation unchanged when no deadline is set."""
+    monkeypatch.setattr(
+        settings.CELERY, "beat_dburi", OVERRIDDEN_STORE.format(password="pw")
+    )
+
+    bootstrap.bootstrap_beat_schema()
+
+    _, _, options = recording_manager.create_session_calls[0]
+    assert options == {}
+
+
 def test_a_rejected_engine_option_would_fail_the_step(sqlite_beat_store: str):
     """Pin why the options are withheld: the library forwards this one verbatim.
 
