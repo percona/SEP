@@ -738,7 +738,7 @@ class GrafanaUser(BaseUser):
                 cls._from_service_account_record(record)
                 for record in await cls._service_account_records()
             ]
-        except (HTTPException, TimeoutError, ClientError, ValueError, KeyError):
+        except (HTTPException, TimeoutError, ClientError, ValueError):
             logger.warning(
                 "Failed to list Grafana service accounts; naming org users only.",
                 exc_info=True,
