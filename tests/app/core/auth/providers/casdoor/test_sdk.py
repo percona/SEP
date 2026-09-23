@@ -91,6 +91,12 @@ def test_casdoor_headers_carry_basic_authorization():
     }
 
 
+def test_casdoor_declares_no_stored_credential_settings():
+    """Casdoor must not expose unused api_key / auth_scheme as provider settings."""
+    assert "api_key" not in CasdoorSDK.model_fields
+    assert "auth_scheme" not in CasdoorSDK.model_fields
+
+
 @pytest.mark.asyncio
 async def test_get_tokens_paginates_by_page_size(mocker):
     """Verify get_tokens fetches ceil(total / page_size) pages, not ``total`` pages."""

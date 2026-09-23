@@ -38,7 +38,6 @@ from app.core.requests import (
     RemoteAPI,
 )
 from app.core.utils.fields import (
-    AuthSchemeStr,
     NonEmptyStr,
     RelativeFilePathField,
     StrHttpUrl,
@@ -105,7 +104,6 @@ class CasdoorSDK(CredentialHeaderMixin, RemoteAPI):
     allowed_issuers: set[StrHttpUrl] | Literal["*"] = set()
     error_detail_key: NonEmptyStr = "error_description"
     error_code_key: NonEmptyStr | None = "error"
-    auth_scheme: AuthSchemeStr = "Basic"
 
     @computed_field
     @cached_property
@@ -121,11 +119,23 @@ class CasdoorSDK(CredentialHeaderMixin, RemoteAPI):
         return None
 
     @property
+    def _authorization_scheme(self) -> str:
+        """Return the fixed Basic scheme Casdoor's Management API expects.
+
+        Not a settings field: an operator-configurable scheme would let a typo
+        (e.g. Bearer) break every Casdoor request.
+
+        :return: ``"Basic"``.
+        """
+        return "Basic"
+
+    @property
     def _credential_value(self) -> str | None:
         """Return the Base64-encoded client credentials for Basic auth.
 
         Encodes ``client_id`` and ``client_secret`` the same way the former
-        ``api_key`` property did. The mixin's ``api_key`` field stays unused.
+        ``api_key`` property did. No stored ``api_key`` field is declared, so
+        none appears as an AUTH provider setting.
 
         :return: The Base64-encoded credential.
         """

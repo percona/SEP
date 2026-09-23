@@ -21,4 +21,5 @@ from app.core.requests.remote_api import (
     CredentialHeaderMixin,
     JSONBody,
     RemoteAPI,
+    StoredCredentialHeaderMixin,
 )

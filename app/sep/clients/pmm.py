@@ -28,8 +28,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from app.core.requests import (
     as_json_array,
     as_json_object,
-    CredentialHeaderMixin,
     RemoteAPI,
+    StoredCredentialHeaderMixin,
 )
 from app.core.requests.connectivity import (
     build_connectivity_result,
@@ -223,7 +223,7 @@ class PMMInventorySnapshot(BaseModel):
     diagnostics: PMMFetchDiagnostics
 
 
-class PMMRemoteAPI(CredentialHeaderMixin, RemoteAPI):
+class PMMRemoteAPI(StoredCredentialHeaderMixin, RemoteAPI):
     """Handle remote API interactions specific to PMM.
 
     Provides methods to interact with the PMM inventory system, including fetching nodes

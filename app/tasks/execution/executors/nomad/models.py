@@ -47,7 +47,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
-from app.core.requests import BaseRemoteAPI, CredentialHeaderMixin
+from app.core.requests import BaseRemoteAPI, StoredCredentialHeaderMixin
 from app.core.settings_override.registry import (
     hot_field,
     InheritedMarkers,
@@ -613,7 +613,7 @@ class NomadAllocStatusEnum(StrEnum):
     UNKNOWN = "unknown"
 
 
-class NomadExecutor(CredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
+class NomadExecutor(StoredCredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
     """Represent a Nomad task executor.
 
     :param wait_interval: The interval in seconds between status checks.
@@ -728,7 +728,7 @@ class NomadExecutor(CredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
     def _configured_api_key(self) -> str | None:
         """Return the configured API key's plain value, or ``None`` when unset.
 
-        Delegates to :attr:`~app.core.requests.remote_api.CredentialHeaderMixin._credential_value`
+        Delegates to :attr:`~app.core.requests.remote_api.StoredCredentialHeaderMixin._credential_value`
         so header emission, ``base_url`` stripping, and the sync ``backend`` session
         all agree on what counts as configured. An empty secret counts as unset.
 
