@@ -334,7 +334,8 @@ class PackagesInstallStrategy:
           :data:`DATA_PATH` will live (its filesystem if it exists, ``/``
           otherwise).
 
-        Each failed check names itself on stderr.
+        Each failed check names itself on stderr, and a free-space figure ``df``
+        could not produce fails the check rather than passing it.
 
         :param spec: The host's bootstrap spec; only its OS is read.
         :return: The step action.
@@ -353,6 +354,9 @@ class PackagesInstallStrategy:
                 f"target={DATA_PATH}",
                 '[ -d "$target" ] || target=/',
                 'avail=$(df --output=avail -B1 "$target" | tail -1)',
+                "case \"$avail\" in ''|*[!0-9]*) "
+                'echo "pre_check: could not measure free space at $target" >&2; '
+                "exit 1;; esac",
                 f'if [ "$avail" -lt {MIN_DATA_DISK_BYTES} ]; then '
                 f'echo "pre_check: less than {MIN_DATA_DISK_BYTES} bytes free '
                 'for the data directory" >&2; exit 1; fi',

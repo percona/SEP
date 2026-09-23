@@ -647,6 +647,29 @@ class TestPreCheckCommand:
         assert result.returncode != 0
         assert "bytes free" in result.stderr
 
+    def test_fails_when_free_space_cannot_be_measured(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """Fail closed when ``df`` prints nothing, instead of passing the check."""
+        action = PackagesInstallStrategy().build_step(
+            "pre_check", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        bin_dir = _fake_bin(tmp_path, with_mongod=False)
+        (bin_dir / "df").unlink()
+        (bin_dir / "df").write_text("#!/bin/sh\nexit 1\n")
+        (bin_dir / "df").chmod(0o755)
+
+        result = subprocess.run(
+            [_SH, "-c", _body(action.command)],
+            capture_output=True,
+            text=True,
+            env={"PATH": str(bin_dir)},
+            check=False,
+        )
+
+        assert result.returncode != 0
+        assert "could not measure free space" in result.stderr
+
 
 class TestRollbackCommands:
     """Run rollback steps' generated shell for real against scratch paths."""
