@@ -15,9 +15,9 @@
 
 """Serve bootstrap runs: create one, dispatch its steps, read its progress.
 
-PMM's ``om`` service is the only intended caller (PMM-15347/plan.md §4 item 9):
-it drives the state machine -- deciding when to dispatch which step, when to
-retry, when to give up and roll back -- as the HA-leader-only stepper, reading
+PMM's ``om`` service is the only intended caller: it drives the state machine
+— deciding when to dispatch which step, when to retry, when to give up and
+roll back — as the HA-leader-only stepper, reading
 this router to know what happened and calling it to make something happen
 next. This router itself decides none of that; it only ever does exactly what
 it is asked; see ``reconcile.py``'s own docstring for the same boundary stated
@@ -26,23 +26,32 @@ from the other side.
 Auth is applied at the mount level: ``/api/apps`` carries the
 ``IsApiAuthenticated`` router guard, and unsafe methods additionally require
 the rank :func:`app.api.deps.require_minimum_role` registers per route.
-Triggering a run or a step is root execution on a database host -- Adamo's
-decided gate (PMM-15347/questions.md Q6) is admin-only, so both mutating routes
-register :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
+Triggering a run or a step is root execution on a database host — the
+decided gate is admin-only, so every mutating route registers
+:attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
+
+Every route that writes a run reads it with a row lock
+(:data:`~app.sep.apps.om_bootstrap.deps.LockedRun`) and commits in the same
+transaction, so two concurrent requests against one run serialise rather than
+the later save silently overwriting the earlier one's ``hosts``/``run_steps``
+document. A ``:dispatch`` route holds that lock across its one Tasks API call on
+purpose: a second dispatch of the same step waits, then sees it ``running`` and
+gets a 409, instead of dispatching it twice.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
+from typing import Annotated
 from uuid import UUID
 
-from aiohttp import ClientError
+import aiohttp
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
-from app.core.config import settings
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -54,7 +63,8 @@ from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
-from app.sep.apps.om_bootstrap.dispatch import dispatch_step
+from app.sep.apps.om_bootstrap.deps import LockedRun
+from app.sep.apps.om_bootstrap.dispatch import cleanup_run_scripts, dispatch_step
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
     dump_host_states,
@@ -80,19 +90,32 @@ from app.sep.apps.om_bootstrap.strategy import (
     StepRecord,
     StepStatus,
 )
-from app.sep.config import sep_settings
-from app.sep.deps import SessionDep
+from app.sep.deps import SessionDep, TasksClient
 
 logger = logging.getLogger(__name__)
 
-#: BootstrapRunStatus members :func:`finish_run` accepts -- a caller declaring the
+#: BootstrapRunStatus members :func:`finish_run` accepts — a caller declaring the
 #: run itself decided to give up. SUCCEEDED is deliberately excluded: reconciling
-#: a run to SUCCEEDED is a fact :func:`~app.sep.apps.om_bootstrap.reconcile.reconcile_run`
-#: infers on its own (see its own docstring), never something a caller requests.
+#: a run to SUCCEEDED is a fact
+#: :func:`~app.sep.apps.om_bootstrap.reconcile.reconcile_run` infers on its own (see its own docstring), never something a caller requests.
 _FINISHABLE_STATUSES = frozenset(
     {BootstrapRunStatus.FAILED, BootstrapRunStatus.ROLLED_BACK}
 )
 
+#: Step statuses a ``:dispatch`` route accepts: a step never dispatched, or one
+#: whose last attempt failed (a retry). A running step would be dispatched
+#: twice; a succeeded or skipped one would re-run a step already done.
+_DISPATCHABLE_STATUSES = frozenset({StepStatus.PENDING, StepStatus.FAILED})
+
+#: Replica-set sizes a run accepts — the decided phase-1 topologies.
+_ALLOWED_HOST_COUNTS = frozenset({1, 3})
+
+#: A node name as Nomad and the executor know it. Excludes anything that could
+#: act as a path separator or shell metacharacter in the step-script filename
+#: and the dispatch target.
+HostName = Annotated[
+    str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$")
+]
 
 #: At least two path segments past the root, so a value like ``/var`` or ``/etc``
 #: (one segment) is rejected outright -- ``_rollback_remove_data`` runs
@@ -102,11 +125,6 @@ _FINISHABLE_STATUSES = frozenset(
 #: command once :func:`shlex.quote`-d -- this bounds the *shape*, quoting closes
 #: the injection vector itself.
 _ABSOLUTE_PATH_PATTERN = r"^(?:/[^/\s\x00]+){2,}$"
-
-#: major.minor or major.minor.patch -- what ``_psmdb_channel`` (strategies/packages.py)
-#: accepts. Confirmed against a live host that anything else produces a
-#: nonexistent repository channel.
-_MONGODB_VERSION_PATTERN = r"^\d+\.\d+(?:\.\d+)?$"
 
 #: No whitespace or other control characters. ``replica_set_name`` and
 #: ``bind_ip`` both land in ``mongod.conf`` via a quoted heredoc
@@ -119,13 +137,15 @@ _NO_CONTROL_CHARS_PATTERN = r"^[^\s\x00-\x1f]+$"
 class TriggerRunRequest(BaseModel):
     """Request one bootstrap run over a set of hosts, all sharing one spec.
 
-    :param hosts: The hosts to provision -- one-member or three-member replica
-        sets only, per Adamo's decided phase-1 scope
-        (PMM-15347/questions.md Q5/Q12).
+    :param hosts: The hosts to provision — one-member or three-member replica
+        sets only, the decided phase-1 scope. Each is a node name: letters,
+        digits, ``.``, ``_`` and ``-``, starting with a letter or digit.
     :param install_method: Which strategy provisions every host in this run.
     :param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.
-    :param mongodb_version: The Percona Server for MongoDB version to install.
-    :param replica_set_name: The replica set every host joins.
+    :param mongodb_version: The Percona Server for MongoDB version to install,
+        as ``major.minor`` or ``major.minor.patch`` (e.g. ``"8.0"``, ``"8.0.4"``).
+    :param replica_set_name: The replica set every host joins: 1-64 letters,
+        digits, ``_`` or ``-``.
     :param data_path: Where mongod stores its data on every host. Defaults to
         the same value the column behind it carries
         (``migrations/versions/..._add_run_config_fields.py``), so a caller
@@ -147,11 +167,11 @@ class TriggerRunRequest(BaseModel):
         defaults (PMM-15347/plan.md §6 Phase B).
     """
 
-    hosts: list[str]
+    hosts: list[HostName]
     install_method: InstallMethod
     os: OperatingSystem
-    mongodb_version: str = Field(pattern=_MONGODB_VERSION_PATTERN)
-    replica_set_name: str = Field(min_length=1, pattern=_NO_CONTROL_CHARS_PATTERN)
+    mongodb_version: Annotated[str, Field(pattern=r"^\d+\.\d+(\.\d+)?$")]
+    replica_set_name: Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
     data_path: str = Field(default="/var/lib/mongo", pattern=_ABSOLUTE_PATH_PATTERN)
     log_path: str = Field(
         default="/var/log/mongodb/mongod.log", pattern=_ABSOLUTE_PATH_PATTERN
@@ -162,15 +182,15 @@ class TriggerRunRequest(BaseModel):
 
 
 class DispatchStepRequest(BaseModel):
-    """Optional body for any ``:dispatch`` route.
+    """Carry the optional body of any ``:dispatch`` route.
 
     :param params: Per-dispatch values the step being dispatched needs but
-        cannot compute itself -- a keyFile's content, a generated
+        cannot compute itself — a keyFile's content, a generated
         monitoring-user password. See
         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own
         docstring for why these are never persisted by ``om_bootstrap``: PMM's
-        stepper holds their durable, encrypted copy (PMM-15347/questions.md Q7)
-        and hands one to a single dispatch, transiently, through this field.
+        stepper holds their durable, encrypted copy and hands one to a single
+        dispatch, transiently, through this field.
         Empty for a step that needs none.
     """
 
@@ -178,13 +198,14 @@ class DispatchStepRequest(BaseModel):
 
 
 class FinishRunRequest(BaseModel):
-    """Body for :func:`finish_run` -- the stepper recording its own decision.
+    """Carry the body of :func:`finish_run`, the stepper recording its own decision.
 
     :param status: The run's new terminal status. Must be one of
-        :data:`_FINISHABLE_STATUSES` -- :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
+        :data:`_FINISHABLE_STATUSES`;
+        :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
         is never requested here (see :data:`_FINISHABLE_STATUSES`'s own
         docstring).
-    :param error: A human-readable reason, if any -- stored on
+    :param error: A human-readable reason, if any — stored on
         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.
     """
 
@@ -193,7 +214,7 @@ class FinishRunRequest(BaseModel):
 
 
 class RunResponse(BaseModel):
-    """One bootstrap run, in full.
+    """Describe one bootstrap run in full.
 
     :param id: The run's id.
     :param status: The run's lifecycle state.
@@ -209,10 +230,9 @@ class RunResponse(BaseModel):
         with -- see :class:`TriggerRunRequest`'s own docstring.
     :param started_at: When the run began.
     :param finished_at: When it reached a terminal status, if it has.
-    :param hosts: Every host's current step-by-step progress -- the full,
+    :param hosts: Every host's current step-by-step progress — the full,
         run-specific step list each host was planned with (forward steps and
-        rollback steps both), not just the steps that have started
-        (PMM-15347/plan.md §4 item 9).
+        rollback steps both), not just the steps that have started.
     :param run_steps: This run's run-level steps
         (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),
         planned up front the same way ``hosts``' steps are.
@@ -253,10 +273,10 @@ def _run_response(
 
     :param run: The run to serialize.
     :param hosts: The run's host states, when the caller already parsed them
-        (e.g. it just built and dumped them) -- avoids re-parsing the JSON it
+        (e.g. it just built and dumped them) — avoids re-parsing the JSON it
         just dumped from the very same typed value. Parsed from ``run.hosts``
         when omitted.
-    :param run_steps: See ``hosts`` -- the run-level counterpart.
+    :param run_steps: See ``hosts`` — the run-level counterpart.
     :return: The run's full state.
     """
     return RunResponse(
@@ -282,25 +302,10 @@ def _run_response(
     )
 
 
-async def _tasks_api_client() -> RemoteAPI:
-    """Build an unauthenticated Tasks API client -- the caller sets its own auth scope.
-
-    Same construction om_inventory's own probe dispatch and bootstrap PoC used
-    (``om_inventory/service.py``, ``om_inventory/api_routes.py``).
-
-    :return: The Tasks API client.
-    """
-    return await settings.get_remote_api(
-        endpoint=sep_settings.TASKS_ENDPOINT,
-        ssl_cafile=settings.SSL_CAFILE,
-        logger_name="tasks_api",
-    )
-
-
 def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
-    """Return the index of ``step_name`` in ``steps``, or 404.
+    """Return the index of a dispatchable ``step_name`` in ``steps``.
 
-    Shared by every ``:dispatch`` route below -- a host's forward steps, its
+    Shared by every ``:dispatch`` route below — a host's forward steps, its
     rollback steps, and a run's own run-level steps are all "find this name in
     a flat StepRecord list" the exact same way.
 
@@ -309,6 +314,8 @@ def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
     :param what: A human-readable description of what was searched, for the
         404 detail (e.g. ``"host 'node00'"``).
     :raises HTTPNotFoundException: When no step in ``steps`` is named ``step_name``.
+    :raises HTTPConflictException: When that step cannot be dispatched now (see
+        :func:`_require_dispatchable`).
     :return: The index of the matching step.
     """
     index = next((i for i, step in enumerate(steps) if step.name == step_name), None)
@@ -316,30 +323,30 @@ def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
         raise HTTPNotFoundException(
             detail=f"Step {step_name!r} is not planned for {what}"
         )
+    _require_dispatchable(steps[index], step_name, what=what)
     return index
 
 
-def _require_not_running(step: StepRecord, step_name: str, *, what: str) -> None:
-    """Raise 409 if ``step`` is already dispatching.
+def _require_dispatchable(step: StepRecord, step_name: str, *, what: str) -> None:
+    """Raise 409 unless ``step`` is ``pending`` or ``failed``.
 
     :param step: The step to check.
     :param step_name: Its name, for the conflict detail.
     :param what: See :func:`_find_step`.
-    :raises HTTPConflictException: When ``step.status`` is already
-        :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.RUNNING`.
+    :raises HTTPConflictException: When ``step.status`` is not in
+        :data:`_DISPATCHABLE_STATUSES` — already running, succeeded, or skipped.
     """
-    if step.status == StepStatus.RUNNING:
+    if step.status not in _DISPATCHABLE_STATUSES:
         raise HTTPConflictException(
-            detail=f"Step {step_name!r} for {what} is already running"
+            detail=f"Step {step_name!r} for {what} is already {step.status.value}"
         )
 
 
 async def _dispatch_and_record(
     tasks_api: RemoteAPI,
     request: Request,
-    run_id: str,
+    run: BootstrapRun,
     target_host: str,
-    step_name: str,
     action: StepAction,
     step: StepRecord,
 ) -> StepRecord:
@@ -347,24 +354,28 @@ async def _dispatch_and_record(
 
     Shared mechanics for every ``:dispatch`` route: only the lookup (see
     :func:`_find_step`) and the action-building differ between a per-host step,
-    a rollback step, and a run-level step.
+    a rollback step, and a run-level step. The dispatch authenticates with
+    SEP's internal token rather than the caller's.
 
     :param tasks_api: The Tasks API client.
-    :param request: The current request -- see :func:`~app.sep.apps.om_bootstrap.dispatch.dispatch_step`.
-    :param run_id: The bootstrap run this step belongs to.
+    :param request: The current request; see
+        :func:`~app.sep.apps.om_bootstrap.dispatch.dispatch_step`.
+    :param run: The bootstrap run this step belongs to.
     :param target_host: The node name the dispatch actually runs on.
-    :param step_name: The step's name.
     :param action: The step's built action.
     :param step: The step's current record, about to be dispatched.
     :return: A new :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord`.
         ``RUNNING`` when the Tasks API accepted the dispatch, with
         :attr:`~app.sep.apps.om_bootstrap.strategy.StepRecord.attempt_count`
-        incremented either way -- PMM's stepper reads this to enforce Adamo's
-        decided retry policy (PMM-15347/questions.md Q8). ``FAILED``, also with
-        ``attempt_count`` incremented and ``detail`` set, when the Tasks API
-        itself rejected the dispatch (:class:`~fastapi.HTTPException`, e.g. an
-        unknown or unreachable executor target) or accepted it without
-        returning a history id (:class:`RuntimeError`) -- a dispatch that never
+        incremented either way — PMM's stepper reads this to enforce its
+        retry-then-rollback policy. ``FAILED``, also with ``attempt_count``
+        incremented and ``detail`` set, when the Tasks API itself rejected the
+        dispatch (:class:`~fastapi.HTTPException`, e.g. an unknown or
+        unreachable executor target), could not be reached at all
+        (:class:`aiohttp.ClientError`, or an :class:`OSError` such as a
+        timeout), accepted it without returning a history id
+        (:class:`RuntimeError`), or the step's script could not be written
+        locally (:class:`OSError`) — a dispatch that never
         starts is as real an outcome as one that starts and later fails, and
         recording it here is what lets the stepper's retry-then-rollback policy
         see it at all. Without this, such a step stays ``PENDING`` forever:
@@ -373,11 +384,12 @@ async def _dispatch_and_record(
         reaching a caller.
     """
     try:
-        task_history_id = await dispatch_step(
-            tasks_api, request, run_id, target_host, step_name, action
-        )
-    except (HTTPException, RuntimeError) as exc:
-        detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        with tasks_api.auth(require_internal_token()):
+            task_history_id = await dispatch_step(
+                tasks_api, request, str(run.id), target_host, step.name, action
+            )
+    except (HTTPException, RuntimeError, aiohttp.ClientError, OSError) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else str(exc) or repr(exc)
         return step.model_copy(
             update={
                 "status": StepStatus.FAILED,
@@ -417,14 +429,20 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
     :param session: The database session.
     :param request: The requested run.
     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
-        same host twice, names an install method with no registered strategy,
-        or ``member_configs`` names a host outside ``hosts``.
+        same host twice, has neither one nor three hosts, names an install
+        method with no registered strategy, or ``member_configs`` names a host
+        outside ``hosts``.
     :return: The created run, every host's steps ``pending``.
     """
     if not request.hosts:
         raise HTTPBadRequestException(detail="At least one host is required")
     if len(set(request.hosts)) != len(request.hosts):
         raise HTTPBadRequestException(detail="hosts must not repeat the same host")
+    if len(request.hosts) not in _ALLOWED_HOST_COUNTS:
+        raise HTTPBadRequestException(
+            detail="A replica set must have exactly 1 or 3 hosts, "
+            f"not {len(request.hosts)}"
+        )
     unknown_members = set(request.member_configs) - set(request.hosts)
     if unknown_members:
         raise HTTPBadRequestException(
@@ -483,20 +501,22 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
 async def list_bootstrap_runs(
     session: SessionDep,
     status: BootstrapRunStatus | None = None,
+    # pagination-ok: bounded by `limit` (capped at 100) and by the number of
+    # concurrently in-flight bootstrap runs.
     limit: int = Query(default=100, ge=1, le=100),
 ) -> list[RunResponse]:
     """Return runs, newest first, optionally narrowed to one status.
 
-    The intended caller is PMM's HA-leader-only stepper (PMM-15347/plan.md §4
-    item 9): it does not persist its own copy of which runs exist or where
-    they are, so on every tick -- and especially right after a leader
-    failover -- it re-discovers every run still in flight from here
-    (``status=running``) rather than from any state of its own.
+    The intended caller is PMM's HA-leader-only stepper. It does not persist
+    its own copy of which runs exist or where they are, so on every tick, and
+    especially right after a leader failover, it re-discovers every run still
+    in flight from here (``status=running``) rather than from any state of its
+    own.
 
     :param session: The database session.
     :param status: Restrict to runs in this status. Omit for any status.
     :param limit: How many to return.
-    :return: The runs. Does **not** reconcile in-flight steps -- unlike
+    :return: The runs. Does **not** reconcile in-flight steps — unlike
         :func:`get_bootstrap_run`, a caller polling a specific run for the
         purpose of driving it forward should use that route instead.
     """
@@ -509,23 +529,26 @@ async def list_bootstrap_runs(
 
 
 @router.get("/runs/{run_id}")
-async def get_bootstrap_run(run_id: UUID, session: SessionDep) -> RunResponse:
+async def get_bootstrap_run(
+    run: LockedRun, session: SessionDep, tasks_client: TasksClient
+) -> RunResponse:
     """Return one run, reconciling any of its running steps first.
 
     Reconciling on every read (rather than relying solely on a periodic task)
     means PMM's driver always sees a step's real outcome on its very next poll,
-    not after waiting for a separate schedule to catch up.
+    not after waiting for a separate schedule to catch up. The run is read under
+    its row lock, like every writing route (see the module docstring), since a
+    reconcile may write it back.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param session: The database session.
+    :param tasks_client: The Tasks API client, authenticated here with SEP's
+        internal token rather than the caller's.
     :raises HTTPNotFoundException: When there is no such run.
     :return: The run, with current step status.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
-
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        changed = await reconcile_run(tasks_api, run)
+    with tasks_client.auth(require_internal_token()):
+        changed = await reconcile_run(tasks_client, run)
     if changed:
         run = await BootstrapRunManager.save(session, run)
     return _run_response(run)
@@ -536,7 +559,7 @@ def _strategy_for(install_method: InstallMethod) -> InstallStrategy:
 
     :func:`~app.sep.apps.om_bootstrap.strategies.strategy_for` raises a bare
     ``ValueError`` for an :class:`InstallMethod` declared on the enum but not yet
-    implemented (``DOCKER``/``PODMAN``, today) -- a caller's request, not a
+    implemented (``DOCKER``/``PODMAN``, today) — a caller's request, not a
     server bug, so this turns it into a 400 instead of an opaque 500.
 
     :param install_method: The install method to look up a strategy for.
@@ -550,11 +573,11 @@ def _strategy_for(install_method: InstallMethod) -> InstallStrategy:
 
 
 def _build_step_action(builder: Callable[[], StepAction]) -> StepAction:
-    """Call a strategy's ``build_*`` method, turning a bad-params ``ValueError`` into 400.
+    """Call a strategy's ``build_*`` method, turning a bad-params error into 400.
 
     Every ``InstallStrategy.build_*`` method raises a bare ``ValueError`` when
     ``params`` is missing something the step needs (e.g. ``distribute_keyfile``
-    without ``key_file_content``) -- the caller's mistake, not a server bug, so
+    without ``key_file_content``) — the caller's mistake, not a server bug, so
     this turns it into a 400 naming the problem instead of an opaque 500.
 
     :param builder: A zero-argument callable invoking one ``build_*`` method.
@@ -579,6 +602,7 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         os=to_strategy_os(run.os),
         mongodb_version=run.mongodb_version,
         replica_set_name=run.replica_set_name,
+        run_id=run.id,
         data_path=run.data_path,
         log_path=run.log_path,
         port=run.port,
@@ -596,45 +620,46 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_run_step(
-    run_id: UUID,
+    run: LockedRun,
     host: str,
     step_name: str,
     session: SessionDep,
     request: Request,
+    tasks_client: TasksClient,
     body: DispatchStepRequest | None = None,
 ) -> RunResponse:
     """Dispatch one host's named step now.
 
-    Does **not** wait for the dispatch to finish -- it returns as soon as the
+    Does **not** wait for the dispatch to finish — it returns as soon as the
     Tasks API accepts it, the same fire-and-forget shape ``dispatch_step``
     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
 
-    Re-dispatching a step already ``pending`` or ``failed`` is how PMM's driver
-    implements Adamo's decided retry policy (PMM-15347/questions.md Q8) -- this
-    route does not itself decide *whether* to retry, only executes the request.
+    Only a ``pending`` or ``failed`` step is dispatched. Re-dispatching a
+    ``failed`` one is how PMM's driver implements its retry policy — this route
+    does not itself decide *whether* to retry, only executes the request.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param host: The host to dispatch the step on.
-    :param step_name: The step to dispatch -- one of the names the run was
+    :param step_name: The step to dispatch — one of the names the run was
         planned with.
     :param session: The database session.
     :param request: The current request, whose host builds the artifact
         download URL the executor fetches the step's script from.
-    :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+    :param tasks_client: The Tasks API client, authenticated here with SEP's
+        internal token rather than the caller's.
+    :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
     :raises HTTPNotFoundException: When there is no such run, host, or step.
-    :raises HTTPConflictException: When the step is already running.
+    :raises HTTPConflictException: When the step is running, succeeded, or
+        skipped.
     :return: The run, with the dispatched step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
-
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
     if host_state is None:
-        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run.id}")
     what = f"host {host!r}"
     step_index = _find_step(host_state.steps, step_name, what=what)
     step = host_state.steps[step_index]
-    _require_not_running(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     params = body.params if body is not None else None
@@ -642,11 +667,9 @@ async def dispatch_run_step(
         lambda: strategy.build_step(step_name, host, spec, params)
     )
 
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        host_state.steps[step_index] = await _dispatch_and_record(
-            tasks_api, request, str(run.id), host, step_name, action, step
-        )
+    host_state.steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, host, action, step
+    )
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
@@ -659,11 +682,12 @@ async def dispatch_run_step(
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_finalize_step(
-    run_id: UUID,
+    run: LockedRun,
     host: str,
     step_name: str,
     session: SessionDep,
     request: Request,
+    tasks_client: TasksClient,
     body: DispatchStepRequest | None = None,
 ) -> RunResponse:
     """Dispatch one host's named finalize step now.
@@ -677,42 +701,40 @@ async def dispatch_finalize_step(
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s
     own docstring for why that ordering matters at all).
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param host: The host to dispatch the step on.
     :param step_name: The finalize step to dispatch -- one of the names the run
         was planned with.
     :param session: The database session.
     :param request: See :func:`dispatch_run_step`.
+    :param tasks_client: See :func:`dispatch_run_step`.
     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
     :raises HTTPNotFoundException: When there is no such run, host, or finalize step.
-    :raises HTTPConflictException: When the step is already running.
+    :raises HTTPConflictException: When the step is running, succeeded, or
+        skipped.
     :return: The run, with the dispatched finalize step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
-
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
     if host_state is None:
-        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run.id}")
     what = f"host {host!r}"
     step_index = _find_step(host_state.finalize_steps, step_name, what=what)
     step = host_state.finalize_steps[step_index]
-    _require_not_running(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
-    action = strategy.build_finalize_step(
-        step_name, host, spec, body.params if body is not None else None
+    params = body.params if body is not None else None
+    action = _build_step_action(
+        lambda: strategy.build_finalize_step(step_name, host, spec, params)
     )
 
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        host_state.finalize_steps[step_index] = await _dispatch_and_record(
-            tasks_api, request, str(run.id), host, step_name, action, step
-        )
+    host_state.finalize_steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, host, action, step
+    )
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
-    return _run_response(run)
+    return _run_response(run, hosts=states)
 
 
 @router.post(
@@ -721,46 +743,46 @@ async def dispatch_finalize_step(
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_run_run_step(
-    run_id: UUID,
+    run: LockedRun,
     step_name: str,
     session: SessionDep,
     request: Request,
+    tasks_client: TasksClient,
     body: DispatchStepRequest | None = None,
 ) -> RunResponse:
     """Dispatch one run-level step now, targeting the run's seed host.
 
-    Same fire-and-forget shape as :func:`dispatch_run_step` -- see its own
+    Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
     docstring. "Seed host" is ``run``'s first host, index 0, matching
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
     own convention for where a run-level step actually executes.
 
-    This route does not check that every per-host step succeeded first --
+    This route does not check that every per-host step succeeded first —
     deciding *when* it is safe to call this is PMM's stepper's job, not this
     route's (see the module docstring).
 
-    :param run_id: The run's id.
-    :param step_name: The run-level step to dispatch -- one of the names the
+    :param run: The path's run, read under its row lock.
+    :param step_name: The run-level step to dispatch — one of the names the
         run was planned with.
     :param session: The database session.
     :param request: See :func:`dispatch_run_step`.
-    :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+    :param tasks_client: See :func:`dispatch_run_step`.
+    :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
     :raises HTTPNotFoundException: When there is no such run, run-level step, or
         the run has no hosts to target.
-    :raises HTTPConflictException: When the step is already running.
+    :raises HTTPConflictException: When the step is running, succeeded, or
+        skipped.
     :return: The run, with the dispatched run-level step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
-
     states = parse_host_states(run)
     if not states:
-        raise HTTPNotFoundException(detail=f"Run {run_id} has no hosts to target")
+        raise HTTPNotFoundException(detail=f"Run {run.id} has no hosts to target")
     seed_host = states[0].host
 
     run_steps = parse_run_steps(run)
-    what = f"run {run_id}"
+    what = f"run {run.id}"
     step_index = _find_step(run_steps, step_name, what=what)
     step = run_steps[step_index]
-    _require_not_running(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     hosts = [state.host for state in states]
@@ -769,11 +791,9 @@ async def dispatch_run_run_step(
         lambda: strategy.build_run_step(step_name, hosts, spec, params)
     )
 
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        run_steps[step_index] = await _dispatch_and_record(
-            tasks_api, request, str(run.id), seed_host, step_name, action, step
-        )
+    run_steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, seed_host, action, step
+    )
 
     run.run_steps = dump_run_steps(run_steps)
     run = await BootstrapRunManager.save(session, run)
@@ -786,55 +806,54 @@ async def dispatch_run_run_step(
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_rollback_step(
-    run_id: UUID,
+    run: LockedRun,
     host: str,
     step_name: str,
     session: SessionDep,
     request: Request,
+    tasks_client: TasksClient,
 ) -> RunResponse:
     """Dispatch one host's named rollback step now.
 
     Same fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take
-    no ``params``: every :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
+    no ``params``: every
+    :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
     a strategy defines only ever tears down what its own forward steps already
     wrote to the host, needing nothing new from the caller.
 
-    Whether a host should be rolled back at all -- and, if so, whether to
-    dispatch its rollback steps in order or all at once -- is PMM's stepper's
-    call (Adamo's decided partial-failure policy, PMM-15347/questions.md Q8),
-    not this route's; it only ever dispatches the one step it is asked to.
+    Whether a host should be rolled back at all, and if so whether to dispatch
+    its rollback steps in order or all at once, is PMM's stepper's call (its
+    partial-failure policy), not this route's. This route only ever dispatches
+    the one step it is asked to.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param host: The host to roll back.
-    :param step_name: The rollback step to dispatch -- one of the names the run
+    :param step_name: The rollback step to dispatch — one of the names the run
         was planned with.
     :param session: The database session.
     :param request: See :func:`dispatch_run_step`.
+    :param tasks_client: See :func:`dispatch_run_step`.
     :raises HTTPNotFoundException: When there is no such run, host, or rollback step.
-    :raises HTTPConflictException: When the step is already running.
+    :raises HTTPConflictException: When the step is running, succeeded, or
+        skipped.
     :return: The run, with the dispatched rollback step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
-
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
     if host_state is None:
-        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run.id}")
     what = f"host {host!r}"
     step_index = _find_step(host_state.rollback_steps, step_name, what=what)
     step = host_state.rollback_steps[step_index]
-    _require_not_running(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     action = _build_step_action(
         lambda: strategy.build_rollback_step(step_name, host, spec)
     )
 
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        host_state.rollback_steps[step_index] = await _dispatch_and_record(
-            tasks_api, request, str(run.id), host, step_name, action, step
-        )
+    host_state.rollback_steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, host, action, step
+    )
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
@@ -844,18 +863,22 @@ async def dispatch_rollback_step(
 @router.post("/runs/{run_id}:finish")
 @require_minimum_role(UserRole.ADMIN)
 async def finish_run(
-    run_id: UUID, session: SessionDep, body: FinishRunRequest
+    run: LockedRun, session: SessionDep, body: FinishRunRequest
 ) -> RunResponse:
-    """Record the stepper's own decision that a run is done -- failed or rolled back.
+    """Record the stepper's own decision that a run is done — failed or rolled back.
 
-    The one way ``run.status`` reaches :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED`
-    or :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
+    The one way ``run.status`` reaches
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
     both are real calls only PMM's stepper makes (retries exhausted; rollback
-    finished), never something ``om_bootstrap`` infers on its own -- see
+    finished), never something ``om_bootstrap`` infers on its own — see
     ``reconcile.py``'s module docstring for the one status it *does* infer
     (SUCCEEDED) and why that's different.
 
-    :param run_id: The run's id.
+    Also removes every step script the run still has on disk: no step of a
+    finished run is dispatched again, so nothing will download them.
+
+    :param run: The path's run, read under its row lock.
     :param session: The database session.
     :param body: The decided terminal status, and why.
     :raises HTTPNotFoundException: When there is no such run.
@@ -864,20 +887,20 @@ async def finish_run(
     :raises HTTPConflictException: When the run is already terminal.
     :return: The run, now terminal.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
     if body.status not in _FINISHABLE_STATUSES:
         raise HTTPBadRequestException(
             detail=f"status must be one of {sorted(_FINISHABLE_STATUSES)}"
         )
     if run.status != BootstrapRunStatus.RUNNING:
         raise HTTPConflictException(
-            detail=f"Run {run_id} is already {run.status.value}"
+            detail=f"Run {run.id} is already {run.status.value}"
         )
 
     run.status = body.status
     run.finished_at = utc_now()
     run.error = body.error
     run = await BootstrapRunManager.save(session, run)
+    await asyncio.to_thread(cleanup_run_scripts, str(run.id))
     return _run_response(run)
 
 
@@ -898,7 +921,7 @@ async def _stop_running_steps(
     ``cancel_requested`` as reason enough on its own), and a step that
     couldn't be stopped here still eventually reaches a terminal status once
     its own dispatch actually finishes. Catches transport failures
-    (``ClientError``/``TimeoutError``) alongside ``HTTPException`` -- the
+    (``aiohttp.ClientError``/``TimeoutError``) alongside ``HTTPException`` -- the
     Tasks API being unreachable is exactly the kind of outage an operator is
     likely to be hitting Abort over, and this call happens after
     ``cancel_requested`` is already saved (see :func:`cancel_run`), so an
@@ -920,7 +943,7 @@ async def _stop_running_steps(
                 continue
             try:
                 await tasks_api.post(f"/history/{step.task_history_id}/stop/")
-            except (HTTPException, ClientError, TimeoutError) as exc:
+            except (HTTPException, aiohttp.ClientError, TimeoutError) as exc:
                 detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                 logger.warning(
                     "Failed to stop task history %s while cancelling: %s",
@@ -931,7 +954,9 @@ async def _stop_running_steps(
 
 @router.post("/runs/{run_id}:cancel", status_code=http_status.HTTP_202_ACCEPTED)
 @require_minimum_role(UserRole.ADMIN)
-async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
+async def cancel_run(
+    run: LockedRun, session: SessionDep, tasks_client: TasksClient
+) -> RunResponse:
     """Request that a running bootstrap run stop and roll back every host.
 
     Records the request and best-effort interrupts whatever is currently
@@ -953,17 +978,18 @@ async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
     :func:`_stop_running_steps`) -- so it runs after, and its own failures
     (including the Tasks API being unreachable) never undo the save above.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param session: The database session.
+    :param tasks_client: The Tasks API client, authenticated here with SEP's
+        internal token rather than the caller's.
     :raises HTTPNotFoundException: When there is no such run.
     :raises HTTPConflictException: When the run is already terminal --
         rolled back or otherwise, there is nothing left to cancel.
     :return: The run, with ``cancel_requested`` now set.
     """
-    run = await BootstrapRunManager.get_run(session, run_id)
     if run.status != BootstrapRunStatus.RUNNING:
         raise HTTPConflictException(
-            detail=f"Run {run_id} is already {run.status.value}"
+            detail=f"Run {run.id} is already {run.status.value}"
         )
     if run.cancel_requested:
         return _run_response(run)
@@ -973,8 +999,7 @@ async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
 
     states = parse_host_states(run)
     run_steps = parse_run_steps(run)
-    tasks_api = await _tasks_api_client()
-    with tasks_api.auth(require_internal_token()):
-        await _stop_running_steps(tasks_api, states, run_steps)
+    with tasks_client.auth(require_internal_token()):
+        await _stop_running_steps(tasks_client, states, run_steps)
 
-    return _run_response(run)
+    return _run_response(run, hosts=states, run_steps=run_steps)

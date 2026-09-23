@@ -16,7 +16,7 @@
 """Convert between ``models.py``'s persisted shape and ``strategy.py``'s typed shape.
 
 Split out of ``models.py`` specifically so it *can* import
-:mod:`~app.sep.apps.om_bootstrap.strategy` -- ``models.py`` cannot, since Alembic
+:mod:`~app.sep.apps.om_bootstrap.strategy` — ``models.py`` cannot, since Alembic
 loads it in isolation and any import through the ``om_bootstrap`` package path
 drags in the whole framework (see ``models.py``'s module docstring). This module
 carries no such restriction: nothing here is Alembic-loaded.
@@ -80,7 +80,7 @@ def to_strategy_install_method(value: models.InstallMethod) -> InstallMethod:
     """Convert a persisted ``models.InstallMethod`` to ``strategy.py``'s real one.
 
     A ``BootstrapRun.install_method`` read off a query is ``models.py``'s
-    spelled-again enum, not ``strategy.py``'s -- Pydantic coerces one into the
+    spelled-again enum, not ``strategy.py``'s — Pydantic coerces one into the
     other by value silently at runtime (they are two distinct classes with the
     same string values), which is precisely the kind of implicit conversion
     worth making explicit and type-checked instead of relying on. Safe by
@@ -96,7 +96,7 @@ def to_strategy_install_method(value: models.InstallMethod) -> InstallMethod:
 def to_strategy_os(value: models.OperatingSystem) -> OperatingSystem:
     """Convert a persisted ``models.OperatingSystem`` to ``strategy.py``'s real one.
 
-    See :func:`to_strategy_install_method` -- same reasoning, same guarantee.
+    See :func:`to_strategy_install_method` — same reasoning, same guarantee.
 
     :param value: The persisted enum value.
     :return: The equivalent ``strategy.py`` member.
@@ -120,7 +120,7 @@ def to_models_install_method(value: InstallMethod) -> models.InstallMethod:
 def to_models_os(value: OperatingSystem) -> models.OperatingSystem:
     """Convert a ``strategy.py`` OS to ``models.py``'s spelled-again one.
 
-    See :func:`to_models_install_method` -- same reasoning, same guarantee.
+    See :func:`to_models_install_method` — same reasoning, same guarantee.
 
     :param value: The strategy-typed value.
     :return: The equivalent ``models.py`` member.
@@ -139,7 +139,7 @@ def parse_host_states(run: BootstrapRun) -> list[HostBootstrapState]:
 
 
 def dump_host_states(states: list[HostBootstrapState]) -> list[dict[str, Any]]:
-    """Dump typed host states into the plain-JSON shape :attr:`BootstrapRun.hosts` stores.
+    """Dump typed host states into the plain-JSON :attr:`BootstrapRun.hosts` shape.
 
     ``mode="json"``: datetimes on
     :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` dump to ISO-8601
@@ -155,7 +155,7 @@ def dump_host_states(states: list[HostBootstrapState]) -> list[dict[str, Any]]:
 def parse_run_steps(run: BootstrapRun) -> list[StepRecord]:
     """Parse a run's persisted ``run_steps`` document back into typed records.
 
-    The run-level counterpart of :func:`parse_host_states` -- same shape, same
+    The run-level counterpart of :func:`parse_host_states` — same shape, same
     "read whole" treatment, just not scoped to any one host (see
     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps`'s own
     docstring).
@@ -170,7 +170,7 @@ def parse_run_steps(run: BootstrapRun) -> list[StepRecord]:
 def dump_run_steps(steps: list[StepRecord]) -> list[dict[str, Any]]:
     """Dump typed run-level steps into the plain-JSON shape ``run_steps`` stores.
 
-    See :func:`dump_host_states` -- same ``mode="json"`` reasoning.
+    See :func:`dump_host_states` — same ``mode="json"`` reasoning.
 
     :param steps: The run-level steps to persist.
     :return: One plain-JSON dict per step, in the same order.

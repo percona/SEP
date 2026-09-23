@@ -17,7 +17,7 @@
 
 The one place an :class:`~app.sep.apps.om_bootstrap.strategy.InstallMethod` maps
 to a concrete strategy, so ``api_routes.py`` never imports a strategy module
-directly -- adding a second strategy (``DockerInstallStrategy``, say) means
+directly — adding a second strategy (``DockerInstallStrategy``, say) means
 adding one module plus one line here, not touching the API layer.
 """
 
@@ -28,7 +28,7 @@ __all__ = ["STRATEGIES", "strategy_for"]
 
 #: Every implemented strategy, keyed by the :class:`InstallMethod` it handles.
 #: Only :data:`~app.sep.apps.om_bootstrap.strategy.InstallMethod.PACKAGES` has one
-#: today -- ``DOCKER``/``PODMAN`` are declared on the enum for later, not here yet.
+#: today — ``DOCKER``/``PODMAN`` are declared on the enum for later, not here yet.
 STRATEGIES: dict[InstallMethod, InstallStrategy] = {
     InstallMethod.PACKAGES: PackagesInstallStrategy(),
 }

@@ -21,32 +21,14 @@ asserts ``GET /schema`` answers. The real routes (``/runs`` and friends) have
 their own tests in ``test_api_routes.py``.
 """
 
-from fastapi import APIRouter, FastAPI, status
-from fastapi.testclient import TestClient
+from fastapi import status
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.sep.apps.om_bootstrap.app import app as om_bootstrap_app
-from app.sep.deps import get_current_user, IsApiAuthenticated
-
-_BASE = "/api/apps/om_bootstrap"
-
-
-def _client(user: CasdoorUser) -> TestClient:
-    """Mount the app's API router behind the production auth guard."""
-    apps_router = APIRouter(prefix="/apps")
-    apps_router.include_router(
-        om_bootstrap_app.api_router, prefix=om_bootstrap_app.uri_path
-    )
-    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(apps_router)
-    fastapi_app = FastAPI()
-    fastapi_app.include_router(api_router)
-    fastapi_app.dependency_overrides[get_current_user] = lambda: user
-    return TestClient(fastapi_app, raise_server_exceptions=False)
+from tests.app.sep.apps.om_bootstrap.conftest import api_client, BASE
 
 
 def test_schema_200(regular_user: CasdoorUser) -> None:
     """Serve the plugin schema at ``GET /schema``."""
-    response = _client(regular_user).get(f"{_BASE}/schema")
+    response = api_client(regular_user).get(f"{BASE}/schema")
 
     assert response.status_code == status.HTTP_200_OK

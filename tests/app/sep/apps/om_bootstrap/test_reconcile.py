@@ -13,14 +13,20 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Assert reconciliation translates TaskHistory status onto StepRecord, and nothing more."""
+"""Assert reconciliation maps TaskHistory status onto StepRecord, and nothing more."""
 
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import aiohttp
 import pytest
+from fastapi import HTTPException
 
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPGoneException,
+    HTTPNotFoundException,
+)
 from app.sep.apps.om_bootstrap import reconcile
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -31,11 +37,10 @@ from app.sep.apps.om_bootstrap.persistence import (
 )
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
-    InstallMethod,
-    OperatingSystem,
     StepRecord,
     StepStatus,
 )
+from tests.app.sep.apps.om_bootstrap.factories import BootstrapRunFactory
 
 TASK_HISTORY_ID = 99
 
@@ -51,7 +56,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_pending_step_is_untouched(self) -> None:
-        """A step that hasn't even started dispatching has nothing to reconcile."""
+        """Leave a step that hasn't started dispatching alone: nothing to reconcile."""
         step = StepRecord(name="pre_check", status=StepStatus.PENDING)
 
         result = await reconcile.reconcile_step(AsyncMock(), step)
@@ -60,7 +65,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_running_step_with_no_task_history_id_is_untouched(self) -> None:
-        """A step marked running but never actually dispatched is left alone."""
+        """Leave a step marked running but never actually dispatched alone."""
         step = StepRecord(name="pre_check", status=StepStatus.RUNNING)
 
         result = await reconcile.reconcile_step(AsyncMock(), step)
@@ -69,7 +74,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_still_running_dispatch_is_untouched(self) -> None:
-        """Polling a dispatch that hasn't finished yet changes nothing."""
+        """Change nothing while the polled dispatch hasn't finished."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -82,7 +87,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_succeeded_dispatch_marks_the_step_succeeded(self) -> None:
-        """A SUCCESS TaskHistory status becomes StepStatus.SUCCEEDED, with a finish time."""
+        """Map SUCCESS to StepStatus.SUCCEEDED, with a finish time."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -97,7 +102,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_failed_dispatch_marks_the_step_failed_with_detail(self) -> None:
-        """A non-SUCCESS terminal status becomes StepStatus.FAILED, with a detail message."""
+        """Map a non-SUCCESS terminal status to StepStatus.FAILED, with a detail."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -112,7 +117,7 @@ class TestReconcileStep:
 
     @pytest.mark.asyncio
     async def test_a_lost_dispatch_is_also_treated_as_failed(self) -> None:
-        """LOST/STOPPED/STALE are all terminal-but-not-success -- none are silently ignored."""
+        """Fail on LOST/STOPPED/STALE too: terminal but not success, never ignored."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -127,7 +132,7 @@ class TestReconcileStep:
     async def test_a_malformed_history_payload_raises_instead_of_hanging_forever(
         self,
     ) -> None:
-        """A non-dict TaskHistory body is a bad upstream answer, not "still running"."""
+        """Treat a non-dict TaskHistory body as a bad answer, not "still running"."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -139,9 +144,75 @@ class TestReconcileStep:
         with pytest.raises(HTTPBadGatewayException):
             await reconcile.reconcile_step(tasks_api, step)
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [{}, {"status": None}, {"status": 3}])
+    async def test_a_history_payload_without_a_string_status_raises(
+        self, payload: dict[str, object]
+    ) -> None:
+        """Reject a TaskHistory without a readable status as a bad upstream answer."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.return_value = payload
+
+        with pytest.raises(HTTPBadGatewayException):
+            await reconcile.reconcile_step(tasks_api, step)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [HTTPNotFoundException(detail="gone"), HTTPGoneException(detail="gone")],
+    )
+    async def test_a_vanished_history_record_marks_the_step_failed(
+        self, error: HTTPException
+    ) -> None:
+        """Fail the step on a 404/410, since its dispatch can never be read again."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.side_effect = error
+
+        result = await reconcile.reconcile_step(tasks_api, step)
+
+        assert result.status == StepStatus.FAILED
+        assert result.finished_at is not None
+        assert result.detail is not None
+        assert "no longer exists" in result.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [
+            aiohttp.ClientConnectionError("refused"),
+            TimeoutError(),
+            HTTPException(status_code=503, detail="unavailable"),
+        ],
+    )
+    async def test_a_transient_read_failure_leaves_the_step_running(
+        self, error: Exception
+    ) -> None:
+        """Leave the step running when the Tasks API is unreachable or failing."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.side_effect = error
+
+        result = await reconcile.reconcile_step(tasks_api, step)
+
+        assert result is step
+
 
 class TestReconcileRun:
-    """Assert reconcile_run updates run.hosts in place and reports whether anything changed."""
+    """Assert reconcile_run updates run.hosts in place and reports any change."""
 
     def _run(
         self,
@@ -151,11 +222,7 @@ class TestReconcileRun:
         run_steps: list[StepRecord] | None = None,
         finalize_steps: list[StepRecord] | None = None,
     ) -> BootstrapRun:
-        return BootstrapRun(
-            install_method=InstallMethod.PACKAGES,
-            os=OperatingSystem.UBUNTU,
-            mongodb_version="8.0",
-            replica_set_name="rs-test",
+        return BootstrapRunFactory.build(
             hosts=dump_host_states(
                 [
                     HostBootstrapState(
@@ -171,7 +238,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_returns_false_when_nothing_changed(self) -> None:
-        """A run with only pending/in-flight steps reports no change to commit."""
+        """Report no change for a run with only pending/in-flight steps."""
         run = self._run([StepRecord(name="pre_check", status=StepStatus.PENDING)])
 
         changed = await reconcile.reconcile_run(AsyncMock(), run)
@@ -180,7 +247,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_persists_a_transitioned_step_back_onto_the_run(self) -> None:
-        """A completed dispatch's new status lands back in run.hosts, not just in memory."""
+        """Persist a completed dispatch's new status to run.hosts, not just memory."""
         run = self._run(
             [
                 StepRecord(
@@ -199,7 +266,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_cleans_up_the_scratch_script_for_a_transitioned_step(self) -> None:
-        """A step that just reached a terminal status has its scratch script removed."""
+        """Remove the scratch script of a step that just reached a terminal status."""
         run = self._run(
             [
                 StepRecord(
@@ -220,7 +287,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_does_not_clean_up_a_step_still_in_flight(self) -> None:
-        """A step whose dispatch hasn't finished keeps its script -- nothing to clean up yet."""
+        """Keep an unfinished dispatch's script; there is nothing to clean up yet."""
         run = self._run(
             [
                 StepRecord(
@@ -240,7 +307,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_reconciles_run_level_steps_too(self) -> None:
-        """A run-level dispatch's outcome lands in run.run_steps, not just hosts."""
+        """Record a run-level dispatch's outcome in run.run_steps, not just hosts."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             run_steps=[
@@ -259,7 +326,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_cleans_up_a_run_level_step_under_the_seed_host(self) -> None:
-        """A run-level step's scratch script is named under the run's first host."""
+        """Name a run-level step's scratch script under the run's first host."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             run_steps=[
@@ -281,7 +348,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_reconciles_rollback_steps_too(self) -> None:
-        """A rollback dispatch's outcome lands in the host's rollback_steps."""
+        """Record a rollback dispatch's outcome in the host's rollback_steps."""
         run = self._run(
             [StepRecord(name="install_package", status=StepStatus.FAILED)],
             rollback_steps=[
@@ -302,7 +369,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_marks_a_fully_succeeded_run_succeeded(self) -> None:
-        """Once every host and run-level step succeeds, the run itself does too."""
+        """Mark the run succeeded once every host and run-level step succeeds."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             run_steps=[
@@ -323,7 +390,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_does_not_mark_succeeded_while_a_host_step_is_pending(self) -> None:
-        """A run isn't done just because its run-level steps finished first."""
+        """Keep a run in flight even when its run-level steps finished first."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.PENDING)],
             run_steps=[StepRecord(name="rs_initiate", status=StepStatus.SUCCEEDED)],
@@ -335,7 +402,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_does_not_override_an_already_terminal_status(self) -> None:
-        """A run the stepper already marked FAILED/ROLLED_BACK is left alone."""
+        """Leave a run the stepper already marked FAILED/ROLLED_BACK alone."""
         run = self._run([StepRecord(name="verify", status=StepStatus.SUCCEEDED)])
         run.status = BootstrapRunStatus.FAILED
 
@@ -345,7 +412,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_pending_rollback_steps_do_not_block_success(self) -> None:
-        """A never-triggered rollback list (all PENDING) doesn't count against success."""
+        """Ignore a never-triggered rollback list (all PENDING) when judging success."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             rollback_steps=[StepRecord(name="stop_service")],

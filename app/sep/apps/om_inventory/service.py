@@ -80,6 +80,9 @@ from app.sep.db import get_async_session_maker
 
 logger = logging.getLogger(__name__)
 
+SWITCHED_OFF_DETAIL = "OM Inventory is switched off"
+"""Why a sweep was refused while ``ENABLED`` is off, on the run row and the 503 alike."""
+
 
 async def _build_clients() -> tuple[RemoteAPI, RemoteAPI]:
     """Construct the inventory and tasks API clients outside request context.
@@ -850,6 +853,13 @@ async def run_probe(
     The run row is created before the work starts so a caller can be answered with an
     id immediately, and only this function ever writes its terminal status.
 
+    ``ENABLED`` is re-checked here rather than only at the trigger endpoint because
+    beat calls this task directly, and because the worker reads ``ENABLED`` from its
+    own override snapshot, which can disagree with the API process that accepted the
+    trigger. Either way the run is recorded ``SKIPPED`` with the switch named as the
+    reason, never left ``RUNNING``, where it would hold every host until
+    ``STALE_RUN_AFTER`` reaps it.
+
     :param execution_id: An already-created run's id, passed by the trigger endpoint.
         ``None`` mints a fresh run.
     :param node_ids: The hosts to refresh, or ``None`` for the whole estate. Taken
@@ -864,6 +874,14 @@ async def run_probe(
         else:
             run = await ProbeRunManager.get(session, id=execution_id)
         run_id = run.id
+
+        if not om_inventory_settings.ENABLED:
+            run.status = ProbeRunStatus.SKIPPED
+            run.finished_at = utc_now()
+            run.error = SWITCHED_OFF_DETAIL
+            await ProbeRunManager.save(session, run)
+            logger.info("OM inventory: sweep %s skipped -- %s", run_id, run.error)
+            return run_id
 
         # The same single-flight check the trigger endpoint makes, repeated here
         # because **the schedule does not go through the endpoint**. Beat calls this

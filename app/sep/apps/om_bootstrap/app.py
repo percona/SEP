@@ -16,21 +16,20 @@
 """Register OpenManager Bootstrap as a ``BaseApp``.
 
 Owns MongoDB provisioning execution: pre-flight checks, install/configure/
-`rs.initiate`, and the persisted run/state-machine history for it -- the write
-side `om_inventory` deliberately stays out of (PMM-15347/plan.md §4 item 5).
+`rs.initiate`, and the persisted run/state-machine history for it — the write
+side `om_inventory` deliberately stays out of.
 `om_inventory` keeps owning general, read-only host facts; this app owns
 everything specific to *running a bootstrap*, including checks that are
 read-only in effect but bootstrap-specific in scope (disk space, path, OS
 version).
 
 ``sidebar=False`` and ``custom_ui=False``: there is nothing to navigate to here.
-The wizard lives in PMM's own UI (PMM-15347/plan.md §4 item 4 / questions.md
-Q4) -- the consumer is PMM's ``om`` managed service driving this app's API to
-trigger and poll bootstraps, the same "consumer drives/polls, no SEP-native
-page" shape `om_inventory` established.
+The wizard lives in PMM's own UI. The consumer is PMM's ``om`` managed service,
+driving this app's API to trigger and poll bootstraps: the same "consumer
+drives/polls, no SEP-native page" shape `om_inventory` established.
 
 ``artifact_base_dirs`` points Nomad's artifact download at
-:func:`~app.sep.apps.om_bootstrap.dispatch.step_scripts_dir` -- this app is the
+:func:`~app.sep.apps.om_bootstrap.dispatch.step_scripts_dir` — this app is the
 first to serve a *generated* artifact rather than a fixed, developer-authored
 file (``dispatch.py``'s module docstring), but the serving mechanism itself
 needs nothing app-specific to support that: it only needs a directory thunk,

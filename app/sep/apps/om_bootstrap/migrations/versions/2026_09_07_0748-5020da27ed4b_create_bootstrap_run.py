@@ -21,12 +21,12 @@ Create Date: 2026-09-07 07:48:14.858060
 
 ``om_bootstrap`` is a separate app from ``om_inventory``, and each app's
 migrations are an independent branch with no ordering between them
-(``om_inventory``'s own ``a3f1c8d24b71`` makes the same point) -- so this
+(``om_inventory``'s own ``a3f1c8d24b71`` makes the same point) — so this
 revision creates OM's shared schema defensively too, rather than assuming
 ``om_inventory``'s migration already ran first.
 
-The schema is named symbolically throughout -- ``schema="om_schema"``,
-translated by the connection (``app/sep/migrations/env.py``) -- with the single
+The schema is named symbolically throughout — ``schema="om_schema"``,
+translated by the connection (``app/sep/migrations/env.py``) — with the single
 exception of ``CREATE SCHEMA``, which is raw DDL and therefore untranslated.
 
 Hand-written, and it has to stay that way: Alembic applies no
@@ -67,7 +67,7 @@ def _create_schema_if_needed() -> str | None:
 def upgrade() -> None:
     schema = _create_schema_if_needed()
 
-    # Inspect the schema the table actually lands in, asking for the *real* name --
+    # Inspect the schema the table actually lands in, asking for the *real* name —
     # the token is not a schema anything can be inspected in.
     existing = set(sa.inspect(op.get_bind()).get_table_names(schema=schema))
 
@@ -85,7 +85,7 @@ def upgrade() -> None:
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "status",
-            # The enum's member NAMES, not its values -- SQLAlchemy's non-native
+            # The enum's member NAMES, not its values — SQLAlchemy's non-native
             # Enum persists by name, same trap ``ProbeRunStatus``'s own migration
             # documents.
             sa.Enum(
