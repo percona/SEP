@@ -1035,12 +1035,15 @@ class CredentialHeaderMixin(BaseModel):
     def _authorization_scheme(self) -> str:
         """Return the scheme spliced ahead of the credential in ``Authorization``.
 
-        Subclasses with a fixed scheme override this. Stored-credential clients
-        inherit :class:`StoredCredentialHeaderMixin`, which reads ``auth_scheme``.
+        Defaults to ``Bearer`` so a future client that supplies a credential but
+        forgets to set a scheme still builds a valid header rather than failing
+        on every request. Subclasses with a fixed scheme (e.g. Casdoor Basic)
+        override this. Stored-credential clients inherit
+        :class:`StoredCredentialHeaderMixin`, which reads ``auth_scheme``.
 
         :return: The authentication scheme token.
         """
-        raise NotImplementedError
+        return "Bearer"
 
     @property
     def _credential_value(self) -> str | None:
