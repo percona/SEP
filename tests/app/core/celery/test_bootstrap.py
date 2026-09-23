@@ -346,14 +346,51 @@ def test_the_readiness_wait_is_not_bounded(
     assert attempts["count"] == refusals + 1
 
 
+def test_a_bounded_readiness_wait_gives_up_after_its_deadline(
+    sqlite_beat_store: str, instant_polling: None, monkeypatch: pytest.MonkeyPatch
+):
+    """Fail ``make migrate`` on a persistent OperationalError instead of hanging.
+
+    A rejected password and a refused connection both surface as OperationalError;
+    the wall-clock deadline covers both so CI and developers see the failure within
+    the bound rather than waiting forever.
+    """
+    attempts = {"count": 0}
+
+    def refuse(self: Engine, *args: Any, **kwargs: Any) -> None:
+        attempts["count"] += 1
+        raise OperationalError(
+            "connect", {}, Exception("password authentication failed")
+        )
+
+    monkeypatch.setattr(Engine, "connect", refuse)
+
+    with pytest.raises(TimeoutError, match="did not become reachable within 0"):
+        bootstrap.bootstrap_beat_schema(deadline_seconds=0)
+
+    assert attempts["count"] == 1
+
+
+def test_a_bounded_readiness_wait_succeeds_before_its_deadline(
+    sqlite_beat_store: str,
+    instant_polling: None,
+    refuse_then_really_connect: Callable[[], int],
+):
+    """Accept the store once it answers, without waiting out the full budget."""
+    bootstrap.bootstrap_beat_schema(deadline_seconds=60)
+
+    assert refuse_then_really_connect() > REFUSALS_BEFORE_THE_STORE_ANSWERS
+    assert table_names(sqlite_beat_store) >= BEAT_TABLES
+
+
 def test_a_non_transient_connection_failure_is_not_retried(
     sqlite_beat_store: str, instant_polling: None, monkeypatch: pytest.MonkeyPatch
 ):
     """Surface anything that is not "not up yet" on the first attempt.
 
     Only ``OperationalError`` means a store that may still appear. Retrying every
-    failure class would turn a misconfiguration into an unbounded wait, which is
-    what now bounds this loop in place of a deadline.
+    failure class would turn a misconfiguration into an unbounded wait; a deadline
+    on the OperationalError path does not change that.
     """
     attempts = {"count": 0}
 
@@ -364,7 +401,31 @@ def test_a_non_transient_connection_failure_is_not_retried(
     monkeypatch.setattr(Engine, "connect", refuse)
 
     with pytest.raises(InterfaceError):
-        bootstrap.bootstrap_beat_schema()
+        bootstrap.bootstrap_beat_schema(deadline_seconds=60)
+
+    assert attempts["count"] == 1
+
+
+def test_main_forwards_a_cli_deadline(
+    sqlite_beat_store: str,
+    instant_polling: None,
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
+):
+    """Thread ``--deadline-seconds`` from the CLI into the readiness wait."""
+    attempts = {"count": 0}
+
+    def refuse(self: Engine, *args: Any, **kwargs: Any) -> None:
+        attempts["count"] += 1
+        raise OperationalError(
+            "connect", {}, Exception("password authentication failed")
+        )
+
+    mocker.patch("logging.config.dictConfig")
+    monkeypatch.setattr(Engine, "connect", refuse)
+
+    with pytest.raises(TimeoutError, match="did not become reachable within 0"):
+        bootstrap.main(["--deadline-seconds", "0"])
 
     assert attempts["count"] == 1
 
@@ -443,15 +504,20 @@ def test_the_migrate_target_bootstraps_the_beat_tables():
     first ``--start-celery`` against a freshly migrated store otherwise waits out
     the API readiness timeout on tables only beat itself would create.
 
+    The recipe passes a 60s readiness deadline so a persistent OperationalError
+    fails the command instead of hanging; the side-car one-shot omits that flag.
+
     This asserts the recipe's text; no test runs the target, so a shell-level
     fault in the line would still reach CI.
     """
     recipe = makefile_recipe("migrate")
     upgrades = [index for index, line in enumerate(recipe) if "alembic --name" in line]
     bootstraps = [
-        index for index, line in enumerate(recipe) if f"-m {bootstrap.__name__}" in line
+        index
+        for index, line in enumerate(recipe)
+        if f"-m {bootstrap.__name__}" in line and "--deadline-seconds 60" in line
     ]
 
     assert upgrades, recipe
-    assert len(bootstraps) == 1
+    assert len(bootstraps) == 1, recipe
     assert bootstraps[0] > max(upgrades)
