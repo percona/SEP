@@ -604,14 +604,19 @@ class TestCataloguedSourceTransports:
 
     @pytest.mark.asyncio
     async def test_batches_distinct_keys_in_one_pass(self, session) -> None:
-        """Return each key's newest transport without a per-key SELECT."""
+        """Return each key's newest transport without a per-key SELECT.
+
+        Same-source rows carry different transports so the ``row_number`` /
+        ``order_by`` window is forced to pick the newest; reversing the window
+        or dropping ``rn == 1`` would fail the assertion.
+        """
         await _save(
             session,
             task_history_id=1,
             service_name="svc-a",
             service_id=7,
             upload_destination="s3://bucket/a",
-            source_transport=CataloguedSourceTransport.S3,
+            source_transport=CataloguedSourceTransport.GCS,
             finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
         )
         await _save(
@@ -658,6 +663,42 @@ class TestCataloguedSourceTransports:
         assert results[(8, "svc-b", "gs://bucket/b")] == CataloguedSourceTransport.GCS
         assert results[(7, "svc-a", "/data/local-only")] is None
         assert results[(7, "svc-a", "s3://missing")] is None
+
+    @pytest.mark.asyncio
+    async def test_same_backup_source_on_two_services_stays_partitioned(
+        self, session
+    ) -> None:
+        """Scope each lookup by service so a shared destination string does not cross."""
+        shared = "s3://bucket/shared"
+        await _save(
+            session,
+            task_history_id=1,
+            service_name="svc-a",
+            service_id=7,
+            upload_destination=shared,
+            source_transport=CataloguedSourceTransport.S3,
+            finished_at=datetime(2026, 7, 29, 1, 0, tzinfo=UTC),
+        )
+        await _save(
+            session,
+            task_history_id=2,
+            service_name="svc-b",
+            service_id=8,
+            upload_destination=shared,
+            source_transport=CataloguedSourceTransport.GCS,
+            finished_at=datetime(2026, 7, 29, 2, 0, tzinfo=UTC),
+        )
+
+        results = await MysqlBackupRunManager.catalogued_source_transports(
+            session,
+            {
+                (7, "svc-a", shared): _key("svc-a", 7),
+                (8, "svc-b", shared): _key("svc-b", 8),
+            },
+        )
+
+        assert results[(7, "svc-a", shared)] == CataloguedSourceTransport.S3
+        assert results[(8, "svc-b", shared)] == CataloguedSourceTransport.GCS
 
     @pytest.mark.asyncio
     async def test_blank_backup_source_maps_to_none_without_matching(

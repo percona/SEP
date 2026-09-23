@@ -371,27 +371,22 @@ async def _fetch_catalogued_transport(
 
 
 def _split_restore_context(
-    context: RestoreResponseContext | Mapping[Any, Any] | None,
+    context: RestoreResponseContext | None,
 ) -> tuple[Mapping[str, str], CatalogTransportContext | None]:
     """Split a bound context into the username map and optional transport prefetch.
 
-    Accepts the composite :class:`RestoreResponseContext` the provider returns,
-    a plain username map (actor-resolution unit tests), or a transport prefetch
-    keyed by ``(service_id, service_name, backup_source)`` tuples (catalog unit
-    tests). A plain username map yields ``transports=None`` so catalog lookups
-    fall back to the sync bridge.
+    Production always binds a :class:`RestoreResponseContext` (or ``None`` outside
+    the JSON routes). An empty ``transports`` map is a real prefetch miss — do not
+    re-enter the sync bridge. ``None`` context leaves transports unbound so
+    callers without a provider still fall back to the NullPool path.
 
     :param context: The value bound as the builder's ``context`` keyword.
-    :return: ``(usernames, transports)``; ``transports`` is ``None`` when the
-        caller did not supply a prefetch map.
+    :return: ``(usernames, transports)``; ``transports`` is ``None`` when no
+        context was bound.
     """
     if context is None:
         return {}, None
-    if isinstance(context, RestoreResponseContext):
-        return context.usernames, context.transports
-    if context and all(isinstance(key, tuple) for key in context):
-        return {}, context  # type: ignore[return-value]
-    return context, None
+    return context.usernames, context.transports
 
 
 async def restore_response_context(
@@ -538,7 +533,7 @@ def build_restore_api_task_response(
     status: TaskHistoryStatusEnum | None = None,
     *,
     last_executed_at: datetime | None = None,
-    context: RestoreResponseContext | Mapping[Any, Any] | None = None,
+    context: RestoreResponseContext | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
@@ -547,9 +542,8 @@ def build_restore_api_task_response(
     :param last_executed_at: The task's most recent finish time (``max``
         ``finished_at``), or ``None`` until it has finished once.
     :param context: The :class:`RestoreResponseContext` bound by
-        ``response_context_provider`` (usernames plus catalog transports), a
-        plain username map, a catalog prefetch map, or ``None`` outside the
-        JSON routes.
+        ``response_context_provider`` (usernames plus catalog transports), or
+        ``None`` outside the JSON routes.
     :return: A validated restore task API response object.
     """
     usernames, transports = _split_restore_context(context)

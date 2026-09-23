@@ -39,6 +39,7 @@ from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_payload,
     catalogued_transport_for_stamp,
     resolve_restore_entities,
+    RestoreResponseContext,
 )
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, SourceTransport
 from app.sep.inventory import CreatedService
@@ -360,7 +361,8 @@ def test_served_stamp_prefers_catalogued_object_store_transport(
     )
     cache_key = (7, "7", "/backups/mydumper/latest")
     served = build_restore_api_task_response(
-        task, context={cache_key: catalogued}
+        task,
+        context=RestoreResponseContext(transports={cache_key: catalogued}),
     ).data[RESERVED_FORM_KEY]
 
     assert served["source_transport"] == expected
@@ -381,7 +383,9 @@ def test_served_stamp_keeps_inference_when_catalog_has_no_transport():
         }
     )
     # Empty prefetch: key was considered and missed — do not re-bridge to the DB.
-    served = build_restore_api_task_response(task, context={}).data[RESERVED_FORM_KEY]
+    served = build_restore_api_task_response(
+        task, context=RestoreResponseContext(transports={})
+    ).data[RESERVED_FORM_KEY]
 
     assert served["source_transport"] == SourceTransport.SSH.value
     assert served["ssh_user"] == "deploy"
@@ -468,7 +472,8 @@ class TestBuildRestoreApiTaskResponse:
     def test_resolves_actors_through_the_context(self):
         """Render both actors as usernames and keep the app's own extras."""
         response = build_restore_api_task_response(
-            self._recorded_task(), context=MOCK_ACTOR_USERNAMES
+            self._recorded_task(),
+            context=RestoreResponseContext(usernames=MOCK_ACTOR_USERNAMES),
         )
 
         assert (response.created_by, response.last_updated_by) == ("alice", "bob")
