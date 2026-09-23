@@ -39,11 +39,12 @@ label written here to clear the gate. Both runs start from one pull-request
 activity and proceed concurrently, so the label may not exist yet when the gate
 evaluates; and a label applied here authenticates with ``GITHUB_TOKEN``, which
 GitHub bars from triggering the CI re-run that would refresh a stale verdict.
-Precedence is unchanged: the gate still short-circuits on a ``qa not required`` it
-finds — whoever applied it — and reaches the predicate only when the label is
-absent. So the label remains the reviewer-facing record and the bypass for a pull
-request the predicate does not cover, and an automatic one left behind by a diff
-that has since grown keeps approving until it is removed.
+For the same reason the gate does not trust a ``qa not required`` label on sight:
+one this script applied caches a verdict that a later push can outdate, and its
+removal cannot trigger the re-run that would withdraw the approval. The gate
+therefore honours the label only when a person applied it, and otherwise decides
+from the predicate alone. So a hand-applied label remains the reviewer-facing
+record and the bypass for a pull request the predicate does not cover.
 
 Two callers, two trust contexts. ``.github/workflows/labels.yaml`` runs on
 ``pull_request_target``, which is privileged, and so invokes this after a sparse
@@ -88,7 +89,7 @@ GENERATED_EXACT = frozenset({"poetry.lock", "frontend/pnpm-lock.yaml"})
 
 QA_NOT_REQUIRED_LABEL = "qa not required"
 QA_NOT_REQUIRED_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
-QA_NOT_REQUIRED_HEAD_BRANCH = re.compile(r"^dependabot/")
+DEPENDABOT_LOGIN = "dependabot[bot]"
 BOT_ACTOR_TYPE = "Bot"
 
 _LABEL_KEY = re.compile(r"^([A-Za-z0-9:_-]+):\s*$")
@@ -103,6 +104,18 @@ class PrFile:
     filename: str
     additions: int = 0
     deletions: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class PullRequest:
+    """Carry the pull-request identity fields the ``qa not required`` predicate reads.
+
+    Both come from the pulls API rather than the head branch name, which the
+    pull-request author chooses and so proves nothing about who opened it.
+    """
+
+    author_login: str
+    head_repository: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +162,15 @@ class LabelEvent:
 
 class GitHubClient(Protocol):
     """Describe the subset of the GitHub REST API used by this script."""
+
+    def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
+        """Return the author and head repository of a pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: The pull request's identity fields.
+        """
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
         """Return every changed file for a pull request.
@@ -331,14 +353,30 @@ def sync_blast_radius_labels(
             log(f"Removed {name}")
 
 
-def qa_not_required_eligible(files: list[PrFile], head_ref: str) -> bool:
+def is_dependabot_pull_request(pull: PullRequest, repository: str) -> bool:
+    """Return whether Dependabot opened ``pull`` from a branch of ``repository``.
+
+    :param pull: Identity fields of the pull request.
+    :param repository: ``owner/name`` of the base repository.
+    :return: ``True`` only for a same-repository Dependabot pull request.
+    """
+    return (
+        pull.author_login == DEPENDABOT_LOGIN
+        and pull.head_repository.casefold() == repository.casefold()
+    )
+
+
+def qa_not_required_eligible(
+    files: list[PrFile], pull: PullRequest, repository: str
+) -> bool:
     """Return whether a pull request qualifies for an automatic ``qa not required``.
 
     :param files: Changed files from the pulls list-files API.
-    :param head_ref: Bare head branch name of the pull request.
-    :return: ``True`` for a Dependabot branch or an all-documentation diff.
+    :param pull: Identity fields of the pull request.
+    :param repository: ``owner/name`` of the base repository.
+    :return: ``True`` for a Dependabot pull request or an all-documentation diff.
     """
-    if QA_NOT_REQUIRED_HEAD_BRANCH.match(head_ref):
+    if is_dependabot_pull_request(pull, repository):
         return True
     return bool(files) and all(
         any(match_glob(glob, file.filename) for glob in QA_NOT_REQUIRED_GLOBS)
@@ -399,6 +437,37 @@ def sync_qa_not_required_label(
             log(f"Removed {QA_NOT_REQUIRED_LABEL}")
 
 
+def qa_not_required_bypass(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    *,
+    eligible: bool,
+) -> bool:
+    """Return whether the merge gate may let a pull request skip QA.
+
+    A pull request the predicate qualifies always may. Otherwise only a
+    ``qa not required`` label a person applied counts: one this script applied
+    caches an earlier verdict, and a new push can outdate it without any
+    corrective CI run, because the removal authenticates with ``GITHUB_TOKEN``.
+
+    :param client: GitHub REST client.
+    :param owner: Repository owner.
+    :param repo: Repository name without owner.
+    :param pr_number: Pull request number.
+    :param eligible: Whether the pull request qualifies for the automatic label.
+    :return: ``True`` when the pull request qualifies or carries a hand-applied label.
+    """
+    if eligible:
+        return True
+    if QA_NOT_REQUIRED_LABEL not in client.list_issue_labels(owner, repo, pr_number):
+        return False
+    return qa_not_required_manually_applied(
+        client.list_issue_events(owner, repo, pr_number)
+    )
+
+
 class UrllibGitHubClient:
     """Wrap the GitHub REST API using stdlib ``urllib``."""
 
@@ -437,6 +506,23 @@ class UrllibGitHubClient:
             if tolerate_missing and exc.code == HTTP_NOT_FOUND:
                 return None
             raise
+
+    def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
+        """Return the author and head repository of a pull request.
+
+        A deleted head repository yields an empty name, which matches no base
+        repository.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: The pull request's identity fields.
+        """
+        item = self._request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+        return PullRequest(
+            author_login=(item.get("user") or {}).get("login", ""),
+            head_repository=(item["head"].get("repo") or {}).get("full_name", ""),
+        )
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
         """Return every changed file for a pull request.
@@ -592,8 +678,9 @@ def apply_blast_radius_labels(
 def main(argv: list[str] | None = None) -> int:
     """Sync one pull request's code-computed labels, or report one and stop.
 
-    ``--print-eligibility`` computes only the automatic ``qa not required``
-    predicate, prints it to stdout, and adds or removes no label.
+    ``--print-eligibility`` prints whether the merge gate may let the pull request
+    skip QA, which is the automatic ``qa not required`` predicate or a hand-applied
+    ``qa not required`` label, and adds or removes no label.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success; ``1`` on error.
@@ -611,11 +698,6 @@ def main(argv: list[str] | None = None) -> int:
         help="path to .github/labeler.yml (default: repo-root .github/labeler.yml)",
     )
     parser.add_argument(
-        "--head-ref",
-        default="",
-        help="bare head branch name of the pull request (GITHUB_HEAD_REF)",
-    )
-    parser.add_argument(
         "--token-env",
         default="GITHUB_TOKEN",
         help="environment variable holding the GitHub API token (default: GITHUB_TOKEN)",
@@ -624,8 +706,9 @@ def main(argv: list[str] | None = None) -> int:
         "--print-eligibility",
         action="store_true",
         help=(
-            "print 'true' or 'false' for the automatic 'qa not required' predicate "
-            "and exit, adding and removing no label"
+            "print 'true' when the pull request may skip QA (the automatic "
+            "'qa not required' predicate, or that label applied by a person), "
+            "else 'false', and exit, adding and removing no label"
         ),
     )
     args = parser.parse_args(argv)
@@ -637,9 +720,6 @@ def main(argv: list[str] | None = None) -> int:
     if not args.print_eligibility and not args.labeler.is_file():
         print(f"{args.labeler}: file not found", file=sys.stderr)
         return 1
-    if not args.head_ref:
-        print("--head-ref is required and must not be empty", file=sys.stderr)
-        return 1
 
     client = UrllibGitHubClient(token)
 
@@ -647,9 +727,14 @@ def main(argv: list[str] | None = None) -> int:
         print(message, flush=True)
 
     try:
+        pull = client.get_pull_request(args.owner, args.repo, args.pr_number)
         files = client.list_pr_files(args.owner, args.repo, args.pr_number)
+        eligible = qa_not_required_eligible(files, pull, f"{args.owner}/{args.repo}")
         if args.print_eligibility:
-            print("true" if qa_not_required_eligible(files, args.head_ref) else "false")
+            bypass = qa_not_required_bypass(
+                client, args.owner, args.repo, args.pr_number, eligible=eligible
+            )
+            print("true" if bypass else "false")
             return 0
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
@@ -659,7 +744,7 @@ def main(argv: list[str] | None = None) -> int:
             args.owner,
             args.repo,
             args.pr_number,
-            eligible=qa_not_required_eligible(files, args.head_ref),
+            eligible=eligible,
             log=log,
         )
     except urllib.error.URLError as exc:
