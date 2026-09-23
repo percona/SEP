@@ -243,9 +243,9 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/sep/api/apps/
   | `SEP__DATABASE__PASSWORD`, `INVENTORY__DATABASE__PASSWORD`, `TASKS__DATABASE__PASSWORD` | the entrypoint | seconds after container start |
 
   None of the four reaches the side-car as environment, so none appears in
-  `docker inspect` or in the process environment. `SEP_NOMAD_ENDPOINT` is the
-  one credential that does: PMM's stock `admin:admin`, a published default
-  rather than a provisioned secret.
+  `docker inspect` or in the process environment. Nomad needs no credential
+  here either: the side-car sends its minted Grafana token to PMM's `/nomad/`
+  as a bearer, so the baked profile's credential-free endpoint is used as-is.
 - **The Grafana service-account token is the side-car's own.** It is the one SEP
   credential this pin does not get from PMM: the side-car mints it against
   Grafana at start and persists it in the `sep-state` volume. A PMM build that

@@ -87,9 +87,6 @@ services:
     group_add: ["0"]
     environment:
       SECRETS_DIR: /run/secrets/sep
-      # The baked profile's endpoint is deliberately credential-free; the
-      # harness is where PMM's admin:admin belongs
-      SEP_NOMAD_ENDPOINT: https://admin:admin@pmm-server:8443/nomad
       # The harness's only Nomad executor runs inside pmm-server and shares its
       # network namespace, so it resolves this compose service name; a real
       # deployment's PMM Client nodes could not. The /sep prefix is load-bearing:
