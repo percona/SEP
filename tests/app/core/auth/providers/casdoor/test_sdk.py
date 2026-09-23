@@ -37,18 +37,18 @@ def test_casdoor_credentials_masked_in_repr():
     assert "my-client-secret" not in repr_str
 
 
-def test_casdoor_api_key_decodes_secret_values():
-    """Test that api_key correctly encodes the secret credentials."""
+def test_casdoor_credential_value_encodes_secret_values():
+    """Test that _credential_value correctly encodes the secret credentials."""
     sdk = CasdoorSDK(
         endpoint="https://casdoor.example.com",
         client_id="test-id",
         client_secret="test-secret",
     )
     expected = base64.b64encode(b"test-id:test-secret").decode("utf-8")
-    assert sdk.api_key == expected
+    assert sdk._credential_value == expected
 
 
-def test_casdoor_api_key_with_empty_credentials():
+def test_casdoor_credential_value_with_empty_credentials():
     """Test that empty credentials encode without raising (no validation guard)."""
     sdk = CasdoorSDK(
         endpoint="https://casdoor.example.com",
@@ -56,24 +56,24 @@ def test_casdoor_api_key_with_empty_credentials():
         client_secret="",
     )
     expected = base64.b64encode(b":").decode("utf-8")
-    assert sdk.api_key == expected
+    assert sdk._credential_value == expected
 
 
-def test_casdoor_api_key_recomputes_after_credentials_change():
-    """Test that api_key reflects mutated credentials (it is not cached)."""
+def test_casdoor_credential_value_recomputes_after_credentials_change():
+    """Test that _credential_value reflects mutated credentials (it is not cached)."""
     sdk = CasdoorSDK(
         endpoint="https://casdoor.example.com",
         client_id="test-id",
         client_secret="test-secret",
     )
-    original = sdk.api_key
+    original = sdk._credential_value
 
     sdk.client_id = SecretStr("new-id")
     sdk.client_secret = SecretStr("new-secret")
 
     expected = base64.b64encode(b"new-id:new-secret").decode("utf-8")
-    assert sdk.api_key == expected
-    assert sdk.api_key != original
+    assert sdk._credential_value == expected
+    assert sdk._credential_value != original
 
 
 @pytest.mark.asyncio
