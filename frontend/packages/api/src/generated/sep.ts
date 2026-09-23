@@ -4264,6 +4264,8 @@ export interface components {
      *     :param sync_failing_since: When the current run of failures began, or None
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
+     *     :param newest_attempt_at: When the newest accepted attempt began, whatever
+     *         its outcome, or None if none has been reported.
      *     :param services: A list of services associated with the node.
      */
     Node: {
@@ -4289,6 +4291,8 @@ export interface components {
       last_synced_at?: string | null;
       /** Name */
       name: string;
+      /** Newest Attempt At */
+      newest_attempt_at?: string | null;
       /** Retired At */
       retired_at?: string | null;
       source: components['schemas']['SourceEnum'];
@@ -4396,6 +4400,8 @@ export interface components {
      *     :param sync_failing_since: When the current run of failures began, or None
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
+     *     :param newest_attempt_at: When the newest accepted attempt began, whatever
+     *         its outcome, or None if none has been reported.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
@@ -4417,6 +4423,8 @@ export interface components {
       last_synced_at?: string | null;
       /** Name */
       name: string;
+      /** Newest Attempt At */
+      newest_attempt_at?: string | null;
       /** Retired At */
       retired_at?: string | null;
       /** Service Id */
@@ -5661,6 +5669,8 @@ export interface components {
      *     :param sync_failing_since: When the current run of failures began, or None
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
+     *     :param newest_attempt_at: When the newest accepted attempt began, whatever
+     *         its outcome, or None if none has been reported.
      */
     app__inventory__models__ServiceResponse: {
       /** Cluster */
@@ -5691,6 +5701,8 @@ export interface components {
       last_synced_at?: string | null;
       /** Name */
       name: string;
+      /** Newest Attempt At */
+      newest_attempt_at?: string | null;
       node: components['schemas']['Node'];
       /** Node Id */
       node_id: number;

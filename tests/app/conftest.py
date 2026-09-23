@@ -538,6 +538,20 @@ def mock_remote_api() -> AsyncMock:
 POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
 
 
+def postgres_dsn_or_skip() -> str:
+    """Return the real-PostgreSQL test DSN, skipping the test when it is unset.
+
+    Local runs without PostgreSQL skip; the dedicated ``test_postgres`` CI job
+    supplies ``$SEP_TEST_POSTGRES_DSN``.
+
+    :return: The DSN from the environment.
+    """
+    dsn = os.environ.get(POSTGRES_DSN_ENV)
+    if not dsn:
+        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
+    return dsn
+
+
 def postgres_worker_schema() -> str:
     """Return the per-xdist-worker schema name for real-PostgreSQL tests.
 
@@ -568,9 +582,7 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     Pair with ``postgres_session`` for a real-PG-bound ``AsyncSession`` — the
     reusable seam for any code that dispatches on a real PostgreSQL bind.
     """
-    dsn = os.environ.get(POSTGRES_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
+    dsn = postgres_dsn_or_skip()
     schema = postgres_worker_schema()
     base = create_async_engine(dsn, json_serializer=json_serializer)
     try:

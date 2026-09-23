@@ -15,13 +15,23 @@
 
 """Shared fixtures for the Inventory-track migration tests."""
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from alembic.config import Config
+from pydantic import SecretStr
+from sqlalchemy import URL
+from sqlalchemy.engine import make_url
 
+from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.conftest import postgres_dsn_or_skip
+from tests.app.inventory.migrations.postgres_support import (
+    drop_public_schema,
+    run_on_postgres,
+)
 
 
 @pytest.fixture
@@ -42,3 +52,43 @@ def inventory_alembic_config(
 
     cfg = Config(str(ALEMBIC_INI), ini_section="inventory")
     return cfg, sync_url
+
+
+@pytest.fixture
+def postgres_async_url() -> URL:
+    """Return an ``asyncpg`` URL to the real-PostgreSQL test database.
+
+    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
+    """
+    return make_url(postgres_dsn_or_skip()).set(drivername="postgresql+asyncpg")
+
+
+@pytest.fixture
+def inventory_postgres_config(
+    postgres_async_url: URL, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[Config, URL]]:
+    """Point the inventory track at real PostgreSQL and yield its Alembic config.
+
+    ``command.upgrade`` builds its own engine inside the track's ``env.py`` from
+    ``inventory_settings.DATABASE`` rather than accepting one, so the settings
+    are what must be redirected. Drop the schema on teardown so sibling tests
+    inherit a clean database.
+    """
+    database = inventory_settings.DATABASE
+    monkeypatch.setattr(database, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
+    monkeypatch.setattr(database, "USER", postgres_async_url.username)
+    monkeypatch.setattr(
+        database,
+        "PASSWORD",
+        SecretStr(postgres_async_url.password) if postgres_async_url.password else None,
+    )
+    monkeypatch.setattr(database, "HOST", postgres_async_url.host)
+    monkeypatch.setattr(database, "PORT", postgres_async_url.port)
+    monkeypatch.setattr(database, "NAME", postgres_async_url.database)
+
+    cfg = Config(str(ALEMBIC_INI), ini_section="inventory")
+    try:
+        yield cfg, postgres_async_url
+    finally:
+        run_on_postgres(postgres_async_url, drop_public_schema)

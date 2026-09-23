@@ -15,12 +15,10 @@
 
 """Shared fixtures for the migration tests that need a real PostgreSQL server."""
 
-import os
-
 import pytest
 from sqlalchemy.engine import make_url, URL
 
-from tests.app.conftest import POSTGRES_DSN_ENV
+from tests.app.conftest import postgres_dsn_or_skip
 
 
 @pytest.fixture
@@ -30,7 +28,4 @@ def postgres_sync_url() -> URL:
     Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
-    dsn = os.environ.get(POSTGRES_DSN_ENV)
-    if not dsn:
-        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
-    return make_url(dsn).set(drivername="postgresql+psycopg2")
+    return make_url(postgres_dsn_or_skip()).set(drivername="postgresql+psycopg2")
