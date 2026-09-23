@@ -32,7 +32,7 @@ from uuid import uuid4
 
 import aiohttp
 import pytest
-from fastapi import HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import minimum_role_for
@@ -53,6 +53,7 @@ from app.sep.apps.om_bootstrap.strategy import (
     StepRecord,
     StepStatus,
 )
+from app.sep.deps import get_session
 from tests.app.sep.apps.om_bootstrap.conftest import api_client, BASE
 from tests.app.sep.apps.om_bootstrap.factories import BootstrapRunFactory
 
@@ -964,7 +965,11 @@ class TestWritingRoutesLockTheRun:
         path: str,
         body: dict[str, str] | None,
     ) -> None:
-        """Lock the row, so two concurrent writes cannot race and lose one."""
+        """Lock the row, so two concurrent writes cannot race and lose one.
+
+        The lock and the route's save must share one session, and so one
+        transaction: the route resolves ``get_session`` exactly once.
+        """
         run = await BootstrapRunManager.save(
             session,
             BootstrapRunFactory.build(
@@ -996,6 +1001,14 @@ class TestWritingRoutesLockTheRun:
             ),
         ):
             client = api_client(regular_user, session, _fake_tasks_api())
+            session_resolutions: list[AsyncSession] = []
+
+            def _session() -> AsyncSession:
+                session_resolutions.append(session)
+                return session
+
+            assert isinstance(client.app, FastAPI)
+            client.app.dependency_overrides[get_session] = _session
             url = f"{BASE}/runs/{run.id}{path}"
             response = (
                 client.get(url) if method == "get" else client.post(url, json=body)
@@ -1004,3 +1017,5 @@ class TestWritingRoutesLockTheRun:
         assert response.status_code < status.HTTP_300_MULTIPLE_CHOICES
         assert get_run.await_args is not None
         assert get_run.await_args.kwargs == {"for_update": True}
+        assert get_run.await_args.args[0] is session
+        assert len(session_resolutions) == 1

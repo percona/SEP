@@ -31,7 +31,7 @@ decided gate is admin-only, so every mutating route registers
 :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 
 Every route that writes a run reads it with a row lock
-(:func:`_get_run_for_update`) and commits in the same
+(:data:`~app.sep.apps.om_bootstrap.deps.LockedRun`) and commits in the same
 transaction, so two concurrent requests against one run serialise rather than
 the later save silently overwriting the earlier one's ``hosts``/``run_steps``
 document. A ``:dispatch`` route holds that lock across its one Tasks API call on
@@ -48,7 +48,6 @@ import aiohttp
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel, Field, StringConstraints
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
@@ -63,6 +62,7 @@ from app.core.utils.date_time import utc_now
 from app.core.utils.fields import UTCDatetime
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
+from app.sep.apps.om_bootstrap.deps import LockedRun
 from app.sep.apps.om_bootstrap.dispatch import cleanup_run_scripts, dispatch_step
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -229,19 +229,6 @@ def _run_response(
         run_steps=run_steps if run_steps is not None else parse_run_steps(run),
         error=run.error,
     )
-
-
-async def _get_run_for_update(session: AsyncSession, run_id: UUID) -> BootstrapRun:
-    """Read a run under its row lock, for a route that writes it back.
-
-    See the module docstring for why every writing route takes the lock.
-
-    :param session: The database session; its transaction holds the lock.
-    :param run_id: The run's id.
-    :raises HTTPNotFoundException: When there is no such run.
-    :return: The run.
-    """
-    return await BootstrapRunManager.get_run(session, run_id, for_update=True)
 
 
 def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
@@ -448,7 +435,7 @@ async def list_bootstrap_runs(
 
 @router.get("/runs/{run_id}")
 async def get_bootstrap_run(
-    run_id: UUID, session: SessionDep, tasks_client: TasksClient
+    run: LockedRun, session: SessionDep, tasks_client: TasksClient
 ) -> RunResponse:
     """Return one run, reconciling any of its running steps first.
 
@@ -458,15 +445,13 @@ async def get_bootstrap_run(
     its row lock, like every writing route (see the module docstring), since a
     reconcile may write it back.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param session: The database session.
     :param tasks_client: The Tasks API client, authenticated here with SEP's
         internal token rather than the caller's.
     :raises HTTPNotFoundException: When there is no such run.
     :return: The run, with current step status.
     """
-    run = await _get_run_for_update(session, run_id)
-
     with tasks_client.auth(require_internal_token()):
         changed = await reconcile_run(tasks_client, run)
     if changed:
@@ -533,7 +518,7 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_run_step(
-    run_id: UUID,
+    run: LockedRun,
     host: str,
     step_name: str,
     session: SessionDep,
@@ -551,7 +536,7 @@ async def dispatch_run_step(
     ``failed`` one is how PMM's driver implements its retry policy — this route
     does not itself decide *whether* to retry, only executes the request.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param host: The host to dispatch the step on.
     :param step_name: The step to dispatch -- one of the names the run was
         planned with.
@@ -566,12 +551,10 @@ async def dispatch_run_step(
         skipped.
     :return: The run, with the dispatched step now ``running``.
     """
-    run = await _get_run_for_update(session, run_id)
-
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
     if host_state is None:
-        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run.id}")
     what = f"host {host!r}"
     step_index = _find_step(host_state.steps, step_name, what=what)
     step = host_state.steps[step_index]
@@ -598,7 +581,7 @@ async def dispatch_run_step(
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_run_run_step(
-    run_id: UUID,
+    run: LockedRun,
     step_name: str,
     session: SessionDep,
     request: Request,
@@ -616,7 +599,7 @@ async def dispatch_run_run_step(
     deciding *when* it is safe to call this is PMM's stepper's job, not this
     route's (see the module docstring).
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param step_name: The run-level step to dispatch -- one of the names the
         run was planned with.
     :param session: The database session.
@@ -629,15 +612,13 @@ async def dispatch_run_run_step(
         skipped.
     :return: The run, with the dispatched run-level step now ``running``.
     """
-    run = await _get_run_for_update(session, run_id)
-
     states = parse_host_states(run)
     if not states:
-        raise HTTPNotFoundException(detail=f"Run {run_id} has no hosts to target")
+        raise HTTPNotFoundException(detail=f"Run {run.id} has no hosts to target")
     seed_host = states[0].host
 
     run_steps = parse_run_steps(run)
-    what = f"run {run_id}"
+    what = f"run {run.id}"
     step_index = _find_step(run_steps, step_name, what=what)
     step = run_steps[step_index]
 
@@ -664,7 +645,7 @@ async def dispatch_run_run_step(
 )
 @require_minimum_role(UserRole.ADMIN)
 async def dispatch_rollback_step(
-    run_id: UUID,
+    run: LockedRun,
     host: str,
     step_name: str,
     session: SessionDep,
@@ -682,7 +663,7 @@ async def dispatch_rollback_step(
     dispatch its rollback steps in order or all at once -- is PMM's stepper's
     call (its partial-failure policy), not this route's; it only ever dispatches the one step it is asked to.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param host: The host to roll back.
     :param step_name: The rollback step to dispatch -- one of the names the run
         was planned with.
@@ -694,12 +675,10 @@ async def dispatch_rollback_step(
         skipped.
     :return: The run, with the dispatched rollback step now ``running``.
     """
-    run = await _get_run_for_update(session, run_id)
-
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
     if host_state is None:
-        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run_id}")
+        raise HTTPNotFoundException(detail=f"Host {host!r} is not part of run {run.id}")
     what = f"host {host!r}"
     step_index = _find_step(host_state.rollback_steps, step_name, what=what)
     step = host_state.rollback_steps[step_index]
@@ -722,7 +701,7 @@ async def dispatch_rollback_step(
 @router.post("/runs/{run_id}:finish")
 @require_minimum_role(UserRole.ADMIN)
 async def finish_run(
-    run_id: UUID, session: SessionDep, body: FinishRunRequest
+    run: LockedRun, session: SessionDep, body: FinishRunRequest
 ) -> RunResponse:
     """Record the stepper's own decision that a run is done -- failed or rolled back.
 
@@ -736,7 +715,7 @@ async def finish_run(
     Also removes every step script the run still has on disk: no step of a
     finished run is dispatched again, so nothing will download them.
 
-    :param run_id: The run's id.
+    :param run: The path's run, read under its row lock.
     :param session: The database session.
     :param body: The decided terminal status, and why.
     :raises HTTPNotFoundException: When there is no such run.
@@ -745,14 +724,13 @@ async def finish_run(
     :raises HTTPConflictException: When the run is already terminal.
     :return: The run, now terminal.
     """
-    run = await _get_run_for_update(session, run_id)
     if body.status not in _FINISHABLE_STATUSES:
         raise HTTPBadRequestException(
             detail=f"status must be one of {sorted(_FINISHABLE_STATUSES)}"
         )
     if run.status != BootstrapRunStatus.RUNNING:
         raise HTTPConflictException(
-            detail=f"Run {run_id} is already {run.status.value}"
+            detail=f"Run {run.id} is already {run.status.value}"
         )
 
     run.status = body.status
