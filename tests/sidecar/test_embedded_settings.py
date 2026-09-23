@@ -94,8 +94,12 @@ ceilings by this, so an unpinned worker (one child per host CPU) would void it.
 EMBEDDED_POOL_SIZING = {"POOL_SIZE": 3, "MAX_OVERFLOW": 2, "POOL_TIMEOUT": 10.0}
 """The pool keys the profile writes into its shared database block."""
 
-ALLOWLIST_SIZE = 24
+ALLOWLIST_SIZE = 25
 """How many entries the embedded override allowlist ships.
+
+``sidecar/settings.yaml``'s ``ALLOWED_KEYS`` is the list itself. A field missing
+from it is not hot-reloadable through the profile, whether the caller is a UI
+request or pmm-managed's own settings sync.
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.

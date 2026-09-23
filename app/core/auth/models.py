@@ -377,6 +377,18 @@ class BaseUser(BaseModel, ABC):
         """
 
     @classmethod
+    async def get_actors(cls) -> Sequence[Self]:
+        """Retrieve every identity that can appear as a task actor.
+
+        Defaults to :meth:`get_users`. A provider whose non-listed identities
+        (such as Grafana service accounts) can also run tasks overrides it so
+        those identities are named too.
+
+        :return: A sequence of user instances.
+        """
+        return await cls.get_users()
+
+    @classmethod
     @abstractmethod
     async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:
         """Create a user instance from a token payload.

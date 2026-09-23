@@ -448,6 +448,35 @@ async def test_callback_registry_drops_alerts_under_reduced_activation(mocker):
     )
 
 
+@pytest.mark.asyncio
+async def test_reseed_reapplies_gating_like_init_sep_db_does(mocker):
+    """Assert the hot re-seed re-applies gating, not only the beat rows.
+
+    ``_reseed_system_periodic_tasks``'s own docstring says gating is re-applied
+    "the same pair :func:`init_sep_db` runs at startup, for the same reason":
+    a schedule an app cleared (``SCHEDULE=None``, or ``OmInventorySettings``
+    turning ``ENABLED`` off) takes the create path on the way back, which seeds
+    a fresh row at the model's default ``enabled`` rather than the app's actual
+    lifecycle state. Without the second call, a disabled app's sweep would
+    silently resume the moment its owner re-registers a schedule.
+    """
+    init_periodic_tasks_db_mock = mocker.patch.object(
+        main_module, "init_periodic_tasks_db", new_callable=AsyncMock
+    )
+    sync_gating_mock = mocker.patch.object(
+        main_module, "sync_app_periodic_task_gating", new_callable=AsyncMock
+    )
+    system_tasks = mocker.sentinel.system_tasks
+    mocker.patch.object(
+        main_module, "get_system_periodic_tasks", return_value=system_tasks
+    )
+
+    await main_module._reseed_system_periodic_tasks(mocker.Mock())
+
+    init_periodic_tasks_db_mock.assert_awaited_once_with(system_tasks, "sep__")
+    sync_gating_mock.assert_awaited_once_with(system_tasks)
+
+
 @contextmanager
 def _reloaded_against(mocker, registry):
     """Rebuild ``sep_app`` over ``registry``, restoring the real one on exit.
