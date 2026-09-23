@@ -1995,15 +1995,16 @@ export interface paths {
      * List Bootstrap Runs
      * @description Return runs, newest first, optionally narrowed to one status.
      *
-     *     The intended caller is PMM's HA-leader-only stepper: it does not persist its own copy of which runs exist or where
-     *     they are, so on every tick -- and especially right after a leader
-     *     failover -- it re-discovers every run still in flight from here
-     *     (``status=running``) rather than from any state of its own.
+     *     The intended caller is PMM's HA-leader-only stepper. It does not persist
+     *     its own copy of which runs exist or where they are, so on every tick, and
+     *     especially right after a leader failover, it re-discovers every run still
+     *     in flight from here (``status=running``) rather than from any state of its
+     *     own.
      *
      *     :param session: The database session.
      *     :param status: Restrict to runs in this status. Omit for any status.
      *     :param limit: How many to return.
-     *     :return: The runs. Does **not** reconcile in-flight steps -- unlike
+     *     :return: The runs. Does **not** reconcile in-flight steps — unlike
      *         :func:`get_bootstrap_run`, a caller polling a specific run for the
      *         purpose of driving it forward should use that route instead.
      */
@@ -2049,7 +2050,7 @@ export interface paths {
      *     its row lock, like every writing route (see the module docstring), since a
      *     reconcile may write it back.
      *
-     *     :param run_id: The run's id.
+     *     :param run: The path's run, read under its row lock.
      *     :param session: The database session.
      *     :param tasks_client: The Tasks API client, authenticated here with SEP's
      *         internal token rather than the caller's.
@@ -2079,17 +2080,19 @@ export interface paths {
      * @description Dispatch one host's named rollback step now.
      *
      *     Same fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take
-     *     no ``params``: every :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
+     *     no ``params``: every
+     *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
      *     a strategy defines only ever tears down what its own forward steps already
      *     wrote to the host, needing nothing new from the caller.
      *
-     *     Whether a host should be rolled back at all -- and, if so, whether to
-     *     dispatch its rollback steps in order or all at once -- is PMM's stepper's
-     *     call (its partial-failure policy), not this route's; it only ever dispatches the one step it is asked to.
+     *     Whether a host should be rolled back at all, and if so whether to dispatch
+     *     its rollback steps in order or all at once, is PMM's stepper's call (its
+     *     partial-failure policy), not this route's. This route only ever dispatches
+     *     the one step it is asked to.
      *
-     *     :param run_id: The run's id.
+     *     :param run: The path's run, read under its row lock.
      *     :param host: The host to roll back.
-     *     :param step_name: The rollback step to dispatch -- one of the names the run
+     *     :param step_name: The rollback step to dispatch — one of the names the run
      *         was planned with.
      *     :param session: The database session.
      *     :param request: See :func:`dispatch_run_step`.
@@ -2119,7 +2122,7 @@ export interface paths {
      * Dispatch Run Step
      * @description Dispatch one host's named step now.
      *
-     *     Does **not** wait for the dispatch to finish -- it returns as soon as the
+     *     Does **not** wait for the dispatch to finish — it returns as soon as the
      *     Tasks API accepts it, the same fire-and-forget shape ``dispatch_step``
      *     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
      *
@@ -2127,16 +2130,16 @@ export interface paths {
      *     ``failed`` one is how PMM's driver implements its retry policy — this route
      *     does not itself decide *whether* to retry, only executes the request.
      *
-     *     :param run_id: The run's id.
+     *     :param run: The path's run, read under its row lock.
      *     :param host: The host to dispatch the step on.
-     *     :param step_name: The step to dispatch -- one of the names the run was
+     *     :param step_name: The step to dispatch — one of the names the run was
      *         planned with.
      *     :param session: The database session.
      *     :param request: The current request, whose host builds the artifact
      *         download URL the executor fetches the step's script from.
      *     :param tasks_client: The Tasks API client, authenticated here with SEP's
      *         internal token rather than the caller's.
-     *     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
      *     :raises HTTPNotFoundException: When there is no such run, host, or step.
      *     :raises HTTPConflictException: When the step is running, succeeded, or
      *         skipped.
@@ -2162,22 +2165,22 @@ export interface paths {
      * Dispatch Run Run Step
      * @description Dispatch one run-level step now, targeting the run's seed host.
      *
-     *     Same fire-and-forget shape as :func:`dispatch_run_step` -- see its own
+     *     Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
      *     docstring. "Seed host" is ``run``'s first host, index 0, matching
      *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
      *     own convention for where a run-level step actually executes.
      *
-     *     This route does not check that every per-host step succeeded first --
+     *     This route does not check that every per-host step succeeded first —
      *     deciding *when* it is safe to call this is PMM's stepper's job, not this
      *     route's (see the module docstring).
      *
-     *     :param run_id: The run's id.
-     *     :param step_name: The run-level step to dispatch -- one of the names the
+     *     :param run: The path's run, read under its row lock.
+     *     :param step_name: The run-level step to dispatch — one of the names the
      *         run was planned with.
      *     :param session: The database session.
      *     :param request: See :func:`dispatch_run_step`.
      *     :param tasks_client: See :func:`dispatch_run_step`.
-     *     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
      *     :raises HTTPNotFoundException: When there is no such run, run-level step, or
      *         the run has no hosts to target.
      *     :raises HTTPConflictException: When the step is running, succeeded, or
@@ -2202,19 +2205,20 @@ export interface paths {
     put?: never;
     /**
      * Finish Run
-     * @description Record the stepper's own decision that a run is done -- failed or rolled back.
+     * @description Record the stepper's own decision that a run is done — failed or rolled back.
      *
-     *     The one way ``run.status`` reaches :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED`
-     *     or :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
+     *     The one way ``run.status`` reaches
+     *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or
+     *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
      *     both are real calls only PMM's stepper makes (retries exhausted; rollback
-     *     finished), never something ``om_bootstrap`` infers on its own -- see
+     *     finished), never something ``om_bootstrap`` infers on its own — see
      *     ``reconcile.py``'s module docstring for the one status it *does* infer
      *     (SUCCEEDED) and why that's different.
      *
      *     Also removes every step script the run still has on disk: no step of a
      *     finished run is dispatched again, so nothing will download them.
      *
-     *     :param run_id: The run's id.
+     *     :param run: The path's run, read under its row lock.
      *     :param session: The database session.
      *     :param body: The decided terminal status, and why.
      *     :raises HTTPNotFoundException: When there is no such run.
@@ -10500,14 +10504,16 @@ export interface components {
      * BootstrapRunStatus
      * @description Enumerate the states of one bootstrap run.
      *
-     *     Matches the decided partial-failure policy exactly: retry a failed host, and if retries are
-     *     exhausted, roll back the whole run -- there is no "partial success" status
+     *     Matches the decided partial-failure policy exactly: retry a failed host,
+     *     and if retries are exhausted, roll back the whole run. There is no "partial
+     *     success" status
      *     here the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A
      *     bootstrap either finishes with every host succeeded, or it did not finish.
      *
-     *     :cvar RUNNING: The run is in flight -- pre-flight checks, installing,
+     *     :cvar RUNNING: The run is in flight — pre-flight checks, installing,
      *         configuring, or verifying on at least one host.
-     *     :cvar SUCCEEDED: Every host reached :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.SUCCEEDED`.
+     *     :cvar SUCCEEDED: Every host reached
+     *         :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.SUCCEEDED`.
      *     :cvar FAILED: A host failed and retries were exhausted; rollback has not
      *         (yet, or ever) run.
      *     :cvar ROLLED_BACK: A failure's rollback completed.
@@ -10519,7 +10525,7 @@ export interface components {
      * @description Carry the optional body of any ``:dispatch`` route.
      *
      *     :param params: Per-dispatch values the step being dispatched needs but
-     *         cannot compute itself -- a keyFile's content, a generated
+     *         cannot compute itself — a keyFile's content, a generated
      *         monitoring-user password. See
      *         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own
      *         docstring for why these are never persisted by ``om_bootstrap``: PMM's
@@ -10538,13 +10544,14 @@ export interface components {
     };
     /**
      * FinishRunRequest
-     * @description Body for :func:`finish_run` -- the stepper recording its own decision.
+     * @description Carry the body of :func:`finish_run`, the stepper recording its own decision.
      *
      *     :param status: The run's new terminal status. Must be one of
-     *         :data:`_FINISHABLE_STATUSES` -- :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
+     *         :data:`_FINISHABLE_STATUSES`;
+     *         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
      *         is never requested here (see :data:`_FINISHABLE_STATUSES`'s own
      *         docstring).
-     *     :param error: A human-readable reason, if any -- stored on
+     *     :param error: A human-readable reason, if any — stored on
      *         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.
      */
     om_bootstrap__FinishRunRequest: {
@@ -10554,13 +10561,13 @@ export interface components {
     };
     /**
      * HostBootstrapState
-     * @description One host's progress through its planned steps.
+     * @description Track one host's progress through its planned steps.
      *
      *     :param host: The node name being bootstrapped.
      *     :param steps: This host's steps, in the order :meth:`InstallStrategy.plan_steps`
-     *         returned them -- the full list is known before the first one starts.
+     *         returned them — the full list is known before the first one starts.
      *     :param rollback_steps: This host's teardown steps, in the order
-     *         :meth:`InstallStrategy.plan_rollback_steps` returned them -- planned
+     *         :meth:`InstallStrategy.plan_rollback_steps` returned them — planned
      *         up front alongside ``steps`` so a fresh run already shows what rollback
      *         would consist of, even before anything fails. Every entry stays
      *         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
@@ -10607,7 +10614,7 @@ export interface components {
      *     :param replica_set_name: The replica set every host in this run joins.
      *     :param started_at: When the run began.
      *     :param finished_at: When it reached a terminal status, if it has.
-     *     :param hosts: Every host's current step-by-step progress -- the full,
+     *     :param hosts: Every host's current step-by-step progress — the full,
      *         run-specific step list each host was planned with (forward steps and
      *         rollback steps both), not just the steps that have started.
      *     :param run_steps: This run's run-level steps
@@ -10649,30 +10656,32 @@ export interface components {
      *
      *     The same shape serves both :attr:`HostBootstrapState.steps` (per-host) and
      *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,
-     *     e.g. ``rs_initiate`` -- see :meth:`InstallStrategy.plan_run_steps`): neither
+     *     e.g. ``rs_initiate`` — see :meth:`InstallStrategy.plan_run_steps`): neither
      *     context needs a field the other doesn't, so one type covers both rather than
      *     two near-duplicates.
      *
      *     :param name: One of the names :meth:`InstallStrategy.plan_steps` (or
-     *         :meth:`InstallStrategy.plan_run_steps`, or :meth:`InstallStrategy.plan_rollback_steps`)
-     *         returned for this spec -- not a fixed enum, since the step list itself is
+     *         :meth:`InstallStrategy.plan_run_steps`, or
+     *         :meth:`InstallStrategy.plan_rollback_steps`)
+     *         returned for this spec — not a fixed enum, since the step list itself is
      *         per-strategy and per-spec (see the module docstring).
      *     :param status: This step's current status.
      *     :param started_at: When the execution layer began this step, if it has.
      *     :param finished_at: When this step reached a terminal status, if it has.
-     *     :param detail: A human-readable outcome -- an error message on
+     *     :param detail: A human-readable outcome — an error message on
      *         :attr:`StepStatus.FAILED`, or ``None`` while pending/running.
      *     :param task_history_id: The Tasks API history id backing this step's dispatch,
-     *         while it is running -- the execution layer's own bookkeeping, not a
+     *         while it is running — the execution layer's own bookkeeping, not a
      *         strategy concern. Still just data describing progress, so it lives here
      *         rather than in a separate persisted-only sibling type: one shape for
      *         planning, persistence, and API responses alike.
      *     :param attempt_count: How many times this step has been dispatched.
-     *         Incremented on every dispatch, including the first -- PMM's stepper reads
+     *         Incremented on every dispatch, including the first — PMM's stepper reads
      *         this to enforce its decided retry policy (retry, then roll back) without
-     *         needing a counter of its own, which would be lost on a leader failover. ``om_bootstrap`` only ever records the
-     *         fact that a dispatch happened; deciding whether *another* one should is
-     *         the stepper's call, not this field's.
+     *         needing a counter of its own, which would be lost on a leader failover.
+     *         ``om_bootstrap`` only ever records the fact that a dispatch happened;
+     *         deciding whether *another* one should is the stepper's call, not this
+     *         field's.
      */
     om_bootstrap__StepRecord: {
       /**
@@ -10695,7 +10704,7 @@ export interface components {
     };
     /**
      * StepStatus
-     * @description One step's progress, as the UI renders it.
+     * @description Name one step's progress, as the UI renders it.
      * @enum {string}
      */
     om_bootstrap__StepStatus: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
@@ -10703,7 +10712,7 @@ export interface components {
      * TriggerRunRequest
      * @description Request one bootstrap run over a set of hosts, all sharing one spec.
      *
-     *     :param hosts: The hosts to provision -- one-member or three-member replica
+     *     :param hosts: The hosts to provision — one-member or three-member replica
      *         sets only, the decided phase-1 scope. Each is a node name: letters,
      *         digits, ``.``, ``_`` and ``-``, starting with a letter or digit.
      *     :param install_method: Which strategy provisions every host in this run.
@@ -15293,9 +15302,9 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        run_id: string;
         host: string;
         step_name: string;
+        run_id: string;
       };
       cookie?: never;
     };
@@ -15326,9 +15335,9 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        run_id: string;
         host: string;
         step_name: string;
+        run_id: string;
       };
       cookie?: never;
     };
@@ -15363,8 +15372,8 @@ export interface operations {
       query?: never;
       header?: never;
       path: {
-        run_id: string;
         step_name: string;
+        run_id: string;
       };
       cookie?: never;
     };
