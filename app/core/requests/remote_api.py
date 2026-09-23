@@ -54,6 +54,7 @@ from aiohttp import (
     FormData,
     TCPConnector,
 )
+from aiohttp.abc import AbstractCookieJar
 from fastapi import HTTPException, status
 from pydantic import computed_field, Field, PrivateAttr
 
@@ -451,6 +452,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             )
         )
 
+    def _cookie_jar(self) -> AbstractCookieJar | None:
+        """Return the cookie jar the client session is built with.
+
+        ``None`` keeps aiohttp's default jar, which stores response cookies and
+        sends them on later requests to the same host. A client whose upstream
+        treats a cookie as a credential overrides this so no call inherits a
+        cookie another call received.
+
+        :return: The jar, or ``None`` for aiohttp's default.
+        """
+        return None
+
     async def __aenter__(self) -> Self:
         """Enter the asynchronous context manager.
 
@@ -476,6 +489,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 json_serialize=json_serializer,
                 connector=connector,
                 timeout=timeout,
+                cookie_jar=self._cookie_jar(),
             )
         return self
 

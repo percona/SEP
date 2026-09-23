@@ -23,6 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import require_minimum_role_for_unsafe_methods
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.sep.apps.om_inventory.service import SweepOutcome
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -38,6 +39,10 @@ FREE_BYTES = 107374182400
 
 #: The Nomad client the dispatch suites probe, named as PMM registers it.
 HOST = "replicaset-cluster-node00"
+
+#: One resolved, one answered: a stubbed sweep ``terminal_status`` reads as a clean
+#: ``SUCCESS``, so a run that ends in any other status was changed by something else.
+CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
 
 
 @pytest_asyncio.fixture

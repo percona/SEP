@@ -43,9 +43,14 @@ from app.sep.apps.alerts.api_routes import (
     alerts_api_restore,
 )
 from app.tasks.routes import execute_task_name, latest_task_history
-from tests.app.conftest import make_request, make_roleless_grafana_assertion
+from tests.app.conftest import (
+    GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN,
+    make_request,
+    make_roleless_grafana_assertion,
+)
 
 SERVICE_TOKEN: Final = "supersecret"
+SERVICE_ACCOUNT_TOKEN: Final = GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
 
 #: Attempts at one credential the cache may never collapse into a single one.
 REPEATED_ATTEMPTS: Final = 2
@@ -363,6 +368,74 @@ class TestAuthenticateBearerTokenTypes:
         )
 
         assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.fixture
+    def service_account_record(self, mocker):
+        """Stub Grafana's verdict on a service-account token (the SDK boundary)."""
+        return mocker.patch(
+            "app.core.auth.providers.grafana.sdk.GrafanaSDK.verify_service_account_token",
+            new=mocker.AsyncMock(
+                return_value={
+                    "id": 7,
+                    "login": "sa-1-ci-runner",
+                    "isDisabled": False,
+                    "role": "Admin",
+                }
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_admin_service_account_reaches_an_admin_gated_surface(
+        self, service_account_record
+    ):
+        """Verify an Admin service account is admitted as an admin."""
+        user = await get_current_admin(
+            await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+        )
+
+        assert user.username == "sa-1-ci-runner"
+        assert user.is_admin is True
+
+    @pytest.mark.asyncio
+    async def test_a_viewer_service_account_does_not_gain_admin(
+        self, service_account_record
+    ):
+        """Verify a Viewer service account stays below the admin gate."""
+        service_account_record.return_value = {
+            **service_account_record.return_value,
+            "role": "Viewer",
+        }
+
+        user = await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+
+        assert user.role is UserRole.VIEWER
+        with pytest.raises(HTTPForbiddenException):
+            await get_current_admin(user)
+
+    @pytest.mark.asyncio
+    async def test_a_glsa_shaped_internal_token_still_short_circuits(
+        self, service_account_record, mocker
+    ):
+        """Verify ``SEP_INTERNAL_TOKEN`` wins even when it looks like an SA token."""
+        mocker.patch.object(
+            settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_ACCOUNT_TOKEN)
+        )
+
+        user = await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+
+        assert user.id == SERVICE_PRINCIPAL_ID
+        service_account_record.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_refused_bearer_is_never_logged(self, caplog):
+        """Verify the failed-authentication log does not echo the credential."""
+        bearer = "bogus-bearer-xyz"
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(HTTPUnauthorizedException):
+            await authenticate_bearer_token(bearer)
+
+        assert caplog.records
+        assert bearer not in caplog.text
 
 
 class TestGetCurrentUserRequestCache:
