@@ -252,6 +252,9 @@ _SA_ID = 7
 _SA_LOGIN = "sa-1-ci-runner"
 #: Grafana calls one uncached verification makes: the token, then the record.
 _VERIFICATION_CALLS = 2
+#: Listing pages read when the second comes back empty: the populated page, then
+#: the empty one that ends the listing.
+_EMPTY_PAGE_CALLS = 2
 
 
 def _json_error(status_code, json_data=None):
@@ -708,7 +711,7 @@ async def test_get_service_accounts_stops_at_an_empty_page():
     accounts = await sdk.get_service_accounts()
 
     assert accounts == first
-    assert session.request.call_count == len(["page 1", "page 2"])
+    assert session.request.call_count == _EMPTY_PAGE_CALLS
     GrafanaSDK.get_service_accounts.cache_clear()
 
 
