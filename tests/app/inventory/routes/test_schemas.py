@@ -443,6 +443,74 @@ class TestListTablesBySchema:
         assert data["items"] == []
         assert data["total"] == 0
 
+    def test_list_tables_by_schema_include_retired_resolves_retired_schema(
+        self, test_client: TestClient, table: Table, retired_schema: Schema
+    ) -> None:
+        """List a retired schema's tables through the opt-in."""
+        response = test_client.get(
+            f"/schemas/{retired_schema.id}/tables/", params={"include_retired": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert [item["id"] for item in data["items"]] == [table.id]
+        assert data["total"] == 1
+
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
+    def test_list_tables_by_schema_hides_retired_schema_by_default(
+        self,
+        test_client: TestClient,
+        table: Table,
+        retired_schema: Schema,
+        params: dict[str, bool],
+    ) -> None:
+        """Return 404 for a retired schema unless the opt-in is set."""
+        response = test_client.get(
+            f"/schemas/{retired_schema.id}/tables/", params=params
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_list_tables_by_schema_include_retired_after_retire_route(
+        self, test_client: TestClient, schema: Schema, table: Table
+    ) -> None:
+        """List the tables the retire route cascaded into, marked retired."""
+        assert (
+            test_client.delete(f"/schemas/{schema.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        hidden = test_client.get(f"/schemas/{schema.id}/tables/")
+        assert hidden.status_code == status.HTTP_404_NOT_FOUND
+
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/", params={"include_retired": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert [item["id"] for item in items] == [table.id]
+        assert items[0]["retired_at"] is not None
+
+    def test_list_tables_by_schema_include_retired_on_active_schema(
+        self, test_client: TestClient, retired_table: Table
+    ) -> None:
+        """Include a retired table of an active schema through the opt-in."""
+        response = test_client.get(
+            f"/schemas/{retired_table.schema_id}/tables/",
+            params={"include_retired": True},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.json()["items"]] == [retired_table.id]
+
+    def test_list_tables_by_schema_rejects_invalid_include_retired(
+        self, test_client: TestClient, schema: Schema
+    ) -> None:
+        """Reject a non-boolean include_retired with HTTP 422."""
+        response = test_client.get(
+            f"/schemas/{schema.id}/tables/", params={"include_retired": "maybe"}
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
     def test_list_tables_by_schema_rejects_unknown_sort_key(
         self, test_client: TestClient, schema: Schema
     ) -> None:
@@ -491,9 +559,14 @@ class TestListTablesBySchema:
         assert data["items"] == []
         assert data["total"] == 0
 
-    def test_list_tables_by_schema_not_found(self, test_client: TestClient) -> None:
-        """Return 404 for a nonexistent schema."""
-        response = test_client.get("/schemas/99999/tables/")
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": True}], ids=["active", "include_retired"]
+    )
+    def test_list_tables_by_schema_not_found(
+        self, test_client: TestClient, params: dict[str, bool]
+    ) -> None:
+        """Return 404 for a nonexistent schema in either retirement scope."""
+        response = test_client.get("/schemas/99999/tables/", params=params)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_list_tables_by_schema_custom_offset(
@@ -622,6 +695,18 @@ class TestCreateTableForSchema:
         """Return 404 when creating a table under a nonexistent schema."""
         payload = TableWriteFactory.build().model_dump()
         response = test_client.post("/schemas/99999/tables/", json=payload)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_create_table_for_retired_schema_ignores_include_retired(
+        self, test_client: TestClient, retired_schema: Schema
+    ) -> None:
+        """Refuse a table under a retired schema, whatever the read opt-in says."""
+        payload = TableWriteFactory.build().model_dump()
+        response = test_client.post(
+            f"/schemas/{retired_schema.id}/tables/",
+            params={"include_retired": True},
+            json=payload,
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 

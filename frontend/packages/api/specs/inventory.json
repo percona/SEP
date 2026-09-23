@@ -3819,7 +3819,7 @@
     },
     "/nodes/{node_id}/services/": {
       "get": {
-        "description": "List Services by Node.",
+        "description": "List Services by Node.\n\n:param session: The async database session.\n:param node: The node addressed by the path, resolved within the request's\n    retirement scope.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param manager: The service manager the request's retirement scope selected.\n:param service_type: Restrict the listing to services of this type.\n:return: A paginated response of the node's services.",
         "operationId": "nodes_list_services_by_node_nodes__node_id__services__get",
         "parameters": [
           {
@@ -3845,6 +3845,16 @@
                 }
               ],
               "title": "Service Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -3904,16 +3914,6 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           }
         ],
@@ -4518,7 +4518,7 @@
     },
     "/schemas/{schema_id}/tables/": {
       "get": {
-        "description": "List Tables by Schema.",
+        "description": "List Tables by Schema.\n\n:param session: The async database session.\n:param schema: The schema addressed by the path, resolved within the\n    request's retirement scope.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param manager: The table manager the request's retirement scope selected.\n:return: A paginated response of the schema's tables.",
         "operationId": "schemas_list_tables_by_schema_schemas__schema_id__tables__get",
         "parameters": [
           {
@@ -4528,6 +4528,16 @@
             "schema": {
               "title": "Schema Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -4589,16 +4599,6 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           }
         ],
@@ -5212,7 +5212,7 @@
     },
     "/services/{service_id}/schemas/": {
       "get": {
-        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The resolved service dependency.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param manager: The schema manager the request's retirement scope selected.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:return: A paginated response of schema responses.",
+        "description": "List Schemas by Service.\n\nReturn ``SchemaResponse`` (with nested tables) when ``include_tables``\nis set, otherwise return ``SchemaCompactResponse`` (without tables).\n\n:param session: The async database session.\n:param service: The service addressed by the path, resolved within the\n    request's retirement scope.\n:param pagination: Validated offset/limit query parameters.\n:param list_query: The resolved sort/search produced at the request\n    boundary.\n:param manager: The schema manager the request's retirement scope selected.\n:param include_tables: Include nested tables in the response when set to\n    any non-empty value. Defaults to compact mode (no tables).\n:return: A paginated response of schema responses.",
         "operationId": "services_list_schemas_by_service_services__service_id__schemas__get",
         "parameters": [
           {
@@ -5238,6 +5238,16 @@
                 }
               ],
               "title": "Include Tables"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_retired",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Retired",
+              "type": "boolean"
             }
           },
           {
@@ -5299,16 +5309,6 @@
               ],
               "description": "Case-insensitive search across the searchable columns.",
               "title": "Search"
-            }
-          },
-          {
-            "in": "query",
-            "name": "include_retired",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Include Retired",
-              "type": "boolean"
             }
           }
         ],
