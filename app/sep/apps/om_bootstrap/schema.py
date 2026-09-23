@@ -15,7 +15,7 @@
 
 """Define the ``AppSchema`` for OpenManager Bootstrap.
 
-The app ships no UI of its own -- its consumer is PMM's ``om`` service -- so this
+The app ships no UI of its own — its consumer is PMM's ``om`` service — so this
 is the minimum the registry needs plus a run list, which is what someone
 diagnosing a bootstrap would want if a page is ever built for it. Placeholder
 columns until the real run/state-machine model exists.

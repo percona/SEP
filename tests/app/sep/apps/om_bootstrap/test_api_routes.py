@@ -15,8 +15,8 @@
 
 """Test the run lifecycle: create, dispatch a step, read progress.
 
-Scoped to this app's own logic -- planning, host/step lookups, conflict
-detection -- not SEP's cross-cutting admin-role gate
+Scoped to this app's own logic — planning, host/step lookups, conflict
+detection — not SEP's cross-cutting admin-role gate
 (``require_minimum_role_for_unsafe_methods``), which resolves its own
 credential outside FastAPI's dependency-override seam and needs the full
 ``sep_app`` plus a real Bearer credential to exercise honestly; that is a
@@ -80,7 +80,7 @@ class TestAdminGateIsRegistered:
     """Assert the mutating routes actually registered the ADMIN minimum.
 
     See the module docstring for why this is inspection rather than an
-    end-to-end 403 -- ``minimum_role_for`` is the exact function the real gate
+    end-to-end 403 — ``minimum_role_for`` is the exact function the real gate
     consults, so this is asserting the same fact the gate would enforce, just
     without needing the full auth stack to observe it.
     """
@@ -90,19 +90,19 @@ class TestAdminGateIsRegistered:
         assert minimum_role_for_endpoint(trigger_run) == UserRole.ADMIN
 
     def test_dispatch_run_step_requires_admin(self) -> None:
-        """Dispatching a step is literal root execution -- same admin-only gate."""
+        """Gate step dispatch as admin-only, since it is literal root execution."""
         assert minimum_role_for_endpoint(dispatch_run_step) == UserRole.ADMIN
 
     def test_dispatch_run_run_step_requires_admin(self) -> None:
-        """A run-level dispatch (rs.initiate, user creation) is equally privileged."""
+        """Gate a run-level dispatch (rs.initiate, user creation) the same way."""
         assert minimum_role_for_endpoint(dispatch_run_run_step) == UserRole.ADMIN
 
     def test_dispatch_rollback_step_requires_admin(self) -> None:
-        """Tearing down a host is as privileged as building it up."""
+        """Treat tearing down a host as privileged as building it up."""
         assert minimum_role_for_endpoint(dispatch_rollback_step) == UserRole.ADMIN
 
     def test_finish_run_requires_admin(self) -> None:
-        """Declaring a run failed/rolled back is the stepper's own privileged call."""
+        """Treat declaring a run failed/rolled back as the stepper's privileged call."""
         assert minimum_role_for_endpoint(finish_run) == UserRole.ADMIN
 
 
@@ -127,7 +127,7 @@ class TestTriggerRun:
     def test_creates_a_run_with_every_host_planned(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """Every requested host gets its strategy's full step list, all pending."""
+        """Plan every requested host's full step list, all pending."""
         response = api_client(regular_user, session, _fake_tasks_api()).post(
             f"{BASE}/runs",
             json={
@@ -153,7 +153,7 @@ class TestTriggerRun:
     def test_rejects_an_empty_host_list(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run over no hosts is a request error, not a run that does nothing."""
+        """Reject a run over no hosts as a request error, not a no-op run."""
         response = api_client(regular_user, session, _fake_tasks_api()).post(
             f"{BASE}/runs",
             json={
@@ -170,7 +170,7 @@ class TestTriggerRun:
     def test_rejects_a_repeated_host(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A duplicated host would plan two states no dispatch route could ever tell apart."""
+        """Reject duplicate hosts, which no dispatch route could tell apart."""
         response = api_client(regular_user, session, _fake_tasks_api()).post(
             f"{BASE}/runs",
             json={
@@ -187,7 +187,7 @@ class TestTriggerRun:
     def test_rejects_an_install_method_with_no_registered_strategy(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """DOCKER/PODMAN are declared on the enum for later -- not implemented yet."""
+        """Reject DOCKER/PODMAN: declared on the enum, not implemented yet."""
         response = api_client(regular_user, session, _fake_tasks_api()).post(
             f"{BASE}/runs",
             json={
@@ -203,7 +203,7 @@ class TestTriggerRun:
 
 
 class TestTriggerRunValidation:
-    """Assert POST /runs rejects hosts, versions and names outside the accepted shapes."""
+    """Assert POST /runs rejects hosts, versions and names of the wrong shape."""
 
     @staticmethod
     def _payload(**overrides: object) -> dict[str, object]:
@@ -236,7 +236,7 @@ class TestTriggerRunValidation:
     def test_rejects_a_host_that_is_not_a_node_name(
         self, regular_user: CasdoorUser, session: AsyncSession, host: str
     ) -> None:
-        """Reject a host that could not safely be a script filename and dispatch target."""
+        """Reject a host that could not safely be a script filename or target."""
         response = api_client(regular_user, session).post(
             f"{BASE}/runs", json=self._payload(hosts=[host])
         )
@@ -293,7 +293,7 @@ class TestListBootstrapRuns:
     async def test_filters_by_status(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A caller re-discovering in-flight runs sees only the running ones."""
+        """Show a caller re-discovering in-flight runs only the running ones."""
         running = await self._seed_run(session, BootstrapRunStatus.RUNNING)
         await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
@@ -309,7 +309,7 @@ class TestListBootstrapRuns:
     async def test_returns_every_status_when_unfiltered(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """Omitting ``status`` lists runs regardless of where they landed."""
+        """List runs regardless of where they landed when ``status`` is omitted."""
         first = await self._seed_run(session, BootstrapRunStatus.RUNNING)
         second = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
@@ -350,7 +350,7 @@ class TestGetBootstrapRun:
     async def test_returns_404_for_an_unknown_run(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run id nobody created is a 404, not a 500 or an empty 200."""
+        """Return 404 for a run id nobody created, not a 500 or an empty 200."""
         response = api_client(regular_user, session, _fake_tasks_api()).get(
             f"{BASE}/runs/{uuid4()}"
         )
@@ -361,7 +361,7 @@ class TestGetBootstrapRun:
     async def test_reflects_a_reconciled_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A GET reconciles before responding, so a just-finished step shows up now."""
+        """Reconcile before responding, so a just-finished step shows up now."""
         run = await self._seed_run(session)
 
         async def _fake_reconcile(
@@ -421,7 +421,7 @@ class TestDispatchRunStep:
     async def test_dispatches_a_pending_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A pending step is dispatched, marked running, and carries its task id."""
+        """Dispatch a pending step, mark it running, and record its task id."""
         run = await self._seed_run(session)
 
         with (
@@ -444,7 +444,7 @@ class TestDispatchRunStep:
     async def test_records_a_dispatch_that_the_tasks_api_rejects(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A dispatch the Tasks API itself rejects becomes a FAILED step, not a 5xx.
+        """Record a dispatch the Tasks API itself rejects as a FAILED step, not a 5xx.
 
         Without this, a step the Tasks API never even accepts (an unknown or
         unreachable executor target, most concretely) stays PENDING forever:
@@ -512,7 +512,7 @@ class TestDispatchRunStep:
     async def test_records_a_dispatch_the_tasks_api_accepts_without_an_id(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """The same treatment applies when dispatch_step's own contract is violated."""
+        """Apply the same treatment when dispatch_step's own contract is violated."""
         run = await self._seed_run(session)
 
         with (
@@ -540,7 +540,7 @@ class TestDispatchRunStep:
     async def test_404s_for_an_unknown_host(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A host that isn't part of the run cannot have a step dispatched on it."""
+        """Refuse to dispatch a step on a host that isn't part of the run."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -553,7 +553,7 @@ class TestDispatchRunStep:
     async def test_404s_for_an_unplanned_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A step name outside the host's own planned list is rejected, not silently run."""
+        """Reject a step name outside the host's planned list rather than run it."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -566,7 +566,7 @@ class TestDispatchRunStep:
     async def test_409s_for_a_step_already_running(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """Dispatching a step that's already in flight is a conflict, not a double-dispatch."""
+        """Reject dispatching an in-flight step as a conflict, not a double-dispatch."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -671,7 +671,7 @@ class TestDispatchRunStep:
     async def test_forwards_body_params_to_build_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A caller-supplied secret (e.g. keyFile content) reaches the built action."""
+        """Pass a caller-supplied secret (e.g. keyFile content) to the built action."""
         run = await self._seed_run(session)
         build_step = MagicMock(return_value=MagicMock(command=["true"], timeout_s=1))
 
@@ -698,7 +698,7 @@ class TestDispatchRunStep:
     async def test_400s_when_the_strategy_rejects_the_params(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A strategy's ValueError for bad params is the caller's mistake, not a 500."""
+        """Blame the caller, not the server, for a strategy's bad-params ValueError."""
         run = await self._seed_run(session)
         build_step = MagicMock(side_effect=ValueError("missing required param"))
 
@@ -746,7 +746,7 @@ class TestDispatchRunRunStep:
     async def test_dispatches_to_the_first_host(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """rs.initiate runs on hosts[0] -- the seed member, not any other host."""
+        """Run rs.initiate on hosts[0], the seed member, not any other host."""
         run = await self._seed_run(session)
         dispatch_step_mock = AsyncMock(return_value=FAKE_TASK_HISTORY_ID)
 
@@ -768,7 +768,7 @@ class TestDispatchRunRunStep:
     async def test_404s_for_an_unplanned_run_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run-level name outside the run's own planned list is rejected."""
+        """Reject a run-level name outside the run's own planned list."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -781,7 +781,7 @@ class TestDispatchRunRunStep:
     async def test_409s_for_a_run_step_already_running(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run-level step already dispatching cannot be dispatched again."""
+        """Refuse to dispatch a run-level step that is already dispatching."""
         run = await BootstrapRunManager.save(
             session,
             BootstrapRunFactory.build(
@@ -837,7 +837,7 @@ class TestDispatchRollbackStep:
     async def test_dispatches_a_pending_rollback_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A pending rollback step is dispatched, scoped to its run, and marked running."""
+        """Dispatch a pending rollback step, scoped to its run, and mark it running."""
         run = await self._seed_run(session)
         dispatch = AsyncMock(return_value=FAKE_TASK_HISTORY_ID)
 
@@ -856,7 +856,7 @@ class TestDispatchRollbackStep:
     async def test_404s_for_an_unplanned_rollback_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A forward step name is not a rollback step name."""
+        """Reject a forward step name as a rollback step name."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -885,7 +885,7 @@ class TestFinishRun:
     async def test_marks_a_running_run_failed(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """The stepper declaring retries exhausted lands as FAILED, with its reason."""
+        """Record the stepper declaring retries exhausted as FAILED, with its reason."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -920,7 +920,7 @@ class TestFinishRun:
     async def test_rejects_succeeded_as_a_requested_status(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """SUCCEEDED is inferred by reconciliation, never requested through this route."""
+        """Refuse SUCCEEDED here: reconciliation infers it, callers never request it."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -933,7 +933,7 @@ class TestFinishRun:
     async def test_409s_for_an_already_terminal_run(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run already FAILED/ROLLED_BACK/SUCCEEDED cannot be finished twice."""
+        """Refuse to finish a run already FAILED/ROLLED_BACK/SUCCEEDED."""
         run = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(

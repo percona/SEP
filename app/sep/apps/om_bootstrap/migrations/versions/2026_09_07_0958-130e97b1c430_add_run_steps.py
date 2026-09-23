@@ -27,7 +27,7 @@ Resolves the schema token to its *real* name (:func:`om_schema`) rather than
 passing ``OM_SCHEMA_SYMBOL`` straight to ``op.add_column``, unlike
 ``5020da27ed4b``'s ``op.create_table``: ``ADD COLUMN`` does not get the same
 runtime ``schema_translate_map`` rewrite ``CREATE TABLE`` does (verified against
-a real SQLite run -- the symbol reaches the driver untranslated and SQLite
+a real SQLite run — the symbol reaches the driver untranslated and SQLite
 raises "no such table: om_schema.bootstrap_run"), so this migration resolves it
 itself instead of relying on that translation happening.
 """

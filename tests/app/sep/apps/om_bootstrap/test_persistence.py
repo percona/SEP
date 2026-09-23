@@ -71,7 +71,7 @@ class TestDumpAndParseHostStatesRoundTrip:
         assert parsed == original
 
     def test_running_step_carries_its_task_history_id_through(self) -> None:
-        """The dispatch-tracking field on StepRecord is not dropped by the round trip."""
+        """Keep StepRecord's dispatch-tracking field through the round trip."""
         parsed = parse_host_states(
             BootstrapRunFactory.build(
                 hosts=dump_host_states(_host_states()),
@@ -94,7 +94,7 @@ def _run_steps() -> list[StepRecord]:
 
 
 class TestDumpAndParseRunStepsRoundTrip:
-    """Assert the plain-JSON shape run-level steps persist as survives the round trip."""
+    """Assert run-level steps' plain-JSON shape survives the round trip."""
 
     def test_round_trips_without_a_database(self) -> None:
         """dump_run_steps then parse_run_steps returns equivalent typed state."""
@@ -114,7 +114,7 @@ class TestBootstrapRunPersistence:
 
     @pytest.mark.asyncio
     async def test_insert_and_read_back(self, session: AsyncSession) -> None:
-        """The enum and JSON columns actually work end to end, not just in the model."""
+        """Exercise the enum and JSON columns end to end, not just in the model."""
         run = BootstrapRun(
             install_method=InstallMethod.PACKAGES,
             os=OperatingSystem.ROCKY,

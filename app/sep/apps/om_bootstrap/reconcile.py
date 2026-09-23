@@ -17,7 +17,7 @@
 
 Deliberately narrow: this module only ever *translates* a ``TaskHistory``'s
 status onto the :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` that
-dispatched it -- it never decides to dispatch the *next* step, retry a failed
+dispatched it — it never decides to dispatch the *next* step, retry a failed
 one, or roll a run back. Those are PMM's ``om`` service's job, driving the state
 machine as the HA-leader-only stepper: it reads a run's current state through
 the API and decides what happens next.
@@ -25,21 +25,24 @@ the API and decides what happens next.
 so PMM's driver has something true to read.
 
 One exception, not a contradiction of the above: :func:`reconcile_run` also
-flips a ``RUNNING`` run to :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
-once every host and every run-level step has actually succeeded. That is not a
-decision -- there is nothing left to decide once everything succeeded, only a
-fact to record -- unlike :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED`
-(retries exhausted) and :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`
+flips a ``RUNNING`` run to
+:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED` once
+every host and every run-level step has actually succeeded. That is not a
+decision — there is nothing left to decide once everything succeeded, only a
+fact to record — unlike
+:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` (retries
+exhausted) and
+:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`
 (rollback finished), both real calls only the stepper makes, which reach
 ``run.status`` through ``api_routes.py``'s explicit ``:finish`` route instead.
 
 ``finished_at`` is stamped with the reconciliation's own clock, not read back
 from ``TaskHistory``: this runs on a polling interval, not a push, so the two
-times differ by at most that interval -- an acceptable approximation for a
+times differ by at most that interval — an acceptable approximation for a
 receipt, not a claim of exact timing.
 
 ``detail`` on a non-``SUCCESS`` terminal status is currently just the
-``TaskHistory`` status name -- it does not yet read the dispatch's stderr for a
+``TaskHistory`` status name — it does not yet read the dispatch's stderr for a
 real error message (the way ``om_inventory/dispatch.py``'s ``_read_stdout``
 does for its own purpose). A worthwhile follow-up, not done here to keep this
 module to exactly the one thing its docstring claims.
@@ -86,7 +89,7 @@ __all__ = ["reconcile_run", "reconcile_step"]
 logger = logging.getLogger(__name__)
 
 #: Statuses that mean "nothing more to do here" for the purpose of deciding a
-#: run is fully done -- a skipped step is as final as a succeeded one.
+#: run is fully done — a skipped step is as final as a succeeded one.
 _DONE_STATUSES = frozenset({StepStatus.SUCCEEDED, StepStatus.SKIPPED})
 
 #: ``TaskHistory`` status values that mean "still in flight" — everything else
@@ -159,22 +162,22 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
 
 
 async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
-    """Reconcile every running step across ``run`` -- per-host, rollback, and run-level.
+    """Reconcile every running step across ``run`` — per-host, rollback, and run-level.
 
     Mutates ``run.hosts``/``run.run_steps``/``run.status``/``run.finished_at``
     directly when anything changed; the caller is responsible for committing the
     session. A finished step's scratch script
     (:func:`~app.sep.apps.om_bootstrap.dispatch.cleanup_step_script`) is removed
-    as part of reconciling it, win or lose -- nothing downstream needs it once
+    as part of reconciling it, win or lose — nothing downstream needs it once
     the dispatch that read it is done. The run-level steps' scripts are named
-    under the run's first host regardless of which host actually ran them --
+    under the run's first host regardless of which host actually ran them —
     see :func:`~app.sep.apps.om_bootstrap.dispatch.step_script_filename`, and
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
     own docstring for why that host is always the target.
 
     :param tasks_api: The Tasks API client.
     :param run: The run to reconcile.
-    :return: Whether anything changed -- callers use this to skip a write when
+    :return: Whether anything changed — callers use this to skip a write when
         every step was still in flight.
     """
     states = parse_host_states(run)
@@ -203,7 +206,7 @@ async def _reconcile_step_list_per_host(
     """Reconcile every host's own ``steps`` and ``rollback_steps``, in place.
 
     :param tasks_api: The Tasks API client.
-    :param run: The run these hosts belong to -- only read, for its id.
+    :param run: The run these hosts belong to — only read, for its id.
     :param states: The parsed host states to reconcile, mutated in place.
     :return: Whether anything changed.
     """
@@ -225,15 +228,15 @@ async def _reconcile_step_list(
 ) -> bool:
     """Reconcile one flat list of steps against their dispatches, in place.
 
-    Shared by every step list this module reconciles -- a host's forward steps,
-    its rollback steps, and the run's own run-level steps -- since all three are
+    Shared by every step list this module reconciles — a host's forward steps,
+    its rollback steps, and the run's own run-level steps — since all three are
     the same shape and need the exact same treatment.
 
     :param tasks_api: The Tasks API client.
-    :param run: The run these steps belong to -- only read, for its id.
+    :param run: The run these steps belong to — only read, for its id.
     :param host: The host whose scratch script directory a transitioned step's
         cleanup targets. ``None`` when there is no host to target (an empty
-        run -- see :func:`reconcile_run`'s ``seed_host``), in which case cleanup
+        run — see :func:`reconcile_run`'s ``seed_host``), in which case cleanup
         is skipped rather than guessing a name.
     :param steps: The steps to reconcile, mutated in place.
     :return: Whether anything changed.
@@ -261,9 +264,11 @@ def _fully_succeeded(
 
     Rollback steps are deliberately excluded from this check, not reconciled
     into it: every host's ``rollback_steps`` are planned up front alongside its
-    forward steps (see :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState`'s
-    own docstring) and stay :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.PENDING`
-    for the entire life of a run that never needed rollback -- counting them here
+    forward steps (see
+    :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState`'s own
+    docstring) and stay
+    :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.PENDING` for the
+    entire life of a run that never needed rollback — counting them here
     would mean a normal, fully-succeeded run could never satisfy this check.
 
     :param states: Every host's current state.

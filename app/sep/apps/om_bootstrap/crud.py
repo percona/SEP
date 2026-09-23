@@ -18,7 +18,7 @@
 A plain :class:`~app.core.db.crud.BaseSQLModelManager`, unlike ``om_inventory``'s
 own :class:`~app.sep.apps.om_inventory.crud.ProbeRunManager` sibling
 (``OmHost``/``OmService``), which hand-writes attribute-by-attribute upserts for
-a documented reason -- freshness columns a blanket update would silently wipe.
+a documented reason — freshness columns a blanket update would silently wipe.
 ``BootstrapRun`` has no such column: every write here replaces the whole row
 (the ``hosts`` document included, per ``models.py``'s "read and written whole"
 design), so the manager's generic ``save``/``update`` need no override.
@@ -36,7 +36,7 @@ from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 __all__ = ["BootstrapRunManager"]
 
 #: ``list_runs``' original ordering, kept explicit rather than relying on
-#: :class:`~app.core.db.crud.BaseManager`'s ``created_at``-descending default --
+#: :class:`~app.core.db.crud.BaseManager`'s ``created_at``-descending default —
 #: PMM's stepper cares about ``started_at`` specifically (see :meth:`list`).
 _NEWEST_STARTED_FIRST = [col(BootstrapRun.started_at).desc()]
 

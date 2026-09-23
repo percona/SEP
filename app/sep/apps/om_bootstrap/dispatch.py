@@ -18,7 +18,7 @@
 Rides the pre-seeded system ``exec-artifact`` task rather than ``run-python``
 (``om_inventory``'s own choice, ``om_inventory/dispatch.py``): ``run-python``'s
 job template has no ``sudo`` branch at all, so a step needing root (installing a
-package, writing ``/etc/mongod.conf``, managing a systemd unit -- everything
+package, writing ``/etc/mongod.conf``, managing a systemd unit — everything
 :class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`
 does) would only work by accident, if the Nomad client agent itself happens to
 run as root. ``exec-artifact`` has an explicit sudo path: its job template keys
@@ -29,7 +29,7 @@ so the script is invoked by its absolute path as ``sudo bash <path>``.
 ``exec-artifact`` downloads its script as a Nomad artifact rather than a
 dispatch payload (unlike ``run-python``), which means the script has to exist as
 a real file at a real URL *before* dispatch. Every existing consumer
-(``dipper``, ``snippets``) serves a fixed, developer-authored file for this --
+(``dipper``, ``snippets``) serves a fixed, developer-authored file for this —
 none of them write one on the fly, because none of them need to: their script
 content never changes. A bootstrap step's command is different per run, host,
 and step, so this module is the first to actually generate the file it serves,
@@ -42,7 +42,7 @@ when reconciliation sees it finish, and when the run itself is finished
 
 Deliberately not modeled as a :class:`~app.sep.snippets.models.snippet.BaseSnippet`:
 that abstraction exists for catalogued, user-parameterized scripts with a
-validated execution model, and a bootstrap step is neither -- its content is
+validated execution model, and a bootstrap step is neither — its content is
 fixed once :class:`~app.sep.apps.om_bootstrap.strategy.StepAction` is built, with
 nothing left for a user to supply. Reusing
 :class:`~app.sep.snippets.models.snippet.SnippetExecutionMeta` directly (the data
@@ -88,11 +88,11 @@ __all__ = [
 #: The pre-seeded system task that runs an artifact-downloaded script as root.
 EXEC_ARTIFACT_TASK = "exec-artifact"
 #: ``exec-artifact``'s job template keys its sudo branch on the interpreter meta
-#: literally starting with ``"sudo "`` (``app/tasks/db/seed.py``) -- nothing else
+#: literally starting with ``"sudo "`` (``app/tasks/db/seed.py``) — nothing else
 #: triggers it.
 ROOT_INTERPRETER = "sudo bash"
 #: The ``artifact_base_dirs`` discriminator ``om_bootstrap`` registers
-#: :func:`step_scripts_dir` under -- see ``app.py``.
+#: :func:`step_scripts_dir` under — see ``app.py``.
 ARTIFACT_TYPE = "om_bootstrap_step"
 #: Set by a step script on its first pass, before it re-executes itself under
 #: ``timeout`` — see :func:`build_step_script`.
@@ -107,7 +107,7 @@ def step_scripts_dir() -> Path:
     A fixed path under the system temp directory, not a per-call
     :func:`tempfile.mkdtemp`: :func:`~app.sep.apps.framework.base.BaseApp`
     declares this directory once, at import time, as the thunk
-    ``artifact_base_dirs`` calls on every download -- it has to resolve to the
+    ``artifact_base_dirs`` calls on every download — it has to resolve to the
     same directory every time, not a fresh one per call.
 
     The directory is ``0700`` — re-applied on every call, so a directory left
@@ -215,7 +215,7 @@ async def write_step_script(
     :param host: The node name being bootstrapped.
     :param step_name: The step's name.
     :param action: The step's action.
-    :return: The written file's path, and its MD5 digest --
+    :return: The written file's path, and its MD5 digest —
         :class:`~app.sep.snippets.models.snippet.SnippetExecutionMeta` requires
         the digest to verify the download on the executor side.
     """
@@ -266,7 +266,7 @@ async def dispatch_step(
 ) -> int:
     """Dispatch one step's action to ``host``, as root, and return its task history id.
 
-    Does **not** wait for the run to finish -- see the module docstring. A caller
+    Does **not** wait for the run to finish — see the module docstring. A caller
     polls ``GET /api/tasks/history/{id}`` for progress, the same generic endpoint
     ``om_inventory/bootstrap.py``'s PoC already established this pattern with.
 
@@ -275,7 +275,7 @@ async def dispatch_step(
 
     :param tasks_api: The Tasks API client.
     :param request: The current request, whose host builds the artifact download
-        URL -- ``None`` falls back to the configured base URL, for callers
+        URL — ``None`` falls back to the configured base URL, for callers
         outside a request context (e.g. a Celery reconciliation task retrying a
         step).
     :param run_id: The bootstrap run this step belongs to.

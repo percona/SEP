@@ -84,7 +84,7 @@ class TestPackagesInstallStrategyIsAnInstallStrategy:
     """Pin the structural-protocol contract, not just the concrete class."""
 
     def test_satisfies_the_protocol(self) -> None:
-        """A future caller programming against InstallStrategy accepts this class."""
+        """Accept this class wherever a caller programs against InstallStrategy."""
         assert isinstance(PackagesInstallStrategy(), InstallStrategy)
 
 
@@ -95,7 +95,7 @@ class TestPlanSteps:
     def test_returns_the_fixed_step_names_regardless_of_os(
         self, os_: OperatingSystem
     ) -> None:
-        """Ubuntu and Rocky get the same step names -- only build_step branches on OS."""
+        """Give Ubuntu and Rocky the same step names; only build_step branches on OS."""
         assert PackagesInstallStrategy().plan_steps(_spec(os_)) == [
             "pre_check",
             "configure_repository",
@@ -115,7 +115,7 @@ class TestBuildStep:
     def test_every_planned_step_builds_a_runnable_action(
         self, step_name: str, os_: OperatingSystem
     ) -> None:
-        """Build a non-empty command with a real timeout for every name plan_steps returns."""
+        """Build a non-empty command with a real timeout for every planned name."""
         action = PackagesInstallStrategy().build_step(
             step_name, "node00", _spec(os_), params=_STEP_PARAMS.get(step_name)
         )
@@ -125,14 +125,14 @@ class TestBuildStep:
         assert action.timeout_s > 0
 
     def test_unknown_step_name_raises(self) -> None:
-        """A name outside plan_steps' own list is a programming error, not a silent no-op."""
+        """Reject a name outside plan_steps' list: a programming error, not a no-op."""
         with pytest.raises(ValueError, match="not a PackagesInstallStrategy step"):
             PackagesInstallStrategy().build_step(
                 "rs_initiate", "node00", _spec(OperatingSystem.UBUNTU)
             )
 
     def test_configure_repository_uses_apt_on_ubuntu(self) -> None:
-        """Ubuntu gets percona-release's .deb, installed via dpkg."""
+        """Install percona-release's .deb via dpkg on Ubuntu."""
         action = PackagesInstallStrategy().build_step(
             "configure_repository", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -143,7 +143,7 @@ class TestBuildStep:
         assert "psmdb-80" in command
 
     def test_configure_repository_uses_dnf_on_rocky(self) -> None:
-        """Rocky gets percona-release's .rpm, installed via dnf."""
+        """Install percona-release's .rpm via dnf on Rocky."""
         action = PackagesInstallStrategy().build_step(
             "configure_repository", "node00", _spec(OperatingSystem.ROCKY)
         )
@@ -168,11 +168,11 @@ class TestBuildStep:
         )
 
     def test_configure_repository_accepts_a_full_patch_version(self) -> None:
-        """Only major.minor selects the channel, not the full patch version.
+        """Select the channel by major.minor only, not the full patch version.
 
         Exactly like the request field's own "only the major version selects
         the install source" comment (TriggerHostBootstrapRequest.mongodb_version)
-        promises - a full patch version like "7.0.14" must not leak into the
+        promises: a full patch version like "7.0.14" must not leak into the
         channel name. Confirmed against a live host: this used to produce the
         nonexistent channel "psmdb-7014" and configure_repository failed with
         "Specified repository does not exist".
@@ -192,7 +192,7 @@ class TestBuildStep:
         assert "psmdb-7014" not in command
 
     def test_install_package_uses_apt_get_on_ubuntu(self) -> None:
-        """Ubuntu's package install goes through apt-get, not dnf."""
+        """Install the package through apt-get, not dnf, on Ubuntu."""
         action = PackagesInstallStrategy().build_step(
             "install_package", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -239,7 +239,7 @@ class TestBuildStep:
         assert marker.read_text() == f"{RUN_ID}\n"
 
     def test_install_package_uses_dnf_on_rocky(self) -> None:
-        """Rocky's package install goes through dnf, not apt-get."""
+        """Install the package through dnf, not apt-get, on Rocky."""
         action = PackagesInstallStrategy().build_step(
             "install_package", "node00", _spec(OperatingSystem.ROCKY)
         )
@@ -247,7 +247,7 @@ class TestBuildStep:
         assert "dnf install -y percona-server-mongodb" in " ".join(action.command)
 
     def test_configure_mongod_names_the_spec_replica_set(self) -> None:
-        """The written mongod.conf carries this host's actual replica set name."""
+        """Write this host's actual replica set name into mongod.conf."""
         action = PackagesInstallStrategy().build_step(
             "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -255,7 +255,7 @@ class TestBuildStep:
         assert "replSetName: rs-test" in " ".join(action.command)
 
     def test_configure_mongod_creates_the_data_directory(self) -> None:
-        """Mongod exits immediately on first start if nobody creates this first."""
+        """Create the data directory, without which mongod exits on first start."""
         action = PackagesInstallStrategy().build_step(
             "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -264,7 +264,7 @@ class TestBuildStep:
         assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
 
     def test_configure_mongod_forks(self) -> None:
-        """mongod.service is Type=forking.
+        """Make mongod fork, since mongod.service is Type=forking.
 
         Without fork: true it never satisfies systemd's readiness check and
         gets killed once TimeoutStartSec elapses.
@@ -278,9 +278,9 @@ class TestBuildStep:
         assert f"pidFilePath: {PID_FILE_PATH}" in command
 
     def test_configure_mongod_sets_a_logpath(self) -> None:
-        """Mongod refuses to start at all with fork: true and no logpath.
+        """Set a logpath, without which mongod refuses to start with fork: true.
 
-        ``BadValue: --fork has to be used with --logpath or --syslog`` --
+        ``BadValue: --fork has to be used with --logpath or --syslog`` —
         confirmed against a real run.
         """
         action = PackagesInstallStrategy().build_step(
@@ -291,7 +291,7 @@ class TestBuildStep:
         assert f"path: {LOG_PATH}" in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
-        """Without a keyFile to plant, this is a programming error, not a blank file."""
+        """Reject a missing keyFile as a programming error, not a blank file."""
         with pytest.raises(ValueError, match="key_file_content"):
             PackagesInstallStrategy().build_step(
                 "distribute_keyfile", "node00", _spec(OperatingSystem.UBUNTU)
@@ -331,7 +331,7 @@ class TestBuildStep:
         assert result.stdout.decode() == content
 
     def test_verify_goes_through_mongosh_eval_too(self) -> None:
-        """``verify`` must not bypass the Atlas CLI probe suppression every mongosh call needs."""
+        """Suppress the Atlas CLI probe in ``verify``, as every mongosh call must."""
         action = PackagesInstallStrategy().build_step(
             "verify", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -343,7 +343,7 @@ class TestPlanRunSteps:
     """Assert the run-level step list is fixed and OS-independent."""
 
     def test_returns_the_fixed_run_step_names(self) -> None:
-        """rs_initiate and create_pmm_monitoring_user, in that order."""
+        """Plan rs_initiate, then create_pmm_monitoring_user."""
         spec = _spec(OperatingSystem.UBUNTU)
         assert PackagesInstallStrategy().plan_run_steps(spec) == [
             "rs_initiate",
@@ -355,14 +355,14 @@ class TestBuildRunStep:
     """Assert build_run_step targets the seed host and rejects unknown names."""
 
     def test_unknown_run_step_name_raises(self) -> None:
-        """A per-host step name is not a run step -- caught the same way as the reverse."""
+        """Reject a per-host step name as a run step, like the reverse."""
         with pytest.raises(ValueError, match="not a PackagesInstallStrategy run step"):
             PackagesInstallStrategy().build_run_step(
                 "pre_check", ["node00"], _spec(OperatingSystem.UBUNTU)
             )
 
     def test_rs_initiate_names_every_host_as_a_member(self) -> None:
-        """Every host in the run becomes an rs.initiate() member, not just the seed."""
+        """Name every host in the run as an rs.initiate() member, not just the seed."""
         action = PackagesInstallStrategy().build_run_step(
             "rs_initiate", ["node00", "node01", "node02"], _spec(OperatingSystem.UBUNTU)
         )
@@ -374,14 +374,14 @@ class TestBuildRunStep:
         assert "rs-test" in command
 
     def test_create_pmm_monitoring_user_requires_params(self) -> None:
-        """Without a generated username/password, this is a programming error."""
+        """Reject a missing username/password as a programming error."""
         with pytest.raises(ValueError, match="username"):
             PackagesInstallStrategy().build_run_step(
                 "create_pmm_monitoring_user", ["node00"], _spec(OperatingSystem.UBUNTU)
             )
 
     def test_create_pmm_monitoring_user_embeds_the_given_credentials(self) -> None:
-        """The dispatched command creates exactly the user the caller generated."""
+        """Create exactly the user the caller generated."""
         action = PackagesInstallStrategy().build_run_step(
             "create_pmm_monitoring_user",
             ["node00"],
@@ -414,11 +414,11 @@ class TestBuildRunStep:
         assert "generated-secret" in heredoc
 
     def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
-        """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
+        """Disable mongosh's Atlas CLI probe, which closes the localhost exception.
 
         Confirmed against a real run where every attempt to create the first
         user failed "not authorized" even though create_pmm_monitoring_user's
-        own command was correct -- the probe, not our command, burned it.
+        own command was correct — the probe, not our command, burned it.
         """
         action = PackagesInstallStrategy().build_run_step(
             "create_pmm_monitoring_user",
@@ -435,7 +435,7 @@ class TestPlanRollbackSteps:
     """Assert the rollback step list is fixed and OS-independent."""
 
     def test_returns_the_fixed_rollback_step_names(self) -> None:
-        """The reverse of the forward steps that actually change host state."""
+        """Reverse the forward steps that actually change host state."""
         spec = _spec(OperatingSystem.UBUNTU)
         assert PackagesInstallStrategy().plan_rollback_steps(spec) == [
             "stop_service",
@@ -482,7 +482,7 @@ class TestBuildRollbackStep:
         assert lines[-1] == f"rm -f {OWNERSHIP_MARKER_PATH}"
 
     def test_unknown_rollback_step_name_raises(self) -> None:
-        """A forward step name is not a rollback step -- no silent no-op."""
+        """Reject a forward step name as a rollback step; no silent no-op."""
         with pytest.raises(
             ValueError, match="not a PackagesInstallStrategy rollback step"
         ):
@@ -491,7 +491,7 @@ class TestBuildRollbackStep:
             )
 
     def test_purge_package_uses_apt_get_on_ubuntu(self) -> None:
-        """Ubuntu's rollback purge goes through apt-get, not dnf."""
+        """Purge the package through apt-get, not dnf, when rolling back Ubuntu."""
         action = PackagesInstallStrategy().build_rollback_step(
             "purge_package", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -501,7 +501,7 @@ class TestBuildRollbackStep:
         )
 
     def test_purge_package_uses_dnf_on_rocky(self) -> None:
-        """Rocky's rollback purge goes through dnf, not apt-get."""
+        """Purge the package through dnf, not apt-get, when rolling back Rocky."""
         action = PackagesInstallStrategy().build_rollback_step(
             "purge_package", "node00", _spec(OperatingSystem.ROCKY)
         )

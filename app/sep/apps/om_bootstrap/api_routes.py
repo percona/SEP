@@ -16,7 +16,7 @@
 """Serve bootstrap runs: create one, dispatch its steps, read its progress.
 
 PMM's ``om`` service is the only intended caller: it drives the state machine
--- deciding when to dispatch which step, when to retry, when to give up and
+— deciding when to dispatch which step, when to retry, when to give up and
 roll back — as the HA-leader-only stepper, reading
 this router to know what happened and calling it to make something happen
 next. This router itself decides none of that; it only ever does exactly what
@@ -90,10 +90,10 @@ from app.sep.apps.om_bootstrap.strategy import (
 )
 from app.sep.deps import SessionDep, TasksClient
 
-#: BootstrapRunStatus members :func:`finish_run` accepts -- a caller declaring the
+#: BootstrapRunStatus members :func:`finish_run` accepts — a caller declaring the
 #: run itself decided to give up. SUCCEEDED is deliberately excluded: reconciling
-#: a run to SUCCEEDED is a fact :func:`~app.sep.apps.om_bootstrap.reconcile.reconcile_run`
-#: infers on its own (see its own docstring), never something a caller requests.
+#: a run to SUCCEEDED is a fact
+#: :func:`~app.sep.apps.om_bootstrap.reconcile.reconcile_run` infers on its own (see its own docstring), never something a caller requests.
 _FINISHABLE_STATUSES = frozenset(
     {BootstrapRunStatus.FAILED, BootstrapRunStatus.ROLLED_BACK}
 )
@@ -117,7 +117,7 @@ HostName = Annotated[
 class TriggerRunRequest(BaseModel):
     """Request one bootstrap run over a set of hosts, all sharing one spec.
 
-    :param hosts: The hosts to provision -- one-member or three-member replica
+    :param hosts: The hosts to provision — one-member or three-member replica
         sets only, the decided phase-1 scope. Each is a node name: letters,
         digits, ``.``, ``_`` and ``-``, starting with a letter or digit.
     :param install_method: Which strategy provisions every host in this run.
@@ -139,7 +139,7 @@ class DispatchStepRequest(BaseModel):
     """Carry the optional body of any ``:dispatch`` route.
 
     :param params: Per-dispatch values the step being dispatched needs but
-        cannot compute itself -- a keyFile's content, a generated
+        cannot compute itself — a keyFile's content, a generated
         monitoring-user password. See
         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own
         docstring for why these are never persisted by ``om_bootstrap``: PMM's
@@ -152,13 +152,14 @@ class DispatchStepRequest(BaseModel):
 
 
 class FinishRunRequest(BaseModel):
-    """Body for :func:`finish_run` -- the stepper recording its own decision.
+    """Carry the body of :func:`finish_run`, the stepper recording its own decision.
 
     :param status: The run's new terminal status. Must be one of
-        :data:`_FINISHABLE_STATUSES` -- :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
+        :data:`_FINISHABLE_STATUSES`;
+        :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
         is never requested here (see :data:`_FINISHABLE_STATUSES`'s own
         docstring).
-    :param error: A human-readable reason, if any -- stored on
+    :param error: A human-readable reason, if any — stored on
         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.
     """
 
@@ -177,7 +178,7 @@ class RunResponse(BaseModel):
     :param replica_set_name: The replica set every host in this run joins.
     :param started_at: When the run began.
     :param finished_at: When it reached a terminal status, if it has.
-    :param hosts: Every host's current step-by-step progress -- the full,
+    :param hosts: Every host's current step-by-step progress — the full,
         run-specific step list each host was planned with (forward steps and
         rollback steps both), not just the steps that have started.
     :param run_steps: This run's run-level steps
@@ -210,10 +211,10 @@ def _run_response(
 
     :param run: The run to serialize.
     :param hosts: The run's host states, when the caller already parsed them
-        (e.g. it just built and dumped them) -- avoids re-parsing the JSON it
+        (e.g. it just built and dumped them) — avoids re-parsing the JSON it
         just dumped from the very same typed value. Parsed from ``run.hosts``
         when omitted.
-    :param run_steps: See ``hosts`` -- the run-level counterpart.
+    :param run_steps: See ``hosts`` — the run-level counterpart.
     :return: The run's full state.
     """
     return RunResponse(
@@ -234,7 +235,7 @@ def _run_response(
 def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
     """Return the index of a dispatchable ``step_name`` in ``steps``.
 
-    Shared by every ``:dispatch`` route below -- a host's forward steps, its
+    Shared by every ``:dispatch`` route below — a host's forward steps, its
     rollback steps, and a run's own run-level steps are all "find this name in
     a flat StepRecord list" the exact same way.
 
@@ -287,7 +288,8 @@ async def _dispatch_and_record(
     a rollback step, and a run-level step.
 
     :param tasks_api: The Tasks API client.
-    :param request: The current request -- see :func:`~app.sep.apps.om_bootstrap.dispatch.dispatch_step`.
+    :param request: The current request; see
+        :func:`~app.sep.apps.om_bootstrap.dispatch.dispatch_step`.
     :param run_id: The bootstrap run this step belongs to.
     :param target_host: The node name the dispatch actually runs on.
     :param step_name: The step's name.
@@ -413,15 +415,16 @@ async def list_bootstrap_runs(
 ) -> list[RunResponse]:
     """Return runs, newest first, optionally narrowed to one status.
 
-    The intended caller is PMM's HA-leader-only stepper: it does not persist its own copy of which runs exist or where
-    they are, so on every tick -- and especially right after a leader
-    failover -- it re-discovers every run still in flight from here
-    (``status=running``) rather than from any state of its own.
+    The intended caller is PMM's HA-leader-only stepper. It does not persist
+    its own copy of which runs exist or where they are, so on every tick, and
+    especially right after a leader failover, it re-discovers every run still
+    in flight from here (``status=running``) rather than from any state of its
+    own.
 
     :param session: The database session.
     :param status: Restrict to runs in this status. Omit for any status.
     :param limit: How many to return.
-    :return: The runs. Does **not** reconcile in-flight steps -- unlike
+    :return: The runs. Does **not** reconcile in-flight steps — unlike
         :func:`get_bootstrap_run`, a caller polling a specific run for the
         purpose of driving it forward should use that route instead.
     """
@@ -464,7 +467,7 @@ def _strategy_for(install_method: InstallMethod) -> InstallStrategy:
 
     :func:`~app.sep.apps.om_bootstrap.strategies.strategy_for` raises a bare
     ``ValueError`` for an :class:`InstallMethod` declared on the enum but not yet
-    implemented (``DOCKER``/``PODMAN``, today) -- a caller's request, not a
+    implemented (``DOCKER``/``PODMAN``, today) — a caller's request, not a
     server bug, so this turns it into a 400 instead of an opaque 500.
 
     :param install_method: The install method to look up a strategy for.
@@ -478,11 +481,11 @@ def _strategy_for(install_method: InstallMethod) -> InstallStrategy:
 
 
 def _build_step_action(builder: Callable[[], StepAction]) -> StepAction:
-    """Call a strategy's ``build_*`` method, turning a bad-params ``ValueError`` into 400.
+    """Call a strategy's ``build_*`` method, turning a bad-params error into 400.
 
     Every ``InstallStrategy.build_*`` method raises a bare ``ValueError`` when
     ``params`` is missing something the step needs (e.g. ``distribute_keyfile``
-    without ``key_file_content``) -- the caller's mistake, not a server bug, so
+    without ``key_file_content``) — the caller's mistake, not a server bug, so
     this turns it into a 400 naming the problem instead of an opaque 500.
 
     :param builder: A zero-argument callable invoking one ``build_*`` method.
@@ -528,7 +531,7 @@ async def dispatch_run_step(
 ) -> RunResponse:
     """Dispatch one host's named step now.
 
-    Does **not** wait for the dispatch to finish -- it returns as soon as the
+    Does **not** wait for the dispatch to finish — it returns as soon as the
     Tasks API accepts it, the same fire-and-forget shape ``dispatch_step``
     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
 
@@ -538,14 +541,14 @@ async def dispatch_run_step(
 
     :param run: The path's run, read under its row lock.
     :param host: The host to dispatch the step on.
-    :param step_name: The step to dispatch -- one of the names the run was
+    :param step_name: The step to dispatch — one of the names the run was
         planned with.
     :param session: The database session.
     :param request: The current request, whose host builds the artifact
         download URL the executor fetches the step's script from.
     :param tasks_client: The Tasks API client, authenticated here with SEP's
         internal token rather than the caller's.
-    :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+    :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
     :raises HTTPNotFoundException: When there is no such run, host, or step.
     :raises HTTPConflictException: When the step is running, succeeded, or
         skipped.
@@ -590,22 +593,22 @@ async def dispatch_run_run_step(
 ) -> RunResponse:
     """Dispatch one run-level step now, targeting the run's seed host.
 
-    Same fire-and-forget shape as :func:`dispatch_run_step` -- see its own
+    Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
     docstring. "Seed host" is ``run``'s first host, index 0, matching
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
     own convention for where a run-level step actually executes.
 
-    This route does not check that every per-host step succeeded first --
+    This route does not check that every per-host step succeeded first —
     deciding *when* it is safe to call this is PMM's stepper's job, not this
     route's (see the module docstring).
 
     :param run: The path's run, read under its row lock.
-    :param step_name: The run-level step to dispatch -- one of the names the
+    :param step_name: The run-level step to dispatch — one of the names the
         run was planned with.
     :param session: The database session.
     :param request: See :func:`dispatch_run_step`.
     :param tasks_client: See :func:`dispatch_run_step`.
-    :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+    :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
     :raises HTTPNotFoundException: When there is no such run, run-level step, or
         the run has no hosts to target.
     :raises HTTPConflictException: When the step is running, succeeded, or
@@ -655,17 +658,19 @@ async def dispatch_rollback_step(
     """Dispatch one host's named rollback step now.
 
     Same fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take
-    no ``params``: every :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
+    no ``params``: every
+    :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
     a strategy defines only ever tears down what its own forward steps already
     wrote to the host, needing nothing new from the caller.
 
-    Whether a host should be rolled back at all -- and, if so, whether to
-    dispatch its rollback steps in order or all at once -- is PMM's stepper's
-    call (its partial-failure policy), not this route's; it only ever dispatches the one step it is asked to.
+    Whether a host should be rolled back at all, and if so whether to dispatch
+    its rollback steps in order or all at once, is PMM's stepper's call (its
+    partial-failure policy), not this route's. This route only ever dispatches
+    the one step it is asked to.
 
     :param run: The path's run, read under its row lock.
     :param host: The host to roll back.
-    :param step_name: The rollback step to dispatch -- one of the names the run
+    :param step_name: The rollback step to dispatch — one of the names the run
         was planned with.
     :param session: The database session.
     :param request: See :func:`dispatch_run_step`.
@@ -703,12 +708,13 @@ async def dispatch_rollback_step(
 async def finish_run(
     run: LockedRun, session: SessionDep, body: FinishRunRequest
 ) -> RunResponse:
-    """Record the stepper's own decision that a run is done -- failed or rolled back.
+    """Record the stepper's own decision that a run is done — failed or rolled back.
 
-    The one way ``run.status`` reaches :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED`
-    or :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
+    The one way ``run.status`` reaches
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or
+    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
     both are real calls only PMM's stepper makes (retries exhausted; rollback
-    finished), never something ``om_bootstrap`` infers on its own -- see
+    finished), never something ``om_bootstrap`` infers on its own — see
     ``reconcile.py``'s module docstring for the one status it *does* infer
     (SUCCEEDED) and why that's different.
 

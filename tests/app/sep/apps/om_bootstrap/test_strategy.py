@@ -33,44 +33,44 @@ def _state(*statuses: StepStatus) -> HostBootstrapState:
 
 
 class TestHostBootstrapStateStatus:
-    """One case per :meth:`HostBootstrapState.status` branch."""
+    """Cover each :meth:`HostBootstrapState.status` branch with one case."""
 
     def test_all_pending_is_pending(self) -> None:
-        """A run nothing has touched yet reports pending, not running."""
+        """Report pending, not running, for a host nothing has touched yet."""
         assert (
             _state(StepStatus.PENDING, StepStatus.PENDING).status == StepStatus.PENDING
         )
 
     def test_one_running_is_running(self) -> None:
-        """One step actively running makes the whole host running."""
+        """Mark the whole host running while one step is actively running."""
         state = _state(StepStatus.SUCCEEDED, StepStatus.RUNNING, StepStatus.PENDING)
 
         assert state.status == StepStatus.RUNNING
 
     def test_a_finished_step_ahead_of_pending_ones_is_running(self) -> None:
-        """A succeeded step followed by an untouched one means the run is mid-flight."""
+        """Report running when a succeeded step is followed by an untouched one."""
         state = _state(StepStatus.SUCCEEDED, StepStatus.PENDING)
 
         assert state.status == StepStatus.RUNNING
 
     def test_all_succeeded_is_succeeded(self) -> None:
-        """Every step succeeding is what "done" actually means."""
+        """Treat every step succeeding as what "done" actually means."""
         state = _state(StepStatus.SUCCEEDED, StepStatus.SUCCEEDED)
 
         assert state.status == StepStatus.SUCCEEDED
 
     def test_succeeded_and_skipped_is_succeeded(self) -> None:
-        """A skipped step (e.g. a TLS step on a non-TLS spec) does not block completion."""
+        """Count a skipped step (e.g. TLS on a non-TLS spec) toward completion."""
         state = _state(StepStatus.SUCCEEDED, StepStatus.SKIPPED)
 
         assert state.status == StepStatus.SUCCEEDED
 
     def test_any_failed_is_failed_even_after_a_success(self) -> None:
-        """One failure fails the host regardless of what already succeeded."""
+        """Fail the host on one failure, regardless of what already succeeded."""
         state = _state(StepStatus.SUCCEEDED, StepStatus.FAILED, StepStatus.PENDING)
 
         assert state.status == StepStatus.FAILED
 
     def test_no_steps_is_pending_not_succeeded(self) -> None:
-        """all() over an empty steps list is vacuously true -- must not read as done."""
+        """Report no steps as pending, not done, despite all() being vacuously true."""
         assert _state().status == StepStatus.PENDING
