@@ -40,6 +40,20 @@ def _file(name: str, additions: int = 0, deletions: int = 0):
     )
 
 
+_REPOSITORY = "percona/SEP"
+_HUMAN_PULL = sync_pr_labels.PullRequest(
+    author_login="yyyyyyyan", head_repository=_REPOSITORY
+)
+_DEPENDABOT_PULL = sync_pr_labels.PullRequest(
+    author_login="dependabot[bot]", head_repository=_REPOSITORY
+)
+
+
+def _pull_payload(login: str) -> dict:
+    """Return a pulls-API body for a same-repository PR opened by ``login``."""
+    return {"user": {"login": login}, "head": {"repo": {"full_name": _REPOSITORY}}}
+
+
 _CI_WORKFLOW_PATH = _PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 
 
@@ -249,25 +263,59 @@ def _sync_qa_not_required(client, *, eligible):
     )
 
 
-def test_qa_not_required_eligible_on_dependabot_branch():
-    """Qualify a Dependabot branch regardless of which files it changes."""
+def test_qa_not_required_eligible_on_dependabot_pull_request():
+    """Qualify a same-repository Dependabot PR regardless of which files it changes."""
     assert sync_pr_labels.qa_not_required_eligible(
-        [_file("poetry.lock"), _file("pyproject.toml")],
-        "dependabot/pip/urllib3-2.5.0",
+        [_file("poetry.lock"), _file("pyproject.toml")], _DEPENDABOT_PULL, _REPOSITORY
     )
+
+
+def test_qa_not_required_not_eligible_for_a_human_author():
+    """Reject a code PR opened by a person, whatever its branch is called."""
+    assert not sync_pr_labels.qa_not_required_eligible(
+        [_file("app/main.py")], _HUMAN_PULL, _REPOSITORY
+    )
+
+
+def test_qa_not_required_not_eligible_for_dependabot_from_another_repository():
+    """Reject a Dependabot-authored PR whose head lives in a fork."""
+    pull = sync_pr_labels.PullRequest(
+        author_login="dependabot[bot]", head_repository="someone/SEP"
+    )
+    assert not sync_pr_labels.qa_not_required_eligible(
+        [_file("app/main.py")], pull, _REPOSITORY
+    )
+
+
+def test_qa_not_required_not_eligible_when_the_head_repository_is_gone():
+    """Reject a Dependabot-authored PR whose head repository was deleted."""
+    pull = sync_pr_labels.PullRequest(
+        author_login="dependabot[bot]", head_repository=""
+    )
+    assert not sync_pr_labels.qa_not_required_eligible(
+        [_file("app/main.py")], pull, _REPOSITORY
+    )
+
+
+def test_dependabot_repository_match_ignores_case():
+    """Match the head repository against the base without regard to case."""
+    pull = sync_pr_labels.PullRequest(
+        author_login="dependabot[bot]", head_repository="Percona/sep"
+    )
+    assert sync_pr_labels.is_dependabot_pull_request(pull, _REPOSITORY)
 
 
 def test_qa_not_required_eligible_on_doc_only_pr():
     """Qualify a branch whose every changed file is documentation."""
     assert sync_pr_labels.qa_not_required_eligible(
-        [_file("README.md"), _file(".gitignore")], "SEP-1"
+        [_file("README.md"), _file(".gitignore")], _HUMAN_PULL, _REPOSITORY
     )
 
 
 def test_qa_not_required_eligible_covers_dist_subtree():
     """Qualify built assets at any depth under ``dist/``."""
     assert sync_pr_labels.qa_not_required_eligible(
-        [_file("dist/app.js"), _file("dist/a/b.css")], "SEP-1"
+        [_file("dist/app.js"), _file("dist/a/b.css")], _HUMAN_PULL, _REPOSITORY
     )
 
 
@@ -278,7 +326,7 @@ def test_qa_not_required_eligible_on_a_codeowners_only_pr():
     which never matched, so this case asserts the corrected literal.
     """
     assert sync_pr_labels.qa_not_required_eligible(
-        [_file(".github/CODEOWNERS")], "SEP-1"
+        [_file(".github/CODEOWNERS")], _HUMAN_PULL, _REPOSITORY
     )
 
 
@@ -291,19 +339,21 @@ def test_qa_not_required_glob_targets_the_real_codeowners_path():
 
 def test_qa_not_required_not_eligible_when_codeowners_moves_to_the_root():
     """Reject a root-level ``CODEOWNERS``, which the literal glob excludes."""
-    assert not sync_pr_labels.qa_not_required_eligible([_file("CODEOWNERS")], "SEP-1")
+    assert not sync_pr_labels.qa_not_required_eligible(
+        [_file("CODEOWNERS")], _HUMAN_PULL, _REPOSITORY
+    )
 
 
 def test_qa_not_required_not_eligible_on_mixed_pr():
     """Reject a PR that mixes documentation with code."""
     assert not sync_pr_labels.qa_not_required_eligible(
-        [_file("README.md"), _file("app/main.py")], "SEP-1"
+        [_file("README.md"), _file("app/main.py")], _HUMAN_PULL, _REPOSITORY
     )
 
 
 def test_qa_not_required_not_eligible_on_empty_file_list():
     """Reject an empty file list instead of matching every glob vacuously."""
-    assert not sync_pr_labels.qa_not_required_eligible([], "SEP-1")
+    assert not sync_pr_labels.qa_not_required_eligible([], _HUMAN_PULL, _REPOSITORY)
 
 
 def test_qa_not_required_manual_when_newest_event_is_a_user():
@@ -532,34 +582,6 @@ def test_main_reports_missing_labeler_cleanly(monkeypatch, capsys):
     assert "Traceback" not in err
 
 
-def test_main_requires_a_head_ref(tmp_path, monkeypatch, capsys):
-    """Fail cleanly when the head ref is missing, rather than mislabelling."""
-    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
-    labeler = tmp_path / "labeler.yml"
-    labeler.write_text("app:demo:\n- any: []\n", encoding="utf-8")
-
-    assert (
-        sync_pr_labels.main(
-            [
-                "--owner",
-                "percona",
-                "--repo",
-                "SEP",
-                "--pr-number",
-                "1",
-                "--labeler",
-                str(labeler),
-                "--head-ref",
-                "",
-            ]
-        )
-        == 1
-    )
-    err = capsys.readouterr().err
-    assert "--head-ref" in err
-    assert "Traceback" not in err
-
-
 def _requested_page(url: str) -> str:
     """Return the ``page`` query argument of a recorded request URL.
 
@@ -730,6 +752,28 @@ def test_request_raises_on_unexpected_not_found(monkeypatch):
         client.list_pr_files("percona", "SEP", 1)
 
 
+def test_get_pull_request_reads_author_and_head_repository(monkeypatch):
+    """Map the pulls API body onto the identity fields the predicate reads."""
+    requested = _patch_urlopen_pages(monkeypatch, [_pull_payload("dependabot[bot]")])
+
+    client = sync_pr_labels.UrllibGitHubClient("token")
+    pull = client.get_pull_request("percona", "SEP", 7)
+
+    assert pull == _DEPENDABOT_PULL
+    assert requested == ["https://api.github.com/repos/percona/SEP/pulls/7"]
+
+
+def test_get_pull_request_maps_a_deleted_head_repository_to_empty(monkeypatch):
+    """Map a ``null`` head repository to a name that matches no base."""
+    _patch_urlopen_pages(
+        monkeypatch, [{"user": {"login": "dependabot[bot]"}, "head": {"repo": None}}]
+    )
+
+    client = sync_pr_labels.UrllibGitHubClient("token")
+
+    assert client.get_pull_request("percona", "SEP", 7).head_repository == ""
+
+
 def test_remove_issue_label_tolerates_a_missing_label(monkeypatch):
     """Treat a 404 on label removal as a benign already-removed race."""
     _patch_urlopen_not_found(monkeypatch)
@@ -803,6 +847,7 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
                 "/pulls/7/files",
                 [{"filename": "poetry.lock", "additions": 9000, "deletions": 0}],
             ),
+            ("/pulls/7", _pull_payload("dependabot[bot]")),
             ("/issues/7/labels", []),
         ],
     )
@@ -818,8 +863,6 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
                 "7",
                 "--labeler",
                 str(labeler),
-                "--head-ref",
-                "dependabot/pip/urllib3-2.5.0",
             ]
         )
         == 0
@@ -849,7 +892,8 @@ def test_print_eligibility_reports_true_and_writes_no_label(monkeypatch, capsys)
             (
                 "/pulls/7/files",
                 [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
-            )
+            ),
+            ("/pulls/7", _pull_payload("dependabot[bot]")),
         ],
     )
 
@@ -862,8 +906,6 @@ def test_print_eligibility_reports_true_and_writes_no_label(monkeypatch, capsys)
                 "SEP",
                 "--pr-number",
                 "7",
-                "--head-ref",
-                "dependabot/pip/urllib3-2.5.0",
                 "--print-eligibility",
             ]
         )
@@ -871,7 +913,7 @@ def test_print_eligibility_reports_true_and_writes_no_label(monkeypatch, capsys)
     )
 
     assert capsys.readouterr().out == "true\n"
-    assert [method for method, _url, _body in recorded] == ["GET"]
+    assert {method for method, _url, _body in recorded} == {"GET"}
 
 
 def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
@@ -883,7 +925,8 @@ def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
             (
                 "/pulls/7/files",
                 [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
-            )
+            ),
+            ("/pulls/7", _pull_payload("yyyyyyyan")),
         ],
     )
 
@@ -896,8 +939,6 @@ def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
                 "SEP",
                 "--pr-number",
                 "7",
-                "--head-ref",
-                "SEP-1234",
                 "--print-eligibility",
             ]
         )
@@ -920,7 +961,8 @@ def test_print_eligibility_needs_no_labeler_file(monkeypatch, capsys):
             (
                 "/pulls/7/files",
                 [{"filename": "README.md", "additions": 1, "deletions": 0}],
-            )
+            ),
+            ("/pulls/7", _pull_payload("yyyyyyyan")),
         ],
     )
 
@@ -935,8 +977,6 @@ def test_print_eligibility_needs_no_labeler_file(monkeypatch, capsys):
                 "7",
                 "--labeler",
                 "/tmp/does-not-exist-labeler.yml",
-                "--head-ref",
-                "SEP-1234",
                 "--print-eligibility",
             ]
         )

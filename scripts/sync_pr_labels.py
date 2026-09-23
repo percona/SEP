@@ -88,7 +88,7 @@ GENERATED_EXACT = frozenset({"poetry.lock", "frontend/pnpm-lock.yaml"})
 
 QA_NOT_REQUIRED_LABEL = "qa not required"
 QA_NOT_REQUIRED_GLOBS = (".github/CODEOWNERS", "README.md", ".gitignore", "dist/**")
-QA_NOT_REQUIRED_HEAD_BRANCH = re.compile(r"^dependabot/")
+DEPENDABOT_LOGIN = "dependabot[bot]"
 BOT_ACTOR_TYPE = "Bot"
 
 _LABEL_KEY = re.compile(r"^([A-Za-z0-9:_-]+):\s*$")
@@ -103,6 +103,18 @@ class PrFile:
     filename: str
     additions: int = 0
     deletions: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class PullRequest:
+    """Carry the pull-request identity fields the ``qa not required`` predicate reads.
+
+    Both come from the pulls API rather than the head branch name, which the
+    pull-request author chooses and so proves nothing about who opened it.
+    """
+
+    author_login: str
+    head_repository: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +161,15 @@ class LabelEvent:
 
 class GitHubClient(Protocol):
     """Describe the subset of the GitHub REST API used by this script."""
+
+    def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
+        """Return the author and head repository of a pull request.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: The pull request's identity fields.
+        """
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
         """Return every changed file for a pull request.
@@ -331,14 +352,30 @@ def sync_blast_radius_labels(
             log(f"Removed {name}")
 
 
-def qa_not_required_eligible(files: list[PrFile], head_ref: str) -> bool:
+def is_dependabot_pull_request(pull: PullRequest, repository: str) -> bool:
+    """Return whether Dependabot opened ``pull`` from a branch of ``repository``.
+
+    :param pull: Identity fields of the pull request.
+    :param repository: ``owner/name`` of the base repository.
+    :return: ``True`` only for a same-repository Dependabot pull request.
+    """
+    return (
+        pull.author_login == DEPENDABOT_LOGIN
+        and pull.head_repository.casefold() == repository.casefold()
+    )
+
+
+def qa_not_required_eligible(
+    files: list[PrFile], pull: PullRequest, repository: str
+) -> bool:
     """Return whether a pull request qualifies for an automatic ``qa not required``.
 
     :param files: Changed files from the pulls list-files API.
-    :param head_ref: Bare head branch name of the pull request.
-    :return: ``True`` for a Dependabot branch or an all-documentation diff.
+    :param pull: Identity fields of the pull request.
+    :param repository: ``owner/name`` of the base repository.
+    :return: ``True`` for a Dependabot pull request or an all-documentation diff.
     """
-    if QA_NOT_REQUIRED_HEAD_BRANCH.match(head_ref):
+    if is_dependabot_pull_request(pull, repository):
         return True
     return bool(files) and all(
         any(match_glob(glob, file.filename) for glob in QA_NOT_REQUIRED_GLOBS)
@@ -437,6 +474,23 @@ class UrllibGitHubClient:
             if tolerate_missing and exc.code == HTTP_NOT_FOUND:
                 return None
             raise
+
+    def get_pull_request(self, owner: str, repo: str, pr_number: int) -> PullRequest:
+        """Return the author and head repository of a pull request.
+
+        A deleted head repository yields an empty name, which matches no base
+        repository.
+
+        :param owner: Repository owner.
+        :param repo: Repository name without owner.
+        :param pr_number: Pull request number.
+        :return: The pull request's identity fields.
+        """
+        item = self._request("GET", f"/repos/{owner}/{repo}/pulls/{pr_number}")
+        return PullRequest(
+            author_login=(item.get("user") or {}).get("login", ""),
+            head_repository=(item["head"].get("repo") or {}).get("full_name", ""),
+        )
 
     def list_pr_files(self, owner: str, repo: str, pr_number: int) -> list[PrFile]:
         """Return every changed file for a pull request.
@@ -611,11 +665,6 @@ def main(argv: list[str] | None = None) -> int:
         help="path to .github/labeler.yml (default: repo-root .github/labeler.yml)",
     )
     parser.add_argument(
-        "--head-ref",
-        default="",
-        help="bare head branch name of the pull request (GITHUB_HEAD_REF)",
-    )
-    parser.add_argument(
         "--token-env",
         default="GITHUB_TOKEN",
         help="environment variable holding the GitHub API token (default: GITHUB_TOKEN)",
@@ -637,9 +686,6 @@ def main(argv: list[str] | None = None) -> int:
     if not args.print_eligibility and not args.labeler.is_file():
         print(f"{args.labeler}: file not found", file=sys.stderr)
         return 1
-    if not args.head_ref:
-        print("--head-ref is required and must not be empty", file=sys.stderr)
-        return 1
 
     client = UrllibGitHubClient(token)
 
@@ -647,9 +693,11 @@ def main(argv: list[str] | None = None) -> int:
         print(message, flush=True)
 
     try:
+        pull = client.get_pull_request(args.owner, args.repo, args.pr_number)
         files = client.list_pr_files(args.owner, args.repo, args.pr_number)
+        eligible = qa_not_required_eligible(files, pull, f"{args.owner}/{args.repo}")
         if args.print_eligibility:
-            print("true" if qa_not_required_eligible(files, args.head_ref) else "false")
+            print("true" if eligible else "false")
             return 0
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
@@ -659,7 +707,7 @@ def main(argv: list[str] | None = None) -> int:
             args.owner,
             args.repo,
             args.pr_number,
-            eligible=qa_not_required_eligible(files, args.head_ref),
+            eligible=eligible,
             log=log,
         )
     except urllib.error.URLError as exc:
