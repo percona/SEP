@@ -17,19 +17,29 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, TYPE_CHECKING
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, TYPE_CHECKING, TypeVar
 
 import yaml
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import BackupType
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    CataloguedSourceTransport,
+)
 from app.sep.apps.mysql_backups.restore.deps import (
+    _transport_cache_key,
     CatalogTransportContext,
     catalogued_transport_for_stamp,
     parse_restore_task_data,
@@ -41,9 +51,10 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreCreate,
 )
 from app.sep.db import get_async_session_maker
+from app.sep.db.engine import engine as sep_engine
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Coroutine, Sequence
 
     from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
@@ -56,6 +67,7 @@ __all__ = [
 ]
 
 _log = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 #: ``FormBackfillContext.extras`` key holding the batched catalog transport map.
 CATALOG_TRANSPORTS_EXTRA = "catalog_transports"
@@ -161,6 +173,86 @@ def _form_for_catalog_lookup(
     return body
 
 
+def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
+    """Run ``coro`` to completion from sync code, including under a running loop.
+
+    Used by the sync form-backfill repairer when no batch prefetch was prepared.
+    When no loop is running, ``asyncio.run`` is enough; when one is, the
+    coroutine runs on a worker thread with its own loop. Callers must open any
+    asyncpg work on a throwaway engine for that loop — see
+    :func:`_fetch_catalogued_transport`.
+
+    :param coro: The awaitable to drive to completion.
+    :return: The coroutine's result.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    def _run() -> _T:
+        return asyncio.run(coro)
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_run).result()
+
+
+async def _fetch_catalogued_transport(
+    key: CatalogServiceKey, backup_source: str
+) -> CataloguedSourceTransport | None:
+    """Open a sep session and return the catalogued transport for ``backup_source``.
+
+    Uses a throwaway ``NullPool`` engine on the sep URL rather than the
+    process-wide sep ``AsyncAdaptedQueuePool``. This coroutine may run on a
+    worker-thread event loop (see :func:`_run_coro_sync`), and asyncpg
+    connections are loop-bound — borrowing from the shared pool would raise or
+    poison it for unrelated requests. Same pattern as
+    :func:`~app.core.db.utils.try_pg_advisory_xact_lock`.
+
+    :param key: The service the catalog rows are selected for.
+    :param backup_source: The restore stamp's ``backup_source``.
+    :return: The recorded S3/GCS transport, or ``None``.
+    """
+    lookup_engine = create_async_engine(sep_engine.url, poolclass=NullPool)
+    try:
+        async with get_async_session_maker_from_engine(lookup_engine)() as session:
+            return await MysqlBackupRunManager.catalogued_source_transport(
+                session, key, backup_source
+            )
+    finally:
+        await lookup_engine.dispose()
+
+
+def _sync_catalogued_transport_for_stamp(
+    task: Task, stored_form: dict[str, Any]
+) -> CataloguedSourceTransport | None:
+    """Look up a catalogued transport via the NullPool sync bridge.
+
+    Fallback when unit tests call the repairer/reconstructor without running the
+    batch preparer. Production backfill always prefetches into ``ctx.extras``.
+
+    :param task: The restore task being repaired or reconstructed.
+    :param stored_form: The undeclared form stamp or reconstructed body.
+    :return: The catalogued transport, or ``None`` on miss / failure.
+    """
+    resolved = _transport_cache_key(task, stored_form)
+    if resolved is None:
+        return None
+    cache_key, service_key = resolved
+    try:
+        return _run_coro_sync(
+            _fetch_catalogued_transport(service_key, cache_key.backup_source)
+        )
+    except Exception:  # noqa: BLE001 — catalog being down must never fail backfill
+        _log.warning(
+            "Catalog source_transport lookup failed for backup_source=%r; "
+            "falling back to inference",
+            cache_key.backup_source,
+            exc_info=True,
+        )
+        return None
+
+
 def _catalogued_transport_from_ctx(
     task: Task,
     form: dict[str, Any],
@@ -171,13 +263,18 @@ def _catalogued_transport_from_ctx(
     When :func:`prepare_mysql_restores_catalog_transports` has filled
     ``ctx.extras``, look up there and never open the sync bridge. Absent that
     key (unit tests calling the repairer/reconstructor directly), fall through
-    to :func:`catalogued_transport_for_stamp`'s NullPool path.
+    to the NullPool path owned by this module.
+
+    :param task: The restore task being repaired or reconstructed.
+    :param form: The undeclared form stamp or reconstructed body.
+    :param ctx: Shared backfill context carrying optional catalog prefetch.
+    :return: The catalogued transport, or ``None``.
     """
     transports = ctx.extras.get(CATALOG_TRANSPORTS_EXTRA)
     if isinstance(transports, dict):
         context: CatalogTransportContext = transports
         return catalogued_transport_for_stamp(task, form, context=context)
-    return catalogued_transport_for_stamp(task, form)
+    return _sync_catalogued_transport_for_stamp(task, form)
 
 
 async def prepare_mysql_restores_catalog_transports(

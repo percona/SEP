@@ -45,6 +45,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupType,
     CataloguedSourceTransport,
     ensure_backup_source_shell_safe,
+    OBJECT_STORE_UPLOAD_SCHEMES,
     XtraBackupTool,
 )
 
@@ -308,7 +309,11 @@ _AES_SOURCE_ONLY = Forbidden(
     ),
 )
 _AES_SOURCE_FIELDS = (_AES_KEYFILE_FIELD,)
-_OBJECT_STORE_SCHEMES = {"s3://": SourceTransport.S3, "gs://": SourceTransport.GCS}
+#: Restore transports for the same schemes :data:`OBJECT_STORE_UPLOAD_SCHEMES` records.
+_OBJECT_STORE_SCHEMES = {
+    scheme: SourceTransport(transport.value)
+    for scheme, transport in OBJECT_STORE_UPLOAD_SCHEMES.items()
+}
 
 #: The gated fields' pre-declaration defaults, read from the config models that
 #: still declare them so the inference keeps no second copy of the table it

@@ -16,7 +16,7 @@
 """Define database operations for the MySQL backup catalog."""
 
 from collections.abc import Iterable, Sequence
-from typing import Any, cast
+from typing import Any, cast, NamedTuple
 
 from sqlalchemy import case, func, Integer, literal, or_, select, String, union_all
 from sqlalchemy.sql import ColumnElement, ColumnExpressionArgument, Subquery
@@ -34,8 +34,19 @@ from app.sep.apps.mysql_backups.models import (
     MysqlBackupRun,
 )
 
-#: Prefetch key ``(service_id, service_name, backup_source)`` used by restore list.
-CatalogTransportLookupKey = tuple[int | None, str, str]
+
+class CatalogTransportLookupKey(NamedTuple):
+    """Prefetch key for restore list/detail catalog transport lookups.
+
+    :param service_id: Inventory service id, or ``None`` for name-only scope.
+    :param service_name: Service name used for the name-only / legacy-row match.
+    :param backup_source: Preferred backup source string the restore stamp carries.
+    """
+
+    service_id: int | None
+    service_name: str
+    backup_source: str
+
 
 _NEWEST_RUN_FIRST = (
     NullsLastOrdering(col(MysqlBackupRun.finished_at), descending=True),
@@ -364,8 +375,9 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         """
         results: dict[CatalogTransportLookupKey, CataloguedSourceTransport | None] = {}
         pending: list[CatalogTransportLookupKey] = []
-        for cache_key in lookups:
-            if not cache_key[2]:
+        for raw in lookups:
+            cache_key = CatalogTransportLookupKey(*raw)
+            if not cache_key.backup_source:
                 results[cache_key] = None
             else:
                 pending.append(cache_key)
@@ -419,7 +431,11 @@ class MysqlBackupRunManager(BaseSQLModelManager):
 
         results.update(dict.fromkeys(pending, None))
         for row in (await cls._exec(session, query)).all():
-            results[(row.lk_service_id, row.lk_service_name, row.lk_backup_source)] = (
-                row.source_transport
-            )
+            results[
+                CatalogTransportLookupKey(
+                    row.lk_service_id,
+                    row.lk_service_name,
+                    row.lk_backup_source,
+                )
+            ] = row.source_transport
         return results

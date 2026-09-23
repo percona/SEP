@@ -205,50 +205,56 @@ async def _insert_run(
     )
 
 
-def test_upgrade_adds_column_and_check(sep_postgres_alembic_config) -> None:
-    """Assert upgrade stamps the column and CHECK on native PostgreSQL ALTER."""
-    cfg, url, schema = sep_postgres_alembic_config
-    command.upgrade(cfg, _TRANSPORT_REVISION)
+class TestSourceTransportMigration:
+    """Define tests for the ``source_transport`` column and CHECK on PostgreSQL."""
 
-    columns, checks = _await(url, schema, _run_state)
+    def test_upgrade_adds_column_and_check(self, sep_postgres_alembic_config) -> None:
+        """Assert upgrade stamps the column and CHECK on native PostgreSQL ALTER."""
+        cfg, url, schema = sep_postgres_alembic_config
+        command.upgrade(cfg, _TRANSPORT_REVISION)
 
-    assert _COLUMN in columns
-    assert _CHECK_NAME in checks
+        columns, checks = _await(url, schema, _run_state)
 
+        assert _COLUMN in columns
+        assert _CHECK_NAME in checks
 
-def test_upgrade_check_accepts_member_names(sep_postgres_alembic_config) -> None:
-    """Assert the CHECK allows ``S3`` / ``GCS`` / NULL on PostgreSQL."""
-    cfg, url, schema = sep_postgres_alembic_config
-    command.upgrade(cfg, _TRANSPORT_REVISION)
+    def test_upgrade_check_accepts_member_names(
+        self, sep_postgres_alembic_config
+    ) -> None:
+        """Assert the CHECK allows ``S3`` / ``GCS`` / NULL on PostgreSQL."""
+        cfg, url, schema = sep_postgres_alembic_config
+        command.upgrade(cfg, _TRANSPORT_REVISION)
 
-    async def _seed(conn: AsyncConnection) -> None:
-        await _insert_run(conn, source_transport="S3", history_id=1)
-        await _insert_run(conn, source_transport="GCS", history_id=2)
-        await _insert_run(conn, source_transport=None, history_id=3)
+        async def _seed(conn: AsyncConnection) -> None:
+            await _insert_run(conn, source_transport="S3", history_id=1)
+            await _insert_run(conn, source_transport="GCS", history_id=2)
+            await _insert_run(conn, source_transport=None, history_id=3)
 
-    _await(url, schema, _seed)
+        _await(url, schema, _seed)
 
+    def test_upgrade_check_rejects_unknown_transport(
+        self, sep_postgres_alembic_config
+    ) -> None:
+        """Assert PostgreSQL rejects a value outside the CHECK."""
+        cfg, url, schema = sep_postgres_alembic_config
+        command.upgrade(cfg, _TRANSPORT_REVISION)
 
-def test_upgrade_check_rejects_unknown_transport(sep_postgres_alembic_config) -> None:
-    """Assert PostgreSQL rejects a value outside the CHECK."""
-    cfg, url, schema = sep_postgres_alembic_config
-    command.upgrade(cfg, _TRANSPORT_REVISION)
+        with pytest.raises(IntegrityError):
+            _await(
+                url,
+                schema,
+                lambda conn: _insert_run(conn, source_transport="SSH", history_id=1),
+            )
 
-    with pytest.raises(IntegrityError):
-        _await(
-            url,
-            schema,
-            lambda conn: _insert_run(conn, source_transport="SSH", history_id=1),
-        )
+    def test_downgrade_drops_column_and_check(
+        self, sep_postgres_alembic_config
+    ) -> None:
+        """Assert downgrade removes the column and CHECK via plain ALTER."""
+        cfg, url, schema = sep_postgres_alembic_config
+        command.upgrade(cfg, _TRANSPORT_REVISION)
+        command.downgrade(cfg, _PRE_TRANSPORT_REVISION)
 
+        columns, checks = _await(url, schema, _run_state)
 
-def test_downgrade_drops_column_and_check(sep_postgres_alembic_config) -> None:
-    """Assert downgrade removes the column and CHECK via plain ALTER."""
-    cfg, url, schema = sep_postgres_alembic_config
-    command.upgrade(cfg, _TRANSPORT_REVISION)
-    command.downgrade(cfg, _PRE_TRANSPORT_REVISION)
-
-    columns, checks = _await(url, schema, _run_state)
-
-    assert _COLUMN not in columns
-    assert _CHECK_NAME not in checks
+        assert _COLUMN not in columns
+        assert _CHECK_NAME not in checks

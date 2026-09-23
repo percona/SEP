@@ -15,11 +15,19 @@
 
 """Tests for the mysql restores legacy form reconstructor."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
+from sqlmodel import SQLModel
 
+import app.sep.apps.mysql_backups.restore.form_backfill as restore_form_backfill
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill import _backfill_single_task
 from app.sep.apps.framework.form_backfill_inventory import (
@@ -28,9 +36,15 @@ from app.sep.apps.framework.form_backfill_inventory import (
 )
 from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
-from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
+from app.sep.apps.mysql_backups.models import (
+    BackupType,
+    CataloguedSourceTransport,
+    MysqlBackupRun,
+)
 from app.sep.apps.mysql_backups.restore.form_backfill import (
+    _sync_catalogued_transport_for_stamp,
     CATALOG_TRANSPORTS_EXTRA,
     FORM_BACKFILL_ENTRY,
     reconstruct_mysql_restores_form,
@@ -41,6 +55,7 @@ from app.sep.apps.mysql_backups.restore.models import (
 )
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.tasks.models import Task, TaskBackendEnum
+from tests.app.db_schema import apply_schema
 from tests.app.sep.apps.mysql_backups.restore.conftest import legacy_default
 
 
@@ -446,57 +461,125 @@ def test_repair_skips_a_stamp_that_already_declares_its_source():
     assert outcome.stamped_data is None
 
 
-def test_repair_prefers_catalogued_object_store_transport():
-    """Seed S3 from the batched prefetch when repairing a stamp that would infer local."""
-    service_lookup, schema_lookup = _lookups(
-        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
-    )
-    stamp = _pre_declaration_stamp()
-    task = _stamped_restore_task(stamp)
-    ctx = _ctx(service_lookup, schema_lookup)
-    ctx.extras[CATALOG_TRANSPORTS_EXTRA] = {
-        (12, "mysql-prod", "/backups/mydumper/latest"): CataloguedSourceTransport.S3,
-    }
+class TestRepairCatalogTransport:
+    """Cover catalogued S3/GCS seeding on stamp repair."""
 
-    outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRY, ctx)
-
-    assert outcome.label == "repaired"
-    assert outcome.stamped_data is not None
-    repaired = outcome.stamped_data[RESERVED_FORM_KEY]
-    assert repaired["source_transport"] == SourceTransport.S3.value
-
-
-def test_repair_skips_catalog_lookup_when_source_already_declared(
-    mocker: MockerFixture,
-):
-    """Do not evaluate the catalog lookup for a stamp that already declares transport.
-
-    ``repair_source_declaration`` would ignore a hit anyway; skipping the call
-    avoids the sync bridge (and even a prefetch map hit) on the eager argument.
-    """
-    lookup = mocker.patch(
-        "app.sep.apps.mysql_backups.restore.form_backfill.catalogued_transport_for_stamp",
-    )
-    service_lookup, schema_lookup = _lookups(
-        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
-    )
-    task = _stamped_restore_task(
-        {
-            "task_name": "restore-stamped",
-            "hostname": "executor-1",
-            "backup_type": BackupType.MYDUMPER.value,
-            "backup_source": "/backups/mydumper/latest",
-            "source_transport": SourceTransport.LOCAL.value,
-            "source_encryption": EncryptionFormat.NONE.value,
+    def test_prefers_catalogued_object_store_transport(self):
+        """Seed S3 from the batched prefetch when repairing a stamp that would infer local."""
+        service_lookup, schema_lookup = _lookups(
+            _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+        stamp = _pre_declaration_stamp()
+        task = _stamped_restore_task(stamp)
+        ctx = _ctx(service_lookup, schema_lookup)
+        ctx.extras[CATALOG_TRANSPORTS_EXTRA] = {
+            (
+                12,
+                "mysql-prod",
+                "/backups/mydumper/latest",
+            ): CataloguedSourceTransport.S3,
         }
-    )
 
-    outcome = _backfill_single_task(
-        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
-    )
+        outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRY, ctx)
 
-    assert outcome.label == "skipped_existing"
-    lookup.assert_not_called()
+        assert outcome.label == "repaired"
+        assert outcome.stamped_data is not None
+        repaired = outcome.stamped_data[RESERVED_FORM_KEY]
+        assert repaired["source_transport"] == SourceTransport.S3.value
+
+    def test_skips_catalog_lookup_when_source_already_declared(
+        self, mocker: MockerFixture
+    ):
+        """Do not evaluate the catalog lookup for a stamp that already declares transport.
+
+        ``repair_source_declaration`` would ignore a hit anyway; skipping the call
+        avoids the sync bridge (and even a prefetch map hit) on the eager argument.
+        """
+        lookup = mocker.patch(
+            "app.sep.apps.mysql_backups.restore.form_backfill.catalogued_transport_for_stamp",
+        )
+        service_lookup, schema_lookup = _lookups(
+            _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+        )
+        task = _stamped_restore_task(
+            {
+                "task_name": "restore-stamped",
+                "hostname": "executor-1",
+                "backup_type": BackupType.MYDUMPER.value,
+                "backup_source": "/backups/mydumper/latest",
+                "source_transport": SourceTransport.LOCAL.value,
+                "source_encryption": EncryptionFormat.NONE.value,
+            }
+        )
+
+        outcome = _backfill_single_task(
+            task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+        )
+
+        assert outcome.label == "skipped_existing"
+        lookup.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_catalogued_transport_bridges_under_a_running_event_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Drive the NullPool sync bridge while a request loop is already running.
+
+    Prefetch-``context`` tests never enter ``_run_coro_sync`` /
+    ``_fetch_catalogued_transport``. A context-less call under pytest-asyncio is
+    the real cross-loop path: worker thread + ``asyncio.run`` + throwaway
+    ``NullPool`` engine against the sep URL.
+    """
+    db_path = tmp_path / "catalog.db"
+    url = f"sqlite+aiosqlite:///{db_path}"
+    seed_engine = create_async_engine(url, json_serializer=json_serializer)
+    try:
+        async with seed_engine.begin() as conn:
+            await apply_schema(conn, SQLModel.metadata)
+        async with get_async_session_maker_from_engine(seed_engine)() as session:
+            await MysqlBackupRunManager.save(
+                session,
+                MysqlBackupRun(
+                    task_history_id=1,
+                    service_name="svc-a",
+                    service_id=7,
+                    backup_type="M",
+                    # Local preferred source so inference alone would stay LOCAL;
+                    # the catalogued S3 value is what must win through the bridge.
+                    location="/backups/mydumper/latest",
+                    source_transport=CataloguedSourceTransport.S3,
+                ),
+            )
+    finally:
+        await seed_engine.dispose()
+
+    monkeypatch.setattr(restore_form_backfill, "sep_engine", SimpleNamespace(url=url))
+    create_kwargs: list[dict] = []
+    real_create = restore_form_backfill.create_async_engine
+
+    def _tracking_create(*args: object, **kwargs: object):
+        create_kwargs.append(kwargs)
+        return real_create(*args, **kwargs)
+
+    monkeypatch.setattr(restore_form_backfill, "create_async_engine", _tracking_create)
+
+    stored_form = {
+        "task_name": "restore-task",
+        "hostname": "executor-1",
+        "backup_type": BackupType.MYDUMPER.value,
+        "service_id": "7",
+        "backup_source": "/backups/mydumper/latest",
+        "s3_tool": "s3cmd",
+    }
+    task = _stamped_restore_task(stored_form)
+
+    assert (
+        _sync_catalogued_transport_for_stamp(task, stored_form)
+        == CataloguedSourceTransport.S3
+    )
+    assert create_kwargs
+    assert all(call.get("poolclass") is NullPool for call in create_kwargs)
 
 
 def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():

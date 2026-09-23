@@ -15,36 +15,20 @@
 
 """Define tests for the app.sep.apps.mysql_backups.restore.deps module."""
 
-from pathlib import Path
-from types import SimpleNamespace
-
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.pool import NullPool
-from sqlmodel import SQLModel
 
-import app.sep.apps.mysql_backups.restore.deps as restore_deps
-from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPUnprocessableEntityException
-from app.core.utils import json_serializer
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import (
-    BackupType,
-    CataloguedSourceTransport,
-    MysqlBackupRun,
-)
+from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
 from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
-    catalogued_transport_for_stamp,
     resolve_restore_entities,
     RestoreResponseContext,
 )
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate, SourceTransport
 from app.sep.inventory import CreatedService
 from app.tasks.models import Task, TaskBackendEnum
-from tests.app.db_schema import apply_schema
 from tests.app.factories import (
     MOCK_ACTOR_USERNAMES,
     MOCK_CREATOR_ID,
@@ -336,127 +320,62 @@ def test_a_task_without_a_stamp_is_served_unchanged():
     assert RESERVED_FORM_KEY not in served
 
 
-@pytest.mark.parametrize(
-    ("catalogued", "expected"),
-    [
-        (CataloguedSourceTransport.S3, SourceTransport.S3.value),
-        (CataloguedSourceTransport.GCS, SourceTransport.GCS.value),
-    ],
-    ids=["s3", "gcs"],
-)
-def test_served_stamp_prefers_catalogued_object_store_transport(
-    catalogued: CataloguedSourceTransport, expected: str
-):
-    """Serve an undeclared stamp with the catalogued S3/GCS transport over inference."""
-    # Prefetched context — the list/detail path; no per-row sync bridge.
-    task = _restore_task(
-        {
-            "task_name": "restore-task",
-            "hostname": "executor-1",
-            "backup_type": BackupType.MYDUMPER.value,
-            "service_id": "7",
-            "backup_source": "/backups/mydumper/latest",
-            "s3_tool": "s3cmd",
-        }
+class TestServedStampCatalogTransport:
+    """Cover catalogued S3/GCS seeding on the edit-form response builder."""
+
+    @pytest.mark.parametrize(
+        ("catalogued", "expected"),
+        [
+            (CataloguedSourceTransport.S3, SourceTransport.S3.value),
+            (CataloguedSourceTransport.GCS, SourceTransport.GCS.value),
+        ],
+        ids=["s3", "gcs"],
     )
-    cache_key = (7, "7", "/backups/mydumper/latest")
-    served = build_restore_api_task_response(
-        task,
-        context=RestoreResponseContext(transports={cache_key: catalogued}),
-    ).data[RESERVED_FORM_KEY]
+    def test_prefers_catalogued_object_store_transport(
+        self, catalogued: CataloguedSourceTransport, expected: str
+    ):
+        """Serve an undeclared stamp with the catalogued S3/GCS transport over inference."""
+        # Prefetched context — the list/detail path; no per-row sync bridge.
+        task = _restore_task(
+            {
+                "task_name": "restore-task",
+                "hostname": "executor-1",
+                "backup_type": BackupType.MYDUMPER.value,
+                "service_id": "7",
+                "backup_source": "/backups/mydumper/latest",
+                "s3_tool": "s3cmd",
+            }
+        )
+        cache_key = (7, "7", "/backups/mydumper/latest")
+        served = build_restore_api_task_response(
+            task,
+            context=RestoreResponseContext(transports={cache_key: catalogued}),
+        ).data[RESERVED_FORM_KEY]
 
-    assert served["source_transport"] == expected
+        assert served["source_transport"] == expected
 
+    def test_keeps_inference_when_catalog_has_no_transport(self):
+        """Fall through to field inference when the matching catalog row has no transport."""
+        task = _restore_task(
+            {
+                "task_name": "restore-task",
+                "hostname": "executor-1",
+                "backup_type": BackupType.XTRABACKUP.value,
+                "backup_source": "db01:/backups/xb/latest",
+                "ssh_user": "deploy",
+                "ssh_port": _NON_DEFAULT_SSH_PORT,
+                "ssh_key": "prod-key",
+                "s3_tool": "s3cmd",
+            }
+        )
+        # Empty prefetch: key was considered and missed — do not re-bridge to the DB.
+        served = build_restore_api_task_response(
+            task, context=RestoreResponseContext(transports={})
+        ).data[RESERVED_FORM_KEY]
 
-def test_served_stamp_keeps_inference_when_catalog_has_no_transport():
-    """Fall through to field inference when the matching catalog row has no transport."""
-    task = _restore_task(
-        {
-            "task_name": "restore-task",
-            "hostname": "executor-1",
-            "backup_type": BackupType.XTRABACKUP.value,
-            "backup_source": "db01:/backups/xb/latest",
-            "ssh_user": "deploy",
-            "ssh_port": _NON_DEFAULT_SSH_PORT,
-            "ssh_key": "prod-key",
-            "s3_tool": "s3cmd",
-        }
-    )
-    # Empty prefetch: key was considered and missed — do not re-bridge to the DB.
-    served = build_restore_api_task_response(
-        task, context=RestoreResponseContext(transports={})
-    ).data[RESERVED_FORM_KEY]
-
-    assert served["source_transport"] == SourceTransport.SSH.value
-    assert served["ssh_user"] == "deploy"
-    assert served["ssh_key"] == "prod-key"
-
-
-@pytest.mark.asyncio
-async def test_catalogued_transport_bridges_under_a_running_event_loop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Drive the NullPool sync bridge while a request loop is already running.
-
-    Prefetch-``context`` tests never enter ``_run_coro_sync`` /
-    ``_fetch_catalogued_transport``, and the form-backfill suite mocks the whole
-    helper. A context-less call under pytest-asyncio is the real cross-loop path:
-    worker thread + ``asyncio.run`` + throwaway ``NullPool`` engine against the
-    sep URL.
-    """
-    db_path = tmp_path / "catalog.db"
-    url = f"sqlite+aiosqlite:///{db_path}"
-    seed_engine = create_async_engine(url, json_serializer=json_serializer)
-    try:
-        async with seed_engine.begin() as conn:
-            await apply_schema(conn, SQLModel.metadata)
-        async with get_async_session_maker_from_engine(seed_engine)() as session:
-            await MysqlBackupRunManager.save(
-                session,
-                MysqlBackupRun(
-                    task_history_id=1,
-                    service_name="svc-a",
-                    service_id=7,
-                    backup_type="M",
-                    # Local preferred source so inference alone would stay LOCAL;
-                    # the catalogued S3 value is what must win through the bridge.
-                    location="/backups/mydumper/latest",
-                    source_transport=CataloguedSourceTransport.S3,
-                ),
-            )
-    finally:
-        await seed_engine.dispose()
-
-    monkeypatch.setattr(restore_deps, "sep_engine", SimpleNamespace(url=url))
-    create_kwargs: list[dict] = []
-    real_create = restore_deps.create_async_engine
-
-    def _tracking_create(*args: object, **kwargs: object):
-        create_kwargs.append(kwargs)
-        return real_create(*args, **kwargs)
-
-    monkeypatch.setattr(restore_deps, "create_async_engine", _tracking_create)
-
-    stored_form = {
-        "task_name": "restore-task",
-        "hostname": "executor-1",
-        "backup_type": BackupType.MYDUMPER.value,
-        "service_id": "7",
-        "backup_source": "/backups/mydumper/latest",
-        "s3_tool": "s3cmd",
-    }
-    task = _restore_task(stored_form)
-
-    # Sync call on the live pytest-asyncio loop — the ThreadPoolExecutor hop.
-    assert (
-        catalogued_transport_for_stamp(task, stored_form)
-        == CataloguedSourceTransport.S3
-    )
-    served = build_restore_api_task_response(task).data[RESERVED_FORM_KEY]
-
-    assert served["source_transport"] == SourceTransport.S3.value
-    assert create_kwargs
-    assert all(call.get("poolclass") is NullPool for call in create_kwargs)
+        assert served["source_transport"] == SourceTransport.SSH.value
+        assert served["ssh_user"] == "deploy"
+        assert served["ssh_key"] == "prod-key"
 
 
 class TestBuildRestoreApiTaskResponse:

@@ -192,7 +192,9 @@ class CataloguedSourceTransport(EnumFieldMixin, StrEnum):
 
 
 #: Object-store upload schemes the catalog can classify authoritatively.
-_OBJECT_STORE_UPLOAD_SCHEMES = {
+#: Restore builds its :class:`~app.sep.apps.mysql_backups.restore.models.SourceTransport`
+#: map from this table so the scheme strings stay in one place.
+OBJECT_STORE_UPLOAD_SCHEMES = {
     "s3://": CataloguedSourceTransport.S3,
     "gs://": CataloguedSourceTransport.GCS,
 }
@@ -220,7 +222,7 @@ def catalogued_transport_from_upload(
     ):
         return None
     lowered = stripped.lower()
-    for scheme, transport in _OBJECT_STORE_UPLOAD_SCHEMES.items():
+    for scheme, transport in OBJECT_STORE_UPLOAD_SCHEMES.items():
         if lowered.startswith(scheme):
             return transport
     return None

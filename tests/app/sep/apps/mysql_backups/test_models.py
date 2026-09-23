@@ -43,31 +43,34 @@ def test_backup_type_labels_is_not_an_enum_member():
     assert "LABELS" not in {member.name for member in BackupType}
 
 
-@pytest.mark.parametrize(
-    ("upload", "expected"),
-    [
-        ("s3://bucket/path", CataloguedSourceTransport.S3),
-        ("  S3://Bucket/Path  ", CataloguedSourceTransport.S3),
-        ("gs://bucket/path", CataloguedSourceTransport.GCS),
-        ("GS://bucket/path", CataloguedSourceTransport.GCS),
-        ("/data/backups/local", None),
-        ("", None),
-        (None, None),
-        ("   ", None),
-    ],
-    ids=[
-        "s3",
-        "s3-case-and-whitespace",
-        "gcs",
-        "gcs-case",
-        "local-path",
-        "empty",
-        "none",
-        "blank",
-    ],
-)
-def test_catalogued_transport_from_upload(
-    upload: str | None, expected: CataloguedSourceTransport | None
-) -> None:
-    """Classify only unambiguous object-store uploads; leave local/ssh to restore time."""
-    assert catalogued_transport_from_upload(upload) is expected
+class TestCataloguedTransportFromUpload:
+    """Cover ``catalogued_transport_from_upload`` scheme classification."""
+
+    @pytest.mark.parametrize(
+        ("upload", "expected"),
+        [
+            ("s3://bucket/path", CataloguedSourceTransport.S3),
+            ("  S3://Bucket/Path  ", CataloguedSourceTransport.S3),
+            ("gs://bucket/path", CataloguedSourceTransport.GCS),
+            ("GS://bucket/path", CataloguedSourceTransport.GCS),
+            ("/data/backups/local", None),
+            ("", None),
+            (None, None),
+            ("   ", None),
+        ],
+        ids=[
+            "s3",
+            "s3-case-and-whitespace",
+            "gcs",
+            "gcs-case",
+            "local-path",
+            "empty",
+            "none",
+            "blank",
+        ],
+    )
+    def test_classifies_object_store_uploads(
+        self, upload: str | None, expected: CataloguedSourceTransport | None
+    ) -> None:
+        """Classify only unambiguous object-store uploads; leave local/ssh to restore time."""
+        assert catalogued_transport_from_upload(upload) is expected

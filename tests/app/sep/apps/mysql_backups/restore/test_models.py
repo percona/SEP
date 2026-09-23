@@ -558,53 +558,56 @@ def test_normalize_source_declaration_leaves_a_declared_stamp_alone() -> None:
     assert normalized == declared
 
 
-@pytest.mark.parametrize(
-    "catalogued",
-    [CataloguedSourceTransport.S3, CataloguedSourceTransport.GCS],
-    ids=["s3", "gcs"],
-)
-def test_normalize_source_declaration_prefers_catalogued_object_store(
-    catalogued: CataloguedSourceTransport,
-) -> None:
-    """Prefer a catalogued S3/GCS transport over field inference on undeclared stamps."""
-    # Local-looking fields: without the catalog, inference would pick LOCAL.
-    stamp = _legacy_stamp(backup_source="/var/backups/latest")
+class TestNormalizeSourceDeclarationCatalog:
+    """Cover catalogued S3/GCS preference in ``normalize_source_declaration``."""
 
-    normalized = normalize_source_declaration(stamp, catalogued_transport=catalogued)
-
-    assert normalized["source_transport"] == SourceTransport(catalogued.value)
-    assert "ssh_user" not in normalized
-    assert "ssh_port" not in normalized
-    if catalogued is CataloguedSourceTransport.S3:
-        # S3 keeps ``s3_tool``; the catalog only picks the transport.
-        assert "s3_tool" in normalized
-    else:
-        assert "s3_tool" not in normalized
-
-
-def test_normalize_source_declaration_falls_through_when_catalog_unset() -> None:
-    """Keep today's inference when the catalog has no object-store transport."""
-    stamp = _legacy_stamp(ssh_key="prod-key")
-
-    normalized = normalize_source_declaration(stamp, catalogued_transport=None)
-
-    assert normalized["source_transport"] == SourceTransport.SSH
-    assert normalized["ssh_key"] == "prod-key"
-
-
-def test_normalize_source_declaration_declared_stamp_ignores_catalog() -> None:
-    """Leave an operator declaration alone even when the catalog disagrees."""
-    declared = _legacy_stamp(
-        source_transport=SourceTransport.SSH.value,
-        source_encryption=EncryptionFormat.NONE.value,
-        ssh_user="deploy",
+    @pytest.mark.parametrize(
+        "catalogued",
+        [CataloguedSourceTransport.S3, CataloguedSourceTransport.GCS],
+        ids=["s3", "gcs"],
     )
+    def test_prefers_catalogued_object_store(
+        self, catalogued: CataloguedSourceTransport
+    ) -> None:
+        """Prefer a catalogued S3/GCS transport over field inference on undeclared stamps."""
+        # Local-looking fields: without the catalog, inference would pick LOCAL.
+        stamp = _legacy_stamp(backup_source="/var/backups/latest")
 
-    normalized = normalize_source_declaration(
-        declared, catalogued_transport=CataloguedSourceTransport.S3
-    )
+        normalized = normalize_source_declaration(
+            stamp, catalogued_transport=catalogued
+        )
 
-    assert normalized == declared
+        assert normalized["source_transport"] == SourceTransport(catalogued.value)
+        assert "ssh_user" not in normalized
+        assert "ssh_port" not in normalized
+        if catalogued is CataloguedSourceTransport.S3:
+            # S3 keeps ``s3_tool``; the catalog only picks the transport.
+            assert "s3_tool" in normalized
+        else:
+            assert "s3_tool" not in normalized
+
+    def test_falls_through_when_catalog_unset(self) -> None:
+        """Keep today's inference when the catalog has no object-store transport."""
+        stamp = _legacy_stamp(ssh_key="prod-key")
+
+        normalized = normalize_source_declaration(stamp, catalogued_transport=None)
+
+        assert normalized["source_transport"] == SourceTransport.SSH
+        assert normalized["ssh_key"] == "prod-key"
+
+    def test_declared_stamp_ignores_catalog(self) -> None:
+        """Leave an operator declaration alone even when the catalog disagrees."""
+        declared = _legacy_stamp(
+            source_transport=SourceTransport.SSH.value,
+            source_encryption=EncryptionFormat.NONE.value,
+            ssh_user="deploy",
+        )
+
+        normalized = normalize_source_declaration(
+            declared, catalogued_transport=CataloguedSourceTransport.S3
+        )
+
+        assert normalized == declared
 
 
 @pytest.mark.parametrize(
