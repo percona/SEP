@@ -60,12 +60,9 @@ default:
       - OmInventorySettings.MAX_CONCURRENT_PROBES
       - OmInventorySettings.RUN_RETENTION
       - OmInventorySettings.STALE_RUN_AFTER
-      # ENABLED gates the periodic estate sweep on PMM's OpenManager switch.
-      # patchConfig (pmm-managed's sep_client.go) PATCHes this same /config
-      # endpoint to sync PMM's switch state, and is_hot_reloadable's policy gate
-      # applies to that call exactly as it does to a UI-driven one: leaving
-      # ENABLED out of this allowlist blocks the sweep from ever turning on,
-      # regardless of which side asks.
+      # PMM's OpenManager switch reaches ENABLED through the app's own
+      # PATCH /config, which this allowlist gates like any other caller: left
+      # out, the sweep can never be turned on.
       - OmInventorySettings.ENABLED
 
   AUTH:

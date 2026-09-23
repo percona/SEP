@@ -41,8 +41,10 @@ def test_client():
 
 
 @pytest.mark.asyncio
-async def test_sep_startup_runs_after_the_override_snapshot_publishes(mocker):
-    """``sep_startup()`` must not read app-owned hot settings before overrides load.
+async def test_sep_startup_runs_after_the_override_snapshot_publishes(
+    mocker: MockerFixture,
+) -> None:
+    """Run ``sep_startup()`` only after the override snapshot has published.
 
     ``sep_overrides_lifespan`` publishes the initial override snapshot on
     entry; a hot app-owned field (e.g. ``OmInventorySettings.ENABLED``) reads

@@ -175,7 +175,7 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``),
     ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``)
-    and ``OmInventorySettings.ENABLED``/``SCHEDULE`` (``sep__run_om_probe``) -- each
+    and ``OmInventorySettings.ENABLED``/``SCHEDULE`` (``sep__run_om_probe``), each
     of which the rebuild seeds or drops as the interval is set or cleared (or, for
     ``OmInventorySettings``, as PMM's OpenManager switch turns the sweep on or off
     without touching the configured cadence), since the app's schedule thunk
@@ -192,9 +192,9 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
     Gating is then re-applied, because preserving it is only true of the **update**
-    path. A schedule an app may set to ``None`` -- which is how an app-owned sweep is
-    turned off, and one of two ways ``OmInventorySettings`` turns off the estate
-    probe, the other being ``ENABLED`` -- contributes no task at all while it is null,
+    path. A schedule an app may set to ``None``, which is how an app-owned sweep is
+    turned off and one of two ways ``OmInventorySettings`` turns off the estate
+    probe (the other being ``ENABLED``), contributes no task at all while it is null,
     and the orphan cleanup in
     ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
     path, which builds a fresh row at the model's default ``enabled``, so a disabled
@@ -315,12 +315,12 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     never dereference not-yet-built ``app.state``. Any callback marked for
     boot must therefore not touch ``app.state``.
 
-    ``sep_startup()`` -- which seeds the periodic-task database from each app's
-    *current* settings -- runs inside the ``async with`` for the same reason:
+    ``sep_startup()``, which seeds the periodic-task database from each app's
+    *current* settings, runs inside the ``async with`` for the same reason:
     an app-owned hot field (e.g. ``OmInventorySettings.ENABLED``) reads its
     class default until the override snapshot's first publish, so seeding
     before that point can seed a sweep as off when a prior run had already
-    turned it on, and nothing re-seeds it afterward -- the callback that would
+    turned it on, and nothing re-seeds it afterward: the callback that would
     is the one this same initial publish deliberately skips. Running it after
     entry, once that publish has happened, is what makes ``sep_startup()``
     see the real persisted settings on every restart, not just after the next
@@ -332,9 +332,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     the rebinder.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
-    :yield: None
-    :rtype: AsyncGenerator[None, None]
+    :return: ``None``, once the lifespans have been entered.
     """
     async with sep_overrides_lifespan(app):
         await sep_startup()
