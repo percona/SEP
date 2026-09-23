@@ -72,6 +72,19 @@ TWO_HOSTS = 2
 PRUNED = 2
 
 
+@pytest.fixture(autouse=True)
+def _enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turn the sweep on for this module.
+
+    ``ENABLED`` defaults to off (PMM's OpenManager switch starts a fresh
+    deployment unswept), but every test here posts to ``/runs`` to exercise
+    scoping and conflict rules that have nothing to do with that switch.
+
+    :param monkeypatch: Restores the real value after the test.
+    """
+    monkeypatch.setattr(om_inventory_settings, "ENABLED", True)
+
+
 @pytest_asyncio.fixture
 async def two_hosts(session: AsyncSession) -> AsyncSession:
     """Give the estate two hosts, so "one of them" is a meaningful scope.
@@ -244,6 +257,29 @@ class TestTerminalStatus:
 
 class TestTriggerScope:
     """Assert the trigger's contract."""
+
+    @pytest.mark.asyncio
+    async def test_rejected_while_enabled_is_off(
+        self,
+        api: AsyncClient,
+        two_hosts: AsyncSession,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Refuse a manual trigger while PMM's OpenManager switch is off.
+
+        ``app.py``'s periodic-task thunk already keeps a disabled deployment off
+        Celery beat; without this check a caller could still start a sweep on
+        request, which is the gap the switch exists to close.
+
+        :param api: The authenticated client.
+        :param two_hosts: The populated session.
+        :param monkeypatch: Restores the real value after the test.
+        """
+        monkeypatch.setattr(om_inventory_settings, "ENABLED", False)
+
+        response = await api.post(f"{BASE}/runs")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
     @pytest.mark.asyncio
     async def test_no_body_means_the_whole_estate(

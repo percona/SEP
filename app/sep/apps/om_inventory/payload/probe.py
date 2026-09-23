@@ -264,7 +264,7 @@ def parse_port(argv, config_path):
     if not config_path:
         return None
     try:
-        with open(config_path) as handle:
+        with open(config_path, encoding="utf-8") as handle:
             for raw_line in handle:
                 line = raw_line.strip()
                 # Matches the YAML `port: 27018` and the legacy `port=27018` alike,
