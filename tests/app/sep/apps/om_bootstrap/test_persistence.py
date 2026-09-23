@@ -32,6 +32,7 @@ from app.sep.apps.om_bootstrap.strategy import (
     StepRecord,
     StepStatus,
 )
+from tests.app.sep.apps.om_bootstrap.factories import BootstrapRunFactory
 
 RUNNING_STEP_TASK_HISTORY_ID = 42
 
@@ -62,11 +63,7 @@ class TestDumpAndParseHostStatesRoundTrip:
         original = _host_states()
 
         parsed = parse_host_states(
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(original),
             )
         )
@@ -76,11 +73,7 @@ class TestDumpAndParseHostStatesRoundTrip:
     def test_running_step_carries_its_task_history_id_through(self) -> None:
         """The dispatch-tracking field on StepRecord is not dropped by the round trip."""
         parsed = parse_host_states(
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(_host_states()),
             )
         )
@@ -108,11 +101,7 @@ class TestDumpAndParseRunStepsRoundTrip:
         original = _run_steps()
 
         parsed = parse_run_steps(
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 run_steps=dump_run_steps(original),
             )
         )

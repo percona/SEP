@@ -37,11 +37,10 @@ from app.sep.apps.om_bootstrap.persistence import (
 )
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
-    InstallMethod,
-    OperatingSystem,
     StepRecord,
     StepStatus,
 )
+from tests.app.sep.apps.om_bootstrap.factories import BootstrapRunFactory
 
 TASK_HISTORY_ID = 99
 
@@ -222,11 +221,7 @@ class TestReconcileRun:
         rollback_steps: list[StepRecord] | None = None,
         run_steps: list[StepRecord] | None = None,
     ) -> BootstrapRun:
-        return BootstrapRun(
-            install_method=InstallMethod.PACKAGES,
-            os=OperatingSystem.UBUNTU,
-            mongodb_version="8.0",
-            replica_set_name="rs-test",
+        return BootstrapRunFactory.build(
             hosts=dump_host_states(
                 [
                     HostBootstrapState(
