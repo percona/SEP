@@ -56,7 +56,7 @@ from aiohttp import (
     TCPConnector,
 )
 from fastapi import HTTPException, status
-from pydantic import computed_field, Field, PrivateAttr
+from pydantic import BaseModel, computed_field, Field, PrivateAttr
 
 from app.core.exceptions import (
     HTTPBadGatewayException,
@@ -1013,7 +1013,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         return context
 
 
-class CredentialHeaderMixin:
+class CredentialHeaderMixin(BaseModel):
     """Opt-in persistent ``Authorization`` header for :class:`BaseRemoteAPI` subclasses.
 
     Apply leftmost in the MRO (e.g. ``CredentialHeaderMixin, RemoteAPI``) so
