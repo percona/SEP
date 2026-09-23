@@ -123,6 +123,16 @@ def _psmdb_channel(mongodb_version: str) -> str:
     return f"psmdb-{major_minor.replace('.', '')}"
 
 
+def _shell_step(body: str, *, timeout_s: int = 30) -> StepAction:
+    """Build a ``StepAction`` running ``body`` through ``sh -c``.
+
+    :param body: The shell script to run on the host.
+    :param timeout_s: How long the step may run, in seconds.
+    :return: The step action.
+    """
+    return StepAction(command=["sh", "-c", body], timeout_s=timeout_s)
+
+
 def _mongosh_eval(js: str) -> StepAction:
     """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
 
@@ -147,13 +157,9 @@ def _mongosh_eval(js: str) -> StepAction:
     :param js: The JavaScript to evaluate.
     :return: The step action.
     """
-    return StepAction(
-        command=[
-            "sh",
-            "-c",
-            f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
-            f"mongosh --quiet --eval {shlex.quote(js)}",
-        ],
+    return _shell_step(
+        f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+        f"mongosh --quiet --eval {shlex.quote(js)}",
         timeout_s=60,
     )
 
@@ -181,7 +187,7 @@ def _mongosh_file(js: str) -> StepAction:
         "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
         'mongosh --quiet --file "$js"\n'
     )
-    return StepAction(command=["sh", "-c", body], timeout_s=60)
+    return _shell_step(body, timeout_s=60)
 
 
 def _require_run_id(spec: BootstrapSpec, step_name: str) -> str:
@@ -197,17 +203,17 @@ def _require_run_id(spec: BootstrapSpec, step_name: str) -> str:
     return str(spec.run_id)
 
 
-def _owned_only(body: str, run_id: str) -> str:
-    """Prefix a rollback body so it does nothing on a host this run never installed.
+def _owned_step(body: str, run_id: str, *, timeout_s: int = 30) -> StepAction:
+    """Build a rollback step that does nothing on a host this run never installed.
 
     :param body: The rollback step's shell body.
     :param run_id: The run the rollback belongs to.
-    :return: ``body``, run only when :data:`OWNERSHIP_MARKER_PATH` holds ``run_id``.
+    :param timeout_s: How long the step may run, in seconds.
+    :return: A step running ``body`` only when :data:`OWNERSHIP_MARKER_PATH`
+        holds ``run_id``.
     """
-    return (
-        f'[ "$(cat {OWNERSHIP_MARKER_PATH} 2>/dev/null)" = {shlex.quote(run_id)} ] '
-        f"|| exit 0\n{body}\n"
-    )
+    guard = f'[ "$(cat {OWNERSHIP_MARKER_PATH} 2>/dev/null)" = {shlex.quote(run_id)} ]'
+    return _shell_step(f"{guard} || exit 0\n{body}\n", timeout_s=timeout_s)
 
 
 class PackagesInstallStrategy:
@@ -307,14 +313,9 @@ class PackagesInstallStrategy:
         if not params or "key_file_content" not in params:
             raise ValueError("distribute_keyfile requires params['key_file_content']")
         encoded = base64.b64encode(params["key_file_content"].encode()).decode("ascii")
-        return StepAction(
-            command=[
-                "sh",
-                "-c",
-                f"printf '%s' {shlex.quote(encoded)} | base64 -d | "
-                f"install -m 400 -o mongod -g mongod /dev/stdin {KEY_FILE_PATH}",
-            ],
-            timeout_s=30,
+        return _shell_step(
+            f"printf '%s' {shlex.quote(encoded)} | base64 -d | "
+            f"install -m 400 -o mongod -g mongod /dev/stdin {KEY_FILE_PATH}"
         )
 
     def _pre_check(self, spec: BootstrapSpec) -> StepAction:
@@ -362,7 +363,7 @@ class PackagesInstallStrategy:
                 'for the data directory" >&2; exit 1; fi',
             ]
         )
-        return StepAction(command=["sh", "-c", body], timeout_s=30)
+        return _shell_step(body)
 
     def _configure_repository(self, spec: BootstrapSpec) -> StepAction:
         """Install ``percona-release`` and enable the requested PSMDB channel.
@@ -387,7 +388,7 @@ class PackagesInstallStrategy:
             )
         else:
             raise ValueError(f"unsupported OperatingSystem: {spec.os!r}")
-        return StepAction(command=["sh", "-c", command], timeout_s=120)
+        return _shell_step(command, timeout_s=120)
 
     def _install_package(self, spec: BootstrapSpec) -> StepAction:
         """Claim the host for this run, then install ``percona-server-mongodb``.
@@ -404,13 +405,9 @@ class PackagesInstallStrategy:
         run_id = _require_run_id(spec, "install_package")
         pkg_manager = self._require_package_manager(spec.os)
         install = "apt-get install -y" if pkg_manager == "apt-get" else "dnf install -y"
-        return StepAction(
-            command=[
-                "sh",
-                "-c",
-                f"printf '%s\\n' {shlex.quote(run_id)} > {OWNERSHIP_MARKER_PATH}\n"
-                f"{install} percona-server-mongodb",
-            ],
+        return _shell_step(
+            f"printf '%s\\n' {shlex.quote(run_id)} > {OWNERSHIP_MARKER_PATH}\n"
+            f"{install} percona-server-mongodb",
             timeout_s=300,
         )
 
@@ -462,10 +459,7 @@ class PackagesInstallStrategy:
             f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
             f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
         )
-        return StepAction(
-            command=["sh", "-c", command],
-            timeout_s=30,
-        )
+        return _shell_step(command)
 
     def _start_service(self, spec: BootstrapSpec) -> StepAction:
         """Enable and start the ``mongod`` systemd unit.
@@ -655,8 +649,9 @@ class PackagesInstallStrategy:
         :return: The step action.
         """
         del spec
-        body = _owned_only("systemctl disable --now mongod || true", run_id)
-        return StepAction(command=["sh", "-c", body], timeout_s=60)
+        return _owned_step(
+            "systemctl disable --now mongod || true", run_id, timeout_s=60
+        )
 
     def _rollback_remove_config(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Remove the config file ``configure_mongod`` wrote.
@@ -666,8 +661,7 @@ class PackagesInstallStrategy:
         :return: The step action.
         """
         del spec
-        body = _owned_only(f"rm -f {CONFIG_PATH}", run_id)
-        return StepAction(command=["sh", "-c", body], timeout_s=30)
+        return _owned_step(f"rm -f {CONFIG_PATH}", run_id)
 
     def _rollback_remove_keyfile(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Remove the keyFile ``distribute_keyfile`` wrote.
@@ -677,8 +671,7 @@ class PackagesInstallStrategy:
         :return: The step action.
         """
         del spec
-        body = _owned_only(f"rm -f {KEY_FILE_PATH}", run_id)
-        return StepAction(command=["sh", "-c", body], timeout_s=30)
+        return _owned_step(f"rm -f {KEY_FILE_PATH}", run_id)
 
     def _rollback_purge_package(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Purge the ``percona-server-mongodb`` package ``install_package`` installed.
@@ -698,8 +691,7 @@ class PackagesInstallStrategy:
             if pkg_manager == "apt-get"
             else "dnf remove -y percona-server-mongodb"
         )
-        body = _owned_only(f"{remove} || true", run_id)
-        return StepAction(command=["sh", "-c", body], timeout_s=120)
+        return _owned_step(f"{remove} || true", run_id, timeout_s=120)
 
     def _rollback_remove_data(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Remove the data directory, then the ownership marker, as the last step.
@@ -709,5 +701,5 @@ class PackagesInstallStrategy:
         :return: The step action.
         """
         del spec
-        body = _owned_only(f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}", run_id)
-        return StepAction(command=["sh", "-c", body], timeout_s=60)
+        body = f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}"
+        return _owned_step(body, run_id, timeout_s=60)

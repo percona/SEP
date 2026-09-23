@@ -275,9 +275,8 @@ def _require_dispatchable(step: StepRecord, step_name: str, *, what: str) -> Non
 async def _dispatch_and_record(
     tasks_api: RemoteAPI,
     request: Request,
-    run_id: str,
+    run: BootstrapRun,
     target_host: str,
-    step_name: str,
     action: StepAction,
     step: StepRecord,
 ) -> StepRecord:
@@ -285,14 +284,14 @@ async def _dispatch_and_record(
 
     Shared mechanics for every ``:dispatch`` route: only the lookup (see
     :func:`_find_step`) and the action-building differ between a per-host step,
-    a rollback step, and a run-level step.
+    a rollback step, and a run-level step. The dispatch authenticates with
+    SEP's internal token rather than the caller's.
 
     :param tasks_api: The Tasks API client.
     :param request: The current request; see
         :func:`~app.sep.apps.om_bootstrap.dispatch.dispatch_step`.
-    :param run_id: The bootstrap run this step belongs to.
+    :param run: The bootstrap run this step belongs to.
     :param target_host: The node name the dispatch actually runs on.
-    :param step_name: The step's name.
     :param action: The step's built action.
     :param step: The step's current record, about to be dispatched.
     :return: A new :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord`.
@@ -315,9 +314,10 @@ async def _dispatch_and_record(
         reaching a caller.
     """
     try:
-        task_history_id = await dispatch_step(
-            tasks_api, request, run_id, target_host, step_name, action
-        )
+        with tasks_api.auth(require_internal_token()):
+            task_history_id = await dispatch_step(
+                tasks_api, request, str(run.id), target_host, step.name, action
+            )
     except (HTTPException, RuntimeError, aiohttp.ClientError, OSError) as exc:
         detail = exc.detail if isinstance(exc, HTTPException) else str(exc) or repr(exc)
         return step.model_copy(
@@ -568,10 +568,9 @@ async def dispatch_run_step(
         lambda: strategy.build_step(step_name, host, spec, params)
     )
 
-    with tasks_client.auth(require_internal_token()):
-        host_state.steps[step_index] = await _dispatch_and_record(
-            tasks_client, request, str(run.id), host, step_name, action, step
-        )
+    host_state.steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, host, action, step
+    )
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
@@ -632,10 +631,9 @@ async def dispatch_run_run_step(
         lambda: strategy.build_run_step(step_name, hosts, spec, params)
     )
 
-    with tasks_client.auth(require_internal_token()):
-        run_steps[step_index] = await _dispatch_and_record(
-            tasks_client, request, str(run.id), seed_host, step_name, action, step
-        )
+    run_steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, seed_host, action, step
+    )
 
     run.run_steps = dump_run_steps(run_steps)
     run = await BootstrapRunManager.save(session, run)
@@ -693,10 +691,9 @@ async def dispatch_rollback_step(
         lambda: strategy.build_rollback_step(step_name, host, spec)
     )
 
-    with tasks_client.auth(require_internal_token()):
-        host_state.rollback_steps[step_index] = await _dispatch_and_record(
-            tasks_client, request, str(run.id), host, step_name, action, step
-        )
+    host_state.rollback_steps[step_index] = await _dispatch_and_record(
+        tasks_client, request, run, host, action, step
+    )
 
     run.hosts = dump_host_states(states)
     run = await BootstrapRunManager.save(session, run)
