@@ -26,10 +26,11 @@ __all__ = [
 
 import re
 from enum import StrEnum
-from typing import Any, TYPE_CHECKING
+from typing import Any, cast, TYPE_CHECKING
 
 from pydantic import BaseModel, field_validator, JsonValue
 from sqlalchemy import Column, event, Index, inspect, String
+from sqlalchemy.orm import InstanceState
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
@@ -253,7 +254,12 @@ def _mark_updated_by_touched(
     # An absent attribute -- first assignment during construction, or unloaded
     # by expiry -- already records any assignment as a change, and
     # ``flag_modified`` raises on it.
-    if "updated_by" not in inspect(target).dict:
+    #
+    # ty doesn't run SQLAlchemy's mypy plugin, so it can't see mapped classes
+    # as ``Inspectable`` and types ``inspect()``'s return as ``Any | None``;
+    # cast to the runtime-guaranteed ``InstanceState``.
+    state = cast(InstanceState, inspect(target))
+    if "updated_by" not in state.dict:
         return
     flag_modified(target, "updated_by")
 
@@ -282,7 +288,9 @@ def _reject_unstamped_update(
     :raises StaleActorUpdateError: When a tracked column changed but
         ``updated_by`` was not restamped to an actor in the same flush.
     """
-    state = inspect(target)
+    # See the note in ``_mark_updated_by_touched`` above on why ``inspect()``
+    # is cast here rather than used as-is under ty.
+    state = cast(InstanceState, inspect(target))
     tracked_changed = any(
         state.attrs[column].history.has_changes() for column in _ACTOR_TRACKED_COLUMNS
     )
