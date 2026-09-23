@@ -265,7 +265,7 @@ default:
       # managed/services/om.
       - MODULE_NAME: om_inventory
       # OM's bootstrap half: drives MongoDB replica-set bootstrap runs
-      # dispatched from the PMM Hosts page (PMM-15347). Ships in the same
+      # dispatched from the PMM Hosts page. Ships in the same
       # image as om_inventory since both are OM apps; without this entry the
       # app-restricted sidecar build (SEP_RESTRICT_APPS=1) strips the
       # om_bootstrap package and pmm-managed's bootstrap dispatch 404s -
