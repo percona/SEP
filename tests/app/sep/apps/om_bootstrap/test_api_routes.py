@@ -85,7 +85,7 @@ class TestAdminGateIsRegistered:
     """
 
     def test_trigger_run_requires_admin(self) -> None:
-        """Creating a run is root-adjacent enough to be scoped to admins."""
+        """Require admin to create a run, since it is root-adjacent."""
         assert minimum_role_for_endpoint(trigger_run) == UserRole.ADMIN
 
     def test_dispatch_run_step_requires_admin(self) -> None:
@@ -220,7 +220,7 @@ class TestTriggerRunValidation:
     def test_rejects_a_host_count_other_than_one_or_three(
         self, regular_user: CasdoorUser, session: AsyncSession, host_count: int
     ) -> None:
-        """Only one-member and three-member replica sets are in scope."""
+        """Reject anything but a one-member or three-member replica set."""
         hosts = [f"node0{index}" for index in range(host_count)]
 
         response = api_client(regular_user, session).post(
@@ -235,7 +235,7 @@ class TestTriggerRunValidation:
     def test_rejects_a_host_that_is_not_a_node_name(
         self, regular_user: CasdoorUser, session: AsyncSession, host: str
     ) -> None:
-        """A host becomes a script filename and a dispatch target, so it is validated."""
+        """Reject a host that could not safely be a script filename and dispatch target."""
         response = api_client(regular_user, session).post(
             f"{BASE}/runs", json=self._payload(hosts=[host])
         )
@@ -246,7 +246,7 @@ class TestTriggerRunValidation:
     def test_rejects_a_malformed_mongodb_version(
         self, regular_user: CasdoorUser, session: AsyncSession, version: str
     ) -> None:
-        """The version selects a repository channel and must be major.minor[.patch]."""
+        """Reject a version that is not major.minor[.patch]."""
         response = api_client(regular_user, session).post(
             f"{BASE}/runs", json=self._payload(mongodb_version=version)
         )
@@ -257,7 +257,7 @@ class TestTriggerRunValidation:
     def test_rejects_a_malformed_replica_set_name(
         self, regular_user: CasdoorUser, session: AsyncSession, name: str
     ) -> None:
-        """The name is written into mongod.conf, so YAML-breaking input is refused."""
+        """Reject a name that could break the mongod.conf it is written into."""
         response = api_client(regular_user, session).post(
             f"{BASE}/runs", json=self._payload(replica_set_name=name)
         )
@@ -267,7 +267,7 @@ class TestTriggerRunValidation:
     def test_accepts_a_full_patch_version(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """major.minor.patch is as valid as major.minor."""
+        """Accept major.minor.patch as well as major.minor."""
         response = api_client(regular_user, session).post(
             f"{BASE}/runs", json=self._payload(mongodb_version="7.0.14")
         )
@@ -487,7 +487,7 @@ class TestDispatchRunStep:
     async def test_records_a_dispatch_that_never_reaches_the_tasks_api(
         self, regular_user: CasdoorUser, session: AsyncSession, error: Exception
     ) -> None:
-        """A transport failure or a failed script write is a FAILED attempt, not a 5xx."""
+        """Record a transport failure or a failed script write as a FAILED attempt."""
         run = await self._seed_run(session)
 
         with patch(
@@ -579,7 +579,7 @@ class TestDispatchRunStep:
     async def test_409s_for_a_step_already_done(
         self, regular_user: CasdoorUser, session: AsyncSession, step_status: StepStatus
     ) -> None:
-        """A succeeded or skipped step is never re-run on the host."""
+        """Refuse to re-run a succeeded or skipped step on the host."""
         run = await BootstrapRunManager.save(
             session,
             BootstrapRunFactory.build(
@@ -609,7 +609,7 @@ class TestDispatchRunStep:
     async def test_retries_a_failed_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A failed step is dispatchable again -- that is how the stepper retries."""
+        """Retry a failed step, which is how the stepper retries."""
         prior_attempts = 1
         run = await BootstrapRunManager.save(
             session,
@@ -648,7 +648,7 @@ class TestDispatchRunStep:
     async def test_increments_attempt_count_on_each_dispatch(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A dispatched step's attempt_count grows -- PMM's stepper reads it to cap retries."""
+        """Count every dispatch, which PMM's stepper reads to cap retries."""
         run = await self._seed_run(session)
 
         with (
@@ -904,7 +904,7 @@ class TestFinishRun:
     async def test_sweeps_the_runs_step_scripts(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A finished run's scripts are removed, whatever state their steps were in."""
+        """Sweep a finished run's scripts, whatever state their steps were in."""
         run = await self._seed_run(session)
 
         with patch(
@@ -966,7 +966,7 @@ class TestWritingRoutesLockTheRun:
         path: str,
         body: dict[str, str] | None,
     ) -> None:
-        """Without the lock, two concurrent writes race and the later save wins."""
+        """Lock the row, so two concurrent writes cannot race and lose one."""
         run = await BootstrapRunManager.save(
             session,
             BootstrapRunFactory.build(

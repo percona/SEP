@@ -95,7 +95,7 @@ ROOT_INTERPRETER = "sudo bash"
 #: :func:`step_scripts_dir` under -- see ``app.py``.
 ARTIFACT_TYPE = "om_bootstrap_step"
 #: Set by a step script on its first pass, before it re-executes itself under
-#: ``timeout`` -- see :func:`build_step_script`.
+#: ``timeout`` — see :func:`build_step_script`.
 TIMEOUT_GUARD_VAR = "OM_BOOTSTRAP_STEP_TIMED"
 #: Grace period between ``timeout``'s SIGTERM and its SIGKILL, in seconds.
 TIMEOUT_KILL_AFTER_S = 10
@@ -110,8 +110,8 @@ def step_scripts_dir() -> Path:
     ``artifact_base_dirs`` calls on every download -- it has to resolve to the
     same directory every time, not a fresh one per call.
 
-    The directory is ``0700`` -- re-applied on every call, so a directory left
-    behind by an older build with looser permissions is tightened too -- since
+    The directory is ``0700`` — re-applied on every call, so a directory left
+    behind by an older build with looser permissions is tightened too — since
     the scripts in it can carry a per-dispatch secret.
 
     :return: The scratch directory, created if it did not already exist.
@@ -144,7 +144,7 @@ def build_step_script(action: StepAction) -> str:
 
     An ``["sh", "-c", body]`` action is written with ``body`` as the script's
     own body rather than as a nested ``sh -c`` line: a nested shell would carry
-    the whole body -- and any secret embedded in it -- in its argv, readable by
+    the whole body — and any secret embedded in it — in its argv, readable by
     any local user through ``ps`` for as long as the step runs. Any other argv
     (e.g. ``["systemctl", "enable", "--now", "mongod"]``) is ``shlex.join``-ed
     into one properly quoted line.
@@ -246,7 +246,7 @@ def cleanup_run_scripts(run_id: str) -> None:
     """Remove every step script of one run, whatever state its steps are in.
 
     Called once a run is finished: no step of it will be dispatched again, so
-    nothing will download any of its scripts again either -- including one
+    nothing will download any of its scripts again either — including one
     whose step was still ``running`` or never reconciled. Best-effort, like
     :func:`cleanup_step_script`.
 

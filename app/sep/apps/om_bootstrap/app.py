@@ -24,7 +24,7 @@ read-only in effect but bootstrap-specific in scope (disk space, path, OS
 version).
 
 ``sidebar=False`` and ``custom_ui=False``: there is nothing to navigate to here.
-The wizard lives in PMM's own UI -- the consumer is PMM's ``om`` managed service driving this app's API to
+The wizard lives in PMM's own UI — the consumer is PMM's ``om`` managed service driving this app's API to
 trigger and poll bootstraps, the same "consumer drives/polls, no SEP-native
 page" shape `om_inventory` established.
 

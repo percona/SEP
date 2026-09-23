@@ -48,8 +48,8 @@ A Tasks API read that fails does not fail the reconcile: a ``404``/``410`` means
 the step's ``TaskHistory`` record is gone and it can never finish, so the step
 is recorded ``failed``; any other failure (an upstream error, a transport error,
 a timeout) is transient, so the step stays ``running`` and the next poll tries
-again. A readable answer that is not a ``TaskHistory`` -- not a JSON object, or
-without a string ``status`` -- is a ``502``, as it would otherwise leave the step
+again. A readable answer that is not a ``TaskHistory`` — not a JSON object, or
+without a string ``status`` — is a ``502``, as it would otherwise leave the step
 looking in flight forever.
 """
 
@@ -89,7 +89,7 @@ logger = logging.getLogger(__name__)
 #: run is fully done -- a skipped step is as final as a succeeded one.
 _DONE_STATUSES = frozenset({StepStatus.SUCCEEDED, StepStatus.SKIPPED})
 
-#: ``TaskHistory`` status values that mean "still in flight" -- everything else
+#: ``TaskHistory`` status values that mean "still in flight" — everything else
 #: is terminal.
 _IN_FLIGHT_STATUS_VALUES = frozenset(
     status.value for status in TaskHistoryStatusEnum.active_statuses()
@@ -114,7 +114,7 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
         dispatch's terminal status, or ``failed`` when its ``TaskHistory``
         record no longer exists.
     :raises HTTPBadGatewayException: When the Tasks API answers with something
-        that is not a ``TaskHistory`` -- not a JSON object, or without a string
+        that is not a ``TaskHistory`` — not a JSON object, or without a string
         ``status``.
     """
     if step.status != StepStatus.RUNNING or step.task_history_id is None:

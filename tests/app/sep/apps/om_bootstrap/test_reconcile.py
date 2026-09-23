@@ -150,7 +150,7 @@ class TestReconcileStep:
     async def test_a_history_payload_without_a_string_status_raises(
         self, payload: dict[str, object]
     ) -> None:
-        """A TaskHistory with no readable status is a bad upstream answer, not in flight."""
+        """Reject a TaskHistory without a readable status as a bad upstream answer."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -170,7 +170,7 @@ class TestReconcileStep:
     async def test_a_vanished_history_record_marks_the_step_failed(
         self, error: HTTPException
     ) -> None:
-        """A 404/410 means the dispatch can never be read again, so the step fails."""
+        """Fail the step on a 404/410, since its dispatch can never be read again."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,
@@ -198,7 +198,7 @@ class TestReconcileStep:
     async def test_a_transient_read_failure_leaves_the_step_running(
         self, error: Exception
     ) -> None:
-        """An unreachable or failing Tasks API is retried on the next poll, not fatal."""
+        """Leave the step running when the Tasks API is unreachable or failing."""
         step = StepRecord(
             name="install_package",
             status=StepStatus.RUNNING,

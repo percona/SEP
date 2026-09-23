@@ -110,7 +110,7 @@ class TestBuildStep:
     def test_every_planned_step_builds_a_runnable_action(
         self, step_name: str, os_: OperatingSystem
     ) -> None:
-        """Every name plan_steps returns builds a non-empty command with a real timeout."""
+        """Build a non-empty command with a real timeout for every name plan_steps returns."""
         action = PackagesInstallStrategy().build_step(
             step_name, "node00", _spec(os_), params=_STEP_PARAMS.get(step_name)
         )
@@ -149,7 +149,7 @@ class TestBuildStep:
         assert "psmdb-80" in command
 
     def test_configure_repository_quotes_the_channel(self) -> None:
-        """The channel reaches the shell quoted, whatever the version string held."""
+        """Pass the channel to the shell quoted, whatever the version string held."""
         spec = _spec(OperatingSystem.UBUNTU).model_copy(
             update={"mongodb_version": "8.0;touch /tmp/x"}
         )
@@ -198,7 +198,7 @@ class TestBuildStep:
     def test_install_package_claims_the_host_before_installing(
         self, os_: OperatingSystem
     ) -> None:
-        """The ownership marker lands first, so a half-finished install still rolls back."""
+        """Claim the host with the ownership marker first, so a half-finished install rolls back."""
         action = PackagesInstallStrategy().build_step(
             "install_package", "node00", _spec(os_)
         )
@@ -267,7 +267,7 @@ class TestBuildStep:
             )
 
     def test_distribute_keyfile_writes_the_given_content(self) -> None:
-        """The dispatched command carries exactly the content the caller supplied."""
+        """Carry exactly the content the caller supplied, base64-encoded."""
         content = "super-secret-keyfile-bytes"
         action = PackagesInstallStrategy().build_step(
             "distribute_keyfile",
@@ -285,7 +285,7 @@ class TestBuildStep:
     def test_distribute_keyfile_content_cannot_break_out_of_the_command(
         self,
     ) -> None:
-        """Content holding a heredoc delimiter or a command reaches the file verbatim."""
+        """Decode content holding a heredoc delimiter or a command verbatim."""
         content = "abc\nMONGOD_KEYFILE\n$(touch /tmp/pwned)'\"\n"
         action = PackagesInstallStrategy().build_step(
             "distribute_keyfile",
@@ -364,7 +364,7 @@ class TestBuildRunStep:
         assert "clusterMonitor" in command
 
     def test_create_pmm_monitoring_user_keeps_the_password_out_of_argv(self) -> None:
-        """The JS is read from a private temp file, never passed through --eval."""
+        """Read the JS from a private temp file, never through --eval."""
         action = PackagesInstallStrategy().build_run_step(
             "create_pmm_monitoring_user",
             ["node00"],
@@ -423,7 +423,7 @@ class TestBuildRollbackStep:
     def test_every_rollback_step_is_a_no_op_without_the_marker(
         self, step_name: str, os_: OperatingSystem
     ) -> None:
-        """Every rollback step first checks the host is one this strategy installed on."""
+        """Skip every rollback step on a host this strategy never installed on."""
         action = PackagesInstallStrategy().build_rollback_step(
             step_name, "node00", _spec(os_)
         )
@@ -433,7 +433,7 @@ class TestBuildRollbackStep:
         )
 
     def test_remove_data_removes_the_marker_last(self) -> None:
-        """The marker outlives every other rollback step, so a retried rollback still runs."""
+        """Remove the marker after everything else, so a retried rollback still runs."""
         action = PackagesInstallStrategy().build_rollback_step(
             "remove_data", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -524,7 +524,7 @@ class TestPreCheckCommand:
     def test_passes_on_a_clean_host(
         self, tmp_path: Path, paths: tuple[Path, Path]
     ) -> None:
-        """No MongoDB anywhere and enough disk: nothing to refuse."""
+        """Pass on a host with no MongoDB anywhere and enough disk."""
         result = self._run(tmp_path)
 
         assert result.returncode == 0, result.stderr
@@ -532,7 +532,7 @@ class TestPreCheckCommand:
     def test_passes_with_an_empty_data_directory(
         self, tmp_path: Path, paths: tuple[Path, Path]
     ) -> None:
-        """An empty data directory is not a MongoDB, and its free space is measured."""
+        """Pass with an empty data directory, measuring its free space."""
         paths[1].mkdir()
 
         result = self._run(tmp_path)
@@ -542,7 +542,7 @@ class TestPreCheckCommand:
     def test_fails_when_mongod_is_on_path(
         self, tmp_path: Path, paths: tuple[Path, Path]
     ) -> None:
-        """An installed mongod means the host already runs a MongoDB of its own."""
+        """Fail when a mongod is installed: the host runs a MongoDB of its own."""
         result = self._run(tmp_path, with_mongod=True)
 
         assert result.returncode != 0
@@ -551,7 +551,7 @@ class TestPreCheckCommand:
     def test_fails_when_the_config_file_exists(
         self, tmp_path: Path, paths: tuple[Path, Path]
     ) -> None:
-        """A mongod.conf already present belongs to someone else's install."""
+        """Fail when a mongod.conf from someone else's install is present."""
         paths[0].write_text("net: {}\n")
 
         result = self._run(tmp_path)
@@ -562,7 +562,7 @@ class TestPreCheckCommand:
     def test_fails_when_the_data_directory_is_not_empty(
         self, tmp_path: Path, paths: tuple[Path, Path]
     ) -> None:
-        """Existing data files are exactly what rollback must never delete."""
+        """Fail on existing data files, exactly what rollback must never delete."""
         paths[1].mkdir()
         (paths[1] / "WiredTiger").write_text("")
 
@@ -577,7 +577,7 @@ class TestPreCheckCommand:
         paths: tuple[Path, Path],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Less free space than the minimum fails the check, naming why."""
+        """Fail with less free space than the minimum, naming why."""
         monkeypatch.setattr(packages, "MIN_DATA_DISK_BYTES", 2**62)
 
         result = self._run(tmp_path)
@@ -614,7 +614,7 @@ class TestRollbackCommands:
     def test_leaves_a_host_without_the_marker_untouched(
         self, paths: tuple[Path, Path, Path]
     ) -> None:
-        """A MongoDB this strategy never installed survives rollback intact."""
+        """Leave a MongoDB this strategy never installed intact."""
         config, data, _marker = paths
 
         self._run("remove_config")
@@ -626,7 +626,7 @@ class TestRollbackCommands:
     def test_removes_what_it_installed_when_the_marker_exists(
         self, paths: tuple[Path, Path, Path]
     ) -> None:
-        """With the marker, rollback removes the config and data, then the marker."""
+        """Remove the config and data, then the marker, when the marker exists."""
         config, data, marker = paths
         marker.touch()
 

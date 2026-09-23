@@ -133,12 +133,12 @@ def _mongosh_eval(js: str) -> StepAction:
     ``admin.atlascli`` (Atlas CLI local-deployment detection) as its first
     command on every connection, before anything in ``js`` runs. Against a
     freshly keyFile-secured member with no user yet, that probe is rejected as
-    unauthorized, and -- confirmed against a real run -- the rejection closes
+    unauthorized, and — confirmed against a real run — the rejection closes
     the localhost exception for the rest of the session, so a first-user
     ``createUser`` then fails with the same "not authorized" error. Harmless on
     ``rs_initiate``, which doesn't need the exception (``replSetInitiate`` is
     separately allowed unauthenticated whenever no replica set config exists
-    yet) -- set on every mongosh call so no caller inherits the same trap.
+    yet) — set on every mongosh call so no caller inherits the same trap.
 
     :param js: The JavaScript to evaluate.
     :return: The step action.
@@ -265,7 +265,7 @@ class PackagesInstallStrategy:
         to already exists) and before ``configure_mongod``, which enables
         ``security.keyFile`` pointing at :data:`KEY_FILE_PATH`. The content comes
         from ``params`` rather than being generated here: keyFiles are generated
-        once per run and persisted, encrypted, in PMM's Postgres -- this strategy
+        once per run and persisted, encrypted, in PMM's Postgres — this strategy
         only ever plants the one copy the stepper hands it, transiently, at
         dispatch time (see
         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s docstring).
@@ -278,6 +278,7 @@ class PackagesInstallStrategy:
         :param spec: The host's bootstrap spec. Unused -- the keyFile's content is
             entirely determined by ``params``, not by anything in ``spec``.
         :param params: Must contain ``"key_file_content"``.
+        :return: The step action.
         :raises ValueError: If ``params`` is missing ``"key_file_content"``.
         """
         del spec
@@ -297,11 +298,11 @@ class PackagesInstallStrategy:
     def _pre_check(self, spec: BootstrapSpec) -> StepAction:
         """Verify OS, paths, and disk space before touching anything.
 
-        The decided pre-checks -- OS, path, disk space -- all read-only and fast
+        The decided pre-checks — OS, path, disk space — all read-only and fast
         enough to run inline rather than as a background job:
 
         - **OS**: the OS's package manager is present.
-        - **Path**: no MongoDB already lives on the host -- no ``mongod`` on
+        - **Path**: no MongoDB already lives on the host — no ``mongod`` on
           ``PATH``, no :data:`CONFIG_PATH`, and :data:`DATA_PATH` absent or
           empty. This is also what makes rollback safe: ``install_package``
           claims the host with :data:`OWNERSHIP_MARKER_PATH` only after this
@@ -311,6 +312,9 @@ class PackagesInstallStrategy:
           otherwise).
 
         Each failed check names itself on stderr.
+
+        :param spec: The host's bootstrap spec; only its OS is read.
+        :return: The step action.
         """
         pkg_manager = self._require_package_manager(spec.os)
         body = "\n".join(
@@ -358,7 +362,10 @@ class PackagesInstallStrategy:
 
         The marker goes first so a rollback of a half-finished install still
         cleans up. It is only ever planted after ``pre_check`` proved the host
-        had no MongoDB of its own -- see the module docstring.
+        had no MongoDB of its own — see the module docstring.
+
+        :param spec: The host's bootstrap spec; only its OS is read.
+        :return: The step action.
         """
         pkg_manager = self._require_package_manager(spec.os)
         install = "apt-get install -y" if pkg_manager == "apt-get" else "dnf install -y"
@@ -487,9 +494,13 @@ class PackagesInstallStrategy:
     def _rs_initiate(self, hosts: list[str], spec: BootstrapSpec) -> StepAction:
         """Initiate the replica set from its seed member (``hosts[0]``).
 
-        Equal-priority members, no voting/hidden/delayed configuration -- that
+        Equal-priority members, no voting/hidden/delayed configuration: that
         per-member tuning is later-phase scope, out of reach until the Configure
         step actually collects it.
+
+        :param hosts: Every member, in run order; ``hosts[0]`` is the seed.
+        :param spec: The run's bootstrap spec, for the replica set name.
+        :return: The step action.
         """
         members = [
             {"_id": index, "host": f"{host}:{MONGOD_PORT}"}
@@ -508,6 +519,8 @@ class PackagesInstallStrategy:
         secret's durable home, not this strategy. Run through
         :func:`_mongosh_file`, so the password never appears in any argv.
 
+        :param params: Must contain ``"username"`` and ``"password"``.
+        :return: The step action.
         :raises ValueError: If ``params`` is missing ``"username"`` or
             ``"password"``.
         """
@@ -536,7 +549,7 @@ class PackagesInstallStrategy:
         blast radius.
 
         Every step is a no-op on a host without :data:`OWNERSHIP_MARKER_PATH`
-        -- see the module docstring.
+        — see the module docstring.
 
         :param spec: The host's bootstrap spec.
         :return: Step names, in the order rollback applies them.
@@ -610,6 +623,9 @@ class PackagesInstallStrategy:
         planted before the package manager runs, so a host whose
         ``install_package`` failed still rolls back, and the purge tolerates a
         package that never landed.
+
+        :param spec: The host's bootstrap spec; only its OS is read.
+        :return: The step action.
         """
         pkg_manager = self._require_package_manager(spec.os)
         remove = (
@@ -622,7 +638,11 @@ class PackagesInstallStrategy:
         )
 
     def _rollback_remove_data(self, spec: BootstrapSpec) -> StepAction:
-        """Remove the data directory, then the ownership marker -- the last rollback step."""
+        """Remove the data directory, then the ownership marker, as the last rollback step.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :return: The step action.
+        """
         del spec
         return StepAction(
             command=[

@@ -17,7 +17,7 @@
 
 PMM's ``om`` service is the only intended caller: it drives the state machine
 -- deciding when to dispatch which step, when to retry, when to give up and
-roll back -- as the HA-leader-only stepper, reading
+roll back — as the HA-leader-only stepper, reading
 this router to know what happened and calling it to make something happen
 next. This router itself decides none of that; it only ever does exactly what
 it is asked; see ``reconcile.py``'s own docstring for the same boundary stated
@@ -26,12 +26,12 @@ from the other side.
 Auth is applied at the mount level: ``/api/apps`` carries the
 ``IsApiAuthenticated`` router guard, and unsafe methods additionally require
 the rank :func:`app.api.deps.require_minimum_role` registers per route.
-Triggering a run or a step is root execution on a database host -- the
+Triggering a run or a step is root execution on a database host — the
 decided gate is admin-only, so every mutating route registers
 :attr:`~app.core.auth.models.UserRole.ADMIN` explicitly.
 
 Every route that writes a run reads it with a row lock
-(``BootstrapRunManager.get_run(..., for_update=True)``) and commits in the same
+(:func:`_get_run_for_update`) and commits in the same
 transaction, so two concurrent requests against one run serialise rather than
 the later save silently overwriting the earlier one's ``hosts``/``run_steps``
 document. A ``:dispatch`` route holds that lock across its one Tasks API call on
@@ -48,6 +48,7 @@ import aiohttp
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
 from pydantic import BaseModel, Field, StringConstraints
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
@@ -102,7 +103,7 @@ _FINISHABLE_STATUSES = frozenset(
 #: twice; a succeeded or skipped one would re-run a step already done.
 _DISPATCHABLE_STATUSES = frozenset({StepStatus.PENDING, StepStatus.FAILED})
 
-#: Replica-set sizes a run accepts -- the decided phase-1 topologies.
+#: Replica-set sizes a run accepts — the decided phase-1 topologies.
 _ALLOWED_HOST_COUNTS = frozenset({1, 3})
 
 #: A node name as Nomad and the executor know it. Excludes anything that could
@@ -135,7 +136,7 @@ class TriggerRunRequest(BaseModel):
 
 
 class DispatchStepRequest(BaseModel):
-    """Optional body for any ``:dispatch`` route.
+    """Carry the optional body of any ``:dispatch`` route.
 
     :param params: Per-dispatch values the step being dispatched needs but
         cannot compute itself -- a keyFile's content, a generated
@@ -166,7 +167,7 @@ class FinishRunRequest(BaseModel):
 
 
 class RunResponse(BaseModel):
-    """One bootstrap run, in full.
+    """Describe one bootstrap run in full.
 
     :param id: The run's id.
     :param status: The run's lifecycle state.
@@ -230,8 +231,21 @@ def _run_response(
     )
 
 
+async def _get_run_for_update(session: AsyncSession, run_id: UUID) -> BootstrapRun:
+    """Read a run under its row lock, for a route that writes it back.
+
+    See the module docstring for why every writing route takes the lock.
+
+    :param session: The database session; its transaction holds the lock.
+    :param run_id: The run's id.
+    :raises HTTPNotFoundException: When there is no such run.
+    :return: The run.
+    """
+    return await BootstrapRunManager.get_run(session, run_id, for_update=True)
+
+
 def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
-    """Return the index of ``step_name`` in ``steps``, or 404.
+    """Return the index of a dispatchable ``step_name`` in ``steps``.
 
     Shared by every ``:dispatch`` route below -- a host's forward steps, its
     rollback steps, and a run's own run-level steps are all "find this name in
@@ -242,6 +256,8 @@ def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
     :param what: A human-readable description of what was searched, for the
         404 detail (e.g. ``"host 'node00'"``).
     :raises HTTPNotFoundException: When no step in ``steps`` is named ``step_name``.
+    :raises HTTPConflictException: When that step cannot be dispatched now (see
+        :func:`_require_dispatchable`).
     :return: The index of the matching step.
     """
     index = next((i for i, step in enumerate(steps) if step.name == step_name), None)
@@ -249,6 +265,7 @@ def _find_step(steps: list[StepRecord], step_name: str, *, what: str) -> int:
         raise HTTPNotFoundException(
             detail=f"Step {step_name!r} is not planned for {what}"
         )
+    _require_dispatchable(steps[index], step_name, what=what)
     return index
 
 
@@ -259,7 +276,7 @@ def _require_dispatchable(step: StepRecord, step_name: str, *, what: str) -> Non
     :param step_name: Its name, for the conflict detail.
     :param what: See :func:`_find_step`.
     :raises HTTPConflictException: When ``step.status`` is not in
-        :data:`_DISPATCHABLE_STATUSES` -- already running, succeeded, or skipped.
+        :data:`_DISPATCHABLE_STATUSES` — already running, succeeded, or skipped.
     """
     if step.status not in _DISPATCHABLE_STATUSES:
         raise HTTPConflictException(
@@ -292,7 +309,7 @@ async def _dispatch_and_record(
     :return: A new :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord`.
         ``RUNNING`` when the Tasks API accepted the dispatch, with
         :attr:`~app.sep.apps.om_bootstrap.strategy.StepRecord.attempt_count`
-        incremented either way -- PMM's stepper reads this to enforce its
+        incremented either way — PMM's stepper reads this to enforce its
         retry-then-rollback policy. ``FAILED``, also with ``attempt_count``
         incremented and ``detail`` set, when the Tasks API itself rejected the
         dispatch (:class:`~fastapi.HTTPException`, e.g. an unknown or
@@ -300,7 +317,7 @@ async def _dispatch_and_record(
         (:class:`aiohttp.ClientError`, or an :class:`OSError` such as a
         timeout), accepted it without returning a history id
         (:class:`RuntimeError`), or the step's script could not be written
-        locally (:class:`OSError`) -- a dispatch that never
+        locally (:class:`OSError`) — a dispatch that never
         starts is as real an outcome as one that starts and later fails, and
         recording it here is what lets the stepper's retry-then-rollback policy
         see it at all. Without this, such a step stays ``PENDING`` forever:
@@ -448,7 +465,7 @@ async def get_bootstrap_run(
     :raises HTTPNotFoundException: When there is no such run.
     :return: The run, with current step status.
     """
-    run = await BootstrapRunManager.get_run(session, run_id, for_update=True)
+    run = await _get_run_for_update(session, run_id)
 
     with tasks_client.auth(require_internal_token()):
         changed = await reconcile_run(tasks_client, run)
@@ -530,7 +547,7 @@ async def dispatch_run_step(
     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
 
     Only a ``pending`` or ``failed`` step is dispatched. Re-dispatching a
-    ``failed`` one is how PMM's driver implements its retry policy -- this route
+    ``failed`` one is how PMM's driver implements its retry policy — this route
     does not itself decide *whether* to retry, only executes the request.
 
     :param run_id: The run's id.
@@ -548,7 +565,7 @@ async def dispatch_run_step(
         skipped.
     :return: The run, with the dispatched step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id, for_update=True)
+    run = await _get_run_for_update(session, run_id)
 
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
@@ -557,7 +574,6 @@ async def dispatch_run_step(
     what = f"host {host!r}"
     step_index = _find_step(host_state.steps, step_name, what=what)
     step = host_state.steps[step_index]
-    _require_dispatchable(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     params = body.params if body is not None else None
@@ -612,7 +628,7 @@ async def dispatch_run_run_step(
         skipped.
     :return: The run, with the dispatched run-level step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id, for_update=True)
+    run = await _get_run_for_update(session, run_id)
 
     states = parse_host_states(run)
     if not states:
@@ -623,7 +639,6 @@ async def dispatch_run_run_step(
     what = f"run {run_id}"
     step_index = _find_step(run_steps, step_name, what=what)
     step = run_steps[step_index]
-    _require_dispatchable(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     hosts = [state.host for state in states]
@@ -678,7 +693,7 @@ async def dispatch_rollback_step(
         skipped.
     :return: The run, with the dispatched rollback step now ``running``.
     """
-    run = await BootstrapRunManager.get_run(session, run_id, for_update=True)
+    run = await _get_run_for_update(session, run_id)
 
     states = parse_host_states(run)
     host_state = next((state for state in states if state.host == host), None)
@@ -687,7 +702,6 @@ async def dispatch_rollback_step(
     what = f"host {host!r}"
     step_index = _find_step(host_state.rollback_steps, step_name, what=what)
     step = host_state.rollback_steps[step_index]
-    _require_dispatchable(step, step_name, what=what)
 
     strategy, spec = _spec_for(run)
     action = _build_step_action(
@@ -730,7 +744,7 @@ async def finish_run(
     :raises HTTPConflictException: When the run is already terminal.
     :return: The run, now terminal.
     """
-    run = await BootstrapRunManager.get_run(session, run_id, for_update=True)
+    run = await _get_run_for_update(session, run_id)
     if body.status not in _FINISHABLE_STATUSES:
         raise HTTPBadRequestException(
             detail=f"status must be one of {sorted(_FINISHABLE_STATUSES)}"

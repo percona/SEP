@@ -56,7 +56,7 @@ class BootstrapRunManager(BaseSQLModelManager):
         """Return one run, or 404.
 
         With ``for_update`` the row is locked (``SELECT ... FOR UPDATE``) until
-        the session's transaction ends -- the caller's :meth:`save` commits it,
+        the session's transaction ends — the caller's :meth:`save` commits it,
         and closing the session without saving rolls it back. Every route that
         writes a run back takes this lock, so two concurrent requests against
         the same run serialise instead of the later commit overwriting the
@@ -96,7 +96,7 @@ class BootstrapRunManager(BaseSQLModelManager):
         The intended caller is PMM's HA-leader-only stepper: on every tick, and
         especially right after a leader failover, it needs to discover every
         run still in flight by reading this API rather than from any state of
-        its own -- ``status=RUNNING`` is exactly that query.
+        its own — ``status=RUNNING`` is exactly that query.
 
         :param session: The database session.
         :param status: Restrict to runs in this status. ``None`` for any status.

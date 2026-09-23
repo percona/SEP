@@ -30,7 +30,7 @@ from app.sep.apps.om_bootstrap.strategy import StepAction
 
 #: What coreutils ``timeout`` exits with when it had to stop the command.
 TIMED_OUT_EXIT = 124
-#: Owner read/write only -- a step script can carry a secret.
+#: Owner read/write only — a step script can carry a secret.
 PRIVATE_FILE_MODE = 0o600
 #: Owner-only access to the scratch directory holding those scripts.
 PRIVATE_DIR_MODE = 0o700
@@ -52,9 +52,9 @@ class TestBuildStepScript:
     """Assert both action shapes strategies produce render into one valid script."""
 
     def test_renders_a_shell_wrapped_command_as_the_script_body(self) -> None:
-        """An ["sh", "-c", body] action becomes the body itself, not a nested sh -c.
+        """Write an ["sh", "-c", body] action's body as the script, not a nested sh -c.
 
-        A nested ``sh -c`` would carry the body -- and any secret in it -- in
+        A nested ``sh -c`` would carry the body — and any secret in it — in
         its argv, visible in ``ps``.
         """
         script = dispatch.build_step_script(
@@ -73,7 +73,7 @@ class TestBuildStepScript:
 
     @pytest.mark.skipif(shutil.which("timeout") is None, reason="needs coreutils")
     def test_enforces_the_action_timeout(self, tmp_path: Path) -> None:
-        """A step that overruns timeout_s is killed and exits 124, not left hanging."""
+        """Kill a step that overruns timeout_s, exiting 124 instead of hanging."""
         script = tmp_path / "step.sh"
         script.write_text(
             dispatch.build_step_script(
@@ -88,7 +88,7 @@ class TestBuildStepScript:
         assert result.returncode == TIMED_OUT_EXIT
 
     def test_runs_the_body_once_under_the_timeout(self, tmp_path: Path) -> None:
-        """The re-executed pass runs the body instead of wrapping itself again."""
+        """Run the body once on the re-executed pass instead of wrapping again."""
         script = tmp_path / "step.sh"
         script.write_text(
             dispatch.build_step_script(StepAction(command=["echo", "ran"]))
@@ -149,7 +149,7 @@ class TestWriteAndCleanupStepScript:
 
     @pytest.mark.asyncio
     async def test_script_is_private_to_its_owner(self) -> None:
-        """A script can carry a secret, so it is 0600 in a 0700 directory."""
+        """Keep a script, which can carry a secret, 0600 in a 0700 directory."""
         run_id, host, step_name = "run-perms", "node00", "verify"
 
         path, _digest = await dispatch.write_step_script(
@@ -163,7 +163,7 @@ class TestWriteAndCleanupStepScript:
 
     @pytest.mark.asyncio
     async def test_rewrite_tightens_a_pre_existing_script(self) -> None:
-        """A retry's rewrite of an existing, looser file leaves it 0600."""
+        """Tighten an existing, looser file to 0600 when a retry rewrites it."""
         run_id, host, step_name = "run-retry-perms", "node00", "verify"
         path = dispatch.step_scripts_dir() / dispatch.step_script_filename(
             run_id, host, step_name
@@ -180,7 +180,7 @@ class TestWriteAndCleanupStepScript:
             dispatch.cleanup_step_script(run_id, host, step_name)
 
     def test_scripts_dir_is_tightened_when_it_already_exists(self) -> None:
-        """A directory left with looser permissions is brought back to 0700."""
+        """Tighten a directory left with looser permissions back to 0700."""
         directory = dispatch.step_scripts_dir()
         directory.chmod(0o755)
 
@@ -194,7 +194,7 @@ class TestWriteAndCleanupStepScript:
 
     @pytest.mark.asyncio
     async def test_cleanup_run_scripts_removes_only_that_runs_scripts(self) -> None:
-        """Finishing a run sweeps every script of it, and no other run's."""
+        """Sweep every script of a finished run, and no other run's."""
         action = StepAction(command=["true"])
         swept = [
             await dispatch.write_step_script("run-sweep", host, step, action)
@@ -273,7 +273,7 @@ class TestDispatchStep:
     async def test_removes_the_script_when_the_dispatch_fails(
         self, post_error: Exception
     ) -> None:
-        """No executor will download a script whose dispatch failed, so it is removed."""
+        """Remove the script of a failed dispatch, which no executor will download."""
         path = dispatch.step_scripts_dir() / dispatch.step_script_filename(
             "run-1", "node00", "install_package"
         )
@@ -285,7 +285,7 @@ class TestDispatchStep:
 
     @pytest.mark.asyncio
     async def test_removes_the_script_when_no_history_id_comes_back(self) -> None:
-        """The id-less contract violation leaves no script behind either."""
+        """Remove the script when the Tasks API returns no history id either."""
         path = dispatch.step_scripts_dir() / dispatch.step_script_filename(
             "run-1", "node00", "install_package"
         )

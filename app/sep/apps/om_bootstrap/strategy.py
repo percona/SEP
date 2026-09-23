@@ -25,7 +25,7 @@ deliberately kept out of it and live in sibling modules instead:
   :mod:`~app.sep.apps.om_bootstrap.dispatch`'s job, so a strategy never touches
   the network or a host.
 - **Persisting progress.** :class:`StepRecord`/:class:`HostBootstrapState` are the
-  *shape* progress takes, not a database row -- they are stored as JSON documents
+  *shape* progress takes, not a database row — they are stored as JSON documents
   on :class:`~app.sep.apps.om_bootstrap.models.BootstrapRun` (see
   :mod:`~app.sep.apps.om_bootstrap.persistence`).
 
@@ -67,7 +67,7 @@ class StepStatus(StrEnum):
 
 
 class InstallMethod(StrEnum):
-    """Which :class:`InstallStrategy` a run uses.
+    """Name the :class:`InstallStrategy` a run uses.
 
     Only ``PACKAGES`` has an implementation
     (:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).
@@ -89,7 +89,7 @@ class OperatingSystem(StrEnum):
 
 
 class BootstrapSpec(BaseModel):
-    """What one host's bootstrap needs to know to plan and build its steps.
+    """Hold what one host's bootstrap needs to know to plan and build its steps.
 
     Deliberately minimal -- just enough to make :class:`InstallStrategy` concrete.
     The full Configure-step shape (replica set topology, member roles, TLS mode)
@@ -97,12 +97,12 @@ class BootstrapSpec(BaseModel):
 
     :param install_method: Which strategy plans and builds this host's steps.
     :param os: The target host's OS, from ``om_inventory``'s already-collected
-        facts -- not re-detected here.
+        facts — not re-detected here.
     :param mongodb_version: The Percona Server for MongoDB version to install, e.g.
         ``"8.0"``. Selects the ``psmdb-<version>`` repository channel.
     :param replica_set_name: The replica set this host joins. ``rs.initiate`` is a
         run-level step and multi-host orchestration is PMM's stepper's job, not a
-        single host's -- this field is what one host's own config file needs to
+        single host's — this field is what one host's own config file needs to
         name.
     """
 
@@ -113,7 +113,7 @@ class BootstrapSpec(BaseModel):
 
 
 class StepAction(BaseModel):
-    """What running one step actually requires -- the execution layer's input.
+    """Describe what running one step requires, as the execution layer's input.
 
     Kept dispatch-mechanism-agnostic on purpose: every strategy's steps resolve to
     one of these, so :mod:`~app.sep.apps.om_bootstrap.dispatch`, which turns it
@@ -132,7 +132,7 @@ class StepAction(BaseModel):
 
 
 class StepRecord(BaseModel):
-    """One step's persisted-shape progress -- a host's, or a run's.
+    """Record one step's progress, for a host or for a run.
 
     The same shape serves both :attr:`HostBootstrapState.steps` (per-host) and
     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,
@@ -221,11 +221,11 @@ class HostBootstrapState(BaseModel):
 
 @runtime_checkable
 class InstallStrategy(Protocol):
-    """One way to get MongoDB installed and configured on a host.
+    """Define one way to get MongoDB installed and configured on a host.
 
     A strategy owns *how*; the state machine (PMM's ``om`` service, driving as the
     HA-leader-only stepper) owns *when* and *whether the run as a whole should
-    continue*, and ``om_bootstrap``'s API persists the progress -- neither knows
+    continue*, and ``om_bootstrap``'s API persists the progress — neither knows
     or cares which strategy is running, only that every strategy answers these
     questions the same way. This is the "abstracted pre-check/install/configure/
     test" requirement.
@@ -250,7 +250,7 @@ class InstallStrategy(Protocol):
     ``build_step`` and ``build_run_step`` both take a ``params`` mapping for the
     one thing a strategy cannot itself supply: per-run secrets (a keyFile's
     content, a generated monitoring-user password). These live durably in PMM's
-    encrypted Postgres, not SEP's --
+    encrypted Postgres, not SEP's —
     ``params`` is how the stepper hands one to a single dispatch, transiently,
     without ``om_bootstrap`` ever persisting the plaintext in
     :class:`StepRecord`/:class:`~app.sep.apps.om_bootstrap.models.BootstrapRun`.

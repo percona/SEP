@@ -2124,7 +2124,7 @@ export interface paths {
      *     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
      *
      *     Only a ``pending`` or ``failed`` step is dispatched. Re-dispatching a
-     *     ``failed`` one is how PMM's driver implements its retry policy -- this route
+     *     ``failed`` one is how PMM's driver implements its retry policy — this route
      *     does not itself decide *whether* to retry, only executes the request.
      *
      *     :param run_id: The run's id.
@@ -10516,7 +10516,7 @@ export interface components {
     om_bootstrap__BootstrapRunStatus: 'running' | 'succeeded' | 'failed' | 'rolled_back';
     /**
      * DispatchStepRequest
-     * @description Optional body for any ``:dispatch`` route.
+     * @description Carry the optional body of any ``:dispatch`` route.
      *
      *     :param params: Per-dispatch values the step being dispatched needs but
      *         cannot compute itself -- a keyFile's content, a generated
@@ -10579,7 +10579,7 @@ export interface components {
     };
     /**
      * InstallMethod
-     * @description Which :class:`InstallStrategy` a run uses.
+     * @description Name the :class:`InstallStrategy` a run uses.
      *
      *     Only ``PACKAGES`` has an implementation
      *     (:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).
@@ -10597,7 +10597,7 @@ export interface components {
     om_bootstrap__OperatingSystem: 'ubuntu' | 'rocky';
     /**
      * RunResponse
-     * @description One bootstrap run, in full.
+     * @description Describe one bootstrap run in full.
      *
      *     :param id: The run's id.
      *     :param status: The run's lifecycle state.
@@ -10645,7 +10645,7 @@ export interface components {
     };
     /**
      * StepRecord
-     * @description One step's persisted-shape progress -- a host's, or a run's.
+     * @description Record one step's progress, for a host or for a run.
      *
      *     The same shape serves both :attr:`HostBootstrapState.steps` (per-host) and
      *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,
