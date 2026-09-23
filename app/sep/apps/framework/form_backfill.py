@@ -460,6 +460,15 @@ async def _backfill_app(
         entry.owner,
     )
 
+    if entry.batch_preparer is not None:
+        try:
+            await entry.batch_preparer(tasks, ctx)
+        except Exception:
+            ctx.log.exception(
+                "[%s] batch preparer raised; continuing without prepared extras",
+                entry.app_key,
+            )
+
     for task in tasks:
         outcome = _backfill_single_task(task, entry, ctx)
         if outcome.stamped_data is not None:

@@ -292,6 +292,34 @@ def _transport_cache_key(
     return (key.service_id, key.service_name, backup_source)
 
 
+def pending_catalog_transport_lookups(
+    items: Sequence[tuple[Task, dict[str, Any]]],
+) -> dict[tuple[int | None, str, str], CatalogServiceKey]:
+    """Build the batched catalog lookup map for undeclared restore forms.
+
+    Shared by the list/detail response prefetch and the form-backfill batch
+    preparer so both pay one ``catalogued_source_transports`` query. Forms that
+    already declare ``source_transport`` are skipped — their repair/normalize
+    path ignores a catalog hit anyway.
+
+    :param items: ``(task, form)`` pairs to consider (stamps or reconstructed
+        bodies).
+    :return: Map from :func:`_transport_cache_key` to the scoping
+        :class:`CatalogServiceKey`.
+    """
+    pending: dict[tuple[int | None, str, str], CatalogServiceKey] = {}
+    for task, stored_form in items:
+        if stored_form.get("source_transport") is not None:
+            continue
+        cache_key = _transport_cache_key(task, stored_form)
+        if cache_key is None or cache_key in pending:
+            continue
+        service_key = _catalog_service_key_for_stamp(task, stored_form)
+        if service_key is not None:
+            pending[cache_key] = service_key
+    return pending
+
+
 def _run_coro_sync(coro: Coroutine[Any, Any, _T]) -> _T:
     """Run ``coro`` to completion from sync code, including under a running loop.
 
@@ -384,21 +412,13 @@ async def restore_response_context(
         catalogued transport.
     """
     usernames = await get_username_mapping()
-    pending: dict[tuple[int | None, str, str], CatalogServiceKey] = {}
+    stamp_items: list[tuple[Task, dict[str, Any]]] = []
     for task in tasks:
         data = task.data if isinstance(task.data, dict) else None
         stored_form = data.get(RESERVED_FORM_KEY) if data else None
-        if (
-            not isinstance(stored_form, dict)
-            or stored_form.get("source_transport") is not None
-        ):
-            continue
-        cache_key = _transport_cache_key(task, stored_form)
-        if cache_key is None or cache_key in pending:
-            continue
-        service_key = _catalog_service_key_for_stamp(task, stored_form)
-        if service_key is not None:
-            pending[cache_key] = service_key
+        if isinstance(stored_form, dict):
+            stamp_items.append((task, stored_form))
+    pending = pending_catalog_transport_lookups(stamp_items)
 
     if not pending:
         return RestoreResponseContext(usernames=usernames, transports={})

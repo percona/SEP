@@ -30,6 +30,7 @@ from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.forms import EncryptionFormat
 from app.sep.apps.mysql_backups.models import BackupType, CataloguedSourceTransport
 from app.sep.apps.mysql_backups.restore.form_backfill import (
+    CATALOG_TRANSPORTS_EXTRA,
     FORM_BACKFILL_ENTRY,
     reconstruct_mysql_restores_form,
 )
@@ -444,25 +445,55 @@ def test_repair_skips_a_stamp_that_already_declares_its_source():
     assert outcome.stamped_data is None
 
 
-def test_repair_prefers_catalogued_object_store_transport(mocker):
-    """Seed S3 from the catalog when repairing a stamp that would otherwise infer local."""
-    mocker.patch(
-        "app.sep.apps.mysql_backups.restore.form_backfill.catalogued_transport_for_stamp",
-        return_value=CataloguedSourceTransport.S3,
-    )
+def test_repair_prefers_catalogued_object_store_transport():
+    """Seed S3 from the batched prefetch when repairing a stamp that would infer local."""
     service_lookup, schema_lookup = _lookups(
         _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
     )
-    task = _stamped_restore_task(_pre_declaration_stamp())
+    stamp = _pre_declaration_stamp()
+    task = _stamped_restore_task(stamp)
+    ctx = _ctx(service_lookup, schema_lookup)
+    ctx.extras[CATALOG_TRANSPORTS_EXTRA] = {
+        (12, "mysql-prod", "/backups/mydumper/latest"): CataloguedSourceTransport.S3,
+    }
 
-    outcome = _backfill_single_task(
-        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
-    )
+    outcome = _backfill_single_task(task, FORM_BACKFILL_ENTRY, ctx)
 
     assert outcome.label == "repaired"
     assert outcome.stamped_data is not None
     repaired = outcome.stamped_data[RESERVED_FORM_KEY]
     assert repaired["source_transport"] == SourceTransport.S3.value
+
+
+def test_repair_skips_catalog_lookup_when_source_already_declared(mocker):
+    """Do not evaluate the catalog lookup for a stamp that already declares transport.
+
+    ``repair_source_declaration`` would ignore a hit anyway; skipping the call
+    avoids the sync bridge (and even a prefetch map hit) on the eager argument.
+    """
+    lookup = mocker.patch(
+        "app.sep.apps.mysql_backups.restore.form_backfill.catalogued_transport_for_stamp",
+    )
+    service_lookup, schema_lookup = _lookups(
+        _service(12, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _stamped_restore_task(
+        {
+            "task_name": "restore-stamped",
+            "hostname": "executor-1",
+            "backup_type": BackupType.MYDUMPER.value,
+            "backup_source": "/backups/mydumper/latest",
+            "source_transport": SourceTransport.LOCAL.value,
+            "source_encryption": EncryptionFormat.NONE.value,
+        }
+    )
+
+    outcome = _backfill_single_task(
+        task, FORM_BACKFILL_ENTRY, _ctx(service_lookup, schema_lookup)
+    )
+
+    assert outcome.label == "skipped_existing"
+    lookup.assert_not_called()
 
 
 def test_reconstructed_legacy_body_declares_a_source_the_gates_accept():

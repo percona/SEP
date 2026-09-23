@@ -35,6 +35,7 @@ from app.sep.apps.framework.form_backfill import (
 )
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.form_backfill_registry import (
+    BatchPreparer,
     collect_form_backfill_entries,
     FormBackfillContext,
     FormBackfillEntry,
@@ -65,6 +66,7 @@ def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
 def _entry(
     reconstructor: FormReconstructor,
     stamp_repairer: StampRepairer | None = None,
+    batch_preparer: BatchPreparer | None = None,
 ) -> FormBackfillEntry:
     """Build a checksums-keyed backfill entry bound to ``reconstructor``."""
     return FormBackfillEntry(
@@ -73,6 +75,7 @@ def _entry(
         create_model=ChecksumsForm,
         reconstructor=reconstructor,
         stamp_repairer=stamp_repairer,
+        batch_preparer=batch_preparer,
     )
 
 
@@ -145,6 +148,39 @@ async def test_rollback_backfill_session_swallows_rollback_failure():
         app_key="checksums",
         task_name="task-fail",
     )
+
+
+@pytest.mark.asyncio
+async def test_backfill_app_runs_batch_preparer_before_per_task_loop():
+    """Invoke the optional batch preparer once with the loaded task list."""
+    task = _minimal_task(data={"meta": {}})
+    prepared: list[int] = []
+
+    async def _prepare(tasks: list[Task], ctx: FormBackfillContext) -> None:
+        prepared.append(len(tasks))
+        ctx.extras["ready"] = True
+
+    entry = _entry(lambda _t, _c: None, batch_preparer=_prepare)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+    session = MagicMock()
+
+    with (
+        patch(
+            "app.sep.apps.framework.form_backfill.TaskManager.list_active",
+            new_callable=AsyncMock,
+            return_value=[task],
+        ),
+        patch(
+            "app.sep.apps.framework.form_backfill._backfill_single_task",
+            return_value=_TaskBackfillOutcome("skipped_existing"),
+        ) as single,
+    ):
+        await _backfill_app(session, entry, ctx)
+
+    assert prepared == [1]
+    assert ctx.extras["ready"] is True
+    single.assert_called_once()
+    assert single.call_args.args[2] is ctx
 
 
 @pytest.mark.asyncio

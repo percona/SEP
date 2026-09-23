@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 
 import yaml
@@ -25,26 +26,39 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
 from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_backfill_registry import FormBackfillEntry
+from app.sep.apps.framework.spec import RESERVED_FORM_KEY
+from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import (
+    CatalogTransportContext,
     catalogued_transport_for_stamp,
     parse_restore_task_data,
+    pending_catalog_transport_lookups,
 )
 from app.sep.apps.mysql_backups.restore.models import (
     OWNER,
     repair_source_declaration,
     RestoreCreate,
 )
+from app.sep.db import get_async_session_maker
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from app.sep.apps.framework.form_backfill_registry import FormBackfillContext
     from app.tasks.models import Task
 
 __all__ = [
     "FORM_BACKFILL_ENTRY",
+    "prepare_mysql_restores_catalog_transports",
     "reconstruct_mysql_restores_form",
     "repair_mysql_restores_stamp",
 ]
+
+_log = logging.getLogger(__name__)
+
+#: ``FormBackfillContext.extras`` key holding the batched catalog transport map.
+CATALOG_TRANSPORTS_EXTRA = "catalog_transports"
 
 _RESTORE_FORM_FIELDS = frozenset(RestoreCreate.model_fields)
 _EXPLICIT_FORM_KEYS = frozenset(
@@ -112,6 +126,99 @@ def _resolve_restore_schema_id(
     if schema_id is None:
         return None
     return str(schema_id)
+
+
+def _form_for_catalog_lookup(
+    task: Task, ctx: FormBackfillContext
+) -> dict[str, Any] | None:
+    """Return a form-shaped dict for catalog keying, or ``None`` when none applies.
+
+    Prefers an undeclared stamp. For unstamped (reconstruct) tasks, builds the
+    same ``backup_source`` / ``service_id`` shape the reconstructor will hand to
+    :func:`catalogued_transport_for_stamp` so the batched prefetch hits.
+    """
+    data = task.data if isinstance(task.data, dict) else None
+    if data is None:
+        return None
+    stored_form = data.get(RESERVED_FORM_KEY)
+    if isinstance(stored_form, dict):
+        return None if stored_form.get("source_transport") is not None else stored_form
+
+    meta = require_run_python_meta(task)
+    if meta is None:
+        return None
+    try:
+        parsed = parse_restore_task_data({"name": task.name, "data": task.data})
+    except (KeyError, TypeError, yaml.YAMLError):
+        return None
+    backup_source = parsed.get("backup_source")
+    if not isinstance(backup_source, str) or not backup_source.strip():
+        return None
+    body: dict[str, Any] = {"backup_source": backup_source.strip()}
+    service_id = _resolve_restore_service_id(parsed, meta, ctx)
+    if service_id is not None:
+        body["service_id"] = service_id
+    return body
+
+
+def _catalogued_transport_from_ctx(
+    task: Task,
+    form: dict[str, Any],
+    ctx: FormBackfillContext,
+) -> Any:
+    """Return the catalogued transport using the batch prefetch when present.
+
+    When :func:`prepare_mysql_restores_catalog_transports` has filled
+    ``ctx.extras``, look up there and never open the sync bridge. Absent that
+    key (unit tests calling the repairer/reconstructor directly), fall through
+    to :func:`catalogued_transport_for_stamp`'s NullPool path.
+    """
+    transports = ctx.extras.get(CATALOG_TRANSPORTS_EXTRA)
+    if isinstance(transports, dict):
+        context: CatalogTransportContext = transports
+        return catalogued_transport_for_stamp(task, form, context=context)
+    return catalogued_transport_for_stamp(task, form)
+
+
+async def prepare_mysql_restores_catalog_transports(
+    tasks: Sequence[Task],
+    ctx: FormBackfillContext,
+) -> None:
+    """Prefetch catalogued S3/GCS transports for this app's active restore tasks.
+
+    Runs once before the per-task loop on the request event loop against the sep
+    session maker — one session and one batched SELECT — so the sync
+    repairer/reconstructor never pays a per-task thread+loop+NullPool spin-up.
+    Stores the map on ``ctx.extras`` under :data:`CATALOG_TRANSPORTS_EXTRA`.
+
+    :param tasks: The active restore tasks for this backfill app.
+    :param ctx: Shared backfill context to receive the prefetch map.
+    """
+    items: list[tuple[Task, dict[str, Any]]] = []
+    for task in tasks:
+        form = _form_for_catalog_lookup(task, ctx)
+        if form is not None:
+            items.append((task, form))
+    pending = pending_catalog_transport_lookups(items)
+    if not pending:
+        ctx.extras[CATALOG_TRANSPORTS_EXTRA] = {}
+        return
+
+    try:
+        async with get_async_session_maker()() as session:
+            transports: CatalogTransportContext = (
+                await MysqlBackupRunManager.catalogued_source_transports(
+                    session, pending
+                )
+            )
+    except Exception:  # noqa: BLE001 — catalog down must not abort the batch
+        _log.warning(
+            "Catalog source_transport session failed during form backfill; "
+            "falling back to inference",
+            exc_info=True,
+        )
+        transports = dict.fromkeys(pending, None)
+    ctx.extras[CATALOG_TRANSPORTS_EXTRA] = transports
 
 
 def reconstruct_mysql_restores_form(
@@ -185,11 +292,14 @@ def reconstruct_mysql_restores_form(
         body["schema_id"] = schema_id
     # A reconstruction is stored state, not a submission, so it takes the same
     # repair a stamp does rather than only the inference — including a catalogued
-    # S3/GCS transport when one is available.
+    # S3/GCS transport when one is available. Skip the lookup when the body
+    # already declares its source (eager args would still evaluate otherwise).
+    if body.get("source_transport") is not None:
+        return repair_source_declaration(body) or body
     return (
         repair_source_declaration(
             body,
-            catalogued_transport=catalogued_transport_for_stamp(task, body),
+            catalogued_transport=_catalogued_transport_from_ctx(task, body, ctx),
         )
         or body
     )
@@ -198,7 +308,7 @@ def reconstruct_mysql_restores_form(
 def repair_mysql_restores_stamp(
     stored_form: dict[str, Any],
     task: Task,
-    _ctx: FormBackfillContext,
+    ctx: FormBackfillContext,
 ) -> dict[str, Any] | None:
     """Declare the source of a stamp that does not describe its own values.
 
@@ -216,17 +326,23 @@ def repair_mysql_restores_stamp(
 
     Prefers a matching catalog ``source_transport`` (S3/GCS) over field inference
     — the same path the edit-form response builder uses — so a repaired stamp
-    lands on the transport the backup run recorded when one is available.
+    lands on the transport the backup run recorded when one is available. The
+    catalog map is the once-per-app prefetch on ``ctx.extras`` when the batch
+    preparer ran; stamps that already declare ``source_transport`` skip the
+    lookup entirely.
 
     :param stored_form: A copy of the task's existing ``data['_form']``.
     :param task: The stamped task row (catalog key / meta for the lookup).
-    :param _ctx: Shared backfill context.
+    :param ctx: Shared backfill context (inventory lookups plus optional catalog
+        prefetch).
     :return: The repaired form, or ``None`` when the stamp already describes its
         source.
     """
+    if stored_form.get("source_transport") is not None:
+        return repair_source_declaration(stored_form)
     return repair_source_declaration(
         stored_form,
-        catalogued_transport=catalogued_transport_for_stamp(task, stored_form),
+        catalogued_transport=_catalogued_transport_from_ctx(task, stored_form, ctx),
     )
 
 
@@ -236,4 +352,5 @@ FORM_BACKFILL_ENTRY = FormBackfillEntry(
     create_model=RestoreCreate,
     reconstructor=reconstruct_mysql_restores_form,
     stamp_repairer=repair_mysql_restores_stamp,
+    batch_preparer=prepare_mysql_restores_catalog_transports,
 )

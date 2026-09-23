@@ -29,8 +29,8 @@ form-backfill entry point offers are built from here rather than per CLI.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
 from functools import partial
 from importlib import import_module
 from typing import Any, TYPE_CHECKING
@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DECLARATION_ATTR",
+    "BatchPreparer",
     "FormBackfillContext",
     "FormBackfillEntry",
     "FormReconstructor",
@@ -72,12 +73,16 @@ class FormBackfillContext:
     :param dry_run: When ``True``, the orchestrator logs actions but does not persist.
     :param service_lookup: Inventory service-id resolver built once per backfill run.
     :param schema_lookup: Inventory schema-id resolver built once per backfill run.
+    :param extras: Per-app scratch bag a :data:`BatchPreparer` may fill before the
+        per-task loop (for example a batched catalog prefetch). Cleared or
+        replaced by each preparer; not interpreted by the orchestrator.
     """
 
     log: logging.Logger
     dry_run: bool = False
     service_lookup: ServiceIdLookup | None = None
     schema_lookup: SchemaIdLookup | None = None
+    extras: dict[str, Any] = field(default_factory=dict)
 
 
 FormReconstructor = Callable[["Task", FormBackfillContext], dict[str, Any] | None]
@@ -88,6 +93,10 @@ StampRepairer = Callable[
     [dict[str, Any], "Task", FormBackfillContext], dict[str, Any] | None
 ]
 """Repair an existing ``data['_form']`` stamp, or return ``None`` to leave it alone."""
+
+
+BatchPreparer = Callable[[Sequence["Task"], FormBackfillContext], Awaitable[None]]
+"""Await once per app after the active task list is loaded, before the per-task loop."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +114,9 @@ class FormBackfillEntry:
     :param stamp_repairer: The app's repairer for stamps written against an older
         revision of ``create_model``, or ``None`` to leave every existing stamp
         untouched.
+    :param batch_preparer: Optional async hook run once with the app's active
+        task list before the per-task loop, so an app can batch side-data onto
+        ``ctx.extras`` instead of paying per-task sync bridges. ``None`` skips.
     """
 
     app_key: str
@@ -112,6 +124,7 @@ class FormBackfillEntry:
     create_model: type[AppFormModel]
     reconstructor: FormReconstructor
     stamp_repairer: StampRepairer | None = None
+    batch_preparer: BatchPreparer | None = None
 
 
 def collect_form_backfill_entries(
