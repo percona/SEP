@@ -97,6 +97,7 @@ from app.sep.apps.om_inventory.models import (
     TriggerRequest,
 )
 from app.sep.apps.om_inventory.schema import om_inventory_schema
+from app.sep.apps.om_inventory.service import SWITCHED_OFF_DETAIL
 from app.sep.deps import ApiCurrentUser, SessionDep
 
 router = APIRouter()
@@ -523,7 +524,7 @@ async def trigger_probe(
     :return: The queued sweep.
     """
     if not om_inventory_settings.ENABLED:
-        raise HTTPServiceUnavailableException(detail="OM Inventory is not enabled")
+        raise HTTPServiceUnavailableException(detail=SWITCHED_OFF_DETAIL)
 
     node_ids = list(dict.fromkeys(request.node_ids)) if request else []
 

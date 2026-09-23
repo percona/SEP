@@ -33,6 +33,7 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.sep.apps.om_inventory import service as service_module
+from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.crud import ProbeRunManager
 from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
 from app.sep.apps.om_inventory.service import run_probe, SweepOutcome
@@ -40,6 +41,15 @@ from app.sep.apps.om_inventory.service import run_probe, SweepOutcome
 #: One resolved, one answered: ``terminal_status`` reads this as a clean SUCCESS,
 #: so a run that reaches it and is *not* rewritten afterwards is unambiguous.
 CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
+
+
+@pytest.fixture(autouse=True)
+def _enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Turn the sweep on, since ``run_probe`` refuses to run while it is off.
+
+    :param monkeypatch: Restores the real value after the test.
+    """
+    monkeypatch.setattr(om_inventory_settings, "ENABLED", True)
 
 
 def _session_maker(session: AsyncSession):

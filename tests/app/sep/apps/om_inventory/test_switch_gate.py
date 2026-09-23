@@ -13,52 +13,87 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test ``run_om_probe``'s own ``ENABLED`` backstop.
+"""Test ``run_probe``'s own ``ENABLED`` check.
 
-``app.py``'s periodic-task thunk keeps a disabled deployment off Celery beat, and
-``trigger_probe`` refuses a manual trigger while ``ENABLED`` is off -- but beat calls
-this task directly, so neither of those checks runs on the scheduled path. This is
-the backstop for the moment ``ENABLED`` flips off after a sweep was already due.
+``trigger_probe`` refuses a manual trigger while ``ENABLED`` is off, but beat calls
+the task directly, and the worker reads ``ENABLED`` from a snapshot that can lag the
+API process that accepted a trigger. In both cases the sweep must be recorded as
+refused. A run left ``RUNNING`` would hold every host until ``STALE_RUN_AFTER``.
 """
 
+from contextlib import nullcontext
+from unittest.mock import AsyncMock
+
 import pytest
+from pytest_mock import MockerFixture
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.sep.apps.om_inventory.celery import run_om_probe
+from app.sep.apps.om_inventory import service as service_module
 from app.sep.apps.om_inventory.config import om_inventory_settings
+from app.sep.apps.om_inventory.crud import ProbeRunManager
+from app.sep.apps.om_inventory.models import ProbeRun, ProbeRunStatus
+from app.sep.apps.om_inventory.service import (
+    run_probe,
+    SweepOutcome,
+    SWITCHED_OFF_DETAIL,
+)
 
-MODULE = "app.sep.apps.om_inventory.celery"
+#: What the stubbed sweep reports. A run that is *not* refused finalises to
+#: ``SUCCESS`` on it, so a ``SKIPPED`` row can only come from the switch.
+CLEAN_OUTCOME = SweepOutcome(resolved=1, answered=1)
 
 
-class TestRunOmProbeEnabledGate:
-    """Cover the ``ENABLED`` check ``run_om_probe`` makes before dispatching."""
+@pytest.fixture
+def _switched_off(
+    mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch, session: AsyncSession
+) -> None:
+    """Turn ``ENABLED`` off and point ``run_probe`` at the test session.
 
-    def test_skips_the_sweep_while_enabled_is_off(
-        self, mocker, monkeypatch: pytest.MonkeyPatch
+    :param mocker: Patches the session maker and the Nomad-bound sweep.
+    :param monkeypatch: Restores the real ``ENABLED`` after the test.
+    :param session: The session every ``run_probe`` block should reuse.
+    """
+    monkeypatch.setattr(om_inventory_settings, "ENABLED", False)
+    mocker.patch.object(
+        service_module,
+        "get_async_session_maker",
+        return_value=lambda: nullcontext(session),
+    )
+    mocker.patch.object(service_module, "sweep", AsyncMock(return_value=CLEAN_OUTCOME))
+
+
+@pytest.mark.usefixtures("_switched_off")
+class TestRunProbeWhileSwitchedOff:
+    """Record a refused sweep, rather than running it or leaving it in flight."""
+
+    @pytest.mark.asyncio
+    async def test_a_triggered_run_is_closed_as_skipped(
+        self, session: AsyncSession
     ) -> None:
-        """No-op, without touching the event loop, while the switch is off."""
-        monkeypatch.setattr(om_inventory_settings, "ENABLED", False)
-        mock_celery = mocker.patch(f"{MODULE}.celery")
-        run_probe_mock = mocker.patch(f"{MODULE}.run_probe")
+        """Close the trigger's row as ``SKIPPED``, naming the switch.
 
-        result = run_om_probe("11111111-1111-1111-1111-111111111111", None)
+        :param session: The database session.
+        """
+        run = await ProbeRunManager.save(session, ProbeRun(scope=None))
 
-        assert result is None
-        run_probe_mock.assert_not_called()
-        mock_celery.loop.run_until_complete.assert_not_called()
+        returned_id = await run_probe(execution_id=run.id, node_ids=None)
 
-    def test_runs_the_sweep_while_enabled_is_on(
-        self, mocker, monkeypatch: pytest.MonkeyPatch
+        assert returned_id == run.id
+        stored = await ProbeRunManager.get(session, id=run.id)
+        assert stored.status is ProbeRunStatus.SKIPPED
+        assert stored.finished_at is not None
+        assert stored.error == SWITCHED_OFF_DETAIL
+
+    @pytest.mark.asyncio
+    async def test_a_scheduled_run_is_recorded_as_skipped(
+        self, session: AsyncSession
     ) -> None:
-        """Dispatch to ``run_probe`` via the event loop while the switch is on."""
-        monkeypatch.setattr(om_inventory_settings, "ENABLED", True)
-        mock_celery = mocker.patch(f"{MODULE}.celery")
-        mock_celery.loop.run_until_complete.return_value = (
-            "11111111-1111-1111-1111-111111111111"
-        )
-        run_probe_mock = mocker.patch(f"{MODULE}.run_probe")
+        """Record a beat-driven sweep as ``SKIPPED`` instead of a silent gap.
 
-        result = run_om_probe(None, ["id-db00"])
+        :param session: The database session.
+        """
+        returned_id = await run_probe(execution_id=None, node_ids=None)
 
-        run_probe_mock.assert_called_once_with(None, ["id-db00"])
-        mock_celery.loop.run_until_complete.assert_called_once()
-        assert result == "11111111-1111-1111-1111-111111111111"
+        stored = await ProbeRunManager.get(session, id=returned_id)
+        assert stored.status is ProbeRunStatus.SKIPPED
+        assert stored.error == SWITCHED_OFF_DETAIL

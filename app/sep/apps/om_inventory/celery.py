@@ -26,7 +26,6 @@ from uuid import UUID
 
 from app.celery import celery
 from app.sep.app_drain import owned_by
-from app.sep.apps.om_inventory.config import om_inventory_settings
 from app.sep.apps.om_inventory.service import run_probe
 
 logger = logging.getLogger(__name__)
@@ -36,32 +35,18 @@ logger = logging.getLogger(__name__)
 @celery.task
 def run_om_probe(
     execution_id: str | None = None, node_ids: list[str] | None = None
-) -> str | None:
+) -> str:
     """Run one probe sweep and return its id.
 
     Scheduled by this app's ``periodic_task_schedules`` contribution, and invoked by
     the trigger endpoint with an already-created id so the caller can be answered
     before the Nomad work begins.
 
-    ``ENABLED`` is re-checked here as a backstop, not the primary gate: beat calls
-    this task directly, so the schedule does not go through the trigger endpoint's
-    own check, and ``app.py``'s periodic-task thunk only stops *new* beat entries
-    from being scheduled -- it does not retract one already due at the moment
-    ``ENABLED`` flips off. A no-op logs and returns rather than raising, since
-    nothing awaits this task's result on the scheduled path.
-
     :param execution_id: An already-created run's id, or ``None`` to mint one.
     :param node_ids: The hosts to refresh, or ``None`` for the whole estate. The
         scheduled sweep passes nothing, which is what keeps it a full refresh.
-    :return: The run's id, as a string, or ``None`` when skipped because
-        ``ENABLED`` is off.
+    :return: The run's id, as a string.
     """
-    if not om_inventory_settings.ENABLED:
-        logger.warning(
-            "run_om_probe invoked while OM Inventory's ENABLED switch is off; "
-            "skipping this sweep."
-        )
-        return None
     # ty-attr-ok: Celery installs `loop` at runtime.
     resolved = celery.loop.run_until_complete(
         run_probe(UUID(execution_id) if execution_id else None, node_ids)
