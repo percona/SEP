@@ -219,7 +219,7 @@ def _owned_step(body: str, run_id: str, *, timeout_s: int = 30) -> StepAction:
 class PackagesInstallStrategy:
     """Install Percona Server for MongoDB from Percona's Ubuntu/Rocky packages."""
 
-    def plan_steps(self, spec: BootstrapSpec) -> list[str]:
+    def plan_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
         """Return this strategy's fixed per-host step names.
 
         Fixed rather than spec-dependent for phase 1: packages, Ubuntu or Rocky,
@@ -229,7 +229,6 @@ class PackagesInstallStrategy:
         :param spec: The host's bootstrap spec.
         :return: Step names, in execution order.
         """
-        del spec  # Unused for now — see the docstring.
         return [
             "pre_check",
             "configure_repository",
@@ -243,7 +242,7 @@ class PackagesInstallStrategy:
     def build_step(
         self,
         step_name: str,
-        host: str,
+        host: str,  # noqa: ARG002
         spec: BootstrapSpec,
         params: dict[str, str] | None = None,
     ) -> StepAction:
@@ -265,7 +264,6 @@ class PackagesInstallStrategy:
             ``distribute_keyfile`` is built without ``params["key_file_content"]``,
             or ``install_package`` is built without ``spec.run_id``.
         """
-        del host  # Unused by every step below today — see the docstring.
         builders = {
             "distribute_keyfile": lambda s: self._distribute_keyfile(s, params),
             "pre_check": self._pre_check,
@@ -285,7 +283,9 @@ class PackagesInstallStrategy:
         return builder(spec)
 
     def _distribute_keyfile(
-        self, spec: BootstrapSpec, params: dict[str, str] | None
+        self,
+        spec: BootstrapSpec,  # noqa: ARG002
+        params: dict[str, str] | None,
     ) -> StepAction:
         """Write the replica set's shared keyFile, owned by ``mongod`` and mode 400.
 
@@ -309,7 +309,6 @@ class PackagesInstallStrategy:
         :return: The step action.
         :raises ValueError: If ``params`` is missing ``"key_file_content"``.
         """
-        del spec
         if not params or "key_file_content" not in params:
             raise ValueError("distribute_keyfile requires params['key_file_content']")
         encoded = base64.b64encode(params["key_file_content"].encode()).decode("ascii")
@@ -461,24 +460,22 @@ class PackagesInstallStrategy:
         )
         return _shell_step(command)
 
-    def _start_service(self, spec: BootstrapSpec) -> StepAction:
+    def _start_service(self, spec: BootstrapSpec) -> StepAction:  # noqa: ARG002
         """Enable and start the ``mongod`` systemd unit.
 
         :param spec: The host's bootstrap spec. Unused.
         :return: The step action.
         """
-        del spec
         return StepAction(
             command=["systemctl", "enable", "--now", "mongod"], timeout_s=60
         )
 
-    def _verify(self, spec: BootstrapSpec) -> StepAction:
+    def _verify(self, spec: BootstrapSpec) -> StepAction:  # noqa: ARG002
         """Confirm ``mongod`` answers before declaring this host done.
 
         :param spec: The host's bootstrap spec. Unused.
         :return: The step action.
         """
-        del spec
         return _mongosh_eval("db.adminCommand('ping').ok")
 
     def _require_package_manager(self, os_: OperatingSystem) -> str:
@@ -494,7 +491,7 @@ class PackagesInstallStrategy:
             return "dnf"
         raise ValueError(f"unsupported OperatingSystem: {os_!r}")
 
-    def plan_run_steps(self, spec: BootstrapSpec) -> list[str]:
+    def plan_run_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
         """Return this strategy's fixed run-level step names.
 
         Both need every member's mongod already running (every host's
@@ -504,7 +501,6 @@ class PackagesInstallStrategy:
         :param spec: The run's bootstrap spec.
         :return: Step names, in execution order.
         """
-        del spec  # Unused for now — fixed regardless of spec, like plan_steps.
         return ["rs_initiate", "create_pmm_monitoring_user"]
 
     def build_run_step(
@@ -584,7 +580,7 @@ class PackagesInstallStrategy:
         )
         return _mongosh_file(command)
 
-    def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
+    def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
         """Return this strategy's fixed per-host rollback step names.
 
         The reverse of :meth:`plan_steps`, undoing what a host's forward steps
@@ -600,7 +596,6 @@ class PackagesInstallStrategy:
         :param spec: The host's bootstrap spec.
         :return: Step names, in the order rollback applies them.
         """
-        del spec
         return [
             "stop_service",
             "remove_config",
@@ -610,7 +605,10 @@ class PackagesInstallStrategy:
         ]
 
     def build_rollback_step(
-        self, step_name: str, host: str, spec: BootstrapSpec
+        self,
+        step_name: str,
+        host: str,  # noqa: ARG002
+        spec: BootstrapSpec,
     ) -> StepAction:
         """Build the action for one of :meth:`plan_rollback_steps`' names.
 
@@ -623,7 +621,6 @@ class PackagesInstallStrategy:
             :meth:`plan_rollback_steps`' names, ``spec.run_id`` is ``None``, or
             ``spec.os`` is not a supported :class:`OperatingSystem`.
         """
-        del host  # See the docstring.
         builders = {
             "stop_service": self._rollback_stop_service,
             "remove_config": self._rollback_remove_config,
@@ -641,36 +638,33 @@ class PackagesInstallStrategy:
         run_id = _require_run_id(spec, step_name)
         return builder(spec, run_id)
 
-    def _rollback_stop_service(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+    def _rollback_stop_service(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
         """Stop and disable ``mongod``, tolerant of it never having started.
 
         :param spec: The host's bootstrap spec. Unused.
         :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
-        del spec
         return _owned_step(
             "systemctl disable --now mongod || true", run_id, timeout_s=60
         )
 
-    def _rollback_remove_config(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+    def _rollback_remove_config(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
         """Remove the config file ``configure_mongod`` wrote.
 
         :param spec: The host's bootstrap spec. Unused.
         :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
-        del spec
         return _owned_step(f"rm -f {CONFIG_PATH}", run_id)
 
-    def _rollback_remove_keyfile(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+    def _rollback_remove_keyfile(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
         """Remove the keyFile ``distribute_keyfile`` wrote.
 
         :param spec: The host's bootstrap spec. Unused.
         :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
-        del spec
         return _owned_step(f"rm -f {KEY_FILE_PATH}", run_id)
 
     def _rollback_purge_package(self, spec: BootstrapSpec, run_id: str) -> StepAction:
@@ -693,13 +687,12 @@ class PackagesInstallStrategy:
         )
         return _owned_step(f"{remove} || true", run_id, timeout_s=120)
 
-    def _rollback_remove_data(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+    def _rollback_remove_data(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
         """Remove the data directory, then the ownership marker, as the last step.
 
         :param spec: The host's bootstrap spec. Unused.
         :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
-        del spec
         body = f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}"
         return _owned_step(body, run_id, timeout_s=60)
