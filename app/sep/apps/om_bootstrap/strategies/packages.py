@@ -17,7 +17,7 @@
 
 First (and, for now, only) implementation of
 :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy` -- Ubuntu and Rocky
-Linux only, matching PMM-15347's phase-1 OS scope. ``DockerInstallStrategy`` and
+Linux only, matching the phase-1 OS scope. ``DockerInstallStrategy`` and
 ``PodmanInstallStrategy`` are future siblings of this module, implementing the same
 protocol.
 
@@ -29,10 +29,16 @@ OS -- only :meth:`PackagesInstallStrategy.build_step` does, once, per step.
 The mongod port is never a field anywhere in this module: every step (and
 :meth:`build_run_step`'s member list) assumes the package's own unconfigured
 default, 27017 -- ``mongod.conf`` here never sets ``net.port``. Making the port
-configurable is future scope, alongside TLS and per-member voting
-(PMM-15347/plan.md §3 Phase 4).
+configurable is future scope, alongside TLS and per-member voting.
+
+Rollback never touches a MongoDB this module did not install: ``pre_check``
+refuses a host that already has one (:data:`CONFIG_PATH`, a non-empty
+:data:`DATA_PATH`, or ``mongod`` on ``PATH``), ``install_package`` then plants
+:data:`OWNERSHIP_MARKER_PATH` before installing anything, and every rollback
+step is a no-op on a host without that marker.
 """
 
+import base64
 import json
 import shlex
 
@@ -53,6 +59,12 @@ DATA_PATH = "/var/lib/mongo"
 
 #: Where the packaged mongod's own config file lives on both supported OSes.
 CONFIG_PATH = "/etc/mongod.conf"
+
+#: Planted by ``install_package`` once ``pre_check`` has proven the host had no
+#: MongoDB of its own. Every rollback step checks for it first, so rolling back
+#: a host this strategy never installed on removes nothing; ``remove_data``,
+#: the last rollback step, deletes it.
+OWNERSHIP_MARKER_PATH = "/etc/mongod.om-bootstrap"
 
 #: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
 #: OSes. The unit is ``Type=forking``, so this has to agree with the systemd unit
@@ -110,25 +122,23 @@ def _psmdb_channel(mongodb_version: str) -> str:
 def _mongosh_eval(js: str) -> StepAction:
     """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
 
-    Centralized so every run-level step (which embeds generated JS, some of it
-    carrying a secret) quotes the same way, once. ``shlex.quote`` on the whole
-    ``--eval`` argument, not string interpolation into a shell command, avoids the
-    quoting bugs that show up trying to nest a JS string literal inside a shell
+    For JS that carries no secret only: ``--eval``'s argument is visible in
+    ``ps`` for as long as mongosh runs. JS that embeds a secret goes through
+    :func:`_mongosh_file` instead. ``shlex.quote`` on the whole ``--eval``
+    argument, not string interpolation into a shell command, avoids the quoting
+    bugs that show up trying to nest a JS string literal inside a shell
     double-quoted one.
 
-    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1`` matters specifically for
-    ``create_pmm_monitoring_user``, run against a freshly keyFile-secured member
-    with no user yet: mongosh probes ``admin.atlascli`` (Atlas CLI local-deployment
-    detection) as its first command on every connection, before anything in
-    ``js`` runs. That probe is not on MongoDB's localhost-exception allow-list, so
-    it gets rejected as unauthorized -- and confirmed against a real run, that
-    rejection closes the exception for the rest of the session, so the *intended*
-    first-user ``createUser`` then fails too with the same "not authorized" error,
-    even run as literally the next command. Harmless on ``rs_initiate``, which
-    doesn't need the exception (``replSetInitiate`` is separately allowed
-    unauthenticated whenever no replica set config exists yet) -- set here rather
-    than only on the one call site so no future ``_mongosh_eval`` caller inherits
-    the same trap.
+    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1``: mongosh probes
+    ``admin.atlascli`` (Atlas CLI local-deployment detection) as its first
+    command on every connection, before anything in ``js`` runs. Against a
+    freshly keyFile-secured member with no user yet, that probe is rejected as
+    unauthorized, and -- confirmed against a real run -- the rejection closes
+    the localhost exception for the rest of the session, so a first-user
+    ``createUser`` then fails with the same "not authorized" error. Harmless on
+    ``rs_initiate``, which doesn't need the exception (``replSetInitiate`` is
+    separately allowed unauthenticated whenever no replica set config exists
+    yet) -- set on every mongosh call so no caller inherits the same trap.
 
     :param js: The JavaScript to evaluate.
     :return: The step action.
@@ -144,6 +154,41 @@ def _mongosh_eval(js: str) -> StepAction:
     )
 
 
+def _mongosh_file(js: str) -> StepAction:
+    """Build a ``StepAction`` running ``js`` from a private temp file.
+
+    For JS that embeds a secret: ``--eval`` would put it in mongosh's argv,
+    visible in ``ps``. The JS is written through a quoted heredoc to a
+    ``mktemp`` file created under ``umask 077`` and removed on exit, and mongosh
+    reads it with ``--file``. The heredoc delimiter cannot appear inside ``js``
+    as a line of its own because every caller builds ``js`` from ``json.dumps``
+    output, which never contains a raw newline.
+
+    :param js: The JavaScript to run.
+    :return: The step action.
+    """
+    body = (
+        "umask 077\n"
+        "js=$(mktemp)\n"
+        "trap 'rm -f \"$js\"' EXIT\n"
+        "cat > \"$js\" <<'OM_BOOTSTRAP_JS'\n"
+        f"{js}\n"
+        "OM_BOOTSTRAP_JS\n"
+        "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+        'mongosh --quiet --file "$js"\n'
+    )
+    return StepAction(command=["sh", "-c", body], timeout_s=60)
+
+
+def _owned_only(body: str) -> str:
+    """Prefix a rollback body so it does nothing on a host this strategy never installed.
+
+    :param body: The rollback step's shell body.
+    :return: ``body``, run only when :data:`OWNERSHIP_MARKER_PATH` exists.
+    """
+    return f"[ -e {OWNERSHIP_MARKER_PATH} ] || exit 0\n{body}\n"
+
+
 class PackagesInstallStrategy:
     """Install Percona Server for MongoDB from Percona's Ubuntu/Rocky packages."""
 
@@ -152,8 +197,7 @@ class PackagesInstallStrategy:
 
         Fixed rather than spec-dependent for phase 1: packages, Ubuntu or Rocky,
         no TLS. A spec asking for TLS would need this to grow a certificate step --
-        not built here, since TLS is out of phase-1 scope
-        (PMM-15347/plan.md §3 Phase 3).
+        not built here, since TLS is out of phase-1 scope.
 
         :param spec: The host's bootstrap spec.
         :return: Step names, in execution order.
@@ -220,11 +264,16 @@ class PackagesInstallStrategy:
         Runs after ``install_package`` (so the ``mongod`` system user this chowns
         to already exists) and before ``configure_mongod``, which enables
         ``security.keyFile`` pointing at :data:`KEY_FILE_PATH`. The content comes
-        from ``params`` rather than being generated here: PMM-15347/questions.md
-        Q7 decided keyFiles are generated once per run and persisted, encrypted,
-        in PMM's Postgres -- this strategy only ever plants the one copy the
-        stepper hands it, transiently, at dispatch time (see
+        from ``params`` rather than being generated here: keyFiles are generated
+        once per run and persisted, encrypted, in PMM's Postgres -- this strategy
+        only ever plants the one copy the stepper hands it, transiently, at
+        dispatch time (see
         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s docstring).
+
+        The content travels base64-encoded through the shell builtin ``printf``,
+        so it can never end a heredoc early or inject a command, and never
+        appears in any process's argv. ``mongod`` ignores whitespace in a
+        keyFile, so a trailing newline in the caller's content is harmless.
 
         :param spec: The host's bootstrap spec. Unused -- the keyFile's content is
             entirely determined by ``params``, not by anything in ``spec``.
@@ -234,35 +283,55 @@ class PackagesInstallStrategy:
         del spec
         if not params or "key_file_content" not in params:
             raise ValueError("distribute_keyfile requires params['key_file_content']")
-        content = params["key_file_content"]
+        encoded = base64.b64encode(params["key_file_content"].encode()).decode("ascii")
         return StepAction(
             command=[
                 "sh",
                 "-c",
-                f"install -m 400 -o mongod -g mongod /dev/stdin {KEY_FILE_PATH} "
-                f"<<'MONGOD_KEYFILE'\n{content}\nMONGOD_KEYFILE\n",
+                f"printf '%s' {shlex.quote(encoded)} | base64 -d | "
+                f"install -m 400 -o mongod -g mongod /dev/stdin {KEY_FILE_PATH}",
             ],
             timeout_s=30,
         )
 
     def _pre_check(self, spec: BootstrapSpec) -> StepAction:
-        """Verify OS, package manager, and disk space before touching anything.
+        """Verify OS, paths, and disk space before touching anything.
 
-        PMM-15347/questions.md Q8: disk space, path, OS version -- Adamo's three
-        checks, all read-only, all fast enough to run inline rather than as a
-        background job.
+        The decided pre-checks -- OS, path, disk space -- all read-only and fast
+        enough to run inline rather than as a background job:
+
+        - **OS**: the OS's package manager is present.
+        - **Path**: no MongoDB already lives on the host -- no ``mongod`` on
+          ``PATH``, no :data:`CONFIG_PATH`, and :data:`DATA_PATH` absent or
+          empty. This is also what makes rollback safe: ``install_package``
+          claims the host with :data:`OWNERSHIP_MARKER_PATH` only after this
+          passed, and rollback removes nothing without that marker.
+        - **Disk space**: at least :data:`MIN_DATA_DISK_BYTES` free where
+          :data:`DATA_PATH` will live (its filesystem if it exists, ``/``
+          otherwise).
+
+        Each failed check names itself on stderr.
         """
         pkg_manager = self._require_package_manager(spec.os)
-        return StepAction(
-            command=[
-                "sh",
-                "-c",
-                f"command -v {pkg_manager} >/dev/null && "
-                f'[ "$(df --output=avail -B1 {DATA_PATH} 2>/dev/null || '
-                f'df --output=avail -B1 / | tail -1)" -ge {MIN_DATA_DISK_BYTES} ]',
-            ],
-            timeout_s=30,
+        body = "\n".join(
+            [
+                f"command -v {pkg_manager} >/dev/null 2>&1 || "
+                f'{{ echo "pre_check: {pkg_manager} not found" >&2; exit 1; }}',
+                "if command -v mongod >/dev/null 2>&1; then "
+                'echo "pre_check: mongod is already installed" >&2; exit 1; fi',
+                f"if [ -e {CONFIG_PATH} ]; then "
+                f'echo "pre_check: {CONFIG_PATH} already exists" >&2; exit 1; fi',
+                f'if [ -d {DATA_PATH} ] && [ -n "$(ls -A {DATA_PATH})" ]; then '
+                f'echo "pre_check: {DATA_PATH} is not empty" >&2; exit 1; fi',
+                f"target={DATA_PATH}",
+                '[ -d "$target" ] || target=/',
+                'avail=$(df --output=avail -B1 "$target" | tail -1)',
+                f'if [ "$avail" -lt {MIN_DATA_DISK_BYTES} ]; then '
+                f'echo "pre_check: less than {MIN_DATA_DISK_BYTES} bytes free '
+                'for the data directory" >&2; exit 1; fi',
+            ]
         )
+        return StepAction(command=["sh", "-c", body], timeout_s=30)
 
     def _configure_repository(self, spec: BootstrapSpec) -> StepAction:
         """Install ``percona-release`` and enable the requested PSMDB channel."""
@@ -272,24 +341,33 @@ class PackagesInstallStrategy:
                 "curl -fsSL -o /tmp/percona-release.deb "
                 "https://repo.percona.com/apt/percona-release_latest.generic_all.deb && "
                 "dpkg -i /tmp/percona-release.deb && "
-                f"percona-release setup -y {channel}"
+                f"percona-release setup -y {shlex.quote(channel)}"
             )
         elif spec.os is OperatingSystem.ROCKY:
             command = (
                 "dnf install -y "
                 "https://repo.percona.com/yum/percona-release-latest.noarch.rpm && "
-                f"percona-release setup -y {channel}"
+                f"percona-release setup -y {shlex.quote(channel)}"
             )
         else:
             raise ValueError(f"unsupported OperatingSystem: {spec.os!r}")
         return StepAction(command=["sh", "-c", command], timeout_s=120)
 
     def _install_package(self, spec: BootstrapSpec) -> StepAction:
-        """Install the ``percona-server-mongodb`` package itself."""
+        """Claim the host with the ownership marker, then install ``percona-server-mongodb``.
+
+        The marker goes first so a rollback of a half-finished install still
+        cleans up. It is only ever planted after ``pre_check`` proved the host
+        had no MongoDB of its own -- see the module docstring.
+        """
         pkg_manager = self._require_package_manager(spec.os)
         install = "apt-get install -y" if pkg_manager == "apt-get" else "dnf install -y"
         return StepAction(
-            command=["sh", "-c", f"{install} percona-server-mongodb"],
+            command=[
+                "sh",
+                "-c",
+                f"touch {OWNERSHIP_MARKER_PATH}\n{install} percona-server-mongodb",
+            ],
             timeout_s=300,
         )
 
@@ -410,8 +488,8 @@ class PackagesInstallStrategy:
         """Initiate the replica set from its seed member (``hosts[0]``).
 
         Equal-priority members, no voting/hidden/delayed configuration -- that
-        per-member tuning is phase-4 scope (PMM-15347/plan.md §3), out of reach
-        until the Configure step actually collects it.
+        per-member tuning is later-phase scope, out of reach until the Configure
+        step actually collects it.
         """
         members = [
             {"_id": index, "host": f"{host}:{MONGOD_PORT}"}
@@ -426,8 +504,9 @@ class PackagesInstallStrategy:
         Created once, on the seed member -- MongoDB replicates ``admin.system.users``
         to every other member automatically, so this never needs to run per host.
         ``params`` rather than a generated value here for the same reason
-        ``distribute_keyfile`` takes one: PMM-15347/questions.md Q7 makes PMM's
-        encrypted Postgres this secret's durable home, not this strategy.
+        ``distribute_keyfile`` takes one: PMM's encrypted Postgres is this
+        secret's durable home, not this strategy. Run through
+        :func:`_mongosh_file`, so the password never appears in any argv.
 
         :raises ValueError: If ``params`` is missing ``"username"`` or
             ``"password"``.
@@ -444,7 +523,7 @@ class PackagesInstallStrategy:
             f"roles: {json.dumps(PMM_MONITORING_USER_ROLES)}"
             f"}})"
         )
-        return _mongosh_eval(command)
+        return _mongosh_file(command)
 
     def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's fixed per-host rollback step names.
@@ -455,6 +534,9 @@ class PackagesInstallStrategy:
         is left alone deliberately -- removing ``percona-release`` would affect
         anything else on the host that depends on it, well outside this run's
         blast radius.
+
+        Every step is a no-op on a host without :data:`OWNERSHIP_MARKER_PATH`
+        -- see the module docstring.
 
         :param spec: The host's bootstrap spec.
         :return: Step names, in the order rollback applies them.
@@ -503,26 +585,31 @@ class PackagesInstallStrategy:
         """Stop and disable ``mongod`` -- tolerant of it never having started."""
         del spec
         return StepAction(
-            command=["sh", "-c", "systemctl disable --now mongod || true"],
+            command=["sh", "-c", _owned_only("systemctl disable --now mongod || true")],
             timeout_s=60,
         )
 
     def _rollback_remove_config(self, spec: BootstrapSpec) -> StepAction:
         """Remove the config file ``configure_mongod`` wrote."""
         del spec
-        return StepAction(command=["rm", "-f", CONFIG_PATH], timeout_s=30)
+        return StepAction(
+            command=["sh", "-c", _owned_only(f"rm -f {CONFIG_PATH}")], timeout_s=30
+        )
 
     def _rollback_remove_keyfile(self, spec: BootstrapSpec) -> StepAction:
         """Remove the keyFile ``distribute_keyfile`` wrote."""
         del spec
-        return StepAction(command=["rm", "-f", KEY_FILE_PATH], timeout_s=30)
+        return StepAction(
+            command=["sh", "-c", _owned_only(f"rm -f {KEY_FILE_PATH}")], timeout_s=30
+        )
 
     def _rollback_purge_package(self, spec: BootstrapSpec) -> StepAction:
         """Purge the ``percona-server-mongodb`` package ``install_package`` installed.
 
-        Tolerant of the package never having installed (a host that failed
-        ``pre_check`` or ``configure_repository`` still runs the full rollback
-        list -- see :func:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`).
+        Tolerant of the install itself having failed part-way: the marker is
+        planted before the package manager runs, so a host whose
+        ``install_package`` failed still rolls back, and the purge tolerates a
+        package that never landed.
         """
         pkg_manager = self._require_package_manager(spec.os)
         remove = (
@@ -530,9 +617,18 @@ class PackagesInstallStrategy:
             if pkg_manager == "apt-get"
             else "dnf remove -y percona-server-mongodb"
         )
-        return StepAction(command=["sh", "-c", f"{remove} || true"], timeout_s=120)
+        return StepAction(
+            command=["sh", "-c", _owned_only(f"{remove} || true")], timeout_s=120
+        )
 
     def _rollback_remove_data(self, spec: BootstrapSpec) -> StepAction:
-        """Remove the data directory ``mongod`` was configured to use."""
+        """Remove the data directory, then the ownership marker -- the last rollback step."""
         del spec
-        return StepAction(command=["rm", "-rf", DATA_PATH], timeout_s=60)
+        return StepAction(
+            command=[
+                "sh",
+                "-c",
+                _owned_only(f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}"),
+            ],
+            timeout_s=60,
+        )

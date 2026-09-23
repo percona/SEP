@@ -15,12 +15,21 @@
 
 """Assert PackagesInstallStrategy plans the same steps and builds OS-correct actions."""
 
+import base64
+import shlex
+import shutil
+import subprocess
+from pathlib import Path
+
 import pytest
 
+from app.sep.apps.om_bootstrap.dispatch import build_step_script
+from app.sep.apps.om_bootstrap.strategies import packages
 from app.sep.apps.om_bootstrap.strategies.packages import (
     _mongosh_eval,
     DATA_PATH,
     LOG_PATH,
+    OWNERSHIP_MARKER_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
 )
@@ -31,31 +40,7 @@ from app.sep.apps.om_bootstrap.strategy import (
     OperatingSystem,
 )
 
-STEP_NAMES = [
-    "pre_check",
-    "configure_repository",
-    "install_package",
-    "distribute_keyfile",
-    "configure_mongod",
-    "start_service",
-    "verify",
-]
-
-RUN_STEP_NAMES = ["rs_initiate", "create_pmm_monitoring_user"]
-
-ROLLBACK_STEP_NAMES = [
-    "stop_service",
-    "remove_config",
-    "remove_keyfile",
-    "purge_package",
-    "remove_data",
-]
-
-#: Every per-host step's own required ``params``, so a single parametrized test
-#: can build every step without hand-listing which ones need what.
-_STEP_PARAMS: dict[str, dict[str, str]] = {
-    "distribute_keyfile": {"key_file_content": "test-keyfile-content"},
-}
+SUPPORTED_OSES = [OperatingSystem.UBUNTU, OperatingSystem.ROCKY]
 
 
 def _spec(os_: OperatingSystem) -> BootstrapSpec:
@@ -65,6 +50,29 @@ def _spec(os_: OperatingSystem) -> BootstrapSpec:
         mongodb_version="8.0",
         replica_set_name="rs-test",
     )
+
+
+#: Derived from the strategy itself, so the parametrized build tests below cover
+#: exactly what the strategy plans; the plan tests pin the lists' contents.
+STEP_NAMES = PackagesInstallStrategy().plan_steps(_spec(OperatingSystem.UBUNTU))
+RUN_STEP_NAMES = PackagesInstallStrategy().plan_run_steps(_spec(OperatingSystem.UBUNTU))
+ROLLBACK_STEP_NAMES = PackagesInstallStrategy().plan_rollback_steps(
+    _spec(OperatingSystem.UBUNTU)
+)
+
+#: Every per-host step's own required ``params``, so a single parametrized test
+#: can build every step without hand-listing which ones need what.
+_STEP_PARAMS: dict[str, dict[str, str]] = {
+    "distribute_keyfile": {"key_file_content": "test-keyfile-content"},
+}
+
+_SH = shutil.which("sh") or "/bin/sh"
+
+
+def _body(command: list[str]) -> str:
+    """Return the shell body of an ``["sh", "-c", body]`` action."""
+    assert command[:2] == ["sh", "-c"]
+    return command[2]
 
 
 class TestPackagesInstallStrategyIsAnInstallStrategy:
@@ -78,26 +86,38 @@ class TestPackagesInstallStrategyIsAnInstallStrategy:
 class TestPlanSteps:
     """Assert the step list is fixed and OS-independent for phase 1."""
 
-    @pytest.mark.parametrize("os_", [OperatingSystem.UBUNTU, OperatingSystem.ROCKY])
+    @pytest.mark.parametrize("os_", SUPPORTED_OSES)
     def test_returns_the_fixed_step_names_regardless_of_os(
         self, os_: OperatingSystem
     ) -> None:
         """Ubuntu and Rocky get the same step names -- only build_step branches on OS."""
-        assert PackagesInstallStrategy().plan_steps(_spec(os_)) == STEP_NAMES
+        assert PackagesInstallStrategy().plan_steps(_spec(os_)) == [
+            "pre_check",
+            "configure_repository",
+            "install_package",
+            "distribute_keyfile",
+            "configure_mongod",
+            "start_service",
+            "verify",
+        ]
 
 
 class TestBuildStep:
     """Assert build_step produces the right command per step and per OS."""
 
+    @pytest.mark.parametrize("os_", SUPPORTED_OSES)
     @pytest.mark.parametrize("step_name", STEP_NAMES)
-    def test_every_planned_step_builds_without_raising(self, step_name: str) -> None:
-        """Every name plan_steps returns is one build_step actually knows."""
-        PackagesInstallStrategy().build_step(
-            step_name,
-            "node00",
-            _spec(OperatingSystem.UBUNTU),
-            params=_STEP_PARAMS.get(step_name),
+    def test_every_planned_step_builds_a_runnable_action(
+        self, step_name: str, os_: OperatingSystem
+    ) -> None:
+        """Every name plan_steps returns builds a non-empty command with a real timeout."""
+        action = PackagesInstallStrategy().build_step(
+            step_name, "node00", _spec(os_), params=_STEP_PARAMS.get(step_name)
         )
+
+        assert action.command
+        assert all(action.command)
+        assert action.timeout_s > 0
 
     def test_unknown_step_name_raises(self) -> None:
         """A name outside plan_steps' own list is a programming error, not a silent no-op."""
@@ -127,6 +147,20 @@ class TestBuildStep:
         assert "percona-release-latest.noarch.rpm" in command
         assert "dnf install" in command
         assert "psmdb-80" in command
+
+    def test_configure_repository_quotes_the_channel(self) -> None:
+        """The channel reaches the shell quoted, whatever the version string held."""
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={"mongodb_version": "8.0;touch /tmp/x"}
+        )
+
+        action = PackagesInstallStrategy().build_step(
+            "configure_repository", "node00", spec
+        )
+
+        assert "percona-release setup -y 'psmdb-80;touch /tmp/x'" in _body(
+            action.command
+        )
 
     def test_configure_repository_accepts_a_full_patch_version(self) -> None:
         """Only major.minor selects the channel, not the full patch version.
@@ -159,6 +193,19 @@ class TestBuildStep:
         )
 
         assert "apt-get install -y percona-server-mongodb" in " ".join(action.command)
+
+    @pytest.mark.parametrize("os_", SUPPORTED_OSES)
+    def test_install_package_claims_the_host_before_installing(
+        self, os_: OperatingSystem
+    ) -> None:
+        """The ownership marker lands first, so a half-finished install still rolls back."""
+        action = PackagesInstallStrategy().build_step(
+            "install_package", "node00", _spec(os_)
+        )
+
+        lines = _body(action.command).splitlines()
+        assert lines[0] == f"touch {OWNERSHIP_MARKER_PATH}"
+        assert "percona-server-mongodb" in lines[1]
 
     def test_install_package_uses_dnf_on_rocky(self) -> None:
         """Rocky's package install goes through dnf, not apt-get."""
@@ -220,17 +267,37 @@ class TestBuildStep:
             )
 
     def test_distribute_keyfile_writes_the_given_content(self) -> None:
-        """The dispatched command embeds exactly the content the caller supplied."""
+        """The dispatched command carries exactly the content the caller supplied."""
+        content = "super-secret-keyfile-bytes"
         action = PackagesInstallStrategy().build_step(
             "distribute_keyfile",
             "node00",
             _spec(OperatingSystem.UBUNTU),
-            params={"key_file_content": "super-secret-keyfile-bytes"},
+            params={"key_file_content": content},
         )
 
-        command = " ".join(action.command)
-        assert "super-secret-keyfile-bytes" in command
-        assert "-m 400" in command
+        body = _body(action.command)
+        encoded = shlex.split(body)[2]
+        assert base64.b64decode(encoded).decode() == content
+        assert content not in body
+        assert "install -m 400 -o mongod -g mongod /dev/stdin" in body
+
+    def test_distribute_keyfile_content_cannot_break_out_of_the_command(
+        self,
+    ) -> None:
+        """Content holding a heredoc delimiter or a command reaches the file verbatim."""
+        content = "abc\nMONGOD_KEYFILE\n$(touch /tmp/pwned)'\"\n"
+        action = PackagesInstallStrategy().build_step(
+            "distribute_keyfile",
+            "node00",
+            _spec(OperatingSystem.UBUNTU),
+            params={"key_file_content": content},
+        )
+        decoder = _body(action.command).split(" | install ")[0]
+
+        result = subprocess.run([_SH, "-c", decoder], capture_output=True, check=True)
+
+        assert result.stdout.decode() == content
 
     def test_verify_goes_through_mongosh_eval_too(self) -> None:
         """``verify`` must not bypass the Atlas CLI probe suppression every mongosh call needs."""
@@ -247,7 +314,10 @@ class TestPlanRunSteps:
     def test_returns_the_fixed_run_step_names(self) -> None:
         """rs_initiate and create_pmm_monitoring_user, in that order."""
         spec = _spec(OperatingSystem.UBUNTU)
-        assert PackagesInstallStrategy().plan_run_steps(spec) == RUN_STEP_NAMES
+        assert PackagesInstallStrategy().plan_run_steps(spec) == [
+            "rs_initiate",
+            "create_pmm_monitoring_user",
+        ]
 
 
 class TestBuildRunStep:
@@ -293,6 +363,25 @@ class TestBuildRunStep:
         assert "generated-secret" in command
         assert "clusterMonitor" in command
 
+    def test_create_pmm_monitoring_user_keeps_the_password_out_of_argv(self) -> None:
+        """The JS is read from a private temp file, never passed through --eval."""
+        action = PackagesInstallStrategy().build_run_step(
+            "create_pmm_monitoring_user",
+            ["node00"],
+            _spec(OperatingSystem.UBUNTU),
+            params={"username": "pmm_monitor", "password": "generated-secret"},
+        )
+        script = build_step_script(action)
+
+        assert "--eval" not in script
+        assert 'mongosh --quiet --file "$js"' in script
+        assert "umask 077" in script
+        assert "sh -c" not in script
+        heredoc = script.split("<<'OM_BOOTSTRAP_JS'\n")[1].split("\nOM_BOOTSTRAP_JS\n")[
+            0
+        ]
+        assert "generated-secret" in heredoc
+
     def test_create_pmm_monitoring_user_disables_the_atlas_cli_check(self) -> None:
         """Mongosh's Atlas CLI local-deployment probe closes the localhost exception.
 
@@ -317,22 +406,41 @@ class TestPlanRollbackSteps:
     def test_returns_the_fixed_rollback_step_names(self) -> None:
         """The reverse of the forward steps that actually change host state."""
         spec = _spec(OperatingSystem.UBUNTU)
-        assert (
-            PackagesInstallStrategy().plan_rollback_steps(spec) == ROLLBACK_STEP_NAMES
-        )
+        assert PackagesInstallStrategy().plan_rollback_steps(spec) == [
+            "stop_service",
+            "remove_config",
+            "remove_keyfile",
+            "purge_package",
+            "remove_data",
+        ]
 
 
 class TestBuildRollbackStep:
     """Assert build_rollback_step produces the right teardown command per OS."""
 
+    @pytest.mark.parametrize("os_", SUPPORTED_OSES)
     @pytest.mark.parametrize("step_name", ROLLBACK_STEP_NAMES)
-    def test_every_planned_rollback_step_builds_without_raising(
-        self, step_name: str
+    def test_every_rollback_step_is_a_no_op_without_the_marker(
+        self, step_name: str, os_: OperatingSystem
     ) -> None:
-        """Every name plan_rollback_steps returns is one build_rollback_step knows."""
-        PackagesInstallStrategy().build_rollback_step(
-            step_name, "node00", _spec(OperatingSystem.UBUNTU)
+        """Every rollback step first checks the host is one this strategy installed on."""
+        action = PackagesInstallStrategy().build_rollback_step(
+            step_name, "node00", _spec(os_)
         )
+
+        assert _body(action.command).startswith(
+            f"[ -e {OWNERSHIP_MARKER_PATH} ] || exit 0\n"
+        )
+
+    def test_remove_data_removes_the_marker_last(self) -> None:
+        """The marker outlives every other rollback step, so a retried rollback still runs."""
+        action = PackagesInstallStrategy().build_rollback_step(
+            "remove_data", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        lines = _body(action.command).strip().splitlines()
+        assert lines[-2] == f"rm -rf {DATA_PATH}"
+        assert lines[-1] == f"rm -f {OWNERSHIP_MARKER_PATH}"
 
     def test_unknown_rollback_step_name_raises(self) -> None:
         """A forward step name is not a rollback step -- no silent no-op."""
@@ -360,3 +468,171 @@ class TestBuildRollbackStep:
         )
 
         assert "dnf remove -y percona-server-mongodb" in " ".join(action.command)
+
+
+def _fake_bin(tmp_path: Path, *, with_mongod: bool) -> Path:
+    """Build a ``PATH`` directory with the real tools pre_check needs and fake ones.
+
+    :param tmp_path: The test's scratch directory.
+    :param with_mongod: Whether a ``mongod`` is on this ``PATH``.
+    :return: The directory.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("df", "tail", "ls"):
+        real = shutil.which(tool)
+        assert real is not None
+        (bin_dir / tool).symlink_to(real)
+    fakes = ["apt-get", "mongod"] if with_mongod else ["apt-get"]
+    for fake in fakes:
+        path = bin_dir / fake
+        path.write_text("#!/bin/sh\nexit 0\n")
+        path.chmod(0o755)
+    return bin_dir
+
+
+class TestPreCheckCommand:
+    """Run pre_check's generated shell for real against scratch paths."""
+
+    @pytest.fixture
+    def paths(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> tuple[Path, Path]:
+        """Point the config and data paths at scratch paths, with a 1-byte minimum."""
+        config = tmp_path / "mongod.conf"
+        data = tmp_path / "data"
+        monkeypatch.setattr(packages, "CONFIG_PATH", str(config))
+        monkeypatch.setattr(packages, "DATA_PATH", str(data))
+        monkeypatch.setattr(packages, "MIN_DATA_DISK_BYTES", 1)
+        return config, data
+
+    def _run(
+        self, tmp_path: Path, *, with_mongod: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        action = PackagesInstallStrategy().build_step(
+            "pre_check", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        bin_dir = _fake_bin(tmp_path, with_mongod=with_mongod)
+        return subprocess.run(
+            [_SH, "-c", _body(action.command)],
+            capture_output=True,
+            text=True,
+            env={"PATH": str(bin_dir)},
+            check=False,
+        )
+
+    def test_passes_on_a_clean_host(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """No MongoDB anywhere and enough disk: nothing to refuse."""
+        result = self._run(tmp_path)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_passes_with_an_empty_data_directory(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """An empty data directory is not a MongoDB, and its free space is measured."""
+        paths[1].mkdir()
+
+        result = self._run(tmp_path)
+
+        assert result.returncode == 0, result.stderr
+
+    def test_fails_when_mongod_is_on_path(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """An installed mongod means the host already runs a MongoDB of its own."""
+        result = self._run(tmp_path, with_mongod=True)
+
+        assert result.returncode != 0
+        assert "mongod is already installed" in result.stderr
+
+    def test_fails_when_the_config_file_exists(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """A mongod.conf already present belongs to someone else's install."""
+        paths[0].write_text("net: {}\n")
+
+        result = self._run(tmp_path)
+
+        assert result.returncode != 0
+        assert "already exists" in result.stderr
+
+    def test_fails_when_the_data_directory_is_not_empty(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """Existing data files are exactly what rollback must never delete."""
+        paths[1].mkdir()
+        (paths[1] / "WiredTiger").write_text("")
+
+        result = self._run(tmp_path)
+
+        assert result.returncode != 0
+        assert "is not empty" in result.stderr
+
+    def test_fails_without_enough_disk_space(
+        self,
+        tmp_path: Path,
+        paths: tuple[Path, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Less free space than the minimum fails the check, naming why."""
+        monkeypatch.setattr(packages, "MIN_DATA_DISK_BYTES", 2**62)
+
+        result = self._run(tmp_path)
+
+        assert result.returncode != 0
+        assert "bytes free" in result.stderr
+
+
+class TestRollbackCommands:
+    """Run rollback steps' generated shell for real against scratch paths."""
+
+    @pytest.fixture
+    def paths(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> tuple[Path, Path, Path]:
+        """Point every path at scratch copies holding a config file and data."""
+        config = tmp_path / "mongod.conf"
+        data = tmp_path / "data"
+        marker = tmp_path / "mongod.om-bootstrap"
+        monkeypatch.setattr(packages, "CONFIG_PATH", str(config))
+        monkeypatch.setattr(packages, "DATA_PATH", str(data))
+        monkeypatch.setattr(packages, "OWNERSHIP_MARKER_PATH", str(marker))
+        config.write_text("net: {}\n")
+        data.mkdir()
+        (data / "WiredTiger").write_text("")
+        return config, data, marker
+
+    def _run(self, step_name: str) -> None:
+        action = PackagesInstallStrategy().build_rollback_step(
+            step_name, "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        subprocess.run([_SH, "-c", _body(action.command)], check=True)
+
+    def test_leaves_a_host_without_the_marker_untouched(
+        self, paths: tuple[Path, Path, Path]
+    ) -> None:
+        """A MongoDB this strategy never installed survives rollback intact."""
+        config, data, _marker = paths
+
+        self._run("remove_config")
+        self._run("remove_data")
+
+        assert config.exists()
+        assert (data / "WiredTiger").exists()
+
+    def test_removes_what_it_installed_when_the_marker_exists(
+        self, paths: tuple[Path, Path, Path]
+    ) -> None:
+        """With the marker, rollback removes the config and data, then the marker."""
+        config, data, marker = paths
+        marker.touch()
+
+        self._run("remove_config")
+        self._run("remove_data")
+
+        assert not config.exists()
+        assert not data.exists()
+        assert not marker.exists()
