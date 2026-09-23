@@ -16,7 +16,7 @@
 """Define the OpenManager Bootstrap persistence model.
 
 One table, and the design is the same call ``om_inventory``'s ``ProbeRun`` makes
-(PMM-15347/plan.md §4 item 9: ``om_bootstrap`` owns durable state): ``hosts`` is a
+(``om_bootstrap`` owns the bootstrap's durable state): ``hosts`` is a
 JSON document of :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState`
 rows rather than a normalized per-step table. A per-step table would need a fixed
 column for "step name", but the step list itself is per-strategy and per-spec
@@ -78,8 +78,7 @@ OM_SCHEMA = "om_schema"
 class BootstrapRunStatus(StrEnum):
     """Enumerate the states of one bootstrap run.
 
-    Matches Adamo's decided partial-failure policy exactly
-    (PMM-15347/questions.md Q8): retry a failed host, and if retries are
+    Matches the decided partial-failure policy exactly: retry a failed host, and if retries are
     exhausted, roll back the whole run -- there is no "partial success" status
     here the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A
     bootstrap either finishes with every host succeeded, or it did not finish.

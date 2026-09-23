@@ -15,19 +15,19 @@
 
 """Define the step/state domain model and the :class:`InstallStrategy` seam.
 
-No persistence and no execution here on purpose (PMM-15347/plan.md §4 item 9): this
-module is pure planning logic, unit-testable without a database or a Nomad
-connection. Two things are deliberately kept out of it, for the state machine (not
-yet built) to own instead:
+No persistence and no execution here on purpose: this module is pure planning
+logic, unit-testable without a database or a Nomad connection. Two things are
+deliberately kept out of it and live in sibling modules instead:
 
 - **Running anything.** :meth:`InstallStrategy.build_step` returns a
   :class:`StepAction` -- data describing what a step needs, not an executed result.
-  Turning that into a real Nomad job (the ``sudo raw_exec`` pattern
-  ``exec-python-artifact`` already proves, PMM-15347/plan.md §2.2) is the state
-  machine's job, so a strategy never touches the network or a host.
+  Turning that into a real Nomad job is
+  :mod:`~app.sep.apps.om_bootstrap.dispatch`'s job, so a strategy never touches
+  the network or a host.
 - **Persisting progress.** :class:`StepRecord`/:class:`HostBootstrapState` are the
-  *shape* progress takes, not a database row -- SQLModel persistence for them is a
-  follow-up (PMM-15347/plan.md §4 item 9: ``om_bootstrap`` owns durable state).
+  *shape* progress takes, not a database row -- they are stored as JSON documents
+  on :class:`~app.sep.apps.om_bootstrap.models.BootstrapRun` (see
+  :mod:`~app.sep.apps.om_bootstrap.persistence`).
 
 The dynamic-progress requirement lives in :meth:`InstallStrategy.plan_steps`: it
 returns the ordered step *names* a given spec will run, computed from the spec
@@ -71,8 +71,9 @@ class InstallMethod(StrEnum):
 
     Only ``PACKAGES`` has an implementation
     (:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).
-    ``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the future
-    state machine have a closed set to switch on before a second strategy exists.
+    ``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the API have
+    a closed set to switch on before a second strategy exists; requesting either
+    today is a 400.
     """
 
     PACKAGES = "packages"
@@ -91,17 +92,18 @@ class BootstrapSpec(BaseModel):
     """What one host's bootstrap needs to know to plan and build its steps.
 
     Deliberately minimal -- just enough to make :class:`InstallStrategy` concrete.
-    The full Configure-step shape (replica set topology, member roles, TLS mode --
-    PMM-15347/questions.md Q5/Q12) is a later design pass, not guessed at here.
+    The full Configure-step shape (replica set topology, member roles, TLS mode)
+    is a later design pass, not guessed at here.
 
     :param install_method: Which strategy plans and builds this host's steps.
     :param os: The target host's OS, from ``om_inventory``'s already-collected
-        facts (PMM-15347/plan.md §2.1) -- not re-detected here.
+        facts -- not re-detected here.
     :param mongodb_version: The Percona Server for MongoDB version to install, e.g.
         ``"8.0"``. Selects the ``psmdb-<version>`` repository channel.
-    :param replica_set_name: The replica set this host joins. ``rs.initiate`` and
-        multi-host orchestration are the state machine's job, not a single host's
-        strategy -- this field is what one host's own config file needs to name.
+    :param replica_set_name: The replica set this host joins. ``rs.initiate`` is a
+        run-level step and multi-host orchestration is PMM's stepper's job, not a
+        single host's -- this field is what one host's own config file needs to
+        name.
     """
 
     install_method: InstallMethod
@@ -114,12 +116,15 @@ class StepAction(BaseModel):
     """What running one step actually requires -- the execution layer's input.
 
     Kept dispatch-mechanism-agnostic on purpose: every strategy's steps resolve to
-    one of these, so the code that turns it into a real Nomad job (not built yet)
-    has exactly one shape to consume regardless of which strategy planned it.
+    one of these, so :mod:`~app.sep.apps.om_bootstrap.dispatch`, which turns it
+    into a real Nomad job, has exactly one shape to consume regardless of which
+    strategy planned it.
 
-    :param command: The argv to run on the host.
-    :param timeout_s: How long the execution layer should wait before treating this
-        step as failed.
+    :param command: The argv to run on the host. An ``["sh", "-c", body]`` argv
+        is run as ``body`` directly (see
+        :func:`~app.sep.apps.om_bootstrap.dispatch.build_step_script`).
+    :param timeout_s: How long the step may run, in seconds, before it is killed
+        and fails.
     """
 
     command: list[str]
@@ -151,9 +156,8 @@ class StepRecord(BaseModel):
         planning, persistence, and API responses alike.
     :param attempt_count: How many times this step has been dispatched.
         Incremented on every dispatch, including the first -- PMM's stepper reads
-        this to enforce Adamo's decided retry policy (PMM-15347/questions.md Q8:
-        retry once, then roll back) without needing a counter of its own, which
-        would be lost on a leader failover. ``om_bootstrap`` only ever records the
+        this to enforce its decided retry policy (retry, then roll back) without
+        needing a counter of its own, which would be lost on a leader failover. ``om_bootstrap`` only ever records the
         fact that a dispatch happened; deciding whether *another* one should is
         the stepper's call, not this field's.
     """
@@ -220,11 +224,11 @@ class InstallStrategy(Protocol):
     """One way to get MongoDB installed and configured on a host.
 
     A strategy owns *how*; the state machine (PMM's ``om`` service, driving as the
-    HA-leader-only stepper) owns *when*, *whether the run as a whole should
-    continue*, and *persisting progress* -- it does not know or care which
-    strategy is running, only that every strategy answers these questions the
-    same way. This is PMM-15347/plan.md §4 item 5's "abstracted pre-check/
-    install/configure/test" requirement.
+    HA-leader-only stepper) owns *when* and *whether the run as a whole should
+    continue*, and ``om_bootstrap``'s API persists the progress -- neither knows
+    or cares which strategy is running, only that every strategy answers these
+    questions the same way. This is the "abstracted pre-check/install/configure/
+    test" requirement.
 
     Three parallel step lists, not one:
 
@@ -240,14 +244,13 @@ class InstallStrategy(Protocol):
       succeeded.
     - **Rollback** (:meth:`plan_rollback_steps`/:meth:`build_rollback_step`):
       one host's teardown, planned up front alongside its forward steps so a
-      fresh run already shows what rolling back would do (Adamo's decided
-      partial-failure policy, PMM-15347/questions.md Q8), even before anything
-      fails.
+      fresh run already shows what rolling back would do (the decided
+      partial-failure policy), even before anything fails.
 
     ``build_step`` and ``build_run_step`` both take a ``params`` mapping for the
     one thing a strategy cannot itself supply: per-run secrets (a keyFile's
-    content, a generated monitoring-user password). PMM-15347/questions.md Q7
-    decided these live durably in PMM's encrypted Postgres, not SEP's --
+    content, a generated monitoring-user password). These live durably in PMM's
+    encrypted Postgres, not SEP's --
     ``params`` is how the stepper hands one to a single dispatch, transiently,
     without ``om_bootstrap`` ever persisting the plaintext in
     :class:`StepRecord`/:class:`~app.sep.apps.om_bootstrap.models.BootstrapRun`.
@@ -263,7 +266,6 @@ class InstallStrategy(Protocol):
         :param spec: The host's bootstrap spec.
         :return: Step names, in execution order.
         """
-        ...
 
     def build_step(
         self,
@@ -285,7 +287,6 @@ class InstallStrategy(Protocol):
             -- see the class docstring. ``None`` for a step that needs none.
         :return: What the execution layer needs to run this step.
         """
-        ...
 
     def plan_run_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's ordered run-level step names for ``spec``.
@@ -296,7 +297,6 @@ class InstallStrategy(Protocol):
         :param spec: The run's bootstrap spec.
         :return: Step names, in execution order.
         """
-        ...
 
     def build_run_step(
         self,
@@ -318,7 +318,6 @@ class InstallStrategy(Protocol):
         :param params: See :meth:`build_step`.
         :return: What the execution layer needs to run this step.
         """
-        ...
 
     def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's ordered per-host rollback step names for ``spec``.
@@ -329,7 +328,6 @@ class InstallStrategy(Protocol):
         :param spec: The host's bootstrap spec.
         :return: Step names, in the order rollback should apply them.
         """
-        ...
 
     def build_rollback_step(
         self, step_name: str, host: str, spec: BootstrapSpec
@@ -342,4 +340,3 @@ class InstallStrategy(Protocol):
         :param spec: The host's bootstrap spec.
         :return: What the execution layer needs to run this step.
         """
-        ...

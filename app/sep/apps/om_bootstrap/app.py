@@ -17,15 +17,14 @@
 
 Owns MongoDB provisioning execution: pre-flight checks, install/configure/
 `rs.initiate`, and the persisted run/state-machine history for it -- the write
-side `om_inventory` deliberately stays out of (PMM-15347/plan.md §4 item 5).
+side `om_inventory` deliberately stays out of.
 `om_inventory` keeps owning general, read-only host facts; this app owns
 everything specific to *running a bootstrap*, including checks that are
 read-only in effect but bootstrap-specific in scope (disk space, path, OS
 version).
 
 ``sidebar=False`` and ``custom_ui=False``: there is nothing to navigate to here.
-The wizard lives in PMM's own UI (PMM-15347/plan.md §4 item 4 / questions.md
-Q4) -- the consumer is PMM's ``om`` managed service driving this app's API to
+The wizard lives in PMM's own UI -- the consumer is PMM's ``om`` managed service driving this app's API to
 trigger and poll bootstraps, the same "consumer drives/polls, no SEP-native
 page" shape `om_inventory` established.
 
