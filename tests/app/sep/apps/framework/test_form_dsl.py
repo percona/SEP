@@ -1322,8 +1322,8 @@ class TestDeriveAppSchemaItemDisplayNames:
         assert schema.item_display_name == "backup"
         assert schema.item_display_name_plural == "backups"
 
-    def test_omitted_record_names_default_from_display_name(self) -> None:
-        """Leave the model's defaulting to fill both when the caller passes neither."""
+    def test_omitted_record_names_default_via_model_fill(self) -> None:
+        """Leave the model's fill: singular from ``display_name``, plural from singular."""
         schema = derive_app_schema(
             _ScopeModel,
             _SINGLE_SECTION,
@@ -1333,7 +1333,7 @@ class TestDeriveAppSchemaItemDisplayNames:
         )
 
         assert schema.item_display_name == "MySQL Backups"
-        assert schema.item_display_name_plural == "MySQL Backups"
+        assert schema.item_display_name_plural == "MySQL Backupses"
 
 
 # ── Section grouping and parent toggles ──────────────────────────────────────
