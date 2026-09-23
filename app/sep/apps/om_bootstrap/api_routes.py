@@ -35,9 +35,10 @@ import logging
 from collections.abc import Callable
 from uuid import UUID
 
+from aiohttp import ClientError
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status as http_status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.deps import require_minimum_role
 from app.core.auth.models import UserRole
@@ -93,6 +94,28 @@ _FINISHABLE_STATUSES = frozenset(
 )
 
 
+#: At least two path segments past the root, so a value like ``/var`` or ``/etc``
+#: (one segment) is rejected outright -- ``_rollback_remove_data`` runs
+#: ``rm -rf`` on ``data_path`` (PMM-15347/strategies/packages.py), and a
+#: single-segment path is a typo away from an existing, load-bearing directory.
+#: No whitespace/NUL either, so the value is safe to interpolate into a shell
+#: command once :func:`shlex.quote`-d -- this bounds the *shape*, quoting closes
+#: the injection vector itself.
+_ABSOLUTE_PATH_PATTERN = r"^(?:/[^/\s\x00]+){2,}$"
+
+#: major.minor or major.minor.patch -- what ``_psmdb_channel`` (strategies/packages.py)
+#: accepts. Confirmed against a live host that anything else produces a
+#: nonexistent repository channel.
+_MONGODB_VERSION_PATTERN = r"^\d+\.\d+(?:\.\d+)?$"
+
+#: No whitespace or other control characters. ``replica_set_name`` and
+#: ``bind_ip`` both land in ``mongod.conf`` via a quoted heredoc
+#: (``_mongod_config``, strategies/packages.py) -- inert against the *shell*,
+#: since the heredoc delimiter is quoted, but a newline in either value would
+#: still inject an arbitrary extra line into the YAML mongod parses.
+_NO_CONTROL_CHARS_PATTERN = r"^[^\s\x00-\x1f]+$"
+
+
 class TriggerRunRequest(BaseModel):
     """Request one bootstrap run over a set of hosts, all sharing one spec.
 
@@ -103,10 +126,20 @@ class TriggerRunRequest(BaseModel):
     :param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.
     :param mongodb_version: The Percona Server for MongoDB version to install.
     :param replica_set_name: The replica set every host joins.
-    :param data_path: Where mongod stores its data on every host.
-    :param log_path: Where mongod writes its log file on every host.
-    :param port: The port mongod listens on, on every host.
+    :param data_path: Where mongod stores its data on every host. Defaults to
+        the same value the column behind it carries
+        (``migrations/versions/..._add_run_config_fields.py``), so a caller
+        written against 1533's fixed-path contract keeps working unchanged.
+    :param log_path: Where mongod writes its log file on every host. Same
+        default story as ``data_path``.
+    :param port: The port mongod listens on, on every host. Same default
+        story as ``data_path``.
     :param bind_ip: The interface(s) mongod listens on, on every host.
+        Defaults to ``127.0.0.1``, not the column's ``0.0.0.0`` -- the column
+        default exists only so a pre-Phase-A row reads back as the fixed value
+        it actually used, and every *new* run always passes this explicitly
+        (PMM already does), so a new run that leaves it out gets the narrower
+        window rather than the historical one.
     :param member_configs: Per-host election settings for ``rs.initiate``,
         keyed by entries of ``hosts``. A host missing from this mapping --
         including every host, when this is left empty -- gets
@@ -117,12 +150,14 @@ class TriggerRunRequest(BaseModel):
     hosts: list[str]
     install_method: InstallMethod
     os: OperatingSystem
-    mongodb_version: str
-    replica_set_name: str
-    data_path: str
-    log_path: str
-    port: int
-    bind_ip: str
+    mongodb_version: str = Field(pattern=_MONGODB_VERSION_PATTERN)
+    replica_set_name: str = Field(min_length=1, pattern=_NO_CONTROL_CHARS_PATTERN)
+    data_path: str = Field(default="/var/lib/mongo", pattern=_ABSOLUTE_PATH_PATTERN)
+    log_path: str = Field(
+        default="/var/log/mongodb/mongod.log", pattern=_ABSOLUTE_PATH_PATTERN
+    )
+    port: int = Field(default=27017, gt=0, le=65535)
+    bind_ip: str = Field(default="127.0.0.1", pattern=_NO_CONTROL_CHARS_PATTERN)
     member_configs: dict[str, MemberConfig] = {}
 
 
@@ -166,6 +201,12 @@ class RunResponse(BaseModel):
     :param os: The run's target OS.
     :param mongodb_version: The run's MongoDB version.
     :param replica_set_name: The replica set every host in this run joins.
+    :param data_path: Where mongod stores its data on every host in this run.
+    :param log_path: Where mongod writes its log file on every host in this run.
+    :param port: The port mongod listens on, on every host in this run.
+    :param bind_ip: The interface(s) mongod listens on, on every host in this run.
+    :param member_configs: Per-host election settings this run was created
+        with -- see :class:`TriggerRunRequest`'s own docstring.
     :param started_at: When the run began.
     :param finished_at: When it reached a terminal status, if it has.
     :param hosts: Every host's current step-by-step progress -- the full,
@@ -189,6 +230,11 @@ class RunResponse(BaseModel):
     os: OperatingSystem
     mongodb_version: str
     replica_set_name: str
+    data_path: str
+    log_path: str
+    port: int
+    bind_ip: str
+    member_configs: dict[str, MemberConfig]
     started_at: UTCDatetime
     finished_at: UTCDatetime | None
     hosts: list[HostBootstrapState]
@@ -220,6 +266,13 @@ def _run_response(
         os=to_strategy_os(run.os),
         mongodb_version=run.mongodb_version,
         replica_set_name=run.replica_set_name,
+        data_path=run.data_path,
+        log_path=run.log_path,
+        port=run.port,
+        bind_ip=run.bind_ip,
+        member_configs={
+            host: MemberConfig(**config) for host, config in run.member_configs.items()
+        },
         started_at=run.started_at,
         finished_at=run.finished_at,
         hosts=hosts if hosts is not None else parse_host_states(run),
@@ -364,13 +417,19 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
     :param session: The database session.
     :param request: The requested run.
     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
-        same host twice, or names an install method with no registered strategy.
+        same host twice, names an install method with no registered strategy,
+        or ``member_configs`` names a host outside ``hosts``.
     :return: The created run, every host's steps ``pending``.
     """
     if not request.hosts:
         raise HTTPBadRequestException(detail="At least one host is required")
     if len(set(request.hosts)) != len(request.hosts):
         raise HTTPBadRequestException(detail="hosts must not repeat the same host")
+    unknown_members = set(request.member_configs) - set(request.hosts)
+    if unknown_members:
+        raise HTTPBadRequestException(
+            detail=f"member_configs names hosts not in hosts: {sorted(unknown_members)}"
+        )
 
     spec = BootstrapSpec(
         install_method=request.install_method,
@@ -524,7 +583,9 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         log_path=run.log_path,
         port=run.port,
         bind_ip=run.bind_ip,
-        member_configs=run.member_configs,  # ty: ignore[invalid-argument-type]
+        member_configs={
+            host: MemberConfig(**config) for host, config in run.member_configs.items()
+        },
     )
     return _strategy_for(install_method), spec
 
@@ -836,7 +897,12 @@ async def _stop_running_steps(
     decision does not depend on this succeeding (it already treats
     ``cancel_requested`` as reason enough on its own), and a step that
     couldn't be stopped here still eventually reaches a terminal status once
-    its own dispatch actually finishes.
+    its own dispatch actually finishes. Catches transport failures
+    (``ClientError``/``TimeoutError``) alongside ``HTTPException`` -- the
+    Tasks API being unreachable is exactly the kind of outage an operator is
+    likely to be hitting Abort over, and this call happens after
+    ``cancel_requested`` is already saved (see :func:`cancel_run`), so an
+    outage here must not surface as a failed cancellation.
 
     :param tasks_api: The Tasks API client.
     :param states: Every host's current state.
@@ -854,11 +920,12 @@ async def _stop_running_steps(
                 continue
             try:
                 await tasks_api.post(f"/history/{step.task_history_id}/stop/")
-            except HTTPException as exc:
+            except (HTTPException, ClientError, TimeoutError) as exc:
+                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                 logger.warning(
                     "Failed to stop task history %s while cancelling: %s",
                     step.task_history_id,
-                    exc.detail,
+                    detail,
                 )
 
 
@@ -879,6 +946,13 @@ async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
     cancellation was already requested is a no-op, not an error -- an
     operator clicking Abort twice should never see a failure.
 
+    Saves ``cancel_requested`` *before* attempting to stop anything: a poll
+    landing between the two would otherwise still see ``cancel_requested=false``
+    and the stepper could keep dispatching. Stopping is best-effort -- the
+    saved flag is the signal that actually matters (see
+    :func:`_stop_running_steps`) -- so it runs after, and its own failures
+    (including the Tasks API being unreachable) never undo the save above.
+
     :param run_id: The run's id.
     :param session: The database session.
     :raises HTTPNotFoundException: When there is no such run.
@@ -895,12 +969,12 @@ async def cancel_run(run_id: UUID, session: SessionDep) -> RunResponse:
         return _run_response(run)
 
     run.cancel_requested = True
+    run = await BootstrapRunManager.save(session, run)
+
     states = parse_host_states(run)
     run_steps = parse_run_steps(run)
-
     tasks_api = await _tasks_api_client()
     with tasks_api.auth(require_internal_token()):
         await _stop_running_steps(tasks_api, states, run_steps)
 
-    run = await BootstrapRunManager.save(session, run)
     return _run_response(run)

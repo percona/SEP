@@ -124,6 +124,13 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
     own docstring for why that host is always the target.
 
+    Skips the SUCCEEDED inference once ``run.cancel_requested`` is set: without
+    this, a cancel that lands just as the last step finishes -- or whose
+    best-effort stop failed -- would flip to SUCCEEDED on the very next poll,
+    permanently recording a run the operator aborted as one that finished
+    normally, with no route back to ROLLED_BACK (``finish_run`` refuses to
+    override a terminal run).
+
     :param tasks_api: The Tasks API client.
     :param run: The run to reconcile.
     :return: Whether anything changed -- callers use this to skip a write when
@@ -141,7 +148,11 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
     if run_steps_changed:
         run.run_steps = dump_run_steps(run_steps)
 
-    if run.status == BootstrapRunStatus.RUNNING and _fully_succeeded(states, run_steps):
+    if (
+        run.status == BootstrapRunStatus.RUNNING
+        and not run.cancel_requested
+        and _fully_succeeded(states, run_steps)
+    ):
         run.status = BootstrapRunStatus.SUCCEEDED
         run.finished_at = utc_now()
         changed = True

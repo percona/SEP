@@ -180,7 +180,7 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     data_path: str = SQLField(default="/var/lib/mongo", sa_type=Text)
     log_path: str = SQLField(default="/var/log/mongodb/mongod.log", sa_type=Text)
     port: int = SQLField(default=27017)
-    bind_ip: str = SQLField(default="0.0.0.0", sa_type=Text)  # noqa: S104
+    bind_ip: str = SQLField(default="0.0.0.0", sa_type=Text)  # nosec B104 - must match the old fixed constant, see above
     # Set once, by the :cancel route, when an operator asks a running run to stop.
     # PMM's stepper (bootstrap_decision.go's runNeedsRollback) treats this the same
     # as a step exhausting its retries -- force every host's rollback, not just the

@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from aiohttp import ClientError
 from fastapi import APIRouter, FastAPI, HTTPException, status
 from fastapi.testclient import TestClient
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -182,8 +183,15 @@ class TestTriggerRun:
     def test_accepts_per_host_member_configs(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A per-host election override in the request survives round-trip creation."""
-        response = _client(regular_user, session).post(
+        """A per-host election override in the request survives round-trip creation.
+
+        Asserts the stored values, not just the status code: a 201 alone
+        still passes if member_configs were silently discarded before
+        persistence.
+        """
+        client = _client(regular_user, session)
+        override = {"priority": 0, "votes": False, "hidden": True, "delay_secs": 300}
+        response = client.post(
             f"{_BASE}/runs",
             json={
                 "hosts": ["node00", "node01"],
@@ -195,18 +203,18 @@ class TestTriggerRun:
                 "log_path": "/var/log/mongodb/mongod.log",
                 "port": 27017,
                 "bind_ip": "0.0.0.0",
-                "member_configs": {
-                    "node01": {
-                        "priority": 0,
-                        "votes": False,
-                        "hidden": True,
-                        "delay_secs": 300,
-                    }
-                },
+                "member_configs": {"node01": override},
             },
         )
 
         assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["member_configs"] == {"node01": override}
+
+        # Re-read from the database, not the same in-memory response -- proves
+        # the value round-trips through persistence, not just the request echo.
+        run_id = response.json()["id"]
+        reread = client.get(f"{_BASE}/runs/{run_id}")
+        assert reread.json()["member_configs"] == {"node01": override}
 
     def test_rejects_an_empty_host_list(
         self, regular_user: CasdoorUser, session: AsyncSession
@@ -1076,6 +1084,59 @@ class TestCancelRun:
 
         assert response.status_code == status.HTTP_202_ACCEPTED
         assert response.json()["cancel_requested"] is True
+
+    @pytest.mark.asyncio
+    async def test_tolerates_the_tasks_api_being_unreachable(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A transport failure while stopping a step doesn't fail the whole request.
+
+        The Tasks API being down is precisely the outage an operator is likely
+        to be hitting Abort over -- ``cancel_requested`` must still save (see
+        ``test_saves_cancel_requested_before_stopping_steps``), and this call
+        must not turn that outage into a 500.
+        """
+        run = await self._seed_run(session)
+        tasks_api = _fake_tasks_api()
+        tasks_api.post = AsyncMock(side_effect=ClientError("connection refused"))
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+            AsyncMock(return_value=tasks_api),
+        ):
+            response = _client(regular_user, session).post(
+                f"{_BASE}/runs/{run.id}:cancel"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert response.json()["cancel_requested"] is True
+
+    @pytest.mark.asyncio
+    async def test_saves_cancel_requested_before_stopping_steps(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """The flag is durable even if stopping the running step blows up entirely.
+
+        Guards the ordering, not just the tolerance: a caller reading the run
+        straight from the database -- not through this response -- must see
+        ``cancel_requested=True`` even when ``_stop_running_steps`` itself
+        raises something ``cancel_run`` does not catch.
+        """
+        run = await self._seed_run(session)
+        tasks_api = _fake_tasks_api()
+        tasks_api.post = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with (
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
+                AsyncMock(return_value=tasks_api),
+            ),
+            pytest.raises(RuntimeError),
+        ):
+            await cancel_run(run.id, session)
+
+        await session.refresh(run)
+        assert run.cancel_requested is True
 
     @pytest.mark.asyncio
     async def test_is_idempotent_once_already_requested(

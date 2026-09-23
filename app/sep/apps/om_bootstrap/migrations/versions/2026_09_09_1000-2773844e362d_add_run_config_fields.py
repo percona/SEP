@@ -74,9 +74,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "bootstrap_run",
-        sa.Column(
-            "bind_ip", sa.Text(), nullable=False, server_default="0.0.0.0"
-        ),
+        sa.Column("bind_ip", sa.Text(), nullable=False, server_default="0.0.0.0"),  # nosec B104 - matches the fixed pre-Phase-A constant
         schema=schema,
     )
 

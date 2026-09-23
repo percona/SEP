@@ -42,7 +42,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 __all__ = [
     "BootstrapSpec",
@@ -103,15 +103,37 @@ class MemberConfig(BaseModel):
         and ``db.hello()``'s own output.
     :param delay_secs: Seconds this member's data intentionally lags the
         primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
-        ``votes`` off whenever this is nonzero -- PMM validates that
-        combination before a run is ever created (TriggerHostBootstrap's own
-        doc comment), so this module trusts it rather than re-checking.
+        ``votes`` off whenever this is nonzero.
+    :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
+        non-voting, hidden, or delayed member names a nonzero ``priority`` --
+        each combination ``rs.initiate`` itself rejects, checked here so a bad
+        request fails at create time (422) rather than several steps into a
+        run.
     """
 
-    priority: int = 1
+    priority: int = Field(default=1, ge=0, le=1000)
     votes: bool = True
     hidden: bool = False
-    delay_secs: int = 0
+    delay_secs: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _priority_matches_role(self) -> "MemberConfig":
+        """Reject a priority MongoDB would refuse for this member's role.
+
+        ``rs.initiate`` rejects a non-voting, hidden, or delayed member unless
+        its ``priority`` is exactly 0 -- each combination otherwise plans a run
+        that fails at ``rs_initiate``, several steps after every host was
+        already provisioned.
+        """
+        if self.priority == 0:
+            return self
+        if not self.votes:
+            raise ValueError("a non-voting member (votes=False) must have priority 0")
+        if self.hidden:
+            raise ValueError("a hidden member (hidden=True) must have priority 0")
+        if self.delay_secs:
+            raise ValueError("a delayed member (delay_secs>0) must have priority 0")
+        return self
 
 
 class BootstrapSpec(BaseModel):
