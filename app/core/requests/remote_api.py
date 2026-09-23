@@ -795,8 +795,6 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK`, or the mask
             alone when the URL cannot be parsed.
         """
-        # The read sits inside the try because the hook behind it can raise
-        # too: Nomad's parses the URL before the redaction ever sees it.
         try:
             return redact_credential_url(self.base_url)
         except ValueError:
