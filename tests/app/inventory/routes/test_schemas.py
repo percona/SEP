@@ -433,11 +433,19 @@ class TestListTablesBySchema:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
     def test_list_tables_by_schema_excludes_retired(
-        self, test_client: TestClient, retired_table: Table
+        self,
+        test_client: TestClient,
+        retired_table: Table,
+        params: dict[str, bool],
     ) -> None:
         """Omit a retired table from an active schema's tables."""
-        response = test_client.get(f"/schemas/{retired_table.schema_id}/tables/")
+        response = test_client.get(
+            f"/schemas/{retired_table.schema_id}/tables/", params=params
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []

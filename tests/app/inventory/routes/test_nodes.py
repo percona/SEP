@@ -600,11 +600,19 @@ class TestListServicesByNode:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
     def test_list_services_by_node_excludes_retired(
-        self, test_client: TestClient, retired_service: Service
+        self,
+        test_client: TestClient,
+        retired_service: Service,
+        params: dict[str, bool],
     ) -> None:
         """Omit a retired service from an active node's services."""
-        response = test_client.get(f"/nodes/{retired_service.node_id}/services/")
+        response = test_client.get(
+            f"/nodes/{retired_service.node_id}/services/", params=params
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []

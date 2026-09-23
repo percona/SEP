@@ -32,6 +32,7 @@ from app.inventory.main import inventory_app
 from app.inventory.models import (
     IdentityLinkDecisionEnum,
     Node,
+    Schema,
     Service,
     SyncOutcomeEnum,
     Table,
@@ -613,5 +614,43 @@ def test_the_observation_collection_requires_a_credential(
     ``IsAuthenticatedDep`` like its per-node sibling rather than being open.
     """
     response = bearer_client.get("/nodes/system-observations")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/nodes/{node_id}/services/",
+        "/services/{service_id}/schemas/",
+        "/schemas/{schema_id}/tables/",
+    ],
+)
+@pytest.mark.parametrize("existing", [True, False], ids=["retired", "missing"])
+def test_a_retired_parent_listing_requires_a_credential(
+    bearer_client: TestClient,
+    retired_node: Node,
+    retired_service: Service,
+    retired_schema: Schema,
+    path: str,
+    *,
+    existing: bool,
+) -> None:
+    """Refuse an anonymous retired-parent listing before the parent is looked up.
+
+    A retired parent and a missing one answer the same 401, so the opt-in gives
+    an anonymous caller no way to probe which identifiers were ever issued.
+    """
+    ids = (
+        {
+            "node_id": retired_node.id,
+            "service_id": retired_service.id,
+            "schema_id": retired_schema.id,
+        }
+        if existing
+        else dict.fromkeys(("node_id", "service_id", "schema_id"), 99999)
+    )
+
+    response = bearer_client.get(path.format(**ids), params={"include_retired": True})
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED

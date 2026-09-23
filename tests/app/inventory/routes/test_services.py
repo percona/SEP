@@ -576,11 +576,19 @@ class TestListSchemasByService:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
     def test_list_schemas_by_service_excludes_retired(
-        self, test_client: TestClient, retired_schema: Schema
+        self,
+        test_client: TestClient,
+        retired_schema: Schema,
+        params: dict[str, bool],
     ) -> None:
         """Omit a retired schema from an active service's schemas."""
-        response = test_client.get(f"/services/{retired_schema.service_id}/schemas/")
+        response = test_client.get(
+            f"/services/{retired_schema.service_id}/schemas/", params=params
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []
