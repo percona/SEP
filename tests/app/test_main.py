@@ -18,7 +18,7 @@
 import logging.config
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from http.client import HTTPConnection
 from typing import Any
 from unittest.mock import MagicMock
@@ -38,6 +38,51 @@ from tests.app.conftest import HealthProbeServer
 def test_client():
     """Create a test client for the top-level combined app."""
     return TestClient(app)
+
+
+@pytest.mark.asyncio
+async def test_sep_startup_runs_after_the_override_snapshot_publishes(mocker):
+    """``sep_startup()`` must not read app-owned hot settings before overrides load.
+
+    ``sep_overrides_lifespan`` publishes the initial override snapshot on
+    entry; a hot app-owned field (e.g. ``OmInventorySettings.ENABLED``) reads
+    its class default until that publish happens, so seeding the periodic-task
+    database before entry can seed a sweep as off when a prior run had already
+    turned it on. ``app.sep.main.sep_lifespan`` gets this right for the
+    standalone entry point; this locks the combined ``app.main:app`` entry
+    point to the same order.
+    """
+    order: list[str] = []
+
+    @asynccontextmanager
+    async def _fake_sep_overrides_lifespan(_app):
+        order.append("sep_overrides_enter")
+        yield
+        order.append("sep_overrides_exit")
+
+    @asynccontextmanager
+    async def _fake_passthrough_lifespan(_app):
+        yield
+
+    async def _fake_sep_startup():
+        order.append("sep_startup")
+
+    mocker.patch.object(main_module, "detect_removed_auth_user_model")
+    mocker.patch.object(main_module, "detect_removed_settings_override_keys")
+    mocker.patch.object(main_module, "validate_importable_settings")
+    mocker.patch.object(
+        main_module, "sep_overrides_lifespan", _fake_sep_overrides_lifespan
+    )
+    mocker.patch.object(main_module, "tasks_lifespan", _fake_passthrough_lifespan)
+    mocker.patch.object(
+        main_module, "inventory_overrides_lifespan", _fake_passthrough_lifespan
+    )
+    mocker.patch.object(main_module, "sep_startup", _fake_sep_startup)
+
+    async with main_module.main_lifespan(app):
+        pass
+
+    assert order == ["sep_overrides_enter", "sep_startup", "sep_overrides_exit"]
 
 
 def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):

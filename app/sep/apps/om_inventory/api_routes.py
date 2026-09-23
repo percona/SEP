@@ -51,6 +51,7 @@ from app.core.auth.models import UserRole
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
+    HTTPServiceUnavailableException,
     HTTPUnprocessableEntityException,
 )
 from app.core.pagination import PaginatedResponse, PaginationDep
@@ -515,10 +516,15 @@ async def trigger_probe(
 
     :param session: The database session.
     :param request: The optional scope. Absent, or an empty list, means everything.
+    :raises HTTPServiceUnavailableException: When PMM's OpenManager switch has
+        ``ENABLED`` off.
     :raises HTTPNotFoundException: When a requested node id is not in the estate.
     :raises HTTPConflictException: When a requested host is already being refreshed.
     :return: The queued sweep.
     """
+    if not om_inventory_settings.ENABLED:
+        raise HTTPServiceUnavailableException(detail="OM Inventory is not enabled")
+
     node_ids = list(dict.fromkeys(request.node_ids)) if request else []
 
     # An id OM does not hold is answered by name rather than by running a refresh
@@ -599,10 +605,16 @@ async def patch_config(
     to a driver as a URI, so making it settable here would widen "configure this
     app" into "read a chosen file across the estate".
 
-    A ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is
-    a thunk re-read on registry rebuild - but beat runs as a forked side-car
-    process, which reaches the new value through its own settings refresher rather
-    than through this request.
+    An ``ENABLED`` or ``SCHEDULE`` change lands without a restart -
+    ``periodic_task_schedules`` is a thunk re-read on registry rebuild - but beat
+    runs as a forked side-car process, which reaches the new value through its own
+    settings refresher rather than through this request.
+
+    ``ENABLED`` is what PMM's OpenManager switch calls, via this same route with
+    its ``--sep-token`` credential (see ``require_minimum_role``'s service-principal
+    bypass): it flips independently of ``SCHEDULE``, so the configured cadence
+    survives OpenManager being turned off and back on rather than being
+    overwritten each time.
 
     :param request: The incoming request; its ``app.state`` carries the rebind
         callbacks fired for the keys this changed.
