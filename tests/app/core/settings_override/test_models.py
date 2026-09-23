@@ -265,6 +265,53 @@ class TestActorStampGuard:
             await session.commit()
 
     @pytest.mark.asyncio
+    async def test_one_unstamped_row_rejects_the_whole_flush(
+        self, session: AsyncSession, persisted_row: SettingOverride
+    ) -> None:
+        """Roll back a correctly-stamped row alongside the unstamped one it shares a flush with."""
+        sibling = await insert_override_row(
+            session,
+            setting_class=SettingClassEnum.SEP_SETTINGS,
+            key="ARTIFACT_DOWNLOAD_TTL",
+            value=_GUARD_ORIGINAL_VALUE,
+            updated_by="original-actor",
+        )
+        sibling.value = _GUARD_UPDATED_VALUE
+        sibling.updated_by = "new-actor"
+        persisted_row.value = _GUARD_UPDATED_VALUE
+        session.add_all([sibling, persisted_row])
+
+        with pytest.raises(StaleActorUpdateError):
+            await session.commit()
+
+        await session.rollback()
+        session.expunge_all()
+        stored = await SettingsOverrideManager.list(session)
+        assert {(row.key, row.value, row.updated_by) for row in stored} == {
+            ("SYNC_REFRESH_TIME", _GUARD_ORIGINAL_VALUE, "original-actor"),
+            ("ARTIFACT_DOWNLOAD_TTL", _GUARD_ORIGINAL_VALUE, "original-actor"),
+        }
+
+    @pytest.mark.asyncio
+    async def test_actor_only_restamp_emits_an_update(
+        self, session: AsyncSession, persisted_row: SettingOverride
+    ) -> None:
+        """Flush an ``updated_by``-only restamp of the stored actor as a real UPDATE.
+
+        This is the re-save semantics the settings PATCH relies on to advance
+        ``updated_at`` when an admin resubmits an unchanged value.
+        """
+        persisted_row.updated_by = "original-actor"
+
+        assert session.is_modified(persisted_row)
+        await session.commit()
+
+        session.expunge_all()
+        stored = await SettingsOverrideManager.get(session, key="SYNC_REFRESH_TIME")
+        assert stored.updated_by == "original-actor"
+        assert stored.updated_at is not None
+
+    @pytest.mark.asyncio
     async def test_manager_update_without_actor_is_rejected(
         self, session: AsyncSession, persisted_row: SettingOverride
     ) -> None:

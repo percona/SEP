@@ -2704,6 +2704,72 @@ class TestSepSettingsProvenance:
         assert entry["updated_by"] == admin_user.username
         assert datetime.fromisoformat(entry["updated_at"]) > stale
 
+    async def test_consecutive_patches_by_the_same_admin_are_accepted(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        admin_user: CasdoorUser,
+    ) -> None:
+        """Accept a second PATCH whose actor restamp equals the stored actor.
+
+        The second write changes ``value`` while assigning ``updated_by`` the
+        value it already holds, which the model's actor-stamp guard must still
+        count as a restamp.
+        """
+        values = (10, 20)
+        for value in values:
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/SEPSettings",
+                json={"SYNC_REFRESH_TIME": value},
+            )
+            assert response.status_code == status.HTTP_200_OK
+
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SEP_SETTINGS_TOKEN, key="SYNC_REFRESH_TIME"
+        )
+        assert len(rows) == 1
+        assert rows[0].value == values[-1]
+        assert rows[0].updated_by == admin_user.username
+
+    @pytest.mark.parametrize(
+        "stored_keys",
+        [("sync_refresh_time",), ("sync_refresh_time", "SYNC_REFRESH_TIME")],
+    )
+    async def test_patch_collapsing_a_legacy_spelling_restamps(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        admin_user: CasdoorUser,
+        stored_keys: tuple[str, ...],
+    ) -> None:
+        """Rename or delete legacy-spelled rows and stamp the survivor with the caller.
+
+        Renaming a row changes the tracked ``key`` column, so the collapse must
+        restamp ``updated_by`` in the same flush to pass the actor-stamp guard.
+        """
+        for key in stored_keys:
+            await insert_override_row(
+                override_session,
+                setting_class=SEP_SETTINGS_TOKEN,
+                key=key,
+                value=5,
+                updated_by="someone-else",
+            )
+
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"SYNC_REFRESH_TIME": 10},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        override_session.expunge_all()
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SEP_SETTINGS_TOKEN
+        )
+        assert [(row.key, row.value, row.updated_by) for row in rows] == [
+            ("SYNC_REFRESH_TIME", 10, admin_user.username)
+        ]
+
     async def test_detail_reports_the_stamp_the_patch_returned(
         self, api_admin_client: TestClient, admin_user: CasdoorUser
     ) -> None:
