@@ -15,7 +15,7 @@
 
 """Define database operations for the MySQL backup catalog."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any, cast
 
 from sqlalchemy import case, func, Integer, literal, or_, select, String, union_all
@@ -266,9 +266,9 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         Scoped by :meth:`_service_predicate` and ordered like
         :meth:`list_for_service`. The match key is the preferred source
         (``upload_destination`` when set, else ``location``), the same string
-        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source` /
-        restore-form choices use — never a raw field equality. Only the single
-        newest match is considered; older matching rows are ignored.
+        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source`
+        computes — never a raw field equality. Only the single newest match is
+        considered; older matching rows are ignored.
 
         :param session: The database session to query on.
         :param key: The service the records are selected for.
@@ -312,23 +312,22 @@ class MysqlBackupRunManager(BaseSQLModelManager):
     async def catalogued_source_transports(
         cls,
         session: AsyncSession,
-        lookups: Mapping[CatalogTransportLookupKey, CatalogServiceKey],
+        lookups: Iterable[CatalogTransportLookupKey],
     ) -> dict[CatalogTransportLookupKey, CataloguedSourceTransport | None]:
         """Return catalogued transports for many preferred-source keys in one query.
 
         Used by the restore list/detail prefetch so a page of undeclared stamps
         pays one SELECT instead of one per key. Each lookup is scoped by the same
         :meth:`_service_predicate` / preferred-source rules as
-        :meth:`catalogued_source_transport`. Ranking happens in SQL
-        (``row_number`` partitioned by lookup key, ordered like
-        :meth:`list_for_service`) so only the newest matching row per key is
-        materialised — stable destinations such as ``s3://bucket/service`` do not
-        pull every historical run into memory. Empty ``backup_source`` keys and
-        misses map to ``None``.
+        :meth:`catalogued_source_transport`, with service id/name taken from the
+        lookup tuple itself. Ranking happens in SQL (``row_number`` partitioned
+        by lookup key, ordered like :meth:`list_for_service`) so only the newest
+        matching row per key is materialised — stable destinations such as
+        ``s3://bucket/service`` do not pull every historical run into memory.
+        Empty ``backup_source`` keys and misses map to ``None``.
 
         :param session: The database session to query on.
-        :param lookups: Map from ``(service_id, service_name, backup_source)`` to
-            the :class:`CatalogServiceKey` that scopes that lookup.
+        :param lookups: Prefetch keys ``(service_id, service_name, backup_source)``.
         :return: The same keys mapped to a catalogued transport or ``None``.
         """
         results: dict[CatalogTransportLookupKey, CataloguedSourceTransport | None] = {}

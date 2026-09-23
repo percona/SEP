@@ -276,26 +276,30 @@ def _catalog_service_key_for_stamp(
 
 def _transport_cache_key(
     task: Task, stored_form: dict[str, Any]
-) -> tuple[int | None, str, str] | None:
-    """Return the prefetch map key for ``stored_form``, or ``None`` when unscoped.
+) -> tuple[tuple[int | None, str, str], CatalogServiceKey] | None:
+    """Return the prefetch key and service scope for ``stored_form``, or ``None``.
 
     :param task: The restore task carrying optional service meta.
     :param stored_form: The undeclared ``_form`` stamp.
-    :return: ``(service_id, service_name, backup_source)``, or ``None``.
+    :return: ``((service_id, service_name, backup_source), service_key)``, or
+        ``None`` when the stamp cannot be scoped.
     """
     backup_source = stored_form.get("backup_source")
     if not isinstance(backup_source, str) or not backup_source:
         return None
-    key = _catalog_service_key_for_stamp(task, stored_form)
-    if key is None:
+    service_key = _catalog_service_key_for_stamp(task, stored_form)
+    if service_key is None:
         return None
-    return (key.service_id, key.service_name, backup_source)
+    return (
+        (service_key.service_id, service_key.service_name, backup_source),
+        service_key,
+    )
 
 
 def pending_catalog_transport_lookups(
     items: Sequence[tuple[Task, dict[str, Any]]],
-) -> dict[tuple[int | None, str, str], CatalogServiceKey]:
-    """Build the batched catalog lookup map for undeclared restore forms.
+) -> list[tuple[int | None, str, str]]:
+    """Build the batched catalog lookup keys for undeclared restore forms.
 
     Shared by the list/detail response prefetch and the form-backfill batch
     preparer so both pay one ``catalogued_source_transports`` query. Forms that
@@ -304,19 +308,22 @@ def pending_catalog_transport_lookups(
 
     :param items: ``(task, form)`` pairs to consider (stamps or reconstructed
         bodies).
-    :return: Map from :func:`_transport_cache_key` to the scoping
-        :class:`CatalogServiceKey`.
+    :return: Distinct :func:`_transport_cache_key` first elements, in first-seen
+        order.
     """
-    pending: dict[tuple[int | None, str, str], CatalogServiceKey] = {}
+    pending: list[tuple[int | None, str, str]] = []
+    seen: set[tuple[int | None, str, str]] = set()
     for task, stored_form in items:
         if stored_form.get("source_transport") is not None:
             continue
-        cache_key = _transport_cache_key(task, stored_form)
-        if cache_key is None or cache_key in pending:
+        resolved = _transport_cache_key(task, stored_form)
+        if resolved is None:
             continue
-        service_key = _catalog_service_key_for_stamp(task, stored_form)
-        if service_key is not None:
-            pending[cache_key] = service_key
+        cache_key, _service_key = resolved
+        if cache_key in seen:
+            continue
+        seen.add(cache_key)
+        pending.append(cache_key)
     return pending
 
 
@@ -403,8 +410,8 @@ async def restore_response_context(
     builder falls through to inference without re-querying.
 
     :param tasks: The page (list) or singleton (detail/create) being rendered.
-    :return: The username map plus a map from :func:`_transport_cache_key` to
-        catalogued transport.
+    :return: The username map plus a map from transport cache key to catalogued
+        transport.
     """
     usernames = await get_username_mapping()
     stamp_items: list[tuple[Task, dict[str, Any]]] = []
@@ -453,18 +460,16 @@ def catalogued_transport_for_stamp(
     :param context: Optional prefetch map from :func:`restore_response_context`.
     :return: The catalogued transport, or ``None``.
     """
-    cache_key = _transport_cache_key(task, stored_form)
-    if cache_key is None:
+    resolved = _transport_cache_key(task, stored_form)
+    if resolved is None:
         return None
+    cache_key, service_key = resolved
     if context is not None:
         return context.get(cache_key)
 
-    key = _catalog_service_key_for_stamp(task, stored_form)
-    if key is None:
-        return None
     backup_source = cache_key[2]
     try:
-        return _run_coro_sync(_fetch_catalogued_transport(key, backup_source))
+        return _run_coro_sync(_fetch_catalogued_transport(service_key, backup_source))
     except Exception:  # noqa: BLE001 — catalog being down must never fail the list
         _log.warning(
             "Catalog source_transport lookup failed for backup_source=%r; "

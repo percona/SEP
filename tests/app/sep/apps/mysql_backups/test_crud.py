@@ -599,7 +599,7 @@ class TestCataloguedSourceTransports:
     async def test_empty_lookups_return_empty(self, session) -> None:
         """Short-circuit without a query when the page needs no catalog hits."""
         assert (
-            await MysqlBackupRunManager.catalogued_source_transports(session, {}) == {}
+            await MysqlBackupRunManager.catalogued_source_transports(session, ()) == {}
         )
 
     @pytest.mark.asyncio
@@ -646,14 +646,12 @@ class TestCataloguedSourceTransports:
             finished_at=datetime(2026, 7, 29, 4, 0, tzinfo=UTC),
         )
 
-        key_a = _key("svc-a", 7)
-        key_b = _key("svc-b", 8)
-        lookups = {
-            (7, "svc-a", "s3://bucket/a"): key_a,
-            (8, "svc-b", "gs://bucket/b"): key_b,
-            (7, "svc-a", "/data/local-only"): key_a,
-            (7, "svc-a", "s3://missing"): key_a,
-        }
+        lookups = [
+            (7, "svc-a", "s3://bucket/a"),
+            (8, "svc-b", "gs://bucket/b"),
+            (7, "svc-a", "/data/local-only"),
+            (7, "svc-a", "s3://missing"),
+        ]
 
         results = await MysqlBackupRunManager.catalogued_source_transports(
             session, lookups
@@ -691,10 +689,10 @@ class TestCataloguedSourceTransports:
 
         results = await MysqlBackupRunManager.catalogued_source_transports(
             session,
-            {
-                (7, "svc-a", shared): _key("svc-a", 7),
-                (8, "svc-b", shared): _key("svc-b", 8),
-            },
+            (
+                (7, "svc-a", shared),
+                (8, "svc-b", shared),
+            ),
         )
 
         assert results[(7, "svc-a", shared)] == CataloguedSourceTransport.S3
@@ -705,9 +703,8 @@ class TestCataloguedSourceTransports:
         self, session
     ) -> None:
         """Treat an empty ``backup_source`` as a miss the same way the single lookup does."""
-        key = _key("svc-a", 7)
         results = await MysqlBackupRunManager.catalogued_source_transports(
-            session, {(7, "svc-a", ""): key}
+            session, ((7, "svc-a", ""),)
         )
 
         assert results == {(7, "svc-a", ""): None}
