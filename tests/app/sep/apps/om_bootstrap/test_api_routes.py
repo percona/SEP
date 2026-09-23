@@ -849,6 +849,7 @@ class TestDispatchRollbackStep:
         assert response.status_code == status.HTTP_202_ACCEPTED
         rollback_step = response.json()["hosts"][0]["rollback_steps"][0]
         assert rollback_step["status"] == "running"
+        assert dispatch.await_args is not None
         action = dispatch.await_args.args[-1]
         assert f"= {run.id} ] || exit 0" in action.command[2]
 
