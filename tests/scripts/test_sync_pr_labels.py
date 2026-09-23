@@ -501,6 +501,17 @@ def test_sync_qa_not_required_is_idempotent_when_already_correct():
     client.list_issue_events.assert_not_called()
 
 
+def test_qa_not_required_bypass_reads_no_label_when_eligible():
+    """Let a qualifying pull request skip QA without consulting its labels."""
+    client = _qa_not_required_client(present=())
+
+    assert sync_pr_labels.qa_not_required_bypass(
+        client, "percona", "SEP", 42, eligible=True
+    )
+    client.list_issue_labels.assert_not_called()
+    client.list_issue_events.assert_not_called()
+
+
 def test_labeler_config_declares_no_qa_not_required_rule():
     """Keep the label out of the labeler config that ``sync-labels`` walks.
 
@@ -923,6 +934,7 @@ def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
                 [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
             ),
             ("/pulls/7", _pull_payload("yyyyyyyan")),
+            ("/issues/7/labels", []),
         ],
     )
 
@@ -942,6 +954,62 @@ def test_print_eligibility_reports_false_for_a_code_diff(monkeypatch, capsys):
     )
 
     assert capsys.readouterr().out == "false\n"
+
+
+@pytest.mark.parametrize(
+    ("actor_type", "expected"),
+    [("User", "true\n"), ("Bot", "false\n")],
+    ids=["hand-applied", "bot-applied"],
+)
+def test_print_eligibility_honours_only_a_hand_applied_label(
+    monkeypatch, capsys, actor_type, expected
+):
+    """Let a person's ``qa not required`` skip QA, but not a stale automatic one.
+
+    The automatic label caches an earlier verdict. A push that outdates it cannot
+    trigger the CI re-run its removal would need, so the gate must not trust it.
+    """
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    _patch_urlopen_routes(
+        monkeypatch,
+        [
+            (
+                "/pulls/7/files",
+                [{"filename": "app/main.py", "additions": 3, "deletions": 0}],
+            ),
+            ("/pulls/7", _pull_payload("yyyyyyyan")),
+            ("/issues/7/labels", [{"name": "qa not required"}]),
+            (
+                "/issues/7/events",
+                [
+                    {
+                        "id": 1,
+                        "event": "labeled",
+                        "label": {"name": "qa not required"},
+                        "actor": {"login": "someone", "type": actor_type},
+                        "created_at": "2026-09-23T17:00:00Z",
+                    }
+                ],
+            ),
+        ],
+    )
+
+    assert (
+        sync_pr_labels.main(
+            [
+                "--owner",
+                "percona",
+                "--repo",
+                "SEP",
+                "--pr-number",
+                "7",
+                "--print-eligibility",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out == expected
 
 
 def test_print_eligibility_needs_no_labeler_file(monkeypatch, capsys):

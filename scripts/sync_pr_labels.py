@@ -39,11 +39,12 @@ label written here to clear the gate. Both runs start from one pull-request
 activity and proceed concurrently, so the label may not exist yet when the gate
 evaluates; and a label applied here authenticates with ``GITHUB_TOKEN``, which
 GitHub bars from triggering the CI re-run that would refresh a stale verdict.
-Precedence is unchanged: the gate still short-circuits on a ``qa not required`` it
-finds — whoever applied it — and reaches the predicate only when the label is
-absent. So the label remains the reviewer-facing record and the bypass for a pull
-request the predicate does not cover, and an automatic one left behind by a diff
-that has since grown keeps approving until it is removed.
+For the same reason the gate does not trust a ``qa not required`` label on sight:
+one this script applied caches a verdict that a later push can outdate, and its
+removal cannot trigger the re-run that would withdraw the approval. The gate
+therefore honours the label only when a person applied it, and otherwise decides
+from the predicate alone. So a hand-applied label remains the reviewer-facing
+record and the bypass for a pull request the predicate does not cover.
 
 Two callers, two trust contexts. ``.github/workflows/labels.yaml`` runs on
 ``pull_request_target``, which is privileged, and so invokes this after a sparse
@@ -436,6 +437,37 @@ def sync_qa_not_required_label(
             log(f"Removed {QA_NOT_REQUIRED_LABEL}")
 
 
+def qa_not_required_bypass(
+    client: GitHubClient,
+    owner: str,
+    repo: str,
+    pr_number: int,
+    *,
+    eligible: bool,
+) -> bool:
+    """Return whether the merge gate may let a pull request skip QA.
+
+    A pull request the predicate qualifies always may. Otherwise only a
+    ``qa not required`` label a person applied counts: one this script applied
+    caches an earlier verdict, and a new push can outdate it without any
+    corrective CI run, because the removal authenticates with ``GITHUB_TOKEN``.
+
+    :param client: GitHub REST client.
+    :param owner: Repository owner.
+    :param repo: Repository name without owner.
+    :param pr_number: Pull request number.
+    :param eligible: Whether the pull request qualifies for the automatic label.
+    :return: ``True`` when the pull request qualifies or carries a hand-applied label.
+    """
+    if eligible:
+        return True
+    if QA_NOT_REQUIRED_LABEL not in client.list_issue_labels(owner, repo, pr_number):
+        return False
+    return qa_not_required_manually_applied(
+        client.list_issue_events(owner, repo, pr_number)
+    )
+
+
 class UrllibGitHubClient:
     """Wrap the GitHub REST API using stdlib ``urllib``."""
 
@@ -646,8 +678,9 @@ def apply_blast_radius_labels(
 def main(argv: list[str] | None = None) -> int:
     """Sync one pull request's code-computed labels, or report one and stop.
 
-    ``--print-eligibility`` computes only the automatic ``qa not required``
-    predicate, prints it to stdout, and adds or removes no label.
+    ``--print-eligibility`` prints whether the merge gate may let the pull request
+    skip QA, which is the automatic ``qa not required`` predicate or a hand-applied
+    ``qa not required`` label, and adds or removes no label.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success; ``1`` on error.
@@ -673,8 +706,9 @@ def main(argv: list[str] | None = None) -> int:
         "--print-eligibility",
         action="store_true",
         help=(
-            "print 'true' or 'false' for the automatic 'qa not required' predicate "
-            "and exit, adding and removing no label"
+            "print 'true' when the pull request may skip QA (the automatic "
+            "'qa not required' predicate, or that label applied by a person), "
+            "else 'false', and exit, adding and removing no label"
         ),
     )
     args = parser.parse_args(argv)
@@ -697,7 +731,10 @@ def main(argv: list[str] | None = None) -> int:
         files = client.list_pr_files(args.owner, args.repo, args.pr_number)
         eligible = qa_not_required_eligible(files, pull, f"{args.owner}/{args.repo}")
         if args.print_eligibility:
-            print("true" if eligible else "false")
+            bypass = qa_not_required_bypass(
+                client, args.owner, args.repo, args.pr_number, eligible=eligible
+            )
+            print("true" if bypass else "false")
             return 0
         apply_blast_radius_labels(
             client, args.owner, args.repo, args.pr_number, files, args.labeler, log=log
