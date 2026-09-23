@@ -38,6 +38,7 @@ from app.core.auth.models import (
 )
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
@@ -91,6 +92,7 @@ from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
     CreatedServiceFactory,
+    GrafanaUserFactory,
     TaskFactory,
     TaskHistoryResponseFactory,
     TaskResponseFactory,
@@ -456,6 +458,41 @@ class TestGetUsernameMapping:
         mocker.patch("app.sep.deps.User", CasdoorUser)
 
         assert await get_username_mapping() == {}
+
+    @pytest.mark.asyncio
+    async def test_maps_every_actor_the_provider_names(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Assert identities outside the user listing are named too."""
+        human, service_account = GrafanaUserFactory.batch(2)
+        mocker.patch("app.sep.deps.User", GrafanaUser)
+        mocker.patch.object(
+            GrafanaUser,
+            "get_actors",
+            new=mocker.AsyncMock(return_value=[human, service_account]),
+        )
+
+        assert await get_username_mapping() == {
+            str(human.id): human.username,
+            str(service_account.id): service_account.username,
+        }
+
+    @pytest.mark.asyncio
+    async def test_a_service_account_listing_timeout_keeps_the_humans(
+        self, grafana_mock, grafana_org_users, mocker: MockerFixture
+    ) -> None:
+        """Assert a failing SA listing costs the SA names only, not the humans'."""
+        mocker.patch("app.sep.deps.User", GrafanaUser)
+        mocker.patch(
+            "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_service_accounts",
+            new=mocker.AsyncMock(side_effect=TimeoutError()),
+        )
+
+        mapping = await get_username_mapping()
+
+        assert sorted(mapping.values()) == sorted(
+            row["login"] for row in grafana_org_users
+        )
 
 
 class TestGetInventoryApi:

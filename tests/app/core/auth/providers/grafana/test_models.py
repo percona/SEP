@@ -15,17 +15,19 @@
 
 """Define tests for the Grafana user and token-payload models."""
 
+import json
 import logging
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from aiohttp import ClientPayloadError
 from fastapi import HTTPException, status
 from itsdangerous import URLSafeTimedSerializer
 from pydantic import ValidationError
 
-from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.models import (
     OAuthToken,
     SessionExchangeTokenResponse,
@@ -33,16 +35,20 @@ from app.core.auth.models import (
 )
 from app.core.auth.providers.grafana.models import (
     _find_org_user,
+    _service_account_uuid,
     _TOKEN_SERIALIZER,
     _TokenType,
     GrafanaTokenPayload,
     GrafanaUser,
 )
 from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
-from app.core.auth.providers.grafana.sdk import GrafanaException
+from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException
-from tests.app.conftest import make_roleless_grafana_assertion
+from tests.app.conftest import (
+    GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN,
+    make_roleless_grafana_assertion,
+)
 from tests.app.factories import GrafanaUserFactory
 
 _MODELS_LOGGER = "app.core.auth.providers.grafana.models"
@@ -1147,6 +1153,7 @@ class TestGrafanaOrgScopedUserLookup:
             [{"userId": 1, "login": "bob", "email": 9, "role": "Viewer"}],
             [{"login": "bob", "email": "bob@example.com", "role": "Viewer"}],
             [{"userId": 1, "login": "bob", "role": ["Admin"]}],
+            [{"userId": True, "login": "bob", "role": "Viewer"}],
         ],
     )
     @pytest.mark.asyncio
@@ -1162,3 +1169,248 @@ class TestGrafanaOrgScopedUserLookup:
 
         assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
         assert "users:read" not in str(exc_info.value.detail)
+
+
+_SA_TOKEN = GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
+
+
+def _sa_record(**overrides: Any) -> dict[str, Any]:
+    """Build a Grafana ``/api/serviceaccounts/{id}`` record."""
+    return {
+        "id": 7,
+        "login": "sa-1-ci-runner",
+        "name": "ci-runner",
+        "orgId": 1,
+        "isDisabled": False,
+        "role": "Editor",
+        **overrides,
+    }
+
+
+@pytest.fixture
+def verify_service_account(grafana_mock, mocker):
+    """Stub Grafana's verdict on a service-account token (the SDK boundary)."""
+    return mocker.patch.object(
+        GrafanaSDK,
+        "verify_service_account_token",
+        new=mocker.AsyncMock(return_value=_sa_record()),
+    )
+
+
+class TestGrafanaServiceAccountBearer:
+    """Verify a ``glsa_`` token authenticates as the service account behind it."""
+
+    @pytest.mark.asyncio
+    async def test_admits_the_service_account(self, verify_service_account):
+        """Verify identity and org role come from the account record."""
+        user = await GrafanaUser.from_bearer(_SA_TOKEN)
+
+        assert user.username == "sa-1-ci-runner"
+        assert user.email == ""
+        assert user.role is UserRole.EDITOR
+        assert user.is_admin is False
+        assert user.id == _service_account_uuid(7)
+        verify_service_account.assert_awaited_once_with(_SA_TOKEN)
+
+    def test_identity_is_stable_and_disjoint_from_humans(self, grafana_user_record):
+        """Verify SA ids are per account, rename-stable, and never a human's."""
+        first = GrafanaUser._from_service_account_record(_sa_record(id=2))
+        renamed = GrafanaUser._from_service_account_record(
+            _sa_record(id=2, name="renamed")
+        )
+        other = GrafanaUser._from_service_account_record(_sa_record(id=4))
+        human = GrafanaUser._from_grafana_record({**grafana_user_record, "id": 2}, [])
+
+        assert first.id == renamed.id
+        assert first.id != other.id
+        assert first.id != human.id
+
+    @pytest.mark.parametrize(
+        ("record", "expected"),
+        [
+            pytest.param(_sa_record(role="Viewer"), UserRole.VIEWER, id="viewer"),
+            pytest.param(_sa_record(role="Editor"), UserRole.EDITOR, id="editor"),
+            pytest.param(_sa_record(role="Admin"), UserRole.ADMIN, id="admin"),
+            pytest.param(_sa_record(role=None), UserRole.NONE, id="null"),
+            pytest.param(
+                {k: v for k, v in _sa_record().items() if k != "role"},
+                UserRole.NONE,
+                id="absent",
+            ),
+            pytest.param(_sa_record(role="Owner"), UserRole.NONE, id="unknown"),
+        ],
+    )
+    def test_role_follows_the_org_role(self, record, expected):
+        """Verify the org role ranks through the provider policy, never super-admin."""
+        user = GrafanaUser._from_service_account_record(record)
+
+        assert user.role is expected
+        assert user.role is not UserRole.SUPER_ADMIN
+
+    def test_an_unknown_role_is_logged(self, caplog):
+        """Verify schema drift in the role stays visible."""
+        with caplog.at_level(logging.WARNING, logger=_MODELS_LOGGER):
+            GrafanaUser._from_service_account_record(_sa_record(role="Owner"))
+
+        assert "Owner" in caplog.text
+
+    @pytest.mark.parametrize(
+        "verdict",
+        [
+            pytest.param(None, id="refused"),
+            pytest.param(_sa_record(isDisabled=True), id="disabled"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_refusal_is_unauthorized(self, verify_service_account, verdict):
+        """Verify Grafana's no, or a disabled account, is a 401."""
+        verify_service_account.return_value = verdict
+
+        with pytest.raises(HTTPUnauthorizedException):
+            await GrafanaUser.from_bearer(_SA_TOKEN)
+
+    @pytest.mark.asyncio
+    async def test_an_upstream_failure_is_a_bad_gateway(self, verify_service_account):
+        """Verify an undecidable check propagates as 502, never 401."""
+        verify_service_account.side_effect = GrafanaException()
+
+        with pytest.raises(GrafanaException) as exc_info:
+            await GrafanaUser.from_bearer(_SA_TOKEN)
+
+        assert exc_info.value.status_code == status.HTTP_502_BAD_GATEWAY
+
+    @pytest.mark.parametrize(
+        "token",
+        [
+            "glsa_",
+            "glsa_short",
+            f"{_SA_TOKEN[:-8]}{_SA_TOKEN[-8:].upper()}",
+            f"{_SA_TOKEN}x",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_token_grafana_rejects_is_refused(
+        self, verify_service_account, token, caplog
+    ):
+        """Verify any ``glsa_`` string is left to Grafana, whose 401 is a 401."""
+        verify_service_account.return_value = None
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(HTTPUnauthorizedException):
+            await GrafanaUser.from_bearer(token)
+
+        verify_service_account.assert_awaited_once_with(token)
+        assert token not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_other_bearers_keep_the_assertion_path(self, verify_service_account):
+        """Verify a non-``glsa_`` bearer never reaches Grafana."""
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_bearer("not-a-valid-signed-token")
+
+        verify_service_account.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_forwards_a_minted_exchange_assertion(self, verify_service_account):
+        """Verify downstream calls carry a SEP assertion, never the SA token."""
+        user = await GrafanaUser.from_bearer(_SA_TOKEN)
+
+        assert user.access_token != _SA_TOKEN
+        assert "glsa_" not in user.access_token
+        exchanged = GrafanaUser.model_validate(
+            user.access_token, context={"token_type": _TokenType.EXCHANGE}
+        )
+        forwarded = await GrafanaUser.from_bearer(user.access_token)
+        assert (exchanged.id, exchanged.role) == (user.id, user.role)
+        assert (forwarded.id, forwarded.username, forwarded.role) == (
+            user.id,
+            user.username,
+            user.role,
+        )
+        verify_service_account.assert_awaited_once()
+
+    def test_a_rejected_bearer_is_not_echoed_in_the_error(self, grafana_mock):
+        """Verify a validation error never renders the presented credential."""
+        with pytest.raises(ValidationError) as exc_info:
+            GrafanaUser.model_validate("bogus-bearer-xyz")
+
+        rendered = str(exc_info.value)
+        assert "value_error" in rendered
+        assert "bogus-bearer-xyz" not in rendered
+
+
+class TestGrafanaActors:
+    """Verify ``get_actors`` names service accounts beside the org users."""
+
+    @pytest.fixture
+    def service_accounts(self, grafana_mock, mocker):
+        """Stub the SDK's service-account listing."""
+        return mocker.patch.object(
+            GrafanaSDK,
+            "get_service_accounts",
+            new=mocker.AsyncMock(
+                return_value=[
+                    _sa_record(id=2, login="sa-1-ci", role="Admin"),
+                    _sa_record(id=4, login="sa-1-old", isDisabled=True),
+                ]
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_names_humans_and_service_accounts(
+        self, service_accounts, grafana_org_users
+    ):
+        """Verify every account is named by its login, disabled ones included."""
+        actors = await GrafanaUser.get_actors()
+
+        by_id = {actor.id: actor.username for actor in actors}
+        assert by_id == {
+            **{
+                user.id: user.username
+                for user in [
+                    GrafanaUser._from_org_user_record(row) for row in grafana_org_users
+                ]
+            },
+            _service_account_uuid(2): "sa-1-ci",
+            _service_account_uuid(4): "sa-1-old",
+        }
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param({"side_effect": GrafanaException()}, id="grafana"),
+            pytest.param({"side_effect": TimeoutError()}, id="timeout"),
+            pytest.param({"side_effect": ClientPayloadError("cut")}, id="payload"),
+            pytest.param(
+                {"side_effect": json.JSONDecodeError("bad", "{", 0)}, id="decode"
+            ),
+            pytest.param({"return_value": ["x"]}, id="off-contract-row"),
+            pytest.param({"return_value": [{"id": 2}]}, id="missing-login"),
+            pytest.param({"return_value": [_sa_record(id=True)]}, id="bool-id"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_a_listing_failure_keeps_the_humans(
+        self, service_accounts, grafana_org_users, failure, caplog
+    ):
+        """Verify the SA half degrades to humans-only with a warning."""
+        service_accounts.configure_mock(**failure)
+
+        with caplog.at_level(logging.WARNING, logger=_MODELS_LOGGER):
+            actors = await GrafanaUser.get_actors()
+
+        assert [actor.username for actor in actors] == [
+            row["login"] for row in grafana_org_users
+        ]
+        assert caplog.records
+
+    @pytest.mark.asyncio
+    async def test_get_users_still_lists_humans_only(
+        self, service_accounts, grafana_org_users
+    ):
+        """Verify ``GET /api/users``'s source is unchanged."""
+        users = await GrafanaUser.get_users()
+
+        assert [user.username for user in users] == [
+            row["login"] for row in grafana_org_users
+        ]
+        service_accounts.assert_not_awaited()
