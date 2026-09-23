@@ -32,8 +32,11 @@ engine, which resolves the same setting through a driver
 :meth:`~sqlalchemy_celery_beat.session.SessionManager.prepare_models` cannot use.
 """
 
+import argparse
 import logging
 import logging.config
+import sys
+from collections.abc import Sequence
 from time import monotonic, sleep
 
 from sqlalchemy.engine import Engine
@@ -140,7 +143,28 @@ def bootstrap_beat_schema(*, deadline_seconds: float | None = None) -> None:
         engine.dispose()
 
 
-def main() -> None:
+def _build_arg_parser() -> argparse.ArgumentParser:
+    """Return the CLI parser for the beat-schema bootstrap entry point.
+
+    :return: A parser exposing optional ``--deadline-seconds``.
+    """
+    parser = argparse.ArgumentParser(
+        description="Create the Celery beat schedule tables if they are absent."
+    )
+    parser.add_argument(
+        "--deadline-seconds",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "Wall-clock seconds to wait for the beat store before failing. "
+            "Omit to wait without a bound (side-car migrate-beat)."
+        ),
+    )
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> None:
     """Run the bootstrap, configuring logging for a freshly spawned process.
 
     Supervisord starts this in a process that has run no ``dictConfig``, and the
@@ -148,13 +172,23 @@ def main() -> None:
     step has not finished. A failure is deliberately left to propagate: the
     non-zero exit is what keeps the caller's sentinel unwritten.
 
+    ``--deadline-seconds`` is optional so the side-car's one-shot invocation
+    stays unbounded; ``make migrate`` passes a bound so a persistent store
+    failure fails the command instead of hanging.
+
+    :param argv: CLI arguments. ``None`` means no flags (unbounded wait), matching
+        a bare ``python -m`` / programmatic call; ``__main__`` passes
+        ``sys.argv[1:]``.
+    :raises TimeoutError: When a supplied deadline elapses while the store is
+        still unreachable.
     :raises SQLAlchemyError: When the tables cannot be created, or the store
         refuses a connection for a reason other than not being up yet.
     """
+    args = _build_arg_parser().parse_args([] if argv is None else argv)
     logging.config.dictConfig(settings.LOGGING_CONFIG)
-    bootstrap_beat_schema()
+    bootstrap_beat_schema(deadline_seconds=args.deadline_seconds)
     logger.info("Celery beat schedule tables are present.")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
