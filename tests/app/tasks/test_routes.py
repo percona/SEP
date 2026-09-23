@@ -65,6 +65,7 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    ExecutorHostState,
     LogCaptureStatusEnum,
     MAX_FAILURE_REASON_LENGTH,
     SYSTEM_USER,
@@ -1848,6 +1849,61 @@ async def test_get_executor_hosts(test_client, mock_executor):
     response = test_client.get("/hosts/")
     assert response.status_code == status.HTTP_200_OK
     assert response.json() == {"node1": "10.0.0.1"}
+
+
+@pytest.mark.asyncio
+async def test_get_executor_host_states(test_client, mock_executor):
+    """Assert /hosts/states/ reports unusable hosts, which /hosts/ can only omit."""
+    mock_executor.get_host_states = MagicMock(
+        return_value=[
+            ExecutorHostState(
+                name="node1", address="10.0.0.1", reachable=True, driver_healthy=True
+            ),
+            ExecutorHostState(
+                name="node2",
+                address="10.0.0.2",
+                reachable=True,
+                driver_healthy=False,
+                status="ready",
+                detail="Failed to find raw_exec",
+            ),
+        ]
+    )
+    response = test_client.get("/hosts/states/")
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert [entry["name"] for entry in body] == ["node1", "node2"]
+    # The reason travels with the row: an operator asking why node2 takes no jobs
+    # should not have to go and read Nomad's own API to find out.
+    assert body[1]["driver_healthy"] is False
+    assert body[1]["detail"] == "Failed to find raw_exec"
+
+
+@pytest.mark.asyncio
+async def test_get_executor_host_states_unreachable(test_client, mock_executor):
+    """Assert /hosts/states/ answers 502 rather than 500 when the backend is down."""
+    mock_executor.get_host_states = MagicMock(
+        side_effect=requests.exceptions.ConnectionError("boom")
+    )
+    response = test_client.get("/hosts/states/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.json()["detail"].startswith("Executor backend unreachable:")
+
+
+@pytest.mark.asyncio
+async def test_get_executor_host_states_nomad_returns_non_json(
+    test_client, mock_executor
+):
+    """Assert /hosts/states/ returns 502 JSON when executor raises JSONDecodeError."""
+    mock_executor.get_host_states.side_effect = requests.exceptions.JSONDecodeError(
+        "Expecting value", "doc", 0
+    )
+    response = test_client.get("/hosts/states/")
+    assert response.status_code == status.HTTP_502_BAD_GATEWAY
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert "detail" in body
+    assert body["detail"].startswith("Executor backend unreachable:")
 
 
 @pytest.mark.asyncio
