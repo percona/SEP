@@ -1995,8 +1995,7 @@ export interface paths {
      * List Bootstrap Runs
      * @description Return runs, newest first, optionally narrowed to one status.
      *
-     *     The intended caller is PMM's HA-leader-only stepper (PMM-15347/plan.md §4
-     *     item 9): it does not persist its own copy of which runs exist or where
+     *     The intended caller is PMM's HA-leader-only stepper: it does not persist its own copy of which runs exist or where
      *     they are, so on every tick -- and especially right after a leader
      *     failover -- it re-discovers every run still in flight from here
      *     (``status=running``) rather than from any state of its own.
@@ -2022,7 +2021,8 @@ export interface paths {
      *     :param session: The database session.
      *     :param request: The requested run.
      *     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
-     *         same host twice, or names an install method with no registered strategy.
+     *         same host twice, has neither one nor three hosts, or names an install
+     *         method with no registered strategy.
      *     :return: The created run, every host's steps ``pending``.
      */
     post: operations['om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post'];
@@ -2045,10 +2045,14 @@ export interface paths {
      *
      *     Reconciling on every read (rather than relying solely on a periodic task)
      *     means PMM's driver always sees a step's real outcome on its very next poll,
-     *     not after waiting for a separate schedule to catch up.
+     *     not after waiting for a separate schedule to catch up. The run is read under
+     *     its row lock, like every writing route (see the module docstring), since a
+     *     reconcile may write it back.
      *
      *     :param run_id: The run's id.
      *     :param session: The database session.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
      *     :raises HTTPNotFoundException: When there is no such run.
      *     :return: The run, with current step status.
      */
@@ -2081,8 +2085,7 @@ export interface paths {
      *
      *     Whether a host should be rolled back at all -- and, if so, whether to
      *     dispatch its rollback steps in order or all at once -- is PMM's stepper's
-     *     call (Adamo's decided partial-failure policy, PMM-15347/questions.md Q8),
-     *     not this route's; it only ever dispatches the one step it is asked to.
+     *     call (its partial-failure policy), not this route's; it only ever dispatches the one step it is asked to.
      *
      *     :param run_id: The run's id.
      *     :param host: The host to roll back.
@@ -2090,8 +2093,10 @@ export interface paths {
      *         was planned with.
      *     :param session: The database session.
      *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
      *     :raises HTTPNotFoundException: When there is no such run, host, or rollback step.
-     *     :raises HTTPConflictException: When the step is already running.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
      *     :return: The run, with the dispatched rollback step now ``running``.
      */
     post: operations['om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post'];
@@ -2118,9 +2123,9 @@ export interface paths {
      *     Tasks API accepts it, the same fire-and-forget shape ``dispatch_step``
      *     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
      *
-     *     Re-dispatching a step already ``pending`` or ``failed`` is how PMM's driver
-     *     implements Adamo's decided retry policy (PMM-15347/questions.md Q8) -- this
-     *     route does not itself decide *whether* to retry, only executes the request.
+     *     Only a ``pending`` or ``failed`` step is dispatched. Re-dispatching a
+     *     ``failed`` one is how PMM's driver implements its retry policy -- this route
+     *     does not itself decide *whether* to retry, only executes the request.
      *
      *     :param run_id: The run's id.
      *     :param host: The host to dispatch the step on.
@@ -2129,9 +2134,12 @@ export interface paths {
      *     :param session: The database session.
      *     :param request: The current request, whose host builds the artifact
      *         download URL the executor fetches the step's script from.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
      *     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
      *     :raises HTTPNotFoundException: When there is no such run, host, or step.
-     *     :raises HTTPConflictException: When the step is already running.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
      *     :return: The run, with the dispatched step now ``running``.
      */
     post: operations['om_bootstrap_dispatch_run_step_api_apps_om_bootstrap_runs__run_id__hosts__host__steps__step_name__dispatch_post'];
@@ -2168,10 +2176,12 @@ export interface paths {
      *         run was planned with.
      *     :param session: The database session.
      *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
      *     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
      *     :raises HTTPNotFoundException: When there is no such run, run-level step, or
      *         the run has no hosts to target.
-     *     :raises HTTPConflictException: When the step is already running.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
      *     :return: The run, with the dispatched run-level step now ``running``.
      */
     post: operations['om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post'];
@@ -2200,6 +2210,9 @@ export interface paths {
      *     finished), never something ``om_bootstrap`` infers on its own -- see
      *     ``reconcile.py``'s module docstring for the one status it *does* infer
      *     (SUCCEEDED) and why that's different.
+     *
+     *     Also removes every step script the run still has on disk: no step of a
+     *     finished run is dispatched again, so nothing will download them.
      *
      *     :param run_id: The run's id.
      *     :param session: The database session.
@@ -10487,8 +10500,7 @@ export interface components {
      * BootstrapRunStatus
      * @description Enumerate the states of one bootstrap run.
      *
-     *     Matches Adamo's decided partial-failure policy exactly
-     *     (PMM-15347/questions.md Q8): retry a failed host, and if retries are
+     *     Matches the decided partial-failure policy exactly: retry a failed host, and if retries are
      *     exhausted, roll back the whole run -- there is no "partial success" status
      *     here the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A
      *     bootstrap either finishes with every host succeeded, or it did not finish.
@@ -10511,8 +10523,8 @@ export interface components {
      *         monitoring-user password. See
      *         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own
      *         docstring for why these are never persisted by ``om_bootstrap``: PMM's
-     *         stepper holds their durable, encrypted copy (PMM-15347/questions.md Q7)
-     *         and hands one to a single dispatch, transiently, through this field.
+     *         stepper holds their durable, encrypted copy and hands one to a single
+     *         dispatch, transiently, through this field.
      *         Empty for a step that needs none.
      */
     om_bootstrap__DispatchStepRequest: {
@@ -10571,8 +10583,9 @@ export interface components {
      *
      *     Only ``PACKAGES`` has an implementation
      *     (:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).
-     *     ``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the future
-     *     state machine have a closed set to switch on before a second strategy exists.
+     *     ``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the API have
+     *     a closed set to switch on before a second strategy exists; requesting either
+     *     today is a 400.
      * @enum {string}
      */
     om_bootstrap__InstallMethod: 'packages' | 'docker' | 'podman';
@@ -10596,8 +10609,7 @@ export interface components {
      *     :param finished_at: When it reached a terminal status, if it has.
      *     :param hosts: Every host's current step-by-step progress -- the full,
      *         run-specific step list each host was planned with (forward steps and
-     *         rollback steps both), not just the steps that have started
-     *         (PMM-15347/plan.md §4 item 9).
+     *         rollback steps both), not just the steps that have started.
      *     :param run_steps: This run's run-level steps
      *         (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),
      *         planned up front the same way ``hosts``' steps are.
@@ -10657,9 +10669,8 @@ export interface components {
      *         planning, persistence, and API responses alike.
      *     :param attempt_count: How many times this step has been dispatched.
      *         Incremented on every dispatch, including the first -- PMM's stepper reads
-     *         this to enforce Adamo's decided retry policy (PMM-15347/questions.md Q8:
-     *         retry once, then roll back) without needing a counter of its own, which
-     *         would be lost on a leader failover. ``om_bootstrap`` only ever records the
+     *         this to enforce its decided retry policy (retry, then roll back) without
+     *         needing a counter of its own, which would be lost on a leader failover. ``om_bootstrap`` only ever records the
      *         fact that a dispatch happened; deciding whether *another* one should is
      *         the stepper's call, not this field's.
      */
@@ -10693,12 +10704,14 @@ export interface components {
      * @description Request one bootstrap run over a set of hosts, all sharing one spec.
      *
      *     :param hosts: The hosts to provision -- one-member or three-member replica
-     *         sets only, per Adamo's decided phase-1 scope
-     *         (PMM-15347/questions.md Q5/Q12).
+     *         sets only, the decided phase-1 scope. Each is a node name: letters,
+     *         digits, ``.``, ``_`` and ``-``, starting with a letter or digit.
      *     :param install_method: Which strategy provisions every host in this run.
      *     :param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.
-     *     :param mongodb_version: The Percona Server for MongoDB version to install.
-     *     :param replica_set_name: The replica set every host joins.
+     *     :param mongodb_version: The Percona Server for MongoDB version to install,
+     *         as ``major.minor`` or ``major.minor.patch`` (e.g. ``"8.0"``, ``"8.0.4"``).
+     *     :param replica_set_name: The replica set every host joins: 1-64 letters,
+     *         digits, ``_`` or ``-``.
      */
     om_bootstrap__TriggerRunRequest: {
       /** Hosts */
