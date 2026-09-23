@@ -424,7 +424,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_reconciles_finalize_steps_too(self) -> None:
-        """A finalize dispatch's outcome lands in the host's finalize_steps."""
+        """Record a finalize dispatch's outcome in the host's finalize_steps."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             run_steps=[
@@ -450,7 +450,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_pending_finalize_steps_block_success(self) -> None:
-        """A run isn't done while a host still has an undispatched finalize step.
+        """Keep a run running while a host still has an undispatched finalize step.
 
         Distinct from rollback_steps, which stay pending forever on a run that
         never needed rollback: every run needs its finalize steps to actually
@@ -473,7 +473,7 @@ class TestReconcileRun:
 
     @pytest.mark.asyncio
     async def test_marks_succeeded_once_finalize_steps_succeed(self) -> None:
-        """The run only finishes once finalize steps succeed too, not before."""
+        """Finish the run only once its finalize steps succeed too."""
         run = self._run(
             [StepRecord(name="verify", status=StepStatus.SUCCEEDED)],
             run_steps=[

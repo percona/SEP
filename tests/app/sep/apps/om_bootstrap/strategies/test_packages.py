@@ -289,10 +289,10 @@ class TestBuildStep:
         assert "install -d -m 750 -o mongod -g mongod /var/lib/mongo" in command
 
     def test_configure_mongod_creates_the_log_directory(self) -> None:
-        """Mongod's control process exits immediately on first start otherwise.
+        """Create the log directory, or mongod's control process exits on first start.
 
         ``Can't initialize rotatable log file :: caused by :: Failed to open
-        <path>`` -- confirmed against a real run where the package's own
+        <path>`` — confirmed against a real run where the package's own
         default log directory (/var/log/mongo) existed but the wizard's
         default log path (/var/log/mongodb/mongod.log) named a different one
         that nothing had created.
@@ -317,11 +317,13 @@ class TestBuildStep:
         )
         return action.command[-1].split(" && cat > ", 1)[0]
 
-    def test_skips_install_d_when_the_directory_already_exists(self, tmp_path) -> None:
-        """``install -d`` is not re-run on a directory that already exists.
+    def test_skips_install_d_when_the_directory_already_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """Skip ``install -d`` on a directory that already exists.
 
         Reapplying ``-m``/``-o``/``-g`` unconditionally would repoint an
-        existing directory's mode and ownership on every run -- for a
+        existing directory's mode and ownership on every run — for a
         ``log_path`` like ``/var/log/mongod.log``, that directory is
         ``/var/log`` itself, a shared directory this must never touch once
         it's already there.
@@ -344,8 +346,8 @@ class TestBuildStep:
         assert result.returncode == 0, result.stderr
         assert not marker.exists()
 
-    def test_runs_install_d_when_the_directory_is_missing(self, tmp_path) -> None:
-        """The other half of the guard: a genuinely missing directory still gets created."""
+    def test_runs_install_d_when_the_directory_is_missing(self, tmp_path: Path) -> None:
+        """Create a genuinely missing directory, the other half of the guard."""
         spec = _spec(OperatingSystem.UBUNTU).model_copy(
             update={
                 "data_path": str(tmp_path / "does-not-exist"),
@@ -391,10 +393,10 @@ class TestBuildStep:
         assert "path: /var/log/mongodb/mongod.log" in command
 
     def test_configure_mongod_leaves_authorization_off(self) -> None:
-        """Authorization has to stay off until the first user already exists.
+        """Leave authorization off until the first user already exists.
 
         MongoDB's localhost exception is unreliable once a replica set already
-        has more than one member -- confirmed against a real run where every
+        has more than one member — confirmed against a real run where every
         createUser attempt failed identically once the first one did.
         enable_auth (a finalize step) turns authorization on afterward, once
         create_pmm_monitoring_user has actually succeeded.
@@ -404,6 +406,7 @@ class TestBuildStep:
         )
 
         command = " ".join(action.command)
+        assert "replSetName" in command
         assert "authorization" not in command
         assert "keyFile" not in command
 
@@ -491,7 +494,7 @@ class TestBuildRunStep:
         assert "rs-test" in command
 
     def test_rs_initiate_defaults_a_host_with_no_member_config(self) -> None:
-        """A host missing from spec.member_configs gets MongoDB's own defaults."""
+        """Give a host missing from spec.member_configs MongoDB's own defaults."""
         action = PackagesInstallStrategy().build_run_step(
             "rs_initiate", ["node00"], _spec(OperatingSystem.UBUNTU)
         )
@@ -504,7 +507,7 @@ class TestBuildRunStep:
         assert "secondaryDelaySecs" not in member
 
     def test_rs_initiate_applies_a_host_s_member_config(self) -> None:
-        """A host named in spec.member_configs gets its own priority/votes/hidden/delay."""
+        """Apply a named host's own priority/votes/hidden/delay from member_configs."""
         spec = _spec(OperatingSystem.UBUNTU).model_copy(
             update={
                 "member_configs": {
@@ -530,10 +533,10 @@ class TestBuildRunStep:
         assert delayed["secondaryDelaySecs"] == 300  # noqa: PLR2004
 
     def test_rs_initiate_tolerates_already_being_initiated(self) -> None:
-        """A retried dispatch after a first, invisible success must not fail the run.
+        """Keep a retried dispatch after a first, invisible success from failing the run.
 
         A bare ``rs.initiate`` fails a retry with ``AlreadyInitiated``, which
-        (retries exhausted) triggers rollback -- tearing down a replica set
+        (retries exhausted) triggers rollback — tearing down a replica set
         that had, in fact, already initiated successfully.
         """
         action = PackagesInstallStrategy().build_run_step(
@@ -602,7 +605,7 @@ class TestBuildRunStep:
         assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
 
     def test_create_pmm_monitoring_user_tolerates_already_existing(self) -> None:
-        """A retried dispatch after a first, invisible success must not fail the run.
+        """Keep a retried dispatch after a first, invisible success from failing the run.
 
         A bare ``createUser`` fails a retry with ``UserAlreadyExists``
         (51003), which (retries exhausted) rolls the whole run back over a
@@ -635,7 +638,7 @@ class TestBuildFinalizeStep:
     """Assert build_finalize_step rejects unknown names and enables auth correctly."""
 
     def test_unknown_finalize_step_name_raises(self) -> None:
-        """A per-host forward step name is not a finalize step."""
+        """Reject a per-host forward step name as a finalize step."""
         with pytest.raises(
             ValueError, match="not a PackagesInstallStrategy finalize step"
         ):
@@ -644,7 +647,7 @@ class TestBuildFinalizeStep:
             )
 
     def test_enable_auth_turns_authorization_on(self) -> None:
-        """The one thing configure_mongod deliberately left out."""
+        """Add the one block configure_mongod deliberately left out."""
         action = PackagesInstallStrategy().build_finalize_step(
             "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -654,7 +657,7 @@ class TestBuildFinalizeStep:
         assert f"keyFile: {KEY_FILE_PATH}" in command
 
     def test_enable_auth_restarts_mongod(self) -> None:
-        """security.authorization only takes effect on a fresh start."""
+        """Restart mongod, since security.authorization only takes effect at startup."""
         action = PackagesInstallStrategy().build_finalize_step(
             "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -662,7 +665,7 @@ class TestBuildFinalizeStep:
         assert "systemctl restart mongod" in " ".join(action.command)
 
     def test_enable_auth_keeps_the_replica_set_name(self) -> None:
-        """Rewriting the config must not lose settings configure_mongod wrote."""
+        """Keep every setting configure_mongod wrote when rewriting the config."""
         action = PackagesInstallStrategy().build_finalize_step(
             "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
         )
@@ -673,10 +676,10 @@ class TestBuildFinalizeStep:
         assert "path: /var/log/mongodb/mongod.log" in command
 
     def test_enable_auth_probes_readiness_after_restarting(self) -> None:
-        """The restart is followed by an unauthenticated readiness probe.
+        """Follow the restart with an unauthenticated readiness probe.
 
         ``ping`` is one of the commands MongoDB answers without credentials
-        even with ``security.authorization: enabled`` -- the same one
+        even with ``security.authorization: enabled`` — the same one
         ``verify`` uses after the first, auth-less start.
         """
         action = PackagesInstallStrategy().build_finalize_step(
@@ -687,13 +690,13 @@ class TestBuildFinalizeStep:
         assert _mongosh_eval_command("db.adminCommand('ping').ok", 27017) in command
 
     def test_enable_auth_does_not_restart_when_the_config_write_fails(
-        self, tmp_path
+        self, tmp_path: Path
     ) -> None:
-        """A failed config write must not leave mongod running on the old, auth-less one.
+        """Skip the restart when the config write fails, leaving no auth-less mongod.
 
         Joining the heredoc, the restart, and the probe with a bare newline
         instead of ``&&`` would let ``systemctl restart`` run regardless of
-        whether ``cat`` actually wrote the new config -- confirmed here by
+        whether ``cat`` actually wrote the new config — confirmed here by
         forcing the write itself to fail (read-only target file) and asserting
         neither ``restart`` nor ``mongosh`` shell function is ever invoked.
         """

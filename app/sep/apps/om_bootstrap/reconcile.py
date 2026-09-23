@@ -176,8 +176,8 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
     own docstring for why that host is always the target.
 
     Skips the SUCCEEDED inference once ``run.cancel_requested`` is set: without
-    this, a cancel that lands just as the last step finishes -- or whose
-    best-effort stop failed -- would flip to SUCCEEDED on the very next poll,
+    this, a cancel that lands just as the last step finishes — or whose
+    best-effort stop failed — would flip to SUCCEEDED on the very next poll,
     permanently recording a run the operator aborted as one that finished
     normally, with no route back to ROLLED_BACK (``finish_run`` refuses to
     override a terminal run).
@@ -284,7 +284,7 @@ def _fully_succeeded(
 
     ``finalize_steps`` are checked explicitly, not folded into
     :attr:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState.status`: that
-    property derives purely from ``steps`` (see its own docstring), by design --
+    property derives purely from ``steps`` (see its own docstring), by design —
     a host isn't considered done finalizing until its finalize steps have too,
     but a host that hasn't started finalizing yet (every finalize step still
     ``pending``, correctly, until every run-level step succeeds) must not read as

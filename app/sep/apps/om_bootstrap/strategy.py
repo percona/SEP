@@ -92,7 +92,7 @@ class OperatingSystem(StrEnum):
 
 
 class MemberConfig(BaseModel):
-    """One host's replica-set election settings, for ``rs.initiate``.
+    """Hold one host's replica-set election settings, for ``rs.initiate``.
 
     Defaults to MongoDB's own for a member (priority 1, votes on, not hidden,
     no delay), so a host a run never names here gets exactly those.
@@ -106,7 +106,7 @@ class MemberConfig(BaseModel):
         primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
         ``votes`` off whenever this is nonzero.
     :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
-        non-voting, hidden, or delayed member names a nonzero ``priority`` --
+        non-voting, hidden, or delayed member names a nonzero ``priority`` —
         each combination ``rs.initiate`` itself rejects, checked here so a bad
         request fails at create time (422) rather than several steps into a
         run.
@@ -122,9 +122,13 @@ class MemberConfig(BaseModel):
         """Reject a priority MongoDB would refuse for this member's role.
 
         ``rs.initiate`` rejects a non-voting, hidden, or delayed member unless
-        its ``priority`` is exactly 0 -- each combination otherwise plans a run
-        that fails at ``rs_initiate``, several steps after every host was
-        already provisioned.
+        its ``priority`` is exactly 0; each such combination would otherwise
+        plan a run that fails at ``rs_initiate``, several steps after every host
+        was already provisioned.
+
+        :raises ValueError: If a non-voting, hidden, or delayed member names a
+            nonzero ``priority``.
+        :return: This config, unchanged.
         """
         if self.priority == 0:
             return self
@@ -160,14 +164,13 @@ class BootstrapSpec(BaseModel):
     :param log_path: Where mongod writes its log file.
     :param port: The port mongod listens on. ``rs.initiate``'s member list and
         every ``mongosh`` dispatch need this alongside ``mongod.conf`` itself,
-        since none of them still assume the package's own unconfigured default
-        (PMM-15347/plan.md §6 Phase A).
+        since none of them assume the package's own unconfigured default.
     :param bind_ip: The interface(s) mongod listens on, e.g. ``0.0.0.0``.
     :param member_configs: Per-host election settings for ``rs.initiate``,
         keyed by the same host names ``hosts`` (the run's target list) uses.
-        A host missing from this mapping -- including every host, for a run
-        that never sets it at all -- gets :class:`MemberConfig`'s own
-        defaults (PMM-15347/plan.md §6 Phase B).
+        A host missing from this mapping — including every host, for a run
+        that never sets it at all — gets :class:`MemberConfig`'s own
+        defaults.
     """
 
     install_method: InstallMethod
@@ -256,10 +259,10 @@ class HostBootstrapState(BaseModel):
         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
         this host back.
     :param finalize_steps: This host's post-coordination steps, in the order
-        :meth:`InstallStrategy.plan_finalize_steps` returned them -- planned up
+        :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up
         front alongside ``steps``, but not dispatched until every run-level step
         has succeeded (PMM's stepper's call, mirroring how it gates run-level
-        steps on every host's ``steps`` first -- see
+        steps on every host's ``steps`` first — see
         :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
         ordering exists at all).
     """
@@ -324,17 +327,17 @@ class InstallStrategy(Protocol):
       succeeded.
     - **Finalize** (:meth:`plan_finalize_steps`/:meth:`build_finalize_step`):
       per-host work that has to happen *after* run-level coordination has
-      already succeeded, not before -- enabling MongoDB authorization is the
+      already succeeded, not before — enabling MongoDB authorization is the
       motivating case: creating the first user reliably requires authorization
       to still be *off* everywhere at the time, because MongoDB's localhost
       exception is unreliable once a replica set already has more than one
       member (confirmed against a real multi-member run, not a theoretical
-      concern -- once any privileged op on it fails once, the exception closes
+      concern — once any privileged op on it fails once, the exception closes
       permanently for that mongod's whole lifetime, not just for one
       connection). So ``configure_mongod`` never enables authorization, and each
       host only turns it on for itself once ``create_pmm_monitoring_user`` has
       actually succeeded. The stepper dispatches these once every run-level step
-      has succeeded -- the same per-host shape as :meth:`plan_steps`, just
+      has succeeded — the same per-host shape as :meth:`plan_steps`, just
       running after run-level steps instead of before them.
     - **Rollback** (:meth:`plan_rollback_steps`/:meth:`build_rollback_step`):
       one host's teardown, planned up front alongside its forward steps so a
@@ -418,7 +421,7 @@ class InstallStrategy(Protocol):
         """Return this strategy's ordered per-host finalize step names for ``spec``.
 
         See the class docstring's "finalize" bullet. Called once, alongside
-        :meth:`plan_steps`, before any host is touched -- planned up front the
+        :meth:`plan_steps`, before any host is touched — planned up front the
         same way rollback steps are, even though the stepper will not dispatch
         any of them until every run-level step has succeeded.
 

@@ -488,8 +488,8 @@ class PackagesInstallStrategy:
         Creates each directory only when absent (``[ -d ... ] ||``), not
         unconditionally: ``install -d`` reapplies ``-m``/``-o``/``-g`` to a
         directory that already exists too, and a ``log_path`` of
-        ``/var/log/mongod.log`` -- a plausible operator value, and the mongod
-        default on some layouts -- has ``/var/log`` as its dirname. An
+        ``/var/log/mongod.log`` — a plausible operator value, and the mongod
+        default on some layouts — has ``/var/log`` as its dirname. An
         unconditional ``install -d`` there hands the host's shared log
         directory to ``mongod:mongod`` at 750, breaking logging for
         everything else on the box.
@@ -623,7 +623,7 @@ class PackagesInstallStrategy:
         Tolerates ``rs.initiate`` already having succeeded: a dispatch that
         times out at the SEP/Nomad layer *after* the command actually took
         effect on the host looks, to the stepper's retry policy, exactly like
-        one that never ran -- it retries. A bare retry fails with
+        one that never ran — it retries. A bare retry fails with
         ``AlreadyInitialized`` and, retries exhausted, triggers rollback
         (including ``rm -rf`` of the data directory), tearing down a replica
         set that had already initiated successfully. Swallowing exactly that
@@ -672,6 +672,7 @@ class PackagesInstallStrategy:
         ``UserAlreadyExists`` (51003) and, retries exhausted, rolls the whole
         run back over a user that was actually created successfully.
 
+        :param spec: The run's bootstrap spec; only its port is read.
         :param params: Must contain ``"username"`` and ``"password"``.
         :return: The step action.
         :raises ValueError: If ``params`` is missing ``"username"`` or

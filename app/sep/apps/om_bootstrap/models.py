@@ -185,7 +185,7 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     bind_ip: str = SQLField(default="127.0.0.1", sa_type=Text)
     # Set once, by the :cancel route, when an operator asks a running run to stop.
     # PMM's stepper (bootstrap_decision.go's runNeedsRollback) treats this the same
-    # as a step exhausting its retries -- force every host's rollback, not just the
+    # as a step exhausting its retries — force every host's rollback, not just the
     # one that failed, since there is no failed step here to point at. This module
     # decides nothing from it; it only ever records the request and best-effort
     # stops whatever is currently dispatching (see api_routes.py's cancel_run).
@@ -210,7 +210,7 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
         ),
     )
     # Keyed by host, one dict per entry matching
-    # strategy.MemberConfig's own fields -- read back through pydantic's own
+    # strategy.MemberConfig's own fields — read back through pydantic's own
     # coercion when rebuilding a BootstrapSpec (api_routes.py's _spec_for), the
     # same "stored as plain JSON, typed on the way out" treatment as `hosts`
     # and `run_steps`. A host missing from this mapping gets MemberConfig's own

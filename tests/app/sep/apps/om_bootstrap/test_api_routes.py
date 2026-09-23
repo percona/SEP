@@ -104,7 +104,7 @@ class TestAdminGateIsRegistered:
         assert minimum_role_for_endpoint(dispatch_rollback_step) == UserRole.ADMIN
 
     def test_dispatch_finalize_step_requires_admin(self) -> None:
-        """Enabling auth and restarting mongod is equally privileged."""
+        """Gate enabling auth and restarting mongod as equally privileged."""
         assert minimum_role_for_endpoint(dispatch_finalize_step) == UserRole.ADMIN
 
     def test_finish_run_requires_admin(self) -> None:
@@ -112,7 +112,7 @@ class TestAdminGateIsRegistered:
         assert minimum_role_for_endpoint(finish_run) == UserRole.ADMIN
 
     def test_cancel_run_requires_admin(self) -> None:
-        """Aborting a live deployment is as privileged as starting one."""
+        """Gate aborting a live deployment as privileged as starting one."""
         assert minimum_role_for_endpoint(cancel_run) == UserRole.ADMIN
 
 
@@ -169,7 +169,7 @@ class TestTriggerRun:
     def test_accepts_per_host_member_configs(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A per-host election override in the request survives round-trip creation.
+        """Round-trip a per-host election override through creation and a re-read.
 
         Asserts the stored values, not just the status code: a 201 alone
         still passes if member_configs were silently discarded before
@@ -196,7 +196,7 @@ class TestTriggerRun:
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["member_configs"] == {"node01": override}
 
-        # Re-read from the database, not the same in-memory response -- proves
+        # Re-read from the database, not the same in-memory response — proves
         # the value round-trips through persistence, not just the request echo.
         run_id = response.json()["id"]
         reread = client.get(f"{BASE}/runs/{run_id}")
@@ -973,7 +973,7 @@ class TestDispatchFinalizeStep:
     async def test_dispatches_a_pending_finalize_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A pending finalize step is dispatched, marked running, and carries its task id."""
+        """Dispatch a pending finalize step, marking it running with its task id."""
         run = await self._seed_run(session)
 
         with patch(
@@ -993,7 +993,7 @@ class TestDispatchFinalizeStep:
     async def test_404s_for_an_unplanned_finalize_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A forward step name is not a finalize step name."""
+        """Return 404 for a forward step name, which is not a finalize step."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -1006,7 +1006,7 @@ class TestDispatchFinalizeStep:
     async def test_404s_for_an_unknown_host(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A host outside this run cannot have a finalize step dispatched on it."""
+        """Return 404 for a finalize dispatch on a host outside this run."""
         run = await self._seed_run(session)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -1019,7 +1019,7 @@ class TestDispatchFinalizeStep:
     async def test_409s_for_a_finalize_step_already_running(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """Re-dispatching an in-flight finalize step is a conflict, not a second dispatch."""
+        """Return 409 for an in-flight finalize step instead of dispatching it twice."""
         run = await BootstrapRunManager.save(
             session,
             BootstrapRunFactory.build(
@@ -1244,7 +1244,7 @@ class TestCancelRun:
     async def test_sets_cancel_requested_and_stops_the_running_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A live step's Nomad allocation is stopped, not left to run out its timeout."""
+        """Stop a live step's Nomad allocation instead of letting it run out its timeout."""
         run = await self._seed_run(session)
         tasks_api = _fake_tasks_api()
         tasks_api.post = AsyncMock(return_value=None)
@@ -1264,10 +1264,10 @@ class TestCancelRun:
     async def test_tolerates_a_step_that_fails_to_stop(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A Tasks API rejection while stopping a step doesn't fail the whole request.
+        """Tolerate a Tasks API rejection while stopping a step.
 
-        PMM's stepper's rollback decision only needs cancel_requested set -- see
-        bootstrap_decision.go's runNeedsRollback -- so a step this route couldn't
+        PMM's stepper's rollback decision only needs cancel_requested set — see
+        bootstrap_decision.go's runNeedsRollback — so a step this route couldn't
         stop is not fatal here.
         """
         run = await self._seed_run(session)
@@ -1287,10 +1287,10 @@ class TestCancelRun:
     async def test_tolerates_the_tasks_api_being_unreachable(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A transport failure while stopping a step doesn't fail the whole request.
+        """Tolerate a transport failure while stopping a step.
 
         The Tasks API being down is precisely the outage an operator is likely
-        to be hitting Abort over -- ``cancel_requested`` must still save (see
+        to be hitting Abort over — ``cancel_requested`` must still save (see
         ``test_saves_cancel_requested_before_stopping_steps``), and this call
         must not turn that outage into a 500.
         """
@@ -1311,10 +1311,10 @@ class TestCancelRun:
     async def test_saves_cancel_requested_before_stopping_steps(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """The flag is durable even if stopping the running step blows up entirely.
+        """Persist the flag even if stopping the running step blows up entirely.
 
         Guards the ordering, not just the tolerance: a caller reading the run
-        straight from the database -- not through this response -- must see
+        straight from the database — not through this response — must see
         ``cancel_requested=True`` even when ``_stop_running_steps`` itself
         raises something ``cancel_run`` does not catch.
         """
@@ -1332,7 +1332,7 @@ class TestCancelRun:
     async def test_is_idempotent_once_already_requested(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """Clicking Abort twice is a no-op, not an error."""
+        """Treat a second Abort as a no-op, not an error."""
         run = await self._seed_run(session, cancel_requested=True)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -1346,7 +1346,7 @@ class TestCancelRun:
     async def test_409s_for_an_already_terminal_run(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A finished run has nothing left to cancel."""
+        """Return 409 for a finished run, which has nothing left to cancel."""
         run = await self._seed_run(session, BootstrapRunStatus.ROLLED_BACK)
 
         response = api_client(regular_user, session, _fake_tasks_api()).post(
@@ -1359,7 +1359,7 @@ class TestCancelRun:
     async def test_404s_for_an_unknown_run(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A run id nobody created is a 404, not a 500."""
+        """Return 404, not 500, for a run id nobody created."""
         response = api_client(regular_user, session, _fake_tasks_api()).post(
             f"{BASE}/runs/{uuid4()}:cancel"
         )

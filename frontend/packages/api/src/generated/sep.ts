@@ -2023,8 +2023,10 @@ export interface paths {
      *     :param request: The requested run.
      *     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
      *         same host twice, has neither one nor three hosts, names an install
-     *         method with no registered strategy, or ``member_configs`` names a host
-     *         outside ``hosts``.
+     *         method with no registered strategy, ``member_configs`` names a host
+     *         outside ``hosts``, or ``member_configs`` leaves no host that both votes
+     *         and has a nonzero priority, since ``rs.initiate`` rejects a config with
+     *         no electable member.
      *     :return: The created run, every host's steps ``pending``.
      */
     post: operations['om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post'];
@@ -2080,23 +2082,23 @@ export interface paths {
      * Dispatch Finalize Step
      * @description Dispatch one host's named finalize step now.
      *
-     *     Same fire-and-forget shape as :func:`dispatch_run_step` -- see its own
+     *     Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
      *     docstring; the only difference is which list on
      *     :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState` this reads
      *     and writes. This route does not check that every run-level step has
-     *     succeeded first -- deciding *when* it is safe to call this is PMM's
+     *     succeeded first — deciding *when* it is safe to call this is PMM's
      *     stepper's job, not this route's (see the module docstring, and
      *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s
      *     own docstring for why that ordering matters at all).
      *
      *     :param run: The path's run, read under its row lock.
      *     :param host: The host to dispatch the step on.
-     *     :param step_name: The finalize step to dispatch -- one of the names the run
+     *     :param step_name: The finalize step to dispatch — one of the names the run
      *         was planned with.
      *     :param session: The database session.
      *     :param request: See :func:`dispatch_run_step`.
      *     :param tasks_client: See :func:`dispatch_run_step`.
-     *     :param body: ``params`` this step needs -- see :class:`DispatchStepRequest`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
      *     :raises HTTPNotFoundException: When there is no such run, host, or finalize step.
      *     :raises HTTPConflictException: When the step is running, succeeded, or
      *         skipped.
@@ -2252,21 +2254,21 @@ export interface paths {
      *
      *     Records the request and best-effort interrupts whatever is currently
      *     dispatching (:func:`_stop_running_steps`) so it doesn't keep running for
-     *     however long its own timeout is -- it does not itself decide to roll
+     *     however long its own timeout is — it does not itself decide to roll
      *     anything back. That is PMM's stepper's call, exactly like every other
      *     rollback trigger (see the module docstring): it reads
      *     ``cancel_requested`` on its next poll and treats it the same as a step
      *     exhausting its retries.
      *
      *     Idempotent while the run is still running: calling this again after
-     *     cancellation was already requested is a no-op, not an error -- an
+     *     cancellation was already requested is a no-op, not an error — an
      *     operator clicking Abort twice should never see a failure.
      *
      *     Saves ``cancel_requested`` *before* attempting to stop anything: a poll
      *     landing between the two would otherwise still see ``cancel_requested=false``
-     *     and the stepper could keep dispatching. Stopping is best-effort -- the
+     *     and the stepper could keep dispatching. Stopping is best-effort — the
      *     saved flag is the signal that actually matters (see
-     *     :func:`_stop_running_steps`) -- so it runs after, and its own failures
+     *     :func:`_stop_running_steps`) — so it runs after, and its own failures
      *     (including the Tasks API being unreachable) never undo the save above.
      *
      *     :param run: The path's run, read under its row lock.
@@ -2274,7 +2276,7 @@ export interface paths {
      *     :param tasks_client: The Tasks API client, authenticated here with SEP's
      *         internal token rather than the caller's.
      *     :raises HTTPNotFoundException: When there is no such run.
-     *     :raises HTTPConflictException: When the run is already terminal --
+     *     :raises HTTPConflictException: When the run is already terminal —
      *         rolled back or otherwise, there is nothing left to cancel.
      *     :return: The run, with ``cancel_requested`` now set.
      */
@@ -10672,10 +10674,10 @@ export interface components {
      *         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
      *         this host back.
      *     :param finalize_steps: This host's post-coordination steps, in the order
-     *         :meth:`InstallStrategy.plan_finalize_steps` returned them -- planned up
+     *         :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up
      *         front alongside ``steps``, but not dispatched until every run-level step
      *         has succeeded (PMM's stepper's call, mirroring how it gates run-level
-     *         steps on every host's ``steps`` first -- see
+     *         steps on every host's ``steps`` first — see
      *         :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
      *         ordering exists at all).
      */
@@ -10709,12 +10711,10 @@ export interface components {
     om_bootstrap__InstallMethod: 'packages' | 'docker' | 'podman';
     /**
      * MemberConfig
-     * @description One host's replica-set election settings, for ``rs.initiate``.
+     * @description Hold one host's replica-set election settings, for ``rs.initiate``.
      *
-     *     MongoDB's own defaults for a member no entry names here -- priority 1,
-     *     votes on, not hidden, no delay -- so a run created before this field
-     *     existed, or one that never names a given host, behaves exactly as it did
-     *     in phase A (PMM-15347/plan.md §6 Phase B).
+     *     Defaults to MongoDB's own for a member (priority 1, votes on, not hidden,
+     *     no delay), so a host a run never names here gets exactly those.
      *
      *     :param priority: Relative election priority, 0-1000. A member with 0 can
      *         never become primary.
@@ -10725,7 +10725,7 @@ export interface components {
      *         primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
      *         ``votes`` off whenever this is nonzero.
      *     :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
-     *         non-voting, hidden, or delayed member names a nonzero ``priority`` --
+     *         non-voting, hidden, or delayed member names a nonzero ``priority`` —
      *         each combination ``rs.initiate`` itself rejects, checked here so a bad
      *         request fails at create time (422) rather than several steps into a
      *         run.
@@ -10773,7 +10773,7 @@ export interface components {
      *     :param port: The port mongod listens on, on every host in this run.
      *     :param bind_ip: The interface(s) mongod listens on, on every host in this run.
      *     :param member_configs: Per-host election settings this run was created
-     *         with -- see :class:`TriggerRunRequest`'s own docstring.
+     *         with — see :class:`TriggerRunRequest`'s own docstring.
      *     :param started_at: When the run began.
      *     :param finished_at: When it reached a terminal status, if it has.
      *     :param hosts: Every host's current step-by-step progress — the full,
@@ -10784,7 +10784,7 @@ export interface components {
      *         planned up front the same way ``hosts``' steps are.
      *     :param error: The run-level failure detail, when the run itself raised
      *         outside any single host's steps.
-     *     :param cancel_requested: Whether an operator has asked this run to stop --
+     *     :param cancel_requested: Whether an operator has asked this run to stop —
      *         see :func:`cancel_run`. PMM's stepper treats this the same as a step
      *         exhausting its retries (force every host's rollback), never something
      *         ``om_bootstrap`` itself acts on.
@@ -10904,22 +10904,19 @@ export interface components {
      *     :param data_path: Where mongod stores its data on every host. Defaults to
      *         the same value the column behind it carries
      *         (``migrations/versions/..._add_run_config_fields.py``), so a caller
-     *         written against 1533's fixed-path contract keeps working unchanged.
+     *         that omits it gets the path the fixed-path contract used.
      *     :param log_path: Where mongod writes its log file on every host. Same
      *         default story as ``data_path``.
      *     :param port: The port mongod listens on, on every host. Same default
      *         story as ``data_path``.
      *     :param bind_ip: The interface(s) mongod listens on, on every host.
-     *         Defaults to ``127.0.0.1``, not the column's ``0.0.0.0`` -- the column
-     *         default exists only so a pre-Phase-A row reads back as the fixed value
-     *         it actually used, and every *new* run always passes this explicitly
-     *         (PMM already does), so a new run that leaves it out gets the narrower
-     *         window rather than the historical one.
+     *         Defaults to ``127.0.0.1``, keeping mongod's pre-auth window local to
+     *         the host unless the caller passes a wider address.
      *     :param member_configs: Per-host election settings for ``rs.initiate``,
-     *         keyed by entries of ``hosts``. A host missing from this mapping --
-     *         including every host, when this is left empty -- gets
+     *         keyed by entries of ``hosts``. A host missing from this mapping —
+     *         including every host, when this is left empty — gets
      *         :class:`~app.sep.apps.om_bootstrap.strategy.MemberConfig`'s own
-     *         defaults (PMM-15347/plan.md §6 Phase B).
+     *         defaults.
      */
     om_bootstrap__TriggerRunRequest: {
       /**
