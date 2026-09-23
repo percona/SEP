@@ -42,7 +42,7 @@ from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
 from typing import Annotated, Any, BinaryIO, ClassVar, NoReturn, Self
-from urllib.parse import unquote, urljoin, urlparse, urlunparse
+from urllib.parse import unquote, urljoin, urlparse, urlsplit, urlunsplit
 
 from aiohttp import (
     ClientResponse,
@@ -750,16 +750,18 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
         :return: The base URL of the API endpoint, credential included.
         """
-        parsed = urlparse(str(self.endpoint))
+        # urlsplit, not urlparse: urlparse moves a ``;params`` segment out of the
+        # path, while pydantic keeps it in ``base_path``, so the suffix would
+        # never match.
+        parsed = urlsplit(str(self.endpoint))
         path = parsed.path.rstrip("/")
         if self.base_path.strip("/") and path.endswith(self.base_path):
             path = path[: -len(self.base_path)]
-        return urlunparse(
+        return urlunsplit(
             (
                 parsed.scheme,
                 parsed.netloc,
                 path,
-                parsed.params,
                 parsed.query,
                 parsed.fragment,
             )
@@ -796,9 +798,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             :data:`~app.core.utils.fields.CREDENTIAL_URL_MASK`, or the mask
             alone when the URL cannot be parsed.
         """
-        url = self.base_url
+        # The read sits inside the try because the hook behind it can raise
+        # too: Nomad's parses the URL before the redaction ever sees it.
         try:
-            return redact_credential_url(url)
+            return redact_credential_url(self.base_url)
         except ValueError:
             return CREDENTIAL_URL_MASK
 

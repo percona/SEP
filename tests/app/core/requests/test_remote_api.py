@@ -17,7 +17,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from unittest.mock import patch
 
@@ -27,12 +27,10 @@ from aioresponses import aioresponses
 from fastapi import HTTPException, status
 from pydantic import computed_field, HttpUrl
 
-# Imported for their side effect of registering each production client as a
-# subclass, which the base-URL redaction walk below discovers.
-import app.core.auth.providers.casdoor.sdk
-import app.core.auth.providers.grafana.sdk
-import app.sep.clients.pmm
-import app.tasks.execution.executors.nomad.models  # noqa: F401
+from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
+from app.core.auth.providers.grafana.sdk import GrafanaSDK
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPConflictException,
@@ -60,6 +58,8 @@ from app.core.utils.fields import (
     PRESERVE_CREDENTIALS_CONTEXT,
     strip_credential_url_userinfo,
 )
+from app.sep.clients.pmm import PMMRemoteAPI
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from tests.app.scan_recording import ScanRecordingBytearray
 
 _UPLOAD_URL = "http://localhost:8000/upload"
@@ -1145,24 +1145,6 @@ class TestEndpointCredentialAndExplicitAuthHeader:
         assert received[0]["Authorization"] == encode_basic_auth("svc/user", "p@ss")
 
 
-def _client_classes() -> list[type[BaseRemoteAPI]]:
-    """Return every client class that inherits the computed base URL.
-
-    Relies on the production client modules imported at the top of this file: a
-    subclass is only reachable through ``__subclasses__`` once its module has
-    been imported, so the walk alone would silently cover nothing.
-
-    :return: The discovered subclasses, deduplicated, in discovery order.
-    """
-
-    def walk(cls: type[BaseRemoteAPI]) -> Iterator[type[BaseRemoteAPI]]:
-        for subclass in cls.__subclasses__():
-            yield subclass
-            yield from walk(subclass)
-
-    return list(dict.fromkeys(walk(BaseRemoteAPI)))
-
-
 class TestBaseUrlRedaction:
     """Cover the credential redaction on the derived base URL."""
 
@@ -1241,16 +1223,36 @@ class TestBaseUrlRedaction:
         api = RemoteAPI(endpoint="http://remote.internal:9000/api?next=/api")
         assert api.base_url == "http://remote.internal:9000?next=/api"
 
-    @pytest.mark.parametrize("client_class", _client_classes())
+    def test_a_path_params_segment_survives_the_base_path_removal(self) -> None:
+        """Remove a base path whose last segment carries ``;params``.
+
+        Pydantic keeps ``;v=2`` inside the path, so a parser that split it out
+        would miss the suffix and return the whole endpoint.
+        """
+        api = RemoteAPI(endpoint="http://h.io:9000/api;v=2")
+        assert api.base_path == "/api;v=2"
+        assert api.base_url == "http://h.io:9000"
+
+    @pytest.mark.parametrize(
+        "client_class",
+        [
+            RemoteAPI,
+            CasdoorSDK,
+            CasdoorAuthProvider,
+            GrafanaSDK,
+            GrafanaAuthProvider,
+            PMMRemoteAPI,
+            NomadExecutor,
+        ],
+    )
     def test_every_client_class_masks_its_base_url(
         self, client_class: type[BaseRemoteAPI]
     ) -> None:
-        """Mask the password for every client, including overridden base URLs.
+        """Mask the password for every production client.
 
-        Built as a walk over the subclasses rather than a list of names so an
-        override added later is covered by construction. ``model_construct``
-        skips validation, so a client with required credentials of its own
-        still takes part without the test knowing what they are.
+        ``model_construct`` skips validation, so a client with required
+        credentials of its own still takes part without the test knowing what
+        they are.
         """
         client = client_class.model_construct(endpoint=HttpUrl(_CREDENTIAL_ENDPOINT))
         assert _CREDENTIAL_SECRET not in client.model_dump_json()
@@ -1270,6 +1272,14 @@ class _UnparseableRemoteAPI(RemoteAPI):
     def _compute_base_url(self) -> str:
         """Return a URL whose bracketed host is unterminated."""
         return "http://[::1:4646/"
+
+
+class _RaisingHookRemoteAPI(RemoteAPI):
+    """Stand in for a client whose base-URL hook itself fails to parse."""
+
+    def _compute_base_url(self) -> str:
+        """Raise the way a hook parsing a malformed URL does."""
+        return strip_credential_url_userinfo("http://[::1:4646/")
 
 
 class TestBaseUrlSubclassing:
@@ -1331,6 +1341,11 @@ class TestRedactedBaseUrl:
     def test_falls_back_to_the_mask_when_the_url_cannot_be_parsed(self) -> None:
         """Return the bare mask rather than raise over the failure being reported."""
         api = _UnparseableRemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        assert api.redacted_base_url == CREDENTIAL_URL_MASK
+
+    def test_falls_back_to_the_mask_when_the_hook_raises(self) -> None:
+        """Return the bare mask when the base-URL hook, not the redaction, fails."""
+        api = _RaisingHookRemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
         assert api.redacted_base_url == CREDENTIAL_URL_MASK
 
 

@@ -22,10 +22,10 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.core.settings_override.registry import (
     annotation_contains_secret,
+    annotation_is_credential_url,
     SECRET_STR_MASK,
 )
 from app.core.utils.fields import (
-    _credential_url_serializer,
     AuthCredentialSecretStr,
     CREDENTIAL_URL_MASK,
     credential_url_password,
@@ -549,9 +549,11 @@ class TestCredentialUrlStrJsonSerializer:
         )
         assert dumped == _CREDENTIAL_URL
 
-    def test_shares_the_serializer_function_with_the_field_types(self) -> None:
-        """Keep the function identity the settings registry detects gates on."""
-        assert CREDENTIAL_URL_STR_JSON_SERIALIZER.func is _credential_url_serializer
+    def test_the_settings_registry_detects_it_as_a_credential_url(self) -> None:
+        """Let the settings registry recognise the marker as a credential URL."""
+        assert annotation_is_credential_url(
+            Annotated[str, CREDENTIAL_URL_STR_JSON_SERIALIZER]
+        )
 
     def test_declares_a_string_return_type(self, adapter: TypeAdapter[str]) -> None:
         """Keep ``type: string`` in the serialization schema, which a bare wrap drops."""
