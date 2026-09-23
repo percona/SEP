@@ -19,8 +19,8 @@ Deliberately narrow: this module only ever *translates* a ``TaskHistory``'s
 status onto the :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` that
 dispatched it -- it never decides to dispatch the *next* step, retry a failed
 one, or roll a run back. Those are PMM's ``om`` service's job, driving the state
-machine as the HA-leader-only stepper (PMM-15347/plan.md §4 item 9): it reads a
-run's current state through the API and decides what happens next.
+machine as the HA-leader-only stepper: it reads a run's current state through
+the API and decides what happens next.
 ``om_bootstrap`` only ever answers "is this step still running", mechanically,
 so PMM's driver has something true to read.
 
@@ -43,10 +43,27 @@ receipt, not a claim of exact timing.
 real error message (the way ``om_inventory/dispatch.py``'s ``_read_stdout``
 does for its own purpose). A worthwhile follow-up, not done here to keep this
 module to exactly the one thing its docstring claims.
+
+A Tasks API read that fails does not fail the reconcile: a ``404``/``410`` means
+the step's ``TaskHistory`` record is gone and it can never finish, so the step
+is recorded ``failed``; any other failure (an upstream error, a transport error,
+a timeout) is transient, so the step stays ``running`` and the next poll tries
+again. A readable answer that is not a ``TaskHistory`` -- not a JSON object, or
+without a string ``status`` -- is a ``502``, as it would otherwise leave the step
+looking in flight forever.
 """
 
 import asyncio
+import logging
 
+import aiohttp
+from fastapi import HTTPException
+
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPGoneException,
+    HTTPNotFoundException,
+)
 from app.core.requests import as_json_object, RemoteAPI
 from app.core.utils.date_time import utc_now
 from app.sep.apps.om_bootstrap.dispatch import cleanup_step_script
@@ -66,14 +83,16 @@ from app.tasks.models import TaskHistoryStatusEnum
 
 __all__ = ["reconcile_run", "reconcile_step"]
 
+logger = logging.getLogger(__name__)
+
 #: Statuses that mean "nothing more to do here" for the purpose of deciding a
 #: run is fully done -- a skipped step is as final as a succeeded one.
 _DONE_STATUSES = frozenset({StepStatus.SUCCEEDED, StepStatus.SKIPPED})
 
-#: ``TaskHistory`` statuses that mean "still in flight" -- everything else is
-#: terminal, matching ``om_inventory/dispatch.py``'s own ``_wait_for_terminal``.
-_IN_FLIGHT_STATUSES = frozenset(
-    {TaskHistoryStatusEnum.PENDING.value, TaskHistoryStatusEnum.RUNNING.value}
+#: ``TaskHistory`` status values that mean "still in flight" -- everything else
+#: is terminal.
+_IN_FLIGHT_STATUS_VALUES = frozenset(
+    status.value for status in TaskHistoryStatusEnum.active_statuses()
 )
 
 
@@ -85,17 +104,46 @@ async def reconcile_step(tasks_api: RemoteAPI, step: StepRecord) -> StepRecord:
     :attr:`~app.sep.apps.om_bootstrap.strategy.StepRecord.task_history_id` (not
     yet dispatched), or whose dispatch is still in flight.
 
+    Also returns ``step`` unchanged when the Tasks API cannot be read right
+    now; see the module docstring for which failures count as that.
+
     :param tasks_api: The Tasks API client.
     :param step: The step to check.
     :return: ``step`` itself when nothing changed, or a new
         :class:`~app.sep.apps.om_bootstrap.strategy.StepRecord` reflecting the
-        dispatch's terminal status.
+        dispatch's terminal status, or ``failed`` when its ``TaskHistory``
+        record no longer exists.
+    :raises HTTPBadGatewayException: When the Tasks API answers with something
+        that is not a ``TaskHistory`` -- not a JSON object, or without a string
+        ``status``.
     """
     if step.status != StepStatus.RUNNING or step.task_history_id is None:
         return step
-    history = as_json_object(await tasks_api.get(f"/history/{step.task_history_id}"))
-    task_status = history["status"]
-    if task_status in _IN_FLIGHT_STATUSES:
+    try:
+        payload = await tasks_api.get(f"/history/{step.task_history_id}")
+    except (HTTPNotFoundException, HTTPGoneException):
+        return step.model_copy(
+            update={
+                "status": StepStatus.FAILED,
+                "finished_at": utc_now(),
+                "detail": f"Task history {step.task_history_id} no longer exists; "
+                "the dispatch's outcome is unknown",
+            }
+        )
+    except (HTTPException, aiohttp.ClientError, OSError):
+        logger.warning(
+            "Could not read task history %s for step %r; leaving it running",
+            step.task_history_id,
+            step.name,
+            exc_info=True,
+        )
+        return step
+    task_status = as_json_object(payload).get("status")
+    if not isinstance(task_status, str):
+        raise HTTPBadGatewayException(
+            detail=f"Task history {step.task_history_id} has no status"
+        )
+    if task_status in _IN_FLIGHT_STATUS_VALUES:
         return step
     if task_status == TaskHistoryStatusEnum.SUCCESS.value:
         return step.model_copy(

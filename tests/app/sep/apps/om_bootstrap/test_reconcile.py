@@ -18,9 +18,15 @@
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
+import aiohttp
 import pytest
+from fastapi import HTTPException
 
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPGoneException,
+    HTTPNotFoundException,
+)
 from app.sep.apps.om_bootstrap import reconcile
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import (
@@ -138,6 +144,72 @@ class TestReconcileStep:
 
         with pytest.raises(HTTPBadGatewayException):
             await reconcile.reconcile_step(tasks_api, step)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("payload", [{}, {"status": None}, {"status": 3}])
+    async def test_a_history_payload_without_a_string_status_raises(
+        self, payload: dict[str, object]
+    ) -> None:
+        """A TaskHistory with no readable status is a bad upstream answer, not in flight."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.return_value = payload
+
+        with pytest.raises(HTTPBadGatewayException):
+            await reconcile.reconcile_step(tasks_api, step)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [HTTPNotFoundException(detail="gone"), HTTPGoneException(detail="gone")],
+    )
+    async def test_a_vanished_history_record_marks_the_step_failed(
+        self, error: HTTPException
+    ) -> None:
+        """A 404/410 means the dispatch can never be read again, so the step fails."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.side_effect = error
+
+        result = await reconcile.reconcile_step(tasks_api, step)
+
+        assert result.status == StepStatus.FAILED
+        assert result.finished_at is not None
+        assert result.detail is not None
+        assert "no longer exists" in result.detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [
+            aiohttp.ClientConnectionError("refused"),
+            TimeoutError(),
+            HTTPException(status_code=503, detail="unavailable"),
+        ],
+    )
+    async def test_a_transient_read_failure_leaves_the_step_running(
+        self, error: Exception
+    ) -> None:
+        """An unreachable or failing Tasks API is retried on the next poll, not fatal."""
+        step = StepRecord(
+            name="install_package",
+            status=StepStatus.RUNNING,
+            task_history_id=TASK_HISTORY_ID,
+        )
+        tasks_api = AsyncMock()
+        tasks_api.get.side_effect = error
+
+        result = await reconcile.reconcile_step(tasks_api, step)
+
+        assert result is step
 
 
 class TestReconcileRun:
