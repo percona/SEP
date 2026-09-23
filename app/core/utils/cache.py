@@ -41,12 +41,9 @@ def _make_key(
     This roughly emulates the key strategy used by :func:`functools.lru_cache`.
 
     :param args: Positional arguments.
-    :type args: tuple[Any, ...]
     :param kwargs: Keyword arguments.
-    :type kwargs: dict[str, Any]
     :param typed: If `True`, include argument types in the key.
     :return: A hashable tuple key.
-    :rtype: tuple[Any, ...]
     """
     if kwargs:
         items = tuple(sorted(kwargs.items()))
@@ -68,9 +65,7 @@ class _CacheShortStats:
     """Define structure to store hits and misses statistics in a cached function.
 
     :param hits: Number of cache hits.
-    :type hits: int
     :param misses: Number of cache misses.
-    :type misses: int
     """
 
     hits: int = 0
@@ -83,12 +78,9 @@ class CacheInfo(NamedTuple):
     This mimics the structure used by :func:`functools.lru_cache`, adding a `ttl` field.
 
     :param hits: Number of cache hits.
-    :type hits: int
     :param misses: Number of cache misses.
-    :type misses: int
     :param maxsize: The configured maximum size of the cache (`None` means unlimited).
     :param currsize: Current number of entries stored in the cache.
-    :type currsize: int
     :param ttl: Time-to-live, in seconds, for each cached entry.
     """
 
@@ -136,7 +128,6 @@ class TTLCache(Generic[T]):
         excessive performance overhead.
 
         :param now: Current monotonic time in fractional seconds.
-        :type now: float
         """
         for _ in range(min(len(self.store), self.prune_limit)):
             _, old_expires = next(iter(self.store.values()))
@@ -155,11 +146,8 @@ class TTLCache(Generic[T]):
         cache to mark it as recently used.
 
         :param key: Cache key.
-        :type key: tuple[Any, ...]
         :param value: Value to cache.
-        :type value: T
         :param now: Current monotonic time in fractional seconds.
-        :type now: float
         """
         expires_at = now + self.ttl
         self.store[key] = (value, expires_at)
@@ -198,7 +186,6 @@ class TTLCache(Generic[T]):
         """Return cache statistics.
 
         :return: A :class:`CacheInfo` tuple with hits, misses, maxsize, currsize, ttl.
-        :rtype: CacheInfo
         """
         with self.lock:
             return CacheInfo(
@@ -213,7 +200,6 @@ class TTLCache(Generic[T]):
         """Return the cache configuration parameters.
 
         :return: Dictionary with `maxsize`, `typed` and `ttl`.
-        :rtype: dict[str, Any]
         """
         return {"maxsize": self.maxsize, "typed": self.typed, "ttl": self.ttl}
 
@@ -232,23 +218,18 @@ def ttl_cache(
     treated as missing and recomputed on the next call.
 
     :param ttl: Time-to-live for each cached entry, in seconds.
-    :type ttl: PositiveFloat
     :param maxsize: Maximum number of entries to cache (LRU). `None` means unlimited.
         Defaults to `128`.
-    :type maxsize: PositiveInt | None
     :param typed: If `True`, treat arguments with different types as distinct. Defaults
         to `False`.
     :return: A decorator that applies a TTL/LRU cache to the target function.
-    :rtype: Callable[[Callable[P, T]], Callable[P, T]]
     """
 
     def decorating_function(func: Callable[P, T]) -> Callable[P, T]:
         """Define decorator that applies TTL/LRU caching to a function.
 
         :param func: The function to be decorated with TTL/LRU caching.
-        :type func: Callable[P, T]
         :return: The wrapped function with caching capabilities.
-        :rtype: Callable[P, T]
         """
         cache = TTLCache(ttl=ttl, maxsize=maxsize, typed=typed)
 

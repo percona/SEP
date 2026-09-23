@@ -1153,6 +1153,7 @@ class TestGrafanaOrgScopedUserLookup:
             [{"userId": 1, "login": "bob", "email": 9, "role": "Viewer"}],
             [{"login": "bob", "email": "bob@example.com", "role": "Viewer"}],
             [{"userId": 1, "login": "bob", "role": ["Admin"]}],
+            [{"userId": True, "login": "bob", "role": "Viewer"}],
         ],
     )
     @pytest.mark.asyncio
@@ -1288,14 +1289,16 @@ class TestGrafanaServiceAccountBearer:
         ],
     )
     @pytest.mark.asyncio
-    async def test_a_malformed_token_makes_no_grafana_call(
+    async def test_a_token_grafana_rejects_is_refused(
         self, verify_service_account, token, caplog
     ):
-        """Verify a ``glsa_`` string off the measured shape is refused locally."""
+        """Verify any ``glsa_`` string is left to Grafana, whose 401 is a 401."""
+        verify_service_account.return_value = None
+
         with caplog.at_level(logging.DEBUG), pytest.raises(HTTPUnauthorizedException):
             await GrafanaUser.from_bearer(token)
 
-        verify_service_account.assert_not_awaited()
+        verify_service_account.assert_awaited_once_with(token)
         assert token not in caplog.text
 
     @pytest.mark.asyncio
@@ -1382,6 +1385,7 @@ class TestGrafanaActors:
             ),
             pytest.param({"return_value": ["x"]}, id="off-contract-row"),
             pytest.param({"return_value": [{"id": 2}]}, id="missing-login"),
+            pytest.param({"return_value": [_sa_record(id=True)]}, id="bool-id"),
         ],
     )
     @pytest.mark.asyncio

@@ -298,6 +298,12 @@ def _sa_record(**overrides):
     return {**record, **overrides}
 
 
+def _validated_sa_record(**overrides):
+    """Return the part of :func:`_sa_record` the strict record adapter keeps."""
+    record = _sa_record(**overrides)
+    return {key: record[key] for key in ("id", "login", "role", "isDisabled")}
+
+
 def _attach_sequence(sdk, *outcomes):
     """Attach a session answering each request with the next outcome in turn."""
     session = MagicMock()
@@ -322,7 +328,7 @@ class TestVerifyServiceAccountToken:
 
         record = await sdk.verify_service_account_token(_SA_TOKEN)
 
-        assert record == _sa_record()
+        assert record == _validated_sa_record()
         first, second = session.request.call_args_list
         assert first.args[:2] == ("GET", "/api/user")
         assert first.kwargs["headers"]["Authorization"] == f"Bearer {_SA_TOKEN}"
@@ -409,7 +415,9 @@ class TestVerifyServiceAccountToken:
 
         with pytest.raises(GrafanaException):
             await sdk.verify_service_account_token(_SA_TOKEN)
-        assert await sdk.verify_service_account_token(_SA_TOKEN) == _sa_record()
+        assert (
+            await sdk.verify_service_account_token(_SA_TOKEN) == _validated_sa_record()
+        )
 
     @pytest.mark.parametrize(
         ("current", "record"),
@@ -421,6 +429,7 @@ class TestVerifyServiceAccountToken:
             pytest.param({}, {"login": "sa-1-other"}, id="login-mismatch"),
             pytest.param({}, {"id": 8}, id="id-mismatch"),
             pytest.param({}, {"isDisabled": "no"}, id="disabled-non-bool"),
+            pytest.param({}, {"isDisabled": 0}, id="disabled-int"),
             pytest.param({}, {"role": 3}, id="role-non-str"),
         ],
     )
@@ -438,6 +447,19 @@ class TestVerifyServiceAccountToken:
             await sdk.verify_service_account_token(_SA_TOKEN)
 
     @pytest.mark.asyncio
+    async def test_a_non_object_body_names_the_path_it_came_from(self):
+        """Verify a JSON body that is not an object is reported against its path."""
+        sdk = _sdk()
+        _attach_sequence(sdk, _mock_response(json_data=[]))
+
+        with pytest.raises(GrafanaException) as exc_info:
+            await sdk.verify_service_account_token(_SA_TOKEN)
+
+        assert exc_info.value.detail == (
+            "Grafana returned an unreadable /api/user response."
+        )
+
+    @pytest.mark.asyncio
     async def test_a_verdict_is_reused_within_the_window(self):
         """Verify a second check with the same token makes no Grafana call."""
         sdk = _sdk()
@@ -446,7 +468,7 @@ class TestVerifyServiceAccountToken:
         await sdk.verify_service_account_token(_SA_TOKEN)
         record = await sdk.verify_service_account_token(_SA_TOKEN)
 
-        assert record == _sa_record()
+        assert record == _validated_sa_record()
         assert session.request.call_count == _VERIFICATION_CALLS
 
     @pytest.mark.asyncio
@@ -469,7 +491,9 @@ class TestVerifyServiceAccountToken:
         with pytest.raises(GrafanaException):
             await sdk.verify_service_account_token(_SA_TOKEN)
 
-        assert await sdk.verify_service_account_token(_SA_TOKEN) == _sa_record()
+        assert (
+            await sdk.verify_service_account_token(_SA_TOKEN) == _validated_sa_record()
+        )
 
     @pytest.mark.asyncio
     async def test_a_verdict_expires_after_the_window(self, mocker):
@@ -556,7 +580,7 @@ class TestVerifyServiceAccountToken:
 
         store = sdk._service_account_verdicts.store
         assert list(store) == [(sha256(_SA_TOKEN.encode()).hexdigest(),)]
-        assert [record for record, _ in store.values()] == [_sa_record()]
+        assert [record for record, _ in store.values()] == [_validated_sa_record()]
 
     @pytest.mark.parametrize(
         "outcomes",

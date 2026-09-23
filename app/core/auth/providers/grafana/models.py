@@ -16,7 +16,6 @@
 """Define the Grafana user and token-payload models."""
 
 import logging
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from typing import Any, cast, Final, NoReturn, NotRequired, Self
@@ -25,7 +24,14 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from aiohttp import ClientError
 from fastapi import HTTPException, status
 from itsdangerous import BadData, URLSafeTimedSerializer
-from pydantic import ConfigDict, model_validator, ValidationError, ValidationInfo
+from pydantic import (
+    ConfigDict,
+    model_validator,
+    TypeAdapter,
+    ValidationError,
+    ValidationInfo,
+    with_config,
+)
 from pydantic.alias_generators import to_camel
 from typing_extensions import TypedDict
 
@@ -37,7 +43,12 @@ from app.core.auth.models import (
     SessionExchangeTokenResponse,
     UserRole,
 )
-from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
+from app.core.auth.providers.grafana.sdk import (
+    GrafanaException,
+    GrafanaSDK,
+    GrafanaServiceAccountRecord,
+    SERVICE_ACCOUNT_RECORDS,
+)
 from app.core.config import settings
 from app.core.exceptions import HTTPNotFoundException
 from app.core.utils.fields import NonEmptyStr
@@ -47,7 +58,6 @@ logger = logging.getLogger(__name__)
 ASSERTION_SALT: Final = "sep.auth.grafana.v1"
 
 _SERVICE_ACCOUNT_BEARER_PREFIX: Final = "glsa_"
-_SERVICE_ACCOUNT_TOKEN_PATTERN: Final = re.compile(r"glsa_[A-Za-z0-9]{32}_[0-9a-f]{8}")
 
 _TOKEN_SERIALIZER = URLSafeTimedSerializer(
     settings.SECRET_KEY.get_secret_value(), salt=ASSERTION_SALT
@@ -114,19 +124,6 @@ class _GrafanaUserRecord(TypedDict):
     isGrafanaAdmin: NotRequired[bool]
 
 
-class _GrafanaServiceAccountRecord(TypedDict):
-    """Describe a Grafana ``/api/serviceaccounts/{id}`` record or search row.
-
-    ``role`` is ``NotRequired`` and nullable because Grafana models "holds no
-    role" either way; the reader accesses it via ``.get()``.
-    """
-
-    id: int
-    login: str
-    role: NotRequired[str | None]
-    isDisabled: bool
-
-
 def _service_account_uuid(service_account_id: int) -> UUID:
     """Return the SEP id of a Grafana service account.
 
@@ -139,17 +136,23 @@ def _service_account_uuid(service_account_id: int) -> UUID:
     return uuid5(NAMESPACE_URL, f"grafana-service-account:{service_account_id}")
 
 
+@with_config(ConfigDict(strict=True))
 class _GrafanaOrgUserRecord(TypedDict):
-    """A Grafana ``/api/org/users`` record.
+    """Describe a Grafana ``/api/org/users`` record.
 
-    ``email`` and ``role`` are ``NotRequired`` because Grafana may omit them;
-    the reader accesses both via ``.get()``.
+    Validation is strict, so a field of the wrong JSON type is refused rather
+    than coerced. ``email`` and ``role`` are ``NotRequired`` and nullable
+    because Grafana may omit them or send ``null``; the reader accesses both
+    via ``.get()``.
     """
 
     userId: int
     login: str
-    email: NotRequired[str]
-    role: NotRequired[str]
+    email: NotRequired[str | None]
+    role: NotRequired[str | None]
+
+
+_ORG_USER_RECORDS: Final = TypeAdapter(list[_GrafanaOrgUserRecord])
 
 
 def _find_org_user(
@@ -371,7 +374,7 @@ class GrafanaUser(BaseUser):
         )
 
     @classmethod
-    def _from_service_account_record(cls, record: _GrafanaServiceAccountRecord) -> Self:
+    def _from_service_account_record(cls, record: GrafanaServiceAccountRecord) -> Self:
         """Build a user from a Grafana service-account record.
 
         The login is the username because it survives a rename, unlike the
@@ -394,22 +397,17 @@ class GrafanaUser(BaseUser):
     async def _from_service_account_token(cls, token: str) -> Self:
         """Authenticate a Grafana service-account token presented as a Bearer.
 
-        A string off the measured token shape is refused without asking
-        Grafana. Otherwise Grafana's verdict decides; ``/api/user`` reports a
-        disabled account as enabled, so the flag is read from the record. The
-        user carries a freshly minted exchange assertion as its
+        Grafana's verdict decides; ``/api/user`` reports a disabled account as
+        enabled, so the flag is read from the record. The user carries a freshly minted exchange assertion as its
         ``access_token``, so the Tasks and Inventory APIs a request calls
         validate a SEP credential locally and never receive the token.
 
         :param token: The ``glsa_``-prefixed Bearer credential.
         :return: The service account's ``GrafanaUser``.
-        :raises HTTPUnauthorizedException: If the token is malformed, Grafana
-            rejects it, the account is outside SEP's org, or it is disabled.
+        :raises HTTPUnauthorizedException: If Grafana rejects the token, the
+            account is outside SEP's org, or it is disabled.
         :raises GrafanaException: If Grafana could not decide.
         """
-        if not _SERVICE_ACCOUNT_TOKEN_PATTERN.fullmatch(token):
-            logger.info("Refused a malformed Grafana service-account token.")
-            raise HTTPUnauthorizedException
         record = await _active_grafana_sdk().verify_service_account_token(token)
         if record is None:
             logger.info("Grafana refused a service-account token.")
@@ -419,9 +417,7 @@ class GrafanaUser(BaseUser):
                 "Refused a token of disabled Grafana service account %s.", record["id"]
             )
             raise HTTPUnauthorizedException
-        user = cls._from_service_account_record(
-            cast("_GrafanaServiceAccountRecord", record)
-        )
+        user = cls._from_service_account_record(record)
         user.access_token = cls._mint(user, _TokenType.EXCHANGE)
         return user
 
@@ -626,29 +622,27 @@ class GrafanaUser(BaseUser):
 
         Every field either mapper reads is checked, not only the ones the match
         compares: a row without ``userId`` or with an unhashable ``role`` passes
-        a narrower gate and then crashes inside the mapping instead.
+        a narrower gate and then crashes inside the mapping instead. The check
+        is strict, so a boolean ``userId`` is refused rather than read as an
+        integer.
 
         A null ``email`` or ``role`` passes: the mappers already read those
         fields as optional, so refusing them would reject a listing the provider
         has always been able to map.
 
-        :return: The listing rows.
+        :return: The listing rows, carrying only the declared fields.
         :raises HTTPException: Whatever the org-users listing raised.
         :raises GrafanaException: If the payload is not a list of records each
             carrying an integer ``userId`` and a string ``login``, with
-            ``email`` and ``role`` either a string or absent.
+            ``email`` and ``role`` a string, ``null`` or absent.
         """
         payload = await _active_grafana_sdk().get_org_users()
-        if not isinstance(payload, list) or not all(
-            isinstance(row, Mapping)
-            and isinstance(row.get("userId"), int)
-            and isinstance(row.get("login"), str)
-            and isinstance(row.get("email"), str | None)
-            and isinstance(row.get("role"), str | None)
-            for row in payload
-        ):
-            raise GrafanaException(detail="Grafana returned an unreadable user list.")
-        return cast("list[_GrafanaOrgUserRecord]", payload)
+        try:
+            return _ORG_USER_RECORDS.validate_python(payload)
+        except ValidationError:
+            raise GrafanaException(
+                detail="Grafana returned an unreadable user list."
+            ) from None
 
     @classmethod
     async def _get_user_from_org_listing(cls, username: NonEmptyStr) -> Self:
@@ -689,7 +683,7 @@ class GrafanaUser(BaseUser):
         ]
 
     @classmethod
-    async def _service_account_records(cls) -> list[_GrafanaServiceAccountRecord]:
+    async def _service_account_records(cls) -> list[GrafanaServiceAccountRecord]:
         """Read SEP's org service accounts, refusing a payload off contract.
 
         :return: The listing rows.
@@ -698,22 +692,17 @@ class GrafanaUser(BaseUser):
         :raises aiohttp.ClientError: If a listing request fails in transport.
         :raises ValueError: If a listing page cannot be decoded.
         :raises GrafanaException: If a row lacks an integer ``id``, a string
-            ``login`` or a boolean ``isDisabled``, or carries a non-string
-            ``role``.
+            ``login`` or a boolean ``isDisabled``, or carries a ``role`` that is
+            neither a string nor ``null``; the check is strict, so a boolean
+            ``id`` or an integer ``isDisabled`` is refused rather than coerced.
         """
         payload = await _active_grafana_sdk().get_service_accounts()
-        if not all(
-            isinstance(row, Mapping)
-            and isinstance(row.get("id"), int)
-            and isinstance(row.get("login"), str)
-            and isinstance(row.get("isDisabled"), bool)
-            and isinstance(row.get("role"), str | None)
-            for row in payload
-        ):
+        try:
+            return SERVICE_ACCOUNT_RECORDS.validate_python(payload)
+        except ValidationError:
             raise GrafanaException(
                 detail="Grafana returned an unreadable service-account list."
-            )
-        return cast("list[_GrafanaServiceAccountRecord]", payload)
+            ) from None
 
     @classmethod
     async def get_actors(cls) -> list[Self]:
@@ -792,7 +781,7 @@ class GrafanaUser(BaseUser):
             against the lifetime of every accepted type, or of a type this
             surface does not accept.
         :raises HTTPUnauthorizedException: If a service-account token is
-            malformed, refused by Grafana, or belongs to a disabled account.
+            refused by Grafana or belongs to a disabled account.
         :raises GrafanaException: If Grafana could not decide on a
             service-account token; or if the accepted-type set is empty, so the
             loop ends with nothing tried and no error to re-raise. The latter is

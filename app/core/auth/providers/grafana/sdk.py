@@ -16,11 +16,12 @@
 """Provide the GrafanaSDK for interacting with Grafana services."""
 
 import re
+from contextlib import suppress
 from datetime import timedelta
 from functools import cached_property
 from hashlib import sha256
 from time import monotonic
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, NotRequired
 
 from aiohttp import (
     ClientConnectionError,
@@ -32,7 +33,14 @@ from aiohttp.abc import AbstractCookieJar
 from annotated_types import Ge, Gt
 from async_lru import _LRUCacheWrapper, alru_cache
 from fastapi import HTTPException, status
-from pydantic import ConfigDict, SecretStr
+from pydantic import (
+    ConfigDict,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    with_config,
+)
+from typing_extensions import TypedDict
 
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
@@ -47,6 +55,25 @@ _SERVICE_ACCOUNT_TOKEN_CACHE_SIZE: Final = 1024
 _SERVICE_ACCOUNT_CALL_TIMEOUT: Final = ClientTimeout(total=10)
 _SERVICE_ACCOUNT_UID_PATTERN: Final = re.compile(r"service-account:([0-9]+)")
 _SERVICE_ACCOUNTS_PAGE_SIZE: Final = 100
+
+
+@with_config(ConfigDict(strict=True))
+class GrafanaServiceAccountRecord(TypedDict):
+    """Describe a Grafana ``/api/serviceaccounts/{id}`` record or search row.
+
+    Validation is strict, so a field of the wrong JSON type is refused rather
+    than coerced. ``role`` is ``NotRequired`` and nullable because Grafana
+    models "holds no role" either way; the reader accesses it via ``.get()``.
+    """
+
+    id: int
+    login: str
+    role: NotRequired[str | None]
+    isDisabled: bool
+
+
+SERVICE_ACCOUNT_RECORD: Final = TypeAdapter(GrafanaServiceAccountRecord)
+SERVICE_ACCOUNT_RECORDS: Final = TypeAdapter(list[GrafanaServiceAccountRecord])
 
 
 def _is_grafana_verdict(exc: HTTPException, status_code: int) -> bool:
@@ -283,7 +310,9 @@ class GrafanaSDK(RemoteAPI):
                 page += 1
 
     @cached_property
-    def _service_account_verdicts(self) -> TTLCache[dict[str, Any] | None]:
+    def _service_account_verdicts(
+        self,
+    ) -> TTLCache[GrafanaServiceAccountRecord | None]:
         """Return the verdict cache, sized once from this instance's settings.
 
         :return: A cache mapping a token digest to its record, or ``None`` for a
@@ -295,7 +324,9 @@ class GrafanaSDK(RemoteAPI):
             typed=False,
         )
 
-    async def verify_service_account_token(self, token: str) -> dict[str, Any] | None:
+    async def verify_service_account_token(
+        self, token: str
+    ) -> GrafanaServiceAccountRecord | None:
         """Verify a Grafana service-account token presented to SEP.
 
         A verdict (the account record, or a refusal Grafana itself answered)
@@ -316,18 +347,17 @@ class GrafanaSDK(RemoteAPI):
         cache = self._service_account_verdicts
         key = (sha256(token.encode()).hexdigest(),)
         started = monotonic()
-        with cache.lock:
-            try:
-                return cache.get(key, started)
-            except KeyError:
-                pass
+        with cache.lock, suppress(KeyError):
+            return cache.get(key, started)
         verdict = await self._fetch_service_account_verdict(token)
         with cache.lock:
             cache.set(key, verdict, started)
             cache.evict_if_needed(monotonic())
         return verdict
 
-    async def _fetch_service_account_verdict(self, token: str) -> dict[str, Any] | None:
+    async def _fetch_service_account_verdict(
+        self, token: str
+    ) -> GrafanaServiceAccountRecord | None:
         """Ask Grafana who ``token`` belongs to, then read that account's record.
 
         ``/api/user`` proves the token and names the account in ``uid``, but it
@@ -340,7 +370,9 @@ class GrafanaSDK(RemoteAPI):
         :return: The account record, or ``None`` for a Grafana-answered refusal.
         :raises GrafanaException: For every outcome that is not a verdict.
         """
-        identity = await self._read_for_verification("/api/user", token, refusal=401)
+        identity = await self._read_for_verification(
+            "/api/user", token, refusal=status.HTTP_401_UNAUTHORIZED
+        )
         if identity is None:
             return None
         uid, login = identity.get("uid"), identity.get("login")
@@ -354,20 +386,20 @@ class GrafanaSDK(RemoteAPI):
                 detail="Grafana returned an unreadable service-account identity."
             )
         account_id = int(match.group(1))
-        record = await self._read_for_verification(
+        payload = await self._read_for_verification(
             f"/api/serviceaccounts/{account_id}",
             self.service_account_token.get_secret_value(),
-            refusal=404,
+            refusal=status.HTTP_404_NOT_FOUND,
         )
-        if record is None:
+        if payload is None:
             return None
-        if (
-            type(record.get("id")) is not int
-            or record["id"] != account_id
-            or record.get("login") != login
-            or not isinstance(record.get("role"), str | None)
-            or not isinstance(record.get("isDisabled"), bool)
-        ):
+        try:
+            record = SERVICE_ACCOUNT_RECORD.validate_python(payload)
+        except ValidationError:
+            raise GrafanaException(
+                detail="Grafana returned an unreadable service-account record."
+            ) from None
+        if record["id"] != account_id or record["login"] != login:
             raise GrafanaException(
                 detail="Grafana returned an unreadable service-account record."
             )
@@ -415,6 +447,6 @@ class GrafanaSDK(RemoteAPI):
             ) from None
         if not isinstance(payload, dict):
             raise GrafanaException(
-                detail="Grafana returned an unreadable service-account identity."
+                detail=f"Grafana returned an unreadable {path} response."
             )
         return payload
