@@ -34,7 +34,7 @@ engine, which resolves the same setting through a driver
 
 import logging
 import logging.config
-from time import sleep
+from time import monotonic, sleep
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
@@ -48,7 +48,7 @@ STORE_READINESS_POLL_INTERVAL = 1.0
 """Seconds between connection attempts while the beat store is unreachable."""
 
 
-def _wait_for_store(engine: Engine) -> None:
+def _wait_for_store(engine: Engine, *, deadline_seconds: float | None = None) -> None:
     """Block until the beat store accepts a connection.
 
     The side-car's three alembic one-shots wait on ``SEP_DB_HOST``/``SEP_DB_PORT``
@@ -57,27 +57,38 @@ def _wait_for_store(engine: Engine) -> None:
     separate database, so readiness is probed against the URL this process will
     actually dial rather than against a host named in the program table.
 
-    The wait is unbounded, matching those three shell loops. A bounded one could
-    expire while the store was merely slow, and the caller runs as a one-shot that
-    is never re-run, so its sentinel could then never appear — leaving every
-    program gated on it waiting for the life of the container. What bounds the
-    observable behaviour instead is the gate in front of each API program, and the
-    healthcheck, which reports the missing sentinel either way.
+    By default the wait is unbounded, matching those three shell loops. A bound
+    that expired while the store was merely slow would leave the side-car's
+    one-shot sentinel permanently unwritten, gating every program behind it for
+    the life of the container. Callers that can be re-run — such as
+    ``make migrate`` — may pass ``deadline_seconds`` so a persistent
+    ``OperationalError`` (including a rejected password) fails the command
+    instead of hanging indefinitely.
 
     ``prepare_models`` retries too, but only for the check-then-create race it was
     written for: ten attempts with sub-second backoff, which a database that has
     not finished starting outlasts.
 
     :param engine: The synchronous engine for the resolved beat store.
+    :param deadline_seconds: Wall-clock seconds to keep retrying
+        ``OperationalError``s. ``None`` (the default) waits without a bound.
+    :raises TimeoutError: When ``deadline_seconds`` elapses while the store still
+        refuses connections with ``OperationalError``.
     :raises DBAPIError: On a connection failure that is not an
         ``OperationalError``, which is raised on the first attempt rather than
         retried — only an ``OperationalError`` is treated as "not up yet".
     """
+    deadline = None if deadline_seconds is None else monotonic() + deadline_seconds
     while True:
         try:
             with engine.connect():
                 return
         except OperationalError:
+            if deadline is not None and monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Celery beat store at {engine.url.host}:{engine.url.port} "
+                    f"did not become reachable within {deadline_seconds} seconds"
+                ) from None
             # Host and port only: the resolved URL carries the store's password.
             logger.info(
                 "Waiting for the Celery beat store at %s:%s",
@@ -87,7 +98,7 @@ def _wait_for_store(engine: Engine) -> None:
             sleep(STORE_READINESS_POLL_INTERVAL)
 
 
-def bootstrap_beat_schema() -> None:
+def bootstrap_beat_schema(*, deadline_seconds: float | None = None) -> None:
     """Create the ``sqlalchemy_celery_beat`` schedule tables if they are absent.
 
     The store and schema are resolved exactly as
@@ -103,6 +114,10 @@ def bootstrap_beat_schema() -> None:
     ``create_engine``. Neither outcome can configure anything, and the second
     would fail this step on a documented, validated setting.
 
+    :param deadline_seconds: Optional wall-clock bound forwarded to the store
+        readiness wait. ``None`` leaves the wait unbounded (side-car one-shot).
+    :raises TimeoutError: When a supplied ``deadline_seconds`` elapses while the
+        store is still unreachable.
     :raises DBAPIError: When the store refuses a connection for a reason other
         than not being up yet, or when creating the tables fails after the
         library has exhausted its own retries. The family is ``DBAPIError``
@@ -119,7 +134,7 @@ def bootstrap_beat_schema() -> None:
         schema=settings.CELERY.beat_schema,
     )
     try:
-        _wait_for_store(engine)
+        _wait_for_store(engine, deadline_seconds=deadline_seconds)
         manager.prepare_models(engine, schema=settings.CELERY.beat_schema)
     finally:
         engine.dispose()
