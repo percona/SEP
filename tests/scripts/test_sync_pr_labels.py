@@ -18,6 +18,7 @@
 import json
 import urllib.parse
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -49,7 +50,7 @@ _DEPENDABOT_PULL = sync_pr_labels.PullRequest(
 )
 
 
-def _pull_payload(login: str) -> dict:
+def _pull_payload(login: str) -> dict[str, Any]:
     """Return a pulls-API body for a same-repository PR opened by ``login``."""
     return {"user": {"login": login}, "head": {"repo": {"full_name": _REPOSITORY}}}
 
@@ -277,20 +278,15 @@ def test_qa_not_required_not_eligible_for_a_human_author():
     )
 
 
-def test_qa_not_required_not_eligible_for_dependabot_from_another_repository():
-    """Reject a Dependabot-authored PR whose head lives in a fork."""
+@pytest.mark.parametrize(
+    "head_repository", ["someone/SEP", ""], ids=["fork", "deleted"]
+)
+def test_qa_not_required_not_eligible_for_dependabot_from_another_repository(
+    head_repository,
+):
+    """Reject a Dependabot-authored PR whose head is a fork or was deleted."""
     pull = sync_pr_labels.PullRequest(
-        author_login="dependabot[bot]", head_repository="someone/SEP"
-    )
-    assert not sync_pr_labels.qa_not_required_eligible(
-        [_file("app/main.py")], pull, _REPOSITORY
-    )
-
-
-def test_qa_not_required_not_eligible_when_the_head_repository_is_gone():
-    """Reject a Dependabot-authored PR whose head repository was deleted."""
-    pull = sync_pr_labels.PullRequest(
-        author_login="dependabot[bot]", head_repository=""
+        author_login="dependabot[bot]", head_repository=head_repository
     )
     assert not sync_pr_labels.qa_not_required_eligible(
         [_file("app/main.py")], pull, _REPOSITORY
