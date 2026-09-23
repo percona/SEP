@@ -142,6 +142,41 @@ class MysqlBackupRunManager(BaseSQLModelManager):
     Model = MysqlBackupRun
 
     @classmethod
+    def _service_match(
+        cls,
+        service_id: ColumnElement[Any],
+        service_name: ColumnElement[Any],
+    ) -> ColumnExpressionArgument[bool]:
+        """Return a predicate matching catalog rows to a service id/name pair.
+
+        A null ``service_id`` matches by name only. A non-null id matches that id
+        or a name-only legacy row (``service_id IS NULL``), so two same-named
+        inventory services stay apart while pre-id catalog rows still resolve.
+        Used for both a single :class:`CatalogServiceKey` (literals) and the
+        batched lookup join (lookup-subquery columns).
+
+        :param service_id: Lookup-side service id expression (column or literal).
+        :param service_name: Lookup-side service name expression (column or literal).
+        :return: The SQL predicate against :class:`MysqlBackupRun` columns.
+        """
+        run_id = col(MysqlBackupRun.service_id)
+        run_name = col(MysqlBackupRun.service_name)
+        by_name = run_name == service_name
+        return cast(
+            ColumnExpressionArgument[bool],
+            or_(
+                and_(service_id.is_(None), by_name),
+                and_(
+                    service_id.is_not(None),
+                    or_(
+                        run_id == service_id,
+                        and_(run_id.is_(None), by_name),
+                    ),
+                ),
+            ),
+        )
+
+    @classmethod
     def _service_predicate(
         cls, key: CatalogServiceKey
     ) -> ColumnExpressionArgument[bool]:
@@ -159,12 +194,9 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         :param key: The service name and optional inventory id to select rows by.
         :return: The SQL predicate selecting this service's rows.
         """
-        by_name = col(MysqlBackupRun.service_name) == key.service_name
-        if key.service_id is None:
-            return by_name
-        return or_(
-            col(MysqlBackupRun.service_id) == key.service_id,
-            and_(col(MysqlBackupRun.service_id).is_(None), by_name),
+        return cls._service_match(
+            literal(key.service_id, Integer),
+            literal(key.service_name, String),
         )
 
     @classmethod
@@ -341,24 +373,9 @@ class MysqlBackupRunManager(BaseSQLModelManager):
             return results
 
         lookup_values = _catalog_transport_lookup_subquery(pending)
-        # Mirror :meth:`_service_predicate` against each lookup row: a keyed id
-        # matches that id or a name-only legacy row; a null id matches by name.
-        service_match = or_(
-            and_(
-                lookup_values.c.lk_service_id.is_(None),
-                col(MysqlBackupRun.service_name) == lookup_values.c.lk_service_name,
-            ),
-            and_(
-                lookup_values.c.lk_service_id.is_not(None),
-                or_(
-                    col(MysqlBackupRun.service_id) == lookup_values.c.lk_service_id,
-                    and_(
-                        col(MysqlBackupRun.service_id).is_(None),
-                        col(MysqlBackupRun.service_name)
-                        == lookup_values.c.lk_service_name,
-                    ),
-                ),
-            ),
+        service_match = cls._service_match(
+            lookup_values.c.lk_service_id,
+            lookup_values.c.lk_service_name,
         )
         ranked = (
             select(

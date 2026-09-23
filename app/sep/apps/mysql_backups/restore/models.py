@@ -369,39 +369,25 @@ def _infer_source_transport(data: Mapping[str, Any]) -> SourceTransport:
 
 
 def _object_store_transport(
-    catalogued: SourceTransport | CataloguedSourceTransport | str | None,
+    catalogued: CataloguedSourceTransport | None,
 ) -> SourceTransport | None:
-    """Return ``catalogued`` when it is an object-store transport, else ``None``.
+    """Return the restore transport for a catalogued S3/GCS value, or ``None``.
 
-    Only S3/GCS are accepted — the catalog never records local/ssh, and a stray
-    value must not override inference. Accepts the catalog enum, the restore
-    enum, or a raw wire string so callers need not remap.
+    :class:`CataloguedSourceTransport` only records object-store members, and
+    their wire values match :class:`SourceTransport` of the same name.
 
-    :param catalogued: A candidate transport from the backup catalog, or ``None``.
+    :param catalogued: A transport from the backup catalog, or ``None``.
     :return: :attr:`SourceTransport.S3` or :attr:`SourceTransport.GCS`, else ``None``.
     """
     if catalogued is None:
         return None
-    try:
-        transport = (
-            catalogued
-            if isinstance(catalogued, SourceTransport)
-            else SourceTransport(str(getattr(catalogued, "value", catalogued)))
-        )
-    except ValueError:
-        return None
-    if transport in (SourceTransport.S3, SourceTransport.GCS):
-        return transport
-    return None
+    return SourceTransport(catalogued.value)
 
 
 def normalize_source_declaration(
     data: Mapping[str, Any],
     *,
-    catalogued_transport: SourceTransport
-    | CataloguedSourceTransport
-    | str
-    | None = None,
+    catalogued_transport: CataloguedSourceTransport | None = None,
 ) -> dict[str, Any]:
     """Declare the source controls on a body that predates them, dropping what they forbid.
 
@@ -412,10 +398,10 @@ def normalize_source_declaration(
     are dropped: a declaration the operator supplied is authoritative, so a body
     that contradicts it is left intact for the gates to reject.
 
-    When ``source_transport`` is undeclared, an object-store
+    When ``source_transport`` is undeclared, a catalogued object-store
     ``catalogued_transport`` (S3/GCS from a matching :class:`MysqlBackupRun`) is
-    preferred over :func:`_infer_source_transport`. A miss, ``None``, or any
-    non-object-store value falls through to today's inference unchanged.
+    preferred over :func:`_infer_source_transport`. A miss or ``None`` falls
+    through to today's inference unchanged.
 
     Dropping is bounded by the inference above, so a removed value can only be one
     the inferred source has no working use for: ``s3_tool`` off the S3 path, or
@@ -519,10 +505,7 @@ def _aligned_aes_declaration(data: Mapping[str, Any]) -> dict[str, Any]:
 def repair_source_declaration(
     stamp: Mapping[str, Any],
     *,
-    catalogued_transport: SourceTransport
-    | CataloguedSourceTransport
-    | str
-    | None = None,
+    catalogued_transport: CataloguedSourceTransport | None = None,
 ) -> dict[str, Any] | None:
     """Return the stamp describing its own source, or ``None`` when it already does.
 

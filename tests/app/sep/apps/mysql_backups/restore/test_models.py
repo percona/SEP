@@ -560,15 +560,11 @@ def test_normalize_source_declaration_leaves_a_declared_stamp_alone() -> None:
 
 @pytest.mark.parametrize(
     "catalogued",
-    [
-        CataloguedSourceTransport.S3,
-        SourceTransport.S3,
-        SourceTransport.S3.value,
-    ],
-    ids=["catalog-enum", "restore-enum", "wire-string"],
+    [CataloguedSourceTransport.S3, CataloguedSourceTransport.GCS],
+    ids=["s3", "gcs"],
 )
 def test_normalize_source_declaration_prefers_catalogued_object_store(
-    catalogued: CataloguedSourceTransport | SourceTransport | str,
+    catalogued: CataloguedSourceTransport,
 ) -> None:
     """Prefer a catalogued S3/GCS transport over field inference on undeclared stamps."""
     # Local-looking fields: without the catalog, inference would pick LOCAL.
@@ -576,22 +572,14 @@ def test_normalize_source_declaration_prefers_catalogued_object_store(
 
     normalized = normalize_source_declaration(stamp, catalogued_transport=catalogued)
 
-    assert normalized["source_transport"] == SourceTransport.S3
+    assert normalized["source_transport"] == SourceTransport(catalogued.value)
     assert "ssh_user" not in normalized
     assert "ssh_port" not in normalized
-    # S3 keeps ``s3_tool``; the catalog only picks the transport.
-    assert "s3_tool" in normalized
-
-
-def test_normalize_source_declaration_prefers_catalogued_gcs() -> None:
-    """Seed GCS from the catalog when the stamp itself does not declare a transport."""
-    stamp = _legacy_stamp(backup_source="/var/backups/latest")
-
-    normalized = normalize_source_declaration(
-        stamp, catalogued_transport=CataloguedSourceTransport.GCS
-    )
-
-    assert normalized["source_transport"] == SourceTransport.GCS
+    if catalogued is CataloguedSourceTransport.S3:
+        # S3 keeps ``s3_tool``; the catalog only picks the transport.
+        assert "s3_tool" in normalized
+    else:
+        assert "s3_tool" not in normalized
 
 
 def test_normalize_source_declaration_falls_through_when_catalog_unset() -> None:
@@ -602,17 +590,6 @@ def test_normalize_source_declaration_falls_through_when_catalog_unset() -> None
 
     assert normalized["source_transport"] == SourceTransport.SSH
     assert normalized["ssh_key"] == "prod-key"
-
-
-def test_normalize_source_declaration_ignores_non_object_store_catalog() -> None:
-    """Ignore a stray local/ssh catalog value rather than overriding inference."""
-    stamp = _legacy_stamp(ssh_key="prod-key")
-
-    normalized = normalize_source_declaration(
-        stamp, catalogued_transport=SourceTransport.LOCAL
-    )
-
-    assert normalized["source_transport"] == SourceTransport.SSH
 
 
 def test_normalize_source_declaration_declared_stamp_ignores_catalog() -> None:
