@@ -7350,9 +7350,10 @@ export interface components {
      *         own ``display_name`` — not the parent app's, and never inferred from
      *         ``item_display_name_plural``.
      *     :param item_display_name_plural: What **several** records of this entity are
-     *         called (for example ``nodes``). An independent declaration under the
-     *         same mid-sentence convention; nothing derives it from
-     *         ``item_display_name``. Defaults to this entity's own ``display_name``.
+     *         called (for example ``nodes``). Same mid-sentence convention. When the
+     *         singular is declared, defaults by pluralising it; when both are
+     *         omitted, defaults to this entity's own ``display_name``. Declare
+     *         explicitly for irregulars or forms the heuristic misses.
      *     :param description: Optional helper text for this entity. Defaults to
      *         ``None``.
      *     :param forms: Form sections for create (and edit when the UI supports it).
@@ -7405,9 +7406,10 @@ export interface components {
      *         model, both record names are required and non-nullable so the generated
      *         client types them as ``string`` and no consumer needs a fallback.
      *     :param item_display_name_plural: What **several** of those records are
-     *         called (for example ``backups``). An independent declaration under the
-     *         same mid-sentence convention; nothing derives it from
-     *         ``item_display_name``. Defaults to ``display_name``.
+     *         called (for example ``backups``). Same mid-sentence convention. When
+     *         the singular is declared, defaults by pluralising it; when both are
+     *         omitted, defaults to ``display_name``. Declare explicitly for
+     *         irregulars or forms the heuristic misses.
      *     :param description: Optional helper text describing the plugin's
      *         purpose. Defaults to ``None``.
      *     :param task_type: Optional task-type identifier used when creating tasks
