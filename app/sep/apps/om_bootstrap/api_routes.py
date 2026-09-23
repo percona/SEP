@@ -429,8 +429,8 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
         same host twice, has neither one nor three hosts, names an install
         method with no registered strategy, ``member_configs`` names a host
         outside ``hosts``, or ``member_configs`` leaves no host that both votes
-        and has a nonzero priority -- ``rs.initiate`` rejects a config with no
-        electable member.
+        and has a nonzero priority, since ``rs.initiate`` rejects a config with
+        no electable member.
     :return: The created run, every host's steps ``pending``.
     """
     if not request.hosts:

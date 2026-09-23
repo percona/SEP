@@ -213,8 +213,8 @@ class BootstrapRun(BaseUUIDSQLModel, table=True):
     # strategy.MemberConfig's own fields -- read back through pydantic's own
     # coercion when rebuilding a BootstrapSpec (api_routes.py's _spec_for), the
     # same "stored as plain JSON, typed on the way out" treatment as `hosts`
-    # and `run_steps`. A host missing from this mapping -- including every run
-    # created before this column existed -- gets MemberConfig's own defaults.
+    # and `run_steps`. A host missing from this mapping gets MemberConfig's own
+    # defaults.
     member_configs: dict[str, dict[str, Any]] = SQLField(
         default_factory=dict,
         sa_column=Column(
