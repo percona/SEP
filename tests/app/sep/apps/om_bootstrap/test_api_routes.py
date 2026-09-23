@@ -339,6 +339,23 @@ class TestTriggerRunValidation:
 
         assert response.status_code == status.HTTP_201_CREATED
 
+    @pytest.mark.parametrize(
+        "config", [{"priority": 0, "votes": False}, {"priority": 0, "votes": True}]
+    )
+    def test_rejects_member_configs_with_no_electable_member(
+        self,
+        regular_user: CasdoorUser,
+        session: AsyncSession,
+        config: dict[str, object],
+    ) -> None:
+        """Reject a member set where no host both votes and has nonzero priority."""
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs",
+            json=self._payload(member_configs={"node00": config}),
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
 
 class TestListBootstrapRuns:
     """Assert GET /runs discovers runs by status, newest first."""

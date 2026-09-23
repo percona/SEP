@@ -430,8 +430,10 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
     :param request: The requested run.
     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
         same host twice, has neither one nor three hosts, names an install
-        method with no registered strategy, or ``member_configs`` names a host
-        outside ``hosts``.
+        method with no registered strategy, ``member_configs`` names a host
+        outside ``hosts``, or ``member_configs`` leaves no host that both votes
+        and has a nonzero priority -- ``rs.initiate`` rejects a config with no
+        electable member.
     :return: The created run, every host's steps ``pending``.
     """
     if not request.hosts:
@@ -447,6 +449,14 @@ async def trigger_run(session: SessionDep, request: TriggerRunRequest) -> RunRes
     if unknown_members:
         raise HTTPBadRequestException(
             detail=f"member_configs names hosts not in hosts: {sorted(unknown_members)}"
+        )
+    effective_configs = [
+        request.member_configs.get(host, MemberConfig()) for host in request.hosts
+    ]
+    if not any(config.votes and config.priority > 0 for config in effective_configs):
+        raise HTTPBadRequestException(
+            detail="member_configs must leave at least one host that votes "
+            "with a nonzero priority"
         )
 
     spec = BootstrapSpec(
