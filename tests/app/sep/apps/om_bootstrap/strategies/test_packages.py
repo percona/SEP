@@ -17,12 +17,15 @@
 
 import json
 import re
+import shlex
 import subprocess
 
 import pytest
 
 from app.sep.apps.om_bootstrap.strategies.packages import (
     _mongosh_eval,
+    _mongosh_eval_command,
+    CONFIG_PATH,
     KEY_FILE_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
@@ -224,6 +227,65 @@ class TestBuildStep:
         command = " ".join(action.command)
         assert "install -d -m 750 -o mongod -g mongod /var/log/mongodb" in command
 
+    def _install_d_guard(self, spec: BootstrapSpec) -> str:
+        """Return just the two ``[ -d ... ] || install -d ...`` clauses, unquoted.
+
+        Stops before the ``cat > ... <<'MONGOD_CONF'`` heredoc: that part needs
+        no real host to exercise, and a shell function override for
+        ``install`` (see the callers below) must not accidentally shadow
+        anything the heredoc's own content might contain.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", spec
+        )
+        return action.command[-1].split(" && cat > ", 1)[0]
+
+    def test_skips_install_d_when_the_directory_already_exists(self, tmp_path) -> None:
+        """``install -d`` is not re-run on a directory that already exists.
+
+        Reapplying ``-m``/``-o``/``-g`` unconditionally would repoint an
+        existing directory's mode and ownership on every run -- for a
+        ``log_path`` like ``/var/log/mongod.log``, that directory is
+        ``/var/log`` itself, a shared directory this must never touch once
+        it's already there.
+        """
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "data_path": str(tmp_path / "data"),
+                "log_path": str(tmp_path / "data" / "mongod.log"),
+            }
+        )
+        (tmp_path / "data").mkdir()
+        guard = self._install_d_guard(spec)
+        marker = tmp_path / "install-was-called"
+        script = f"install() {{ : > {shlex.quote(str(marker))}; }}\n{guard}"
+
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not marker.exists()
+
+    def test_runs_install_d_when_the_directory_is_missing(self, tmp_path) -> None:
+        """The other half of the guard: a genuinely missing directory still gets created."""
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "data_path": str(tmp_path / "does-not-exist"),
+                "log_path": str(tmp_path / "log-missing" / "mongod.log"),
+            }
+        )
+        guard = self._install_d_guard(spec)
+        marker = tmp_path / "install-was-called"
+        script = f"install() {{ : > {shlex.quote(str(marker))}; }}\n{guard}"
+
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert marker.exists()
+
     def test_configure_mongod_forks(self) -> None:
         """mongod.service is Type=forking.
 
@@ -338,7 +400,7 @@ class TestPreCheckDiskSpaceCommand:
         assert result.returncode == 0, result.stderr
         assert "integer expression expected" not in result.stderr
 
-    def test_falls_back_to_root_when_data_path_is_missing(
+    def test_walks_up_to_the_nearest_existing_ancestor_when_data_path_is_missing(
         self, monkeypatch, tmp_path
     ) -> None:
         """The common case: a fresh host, nothing has created data_path yet."""
@@ -351,6 +413,35 @@ class TestPreCheckDiskSpaceCommand:
 
         assert result.returncode == 0, result.stderr
         assert "integer expression expected" not in result.stderr
+
+    def test_checks_the_mount_data_path_will_live_on_not_root(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """A missing ``data_path`` under its own mount checks that mount, not ``/``.
+
+        ``/mnt/mongo/data`` can be absent while ``/mnt/mongo`` is a distinct,
+        already-mounted volume -- falling straight back to ``/`` would report
+        the wrong filesystem's free space (Copilot review, PMM-15347).
+        """
+        mount_point = tmp_path / "mnt-mongo"
+        mount_point.mkdir()
+        script = self._disk_check_command(
+            monkeypatch, threshold=1, data_path=str(mount_point / "data")
+        )
+        # The script never prints avail_dir itself -- read it back by running
+        # just the walk-up loop (everything before the disk-space `[ ... ]`
+        # test) and echoing the variable it leaves behind.
+        walk = script.split(" && [ ", 1)[0]
+
+        result = subprocess.run(
+            ["sh", "-c", f'{walk} && echo "$avail_dir"'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == str(mount_point)
 
     def test_fails_closed_when_the_threshold_is_unreasonably_high(
         self, monkeypatch, tmp_path
@@ -440,6 +531,21 @@ class TestBuildRunStep:
         assert delayed["hidden"] is True
         assert delayed["secondaryDelaySecs"] == 300  # noqa: PLR2004
 
+    def test_rs_initiate_tolerates_already_being_initiated(self) -> None:
+        """A retried dispatch after a first, invisible success must not fail the run.
+
+        A bare ``rs.initiate`` fails a retry with ``AlreadyInitiated``, which
+        (retries exhausted) triggers rollback -- tearing down a replica set
+        that had, in fact, already initiated successfully.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00"], _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "try {" in command
+        assert "AlreadyInitialized" in command
+
     def test_create_pmm_monitoring_user_requires_params(self) -> None:
         """Without a generated username/password, this is a programming error."""
         with pytest.raises(ValueError, match="username"):
@@ -460,6 +566,24 @@ class TestBuildRunStep:
         assert "pmm_monitor" in command
         assert "generated-secret" in command
         assert "clusterMonitor" in command
+
+    def test_create_pmm_monitoring_user_tolerates_already_existing(self) -> None:
+        """A retried dispatch after a first, invisible success must not fail the run.
+
+        A bare ``createUser`` fails a retry with ``UserAlreadyExists``
+        (51003), which (retries exhausted) rolls the whole run back over a
+        user that was actually created successfully.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "create_pmm_monitoring_user",
+            ["node00"],
+            _spec(OperatingSystem.UBUNTU),
+            params={"username": "pmm_monitor", "password": "generated-secret"},
+        )
+
+        command = " ".join(action.command)
+        assert "getUser(" in command
+        assert "if (!db" in command
 
 
 class TestPlanFinalizeSteps:
@@ -513,6 +637,56 @@ class TestBuildFinalizeStep:
         assert "replSetName: rs-test" in command
         assert "fork: true" in command
         assert "path: /var/log/mongodb/mongod.log" in command
+
+    def test_enable_auth_probes_readiness_after_restarting(self) -> None:
+        """The restart is followed by an unauthenticated readiness probe.
+
+        ``ping`` is one of the commands MongoDB answers without credentials
+        even with ``security.authorization: enabled`` -- the same one
+        ``verify`` uses after the first, auth-less start.
+        """
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert _mongosh_eval_command("db.adminCommand('ping').ok", 27017) in command
+
+    def test_enable_auth_does_not_restart_when_the_config_write_fails(
+        self, tmp_path
+    ) -> None:
+        """A failed config write must not leave mongod running on the old, auth-less one.
+
+        Joining the heredoc, the restart, and the probe with a bare newline
+        instead of ``&&`` would let ``systemctl restart`` run regardless of
+        whether ``cat`` actually wrote the new config -- confirmed here by
+        forcing the write itself to fail (read-only target file) and asserting
+        neither ``restart`` nor ``mongosh`` shell function is ever invoked.
+        """
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        script = action.command[-1]
+
+        fake_config_path = tmp_path / "mongod.conf"
+        marker = tmp_path / "restart-was-called"
+        # Make the write fail (read-only target) instead of actually
+        # restarting anything, and stand in for `systemctl`/`mongosh` so a
+        # bug that *does* reach them fails loudly rather than by chance.
+        fake_config_path.touch()
+        fake_config_path.chmod(0o444)
+        rigged = script.replace(CONFIG_PATH, str(fake_config_path))
+        wrapped = (
+            f"systemctl() {{ : > {shlex.quote(str(marker))}; }}\n"
+            f"mongosh() {{ : > {shlex.quote(str(marker))}; }}\n{rigged}"
+        )
+
+        result = subprocess.run(
+            ["sh", "-c", wrapped], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode != 0
+        assert not marker.exists()
 
 
 class TestPlanRollbackSteps:

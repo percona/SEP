@@ -29,7 +29,10 @@ OS -- only :meth:`PackagesInstallStrategy.build_step` does, once, per step.
 Data path, log path, port and bind IP all come from :class:`BootstrapSpec`
 (PMM-15347/plan.md §6 Phase A). Per-member election settings (priority, votes,
 hidden, delayed) come from ``spec.member_configs`` (plan.md §6 Phase B); TLS is
-still future scope (plan.md §6 Phase C).
+still future scope (plan.md §6 Phase C), same as encryption at rest
+(``security.enableEncryption``/``encryptionKeyFile``) -- ``_mongod_config``
+below writes only ``security.authorization``/``keyFile`` (intra-cluster auth),
+never an encryption block, so a run today gets neither.
 """
 
 import json
@@ -127,14 +130,26 @@ def _mongod_config(spec: BootstrapSpec, *, with_auth: bool) -> str:
     )
 
 
-def _mongosh_eval(js: str, port: int) -> StepAction:
-    """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
+def _mongosh_eval_command(js: str, port: int) -> str:
+    """Build one ``mongosh --quiet --eval`` shell fragment.
 
-    Centralized so every run-level step (which embeds generated JS, some of it
+    Centralized so every caller (which embeds generated JS, some of it
     carrying a secret) quotes the same way, once. ``shlex.quote`` on the whole
     ``--eval`` argument, not string interpolation into a shell command, avoids the
     quoting bugs that show up trying to nest a JS string literal inside a shell
     double-quoted one.
+
+    :param js: The JavaScript to evaluate.
+    :param port: The port mongod listens on -- explicit rather than assumed,
+        since ``spec.port`` is no longer always the package's own default
+        (PMM-15347/plan.md §6 Phase A).
+    :return: The shell fragment, not yet wrapped in a :class:`StepAction`.
+    """
+    return f"mongosh --quiet --port {port} --eval {shlex.quote(js)}"
+
+
+def _mongosh_eval(js: str, port: int) -> StepAction:
+    """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
 
     Every caller here runs before authorization is ever enabled (see
     :meth:`PackagesInstallStrategy._configure_mongod`'s own docstring) --
@@ -146,17 +161,11 @@ def _mongosh_eval(js: str, port: int) -> StepAction:
     exists.
 
     :param js: The JavaScript to evaluate.
-    :param port: The port mongod listens on -- explicit rather than assumed,
-        since ``spec.port`` is no longer always the package's own default
-        (PMM-15347/plan.md §6 Phase A).
+    :param port: The port mongod listens on.
     :return: The step action.
     """
     return StepAction(
-        command=[
-            "sh",
-            "-c",
-            f"mongosh --quiet --port {port} --eval {shlex.quote(js)}",
-        ],
+        command=["sh", "-c", _mongosh_eval_command(js, port)],
         timeout_s=60,
     )
 
@@ -269,13 +278,17 @@ class PackagesInstallStrategy:
         checks, all read-only, all fast enough to run inline rather than as a
         background job.
 
-        Checks ``spec.data_path`` itself only when it already exists -- on the
-        first bootstrap of a fresh host it never does yet (this runs before
+        Checks the *nearest existing ancestor* of ``spec.data_path``, not
+        necessarily ``spec.data_path`` itself -- on the first bootstrap of a
+        fresh host it never exists yet (this runs before
         ``install_package``/``configure_mongod``, so nothing has created it),
-        and ``df`` on a path that does not exist would just fail. Falling back
-        to ``/`` in that case, rather than treating a missing path as an
-        automatic failure, is deliberate: the two are on the same filesystem on
-        every host this has been run against so far. Runs `df` exactly once
+        and ``df`` on a path that does not exist would just fail. Walking up
+        to the nearest ancestor that does exist, rather than falling straight
+        back to ``/``, matters once ``data_path`` sits under its own mount --
+        ``/mnt/mongo/data`` can be absent while ``/mnt/mongo`` is a distinct,
+        already-mounted volume, and checking ``/`` there reports the wrong
+        filesystem's free space. The loop always terminates: ``dirname`` of
+        ``/`` is ``/`` itself, which always exists. Runs `df` exactly once
         either way (rather than a `2>/dev/null || df ...` fallback chain) so
         `tail -1` -- stripping `df --output`'s header row -- always applies:
         confirmed against a real retry (a host bootstrapped, rolled back, and
@@ -287,12 +300,14 @@ class PackagesInstallStrategy:
         not pass a disk-space check.
         """
         pkg_manager = self._require_package_manager(spec.os)
+        quoted_data_path = shlex.quote(spec.data_path)
         return StepAction(
             command=[
                 "sh",
                 "-c",
                 f"command -v {pkg_manager} >/dev/null && "
-                f'avail_dir="$( [ -d {spec.data_path} ] && echo {spec.data_path} || echo / )" && '
+                f"avail_dir={quoted_data_path} && "
+                'while [ ! -d "$avail_dir" ]; do avail_dir="$(dirname "$avail_dir")"; done && '
                 f'[ "$(df --output=avail -B1 "$avail_dir" | tail -1)" -ge {MIN_DATA_DISK_BYTES} ]',
             ],
             timeout_s=30,
@@ -357,6 +372,15 @@ class PackagesInstallStrategy:
         later, is what actually surfaces the failure -- by then the run has
         already reported ``start_service`` as done.
 
+        Creates each directory only when absent (``[ -d ... ] ||``), not
+        unconditionally: ``install -d`` reapplies ``-m``/``-o``/``-g`` to a
+        directory that already exists too, and a ``log_path`` of
+        ``/var/log/mongod.log`` -- a plausible operator value, and the mongod
+        default on some layouts -- has ``/var/log`` as its dirname. An
+        unconditional ``install -d`` there hands the host's shared log
+        directory to ``mongod:mongod`` at 750, breaking logging for
+        everything else on the box.
+
         Sets ``processManagement.fork``/``pidFilePath`` for the same reason:
         the packaged ``mongod.service`` is ``Type=forking``, so systemd waits for
         mongod itself to daemonize and write :data:`PID_FILE_PATH`. Without
@@ -389,10 +413,13 @@ class PackagesInstallStrategy:
         own default (``/var/log/mongodb/mongod.log``) does not.
         """
         config = _mongod_config(spec, with_auth=False)
-        log_dir = posixpath.dirname(spec.log_path)
+        quoted_data_path = shlex.quote(spec.data_path)
+        quoted_log_dir = shlex.quote(posixpath.dirname(spec.log_path))
         command = (
-            f"install -d -m 750 -o mongod -g mongod {spec.data_path} && "
-            f"install -d -m 750 -o mongod -g mongod {log_dir} && "
+            f"{{ [ -d {quoted_data_path} ] || "
+            f"install -d -m 750 -o mongod -g mongod {quoted_data_path} ; }} && "
+            f"{{ [ -d {quoted_log_dir} ] || "
+            f"install -d -m 750 -o mongod -g mongod {quoted_log_dir} ; }} && "
             f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
         )
         return StepAction(
@@ -468,6 +495,15 @@ class PackagesInstallStrategy:
         Per-member priority/votes/hidden/delay come from ``spec.member_configs``,
         keyed by host -- a host missing from it gets :class:`MemberConfig`'s own
         defaults, so a run that never set this behaves exactly as phase A did.
+
+        Tolerates ``rs.initiate`` already having succeeded: a dispatch that
+        times out at the SEP/Nomad layer *after* the command actually took
+        effect on the host looks, to the stepper's retry policy, exactly like
+        one that never ran -- it retries. A bare retry fails with
+        ``AlreadyInitialized`` and, retries exhausted, triggers rollback
+        (including ``rm -rf`` of the data directory), tearing down a replica
+        set that had already initiated successfully. Swallowing exactly that
+        one ``codeName`` makes the retry a no-op instead.
         """
         members = []
         for index, host in enumerate(hosts):
@@ -483,7 +519,11 @@ class PackagesInstallStrategy:
                 entry["secondaryDelaySecs"] = member.delay_secs
             members.append(entry)
         config = {"_id": spec.replica_set_name, "members": members}
-        return _mongosh_eval(f"rs.initiate({json.dumps(config)})", spec.port)
+        js = (
+            f"try {{ rs.initiate({json.dumps(config)}) }} "
+            "catch (e) { if (e.codeName !== 'AlreadyInitialized') throw e }"
+        )
+        return _mongosh_eval(js, spec.port)
 
     def _create_pmm_monitoring_user(
         self, spec: BootstrapSpec, params: dict[str, str] | None
@@ -496,6 +536,13 @@ class PackagesInstallStrategy:
         ``distribute_keyfile`` takes one: PMM-15347/questions.md Q7 makes PMM's
         encrypted Postgres this secret's durable home, not this strategy.
 
+        Tolerates the user already existing, for the same reason
+        :meth:`_rs_initiate` tolerates ``AlreadyInitialized``: a dispatch that
+        times out after ``createUser`` already took effect looks, to the
+        retry policy, like one that never ran. A bare retry fails with
+        ``UserAlreadyExists`` (51003) and, retries exhausted, rolls the whole
+        run back over a user that was actually created successfully.
+
         :raises ValueError: If ``params`` is missing ``"username"`` or
             ``"password"``.
         """
@@ -504,14 +551,16 @@ class PackagesInstallStrategy:
                 "create_pmm_monitoring_user requires params['username'] and "
                 "params['password']"
             )
-        command = (
+        username = json.dumps(params["username"])
+        create = (
             f"db.getSiblingDB('admin').createUser({{"
-            f"user: {json.dumps(params['username'])}, "
+            f"user: {username}, "
             f"pwd: {json.dumps(params['password'])}, "
             f"roles: {json.dumps(PMM_MONITORING_USER_ROLES)}"
             f"}})"
         )
-        return _mongosh_eval(command, spec.port)
+        js = f"if (!db.getSiblingDB('admin').getUser({username})) {{ {create} }}"
+        return _mongosh_eval(js, spec.port)
 
     def plan_finalize_steps(self, spec: BootstrapSpec) -> list[str]:
         """Return this strategy's fixed per-host finalize step names.
@@ -565,12 +614,28 @@ class PackagesInstallStrategy:
         them as one unit transaction either way, and a two-step version would
         leave a window (however short) where ``mongod`` isn't running at all if
         something between the two commands failed.
+
+        Joins the write, the restart, and a readiness probe with ``&&``, not a
+        bare newline: ``mongod.service`` is ``Type=forking`` (see
+        :meth:`_configure_mongod`'s own docstring), so ``systemctl restart``
+        reports success once mongod forks, not once it actually accepted the
+        new config -- a config write that failed (read-only filesystem, full
+        disk) would otherwise still restart mongod on the *old*, auth-less
+        config, and the step would report SUCCEEDED with authorization still
+        off. The probe reuses the same unauthenticated ``ping`` ``verify``
+        uses: MongoDB answers it without credentials even with
+        ``security.authorization: enabled``, so this proves mongod actually
+        came back up on the new config rather than forking and then exiting.
         """
         config = _mongod_config(spec, with_auth=True)
-        command = f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
+        readiness = _mongosh_eval_command("db.adminCommand('ping').ok", spec.port)
+        command = (
+            f"cat > {CONFIG_PATH} <<'MONGOD_CONF' && systemctl restart mongod "
+            f"&& {readiness}\n{config}MONGOD_CONF\n"
+        )
         return StepAction(
-            command=["sh", "-c", f"{command}systemctl restart mongod"],
-            timeout_s=90,
+            command=["sh", "-c", command],
+            timeout_s=120,
         )
 
     def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:
