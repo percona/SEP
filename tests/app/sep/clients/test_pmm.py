@@ -107,6 +107,20 @@ class TestAlertingHeaders:
         assert pmm_remote_api.alerting_headers == {"X-Disable-Provenance": "true"}
 
 
+class TestAuthorizationHeaders:
+    """Regression: persistent Authorization header after CredentialHeaderMixin."""
+
+    def test_headers_carry_bearer_authorization(
+        self, pmm_remote_api: PMMRemoteAPI
+    ) -> None:
+        """Assert the complete headers including Bearer Authorization."""
+        assert pmm_remote_api.headers == {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer test-key",
+        }
+
+
 class TestCreateTemplate:
     """Test the create_template method."""
 

@@ -76,6 +76,21 @@ def test_casdoor_credential_value_recomputes_after_credentials_change():
     assert sdk._credential_value != original
 
 
+def test_casdoor_headers_carry_basic_authorization():
+    """Assert the complete headers including Basic Authorization."""
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="test-id",
+        client_secret="test-secret",
+    )
+    expected = base64.b64encode(b"test-id:test-secret").decode("utf-8")
+    assert sdk.headers == {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Basic {expected}",
+    }
+
+
 @pytest.mark.asyncio
 async def test_get_tokens_paginates_by_page_size(mocker):
     """Verify get_tokens fetches ceil(total / page_size) pages, not ``total`` pages."""
