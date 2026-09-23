@@ -111,6 +111,40 @@ class FileMetadata(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class ExecutorHostState(BaseModel):
+    """Describe one executor host in more detail than "usable or absent".
+
+    :meth:`app.tasks.execution.models.BaseExecutor.get_hosts` answers a yes/no
+    question - can a job be placed here - by collapsing several conditions into
+    presence in a mapping. That is the right answer for *dispatching*, and the wrong
+    one for *reporting*: a host that is missing from it may never have been onboarded,
+    or may be onboarded and down, or up with a broken driver, and those are three
+    different jobs for whoever has to fix it.
+
+    :param name: The host's name as the backend knows it.
+    :param address: Its network address.
+    :param reachable: Whether the backend currently considers it ready. ``False``
+        covers several causes the backend does not distinguish here - down, stopped,
+        never registered, or still initializing; see ``status`` for the precise one.
+    :param driver_healthy: Whether it can actually run this executor's job type. A
+        reachable host with an unhealthy driver is onboarded but broken - a different
+        problem from one that was never onboarded, and the distinction this type
+        exists for. When ``reachable`` is ``False`` this is the last-known value from
+        before the host dropped, not a current fact.
+    :param status: The backend's own word for its state, passed through unmapped so a
+        reader can look it up in the backend's documentation.
+    :param detail: Why the driver is unhealthy, or why the host is unreachable, when
+        the backend says.
+    """
+
+    name: str
+    address: str
+    reachable: bool
+    driver_healthy: bool
+    status: str | None = None
+    detail: str | None = None
+
+
 class ExecutionEvent(BaseModel):
     """Represent a single lifecycle event from a task executor (executor-agnostic shape).
 
