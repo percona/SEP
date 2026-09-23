@@ -89,8 +89,8 @@ jobs:
           # The label is a cache of this predicate — a pure function of the
           # changed files and the pull request's author and head repository —
           # written by a workflow the same pull-request activity starts in
-          # parallel, so it may not exist yet. scripts/sync_pr_labels.py carries why that handoff cannot be
-          # repaired by a re-run.
+          # parallel, so it may not exist yet. scripts/sync_pr_labels.py carries
+          # why that handoff cannot be repaired by a re-run.
           if ! approved="$(python3 scripts/sync_pr_labels.py \
               --owner "$OWNER" \
               --repo "$REPO_NAME" \
