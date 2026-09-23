@@ -22,7 +22,7 @@ import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Final
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -407,6 +407,17 @@ def resolve_casdoor_as_role(
         )
 
     return resolve_as
+
+
+#: A made-up token in the measured ``glsa_`` shape, presented as a caller's
+#: Bearer credential (not SEP's own service-account token). It is assembled
+#: from its parts so no committed line carries a string secret scanners would
+#: report as a live Grafana credential.
+_FAKE_GRAFANA_TOKEN_SECRET: Final = "Qx7Rk2mZp9LwYc4Vb8Nt3Hs6Jd1Fg5Ae"
+_FAKE_GRAFANA_TOKEN_CHECKSUM: Final = "3f9c01ab"
+GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN: Final = (
+    f"glsa_{_FAKE_GRAFANA_TOKEN_SECRET}_{_FAKE_GRAFANA_TOKEN_CHECKSUM}"
+)
 
 
 @pytest.fixture
