@@ -38,5 +38,4 @@ jobs:
           python3 scripts/sync_pr_labels.py \
             --owner "${{ github.repository_owner }}" \
             --repo "${{ github.event.repository.name }}" \
-            --pr-number "${{ github.event.pull_request.number }}" \
-            --head-ref "$GITHUB_HEAD_REF"
+            --pr-number "${{ github.event.pull_request.number }}"
