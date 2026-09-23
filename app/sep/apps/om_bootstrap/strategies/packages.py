@@ -1,0 +1,698 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Install Percona Server for MongoDB from Percona's official OS packages.
+
+First (and, for now, only) implementation of
+:class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy` — Ubuntu and Rocky
+Linux only, matching the phase-1 OS scope. ``DockerInstallStrategy`` and
+``PodmanInstallStrategy`` are future siblings of this module, implementing the same
+protocol.
+
+Every per-host step here is package-manager-specific (``apt`` vs. ``dnf``), which
+is exactly what the strategy boundary is for: :meth:`PackagesInstallStrategy.plan_steps`
+returns the same step *names* regardless of OS, so the stepper never branches on
+OS — only :meth:`PackagesInstallStrategy.build_step` does, once, per step.
+
+The mongod port is never a field anywhere in this module: every step (and
+:meth:`build_run_step`'s member list) assumes the package's own unconfigured
+default, 27017 — ``mongod.conf`` here never sets ``net.port``. Making the port
+configurable is future scope, alongside TLS and per-member voting.
+
+Rollback never touches a MongoDB this run did not install: ``pre_check``
+refuses a host that already has one (:data:`CONFIG_PATH`, a non-empty
+:data:`DATA_PATH`, or ``mongod`` on ``PATH``), ``install_package`` then writes
+this run's id to :data:`OWNERSHIP_MARKER_PATH` before installing anything, and
+every rollback step is a no-op on a host whose marker does not hold this run's
+id. The marker outlives a successful run, so a later run that fails
+``pre_check`` on the same host and rolls back leaves the earlier run's MongoDB
+intact.
+"""
+
+import base64
+import json
+import shlex
+
+from app.sep.apps.om_bootstrap.strategy import (
+    BootstrapSpec,
+    OperatingSystem,
+    StepAction,
+)
+
+#: Where every step here reads or writes the shared keyFile — planted by the
+#: ``distribute_keyfile`` step, ahead of ``configure_mongod``.
+KEY_FILE_PATH = "/etc/mongod.key"
+
+#: Where the packaged mongod stores its data — the default the package itself
+#: configures, kept explicit here since ``pre_check`` and ``configure_mongod`` both
+#: need to agree on it.
+DATA_PATH = "/var/lib/mongo"
+
+#: Where the packaged mongod's own config file lives on both supported OSes.
+CONFIG_PATH = "/etc/mongod.conf"
+
+#: Written by ``install_package``, holding the run's id, once ``pre_check`` has
+#: proven the host had no MongoDB of its own. Every rollback step first checks
+#: that it holds its own run's id, so rolling back a host this run never
+#: installed on removes nothing; ``remove_data``, the last rollback step,
+#: deletes it.
+OWNERSHIP_MARKER_PATH = "/etc/mongod.om-bootstrap"
+
+#: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
+#: OSes. The unit is ``Type=forking``, so this has to agree with the systemd unit
+#: exactly — see :meth:`PackagesInstallStrategy._configure_mongod`.
+PID_FILE_PATH = "/var/run/mongod.pid"
+
+#: Where mongod's own logs go once it forks. Not the same thing as the unit's
+#: ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` — those capture
+#: only the pre-fork parent, which prints nothing once mongod backgrounds
+#: itself. ``/var/log/mongodb`` already exists, owned by ``mongod``, from the
+#: package's own post-install.
+LOG_PATH = "/var/log/mongodb/mongod.log"
+
+#: Minimum free space at :data:`DATA_PATH` ``pre_check`` requires, in bytes.
+#: 5 GiB — generous for phase-1's single-member/three-member replica sets, not a
+#: sized-for-production figure.
+MIN_DATA_DISK_BYTES = 5 * 1024 * 1024 * 1024
+
+#: The mongod port every step assumes — see the module docstring.
+MONGOD_PORT = 27017
+
+#: Roles PMM's ``mongodb_exporter`` needs, granted to the user
+#: ``create_pmm_monitoring_user`` creates — ``clusterMonitor`` for replication/
+#: server-status metrics, ``read`` on ``local`` for oplog metrics. The same
+#: minimum PMM's own client-side setup docs grant a manually-created monitoring
+#: user.
+PMM_MONITORING_USER_ROLES = [
+    {"role": "clusterMonitor", "db": "admin"},
+    {"role": "read", "db": "local"},
+]
+
+
+def _psmdb_channel(mongodb_version: str) -> str:
+    """Turn ``"8.0"`` (or ``"8.0.4"``) into the channel name ``"psmdb-80"``.
+
+    Uses only the first two dot-separated components: PMM's own
+    ``TriggerHostBootstrapRequest.mongodb_version`` field docs a full patch
+    version as a valid example (``"7.0.8"``) and pmm-managed passes it through
+    unchanged (``managed/services/om/inventory.go``), so this has to accept
+    one: naively stripping every dot from ``"7.0.14"`` produced the
+    nonexistent channel ``"psmdb-7014"`` instead of ``"psmdb-70"`` (confirmed
+    against a live ``percona-release enable``: "Specified repository does not
+    exist"). PSMDB does not ship parallel repos per patch version, matching
+    the request field's own "only the major version selects the install
+    source" comment.
+
+    :param mongodb_version: A dotted version, major.minor (``"8.0"``) or
+        major.minor.patch (``"8.0.4"``).
+    :return: The channel name ``percona-release setup`` expects.
+    """
+    major_minor = ".".join(mongodb_version.split(".")[:2])
+    return f"psmdb-{major_minor.replace('.', '')}"
+
+
+def _shell_step(body: str, *, timeout_s: int = 30) -> StepAction:
+    """Build a ``StepAction`` running ``body`` through ``sh -c``.
+
+    :param body: The shell script to run on the host.
+    :param timeout_s: How long the step may run, in seconds.
+    :return: The step action.
+    """
+    return StepAction(command=["sh", "-c", body], timeout_s=timeout_s)
+
+
+def _mongosh_eval(js: str) -> StepAction:
+    """Build a ``StepAction`` running one ``mongosh --quiet --eval`` command.
+
+    For JS that carries no secret only: ``--eval``'s argument is visible in
+    ``ps`` for as long as mongosh runs. JS that embeds a secret goes through
+    :func:`_mongosh_file` instead. ``shlex.quote`` on the whole ``--eval``
+    argument, not string interpolation into a shell command, avoids the quoting
+    bugs that show up trying to nest a JS string literal inside a shell
+    double-quoted one.
+
+    ``MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1``: mongosh probes
+    ``admin.atlascli`` (Atlas CLI local-deployment detection) as its first
+    command on every connection, before anything in ``js`` runs. Against a
+    freshly keyFile-secured member with no user yet, that probe is rejected as
+    unauthorized, and — confirmed against a real run — the rejection closes
+    the localhost exception for the rest of the session, so a first-user
+    ``createUser`` then fails with the same "not authorized" error. Harmless on
+    ``rs_initiate``, which doesn't need the exception (``replSetInitiate`` is
+    separately allowed unauthenticated whenever no replica set config exists
+    yet) — set on every mongosh call so no caller inherits the same trap.
+
+    :param js: The JavaScript to evaluate.
+    :return: The step action.
+    """
+    return _shell_step(
+        f"MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+        f"mongosh --quiet --eval {shlex.quote(js)}",
+        timeout_s=60,
+    )
+
+
+def _mongosh_file(js: str) -> StepAction:
+    """Build a ``StepAction`` running ``js`` from a private temp file.
+
+    For JS that embeds a secret: ``--eval`` would put it in mongosh's argv,
+    visible in ``ps``. The JS is written through a quoted heredoc to a
+    ``mktemp`` file created under ``umask 077`` and removed on exit, and mongosh
+    reads it with ``--file``. The heredoc delimiter cannot appear inside ``js``
+    as a line of its own because every caller builds ``js`` from ``json.dumps``
+    output, which never contains a raw newline.
+
+    :param js: The JavaScript to run.
+    :return: The step action.
+    """
+    body = (
+        "umask 077\n"
+        "js=$(mktemp)\n"
+        "trap 'rm -f \"$js\"' EXIT\n"
+        "cat > \"$js\" <<'OM_BOOTSTRAP_JS'\n"
+        f"{js}\n"
+        "OM_BOOTSTRAP_JS\n"
+        "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1 "
+        'mongosh --quiet --file "$js"\n'
+    )
+    return _shell_step(body, timeout_s=60)
+
+
+def _require_run_id(spec: BootstrapSpec, step_name: str) -> str:
+    """Return ``spec.run_id`` as a string, for a step scoped to its run.
+
+    :param spec: The host's bootstrap spec.
+    :param step_name: The step being built, for the error message.
+    :return: The run id.
+    :raises ValueError: If ``spec.run_id`` is ``None``.
+    """
+    if spec.run_id is None:
+        raise ValueError(f"{step_name} requires spec.run_id")
+    return str(spec.run_id)
+
+
+def _owned_step(body: str, run_id: str, *, timeout_s: int = 30) -> StepAction:
+    """Build a rollback step that does nothing on a host this run never installed.
+
+    :param body: The rollback step's shell body.
+    :param run_id: The run the rollback belongs to.
+    :param timeout_s: How long the step may run, in seconds.
+    :return: A step running ``body`` only when :data:`OWNERSHIP_MARKER_PATH`
+        holds ``run_id``.
+    """
+    guard = f'[ "$(cat {OWNERSHIP_MARKER_PATH} 2>/dev/null)" = {shlex.quote(run_id)} ]'
+    return _shell_step(f"{guard} || exit 0\n{body}\n", timeout_s=timeout_s)
+
+
+class PackagesInstallStrategy:
+    """Install Percona Server for MongoDB from Percona's Ubuntu/Rocky packages."""
+
+    def plan_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
+        """Return this strategy's fixed per-host step names.
+
+        Fixed rather than spec-dependent for phase 1: packages, Ubuntu or Rocky,
+        no TLS. A spec asking for TLS would need this to grow a certificate step —
+        not built here, since TLS is out of phase-1 scope.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in execution order.
+        """
+        return [
+            "pre_check",
+            "configure_repository",
+            "install_package",
+            "distribute_keyfile",
+            "configure_mongod",
+            "start_service",
+            "verify",
+        ]
+
+    def build_step(
+        self,
+        step_name: str,
+        host: str,  # noqa: ARG002
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one of :meth:`plan_steps`' names.
+
+        :param step_name: One of :meth:`plan_steps`' names.
+        :param host: The node name being bootstrapped. Unused by every step below
+            today — each builds a command to run *on* ``host``, not one
+            referencing it — kept in the signature because
+            :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy` requires
+            it and a future step (e.g. one resolving this host's advertised
+            address for ``configure_mongod``) will need it.
+        :param spec: The host's bootstrap spec.
+        :param params: ``{"key_file_content": ...}`` for ``distribute_keyfile``;
+            ignored by every other step.
+        :return: What the execution layer needs to run this step.
+        :raises ValueError: If ``step_name`` is not one of :meth:`plan_steps`'
+            names, ``spec.os`` is not a supported :class:`OperatingSystem`,
+            ``distribute_keyfile`` is built without ``params["key_file_content"]``,
+            or ``install_package`` is built without ``spec.run_id``.
+        """
+        builders = {
+            "distribute_keyfile": lambda s: self._distribute_keyfile(s, params),
+            "pre_check": self._pre_check,
+            "configure_repository": self._configure_repository,
+            "install_package": self._install_package,
+            "configure_mongod": self._configure_mongod,
+            "start_service": self._start_service,
+            "verify": self._verify,
+        }
+        try:
+            builder = builders[step_name]
+        except KeyError:
+            raise ValueError(
+                f"{step_name!r} is not a PackagesInstallStrategy step; "
+                f"expected one of {list(builders)}"
+            ) from None
+        return builder(spec)
+
+    def _distribute_keyfile(
+        self,
+        spec: BootstrapSpec,  # noqa: ARG002
+        params: dict[str, str] | None,
+    ) -> StepAction:
+        """Write the replica set's shared keyFile, owned by ``mongod`` and mode 400.
+
+        Runs after ``install_package`` (so the ``mongod`` system user this chowns
+        to already exists) and before ``configure_mongod``, which enables
+        ``security.keyFile`` pointing at :data:`KEY_FILE_PATH`. The content comes
+        from ``params`` rather than being generated here: keyFiles are generated
+        once per run and persisted, encrypted, in PMM's Postgres — this strategy
+        only ever plants the one copy the stepper hands it, transiently, at
+        dispatch time (see
+        :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s docstring).
+
+        The content travels base64-encoded through the shell builtin ``printf``,
+        so it can never end a heredoc early or inject a command, and never
+        appears in any process's argv. ``mongod`` ignores whitespace in a
+        keyFile, so a trailing newline in the caller's content is harmless.
+
+        :param spec: The host's bootstrap spec. Unused — the keyFile's content is
+            entirely determined by ``params``, not by anything in ``spec``.
+        :param params: Must contain ``"key_file_content"``.
+        :return: The step action.
+        :raises ValueError: If ``params`` is missing ``"key_file_content"``.
+        """
+        if not params or "key_file_content" not in params:
+            raise ValueError("distribute_keyfile requires params['key_file_content']")
+        encoded = base64.b64encode(params["key_file_content"].encode()).decode("ascii")
+        return _shell_step(
+            f"printf '%s' {shlex.quote(encoded)} | base64 -d | "
+            f"install -m 400 -o mongod -g mongod /dev/stdin {KEY_FILE_PATH}"
+        )
+
+    def _pre_check(self, spec: BootstrapSpec) -> StepAction:
+        """Verify OS, paths, and disk space before touching anything.
+
+        The decided pre-checks — OS, path, disk space — all read-only and fast
+        enough to run inline rather than as a background job:
+
+        - **OS**: the OS's package manager is present.
+        - **Path**: no MongoDB already lives on the host — no ``mongod`` on
+          ``PATH``, no :data:`CONFIG_PATH`, and :data:`DATA_PATH` absent or
+          empty. This is also what makes rollback safe: ``install_package``
+          claims the host for its run with :data:`OWNERSHIP_MARKER_PATH` only
+          after this passed, and rollback removes nothing unless that marker
+          holds its own run's id.
+        - **Disk space**: at least :data:`MIN_DATA_DISK_BYTES` free where
+          :data:`DATA_PATH` will live (its filesystem if it exists, ``/``
+          otherwise).
+
+        Each failed check names itself on stderr, and a free-space figure ``df``
+        could not produce fails the check rather than passing it.
+
+        :param spec: The host's bootstrap spec; only its OS is read.
+        :return: The step action.
+        """
+        pkg_manager = self._require_package_manager(spec.os)
+        body = "\n".join(
+            [
+                f"command -v {pkg_manager} >/dev/null 2>&1 || "
+                f'{{ echo "pre_check: {pkg_manager} not found" >&2; exit 1; }}',
+                "if command -v mongod >/dev/null 2>&1; then "
+                'echo "pre_check: mongod is already installed" >&2; exit 1; fi',
+                f"if [ -e {CONFIG_PATH} ]; then "
+                f'echo "pre_check: {CONFIG_PATH} already exists" >&2; exit 1; fi',
+                f'if [ -d {DATA_PATH} ] && [ -n "$(ls -A {DATA_PATH})" ]; then '
+                f'echo "pre_check: {DATA_PATH} is not empty" >&2; exit 1; fi',
+                f"target={DATA_PATH}",
+                '[ -d "$target" ] || target=/',
+                'avail=$(df --output=avail -B1 "$target" | tail -1)',
+                "case \"$avail\" in ''|*[!0-9]*) "
+                'echo "pre_check: could not measure free space at $target" >&2; '
+                "exit 1;; esac",
+                f'if [ "$avail" -lt {MIN_DATA_DISK_BYTES} ]; then '
+                f'echo "pre_check: less than {MIN_DATA_DISK_BYTES} bytes free '
+                'for the data directory" >&2; exit 1; fi',
+            ]
+        )
+        return _shell_step(body)
+
+    def _configure_repository(self, spec: BootstrapSpec) -> StepAction:
+        """Install ``percona-release`` and enable the requested PSMDB channel.
+
+        :param spec: The host's bootstrap spec; its OS and MongoDB version are read.
+        :return: The step action.
+        :raises ValueError: If ``spec.os`` is not a supported :class:`OperatingSystem`.
+        """
+        channel = _psmdb_channel(spec.mongodb_version)
+        if spec.os is OperatingSystem.UBUNTU:
+            command = (
+                "curl -fsSL -o /tmp/percona-release.deb "
+                "https://repo.percona.com/apt/percona-release_latest.generic_all.deb && "
+                "dpkg -i /tmp/percona-release.deb && "
+                f"percona-release setup -y {shlex.quote(channel)}"
+            )
+        elif spec.os is OperatingSystem.ROCKY:
+            command = (
+                "dnf install -y "
+                "https://repo.percona.com/yum/percona-release-latest.noarch.rpm && "
+                f"percona-release setup -y {shlex.quote(channel)}"
+            )
+        else:
+            raise ValueError(f"unsupported OperatingSystem: {spec.os!r}")
+        return _shell_step(command, timeout_s=120)
+
+    def _install_package(self, spec: BootstrapSpec) -> StepAction:
+        """Claim the host for this run, then install ``percona-server-mongodb``.
+
+        The marker, holding the run's id, goes first so a rollback of a
+        half-finished install still cleans up. It is only ever written after
+        ``pre_check`` proved the host had no MongoDB of its own — see the module
+        docstring.
+
+        :param spec: The host's bootstrap spec; its OS and run id are read.
+        :return: The step action.
+        :raises ValueError: If ``spec.run_id`` is ``None``.
+        """
+        run_id = _require_run_id(spec, "install_package")
+        pkg_manager = self._require_package_manager(spec.os)
+        install = "apt-get install -y" if pkg_manager == "apt-get" else "dnf install -y"
+        return _shell_step(
+            f"printf '%s\\n' {shlex.quote(run_id)} > {OWNERSHIP_MARKER_PATH}\n"
+            f"{install} percona-server-mongodb",
+            timeout_s=300,
+        )
+
+    def _configure_mongod(self, spec: BootstrapSpec) -> StepAction:
+        """Write ``mongod.conf`` enabling replication and keyFile auth.
+
+        Assumes a keyFile already exists at :data:`KEY_FILE_PATH` — planted by
+        ``distribute_keyfile``, immediately before this step.
+
+        Also creates :data:`DATA_PATH`, owned by ``mongod``, rather than
+        assuming the package's own post-install already did — confirmed
+        against a real failure that it does not: mongod exits immediately on
+        first start with ``NonExistentPath: Data directory /var/lib/mongo not
+        found``, and ``start_service`` (``systemctl enable --now``) reports
+        success regardless, since ``Type=forking`` only waits for the initial
+        fork, not for mongod's own startup logic to run. ``verify``, a step
+        later, is what actually surfaces the failure — by then the run has
+        already reported ``start_service`` as done.
+
+        Sets ``processManagement.fork``/``pidFilePath`` for the same reason:
+        the packaged ``mongod.service`` is ``Type=forking``, so systemd waits for
+        mongod itself to daemonize and write :data:`PID_FILE_PATH`. Without
+        ``fork: true`` mongod runs in the foreground indefinitely — confirmed
+        against a real run where mongod started and stayed healthy, but systemd's
+        default 90s ``TimeoutStartSec`` elapsed waiting for a fork that was never
+        coming and killed it, so ``verify`` found nothing listening on 27017 a
+        step later, again after ``start_service`` had already reported success.
+
+        ``systemLog.path`` is required alongside ``fork: true`` — mongod refuses
+        to start at all otherwise (``BadValue: --fork has to be used with
+        --logpath or --syslog``), confirmed against a real run once the
+        fork-without-a-logpath combination above was fixed. The unit's own
+        ``STDOUT``/``STDERR`` redirects in ``/etc/default/mongod`` do not stand
+        in for this: those capture only the pre-fork parent, which prints
+        nothing once mongod backgrounds itself.
+
+        :param spec: The host's bootstrap spec; only its replica set name is read.
+        :return: The step action.
+        """
+        config = (
+            f"net:\n  bindIp: 0.0.0.0\n"
+            f"storage:\n  dbPath: {DATA_PATH}\n"
+            f"security:\n  authorization: enabled\n  keyFile: {KEY_FILE_PATH}\n"
+            f"replication:\n  replSetName: {spec.replica_set_name}\n"
+            f"processManagement:\n  fork: true\n  pidFilePath: {PID_FILE_PATH}\n"
+            f"systemLog:\n  destination: file\n  path: {LOG_PATH}\n  logAppend: true\n"
+        )
+        command = (
+            f"install -d -m 750 -o mongod -g mongod {DATA_PATH} && "
+            f"cat > {CONFIG_PATH} <<'MONGOD_CONF'\n{config}MONGOD_CONF\n"
+        )
+        return _shell_step(command)
+
+    def _start_service(self, spec: BootstrapSpec) -> StepAction:  # noqa: ARG002
+        """Enable and start the ``mongod`` systemd unit.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :return: The step action.
+        """
+        return StepAction(
+            command=["systemctl", "enable", "--now", "mongod"], timeout_s=60
+        )
+
+    def _verify(self, spec: BootstrapSpec) -> StepAction:  # noqa: ARG002
+        """Confirm ``mongod`` answers before declaring this host done.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :return: The step action.
+        """
+        return _mongosh_eval("db.adminCommand('ping').ok")
+
+    def _require_package_manager(self, os_: OperatingSystem) -> str:
+        """Map a supported OS to its package manager, or reject an unsupported one.
+
+        :param os_: The host's OS.
+        :return: The package manager's command name.
+        :raises ValueError: If ``os_`` is not a supported :class:`OperatingSystem`.
+        """
+        if os_ is OperatingSystem.UBUNTU:
+            return "apt-get"
+        if os_ is OperatingSystem.ROCKY:
+            return "dnf"
+        raise ValueError(f"unsupported OperatingSystem: {os_!r}")
+
+    def plan_run_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
+        """Return this strategy's fixed run-level step names.
+
+        Both need every member's mongod already running (every host's
+        :meth:`plan_steps` succeeded) — the stepper's job to wait for, not this
+        method's.
+
+        :param spec: The run's bootstrap spec.
+        :return: Step names, in execution order.
+        """
+        return ["rs_initiate", "create_pmm_monitoring_user"]
+
+    def build_run_step(
+        self,
+        step_name: str,
+        hosts: list[str],
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one of :meth:`plan_run_steps`' names.
+
+        :param step_name: One of :meth:`plan_run_steps`' names.
+        :param hosts: Every host in this run — see
+            :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
+            own docstring for why index 0 is where this action actually runs.
+        :param spec: The run's bootstrap spec.
+        :param params: ``{"username": ..., "password": ...}`` for
+            ``create_pmm_monitoring_user``; ignored by ``rs_initiate``.
+        :return: What the execution layer needs to run this step.
+        :raises ValueError: If ``step_name`` is not one of :meth:`plan_run_steps`'
+            names, or ``create_pmm_monitoring_user`` is built without both
+            ``params`` entries.
+        """
+        if step_name == "rs_initiate":
+            return self._rs_initiate(hosts, spec)
+        if step_name == "create_pmm_monitoring_user":
+            return self._create_pmm_monitoring_user(params)
+        raise ValueError(
+            f"{step_name!r} is not a PackagesInstallStrategy run step; "
+            f"expected one of {self.plan_run_steps(spec)}"
+        )
+
+    def _rs_initiate(self, hosts: list[str], spec: BootstrapSpec) -> StepAction:
+        """Initiate the replica set from its seed member (``hosts[0]``).
+
+        Equal-priority members, no voting/hidden/delayed configuration: that
+        per-member tuning is later-phase scope, out of reach until the Configure
+        step actually collects it.
+
+        :param hosts: Every member, in run order; ``hosts[0]`` is the seed.
+        :param spec: The run's bootstrap spec, for the replica set name.
+        :return: The step action.
+        """
+        members = [
+            {"_id": index, "host": f"{host}:{MONGOD_PORT}"}
+            for index, host in enumerate(hosts)
+        ]
+        config = {"_id": spec.replica_set_name, "members": members}
+        return _mongosh_eval(f"rs.initiate({json.dumps(config)})")
+
+    def _create_pmm_monitoring_user(self, params: dict[str, str] | None) -> StepAction:
+        """Create the MongoDB user PMM's ``mongodb_exporter`` authenticates as.
+
+        Created once, on the seed member — MongoDB replicates ``admin.system.users``
+        to every other member automatically, so this never needs to run per host.
+        ``params`` rather than a generated value here for the same reason
+        ``distribute_keyfile`` takes one: PMM's encrypted Postgres is this
+        secret's durable home, not this strategy. Run through
+        :func:`_mongosh_file`, so the password never appears in any argv.
+
+        :param params: Must contain ``"username"`` and ``"password"``.
+        :return: The step action.
+        :raises ValueError: If ``params`` is missing ``"username"`` or
+            ``"password"``.
+        """
+        if not params or "username" not in params or "password" not in params:
+            raise ValueError(
+                "create_pmm_monitoring_user requires params['username'] and "
+                "params['password']"
+            )
+        command = (
+            f"db.getSiblingDB('admin').createUser({{"
+            f"user: {json.dumps(params['username'])}, "
+            f"pwd: {json.dumps(params['password'])}, "
+            f"roles: {json.dumps(PMM_MONITORING_USER_ROLES)}"
+            f"}})"
+        )
+        return _mongosh_file(command)
+
+    def plan_rollback_steps(self, spec: BootstrapSpec) -> list[str]:  # noqa: ARG002
+        """Return this strategy's fixed per-host rollback step names.
+
+        The reverse of :meth:`plan_steps`, undoing what a host's forward steps
+        did rather than mirroring their names one-for-one: there is nothing to
+        undo for ``pre_check``/``verify`` (read-only), and ``configure_repository``
+        is left alone deliberately — removing ``percona-release`` would affect
+        anything else on the host that depends on it, well outside this run's
+        blast radius.
+
+        Every step is a no-op on a host whose :data:`OWNERSHIP_MARKER_PATH`
+        does not hold this run's id — see the module docstring.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in the order rollback applies them.
+        """
+        return [
+            "stop_service",
+            "remove_config",
+            "remove_keyfile",
+            "purge_package",
+            "remove_data",
+        ]
+
+    def build_rollback_step(
+        self,
+        step_name: str,
+        host: str,  # noqa: ARG002
+        spec: BootstrapSpec,
+    ) -> StepAction:
+        """Build the action for one of :meth:`plan_rollback_steps`' names.
+
+        :param step_name: One of :meth:`plan_rollback_steps`' names.
+        :param host: The node name being rolled back. Unused — same reasoning as
+            :meth:`build_step`'s own ``host`` parameter.
+        :param spec: The host's bootstrap spec.
+        :return: What the execution layer needs to run this step.
+        :raises ValueError: If ``step_name`` is not one of
+            :meth:`plan_rollback_steps`' names, ``spec.run_id`` is ``None``, or
+            ``spec.os`` is not a supported :class:`OperatingSystem`.
+        """
+        builders = {
+            "stop_service": self._rollback_stop_service,
+            "remove_config": self._rollback_remove_config,
+            "remove_keyfile": self._rollback_remove_keyfile,
+            "purge_package": self._rollback_purge_package,
+            "remove_data": self._rollback_remove_data,
+        }
+        try:
+            builder = builders[step_name]
+        except KeyError:
+            raise ValueError(
+                f"{step_name!r} is not a PackagesInstallStrategy rollback step; "
+                f"expected one of {list(builders)}"
+            ) from None
+        run_id = _require_run_id(spec, step_name)
+        return builder(spec, run_id)
+
+    def _rollback_stop_service(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
+        """Stop and disable ``mongod``, tolerant of it never having started.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
+        return _owned_step(
+            "systemctl disable --now mongod || true", run_id, timeout_s=60
+        )
+
+    def _rollback_remove_config(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
+        """Remove the config file ``configure_mongod`` wrote.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
+        return _owned_step(f"rm -f {CONFIG_PATH}", run_id)
+
+    def _rollback_remove_keyfile(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
+        """Remove the keyFile ``distribute_keyfile`` wrote.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
+        return _owned_step(f"rm -f {KEY_FILE_PATH}", run_id)
+
+    def _rollback_purge_package(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+        """Purge the ``percona-server-mongodb`` package ``install_package`` installed.
+
+        Tolerant of the install itself having failed part-way: the marker is
+        planted before the package manager runs, so a host whose
+        ``install_package`` failed still rolls back, and the purge tolerates a
+        package that never landed.
+
+        :param spec: The host's bootstrap spec; only its OS is read.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
+        pkg_manager = self._require_package_manager(spec.os)
+        remove = (
+            "apt-get remove -y --purge percona-server-mongodb"
+            if pkg_manager == "apt-get"
+            else "dnf remove -y percona-server-mongodb"
+        )
+        return _owned_step(f"{remove} || true", run_id, timeout_s=120)
+
+    def _rollback_remove_data(self, spec: BootstrapSpec, run_id: str) -> StepAction:  # noqa: ARG002
+        """Remove the data directory, then the ownership marker, as the last step.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
+        body = f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}"
+        return _owned_step(body, run_id, timeout_s=60)

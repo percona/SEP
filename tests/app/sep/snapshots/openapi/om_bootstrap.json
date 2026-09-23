@@ -1,0 +1,4910 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ServiceTypeEnum": {
+        "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
+        "enum": [
+          "mysql",
+          "postgresql",
+          "mongodb",
+          "proxysql",
+          "haproxy",
+          "external",
+          "valkey"
+        ],
+        "title": "ServiceTypeEnum",
+        "type": "string"
+      },
+      "TaskHistoryStatusEnum": {
+        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:cvar PENDING: Enum value for pending tasks.\n:cvar RUNNING: Enum value for running tasks.\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:cvar STOPPED: Enum value for stopped tasks.\n:cvar LOST: Enum value for tasks that are lost.\n:cvar STALE: Enum value for tasks skipped because executor placement\n    exceeded the configured staleness threshold (for example a Nomad\n    allocation that never left the queue).\n:cvar UNLAUNCHABLE: Enum value for tasks the executor node could not\n    launch at all, because some command in the invocation does not\n    resolve there. The payload never ran, so this is not a script\n    failure.",
+        "enum": [
+          "failed",
+          "pending",
+          "running",
+          "success",
+          "stopped",
+          "lost",
+          "stale",
+          "unlaunchable"
+        ],
+        "title": "TaskHistoryStatusEnum",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "framework__AppEntitySchema": {
+        "additionalProperties": false,
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:param display_name: Human-readable title for this entity's screens.\n:param item_display_name: What **one** record of this entity is called (for\n    example ``node``), as opposed to ``display_name``, which names the\n    entity's screens. Stored in mid-sentence form so a consumer composing a\n    label capitalises the first character itself. Defaults to this entity's\n    own ``display_name`` — not the parent app's, and never inferred from\n    ``item_display_name_plural``.\n:param item_display_name_plural: What **several** records of this entity are\n    called (for example ``nodes``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to this entity's own ``display_name``.\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:param forms: Form sections for create (and edit when the UI supports it).\n:param list_view: Column configuration for this entity's list table.\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.",
+        "properties": {
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_highlights": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/framework__DetailHighlightLanguage"
+            },
+            "title": "Detail Highlights",
+            "type": "object"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/framework__FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
+          "list_view": {
+            "$ref": "#/components/schemas/framework__ListView"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "item_display_name",
+          "item_display_name_plural",
+          "forms",
+          "list_view"
+        ],
+        "title": "AppEntitySchema",
+        "type": "object"
+      },
+      "framework__AppSchema": {
+        "additionalProperties": false,
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:param display_name: The human-readable plugin title displayed in the UI.\n:param item_display_name: What **one** record this plugin's create form\n    produces is called (for example ``backup``), as opposed to\n    ``display_name``, which names the plugin. Stored in mid-sentence form —\n    lowercase unless it opens with a proper noun — so a consumer composing a\n    label capitalises the first character itself. Defaults to\n    ``display_name``, and is never inferred from\n    ``item_display_name_plural``. Unlike the optional UI hints on this\n    model, both record names are required and non-nullable so the generated\n    client types them as ``string`` and no consumer needs a fallback.\n:param item_display_name_plural: What **several** of those records are\n    called (for example ``backups``). An independent declaration under the\n    same mid-sentence convention; nothing derives it from\n    ``item_display_name``. Defaults to ``display_name``.\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:param forms: Form sections for single-entity / task plugins. When\n    ``entities`` is non-empty, root ``forms`` must be empty (declare\n    forms on each entity instead); non-empty root ``forms`` are rejected\n    at construction. Defaults to an empty list.\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only). Rejected at construction when\n    ``entities`` is non-empty — declare rules on each entity instead.\n    Defaults to ``None``.\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only). Rejected at construction when ``entities`` is non-empty —\n    declare rules on each entity instead. Defaults to ``None``.\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:param task_statuses: The task-status vocabulary a client polls against,\n    declaring per status value both run terminality and whether output\n    retrieval is meaningful. Server-authored, so a supplied value is\n    replaced rather than honoured. Withheld (``None``) for a plugin\n    declaring ``entities``, whose records are not task runs.",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__Capabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "derived": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__DerivedTask"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__DetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__AppEntitySchema"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entities"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/framework__FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "item_display_name": {
+            "minLength": 1,
+            "title": "Item Display Name",
+            "type": "string"
+          },
+          "item_display_name_plural": {
+            "minLength": 1,
+            "title": "Item Display Name Plural",
+            "type": "string"
+          },
+          "list_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ListView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "predecessors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__ChainedPredecessor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessors"
+          },
+          "related_apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__RelatedApp"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Apps"
+          },
+          "task_statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__TaskStatusDescriptor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Statuses"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "item_display_name",
+          "item_display_name_plural"
+        ],
+        "title": "AppSchema",
+        "type": "object"
+      },
+      "framework__BoolField": {
+        "additionalProperties": false,
+        "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "bool",
+            "default": "bool",
+            "enum": [
+              "bool"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "BoolField",
+        "type": "object"
+      },
+      "framework__Capabilities": {
+        "additionalProperties": false,
+        "description": "Represent plugin-level feature flags.\n\n:param chaining: Whether the plugin supports chaining tasks together.\n    Defaults to ``False``.\n:type chaining: bool\n:param alert_on_fail: Whether the plugin supports configuring a PMM\n    alert when a task fails. Defaults to ``False``.\n:type alert_on_fail: bool\n:param scheduling: Whether the plugin supports scheduling tasks on a\n    periodic interval. Defaults to ``False``.\n:type scheduling: bool\n:param stats: Whether the plugin supports rendering the aggregated\n    execution statistics card on its detail page. Defaults to\n    ``False``.\n:type stats: bool\n:param pii_anonymization: Whether the plugin wires ``anonymize_mask``\n    into task execution and the React detail page should surface which\n    PII entities are anonymized. This is a UI-rendering gate — the\n    anonymization always happens when configured; this flag controls\n    whether the detail view renders the \"PII Anonymization\" section.\n    Defaults to ``False``.\n:type pii_anonymization: bool",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "chaining": {
+            "default": false,
+            "title": "Chaining",
+            "type": "boolean"
+          },
+          "pii_anonymization": {
+            "default": false,
+            "title": "Pii Anonymization",
+            "type": "boolean"
+          },
+          "scheduling": {
+            "default": false,
+            "title": "Scheduling",
+            "type": "boolean"
+          },
+          "stats": {
+            "default": false,
+            "title": "Stats",
+            "type": "boolean"
+          }
+        },
+        "title": "Capabilities",
+        "type": "object"
+      },
+      "framework__CardinalityRule": {
+        "additionalProperties": false,
+        "description": "Express a cardinality constraint over a list of fields.\n\nWhen ``when`` matches (or unconditionally if ``when`` is ``None``), the\ncount of present fields in ``fields`` must lie in ``[min, max]`` with\n``None`` bounds treated as unbounded.\n\n:param when: The predicate that gates the rule. ``None`` means\n    unconditional.\n:type when: Predicate | None\n:param fields: The non-empty list of target field names.\n:type fields: list[str]\n:param min: Optional lower bound on the count of present fields.\n    Defaults to ``None``.\n:type min: int | None\n:param max: Optional upper bound on the count of present fields.\n    Defaults to ``None``.\n:type max: int | None\n:param message: Optional failure message. Defaults to ``None``.\n:type message: str | None",
+        "properties": {
+          "fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          },
+          "when": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "description": "Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.",
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "When"
+          }
+        },
+        "required": [
+          "fields"
+        ],
+        "title": "CardinalityRule",
+        "type": "object"
+      },
+      "framework__ChainedPredecessor": {
+        "additionalProperties": false,
+        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "properties": {
+          "name_suffix": {
+            "minLength": 1,
+            "title": "Name Suffix",
+            "type": "string"
+          },
+          "on_failure": {
+            "default": "halt",
+            "enum": [
+              "halt",
+              "continue"
+            ],
+            "title": "On Failure",
+            "type": "string"
+          },
+          "parent_link": {
+            "default": true,
+            "title": "Parent Link",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name_suffix"
+        ],
+        "title": "ChainedPredecessor",
+        "type": "object"
+      },
+      "framework__Choice": {
+        "additionalProperties": false,
+        "description": "Represent one option in a choice or multi-choice field.\n\n:param label: The human-readable label displayed for the choice.\n:type label: NonEmptyStr\n:param value: The value submitted when the choice is selected.\n:type value: NonEmptyStr\n:param disabled: Whether the option is rendered non-selectable. Optional,\n    defaulting to ``None`` (selectable). Typed ``bool | None`` so the\n    discovery endpoint's ``exclude_none`` posture drops it from the wire\n    until a plugin opts in, keeping the addition byte-compatible with\n    existing schemas. UI hint only; enforcing rejection of a disabled\n    value is the consuming app's responsibility.\n:type disabled: bool | None\n:param disabled_reason: Optional explanatory text surfaced (for example,\n    in a tooltip) when the option is disabled. Defaults to ``None`` and\n    may only be set when ``disabled`` is ``True``.\n:type disabled_reason: NonEmptyStr | None",
+        "properties": {
+          "disabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "Choice",
+        "type": "object"
+      },
+      "framework__ChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a single-select dropdown field.\n\n:param field_type: The discriminator literal; always ``\"choice\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"choice\"]\n:param choices: The non-empty list of options the user can choose from.\n:type choices: list[Choice]",
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/framework__Choice"
+            },
+            "minItems": 1,
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "choice",
+            "default": "choice",
+            "enum": [
+              "choice"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "choices"
+        ],
+        "title": "ChoiceField",
+        "type": "object"
+      },
+      "framework__Column": {
+        "additionalProperties": false,
+        "description": "Represent one column in a plugin list view.\n\n:param key: The task attribute path this column displays (for example,\n    ``\"status\"`` or ``\"target.service\"``). Must be non-empty.\n:param label: The human-readable column header. Must be non-empty.\n:param sortable: Whether the column can be used to sort the list.\n    Defaults to ``False``.\n:param format: Optional formatting hint applied when rendering the\n    column values. Defaults to ``None``.\n:param value_labels: Optional map from a raw cell value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a column\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
+        "properties": {
+          "format": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__ColumnFormat"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "key": {
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "sortable": {
+            "default": false,
+            "title": "Sortable",
+            "type": "boolean"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "Column",
+        "type": "object"
+      },
+      "framework__ColumnFormat": {
+        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
+        "enum": [
+          "text",
+          "chip",
+          "status",
+          "date",
+          "relative",
+          "code",
+          "actions",
+          "schedule"
+        ],
+        "title": "ColumnFormat",
+        "type": "string"
+      },
+      "framework__DateTimeField": {
+        "additionalProperties": false,
+        "description": "Represent a datetime picker field.\n\n:param field_type: The discriminator literal; always ``\"datetime\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"datetime\"]",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "datetime",
+            "default": "datetime",
+            "enum": [
+              "datetime"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "DateTimeField",
+        "type": "object"
+      },
+      "framework__DerivedTask": {
+        "additionalProperties": false,
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "properties": {
+          "arg_substitutions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arg Substitutions"
+          },
+          "data_overrides": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Overrides"
+          },
+          "name_suffix": {
+            "minLength": 1,
+            "title": "Name Suffix",
+            "type": "string"
+          },
+          "parent_link": {
+            "default": true,
+            "title": "Parent Link",
+            "type": "boolean"
+          },
+          "payload_substitutions": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Substitutions"
+          }
+        },
+        "required": [
+          "name_suffix"
+        ],
+        "title": "DerivedTask",
+        "type": "object"
+      },
+      "framework__DetailField": {
+        "additionalProperties": false,
+        "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:param label: Human-readable label rendered alongside the resolved value.\n    Must be non-empty.\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:param value_labels: Optional map from a raw resolved value to the text a\n    renderer displays in its place. Defaults to ``None``, which the schema\n    route's ``exclude_none`` posture drops from the payload, so a field\n    declaring no labels stays byte-identical on the wire. A value absent\n    from the map is the consuming app's decision to render as-is.",
+        "properties": {
+          "highlight": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__DetailHighlightLanguage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\[\\d+\\])*)*$",
+            "title": "Path",
+            "type": "string"
+          },
+          "value_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Labels"
+          }
+        },
+        "required": [
+          "path",
+          "label"
+        ],
+        "title": "DetailField",
+        "type": "object"
+      },
+      "framework__DetailHighlightLanguage": {
+        "description": "Enumerate supported syntax highlighters for detail fields.",
+        "enum": [
+          "sql",
+          "json",
+          "bash",
+          "yaml"
+        ],
+        "title": "DetailHighlightLanguage",
+        "type": "string"
+      },
+      "framework__DetailSection": {
+        "additionalProperties": false,
+        "description": "Declare one titled section inside a :class:`DetailView`.\n\n:param title: Heading rendered above the section's fields.\n:param fields: Ordered list of fields rendered inside the section. An\n    empty list is valid; the frontend hides the section when every\n    field resolves to an empty value.",
+        "properties": {
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/framework__DetailField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "fields"
+        ],
+        "title": "DetailSection",
+        "type": "object"
+      },
+      "framework__DetailView": {
+        "additionalProperties": false,
+        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`AppSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
+        "properties": {
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/framework__DetailSection"
+            },
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "DetailView",
+        "type": "object"
+      },
+      "framework__FailRule": {
+        "additionalProperties": false,
+        "description": "Express a predicate-only invariant: rule fails iff predicate matches.\n\n:param fail_when: The predicate whose match triggers a failure.\n:type fail_when: Predicate\n:param error_fields: The field names the FE renderer should attach the\n    error to (informational hint; the runtime evaluator ignores this\n    list). May be empty when no field is logically responsible.\n:type error_fields: list[str]\n:param message: Optional failure message. Defaults to ``None``.\n:type message: str | None",
+        "properties": {
+          "error_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Error Fields",
+            "type": "array"
+          },
+          "fail_when": {
+            "additionalProperties": true,
+            "description": "Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.",
+            "title": "Fail When",
+            "type": "object"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "required": [
+          "fail_when",
+          "error_fields"
+        ],
+        "title": "FailRule",
+        "type": "object"
+      },
+      "framework__FieldGate": {
+        "additionalProperties": false,
+        "description": "Express a binary self-cardinality gate at :class:`BaseField` scope.\n\nUsed by :attr:`BaseField.requires` and :attr:`BaseField.forbidden`. The\ntarget field is the field carrying the rule (implicit self).\n\n:param when: The predicate that gates the rule.\n:type when: Predicate\n:param message: Optional failure message surfaced when the rule fires.\n    Defaults to ``None``.\n:type message: str | None",
+        "properties": {
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "when": {
+            "additionalProperties": true,
+            "description": "Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.",
+            "title": "When",
+            "type": "object"
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "title": "FieldGate",
+        "type": "object"
+      },
+      "framework__FileField": {
+        "additionalProperties": false,
+        "description": "Represent a file upload field.\n\n:param field_type: The discriminator literal; always ``\"file\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"file\"]\n:param accept: Optional list of accepted file types, using the same\n    syntax as the HTML ``accept`` attribute (for example, ``[\".sql\",\n    \".csv\"]`` or ``[\"image/png\"]``). Defaults to ``None``.\n:type accept: list[str] | None",
+        "properties": {
+          "accept": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accept"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "file",
+            "default": "file",
+            "enum": [
+              "file"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "FileField",
+        "type": "object"
+      },
+      "framework__FloatField": {
+        "additionalProperties": false,
+        "description": "Represent a float numeric input field.\n\n:param field_type: The discriminator literal; always ``\"float\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"float\"]\n:param ge: Optional lower bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type ge: float | None\n:param le: Optional upper bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type le: float | None\n:param step: Optional step size for the input control. Defaults to\n    ``None``.\n:type step: float | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "ge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ge"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "le": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Le"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "type": {
+            "const": "float",
+            "default": "float",
+            "enum": [
+              "float"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "FloatField",
+        "type": "object"
+      },
+      "framework__FormSection": {
+        "additionalProperties": false,
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:param description: Optional helper text for the section. SEP's\n    renderer shows it beneath the section heading, but a renderer may\n    omit it, so do not put guidance here that a user must see. Defaults\n    to ``None``.\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:param advanced: Whether the section holds expert options rather than the\n    common case. The renderer withholds advanced sections behind a single\n    \"Show advanced options\" control placed after the ordinary ones and\n    reveals them as ordinary top-level sections, so several expert sections\n    cost one row at rest instead of one each. Membership needs no\n    adjacency. Defaults to ``False``.\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.",
+        "properties": {
+          "advanced": {
+            "default": false,
+            "title": "Advanced",
+            "type": "boolean"
+          },
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "collapsed_by_default": {
+            "default": false,
+            "title": "Collapsed By Default",
+            "type": "boolean"
+          },
+          "collapsible": {
+            "default": false,
+            "title": "Collapsible",
+            "type": "boolean"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "fields": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/framework__BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__OneOfGroup"
+                }
+              ]
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "render_after_submit": {
+            "default": false,
+            "title": "Render After Submit",
+            "type": "boolean"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "fields"
+        ],
+        "title": "FormSection",
+        "type": "object"
+      },
+      "framework__HelpPlacement": {
+        "description": "Say where a field's ``description`` is shown, overriding the default.\n\nThe renderer otherwise places help by length — a description that fits\nroughly one line sits under the input, a longer one goes behind a help icon\nbeside the label. Setting this is for the cases where that reads wrong: a\nterse note that is still secondary, or a long one someone needs in front of\nthem while they type.",
+        "enum": [
+          "tooltip",
+          "inline"
+        ],
+        "title": "HelpPlacement",
+        "type": "string"
+      },
+      "framework__HostField": {
+        "additionalProperties": false,
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
+          },
+          "type": {
+            "const": "host",
+            "default": "host",
+            "enum": [
+              "host"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "HostField",
+        "type": "object"
+      },
+      "framework__IntegerField": {
+        "additionalProperties": false,
+        "description": "Represent an integer numeric input field.\n\n:param field_type: The discriminator literal; always ``\"integer\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"integer\"]\n:param ge: Optional lower bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type ge: int | None\n:param le: Optional upper bound (inclusive) for accepted values. Defaults\n    to ``None``.\n:type le: int | None\n:param step: Optional step size for the input control. Defaults to\n    ``None``.\n:type step: int | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "ge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ge"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "le": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Le"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "type": {
+            "const": "integer",
+            "default": "integer",
+            "enum": [
+              "integer"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "IntegerField",
+        "type": "object"
+      },
+      "framework__ListView": {
+        "additionalProperties": false,
+        "description": "Represent the list-view configuration for a plugin.\n\n:param columns: The ordered list of columns displayed in the list view.\n:param default_sort: Optional key of the column to sort by on first\n    render. Prefix with ``-`` for descending order (for example,\n    ``\"-lastRun\"``). The unprefixed key must match one of the declared\n    column keys. Defaults to ``None``.\n:param server_side_query: Opt-in capability flag declaring that the list\n    endpoint honors whole-result-set sort and search via server query\n    params. When ``True`` and the list is also server-paginated, the React\n    list view enables manual sorting and filtering and drives them through\n    those params instead of sorting the loaded page; a capability-on list\n    rendered without pagination stays client-side.\n    Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas.\n    Defaults to ``None``.\n:param overview_hidden_fields: Additional task-level keys to suppress\n    from the auto-rendered \"extras\" loop on the plugin detail Overview\n    tab. The framework always hides a baseline set of internal fields\n    (``id``, ``backend``, ``protected``, ``data``, ``updated_at``,\n    ``last_updated_by``, ``connectivity_warning``); any keys listed here\n    are merged with that baseline. Defaults to ``[]``.",
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/framework__Column"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "default_sort": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Sort"
+          },
+          "overview_hidden_fields": {
+            "items": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "title": "Overview Hidden Fields",
+            "type": "array"
+          },
+          "server_side_query": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Side Query"
+          }
+        },
+        "required": [
+          "columns"
+        ],
+        "title": "ListView",
+        "type": "object"
+      },
+      "framework__MultiChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-select dropdown field.\n\n:param field_type: The discriminator literal; always ``\"multi_choice\"``\n    for this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"multi_choice\"]\n:param choices: The non-empty list of options the user can choose from.\n:type choices: list[Choice]",
+        "properties": {
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/framework__Choice"
+            },
+            "minItems": 1,
+            "title": "Choices",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_choice",
+            "default": "multi_choice",
+            "enum": [
+              "multi_choice"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "choices"
+        ],
+        "title": "MultiChoiceField",
+        "type": "object"
+      },
+      "framework__MultiHostField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\nCascade auto-select is single-host only (:class:`HostField`). ``depends_on``\nmay still be emitted when ``Ui(depends_on=...)`` is set so derivation stays\nuniform, but the multi-host renderer does not honour it today.\n``target_service`` is mirrored the same way; the multi-host renderer\nignores it (no co-location warning).\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional upstream field name mirrored from\n    ``Ui(depends_on=...)``. Emitted for wire uniformity with\n    :class:`HostField`; the current multi-host renderer ignores it (no\n    cascade). ``None`` (the default) omits the key from the wire.\n:param target_service: Optional service field name mirrored for wire\n    uniformity with :class:`HostField`; ignored by the multi-host\n    renderer. ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "target_service": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Service"
+          },
+          "type": {
+            "const": "multi_host",
+            "default": "multi_host",
+            "enum": [
+              "multi_host"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "MultiHostField",
+        "type": "object"
+      },
+      "framework__MultiSchemaField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory database-schema selector field.\n\nThe multi-value counterpart of :class:`SchemaField`: the renderer commits a\nlist of schemas instead of a single one. Derived from a\n``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_schema",
+            "default": "multi_schema",
+            "enum": [
+              "multi_schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiSchemaField",
+        "type": "object"
+      },
+      "framework__MultiServiceField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory service selector field.\n\nThe multi-value counterpart of :class:`ServiceField`: the renderer commits a\nlist of services instead of a single one. Derived from a\n``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the inventory options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "service_types": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTypeEnum"
+            },
+            "title": "Service Types",
+            "type": "array"
+          },
+          "type": {
+            "const": "multi_service",
+            "default": "multi_service",
+            "enum": [
+              "multi_service"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "service_types"
+        ],
+        "title": "MultiServiceField",
+        "type": "object"
+      },
+      "framework__MultiTableField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory table selector field.\n\nThe multi-value counterpart of :class:`TableField`: the renderer commits a\nlist of tables instead of a single one. Derived from a\n``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_table\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_table",
+            "default": "multi_table",
+            "enum": [
+              "multi_table"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiTableField",
+        "type": "object"
+      },
+      "framework__OneOfBranch": {
+        "additionalProperties": false,
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
+        "properties": {
+          "fields": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/framework__BoolField",
+                  "choice": "#/components/schemas/framework__ChoiceField",
+                  "datetime": "#/components/schemas/framework__DateTimeField",
+                  "file": "#/components/schemas/framework__FileField",
+                  "float": "#/components/schemas/framework__FloatField",
+                  "host": "#/components/schemas/framework__HostField",
+                  "integer": "#/components/schemas/framework__IntegerField",
+                  "multi_choice": "#/components/schemas/framework__MultiChoiceField",
+                  "multi_host": "#/components/schemas/framework__MultiHostField",
+                  "multi_schema": "#/components/schemas/framework__MultiSchemaField",
+                  "multi_service": "#/components/schemas/framework__MultiServiceField",
+                  "multi_table": "#/components/schemas/framework__MultiTableField",
+                  "remote_choice": "#/components/schemas/framework__RemoteChoiceField",
+                  "schema": "#/components/schemas/framework__SchemaField",
+                  "script_preview": "#/components/schemas/framework__ScriptPreviewField",
+                  "service": "#/components/schemas/framework__ServiceField",
+                  "string": "#/components/schemas/framework__StringField",
+                  "table": "#/components/schemas/framework__TableField",
+                  "textarea": "#/components/schemas/framework__TextAreaField",
+                  "yaml": "#/components/schemas/framework__YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/framework__BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__MultiTableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__RemoteChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/framework__YamlField"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "fields"
+        ],
+        "title": "OneOfBranch",
+        "type": "object"
+      },
+      "framework__OneOfGroup": {
+        "additionalProperties": false,
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:param label: The human-readable group heading above the segmented control.\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:param branches: Two or more named branches, each owning its own field list.",
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/framework__OneOfBranch"
+            },
+            "minItems": 2,
+            "title": "Branches",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "discriminator": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Discriminator",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "one_of",
+            "default": "one_of",
+            "enum": [
+              "one_of"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "discriminator",
+          "branches"
+        ],
+        "title": "OneOfGroup",
+        "type": "object"
+      },
+      "framework__RelatedApp": {
+        "additionalProperties": false,
+        "description": "Declare a separately registered app surfaced as a sibling tab in the UI.\n\nConsumed by the React ``SchemaDrivenPlugin`` shell to mount a nested\nschema-driven flow for the related registry entry (for example\n``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without\nre-merging the child app's API router into the parent.\n\n:param app_key: The scoped registry key of the related app (for example\n    ``mysql_backups/restore``).\n:type app_key: NonEmptyStr\n:param label: The human-readable tab label (for example ``Restore``).\n:type label: NonEmptyStr\n:param route_segment: The React sub-path segment under the parent's\n    ``route_base`` (for example ``restores``). Must be a single URL path\n    segment — no slashes — and must not be a reserved single-entity route\n    keyword (``new``, ``schedule``, ``task``).\n:type route_segment: NonEmptyStr",
+        "properties": {
+          "app_key": {
+            "minLength": 1,
+            "title": "App Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "route_segment": {
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Route Segment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_key",
+          "label",
+          "route_segment"
+        ],
+        "title": "RelatedApp",
+        "type": "object"
+      },
+      "framework__RemoteChoiceField": {
+        "additionalProperties": false,
+        "description": "Represent a field whose options are fetched at render from an app endpoint.\n\nThe renderer fetches ``endpoint_url`` and renders the returned\n``Choice``-compatible options (``value`` / ``label`` / optional ``disabled``\n/ ``disabled_reason``). When ``depends_on`` is set, the fetch is\nparameterised by the dependency's value (appended as a query parameter named\nafter ``depends_on``) and the field offers no options until the dependency\nhas a value, staying disabled while it waits unless ``allow_custom`` keeps\nfree-text entry open. When ``allow_custom`` is set, the renderer also\naccepts a free-typed value. The endpoint response contract is a JSON array\nof objects shaped like :class:`Choice`: ``{\"value\": str, \"label\": str,\n\"disabled\"?: bool, \"disabled_reason\"?: str}``.\n\n:param field_type: The discriminator literal; always ``\"remote_choice\"``.\n    Serialised as the JSON key ``\"type\"``.\n:param endpoint_url: The fully-resolved URL the renderer fetches options\n    from, relative to the frontend ``apiClient`` base (``/api``).\n:param depends_on: Optional name of the sibling field whose value drives\n    (and parameterises) the option fetch. ``None`` (the default) omits the\n    key from the wire so plugins that do not cascade stay byte-identical.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value. ``None`` (the default) omits the key from the wire so plugins\n    that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depends On"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "endpoint_url": {
+            "minLength": 1,
+            "title": "Endpoint Url",
+            "type": "string"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "remote_choice",
+            "default": "remote_choice",
+            "enum": [
+              "remote_choice"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "endpoint_url"
+        ],
+        "title": "RemoteChoiceField",
+        "type": "object"
+      },
+      "framework__SchemaField": {
+        "additionalProperties": false,
+        "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "schema",
+            "default": "schema",
+            "enum": [
+              "schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "SchemaField",
+        "type": "object"
+      },
+      "framework__ScriptPreviewField": {
+        "additionalProperties": false,
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "endpoint_url": {
+            "minLength": 1,
+            "title": "Endpoint Url",
+            "type": "string"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "script_preview",
+            "default": "script_preview",
+            "enum": [
+              "script_preview"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "endpoint_url"
+        ],
+        "title": "ScriptPreviewField",
+        "type": "object"
+      },
+      "framework__ServiceField": {
+        "additionalProperties": false,
+        "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    inventory options. Optional, defaulting to ``None`` (options only).\n    Typed ``bool | None`` so the discovery endpoint's ``exclude_none``\n    posture drops it from the wire until a plugin opts in, keeping the\n    addition byte-compatible with existing schemas. The built-in\n    SchemaFormRenderer does not yet consume the flag; the free-solo\n    widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "service_types": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTypeEnum"
+            },
+            "title": "Service Types",
+            "type": "array"
+          },
+          "type": {
+            "const": "service",
+            "default": "service",
+            "enum": [
+              "service"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "service_types"
+        ],
+        "title": "ServiceField",
+        "type": "object"
+      },
+      "framework__StringField": {
+        "additionalProperties": false,
+        "description": "Represent a single-line string input field.\n\n:param field_type: The discriminator literal; always ``\"string\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"string\"]\n:param min_length: Optional minimum character length. Defaults to\n    ``None``.\n:type min_length: int | None\n:param max_length: Optional maximum character length. Defaults to\n    ``None``.\n:type max_length: int | None\n:param pattern: Optional regular expression the value must match.\n    Defaults to ``None``.\n:type pattern: NonEmptyStr | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length"
+          },
+          "min_length": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Length"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placeholder"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "string",
+            "default": "string",
+            "enum": [
+              "string"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "StringField",
+        "type": "object"
+      },
+      "framework__TableField": {
+        "additionalProperties": false,
+        "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "table",
+            "default": "table",
+            "enum": [
+              "table"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "TableField",
+        "type": "object"
+      },
+      "framework__TaskStatusDescriptor": {
+        "additionalProperties": false,
+        "description": "Declare one task-status value and its run terminality/output predicates.\n\n:param value: The status as it appears on a task-history payload.\n:param terminal: Whether a run in this status will not transition again, so\n    a client polling for completion can stop re-reading on it.\n:param output_available: Whether the run reached an observed outcome, so its\n    output may be requested and may legitimately be empty, as for ``stale``\n    and ``unlaunchable``. ``lost`` is excluded because its outcome was never\n    observed.",
+        "properties": {
+          "output_available": {
+            "title": "Output Available",
+            "type": "boolean"
+          },
+          "terminal": {
+            "title": "Terminal",
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+          }
+        },
+        "required": [
+          "value",
+          "terminal",
+          "output_available"
+        ],
+        "title": "TaskStatusDescriptor",
+        "type": "object"
+      },
+      "framework__TextAreaField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-line string input field.\n\n:param field_type: The discriminator literal; always ``\"textarea\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"textarea\"]\n:param rows: Optional number of visible text rows. Defaults to ``None``.\n:type rows: int | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placeholder"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "type": {
+            "const": "textarea",
+            "default": "textarea",
+            "enum": [
+              "textarea"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "TextAreaField",
+        "type": "object"
+      },
+      "framework__YamlField": {
+        "additionalProperties": false,
+        "description": "Represent a YAML-syntax multi-line text input field.\n\n:param field_type: The discriminator literal; always ``\"yaml\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"yaml\"]\n:param rows: Optional number of visible text rows. Defaults to ``None``.\n:type rows: int | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
+        "properties": {
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destructive"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "help_placement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/framework__HelpPlacement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "placeholder": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placeholder"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/framework__FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "rows": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows"
+          },
+          "type": {
+            "const": "yaml",
+            "default": "yaml",
+            "enum": [
+              "yaml"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "YamlField",
+        "type": "object"
+      },
+      "om_bootstrap__BootstrapRunStatus": {
+        "description": "Enumerate the states of one bootstrap run.\n\nMatches the decided partial-failure policy exactly: retry a failed host,\nand if retries are exhausted, roll back the whole run. There is no \"partial\nsuccess\" status\nhere the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A\nbootstrap either finishes with every host succeeded, or it did not finish.\n\n:cvar RUNNING: The run is in flight — pre-flight checks, installing,\n    configuring, or verifying on at least one host.\n:cvar SUCCEEDED: Every host reached\n    :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.SUCCEEDED`.\n:cvar FAILED: A host failed and retries were exhausted; rollback has not\n    (yet, or ever) run.\n:cvar ROLLED_BACK: A failure's rollback completed.",
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "rolled_back"
+        ],
+        "title": "BootstrapRunStatus",
+        "type": "string"
+      },
+      "om_bootstrap__DispatchStepRequest": {
+        "description": "Carry the optional body of any ``:dispatch`` route.\n\n:param params: Per-dispatch values the step being dispatched needs but\n    cannot compute itself — a keyFile's content, a generated\n    monitoring-user password. See\n    :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own\n    docstring for why these are never persisted by ``om_bootstrap``: PMM's\n    stepper holds their durable, encrypted copy and hands one to a single\n    dispatch, transiently, through this field.\n    Empty for a step that needs none.",
+        "properties": {
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "DispatchStepRequest",
+        "type": "object"
+      },
+      "om_bootstrap__FinishRunRequest": {
+        "description": "Carry the body of :func:`finish_run`, the stepper recording its own decision.\n\n:param status: The run's new terminal status. Must be one of\n    :data:`_FINISHABLE_STATUSES`;\n    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`\n    is never requested here (see :data:`_FINISHABLE_STATUSES`'s own\n    docstring).\n:param error: A human-readable reason, if any — stored on\n    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "FinishRunRequest",
+        "type": "object"
+      },
+      "om_bootstrap__HostBootstrapState": {
+        "description": "Track one host's progress through its planned steps.\n\n:param host: The node name being bootstrapped.\n:param steps: This host's steps, in the order :meth:`InstallStrategy.plan_steps`\n    returned them — the full list is known before the first one starts.\n:param rollback_steps: This host's teardown steps, in the order\n    :meth:`InstallStrategy.plan_rollback_steps` returned them — planned\n    up front alongside ``steps`` so a fresh run already shows what rollback\n    would consist of, even before anything fails. Every entry stays\n    :attr:`StepStatus.PENDING` unless the stepper actually decides to roll\n    this host back.",
+        "properties": {
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "rollback_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Rollback Steps",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "host",
+          "steps"
+        ],
+        "title": "HostBootstrapState",
+        "type": "object"
+      },
+      "om_bootstrap__InstallMethod": {
+        "description": "Name the :class:`InstallStrategy` a run uses.\n\nOnly ``PACKAGES`` has an implementation\n(:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).\n``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the API have\na closed set to switch on before a second strategy exists; requesting either\ntoday is a 400.",
+        "enum": [
+          "packages",
+          "docker",
+          "podman"
+        ],
+        "title": "InstallMethod",
+        "type": "string"
+      },
+      "om_bootstrap__OperatingSystem": {
+        "description": "Target host OS. First implementation supports exactly these two.",
+        "enum": [
+          "ubuntu",
+          "rocky"
+        ],
+        "title": "OperatingSystem",
+        "type": "string"
+      },
+      "om_bootstrap__RunResponse": {
+        "description": "Describe one bootstrap run in full.\n\n:param id: The run's id.\n:param status: The run's lifecycle state.\n:param install_method: The run's install method.\n:param os: The run's target OS.\n:param mongodb_version: The run's MongoDB version.\n:param replica_set_name: The replica set every host in this run joins.\n:param started_at: When the run began.\n:param finished_at: When it reached a terminal status, if it has.\n:param hosts: Every host's current step-by-step progress — the full,\n    run-specific step list each host was planned with (forward steps and\n    rollback steps both), not just the steps that have started.\n:param run_steps: This run's run-level steps\n    (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),\n    planned up front the same way ``hosts``' steps are.\n:param error: The run-level failure detail, when the run itself raised\n    outside any single host's steps.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "hosts": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__HostBootstrapState"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "install_method": {
+            "$ref": "#/components/schemas/om_bootstrap__InstallMethod"
+          },
+          "mongodb_version": {
+            "title": "Mongodb Version",
+            "type": "string"
+          },
+          "os": {
+            "$ref": "#/components/schemas/om_bootstrap__OperatingSystem"
+          },
+          "replica_set_name": {
+            "title": "Replica Set Name",
+            "type": "string"
+          },
+          "run_steps": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Run Steps",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "install_method",
+          "os",
+          "mongodb_version",
+          "replica_set_name",
+          "started_at",
+          "finished_at",
+          "hosts",
+          "run_steps",
+          "error"
+        ],
+        "title": "RunResponse",
+        "type": "object"
+      },
+      "om_bootstrap__StepRecord": {
+        "description": "Record one step's progress, for a host or for a run.\n\nThe same shape serves both :attr:`HostBootstrapState.steps` (per-host) and\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,\ne.g. ``rs_initiate`` — see :meth:`InstallStrategy.plan_run_steps`): neither\ncontext needs a field the other doesn't, so one type covers both rather than\ntwo near-duplicates.\n\n:param name: One of the names :meth:`InstallStrategy.plan_steps` (or\n    :meth:`InstallStrategy.plan_run_steps`, or\n    :meth:`InstallStrategy.plan_rollback_steps`)\n    returned for this spec — not a fixed enum, since the step list itself is\n    per-strategy and per-spec (see the module docstring).\n:param status: This step's current status.\n:param started_at: When the execution layer began this step, if it has.\n:param finished_at: When this step reached a terminal status, if it has.\n:param detail: A human-readable outcome — an error message on\n    :attr:`StepStatus.FAILED`, or ``None`` while pending/running.\n:param task_history_id: The Tasks API history id backing this step's dispatch,\n    while it is running — the execution layer's own bookkeeping, not a\n    strategy concern. Still just data describing progress, so it lives here\n    rather than in a separate persisted-only sibling type: one shape for\n    planning, persistence, and API responses alike.\n:param attempt_count: How many times this step has been dispatched.\n    Incremented on every dispatch, including the first — PMM's stepper reads\n    this to enforce its decided retry policy (retry, then roll back) without\n    needing a counter of its own, which would be lost on a leader failover.\n    ``om_bootstrap`` only ever records the fact that a dispatch happened;\n    deciding whether *another* one should is the stepper's call, not this\n    field's.",
+        "properties": {
+          "attempt_count": {
+            "default": 0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__StepStatus",
+            "default": "pending"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StepRecord",
+        "type": "object"
+      },
+      "om_bootstrap__StepStatus": {
+        "description": "Name one step's progress, as the UI renders it.",
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "StepStatus",
+        "type": "string"
+      },
+      "om_bootstrap__TriggerRunRequest": {
+        "description": "Request one bootstrap run over a set of hosts, all sharing one spec.\n\n:param hosts: The hosts to provision — one-member or three-member replica\n    sets only, the decided phase-1 scope. Each is a node name: letters,\n    digits, ``.``, ``_`` and ``-``, starting with a letter or digit.\n:param install_method: Which strategy provisions every host in this run.\n:param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.\n:param mongodb_version: The Percona Server for MongoDB version to install,\n    as ``major.minor`` or ``major.minor.patch`` (e.g. ``\"8.0\"``, ``\"8.0.4\"``).\n:param replica_set_name: The replica set every host joins: 1-64 letters,\n    digits, ``_`` or ``-``.",
+        "properties": {
+          "hosts": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$",
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "install_method": {
+            "$ref": "#/components/schemas/om_bootstrap__InstallMethod"
+          },
+          "mongodb_version": {
+            "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+            "title": "Mongodb Version",
+            "type": "string"
+          },
+          "os": {
+            "$ref": "#/components/schemas/om_bootstrap__OperatingSystem"
+          },
+          "replica_set_name": {
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "title": "Replica Set Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hosts",
+          "install_method",
+          "os",
+          "mongodb_version",
+          "replica_set_name"
+        ],
+        "title": "TriggerRunRequest",
+        "type": "object"
+      }
+    }
+  },
+  "paths": {
+    "/api/apps/om_bootstrap/runs": {
+      "get": {
+        "description": "Return runs, newest first, optionally narrowed to one status.\n\nThe intended caller is PMM's HA-leader-only stepper. It does not persist\nits own copy of which runs exist or where they are, so on every tick, and\nespecially right after a leader failover, it re-discovers every run still\nin flight from here (``status=running``) rather than from any state of its\nown.\n\n:param session: The database session.\n:param status: Restrict to runs in this status. Omit for any status.\n:param limit: How many to return.\n:return: The runs. Does **not** reconcile in-flight steps — unlike\n    :func:`get_bootstrap_run`, a caller polling a specific run for the\n    purpose of driving it forward should use that route instead.",
+        "operationId": "om_bootstrap_list_bootstrap_runs_api_apps_om_bootstrap_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                  },
+                  "title": "Response Om Bootstrap List Bootstrap Runs Api Apps Om Bootstrap Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Bootstrap Runs",
+        "tags": [
+          "om_bootstrap"
+        ]
+      },
+      "post": {
+        "description": "Create a bootstrap run, planning every host's steps up front.\n\nDispatches nothing: creating a run only plans it, so the caller (PMM's\ndriver) sees the full step list for every host before anything is touched.\nActually starting a host's first step is a separate call to\n:func:`dispatch_run_step`.\n\n:param session: The database session.\n:param request: The requested run.\n:raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the\n    same host twice, has neither one nor three hosts, or names an install\n    method with no registered strategy.\n:return: The created run, every host's steps ``pending``.",
+        "operationId": "om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/om_bootstrap__TriggerRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}": {
+      "get": {
+        "description": "Return one run, reconciling any of its running steps first.\n\nReconciling on every read (rather than relying solely on a periodic task)\nmeans PMM's driver always sees a step's real outcome on its very next poll,\nnot after waiting for a separate schedule to catch up. The run is read under\nits row lock, like every writing route (see the module docstring), since a\nreconcile may write it back.\n\n:param run: The path's run, read under its row lock.\n:param session: The database session.\n:param tasks_client: The Tasks API client, authenticated here with SEP's\n    internal token rather than the caller's.\n:raises HTTPNotFoundException: When there is no such run.\n:return: The run, with current step status.",
+        "operationId": "om_bootstrap_get_bootstrap_run_api_apps_om_bootstrap_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Bootstrap Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/rollback/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one host's named rollback step now.\n\nSame fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take\nno ``params``: every\n:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`\na strategy defines only ever tears down what its own forward steps already\nwrote to the host, needing nothing new from the caller.\n\nWhether a host should be rolled back at all, and if so whether to dispatch\nits rollback steps in order or all at once, is PMM's stepper's call (its\npartial-failure policy), not this route's. This route only ever dispatches\nthe one step it is asked to.\n\n:param run: The path's run, read under its row lock.\n:param host: The host to roll back.\n:param step_name: The rollback step to dispatch — one of the names the run\n    was planned with.\n:param session: The database session.\n:param request: See :func:`dispatch_run_step`.\n:param tasks_client: See :func:`dispatch_run_step`.\n:raises HTTPNotFoundException: When there is no such run, host, or rollback step.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched rollback step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Rollback Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/steps/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one host's named step now.\n\nDoes **not** wait for the dispatch to finish — it returns as soon as the\nTasks API accepts it, the same fire-and-forget shape ``dispatch_step``\nitself commits to. The caller polls :func:`get_bootstrap_run` for progress.\n\nOnly a ``pending`` or ``failed`` step is dispatched. Re-dispatching a\n``failed`` one is how PMM's driver implements its retry policy — this route\ndoes not itself decide *whether* to retry, only executes the request.\n\n:param run: The path's run, read under its row lock.\n:param host: The host to dispatch the step on.\n:param step_name: The step to dispatch — one of the names the run was\n    planned with.\n:param session: The database session.\n:param request: The current request, whose host builds the artifact\n    download URL the executor fetches the step's script from.\n:param tasks_client: The Tasks API client, authenticated here with SEP's\n    internal token rather than the caller's.\n:param body: ``params`` this step needs — see :class:`DispatchStepRequest`.\n:raises HTTPNotFoundException: When there is no such run, host, or step.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_run_step_api_apps_om_bootstrap_runs__run_id__hosts__host__steps__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_bootstrap__DispatchStepRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Run Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/run-steps/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one run-level step now, targeting the run's seed host.\n\nSame fire-and-forget shape as :func:`dispatch_run_step` — see its own\ndocstring. \"Seed host\" is ``run``'s first host, index 0, matching\n:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s\nown convention for where a run-level step actually executes.\n\nThis route does not check that every per-host step succeeded first —\ndeciding *when* it is safe to call this is PMM's stepper's job, not this\nroute's (see the module docstring).\n\n:param run: The path's run, read under its row lock.\n:param step_name: The run-level step to dispatch — one of the names the\n    run was planned with.\n:param session: The database session.\n:param request: See :func:`dispatch_run_step`.\n:param tasks_client: See :func:`dispatch_run_step`.\n:param body: ``params`` this step needs — see :class:`DispatchStepRequest`.\n:raises HTTPNotFoundException: When there is no such run, run-level step, or\n    the run has no hosts to target.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched run-level step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_bootstrap__DispatchStepRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Run Run Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}:finish": {
+      "post": {
+        "description": "Record the stepper's own decision that a run is done — failed or rolled back.\n\nThe one way ``run.status`` reaches\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:\nboth are real calls only PMM's stepper makes (retries exhausted; rollback\nfinished), never something ``om_bootstrap`` infers on its own — see\n``reconcile.py``'s module docstring for the one status it *does* infer\n(SUCCEEDED) and why that's different.\n\nAlso removes every step script the run still has on disk: no step of a\nfinished run is dispatched again, so nothing will download them.\n\n:param run: The path's run, read under its row lock.\n:param session: The database session.\n:param body: The decided terminal status, and why.\n:raises HTTPNotFoundException: When there is no such run.\n:raises HTTPBadRequestException: When ``body.status`` is not one of\n    :data:`_FINISHABLE_STATUSES`.\n:raises HTTPConflictException: When the run is already terminal.\n:return: The run, now terminal.",
+        "operationId": "om_bootstrap_finish_run_api_apps_om_bootstrap_runs__run_id__finish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/om_bootstrap__FinishRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/schema": {
+      "get": {
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
+        "operationId": "om_bootstrap_get_schema_api_apps_om_bootstrap_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/framework__AppSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Schema",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    }
+  }
+}
