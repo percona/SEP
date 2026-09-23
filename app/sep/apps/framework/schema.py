@@ -1552,14 +1552,46 @@ def _collect_fail_rule_errors(
 ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
 """The two record-name keys, shared with the conformance detector that checks them."""
 
+_VOWELS = frozenset("aeiou")
+
+
+def _pluralize_item_display_name(singular: str) -> str:
+    """Return a Django-style English plural for a mid-sentence record noun.
+
+    Pluralises only the last whitespace-separated token so multi-word nouns
+    like ``schema change`` become ``schema changes``. Irregular plurals and
+    forms outside this heuristic stay author-declared via
+    ``item_display_name_plural``.
+
+    :param singular: The resolved singular record noun (explicit or
+        ``display_name`` fallback).
+    :return: The pluralised noun under the consonant-``y`` / sibilant / ``+s``
+        rules (including vowel-``y`` → ``+s``, e.g. ``key`` → ``keys``).
+    """
+    head, sep, word = singular.rpartition(" ")
+    if not word:
+        return singular
+    lower = word.lower()
+    # Slice is empty when the word is shorter than two characters.
+    penult = lower[-2:-1]
+    if lower.endswith("y") and penult and penult not in _VOWELS:
+        plural_word = f"{word[:-1]}ies"
+    elif lower.endswith(("s", "x", "z", "ch", "sh")):
+        plural_word = f"{word}es"
+    else:
+        plural_word = f"{word}s"
+    return f"{head}{sep}{plural_word}"
+
 
 def _fill_item_display_names(data: Any) -> Any:
-    """Fill either unset record name from the payload's own ``display_name``.
+    """Fill unset record names: singular from ``display_name``, plural from singular.
 
     Backs the ``mode="before"`` validator on :class:`AppEntitySchema` and
     :class:`AppSchema` so both fields can be declared bare and required while
-    staying optional for the author. Each key defaults independently: supplying
-    the singular never derives the plural, or the reverse.
+    staying optional for the author. The singular falls back to
+    ``display_name`` when omitted; the plural falls back to a Django-style
+    pluralisation of that resolved singular. An explicit
+    ``item_display_name_plural`` always wins (irregular override).
 
     :param data: The raw input passed to the model, which Pydantic hands over
         before field validation and therefore does not constrain — anything the
@@ -1569,17 +1601,22 @@ def _fill_item_display_names(data: Any) -> Any:
         validator; input whose ``display_name`` is absent or not a string is
         returned untouched for the same reason, leaving the two record names to
         be reported ``missing`` alongside it.
-    :return: A mapping with either record name filled from ``display_name``, or
-        the input unchanged when both were supplied or nothing could be filled.
+    :return: A mapping with either record name filled, or the input unchanged
+        when both were supplied or nothing could be filled.
     """
     if not isinstance(data, Mapping):
         return data
     display_name = data.get("display_name")
     if not isinstance(display_name, str):
         return data
-    filled = {
-        key: display_name for key in ITEM_DISPLAY_NAME_KEYS if data.get(key) is None
-    }
+    singular = data.get("item_display_name")
+    if singular is None:
+        singular = display_name
+    filled: dict[str, str] = {}
+    if data.get("item_display_name") is None:
+        filled["item_display_name"] = singular
+    if data.get("item_display_name_plural") is None:
+        filled["item_display_name_plural"] = _pluralize_item_display_name(singular)
     return {**data, **filled} if filled else data
 
 
@@ -1600,9 +1637,9 @@ class AppEntitySchema(SchemaBaseModel):
         own ``display_name`` — not the parent app's, and never inferred from
         ``item_display_name_plural``.
     :param item_display_name_plural: What **several** records of this entity are
-        called (for example ``nodes``). An independent declaration under the
-        same mid-sentence convention; nothing derives it from
-        ``item_display_name``. Defaults to this entity's own ``display_name``.
+        called (for example ``nodes``). Same mid-sentence convention. Defaults
+        from the resolved ``item_display_name`` via a Django-style pluraliser;
+        declare explicitly for irregulars or forms the heuristic misses.
     :param description: Optional helper text for this entity. Defaults to
         ``None``.
     :param forms: Form sections for create (and edit when the UI supports it).
@@ -1632,7 +1669,7 @@ class AppEntitySchema(SchemaBaseModel):
     @model_validator(mode="before")
     @classmethod
     def _default_item_display_names(cls, data: Any) -> Any:
-        """Fill both record names from ``display_name`` when the author omits them.
+        """Fill unset record names: singular from ``display_name``, plural from singular.
 
         :param data: The raw input Pydantic passes before field validation.
         :return: The input with either record name filled, or unchanged when both
@@ -1698,9 +1735,10 @@ class AppSchema(SchemaBaseModel):
         model, both record names are required and non-nullable so the generated
         client types them as ``string`` and no consumer needs a fallback.
     :param item_display_name_plural: What **several** of those records are
-        called (for example ``backups``). An independent declaration under the
-        same mid-sentence convention; nothing derives it from
-        ``item_display_name``. Defaults to ``display_name``.
+        called (for example ``backups``). Same mid-sentence convention.
+        Defaults from the resolved ``item_display_name`` via a Django-style
+        pluraliser; declare explicitly for irregulars or forms the heuristic
+        misses.
     :param description: Optional helper text describing the plugin's
         purpose. Defaults to ``None``.
     :param task_type: Optional task-type identifier used when creating tasks
@@ -1768,7 +1806,7 @@ class AppSchema(SchemaBaseModel):
     @model_validator(mode="before")
     @classmethod
     def _default_item_display_names(cls, data: Any) -> Any:
-        """Fill both record names from ``display_name`` when the author omits them.
+        """Fill unset record names: singular from ``display_name``, plural from singular.
 
         :param data: The raw input Pydantic passes before field validation.
         :return: The input with either record name filled, or unchanged when both
