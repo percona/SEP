@@ -599,6 +599,6 @@ class TestRecordDisplayNames:
     async def test_static_schema_record_names_default_when_omitted(
         self, source: ScriptSource
     ) -> None:
-        """Leave singular as ``display_name`` and derive the plural when neither is passed."""
+        """Leave both app-level nouns as ``display_name`` when the caller passes neither."""
         assert source.static_schema.item_display_name == "Test Kit"
-        assert source.static_schema.item_display_name_plural == "Test Kits"
+        assert source.static_schema.item_display_name_plural == "Test Kit"

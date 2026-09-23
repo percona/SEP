@@ -2837,7 +2837,7 @@ class TestAppSchemaRecordDisplayNames:
     """Cover the singular/plural record names carried beside ``display_name``."""
 
     def test_both_record_names_default_when_omitted(self) -> None:
-        """Fall back singular to ``display_name``; derive plural from that singular."""
+        """Fall back both record names to ``display_name`` when neither is supplied."""
         schema = AppSchema(
             name="minimal",
             display_name="MySQL Backups",
@@ -2845,7 +2845,7 @@ class TestAppSchemaRecordDisplayNames:
         )
 
         assert schema.item_display_name == "MySQL Backups"
-        assert schema.item_display_name_plural == "MySQL Backupses"
+        assert schema.item_display_name_plural == "MySQL Backups"
 
     def test_supplying_the_singular_derives_the_plural(self) -> None:
         """Default the plural from the resolved singular when it is omitted."""
@@ -2938,14 +2938,14 @@ class TestAppSchemaRecordDisplayNames:
         schema = AppSchema.model_validate(payload)
 
         assert schema.item_display_name == "MySQL Backups"
-        assert schema.item_display_name_plural == "MySQL Backupses"
+        assert schema.item_display_name_plural == "MySQL Backups"
 
     def test_entity_record_names_default_from_the_entity_display_name(self) -> None:
-        """Default an entity's singular from its ``display_name``; derive the plural."""
+        """Default both entity record names from its own ``display_name`` when omitted."""
         entity = _minimal_entity_schema()
 
         assert entity.item_display_name == "Things"
-        assert entity.item_display_name_plural == "Thingses"
+        assert entity.item_display_name_plural == "Things"
 
     def test_entity_record_names_are_independent_of_the_parent(self) -> None:
         """Keep an entity's declared record names distinct from the app's."""
