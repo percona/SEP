@@ -30,9 +30,9 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
+import aiohttp
 import pytest
-from fastapi import APIRouter, FastAPI, HTTPException, status
-from fastapi.testclient import TestClient
+from fastapi import HTTPException, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.deps import minimum_role_for
@@ -45,28 +45,25 @@ from app.sep.apps.om_bootstrap.api_routes import (
     finish_run,
     trigger_run,
 )
-from app.sep.apps.om_bootstrap.app import app as om_bootstrap_app
 from app.sep.apps.om_bootstrap.crud import BootstrapRunManager
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 from app.sep.apps.om_bootstrap.persistence import dump_host_states
 from app.sep.apps.om_bootstrap.strategy import (
     HostBootstrapState,
-    InstallMethod,
-    OperatingSystem,
     StepRecord,
     StepStatus,
 )
-from app.sep.deps import get_current_user, get_session, IsApiAuthenticated
+from tests.app.sep.apps.om_bootstrap.conftest import api_client, BASE
+from tests.app.sep.apps.om_bootstrap.factories import BootstrapRunFactory
 
-_BASE = "/api/apps/om_bootstrap"
 FAKE_TASK_HISTORY_ID = 7
 
 
 def _fake_tasks_api() -> MagicMock:
     """Build a stand-in Tasks API client whose ``.auth()`` is a real context manager.
 
-    ``_tasks_api_client`` is patched to return this rather than left to
-    auto-mock: a bare ``AsyncMock``'s attributes default to ``MagicMock``,
+    Injected through ``get_tasks_client``'s dependency override rather than left
+    to auto-mock: a bare ``AsyncMock``'s attributes default to ``MagicMock``,
     whose ``.auth(token)`` call is fine, but the production code's
     ``with tasks_api.auth(...):`` needs that return value to actually support
     the context-manager protocol, which a default ``MagicMock`` return value
@@ -76,21 +73,6 @@ def _fake_tasks_api() -> MagicMock:
     client = MagicMock()
     client.auth.return_value = nullcontext()
     return client
-
-
-def _client(user: CasdoorUser, session: AsyncSession) -> TestClient:
-    """Mount the app's API router behind the production auth guard, real session."""
-    apps_router = APIRouter(prefix="/apps")
-    apps_router.include_router(
-        om_bootstrap_app.api_router, prefix=om_bootstrap_app.uri_path
-    )
-    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(apps_router)
-    fastapi_app = FastAPI()
-    fastapi_app.include_router(api_router)
-    fastapi_app.dependency_overrides[get_current_user] = lambda: user
-    fastapi_app.dependency_overrides[get_session] = lambda: session
-    return TestClient(fastapi_app, raise_server_exceptions=False)
 
 
 class TestAdminGateIsRegistered:
@@ -103,7 +85,7 @@ class TestAdminGateIsRegistered:
     """
 
     def test_trigger_run_requires_admin(self) -> None:
-        """Creating a run is root-adjacent enough that Adamo scoped it to admins."""
+        """Creating a run is root-adjacent enough to be scoped to admins."""
         assert minimum_role_for_endpoint(trigger_run) == UserRole.ADMIN
 
     def test_dispatch_run_step_requires_admin(self) -> None:
@@ -145,10 +127,10 @@ class TestTriggerRun:
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """Every requested host gets its strategy's full step list, all pending."""
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs",
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs",
             json={
-                "hosts": ["node00", "node01"],
+                "hosts": ["node00", "node01", "node02"],
                 "install_method": "packages",
                 "os": "ubuntu",
                 "mongodb_version": "8.0",
@@ -158,7 +140,11 @@ class TestTriggerRun:
 
         assert response.status_code == status.HTTP_201_CREATED
         body = response.json()
-        assert {host["host"] for host in body["hosts"]} == {"node00", "node01"}
+        assert {host["host"] for host in body["hosts"]} == {
+            "node00",
+            "node01",
+            "node02",
+        }
         for host in body["hosts"]:
             assert host["steps"]
             assert all(step["status"] == "pending" for step in host["steps"])
@@ -167,8 +153,8 @@ class TestTriggerRun:
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """A run over no hosts is a request error, not a run that does nothing."""
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs",
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs",
             json={
                 "hosts": [],
                 "install_method": "packages",
@@ -184,8 +170,8 @@ class TestTriggerRun:
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """A duplicated host would plan two states no dispatch route could ever tell apart."""
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs",
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs",
             json={
                 "hosts": ["node00", "node00"],
                 "install_method": "packages",
@@ -201,8 +187,8 @@ class TestTriggerRun:
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """DOCKER/PODMAN are declared on the enum for later -- not implemented yet."""
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs",
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs",
             json={
                 "hosts": ["node00"],
                 "install_method": "docker",
@@ -215,6 +201,80 @@ class TestTriggerRun:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
 
+class TestTriggerRunValidation:
+    """Assert POST /runs rejects hosts, versions and names outside the accepted shapes."""
+
+    @staticmethod
+    def _payload(**overrides: object) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "hosts": ["node00"],
+            "install_method": "packages",
+            "os": "ubuntu",
+            "mongodb_version": "8.0",
+            "replica_set_name": "rs-test",
+        }
+        payload.update(overrides)
+        return payload
+
+    @pytest.mark.parametrize("host_count", [2, 4])
+    def test_rejects_a_host_count_other_than_one_or_three(
+        self, regular_user: CasdoorUser, session: AsyncSession, host_count: int
+    ) -> None:
+        """Only one-member and three-member replica sets are in scope."""
+        hosts = [f"node0{index}" for index in range(host_count)]
+
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs", json=self._payload(hosts=hosts)
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @pytest.mark.parametrize(
+        "host", ["node00;reboot", "../etc", "-node", "node 00", "", "a" * 254]
+    )
+    def test_rejects_a_host_that_is_not_a_node_name(
+        self, regular_user: CasdoorUser, session: AsyncSession, host: str
+    ) -> None:
+        """A host becomes a script filename and a dispatch target, so it is validated."""
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs", json=self._payload(hosts=[host])
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.parametrize("version", ["8", "8.0;id", "latest", "8.0.4.1", ""])
+    def test_rejects_a_malformed_mongodb_version(
+        self, regular_user: CasdoorUser, session: AsyncSession, version: str
+    ) -> None:
+        """The version selects a repository channel and must be major.minor[.patch]."""
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs", json=self._payload(mongodb_version=version)
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.parametrize("name", ["rs\nnet: {}", "rs test", "", "r" * 65])
+    def test_rejects_a_malformed_replica_set_name(
+        self, regular_user: CasdoorUser, session: AsyncSession, name: str
+    ) -> None:
+        """The name is written into mongod.conf, so YAML-breaking input is refused."""
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs", json=self._payload(replica_set_name=name)
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    def test_accepts_a_full_patch_version(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """major.minor.patch is as valid as major.minor."""
+        response = api_client(regular_user, session).post(
+            f"{BASE}/runs", json=self._payload(mongodb_version="7.0.14")
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
+
 class TestListBootstrapRuns:
     """Assert GET /runs discovers runs by status, newest first."""
 
@@ -223,12 +283,8 @@ class TestListBootstrapRuns:
     ) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
+            BootstrapRunFactory.build(
                 status=run_status,
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
             ),
         )
 
@@ -240,7 +296,9 @@ class TestListBootstrapRuns:
         running = await self._seed_run(session, BootstrapRunStatus.RUNNING)
         await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
-        response = _client(regular_user, session).get(f"{_BASE}/runs?status=running")
+        response = api_client(regular_user, session, _fake_tasks_api()).get(
+            f"{BASE}/runs?status=running"
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -254,7 +312,9 @@ class TestListBootstrapRuns:
         first = await self._seed_run(session, BootstrapRunStatus.RUNNING)
         second = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
-        response = _client(regular_user, session).get(f"{_BASE}/runs")
+        response = api_client(regular_user, session, _fake_tasks_api()).get(
+            f"{BASE}/runs"
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -267,11 +327,7 @@ class TestGetBootstrapRun:
     async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(
                     [
                         HostBootstrapState(
@@ -294,7 +350,9 @@ class TestGetBootstrapRun:
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """A run id nobody created is a 404, not a 500 or an empty 200."""
-        response = _client(regular_user, session).get(f"{_BASE}/runs/{uuid4()}")
+        response = api_client(regular_user, session, _fake_tasks_api()).get(
+            f"{BASE}/runs/{uuid4()}"
+        )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -322,14 +380,12 @@ class TestGetBootstrapRun:
 
         with (
             patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
-            patch(
                 "app.sep.apps.om_bootstrap.api_routes.reconcile_run", _fake_reconcile
             ),
         ):
-            response = _client(regular_user, session).get(f"{_BASE}/runs/{run.id}")
+            response = api_client(regular_user, session, _fake_tasks_api()).get(
+                f"{BASE}/runs/{run.id}"
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["hosts"][0]["steps"][0]["status"] == "succeeded"
@@ -341,11 +397,7 @@ class TestDispatchRunStep:
     async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(
                     [
                         HostBootstrapState(
@@ -373,16 +425,12 @@ class TestDispatchRunStep:
 
         with (
             patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
-            patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
             )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -400,16 +448,12 @@ class TestDispatchRunStep:
         Without this, a step the Tasks API never even accepts (an unknown or
         unreachable executor target, most concretely) stays PENDING forever:
         nothing ever transitions it, so the stepper's own retry-then-rollback
-        policy (Q8) never engages, and every tick looks identical to the very
+        policy never engages, and every tick looks identical to the very
         first attempt.
         """
         run = await self._seed_run(session)
 
         with (
-            patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
             patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(
@@ -419,8 +463,8 @@ class TestDispatchRunStep:
                 ),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
             )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -432,6 +476,38 @@ class TestDispatchRunStep:
         assert step["task_history_id"] is None
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error",
+        [
+            aiohttp.ClientConnectionError("Cannot connect to host tasks:8443"),
+            TimeoutError(),
+            PermissionError("scratch directory is not writable"),
+        ],
+    )
+    async def test_records_a_dispatch_that_never_reaches_the_tasks_api(
+        self, regular_user: CasdoorUser, session: AsyncSession, error: Exception
+    ) -> None:
+        """A transport failure or a failed script write is a FAILED attempt, not a 5xx."""
+        run = await self._seed_run(session)
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+            AsyncMock(side_effect=error),
+        ):
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        step = next(
+            s for s in response.json()["hosts"][0]["steps"] if s["name"] == "pre_check"
+        )
+        assert step["status"] == "failed"
+        assert step["attempt_count"] == 1
+        assert step["detail"].startswith("Failed to dispatch: ")
+        assert step["task_history_id"] is None
+
+    @pytest.mark.asyncio
     async def test_records_a_dispatch_the_tasks_api_accepts_without_an_id(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
@@ -439,10 +515,6 @@ class TestDispatchRunStep:
         run = await self._seed_run(session)
 
         with (
-            patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
             patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(
@@ -452,8 +524,8 @@ class TestDispatchRunStep:
                 ),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
             )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -470,8 +542,8 @@ class TestDispatchRunStep:
         """A host that isn't part of the run cannot have a step dispatched on it."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/hosts/no-such-host/steps/pre_check:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/hosts/no-such-host/steps/pre_check:dispatch"
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -483,8 +555,8 @@ class TestDispatchRunStep:
         """A step name outside the host's own planned list is rejected, not silently run."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/hosts/node00/steps/rs_initiate:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/hosts/node00/steps/rs_initiate:dispatch"
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -496,31 +568,97 @@ class TestDispatchRunStep:
         """Dispatching a step that's already in flight is a conflict, not a double-dispatch."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/hosts/node00/steps/configure_repository:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/hosts/node00/steps/configure_repository:dispatch"
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("step_status", [StepStatus.SUCCEEDED, StepStatus.SKIPPED])
+    async def test_409s_for_a_step_already_done(
+        self, regular_user: CasdoorUser, session: AsyncSession, step_status: StepStatus
+    ) -> None:
+        """A succeeded or skipped step is never re-run on the host."""
+        run = await BootstrapRunManager.save(
+            session,
+            BootstrapRunFactory.build(
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[StepRecord(name="pre_check", status=step_status)],
+                        )
+                    ]
+                ),
+            ),
+        )
+        dispatch_step_mock = AsyncMock(return_value=FAKE_TASK_HISTORY_ID)
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes.dispatch_step", dispatch_step_mock
+        ):
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        dispatch_step_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_retries_a_failed_step(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A failed step is dispatchable again -- that is how the stepper retries."""
+        prior_attempts = 1
+        run = await BootstrapRunManager.save(
+            session,
+            BootstrapRunFactory.build(
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[
+                                StepRecord(
+                                    name="pre_check",
+                                    status=StepStatus.FAILED,
+                                    attempt_count=prior_attempts,
+                                )
+                            ],
+                        )
+                    ]
+                ),
+            ),
+        )
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+            AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+        ):
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            )
+
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        step = response.json()["hosts"][0]["steps"][0]
+        assert step["status"] == "running"
+        assert step["attempt_count"] == prior_attempts + 1
+
+    @pytest.mark.asyncio
     async def test_increments_attempt_count_on_each_dispatch(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A retried step's attempt_count grows -- PMM's stepper reads this for Q8."""
+        """A dispatched step's attempt_count grows -- PMM's stepper reads it to cap retries."""
         run = await self._seed_run(session)
 
         with (
-            patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
             patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
             )
 
         step = next(
@@ -538,10 +676,6 @@ class TestDispatchRunStep:
 
         with (
             patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
-            patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
             ),
@@ -550,8 +684,8 @@ class TestDispatchRunStep:
                 return_value=MagicMock(build_step=build_step),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch",
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch",
                 json={"params": {"key_file_content": "secret-bytes"}},
             )
 
@@ -571,8 +705,8 @@ class TestDispatchRunStep:
             "app.sep.apps.om_bootstrap.api_routes.strategy_for",
             return_value=MagicMock(build_step=build_step),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/steps/pre_check:dispatch"
             )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -584,11 +718,7 @@ class TestDispatchRunRunStep:
     async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(
                     [
                         HostBootstrapState(
@@ -621,15 +751,11 @@ class TestDispatchRunRunStep:
 
         with (
             patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
-            patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step", dispatch_step_mock
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
             )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -644,8 +770,8 @@ class TestDispatchRunRunStep:
         """A run-level name outside the run's own planned list is rejected."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/run-steps/create_pmm_monitoring_user:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/run-steps/create_pmm_monitoring_user:dispatch"
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -657,11 +783,7 @@ class TestDispatchRunRunStep:
         """A run-level step already dispatching cannot be dispatched again."""
         run = await BootstrapRunManager.save(
             session,
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(
                     [
                         HostBootstrapState(
@@ -680,8 +802,8 @@ class TestDispatchRunRunStep:
             ),
         )
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/run-steps/rs_initiate:dispatch"
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -693,11 +815,7 @@ class TestDispatchRollbackStep:
     async def _seed_run(self, session: AsyncSession) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
+            BootstrapRunFactory.build(
                 hosts=dump_host_states(
                     [
                         HostBootstrapState(
@@ -723,16 +841,12 @@ class TestDispatchRollbackStep:
 
         with (
             patch(
-                "app.sep.apps.om_bootstrap.api_routes._tasks_api_client",
-                AsyncMock(return_value=_fake_tasks_api()),
-            ),
-            patch(
                 "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
                 AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
             ),
         ):
-            response = _client(regular_user, session).post(
-                f"{_BASE}/runs/{run.id}/hosts/node00/rollback/stop_service:dispatch"
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}/hosts/node00/rollback/stop_service:dispatch"
             )
 
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -746,8 +860,8 @@ class TestDispatchRollbackStep:
         """A forward step name is not a rollback step name."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}/hosts/node00/rollback/install_package:dispatch"
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}/hosts/node00/rollback/install_package:dispatch"
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -763,12 +877,8 @@ class TestFinishRun:
     ) -> BootstrapRun:
         return await BootstrapRunManager.save(
             session,
-            BootstrapRun(
+            BootstrapRunFactory.build(
                 status=run_status,
-                install_method=InstallMethod.PACKAGES,
-                os=OperatingSystem.UBUNTU,
-                mongodb_version="8.0",
-                replica_set_name="rs-test",
             ),
         )
 
@@ -779,8 +889,8 @@ class TestFinishRun:
         """The stepper declaring retries exhausted lands as FAILED, with its reason."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}:finish",
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}:finish",
             json={"status": "failed", "error": "node00 exhausted retries"},
         )
 
@@ -791,14 +901,31 @@ class TestFinishRun:
         assert body["finished_at"] is not None
 
     @pytest.mark.asyncio
+    async def test_sweeps_the_runs_step_scripts(
+        self, regular_user: CasdoorUser, session: AsyncSession
+    ) -> None:
+        """A finished run's scripts are removed, whatever state their steps were in."""
+        run = await self._seed_run(session)
+
+        with patch(
+            "app.sep.apps.om_bootstrap.api_routes.cleanup_run_scripts"
+        ) as cleanup:
+            response = api_client(regular_user, session, _fake_tasks_api()).post(
+                f"{BASE}/runs/{run.id}:finish", json={"status": "rolled_back"}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        cleanup.assert_called_once_with(str(run.id))
+
+    @pytest.mark.asyncio
     async def test_rejects_succeeded_as_a_requested_status(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
         """SUCCEEDED is inferred by reconciliation, never requested through this route."""
         run = await self._seed_run(session)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}:finish", json={"status": "succeeded"}
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}:finish", json={"status": "succeeded"}
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -810,8 +937,72 @@ class TestFinishRun:
         """A run already FAILED/ROLLED_BACK/SUCCEEDED cannot be finished twice."""
         run = await self._seed_run(session, BootstrapRunStatus.SUCCEEDED)
 
-        response = _client(regular_user, session).post(
-            f"{_BASE}/runs/{run.id}:finish", json={"status": "rolled_back"}
+        response = api_client(regular_user, session, _fake_tasks_api()).post(
+            f"{BASE}/runs/{run.id}:finish", json={"status": "rolled_back"}
         )
 
         assert response.status_code == status.HTTP_409_CONFLICT
+
+
+class TestWritingRoutesLockTheRun:
+    """Assert every route that writes a run back reads it under the row lock."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method", "path", "body"),
+        [
+            ("get", "", None),
+            ("post", "/hosts/node00/steps/pre_check:dispatch", None),
+            ("post", "/hosts/node00/rollback/stop_service:dispatch", None),
+            ("post", "/run-steps/rs_initiate:dispatch", None),
+            ("post", ":finish", {"status": "failed"}),
+        ],
+    )
+    async def test_reads_the_run_for_update(
+        self,
+        regular_user: CasdoorUser,
+        session: AsyncSession,
+        method: str,
+        path: str,
+        body: dict[str, str] | None,
+    ) -> None:
+        """Without the lock, two concurrent writes race and the later save wins."""
+        run = await BootstrapRunManager.save(
+            session,
+            BootstrapRunFactory.build(
+                hosts=dump_host_states(
+                    [
+                        HostBootstrapState(
+                            host="node00",
+                            steps=[StepRecord(name="pre_check")],
+                            rollback_steps=[StepRecord(name="stop_service")],
+                        )
+                    ]
+                ),
+                run_steps=[
+                    {"name": "rs_initiate", "status": "pending", "attempt_count": 0}
+                ],
+            ),
+        )
+        get_run = AsyncMock(return_value=run)
+
+        with (
+            patch.object(BootstrapRunManager, "get_run", get_run),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
+                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
+            ),
+            patch(
+                "app.sep.apps.om_bootstrap.api_routes.reconcile_run",
+                AsyncMock(return_value=False),
+            ),
+        ):
+            client = api_client(regular_user, session, _fake_tasks_api())
+            url = f"{BASE}/runs/{run.id}{path}"
+            response = (
+                client.get(url) if method == "get" else client.post(url, json=body)
+            )
+
+        assert response.status_code < status.HTTP_300_MULTIPLE_CHOICES
+        assert get_run.await_args is not None
+        assert get_run.await_args.kwargs == {"for_update": True}

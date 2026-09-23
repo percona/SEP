@@ -26,10 +26,11 @@ design), so the manager's generic ``save``/``update`` need no override.
 
 from uuid import UUID
 
-from sqlmodel import col
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.crud import BaseSQLModelManager
+from app.core.exceptions import HTTPNotFoundException
 from app.sep.apps.om_bootstrap.models import BootstrapRun, BootstrapRunStatus
 
 __all__ = ["BootstrapRunManager"]
@@ -49,15 +50,36 @@ class BootstrapRunManager(BaseSQLModelManager):
     Model = BootstrapRun
 
     @classmethod
-    async def get_run(cls, session: AsyncSession, run_id: UUID) -> BootstrapRun:
+    async def get_run(
+        cls, session: AsyncSession, run_id: UUID, *, for_update: bool = False
+    ) -> BootstrapRun:
         """Return one run, or 404.
+
+        With ``for_update`` the row is locked (``SELECT ... FOR UPDATE``) until
+        the session's transaction ends -- the caller's :meth:`save` commits it,
+        and closing the session without saving rolls it back. Every route that
+        writes a run back takes this lock, so two concurrent requests against
+        the same run serialise instead of the later commit overwriting the
+        earlier one's ``hosts``/``run_steps`` document. ``populate_existing``
+        makes the locked read replace any copy of the row the session already
+        holds, so the caller works from what the lock actually protects. On
+        SQLite the clause is a no-op (writes already serialise at the database
+        level).
 
         :param session: The database session.
         :param run_id: The run's id.
+        :param for_update: Whether to lock the row for the rest of the
+            transaction.
         :raises HTTPNotFoundException: When there is no such run.
         :return: The run.
         """
-        return await cls.get_or_404(session, id=run_id)
+        query = select(BootstrapRun).where(col(BootstrapRun.id) == run_id)
+        if for_update:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        run = (await cls._exec(session, query)).first()
+        if run is None:
+            raise HTTPNotFoundException(detail=f"Run {run_id} not found")
+        return run
 
     @classmethod
     async def list_runs(
@@ -65,15 +87,16 @@ class BootstrapRunManager(BaseSQLModelManager):
         session: AsyncSession,
         *,
         status: BootstrapRunStatus | None = None,
+        # pagination-ok: bounded by `limit` (capped at 100 by the route) and by
+        # the number of concurrently in-flight bootstrap runs.
         limit: int = 100,
     ) -> list[BootstrapRun]:
         """Return runs, newest first, optionally narrowed to one status.
 
-        The intended caller is PMM's HA-leader-only stepper (PMM-15347/plan.md
-        §4 item 9): on every tick, and especially right after a leader
-        failover, it needs to discover every run still in flight by reading
-        this API rather than from any state of its own -- ``status=RUNNING`` is
-        exactly that query.
+        The intended caller is PMM's HA-leader-only stepper: on every tick, and
+        especially right after a leader failover, it needs to discover every
+        run still in flight by reading this API rather than from any state of
+        its own -- ``status=RUNNING`` is exactly that query.
 
         :param session: The database session.
         :param status: Restrict to runs in this status. ``None`` for any status.
