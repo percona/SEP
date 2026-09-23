@@ -836,15 +836,11 @@ class TestDispatchRollbackStep:
     async def test_dispatches_a_pending_rollback_step(
         self, regular_user: CasdoorUser, session: AsyncSession
     ) -> None:
-        """A pending rollback step is dispatched and marked running."""
+        """A pending rollback step is dispatched, scoped to its run, and marked running."""
         run = await self._seed_run(session)
+        dispatch = AsyncMock(return_value=FAKE_TASK_HISTORY_ID)
 
-        with (
-            patch(
-                "app.sep.apps.om_bootstrap.api_routes.dispatch_step",
-                AsyncMock(return_value=FAKE_TASK_HISTORY_ID),
-            ),
-        ):
+        with patch("app.sep.apps.om_bootstrap.api_routes.dispatch_step", dispatch):
             response = api_client(regular_user, session, _fake_tasks_api()).post(
                 f"{BASE}/runs/{run.id}/hosts/node00/rollback/stop_service:dispatch"
             )
@@ -852,6 +848,8 @@ class TestDispatchRollbackStep:
         assert response.status_code == status.HTTP_202_ACCEPTED
         rollback_step = response.json()["hosts"][0]["rollback_steps"][0]
         assert rollback_step["status"] == "running"
+        action = dispatch.await_args.args[-1]
+        assert f"= {run.id} ] || exit 0" in action.command[2]
 
     @pytest.mark.asyncio
     async def test_404s_for_an_unplanned_rollback_step(

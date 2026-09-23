@@ -31,11 +31,14 @@ The mongod port is never a field anywhere in this module: every step (and
 default, 27017 -- ``mongod.conf`` here never sets ``net.port``. Making the port
 configurable is future scope, alongside TLS and per-member voting.
 
-Rollback never touches a MongoDB this module did not install: ``pre_check``
+Rollback never touches a MongoDB this run did not install: ``pre_check``
 refuses a host that already has one (:data:`CONFIG_PATH`, a non-empty
-:data:`DATA_PATH`, or ``mongod`` on ``PATH``), ``install_package`` then plants
-:data:`OWNERSHIP_MARKER_PATH` before installing anything, and every rollback
-step is a no-op on a host without that marker.
+:data:`DATA_PATH`, or ``mongod`` on ``PATH``), ``install_package`` then writes
+this run's id to :data:`OWNERSHIP_MARKER_PATH` before installing anything, and
+every rollback step is a no-op on a host whose marker does not hold this run's
+id. The marker outlives a successful run, so a later run that fails
+``pre_check`` on the same host and rolls back leaves the earlier run's MongoDB
+intact.
 """
 
 import base64
@@ -60,10 +63,11 @@ DATA_PATH = "/var/lib/mongo"
 #: Where the packaged mongod's own config file lives on both supported OSes.
 CONFIG_PATH = "/etc/mongod.conf"
 
-#: Planted by ``install_package`` once ``pre_check`` has proven the host had no
-#: MongoDB of its own. Every rollback step checks for it first, so rolling back
-#: a host this strategy never installed on removes nothing; ``remove_data``,
-#: the last rollback step, deletes it.
+#: Written by ``install_package``, holding the run's id, once ``pre_check`` has
+#: proven the host had no MongoDB of its own. Every rollback step first checks
+#: that it holds its own run's id, so rolling back a host this run never
+#: installed on removes nothing; ``remove_data``, the last rollback step,
+#: deletes it.
 OWNERSHIP_MARKER_PATH = "/etc/mongod.om-bootstrap"
 
 #: Matches the packaged ``mongod.service``'s own ``PIDFile=`` on both supported
@@ -180,13 +184,30 @@ def _mongosh_file(js: str) -> StepAction:
     return StepAction(command=["sh", "-c", body], timeout_s=60)
 
 
-def _owned_only(body: str) -> str:
-    """Prefix a rollback body so it does nothing on a host this strategy never installed.
+def _require_run_id(spec: BootstrapSpec, step_name: str) -> str:
+    """Return ``spec.run_id`` as a string, for a step scoped to its run.
+
+    :param spec: The host's bootstrap spec.
+    :param step_name: The step being built, for the error message.
+    :return: The run id.
+    :raises ValueError: If ``spec.run_id`` is ``None``.
+    """
+    if spec.run_id is None:
+        raise ValueError(f"{step_name} requires spec.run_id")
+    return str(spec.run_id)
+
+
+def _owned_only(body: str, run_id: str) -> str:
+    """Prefix a rollback body so it does nothing on a host this run never installed.
 
     :param body: The rollback step's shell body.
-    :return: ``body``, run only when :data:`OWNERSHIP_MARKER_PATH` exists.
+    :param run_id: The run the rollback belongs to.
+    :return: ``body``, run only when :data:`OWNERSHIP_MARKER_PATH` holds ``run_id``.
     """
-    return f"[ -e {OWNERSHIP_MARKER_PATH} ] || exit 0\n{body}\n"
+    return (
+        f'[ "$(cat {OWNERSHIP_MARKER_PATH} 2>/dev/null)" = {shlex.quote(run_id)} ] '
+        f"|| exit 0\n{body}\n"
+    )
 
 
 class PackagesInstallStrategy:
@@ -234,8 +255,9 @@ class PackagesInstallStrategy:
             ignored by every other step.
         :return: What the execution layer needs to run this step.
         :raises ValueError: If ``step_name`` is not one of :meth:`plan_steps`'
-            names, ``spec.os`` is not a supported :class:`OperatingSystem`, or
-            ``distribute_keyfile`` is built without ``params["key_file_content"]``.
+            names, ``spec.os`` is not a supported :class:`OperatingSystem`,
+            ``distribute_keyfile`` is built without ``params["key_file_content"]``,
+            or ``install_package`` is built without ``spec.run_id``.
         """
         del host  # Unused by every step below today -- see the docstring.
         builders = {
@@ -305,8 +327,9 @@ class PackagesInstallStrategy:
         - **Path**: no MongoDB already lives on the host — no ``mongod`` on
           ``PATH``, no :data:`CONFIG_PATH`, and :data:`DATA_PATH` absent or
           empty. This is also what makes rollback safe: ``install_package``
-          claims the host with :data:`OWNERSHIP_MARKER_PATH` only after this
-          passed, and rollback removes nothing without that marker.
+          claims the host for its run with :data:`OWNERSHIP_MARKER_PATH` only
+          after this passed, and rollback removes nothing unless that marker
+          holds its own run's id.
         - **Disk space**: at least :data:`MIN_DATA_DISK_BYTES` free where
           :data:`DATA_PATH` will live (its filesystem if it exists, ``/``
           otherwise).
@@ -358,22 +381,26 @@ class PackagesInstallStrategy:
         return StepAction(command=["sh", "-c", command], timeout_s=120)
 
     def _install_package(self, spec: BootstrapSpec) -> StepAction:
-        """Claim the host with the ownership marker, then install ``percona-server-mongodb``.
+        """Claim the host for this run, then install ``percona-server-mongodb``.
 
-        The marker goes first so a rollback of a half-finished install still
-        cleans up. It is only ever planted after ``pre_check`` proved the host
-        had no MongoDB of its own — see the module docstring.
+        The marker, holding the run's id, goes first so a rollback of a
+        half-finished install still cleans up. It is only ever written after
+        ``pre_check`` proved the host had no MongoDB of its own — see the module
+        docstring.
 
-        :param spec: The host's bootstrap spec; only its OS is read.
+        :param spec: The host's bootstrap spec; its OS and run id are read.
         :return: The step action.
+        :raises ValueError: If ``spec.run_id`` is ``None``.
         """
+        run_id = _require_run_id(spec, "install_package")
         pkg_manager = self._require_package_manager(spec.os)
         install = "apt-get install -y" if pkg_manager == "apt-get" else "dnf install -y"
         return StepAction(
             command=[
                 "sh",
                 "-c",
-                f"touch {OWNERSHIP_MARKER_PATH}\n{install} percona-server-mongodb",
+                f"printf '%s\\n' {shlex.quote(run_id)} > {OWNERSHIP_MARKER_PATH}\n"
+                f"{install} percona-server-mongodb",
             ],
             timeout_s=300,
         )
@@ -548,8 +575,8 @@ class PackagesInstallStrategy:
         anything else on the host that depends on it, well outside this run's
         blast radius.
 
-        Every step is a no-op on a host without :data:`OWNERSHIP_MARKER_PATH`
-        — see the module docstring.
+        Every step is a no-op on a host whose :data:`OWNERSHIP_MARKER_PATH`
+        does not hold this run's id — see the module docstring.
 
         :param spec: The host's bootstrap spec.
         :return: Step names, in the order rollback applies them.
@@ -574,8 +601,8 @@ class PackagesInstallStrategy:
         :param spec: The host's bootstrap spec.
         :return: What the execution layer needs to run this step.
         :raises ValueError: If ``step_name`` is not one of
-            :meth:`plan_rollback_steps`' names, or ``spec.os`` is not a supported
-            :class:`OperatingSystem`.
+            :meth:`plan_rollback_steps`' names, ``spec.run_id`` is ``None``, or
+            ``spec.os`` is not a supported :class:`OperatingSystem`.
         """
         del host  # See the docstring.
         builders = {
@@ -592,31 +619,43 @@ class PackagesInstallStrategy:
                 f"{step_name!r} is not a PackagesInstallStrategy rollback step; "
                 f"expected one of {list(builders)}"
             ) from None
-        return builder(spec)
+        run_id = _require_run_id(spec, step_name)
+        return builder(spec, run_id)
 
-    def _rollback_stop_service(self, spec: BootstrapSpec) -> StepAction:
-        """Stop and disable ``mongod`` -- tolerant of it never having started."""
+    def _rollback_stop_service(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+        """Stop and disable ``mongod``, tolerant of it never having started.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
         del spec
-        return StepAction(
-            command=["sh", "-c", _owned_only("systemctl disable --now mongod || true")],
-            timeout_s=60,
-        )
+        body = _owned_only("systemctl disable --now mongod || true", run_id)
+        return StepAction(command=["sh", "-c", body], timeout_s=60)
 
-    def _rollback_remove_config(self, spec: BootstrapSpec) -> StepAction:
-        """Remove the config file ``configure_mongod`` wrote."""
+    def _rollback_remove_config(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+        """Remove the config file ``configure_mongod`` wrote.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
         del spec
-        return StepAction(
-            command=["sh", "-c", _owned_only(f"rm -f {CONFIG_PATH}")], timeout_s=30
-        )
+        body = _owned_only(f"rm -f {CONFIG_PATH}", run_id)
+        return StepAction(command=["sh", "-c", body], timeout_s=30)
 
-    def _rollback_remove_keyfile(self, spec: BootstrapSpec) -> StepAction:
-        """Remove the keyFile ``distribute_keyfile`` wrote."""
+    def _rollback_remove_keyfile(self, spec: BootstrapSpec, run_id: str) -> StepAction:
+        """Remove the keyFile ``distribute_keyfile`` wrote.
+
+        :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
+        :return: The step action.
+        """
         del spec
-        return StepAction(
-            command=["sh", "-c", _owned_only(f"rm -f {KEY_FILE_PATH}")], timeout_s=30
-        )
+        body = _owned_only(f"rm -f {KEY_FILE_PATH}", run_id)
+        return StepAction(command=["sh", "-c", body], timeout_s=30)
 
-    def _rollback_purge_package(self, spec: BootstrapSpec) -> StepAction:
+    def _rollback_purge_package(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Purge the ``percona-server-mongodb`` package ``install_package`` installed.
 
         Tolerant of the install itself having failed part-way: the marker is
@@ -625,6 +664,7 @@ class PackagesInstallStrategy:
         package that never landed.
 
         :param spec: The host's bootstrap spec; only its OS is read.
+        :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
         pkg_manager = self._require_package_manager(spec.os)
@@ -633,22 +673,16 @@ class PackagesInstallStrategy:
             if pkg_manager == "apt-get"
             else "dnf remove -y percona-server-mongodb"
         )
-        return StepAction(
-            command=["sh", "-c", _owned_only(f"{remove} || true")], timeout_s=120
-        )
+        body = _owned_only(f"{remove} || true", run_id)
+        return StepAction(command=["sh", "-c", body], timeout_s=120)
 
-    def _rollback_remove_data(self, spec: BootstrapSpec) -> StepAction:
+    def _rollback_remove_data(self, spec: BootstrapSpec, run_id: str) -> StepAction:
         """Remove the data directory, then the ownership marker, as the last rollback step.
 
         :param spec: The host's bootstrap spec. Unused.
+        :param run_id: The run the rollback belongs to.
         :return: The step action.
         """
         del spec
-        return StepAction(
-            command=[
-                "sh",
-                "-c",
-                _owned_only(f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}"),
-            ],
-            timeout_s=60,
-        )
+        body = _owned_only(f"rm -rf {DATA_PATH}\nrm -f {OWNERSHIP_MARKER_PATH}", run_id)
+        return StepAction(command=["sh", "-c", body], timeout_s=60)

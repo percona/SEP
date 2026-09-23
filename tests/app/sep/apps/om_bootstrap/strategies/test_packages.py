@@ -20,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 
@@ -42,13 +43,17 @@ from app.sep.apps.om_bootstrap.strategy import (
 
 SUPPORTED_OSES = [OperatingSystem.UBUNTU, OperatingSystem.ROCKY]
 
+RUN_ID = UUID("11111111-1111-4111-8111-111111111111")
+OTHER_RUN_ID = UUID("22222222-2222-4222-8222-222222222222")
 
-def _spec(os_: OperatingSystem) -> BootstrapSpec:
+
+def _spec(os_: OperatingSystem, run_id: UUID | None = RUN_ID) -> BootstrapSpec:
     return BootstrapSpec(
         install_method=InstallMethod.PACKAGES,
         os=os_,
         mongodb_version="8.0",
         replica_set_name="rs-test",
+        run_id=run_id,
     )
 
 
@@ -198,14 +203,40 @@ class TestBuildStep:
     def test_install_package_claims_the_host_before_installing(
         self, os_: OperatingSystem
     ) -> None:
-        """Claim the host with the ownership marker first, so a half-finished install rolls back."""
+        """Claim the host for this run first, so a half-finished install rolls back."""
         action = PackagesInstallStrategy().build_step(
             "install_package", "node00", _spec(os_)
         )
 
         lines = _body(action.command).splitlines()
-        assert lines[0] == f"touch {OWNERSHIP_MARKER_PATH}"
+        assert lines[0] == f"printf '%s\\n' {RUN_ID} > {OWNERSHIP_MARKER_PATH}"
         assert "percona-server-mongodb" in lines[1]
+
+    def test_install_package_requires_a_run_id(self) -> None:
+        """Refuse to write an ownership marker no run's rollback could match."""
+        with pytest.raises(ValueError, match="install_package requires spec.run_id"):
+            PackagesInstallStrategy().build_step(
+                "install_package", "node00", _spec(OperatingSystem.UBUNTU, None)
+            )
+
+    def test_install_package_writes_the_run_id_to_the_marker(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Leave exactly this run's id in the marker once the shell has run."""
+        marker = tmp_path / "mongod.om-bootstrap"
+        monkeypatch.setattr(packages, "OWNERSHIP_MARKER_PATH", str(marker))
+        action = PackagesInstallStrategy().build_step(
+            "install_package", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        bin_dir = _recording_bin(tmp_path, ["apt-get"])
+
+        subprocess.run(
+            [_SH, "-c", _body(action.command)],
+            env={"PATH": str(bin_dir)},
+            check=True,
+        )
+
+        assert marker.read_text() == f"{RUN_ID}\n"
 
     def test_install_package_uses_dnf_on_rocky(self) -> None:
         """Rocky's package install goes through dnf, not apt-get."""
@@ -420,17 +451,25 @@ class TestBuildRollbackStep:
 
     @pytest.mark.parametrize("os_", SUPPORTED_OSES)
     @pytest.mark.parametrize("step_name", ROLLBACK_STEP_NAMES)
-    def test_every_rollback_step_is_a_no_op_without_the_marker(
+    def test_every_rollback_step_is_scoped_to_its_run(
         self, step_name: str, os_: OperatingSystem
     ) -> None:
-        """Skip every rollback step on a host this strategy never installed on."""
+        """Skip every rollback step unless the marker holds this run's id."""
         action = PackagesInstallStrategy().build_rollback_step(
             step_name, "node00", _spec(os_)
         )
 
         assert _body(action.command).startswith(
-            f"[ -e {OWNERSHIP_MARKER_PATH} ] || exit 0\n"
+            f'[ "$(cat {OWNERSHIP_MARKER_PATH} 2>/dev/null)" = {RUN_ID} ] || exit 0\n'
         )
+
+    @pytest.mark.parametrize("step_name", ROLLBACK_STEP_NAMES)
+    def test_every_rollback_step_requires_a_run_id(self, step_name: str) -> None:
+        """Refuse to build a rollback step that no marker could scope."""
+        with pytest.raises(ValueError, match=f"{step_name} requires spec.run_id"):
+            PackagesInstallStrategy().build_rollback_step(
+                step_name, "node00", _spec(OperatingSystem.UBUNTU, None)
+            )
 
     def test_remove_data_removes_the_marker_last(self) -> None:
         """Remove the marker after everything else, so a retried rollback still runs."""
@@ -468,6 +507,29 @@ class TestBuildRollbackStep:
         )
 
         assert "dnf remove -y percona-server-mongodb" in " ".join(action.command)
+
+
+def _recording_bin(tmp_path: Path, fakes: list[str]) -> Path:
+    """Build a ``PATH`` directory with ``cat``/``rm`` and fakes that log their argv.
+
+    Each fake appends its name and arguments to ``calls.log`` in ``tmp_path``.
+
+    :param tmp_path: The test's scratch directory.
+    :param fakes: The commands to fake.
+    :return: The directory.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("cat", "rm"):
+        real = shutil.which(tool)
+        assert real is not None
+        (bin_dir / tool).symlink_to(real)
+    log = tmp_path / "calls.log"
+    for fake in fakes:
+        path = bin_dir / fake
+        path.write_text(f'#!/bin/sh\necho "{fake} $*" >> {shlex.quote(str(log))}\n')
+        path.chmod(0o755)
+    return bin_dir
 
 
 def _fake_bin(tmp_path: Path, *, with_mongod: bool) -> Path:
@@ -605,34 +667,69 @@ class TestRollbackCommands:
         (data / "WiredTiger").write_text("")
         return config, data, marker
 
-    def _run(self, step_name: str) -> None:
+    def _run(self, tmp_path: Path, step_name: str) -> None:
         action = PackagesInstallStrategy().build_rollback_step(
             step_name, "node00", _spec(OperatingSystem.UBUNTU)
         )
-        subprocess.run([_SH, "-c", _body(action.command)], check=True)
+        bin_dir = tmp_path / "bin"
+        if not bin_dir.exists():
+            _recording_bin(tmp_path, ["systemctl", "apt-get"])
+        subprocess.run(
+            [_SH, "-c", _body(action.command)],
+            env={"PATH": str(bin_dir)},
+            check=True,
+        )
+
+    def _run_all(self, tmp_path: Path) -> list[str]:
+        """Run every rollback step in order and return the faked commands' calls."""
+        for step_name in ROLLBACK_STEP_NAMES:
+            self._run(tmp_path, step_name)
+        log = tmp_path / "calls.log"
+        return log.read_text().splitlines() if log.exists() else []
 
     def test_leaves_a_host_without_the_marker_untouched(
-        self, paths: tuple[Path, Path, Path]
+        self, tmp_path: Path, paths: tuple[Path, Path, Path]
     ) -> None:
         """Leave a MongoDB this strategy never installed intact."""
         config, data, _marker = paths
 
-        self._run("remove_config")
-        self._run("remove_data")
+        calls = self._run_all(tmp_path)
 
+        assert calls == []
         assert config.exists()
         assert (data / "WiredTiger").exists()
 
-    def test_removes_what_it_installed_when_the_marker_exists(
-        self, paths: tuple[Path, Path, Path]
+    def test_leaves_another_runs_install_untouched(
+        self, tmp_path: Path, paths: tuple[Path, Path, Path]
     ) -> None:
-        """Remove the config and data, then the marker, when the marker exists."""
+        """Make every step a no-op when the marker holds a different run's id.
+
+        The host an earlier run bootstrapped keeps its marker; a later run
+        that fails ``pre_check`` there and rolls back must not destroy it.
+        """
         config, data, marker = paths
-        marker.touch()
+        marker.write_text(f"{OTHER_RUN_ID}\n")
 
-        self._run("remove_config")
-        self._run("remove_data")
+        calls = self._run_all(tmp_path)
 
+        assert calls == []
+        assert config.exists()
+        assert (data / "WiredTiger").exists()
+        assert marker.read_text() == f"{OTHER_RUN_ID}\n"
+
+    def test_removes_what_it_installed_when_the_marker_holds_its_run(
+        self, tmp_path: Path, paths: tuple[Path, Path, Path]
+    ) -> None:
+        """Stop, purge, and remove everything, then the marker, for this run."""
+        config, data, marker = paths
+        marker.write_text(f"{RUN_ID}\n")
+
+        calls = self._run_all(tmp_path)
+
+        assert calls == [
+            "systemctl disable --now mongod",
+            "apt-get remove -y --purge percona-server-mongodb",
+        ]
         assert not config.exists()
         assert not data.exists()
         assert not marker.exists()

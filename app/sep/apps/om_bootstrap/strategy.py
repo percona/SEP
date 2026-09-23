@@ -41,6 +41,7 @@ strategies would each have to fit themselves into.
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -104,12 +105,16 @@ class BootstrapSpec(BaseModel):
         run-level step and multi-host orchestration is PMM's stepper's job, not a
         single host's — this field is what one host's own config file needs to
         name.
+    :param run_id: The bootstrap run dispatching this host's steps. Required to
+        build ``install_package`` and every rollback step, which scope the host's
+        ownership marker to this run. ``None`` while only planning a run's steps.
     """
 
     install_method: InstallMethod
     os: OperatingSystem
     mongodb_version: str
     replica_set_name: str
+    run_id: UUID | None = None
 
 
 class StepAction(BaseModel):

@@ -522,6 +522,7 @@ def _spec_for(run: BootstrapRun) -> tuple[InstallStrategy, BootstrapSpec]:
         os=to_strategy_os(run.os),
         mongodb_version=run.mongodb_version,
         replica_set_name=run.replica_set_name,
+        run_id=run.id,
     )
     return _strategy_for(install_method), spec
 
