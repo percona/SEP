@@ -750,9 +750,6 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
 
         :return: The base URL of the API endpoint, credential included.
         """
-        # urlsplit, not urlparse: urlparse moves a ``;params`` segment out of the
-        # path, while pydantic keeps it in ``base_path``, so the suffix would
-        # never match.
         parsed = urlsplit(str(self.endpoint))
         path = parsed.path.rstrip("/")
         if self.base_path.strip("/") and path.endswith(self.base_path):
