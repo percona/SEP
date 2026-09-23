@@ -64,7 +64,7 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``sep_startup()``, which seeds the periodic-task database from each app's
     *current* settings, runs inside the ``async with``, after
     ``sep_overrides_lifespan`` has published its initial override snapshot: an
-    app-owned hot field (e.g. ``OmInventorySettings.ENABLED``) reads its class
+    app-owned hot field reads its class
     default until that publish happens, so seeding before it can seed a sweep
     as off when a prior run had already turned it on. Same ordering as
     :func:`app.sep.main.sep_lifespan`, which the standalone-app entry point
