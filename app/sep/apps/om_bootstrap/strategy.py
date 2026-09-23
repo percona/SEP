@@ -38,12 +38,13 @@ lets the UI render a real, run-specific progress list rather than a fixed one fo
 strategies would each have to fit themselves into.
 """
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from pydantic import BaseModel
+
+from app.core.utils.fields import UTCDatetime
 
 __all__ = [
     "BootstrapSpec",
@@ -171,8 +172,8 @@ class StepRecord(BaseModel):
 
     name: str
     status: StepStatus = StepStatus.PENDING
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
+    started_at: UTCDatetime | None = None
+    finished_at: UTCDatetime | None = None
     detail: str | None = None
     task_history_id: int | None = None
     attempt_count: int = 0
