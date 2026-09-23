@@ -18,6 +18,7 @@ from app.core.requests.remote_api import (
     as_json_array,
     as_json_object,
     BaseRemoteAPI,
+    CredentialHeaderMixin,
     JSONBody,
     RemoteAPI,
 )

@@ -18,6 +18,7 @@
 __all__ = [
     "UPSTREAM_NON_JSON_HEADER",
     "BaseRemoteAPI",
+    "CredentialHeaderMixin",
     "JSONBody",
     "RemoteAPI",
     "as_json_array",
@@ -78,6 +79,8 @@ from app.core.requests.connectivity import (
 )
 from app.core.utils import json_serializer
 from app.core.utils.fields import (
+    AuthCredentialSecretStr,
+    AuthSchemeStr,
     CredentialHttpUrl,
     NonEmptyStr,
     redact_credential_url,
@@ -1008,6 +1011,52 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
                 keyfile=keyfile,
             )
         return context
+
+
+class CredentialHeaderMixin:
+    """Opt-in persistent ``Authorization`` header for :class:`BaseRemoteAPI` subclasses.
+
+    Apply leftmost in the MRO (e.g. ``CredentialHeaderMixin, RemoteAPI``) so
+    :attr:`headers` wins over the base. Declares ``api_key`` and ``auth_scheme``;
+    :attr:`headers` formats ``Authorization`` from those without each client
+    reimplementing the string. Subclasses with a derived credential (not a stored
+    secret field) override :attr:`_credential_value` and leave ``api_key`` unused.
+
+    Clients that deliberately carry no session-lifetime credential — GrafanaSDK,
+    bare :class:`RemoteAPI` instances — simply do not apply this mixin.
+    """
+
+    api_key: AuthCredentialSecretStr | None = None
+    auth_scheme: AuthSchemeStr = "Bearer"
+
+    @property
+    def _credential_value(self) -> str | None:
+        """Return the plain credential for the ``Authorization`` header, or ``None``.
+
+        An empty secret counts as unset: :class:`~pydantic.SecretStr` defines
+        ``__len__``, so a blank value is falsy and would otherwise emit a header
+        with no credential. Subclasses whose credential is derived (not this
+        field) override this property and return their plain value directly.
+
+        :return: The plain credential when a non-empty one is configured, else
+            ``None``.
+        """
+        return self.api_key.get_secret_value() if self.api_key else None
+
+    @property
+    def headers(self) -> dict[str, str]:
+        """Return request headers, adding ``Authorization`` when a credential is set.
+
+        :return: The inherited headers, plus ``Authorization`` when
+            :attr:`_credential_value` is non-``None``.
+        """
+        credential = self._credential_value
+        if credential is None:
+            return super().headers
+        return {
+            **super().headers,
+            "Authorization": f"{self.auth_scheme} {credential}",
+        }
 
 
 class RemoteAPI(BaseRemoteAPI):
