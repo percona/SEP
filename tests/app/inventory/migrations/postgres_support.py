@@ -51,10 +51,27 @@ def run_on_postgres(
     return asyncio.run(_run())
 
 
-async def drop_public_schema(conn: AsyncConnection) -> None:
-    """Drop and recreate the ``public`` schema.
+def recreate_database(url: URL, name: str, *, create: bool = True) -> None:
+    """Drop the database ``name`` if it exists, then create it afresh.
 
-    :param conn: The open connection to run the DDL on.
+    ``CREATE DATABASE`` refuses to run inside a transaction, so this connects
+    in autocommit rather than through :func:`run_on_postgres`.
+
+    :param url: The ``asyncpg`` URL of any database on the same server.
+    :param name: The database to recreate.
+    :param create: Whether to create it again; False only drops it.
     """
-    await conn.execute(text("DROP SCHEMA public CASCADE"))
-    await conn.execute(text("CREATE SCHEMA public"))
+
+    async def _run() -> None:
+        engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(
+                    text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+                )
+                if create:
+                    await conn.execute(text(f'CREATE DATABASE "{name}"'))
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())

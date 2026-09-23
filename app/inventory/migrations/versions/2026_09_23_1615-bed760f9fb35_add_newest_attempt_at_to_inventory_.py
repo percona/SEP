@@ -24,13 +24,24 @@ newest sync attempt accepted for a row whatever its outcome, so a late report
 from an older attempt cannot clear a failing run or replace a newer error
 message.
 
-Existing rows are backfilled with ``COALESCE(sync_failing_since,
-last_synced_at)`` rather than left NULL. NULL disables the guard until a row's
-next report, so a row mid-failure-run at upgrade time would briefly lose even
-the protection the run start gave it. The backfill is a lower bound on the true
-newest attempt: a failing row's run started after its last success, and a
-clean row has no run start.
+Existing rows are backfilled rather than left NULL, since NULL disables the
+guard until a row's next report. A failing row takes the upgrade time: its
+stored run start names only the run's first failure, so a later failure of the
+same run left no trace, and seeding from the run start would let a late success
+attempted between the two clear it. The cost is that a success attempted before
+the upgrade but reported after it is refused, leaving the row failing until its
+next sync. A clean row takes ``last_synced_at``, which no unrecorded failure can
+postdate without having opened a run.
+
+The guard holds only if every writer maintains the column, so no Inventory API
+instance running the previous release may record sync health once this
+revision is applied: stop them before upgrading rather than rolling the release
+out behind the migration. A previous-release writer would record a failure
+without advancing ``newest_attempt_at``, and a late success older than that
+failure would then pass the guard and clear the run.
 """
+
+from datetime import datetime, UTC
 
 import sqlalchemy as sa
 from alembic import op
@@ -47,6 +58,9 @@ _SYNCABLE_TABLES = ("node", "service", "schema", "table")
 
 def upgrade() -> None:
     """Add ``newest_attempt_at`` to every syncable table and backfill it."""
+    # Bound as a typed Python value rather than ``now()`` so SQLite stores the
+    # same text format the application writes, keeping string comparison sound.
+    upgraded_at = sa.literal(datetime.now(UTC), sa.DateTime(timezone=True))
     for table_name in _SYNCABLE_TABLES:
         op.add_column(
             table_name,
@@ -62,8 +76,9 @@ def upgrade() -> None:
         )
         op.execute(
             table.update().values(
-                newest_attempt_at=sa.func.coalesce(
-                    table.c.sync_failing_since, table.c.last_synced_at
+                newest_attempt_at=sa.case(
+                    (table.c.sync_failing_since.is_not(None), upgraded_at),
+                    else_=table.c.last_synced_at,
                 )
             )
         )

@@ -240,32 +240,54 @@ class TestNewestAttemptAtMigration:
             assert columns["newest_attempt_at"]["nullable"] is True
 
     @pytest.mark.parametrize(
-        ("last_synced_at", "sync_failing_since", "expected"),
-        [
-            (None, None, None),
-            (_LAST_SYNCED_AT, None, _LAST_SYNCED_AT),
-            (_LAST_SYNCED_AT, _FAILING_SINCE, _FAILING_SINCE),
-            (None, _FAILING_SINCE, _FAILING_SINCE),
-        ],
-        ids=["never_synced", "clean", "failing_after_success", "failing_never_synced"],
+        ("last_synced_at", "expected"),
+        [(None, None), (_LAST_SYNCED_AT, _LAST_SYNCED_AT)],
+        ids=["never_synced", "clean"],
     )
-    def test_upgrade_backfills_the_newest_known_attempt(
+    def test_upgrade_backfills_a_clean_row_from_its_last_success(
         self,
         inventory_alembic_config: tuple[Config, str],
         pre_revision_engine: Engine,
         last_synced_at: datetime | None,
-        sync_failing_since: datetime | None,
         expected: datetime | None,
     ) -> None:
-        """Seed the column from the run start, else the last success, else NULL."""
+        """Seed a row outside a failing run from its last success, else NULL."""
         cfg, _ = inventory_alembic_config
         with pre_revision_engine.begin() as conn:
-            node_id = _seed_node(conn, last_synced_at, sync_failing_since)
+            node_id = _seed_node(conn, last_synced_at, None)
 
         command.upgrade(cfg, _REVISION)
 
         with pre_revision_engine.connect() as conn:
             assert _newest_attempt_at(conn, "node", node_id) == _sqlite_text(expected)
+
+    @pytest.mark.parametrize(
+        "last_synced_at",
+        [_LAST_SYNCED_AT, None],
+        ids=["failing_after_success", "failing_never_synced"],
+    )
+    def test_upgrade_backfills_a_failing_row_with_the_upgrade_time(
+        self,
+        inventory_alembic_config: tuple[Config, str],
+        pre_revision_engine: Engine,
+        last_synced_at: datetime | None,
+    ) -> None:
+        """Seed a failing row past every pre-upgrade attempt, not from its run start.
+
+        The run start names only the first failure, so a success attempted
+        after it may still predate a later, unrecorded failure of the run.
+        """
+        cfg, _ = inventory_alembic_config
+        with pre_revision_engine.begin() as conn:
+            node_id = _seed_node(conn, last_synced_at, _FAILING_SINCE)
+
+        before = datetime.now(UTC)
+        command.upgrade(cfg, _REVISION)
+        after = datetime.now(UTC)
+
+        with pre_revision_engine.connect() as conn:
+            stored = _newest_attempt_at(conn, "node", node_id)
+        assert _sqlite_text(before) <= stored <= _sqlite_text(after)
 
     def test_upgrade_backfills_the_reserved_word_table(
         self, inventory_alembic_config: tuple[Config, str], pre_revision_engine: Engine
@@ -286,12 +308,12 @@ class TestNewestAttemptAtMigration:
             )
             table_id = _last_id(conn)
 
+        before = datetime.now(UTC)
         command.upgrade(cfg, _REVISION)
 
         with pre_revision_engine.connect() as conn:
-            assert _newest_attempt_at(conn, "table", table_id) == _sqlite_text(
-                _FAILING_SINCE
-            )
+            stored = _newest_attempt_at(conn, "table", table_id)
+        assert stored >= _sqlite_text(before)
 
     def test_downgrade_drops_only_the_new_column(
         self, inventory_alembic_config: tuple[Config, str], pre_revision_engine: Engine
@@ -325,22 +347,25 @@ class TestNewestAttemptAtMigrationOnPostgreSQL:
     """Test the ``newest_attempt_at`` migration against real PostgreSQL.
 
     The backfill ``UPDATE`` targets ``schema`` and ``table``, both reserved
-    words, and coalesces ``timestamptz`` values; SQLite quotes and types neither
+    words, and binds a ``timestamptz`` value; SQLite quotes and types neither
     the way PostgreSQL does, so only this lane proves the statement is accepted.
     """
 
     def test_upgrade_backfills_every_syncable_table(
         self, inventory_postgres_config: tuple[Config, URL]
     ) -> None:
-        """Seed each failing row from its run start, reserved-word tables included."""
+        """Seed each failing row with the upgrade time, reserved-word tables included."""
         cfg, url = inventory_postgres_config
         command.upgrade(cfg, _PRE_REVISION)
         ids = run_on_postgres(url, _seed_failing_chain)
 
+        before = datetime.now(UTC)
         command.upgrade(cfg, _REVISION)
+        after = datetime.now(UTC)
 
         newest = run_on_postgres(url, lambda conn: _newest_attempts(conn, ids))
-        assert newest == dict.fromkeys(ids, _FAILING_SINCE)
+        assert newest.keys() == ids.keys()
+        assert all(before <= value <= after for value in newest.values())
 
     def test_downgrade_round_trips(
         self, inventory_postgres_config: tuple[Config, URL]

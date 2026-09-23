@@ -27,11 +27,8 @@ from sqlalchemy.engine import make_url
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
-from tests.app.conftest import postgres_dsn_or_skip
-from tests.app.inventory.migrations.postgres_support import (
-    drop_public_schema,
-    run_on_postgres,
-)
+from tests.app.conftest import postgres_dsn_or_skip, postgres_worker_schema
+from tests.app.inventory.migrations.postgres_support import recreate_database
 
 
 @pytest.fixture
@@ -68,13 +65,20 @@ def postgres_async_url() -> URL:
 def inventory_postgres_config(
     postgres_async_url: URL, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[tuple[Config, URL]]:
-    """Point the inventory track at real PostgreSQL and yield its Alembic config.
+    """Point the inventory track at a per-worker PostgreSQL database.
 
     ``command.upgrade`` builds its own engine inside the track's ``env.py`` from
     ``inventory_settings.DATABASE`` rather than accepting one, so the settings
-    are what must be redirected. Drop the schema on teardown so sibling tests
-    inherit a clean database.
+    are what must be redirected. That engine takes no ``schema_translate_map``,
+    so the per-worker *schema* the other PostgreSQL fixtures use cannot isolate
+    it; a database per xdist worker does, and is dropped on teardown.
+
+    :return: The Alembic config and the ``asyncpg`` URL of the worker database.
     """
+    worker_url = postgres_async_url.set(
+        database=f"{postgres_async_url.database}_{postgres_worker_schema()}"
+    )
+    recreate_database(postgres_async_url, worker_url.database)
     database = inventory_settings.DATABASE
     monkeypatch.setattr(database, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
     monkeypatch.setattr(database, "USER", postgres_async_url.username)
@@ -85,10 +89,10 @@ def inventory_postgres_config(
     )
     monkeypatch.setattr(database, "HOST", postgres_async_url.host)
     monkeypatch.setattr(database, "PORT", postgres_async_url.port)
-    monkeypatch.setattr(database, "NAME", postgres_async_url.database)
+    monkeypatch.setattr(database, "NAME", worker_url.database)
 
     cfg = Config(str(ALEMBIC_INI), ini_section="inventory")
     try:
-        yield cfg, postgres_async_url
+        yield cfg, worker_url
     finally:
-        run_on_postgres(postgres_async_url, drop_public_schema)
+        recreate_database(postgres_async_url, worker_url.database, create=False)
