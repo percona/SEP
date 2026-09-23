@@ -61,18 +61,27 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``tasks_lifespan`` enters :func:`app.core.config.default_lifespan`, so the
     shared ``settings.CASDOOR`` / client registry is entered exactly once.
 
+    ``sep_startup()``, which seeds the periodic-task database from each app's
+    *current* settings, runs inside the ``async with``, after
+    ``sep_overrides_lifespan`` has published its initial override snapshot: an
+    app-owned hot field reads its class
+    default until that publish happens, so seeding before it can seed a sweep
+    as off when a prior run had already turned it on. Same ordering as
+    :func:`app.sep.main.sep_lifespan`, which the standalone-app entry point
+    uses for the same reason.
+
     :param app: The FastAPI application instance.
-    :yield: None
+    :return: ``None``, once the lifespans have been entered.
     """
     detect_removed_auth_user_model()
     detect_removed_settings_override_keys()
     validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
-    await sep_startup()
     async with (
         sep_overrides_lifespan(app),
         tasks_lifespan(app),
         inventory_overrides_lifespan(app),
     ):
+        await sep_startup()
         yield
 
 
