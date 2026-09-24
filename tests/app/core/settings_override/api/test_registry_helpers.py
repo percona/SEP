@@ -213,6 +213,24 @@ def test_dump_field_value_redacts_credential_http_url() -> None:
     assert "inv-user" in dumped
 
 
+def test_dump_field_value_redacts_a_computed_credential_url() -> None:
+    """Redact the derived base URL of a client setting alongside its endpoint.
+
+    The settings LIST, DETAIL, and export responses all serialize through this
+    helper, and a computed field carries no annotation for the credential-URL
+    detection to read — the redaction has to travel on the field's own return
+    annotation to reach them.
+    """
+    field = TasksSettings.model_fields["NOMAD"]
+    executor = NomadExecutor.model_validate(
+        {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    )
+    dumped = dump_field_value(field, executor)
+    assert "nomad-secret" not in str(dumped)
+    assert dumped["base_url"] == "http://nomad-user:****@nomad.internal:4646"
+    assert dumped["endpoint"] == "http://nomad-user:****@nomad.internal:4646/"
+
+
 def test_is_credential_url_field_recognises_all_aliases() -> None:
     """Detect every credential-URL annotated type by serializer identity.
 

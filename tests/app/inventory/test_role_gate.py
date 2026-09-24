@@ -15,7 +15,7 @@
 
 """Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import status
@@ -25,6 +25,8 @@ from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps as api_deps
+from app.core.auth.providers.grafana.models import GrafanaUser
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.deps import get_session
@@ -36,6 +38,7 @@ from app.inventory.models import (
     SyncOutcomeEnum,
     Table,
 )
+from tests.app.conftest import GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     NodeWriteFactory,
@@ -448,6 +451,67 @@ def test_an_admin_still_retires_a_table(
     response = admin_bearer_client.delete(f"/tables/{table.id}", headers=BEARER_HEADERS)
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+class TestServiceAccountBearer:
+    """Verify a Grafana service-account token is ranked by the gate on a real route."""
+
+    TOKEN = GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
+
+    @pytest.fixture
+    def service_account_client(
+        self,
+        bearer_client: TestClient,
+        grafana_mock: GrafanaAuthProvider,
+        mocker: MockerFixture,
+    ) -> Callable[[str], TestClient]:
+        """Return a factory pinning the service account's Grafana org role."""
+        mocker.patch.object(api_deps, "User", GrafanaUser)
+        verify = mocker.patch(
+            "app.core.auth.providers.grafana.sdk.GrafanaSDK.verify_service_account_token",
+            new=mocker.AsyncMock(),
+        )
+
+        def with_role(role: str) -> TestClient:
+            """Answer every verification with an account holding ``role``."""
+            verify.return_value = {
+                "id": 7,
+                "login": "sa-1-ci-runner",
+                "isDisabled": False,
+                "role": role,
+            }
+            return bearer_client
+
+        return with_role
+
+    def test_a_viewer_is_refused_an_admin_write(
+        self,
+        service_account_client: Callable[[str], TestClient],
+        table: Table,
+    ) -> None:
+        """Verify the gate refuses a Viewer account and the table survives."""
+        client = service_account_client("Viewer")
+        headers = {"Authorization": f"Bearer {self.TOKEN}"}
+
+        response = client.delete(f"/tables/{table.id}", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert (
+            client.get(f"/tables/{table.id}", headers=headers).json()["retired_at"]
+            is None
+        )
+
+    def test_an_admin_retires_a_table(
+        self, service_account_client: Callable[[str], TestClient], table: Table
+    ) -> None:
+        """Verify an Admin account clears the gate and the handler runs."""
+        client = service_account_client("Admin")
+
+        response = client.delete(
+            f"/tables/{table.id}", headers={"Authorization": f"Bearer {self.TOKEN}"}
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
 def test_a_restricted_route_still_advertises_its_bearer_security() -> None:

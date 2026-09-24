@@ -41,7 +41,6 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
-from pydantic import computed_field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -90,6 +89,7 @@ from app.tasks.logs.log_writer import (
 )
 from app.tasks.models import (
     ExecutionEvent,
+    ExecutorHostState,
     FileMetadata,
     LogCaptureStatusEnum,
     Task,
@@ -113,6 +113,12 @@ _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
 # held until its own deadline.
 _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS = 5
 _CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS = 0.5
+#: The Nomad task driver every SEP payload runs under. Named once because the
+#: dispatch filter and the reporting in ``get_host_states`` must agree on it: if they
+#: drift, a host is reported healthy and jobs still refuse to place on it.
+RAW_EXEC_DRIVER = "raw_exec"
+#: Nomad's own word for a client it currently has contact with.
+NODE_STATUS_READY = "ready"
 # Internal states returned by :meth:`NomadExecutor._consume_nomad_log_stream` (not Nomad task states).
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
@@ -737,21 +743,20 @@ class NomadExecutor(StoredCredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
         """
         return self._credential_value
 
-    @computed_field
-    @property
-    def base_url(self) -> str:
+    def _compute_base_url(self) -> str:
         """Compute the base URL, dropping userinfo once an API key is configured.
 
         ``__aenter__`` builds the aiohttp session from this value, so this is
         where the asynchronous path takes the strip that
         :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
-        It stays a computed field, so it continues to appear in ``model_dump``
-        and therefore in the config fingerprint
-        :class:`~app.tasks.execution.nomad_lifecycle.NomadLifecycle` compares.
+
+        Overriding the hook rather than the ``base_url`` computed field keeps
+        the base class's JSON redaction in force, and ``base_url`` still appears
+        in ``model_dump`` as the inherited computed field.
 
         :return: The base URL of the Nomad endpoint.
         """
-        url = super().base_url
+        url = super()._compute_base_url()
         if self._configured_api_key is None:
             return url
         return strip_credential_url_userinfo(url)
@@ -1056,11 +1061,64 @@ class NomadExecutor(StoredCredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
             as values.
         :rtype: dict[str, str]
         """
-        filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
+        filter_expression = (
+            f"Status == {NODE_STATUS_READY} "
+            f"and {RAW_EXEC_DRIVER} in Drivers "
+            f"and Drivers.{RAW_EXEC_DRIVER}.Healthy == true"
+        )
         return {
             node["Name"]: node["Address"]
             for node in self.backend.nodes.get_nodes(filter_=filter_expression)
         }
+
+    def get_host_states(self) -> list[ExecutorHostState]:
+        """Describe every node Nomad knows about, including the unusable ones.
+
+        The same three conditions :meth:`get_hosts` filters on, reported separately
+        instead of collapsed: ``Status == ready``, ``raw_exec`` present in
+        ``Drivers``, and its ``Healthy`` flag. A caller asking "why can I not run
+        anything on this machine" gets an answer here, where ``get_hosts`` can only
+        omit the row.
+
+        ``resources=True`` is not requested: the stub list carries ``Status`` and
+        ``Drivers`` already, and the per-node detail fetch would be one request per
+        node against a Nomad that may have hundreds.
+
+        :return: One entry per registered Nomad client.
+        """
+        states = []
+        for node in self.backend.nodes.get_nodes():
+            driver = (node.get("Drivers") or {}).get(RAW_EXEC_DRIVER) or {}
+            # An absent or non-boolean driver entry is not a healthy one: Nomad
+            # omits drivers it has not detected, and "not detected" is exactly the
+            # never-onboarded case worth telling apart. An identity check, not a
+            # truthiness one, so a malformed upstream value cannot read as healthy.
+            healthy = driver.get("Healthy") is True
+            reachable = node.get("Status") == NODE_STATUS_READY
+            if not reachable:
+                # The driver fields are a stale pre-disconnect snapshot once the
+                # node itself is unreachable, so explain the outage from the node
+                # stub's own status text instead of a driver detail that predates it.
+                detail = node.get("StatusDescription") or None
+            elif healthy:
+                detail = None
+            else:
+                # Only when it is a problem. Nomad sets HealthDescription to
+                # the literal "Healthy" on a working driver, and a field that
+                # explains failures must not be full of the word "Healthy" - a
+                # reader scanning for the broken ones would find nothing to scan by.
+                detail = driver.get("HealthDescription") or None
+            states.append(
+                ExecutorHostState(
+                    name=node.get("Name", ""),
+                    address=node.get("Address", ""),
+                    reachable=reachable,
+                    driver_healthy=healthy,
+                    status=node.get("Status"),
+                    detail=detail,
+                )
+            )
+        return states
 
     def get_allocation_for_task_history(
         self, queue_item: TaskHistory
