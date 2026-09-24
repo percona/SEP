@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ApiError, parseFieldErrors } from '@sep/api';
+import { ApiError, parseFieldErrors } from '@pmm-extensions/api';
 
 /** Used only when neither the response body nor the error carries a message. */
 export const DEFAULT_ACTION_ERROR_FALLBACK = 'The action failed. Please try again.';
@@ -26,7 +26,7 @@ export const DEFAULT_ACTION_ERROR_FALLBACK = 'The action failed. Please try agai
  *
  * Two backend shapes carry that reason. A string ``detail`` — the 403 refusal,
  * 409, and 4xx/5xx generally — is already lifted into ``ApiError.message`` by
- * ``@sep/api``. A 422 instead carries ``detail`` as a per-field array, which
+ * ``@pmm-extensions/api``. A 422 instead carries ``detail`` as a per-field array, which
  * that lift skips (leaving the literal ``HTTP 422``), so the field entries are
  * read here and joined; a caller rendering a form uses ``mapSubmitError``
  * instead, which places the same entries on their fields.
@@ -56,7 +56,7 @@ export function actionErrorMessage(
           .join('; ');
       }
       // Neither a per-field array nor a string ``detail``: what is left is the
-      // ``HTTP 422`` ``@sep/api`` synthesizes when the body carries no reason,
+      // ``HTTP 422`` ``@pmm-extensions/api`` synthesizes when the body carries no reason,
       // which tells the user nothing the caller's own wording does not.
       if (error.message === `HTTP ${error.status}`) {
         return fallback;

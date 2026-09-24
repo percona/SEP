@@ -17,7 +17,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { useResolvedServiceField, type RenderFieldOverride } from '@sep/framework';
+import { useResolvedServiceField, type RenderFieldOverride } from '@pmm-extensions/framework';
 import {
   isAutoMongoBackupTaskName,
   suggestMongoBackupTaskName,

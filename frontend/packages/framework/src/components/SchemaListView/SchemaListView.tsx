@@ -27,8 +27,8 @@ import {
   type MRT_PaginationState,
   type MRT_SortingState,
 } from 'material-react-table';
-import { DEFAULT_APP_LIST_LIMIT, type ListColumn, type ListView } from '@sep/api';
-import { SEP_TABLE_CLASS } from '../../constants';
+import { DEFAULT_APP_LIST_LIMIT, type ListColumn, type ListView } from '@pmm-extensions/api';
+import { EXTENSIONS_TABLE_CLASS } from '../../constants';
 import { ScheduleCell } from '../ScheduleCell';
 import { TaskHistoryStatusBadge, isTaskHistoryStatus } from '../TaskHistoryTable';
 import {
@@ -466,7 +466,7 @@ function SchemaListViewCore({
         ...(!manualPagination && { pagination: { pageIndex: 0, pageSize: 10 } }),
       }}
       muiTablePaperProps={{
-        className: SEP_TABLE_CLASS,
+        className: EXTENSIONS_TABLE_CLASS,
         elevation: 0,
         variant: 'outlined',
         sx: opaqueTableSurface,

@@ -27,13 +27,13 @@
  * (which also supply custom apps' sidebar ``to``).
  */
 
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import BackupIcon from '@mui/icons-material/Backup';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import { ROUTES } from '@sep/shared';
+import { ROUTES } from '@pmm-extensions/shared';
 import { ICON_BY_KEY } from './generated/appNavIcons';
 import type { NavIcon, NavItem } from './contexts/navigation';
 

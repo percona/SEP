@@ -46,13 +46,13 @@ class TestBuildOwnerAlertDetails:
 
         mocker.patch.dict(
             hook_resolver._RESOLVED,
-            {"app.sep.apps.some_module:builder": _fake_builder},
+            {"app.extensions.apps.some_module:builder": _fake_builder},
             clear=False,
         )
 
         assert (
             await build_owner_alert_details(
-                _history("app.sep.apps.some_module:builder")
+                _history("app.extensions.apps.some_module:builder")
             )
             is expected
         )
@@ -64,7 +64,7 @@ class TestBuildOwnerAlertDetails:
 
         assert (
             await build_owner_alert_details(
-                _history("app.sep.apps.no_such_module:builder")
+                _history("app.extensions.apps.no_such_module:builder")
             )
             is None
         )
@@ -78,13 +78,13 @@ class TestBuildOwnerAlertDetails:
 
         mocker.patch.dict(
             hook_resolver._RESOLVED,
-            {"app.sep.apps.some_module:raising": _raising_builder},
+            {"app.extensions.apps.some_module:raising": _raising_builder},
             clear=False,
         )
 
         assert (
             await build_owner_alert_details(
-                _history("app.sep.apps.some_module:raising")
+                _history("app.extensions.apps.some_module:raising")
             )
             is None
         )

@@ -19,7 +19,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ConnectivityResult, ConnectivityStatus } from '@sep/api';
+import type { ConnectivityResult, ConnectivityStatus } from '@pmm-extensions/api';
 
 import { server } from '../../../../tests/msw-server';
 import { makeWrapper } from './fixtures';

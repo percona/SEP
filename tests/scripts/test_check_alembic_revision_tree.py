@@ -156,11 +156,11 @@ def test_repo_alembic_ini_is_converged():
     ini_path = PROJECT_ROOT / "alembic.ini"
     trees = check_alembic_revision_tree.inspect_revision_trees(ini_path)
     names = {tree.name for tree in trees}
-    assert {"tasks", "inventory", "sep"} <= names
+    assert {"tasks", "inventory", "extensions"} <= names
     assert all(not tree.is_forked for tree in trees)
 
 
-def test_reintroducing_sep_1824_fork_fails(tmp_path, capsys):
+def test_reintroducing_extensions_1824_fork_fails(tmp_path, capsys):
     """Fail when the SEP-1824 fork is reintroduced in the tasks track."""
     versions_copy = tmp_path / "versions"
     shutil.copytree(

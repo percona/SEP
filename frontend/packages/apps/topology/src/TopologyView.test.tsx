@@ -10,7 +10,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ADMIN_SESSION, apiClient, AuthContext, UNAUTHENTICATED_SESSION } from '@sep/api';
+import {
+  ADMIN_SESSION,
+  apiClient,
+  AuthContext,
+  UNAUTHENTICATED_SESSION,
+} from '@pmm-extensions/api';
 import { TOPOLOGY_TASK_IDS_STORAGE_KEY, TopologyView } from './TopologyView';
 import type { TopologyGraph } from './types';
 

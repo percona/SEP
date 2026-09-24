@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import { ApiError, type AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@pmm-extensions/api';
 import { AppDetailPage, resolveTabFromSplat, type TaskExecuteAction } from './AppDetailPage';
 
 const mockDeleteMutate = vi.fn();
@@ -59,7 +59,7 @@ function defaultAppTasksResult(items: { name: string }[] = []) {
 let mockCanMutate = true;
 
 // Manual factory keeps axios out of the resolution graph.
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
   useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
   // Consumed by ScheduleSummary (via useScheduledTasksForApp) and by ActionBar

@@ -20,13 +20,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
-import { ApiError, REDACTED_SECRET, useSettingsList, type SettingClassGroup } from '@sep/api';
-import { ROUTES } from '@sep/shared';
+import {
+  ApiError,
+  REDACTED_SECRET,
+  useSettingsList,
+  type SettingClassGroup,
+} from '@pmm-extensions/api';
+import { ROUTES } from '@pmm-extensions/shared';
 import { DeliverySetupGate } from '../src/DeliverySetupGate';
 import { Messages } from '../src/DeliverySetupGate.messages';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   useSettingsList: vi.fn(),
 }));
 
@@ -46,7 +51,7 @@ const setting = (key: string, value: unknown, hasOverride = false) =>
  * secret names and stores `storedSecrets` against them. Omitting `storedSecrets`
  * models a deployment that never supplied an override at all.
  */
-const sepGroups = (
+const extensionsGroups = (
   declared: string[],
   storedSecrets?: Record<string, string>,
 ): SettingClassGroup[] =>
@@ -100,7 +105,7 @@ describe('DeliverySetupGate', () => {
   });
 
   it('renders the app once delivery is configured', () => {
-    mockList({ data: sepGroups(['sn_api_key'], { sn_api_key: 'secret' }) });
+    mockList({ data: extensionsGroups(['sn_api_key'], { sn_api_key: 'secret' }) });
     renderGate();
 
     expect(screen.getByTestId('atw-app')).toBeInTheDocument();
@@ -108,7 +113,7 @@ describe('DeliverySetupGate', () => {
   });
 
   it('prompts for setup when nothing is stored', () => {
-    mockList({ data: sepGroups(['sn_api_key']) });
+    mockList({ data: extensionsGroups(['sn_api_key']) });
     renderGate();
 
     expect(screen.getByTestId('atw-delivery-setup-prompt')).toBeInTheDocument();
@@ -117,7 +122,7 @@ describe('DeliverySetupGate', () => {
   });
 
   it('prompts for setup when a declared secret was stored empty', () => {
-    mockList({ data: sepGroups(['sn_api_key'], { sn_api_key: '' }) });
+    mockList({ data: extensionsGroups(['sn_api_key'], { sn_api_key: '' }) });
     renderGate();
 
     expect(screen.getByTestId('atw-delivery-setup-prompt')).toBeInTheDocument();
@@ -126,14 +131,14 @@ describe('DeliverySetupGate', () => {
   it('renders the app when the plan declares no secrets and an override is stored', () => {
     // Nothing is left for the deployment to supply, so the override alone is as
     // configured as it can get — the endpoint would otherwise read as missing.
-    mockList({ data: sepGroups([], {}) });
+    mockList({ data: extensionsGroups([], {}) });
     renderGate();
 
     expect(screen.getByTestId('atw-app')).toBeInTheDocument();
   });
 
   it('prompts for setup when the stored values no longer match the plan', () => {
-    mockList({ data: sepGroups(['sn_token'], { sn_api_key: 'secret' }) });
+    mockList({ data: extensionsGroups(['sn_token'], { sn_api_key: 'secret' }) });
     renderGate();
 
     expect(screen.getByTestId('atw-delivery-setup-prompt')).toBeInTheDocument();
@@ -183,7 +188,7 @@ describe('DeliverySetupGate', () => {
   });
 
   it('tells a non-admin to ask an administrator, with no call to action', () => {
-    mockList({ data: sepGroups(['sn_api_key']) });
+    mockList({ data: extensionsGroups(['sn_api_key']) });
     renderGate(false);
 
     expect(screen.getByText(Messages.notConfigured)).toBeInTheDocument();
@@ -192,7 +197,7 @@ describe('DeliverySetupGate', () => {
   });
 
   it('points an admin at the settings page and names the key to fill in', () => {
-    mockList({ data: sepGroups(['sn_api_key']) });
+    mockList({ data: extensionsGroups(['sn_api_key']) });
     renderGate(true);
 
     expect(screen.getByText(Messages.notConfigured)).toBeInTheDocument();

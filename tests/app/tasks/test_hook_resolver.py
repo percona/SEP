@@ -21,9 +21,9 @@ import logging
 import pytest
 from pytest_mock import MockerFixture
 
-from app.sep.apps.archives import alerts as archive_alerts
-from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
-from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.extensions.apps.archives import alerts as archive_alerts
+from app.extensions.apps.archives.alerts import ALERT_DETAIL_BUILDER
+from app.extensions.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks import hook_resolver
 from app.tasks.hook_resolver import (
     HookPathNotAllowedError,
@@ -54,19 +54,19 @@ def test_caches_resolved_callable(mocker):
     second = resolve_hook(ALLOWED_PATH)
 
     assert first is second
-    spy.assert_called_once_with("app.sep.apps.archives.alerts")
+    spy.assert_called_once_with("app.extensions.apps.archives.alerts")
 
 
 def test_raises_import_error_for_unknown_module():
     """Raise ``ImportError`` when the module cannot be imported."""
     with pytest.raises(ImportError):
-        resolve_hook("app.sep.apps.no_such_module:thing")
+        resolve_hook("app.extensions.apps.no_such_module:thing")
 
 
 def test_raises_attribute_error_for_unknown_attribute():
     """Raise ``AttributeError`` when the module has no such attribute."""
     with pytest.raises(AttributeError):
-        resolve_hook("app.sep.apps.archives.alerts:does_not_exist")
+        resolve_hook("app.extensions.apps.archives.alerts:does_not_exist")
 
 
 class TestAllowList:
@@ -78,13 +78,13 @@ class TestAllowList:
             "os:system",
             "builtins:eval",
             "app.tasks.alert_hooks:build_owner_alert_details",
-            "app.sep.plugins.archives.alerts:build_owner_alert_details",
-            "app.sep.appsevil.mod:builder",
+            "app.extensions.plugins.archives.alerts:build_owner_alert_details",
+            "app.extensions.appsevil.mod:builder",
         ],
     )
     def test_rejects_module_outside_allow_listed_namespace(self, path: str) -> None:
         """Reject a path whose module is not under an allow-listed root."""
-        with pytest.raises(HookPathNotAllowedError, match="app.sep.apps"):
+        with pytest.raises(HookPathNotAllowedError, match="app.extensions.apps"):
             validate_hook_path(path)
 
     @pytest.mark.parametrize(
@@ -92,14 +92,14 @@ class TestAllowList:
         [
             "no_colon_here",
             ":build_owner_alert_details",
-            "app.sep.apps.archives.alerts:",
-            "app.sep.apps.archives.alerts:not an identifier",
-            "app.sep.apps.archives.alerts:a:b",
-            "app.sep.apps..archives:builder",
-            ".app.sep.apps:builder",
-            " app.sep.apps.archives.alerts:builder",
-            "app.sep.apps.archives.alerts:__builtins__",
-            "app.sep.apps.archives.alerts:_private",
+            "app.extensions.apps.archives.alerts:",
+            "app.extensions.apps.archives.alerts:not an identifier",
+            "app.extensions.apps.archives.alerts:a:b",
+            "app.extensions.apps..archives:builder",
+            ".app.extensions.apps:builder",
+            " app.extensions.apps.archives.alerts:builder",
+            "app.extensions.apps.archives.alerts:__builtins__",
+            "app.extensions.apps.archives.alerts:_private",
         ],
     )
     def test_rejects_malformed_path(self, path: str) -> None:
@@ -124,7 +124,10 @@ class TestAllowList:
 
     def test_accepts_allow_listed_root_itself(self) -> None:
         """Admit a callable living in the allow-listed root module itself."""
-        assert validate_hook_path("app.sep.apps:builder") == "app.sep.apps:builder"
+        assert (
+            validate_hook_path("app.extensions.apps:builder")
+            == "app.extensions.apps:builder"
+        )
 
     def test_rejection_names_the_offending_field(self) -> None:
         """Name the offending field in the rejection message."""
@@ -180,7 +183,7 @@ class TestAllowList:
         """Admit a module under a root added to the configured allow-list."""
         mocker.patch(
             "app.tasks.config.tasks_settings.HOOK_MODULE_ALLOWLIST",
-            ("app.sep.apps", "app.tasks"),
+            ("app.extensions.apps", "app.tasks"),
         )
 
         resolved = validate_hook_path("app.tasks.alert_hooks:build_owner_alert_details")

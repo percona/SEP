@@ -186,7 +186,7 @@ def test_merges_only_forked_branch_in_multibranch_track(tmp_path):
     script_location = script_location_with_mako(tmp_path)
     versions_main = (tmp_path / "main" / "versions").resolve()
     versions_plugin = (tmp_path / "plugin" / "versions").resolve()
-    write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
+    write_revision(versions_main, "r1", None, branch_labels=("extensions_main",))
     write_revision(versions_main, "h1a", "r1")
     write_revision(versions_main, "h1b", "r1")
     write_revision(versions_plugin, "r2", None, branch_labels=("alerts",))
@@ -217,7 +217,7 @@ def test_merges_only_forked_branch_in_multibranch_track(tmp_path):
     assert _revision_files(versions_plugin) == plugin_before
 
     merge_head = next(h for h in heads if h != "h2")
-    assert script.get_revision(merge_head).branch_labels == {"sep_main"}
+    assert script.get_revision(merge_head).branch_labels == {"extensions_main"}
     assert script.get_revision("h2").branch_labels == {"alerts"}
     assert (
         check_alembic_revision_tree.inspect_revision_trees(ini_path)[0].is_forked
@@ -324,19 +324,21 @@ def test_fork_in_one_track_does_not_block_another(tmp_path, capsys):
 def test_merge_revision_declares_no_branch_label(tmp_path):
     """Assert generated merge revisions set ``branch_labels = None``.
 
-    Uses the sep-track ``script.py.mako`` so the Sequence annotation change
+    Uses the extensions-track ``script.py.mako`` so the Sequence annotation change
     in that template is exercised, not only the tasks copy.
     """
-    sep_mako = PROJECT_ROOT / "app" / "sep" / "migrations" / "script.py.mako"
-    script_location = script_location_with_mako(tmp_path, mako_template=sep_mako)
+    extensions_mako = (
+        PROJECT_ROOT / "app" / "extensions" / "migrations" / "script.py.mako"
+    )
+    script_location = script_location_with_mako(tmp_path, mako_template=extensions_mako)
     versions_dir = script_location / "versions"
-    write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
+    write_revision(versions_dir, "root", None, branch_labels=("extensions_main",))
     write_revision(versions_dir, "left", "root")
     write_revision(versions_dir, "right", "root")
     ini_path = write_ini(
         tmp_path,
-        databases="sep",
-        sections={"sep": {"script_location": str(script_location)}},
+        databases="extensions",
+        sections={"extensions": {"script_location": str(script_location)}},
     )
 
     merge_alembic_heads.merge_forked_heads(ini_path)
@@ -345,9 +347,9 @@ def test_merge_revision_declares_no_branch_label(tmp_path):
     assert "down_revision: Union[str, Sequence[str], None]" in text
     assert "branch_labels: Union[str, Sequence[str], None] = None" in text
 
-    script = _script_directory(ini_path, "sep")
+    script = _script_directory(ini_path, "extensions")
     head = script.get_heads()[0]
-    assert script.get_revision(head).branch_labels == {"sep_main"}
+    assert script.get_revision(head).branch_labels == {"extensions_main"}
 
 
 def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
@@ -355,7 +357,7 @@ def test_new_root_with_branch_label_is_not_a_fork(tmp_path, capsys):
     script_location = script_location_with_mako(tmp_path)
     versions_main = (tmp_path / "main" / "versions").resolve()
     versions_new = (tmp_path / "new_app" / "versions").resolve()
-    write_revision(versions_main, "r1", None, branch_labels=("sep_main",))
+    write_revision(versions_main, "r1", None, branch_labels=("extensions_main",))
     write_revision(versions_main, "h1", "r1")
     write_revision(versions_new, "r_new", None, branch_labels=("new_app",))
     before_main = _revision_files(versions_main)
@@ -405,18 +407,18 @@ def test_message_uses_branch_label_when_present(tmp_path):
     """Prefer the inherited branch label over the track name in the merge message."""
     script_location = script_location_with_mako(tmp_path)
     versions_dir = script_location / "versions"
-    write_revision(versions_dir, "root", None, branch_labels=("sep_main",))
+    write_revision(versions_dir, "root", None, branch_labels=("extensions_main",))
     write_revision(versions_dir, "left", "root")
     write_revision(versions_dir, "right", "root")
     ini_path = write_ini(
         tmp_path,
-        databases="sep",
-        sections={"sep": {"script_location": str(script_location)}},
+        databases="extensions",
+        sections={"extensions": {"script_location": str(script_location)}},
     )
 
-    actions = merge_alembic_heads.plan_merges(ini_path, "sep")
+    actions = merge_alembic_heads.plan_merges(ini_path, "extensions")
     assert len(actions) == 1
-    assert actions[0].message == "merge sep_main migration heads"
+    assert actions[0].message == "merge extensions_main migration heads"
 
 
 def test_partial_merge_reports_already_written_files(tmp_path, capsys, monkeypatch):

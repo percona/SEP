@@ -36,7 +36,7 @@ import AppsIcon from '@mui/icons-material/Apps';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
-import { useAppInfo } from '@sep/api';
+import { useAppInfo } from '@pmm-extensions/api';
 import { useNavigation, type NavItem } from '../contexts/navigation';
 
 const DRAWER_WIDTH_EXPANDED = 270;

@@ -148,7 +148,7 @@ def downgrade_restore_setting_class_check() -> None:
 def upgrade_add_updated_by() -> None:
     """Add the nullable ``updated_by`` column, once across all three tracks.
 
-    Idempotent on a shared PostgreSQL database: whichever of the ``sep``,
+    Idempotent on a shared PostgreSQL database: whichever of the ``extensions``,
     ``tasks`` and ``inventory`` tracks runs first adds the column and the other
     two no-op. A missing table is also a no-op, matching the sibling
     ``settingoverride`` guards.

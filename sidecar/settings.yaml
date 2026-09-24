@@ -24,7 +24,7 @@ default:
   LOGGING: INFO
   SSL_CAFILE: null
   # Set via the BASE_URL environment variable when tasks download scripts or artifacts.
-  # The value must include SEP's URL prefix below, because download URLs are joined
+  # The value must include PMM Extensions' URL prefix below, because download URLs are joined
   # onto it rather than replacing its path.
   BASE_URL: null
 
@@ -47,7 +47,7 @@ default:
       - TasksSettings.LOG_RETENTION_DAYS
       - TasksSettings.PENDING_ALLOCATION_TIMEOUT_SECONDS
       # CREDENTIALS_PATH is deliberately absent: it names a file read off the
-      # *monitored* host, not a setting of SEP's own behavior. SCHEDULE is a nested
+      # *monitored* host, not a setting of PMM Extensions' own behavior. SCHEDULE is a nested
       # submodel, so each overridable leaf is listed under its __-delimited path.
       - OmInventorySettings.SCHEDULE__every
       - OmInventorySettings.SCHEDULE__period
@@ -88,7 +88,7 @@ default:
     # Superseded per container start by the credentialed URLs entrypoint.sh mints.
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
-    # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so a
+    # No BEAT_DBURI: the beat store defaults to the resolved PMM Extensions database, so a
     # mounted DATABASE__PASSWORD or EXTENSIONS__DATABASE__PASSWORD reaches it without an
     # env-visible URI.
     RESULT_EXPIRES: 3600
@@ -102,7 +102,7 @@ default:
       # No sizing keys. celery-beat runs as its own program here, never forked, so
       # its scheduler engine is a NullPool: MAX_OVERFLOW raises TypeError at beat
       # startup, and POOL_SIZE and POOL_TIMEOUT are dropped. The engines these
-      # options do size (one each in sep and tasks, one per worker child that runs
+      # options do size (one each in extensions and tasks, one per worker child that runs
       # inventory collection) therefore stay at SQLAlchemy's 5 + 10.
 
   # One database for all three services: PMM_ENABLE_EXTENSIONS provisions exactly
@@ -120,14 +120,14 @@ default:
   # pmm-managed (50) and Grafana (100). The side-car holds itself to 10% of it.
   # Worst case with every pool full, where an engine's ceiling is POOL_SIZE +
   # MAX_OVERFLOW:
-  #   sep          2 x 5 + celery-DB 15                    25
+  #   extensions   2 x 5 + celery-DB 15                    25
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25
   #   worker       parent 2 x 5, plus 4 children x 25     110
   #   beat         2 x 5 + NullPool scheduler              11
   #   sync locks   one held per configured syncer           2
   #                                                total  178 of 200
-  # Both sep and beat reach a service-DB engine they do not own: sep imports the
+  # Both extensions and beat reach a service-DB engine they do not own: extensions imports the
   # tasks one through periodic_tasks, and beat loads the worker's task modules
   # because celery beat runs init_worker() before starting the scheduler.
   # Not in the total: the four schema one-shots add 4 at boot, and every sync
@@ -143,7 +143,7 @@ default:
     POOL_SIZE: 3
     MAX_OVERFLOW: 2
     POOL_TIMEOUT: 10.0
-    # `om_schema` is OM's shared symbolic schema token (app/sep/apps/shared/om/
+    # `om_schema` is OM's shared symbolic schema token (app/extensions/apps/shared/om/
     # __init__.py); see the equivalent block in the repo-root settings.yaml for the
     # full explanation of SCHEMA_TRANSLATE_MAP.
     SCHEMA_TRANSLATE_MAP:
@@ -319,7 +319,7 @@ default:
       SSL_CERTFILE: null
       SSL_KEYFILE: null
     INVENTORY_SYNC_INTERVAL: 15 minutes
-    INVENTORY_SYNC_SYNCER: app.sep.sync.syncers.pmm.PMMSyncer
+    INVENTORY_SYNC_SYNCER: app.extensions.sync.syncers.pmm.PMMSyncer
     # Daily rather than PMM's 15 minutes: a node's uid and sudo availability change
     # at provisioning time, not during operation, and each run costs a per-node venv
     # build plus a four-driver pip install. The full get_name() form is required
@@ -328,7 +328,7 @@ default:
     # has never run. An operator-managed schedule that already covers this syncer
     # replaces this entry and does not wait.
     INVENTORY_SYNC_SCHEDULES:
-      - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
+      - SYNCER: app.extensions.sync.syncers.system_facts.syncer.SystemFactsSyncer
         INTERVAL: 1 days
     SSL_CERTFILE: null
     SSL_KEYFILE: null

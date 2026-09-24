@@ -25,11 +25,11 @@ import {
   type SnippetElevation,
 } from './HostElevationWarning';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 const ALWAYS: SnippetElevation = { title: 'always.sh', sudo: 'always' };
@@ -100,7 +100,7 @@ describe('HostElevationWarning', () => {
     const client = renderWarning('nomad-1', [UNDECLARED]);
 
     await waitFor(() => {
-      expect(client.getQueryData(['sep', 'hosts'])).toBeDefined();
+      expect(client.getQueryData(['extensions', 'hosts'])).toBeDefined();
     });
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });

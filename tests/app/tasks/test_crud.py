@@ -36,7 +36,7 @@ from app.core.pagination import (
     Pagination,
 )
 from app.core.utils.date_time import utc_now
-from app.sep.apps.meta_keys import SERVICE_ID_META_KEY
+from app.extensions.apps.meta_keys import SERVICE_ID_META_KEY
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,

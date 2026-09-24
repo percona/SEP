@@ -17,7 +17,7 @@
 
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 
 export interface TableOption {
   id: number;
@@ -40,7 +40,7 @@ export interface UseTablesResult {
 }
 
 /**
- * Fetch tables for one or more schemas via the SEP inventory gateway
+ * Fetch tables for one or more schemas via the PMM Extensions inventory gateway
  * (`GET /extensions/schemas/{id}/tables` → `[{id, name}]`).
  *
  * Disabled when no schema ids are provided.

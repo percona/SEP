@@ -145,7 +145,7 @@ jobs:
               - '**/**.py'
               # Nomad payloads are extensionless, so they match no *.py glob and
               # would otherwise skip the pytest tier that guards their invariants.
-              - 'app/sep/apps/**/*payload'
+              - 'app/extensions/apps/**/*payload'
               - 'pyproject.toml'
               - 'alembic.ini'
               - 'poetry.lock'
@@ -408,7 +408,7 @@ jobs:
         with:
           context: .
           file: Containerfile.base
-          tags: sep:builder
+          tags: extensions:builder
           load: true
           cache-from: type=gha,scope=base
           cache-to: type=gha,mode=max,scope=base
@@ -419,14 +419,14 @@ jobs:
       - name: Build app image
         run: >-
           docker build
-          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          --build-context "localhost/extensions:builder=docker-image://extensions:builder"
           -f sidecar/Containerfile.sidecar
           --build-arg EXTENSIONS_RESTRICT_APPS=1
-          -t "sep:HEAD" .
+          -t "extensions:HEAD" .
 
       - name: Smoke test - verify binaries and config files
         run: |
-          docker run --rm --entrypoint /bin/sh "sep:HEAD" -c '
+          docker run --rm --entrypoint /bin/sh "extensions:HEAD" -c '
             set -e
             command -v valkey-server
             command -v valkey-cli
@@ -442,17 +442,17 @@ jobs:
 
       - name: Smoke test - verify HEALTHCHECK instruction
         run: |
-          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD")
+          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "extensions:HEAD")
           if [ -z "$healthcheck_test" ] || [ "$healthcheck_test" = "null" ] || [ "$healthcheck_test" = "[\"NONE\"]" ]; then
             echo "::error::HEALTHCHECK instruction is missing or disabled (HEALTHCHECK NONE) in the side-car image"
             exit 1
           fi
-          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD")
+          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "extensions:HEAD")
           echo "HEALTHCHECK present: $healthcheck"
 
       - name: Smoke test - verify ENTRYPOINT is the side-car wrapper
         run: |
-          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD")
+          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "extensions:HEAD")
           case "$entrypoint" in
             *entrypoint.sh*) ;;
             *)
@@ -463,7 +463,7 @@ jobs:
           echo "ENTRYPOINT present: $entrypoint"
 
       - name: Smoke test - restricted image ships exactly the activated apps
-        run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
+        run: sidecar/verify_image_apps.sh "extensions:HEAD" restricted
 
       - name: Verify the purge layer is the last package-manager operation
         run: python3 scripts/check_sidecar_purge.py --check-ordering
@@ -475,7 +475,7 @@ jobs:
             echo "::error::the purge checker named no packages, so this check cannot run"
             exit 1
           fi
-          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "sep:HEAD" -c '
+          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "extensions:HEAD" -c '
             command -v dpkg-query > /dev/null 2>&1 || {
               echo "::error::dpkg-query is absent, so package presence cannot be established"
               exit 1

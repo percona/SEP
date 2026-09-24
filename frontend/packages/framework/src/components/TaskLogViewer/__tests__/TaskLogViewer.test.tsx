@@ -51,7 +51,7 @@ vi.mock('@melloware/react-logviewer', async () => {
 
 // Manual mock keeps axios out of the resolution graph.
 let _tokenProvider: () => string | null = () => null;
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   setTokenProvider: (p: () => string | null) => {
     _tokenProvider = p;
   },
@@ -654,7 +654,7 @@ describe('TaskLogViewer', () => {
     const handle = getHandle('25');
     act(() => {
       handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
-      handle.pushNamed('sep-error', { detail: 'gateway blew up' });
+      handle.pushNamed('extensions-error', { detail: 'gateway blew up' });
     });
     await waitFor(() => expect(screen.getByText('gateway blew up')).toBeInTheDocument());
 
@@ -952,7 +952,7 @@ describe('TaskLogViewer', () => {
 
     const handle = getHandle('1');
     act(() => {
-      handle.pushNamed('sep-error', {
+      handle.pushNamed('extensions-error', {
         code: 410,
         detail: { message: 'gone', job_id: 'J-1', executor_name: 'nomad-a' },
       });

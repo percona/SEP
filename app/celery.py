@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the shared Celery application for SEP."""
+"""Define the shared Celery application for PMM Extensions."""
 
 import asyncio
 import logging.config
@@ -30,7 +30,7 @@ from celery.signals import (
 
 from app.core.config import settings
 from app.core.log import clear_log_context, correlation_id_var, set_log_context
-from app.sep.apps.framework.registry import build_celery_include
+from app.extensions.apps.framework.registry import build_celery_include
 
 logger = logging.getLogger(__name__)
 

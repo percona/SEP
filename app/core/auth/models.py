@@ -138,7 +138,7 @@ class UserRole(EnumFieldMixin, Enum):
     """Enumerate an identity's access level, lowest to highest.
 
     Members and ordering mirror PMM's own authorization vocabulary so the two
-    products stay semantically aligned; ``SUPER_ADMIN`` is SEP's
+    products stay semantically aligned; ``SUPER_ADMIN`` is PMM Extensions'
     provider-neutral name for the rank PMM calls ``grafanaAdmin``.
 
     Members compare by declared rank rather than by name: ``EDITOR < ADMIN``
@@ -273,7 +273,7 @@ class BaseUser(BaseModel, ABC):
         last_name: str = "",
         **provider_fields: Any,
     ) -> Self:
-        """Build the synthetic service-principal user for SEP-internal auth.
+        """Build the synthetic service-principal user for PMM Extensions internal auth.
 
         Fill the fields common to every provider's user model. A provider whose
         user model requires additional fields overrides this to inject them via

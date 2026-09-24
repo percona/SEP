@@ -28,7 +28,7 @@ import { useMutation } from '@tanstack/react-query';
 
 import { apiClient } from '../client';
 import type { ApiError } from '../errors';
-import type { components } from '../generated/sep';
+import type { components } from '../generated/extensions';
 
 /** Request body: the services to probe (at least one; backend collapses dupes). */
 export type ConnectivityCheckRequest = components['schemas']['ConnectivityCheckRequest'];

@@ -49,7 +49,7 @@ from app.core.settings_override.resolution import (
     resolve_nested_field_metadata,
     resolve_nested_value,
 )
-from app.sep.config import CookieOptions, ExtensionsSettings
+from app.extensions.config import CookieOptions, ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     EXTENSIONS_SETTINGS_TOKEN,

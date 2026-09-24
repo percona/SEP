@@ -37,7 +37,7 @@ from app.core.settings_override.secret_preservation import (
     preserve_secrets_in_model_payload,
 )
 from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
-from app.sep.config import ExtensionsSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 

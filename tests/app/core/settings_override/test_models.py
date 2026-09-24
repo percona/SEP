@@ -35,15 +35,15 @@ from app.core.settings_override.models import (
     SettingOverride,
     StaleActorUpdateError,
 )
+from app.extensions import apps
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.apps.framework.registry import collect_app_owned_settings_classes
+from app.extensions.apps.inventory.config import InventoryAppSettings
+from app.extensions.apps.om_inventory.config import OmInventorySettings
+from app.extensions.apps.report.config import HealthReportSettings
+from app.extensions.config import App, ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep import apps
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.framework.registry import collect_app_owned_settings_classes
-from app.sep.apps.inventory.config import InventoryAppSettings
-from app.sep.apps.om_inventory.config import OmInventorySettings
-from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import App, ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (

@@ -1,5 +1,5 @@
 {
-  "name": "@sep/backup-mongo",
+  "name": "@pmm-extensions/backup-mongo",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sep/api": "workspace:*",
-    "@sep/framework": "workspace:*"
+    "@pmm-extensions/api": "workspace:*",
+    "@pmm-extensions/framework": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
