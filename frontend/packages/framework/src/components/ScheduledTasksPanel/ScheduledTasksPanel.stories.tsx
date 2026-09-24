@@ -18,7 +18,7 @@
 import { useEffect, useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
+import { DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@pmm-extensions/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 

@@ -102,7 +102,7 @@ def test_client(
 ) -> Iterator[TestClient]:
     """Create an authenticated test client for the inventory app.
 
-    Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``
+    Mirrors the PMM Extensions ``test_client``'s ``require_minimum_role_for_unsafe_methods``
     override so the non-admin fixture user can exercise a mutating route, and
     overrides ``get_current_service_principal`` for the same reason: it is the
     outer dependency on the node and service writes, so overriding

@@ -66,13 +66,13 @@ async def test_list_filters_by_setting_class(session: AsyncSession) -> None:
             value=7200,
         ),
     )
-    sep_rows = await SettingsOverrideManager.list(
+    extensions_rows = await SettingsOverrideManager.list(
         session, setting_class=EXTENSIONS_SETTINGS_TOKEN
     )
     tasks_rows = await SettingsOverrideManager.list(
         session, setting_class=TASKS_SETTINGS_TOKEN
     )
-    assert [r.key for r in sep_rows] == ["SYNC_REFRESH_TIME"]
+    assert [r.key for r in extensions_rows] == ["SYNC_REFRESH_TIME"]
     assert [r.key for r in tasks_rows] == ["STALENESS_THRESHOLD_SECONDS"]
 
 

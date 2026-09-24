@@ -31,7 +31,7 @@ import {
   useUpdateAppEntity,
   type AppEntitySchema,
   type AppSchema,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';

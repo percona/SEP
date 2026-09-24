@@ -33,8 +33,8 @@ const { apiMock, useAppTasksMock, authMock } = vi.hoisted(() => ({
   authMock: { canMutate: true },
 }));
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: apiMock,
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
@@ -42,9 +42,9 @@ vi.mock('@sep/api', async (importOriginal) => ({
 // `fetchAllAppListPages` (used by `useScheduledTasksForApp`) calls the
 // package-internal `apiClient` bound in `../client`, not the barrel export
 // above, so it needs its own mock pointing at the same spy.
-vi.mock('@sep/api/src/client', () => ({ apiClient: apiMock }));
+vi.mock('@pmm-extensions/api/src/client', () => ({ apiClient: apiMock }));
 
-import { DEFAULT_APP_LIST_LIMIT } from '@sep/api';
+import { DEFAULT_APP_LIST_LIMIT } from '@pmm-extensions/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 

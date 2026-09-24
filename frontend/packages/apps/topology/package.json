@@ -1,5 +1,5 @@
 {
-  "name": "@sep/topology",
+  "name": "@pmm-extensions/topology",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -13,13 +13,13 @@
     "@dagrejs/dagre": "^3.0.0",
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
-    "@sep/api": "workspace:*",
+    "@pmm-extensions/api": "workspace:*",
     "@xyflow/react": "^12.10.2"
   },
   "devDependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
-    "@sep/test-utils": "workspace:*",
+    "@pmm-extensions/test-utils": "workspace:*",
     "@tanstack/react-query": "^5.75.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",

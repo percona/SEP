@@ -20,7 +20,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { useAppInfo } from '@sep/api';
+import { useAppInfo } from '@pmm-extensions/api';
 
 import { server } from '../../tests/msw-server';
 

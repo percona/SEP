@@ -29,7 +29,7 @@ import yaml
 INFRASTRUCTURE_PACKAGES = frozenset({"framework", "shared"})
 """Packages the strip retains that are not activatable apps.
 
-The SEP core reaches ``framework`` and the backup apps reach ``shared``, so
+The PMM Extensions core reaches ``framework`` and the backup apps reach ``shared``, so
 neither is removable even though neither appears in ``EXTENSIONS.APPS``.
 """
 
@@ -60,7 +60,7 @@ def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
     survive. Re-running against an already-stripped tree removes nothing.
 
     :param profile: The baked settings profile.
-    :param apps_root: The ``app/sep/apps`` directory to thin.
+    :param apps_root: The ``app/extensions/apps`` directory to thin.
     :return: The package directory names left in place.
     :raises FileNotFoundError: When a retained package — an activated app or an
         infrastructure one — has no directory.

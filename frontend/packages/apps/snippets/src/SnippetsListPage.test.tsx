@@ -17,8 +17,8 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@sep/api';
-import { useSnippetDownload } from '@sep/framework';
+import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET } from '@pmm-extensions/api';
+import { useSnippetDownload } from '@pmm-extensions/framework';
 import { SnippetsListPage } from './SnippetsListPage';
 import {
   useSnippets,
@@ -39,8 +39,8 @@ let mockCanMutate = true;
 
 // Partial mock: only the auth reader is stubbed so the page's approval /
 // refresh gating can be driven per test.
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
 
@@ -50,8 +50,8 @@ vi.mock('@sep/api', async (importOriginal) => ({
 // Partial mock: only the download hook is stubbed. `useDebouncedValue` is a
 // pure timer primitive with no transport of its own, so the page exercises the
 // real one — the same 300ms window it debounced inline before.
-vi.mock('@sep/framework', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/framework')>()),
+vi.mock('@pmm-extensions/framework', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/framework')>()),
   useSnippetDownload: vi.fn(() => ({
     mutate: (_params: unknown, callbacks?: { onSuccess?: () => void }) => callbacks?.onSuccess?.(),
     isPending: false,

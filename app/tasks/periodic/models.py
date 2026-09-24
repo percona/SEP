@@ -45,14 +45,14 @@ from app.tasks.models import TaskExecuteRequest, TaskHistoryStatusEnum
 def resolve_task_name(
     args: list[Any] | None, kwargs: dict[str, Any] | None
 ) -> str | None:
-    """Return the SEP task name carried by a beat schedule's decoded fields.
+    """Return the PMM Extensions task name carried by a beat schedule's decoded fields.
 
     Apply the single rule every caller shares: the name is ``args[0]``,
     overridden by ``kwargs["task_name"]`` when that key is present.
 
     :param args: The schedule's decoded positional ``args``, or ``None``.
     :param kwargs: The schedule's decoded ``kwargs``, or ``None``.
-    :return: The resolved SEP task name, or ``None`` when it cannot be derived.
+    :return: The resolved PMM Extensions task name, or ``None`` when it cannot be derived.
     """
     name = args[0] if args else None
     if kwargs and "task_name" in kwargs:
@@ -185,7 +185,7 @@ class PeriodicTaskResponse(BasePeriodicTask):
     last run time, total run count, and date changed.
 
     :param name: The name of the periodic task.
-    :param task: The SEP task name.
+    :param task: The PMM Extensions task name.
     :param start_time: The start time for the task execution.
     :param enabled: Whether the task is enabled.
     :param description: A description of the task.

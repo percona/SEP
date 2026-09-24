@@ -23,11 +23,11 @@ import AccordionSummary from '@mui/material/AccordionSummary';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
-import { detailSyntaxBlockSx } from '@sep/framework';
+import { detailSyntaxBlockSx } from '@pmm-extensions/framework';
 import type { TaskDetailTask } from './types';
 
 const DetailSyntaxHighlighter = lazy(() =>
-  import('@sep/framework').then((mod) => ({ default: mod.DetailSyntaxHighlighter })),
+  import('@pmm-extensions/framework').then((mod) => ({ default: mod.DetailSyntaxHighlighter })),
 );
 
 interface TaskSpecificationSectionProps {

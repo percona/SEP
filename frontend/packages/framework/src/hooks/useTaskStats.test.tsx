@@ -20,13 +20,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
-const { mockSepGet } = vi.hoisted(() => ({ mockSepGet: vi.fn() }));
+const { mockExtensionsGet } = vi.hoisted(() => ({ mockExtensionsGet: vi.fn() }));
 
-vi.mock('@sep/api', async () => {
-  const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
+vi.mock('@pmm-extensions/api', async () => {
+  const actual = await vi.importActual<typeof import('@pmm-extensions/api')>('@pmm-extensions/api');
   return {
     ...actual,
-    sepApi: { GET: mockSepGet },
+    extensionsApi: { GET: mockExtensionsGet },
   };
 });
 
@@ -54,50 +54,50 @@ function wrapper() {
 }
 
 beforeEach(() => {
-  mockSepGet.mockReset();
+  mockExtensionsGet.mockReset();
 });
 
 describe('useTaskStats', () => {
   it('does not call the API when taskName is undefined', () => {
-    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockExtensionsGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats(undefined), { wrapper: wrapper() });
-    expect(mockSepGet).not.toHaveBeenCalled();
+    expect(mockExtensionsGet).not.toHaveBeenCalled();
   });
 
   it('does not call the API for whitespace-only taskName', () => {
-    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockExtensionsGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('   '), { wrapper: wrapper() });
-    expect(mockSepGet).not.toHaveBeenCalled();
+    expect(mockExtensionsGet).not.toHaveBeenCalled();
   });
 
   it('does not call the API when enabled=false', () => {
-    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockExtensionsGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('foo', false), { wrapper: wrapper() });
-    expect(mockSepGet).not.toHaveBeenCalled();
+    expect(mockExtensionsGet).not.toHaveBeenCalled();
   });
 
   it('calls /api/extensions/task-stats/{task_name} with the trimmed name in path params', async () => {
-    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockExtensionsGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('  my-task  '), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockSepGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
+      expect(mockExtensionsGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
         params: { path: { task_name: 'my-task' } },
       });
     });
   });
 
   it('passes URL-special characters through to the openapi-fetch client', async () => {
-    mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
+    mockExtensionsGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('weird/name with spaces&q=?'), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockSepGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
+      expect(mockExtensionsGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
         params: { path: { task_name: 'weird/name with spaces&q=?' } },
       });
     });
   });
 
   it('throws an ApiError with the response status (no retry on 401)', async () => {
-    mockSepGet.mockResolvedValue({
+    mockExtensionsGet.mockResolvedValue({
       data: undefined,
       error: { detail: 'nope' },
       response: {
@@ -111,16 +111,16 @@ describe('useTaskStats', () => {
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
-    const { ApiError } = await import('@sep/api');
+    const { ApiError } = await import('@pmm-extensions/api');
     expect(result.current.error).toBeInstanceOf(ApiError);
     const err = result.current.error as InstanceType<typeof ApiError>;
     expect(err.status).toBe(401);
     expect(err.message).toBe('nope');
-    expect(mockSepGet).toHaveBeenCalledTimes(1);
+    expect(mockExtensionsGet).toHaveBeenCalledTimes(1);
   });
 
   it('throws an ApiError with status 502 and does not retry on upstream failure', async () => {
-    mockSepGet.mockResolvedValue({
+    mockExtensionsGet.mockResolvedValue({
       data: undefined,
       error: { detail: 'tasks unreachable' },
       response: {
@@ -134,11 +134,11 @@ describe('useTaskStats', () => {
     await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
-    const { ApiError } = await import('@sep/api');
+    const { ApiError } = await import('@pmm-extensions/api');
     expect(result.current.error).toBeInstanceOf(ApiError);
     const err = result.current.error as InstanceType<typeof ApiError>;
     expect(err.status).toBe(502);
     expect(err.message).toBe('tasks unreachable');
-    expect(mockSepGet).toHaveBeenCalledTimes(1);
+    expect(mockExtensionsGet).toHaveBeenCalledTimes(1);
   });
 });

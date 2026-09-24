@@ -111,7 +111,7 @@ jobs:
         run: poetry sync --no-root
       - name: Run tests
         env:
-          SEP_PAYLOAD_CHECK_PYTHON: ${{ steps.py39.outputs.python-path }}
+          EXTENSIONS_PAYLOAD_CHECK_PYTHON: ${{ steps.py39.outputs.python-path }}
         run: make test PYTEST_MARKERS='not postgres' COV=${{ matrix.python == '3.11.9' && '1' || '0' }}
       - name: Generate coverage comment data
         id: coverage_comment
@@ -135,15 +135,15 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: sep
-          POSTGRES_PASSWORD: sep
-          POSTGRES_DB: sep_test
+          POSTGRES_USER: extensions
+          POSTGRES_PASSWORD: extensions
+          POSTGRES_DB: extensions_test
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready --health-interval 10s
           --health-timeout 5s --health-retries 5
     env:
-      SEP_TEST_POSTGRES_DSN: postgresql+asyncpg://sep:sep@localhost:5432/sep_test
+      EXTENSIONS_TEST_POSTGRES_DSN: postgresql+asyncpg://extensions:extensions@localhost:5432/extensions_test
     steps:
       - name: Checkout codebase
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

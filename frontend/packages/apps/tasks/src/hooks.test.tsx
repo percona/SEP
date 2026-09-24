@@ -18,7 +18,7 @@
 import type { ReactNode } from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useTaskDetail, useTasksList } from './hooks';
 import { TASKS_APPS_API_BASE } from './types';
@@ -142,7 +142,7 @@ describe('useTaskDetail', () => {
             name: 'monitor-task',
             data: {},
             backend: 'nomad',
-            owner: 'sep',
+            owner: 'extensions',
             is_template: false,
             protected: false,
             alert_on_fail: false,

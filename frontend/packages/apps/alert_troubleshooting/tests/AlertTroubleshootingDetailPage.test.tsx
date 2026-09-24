@@ -22,11 +22,11 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import type { ReactNode } from 'react';
 import { AlertTroubleshootingDetailPage } from '../src/AlertTroubleshootingDetailPage';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn() },
 }));
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   SnippetExecutionAccordion: ({
     snippetFilename,
     title,
@@ -45,7 +45,7 @@ vi.mock('@sep/framework', () => ({
   ),
 }));
 
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function renderAtRoute(path: string, ui: ReactNode) {

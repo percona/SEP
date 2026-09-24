@@ -20,7 +20,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
-from app.sep.utils.forms import parse_crontab_form_fields
+from app.extensions.utils.forms import parse_crontab_form_fields
 
 #: Five-field cron expressions the scheduler can run.
 RUNNABLE_CRONS = [

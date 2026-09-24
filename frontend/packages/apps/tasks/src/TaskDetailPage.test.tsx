@@ -18,7 +18,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TaskHistoryEntry } from '@sep/framework';
+import type { TaskHistoryEntry } from '@pmm-extensions/framework';
 import { TaskDetailPage } from './TaskDetailPage';
 import { useTaskDetail } from './hooks';
 import type { TaskDetailBundle, TaskDetailTask } from './types';
@@ -47,9 +47,9 @@ vi.mock('./TaskSpecificationSection', () => ({
   ),
 }));
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   RUNNING_STATUSES: new Set(['running', 'pending']),
-  SEP_TABLE_CLASS: 'SepTable',
+  EXTENSIONS_TABLE_CLASS: 'ExtensionsTable',
   ChainDisplay: ({ chainNames }: { chainNames?: readonly string[] }) => (
     <span data-testid="chain-display">{chainNames?.join(', ') ?? '—'}</span>
   ),
@@ -118,7 +118,7 @@ const historyEntry = {
     id: 1,
     name: 'monitor-task',
     backend: 'nomad',
-    owner: 'sep',
+    owner: 'extensions',
     is_template: false,
     data: {},
     protected: false,
@@ -134,7 +134,7 @@ const detailTask: TaskDetailTask = {
   name: 'monitor-task',
   data: {},
   backend: 'nomad',
-  owner: 'sep',
+  owner: 'extensions',
   is_template: false,
   protected: false,
   alert_on_fail: false,

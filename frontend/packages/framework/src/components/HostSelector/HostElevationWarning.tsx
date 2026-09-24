@@ -17,12 +17,12 @@
 
 import { useWatch } from 'react-hook-form';
 import { Alert } from '@mui/material';
-import type { SepComponents } from '@sep/api';
+import type { ExtensionsComponents } from '@pmm-extensions/api';
 import { useHosts } from '../../hooks/useHosts';
 import { hostValueId } from './HostSelector';
 
 /** Whether a snippet never, optionally, or always runs with `sudo`. */
-export type SnippetSudoRequirement = SepComponents['schemas']['SnippetSudoRequirement'];
+export type SnippetSudoRequirement = ExtensionsComponents['schemas']['SnippetSudoRequirement'];
 
 /** A snippet the form will launch, as far as elevation is concerned. */
 export interface SnippetElevation {
