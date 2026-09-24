@@ -295,19 +295,22 @@
 | app/sep/apps/mysql\_backups/spec.py                                                                                          |       36 |        1 |       12 |        1 |     96% |       155 |
 | app/sep/apps/mysql\_backups/views.py                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/nav\_icons.py                                                                                                   |       16 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/om\_bootstrap/api\_routes.py                                                                                    |      161 |        6 |       22 |        2 |     96% |405, 577, 619, 640, 684, 700 |
+| app/sep/apps/om\_bootstrap/api\_routes.py                                                                                    |      219 |        5 |       34 |        2 |     97% |381, 489, 546, 820, 841 |
 | app/sep/apps/om\_bootstrap/app.py                                                                                            |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/om\_bootstrap/crud.py                                                                                           |       23 |        3 |        4 |        1 |     78% |77-\>79, 80-82 |
 | app/sep/apps/om\_bootstrap/deps.py                                                                                           |        9 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/om\_bootstrap/dispatch.py                                                                                       |       69 |        1 |       10 |        1 |     97% |       201 |
 | app/sep/apps/om\_bootstrap/migrations/versions/2026\_09\_07\_0748-5020da27ed4b\_create\_bootstrap\_run.py                    |       27 |        5 |        4 |        2 |     77% |63, 75, 159-169 |
 | app/sep/apps/om\_bootstrap/migrations/versions/2026\_09\_07\_0958-130e97b1c430\_add\_run\_steps.py                           |       14 |        1 |        0 |        0 |     93% |        68 |
-| app/sep/apps/om\_bootstrap/models.py                                                                                         |       29 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/om\_bootstrap/migrations/versions/2026\_09\_09\_1000-2773844e362d\_add\_run\_config\_fields.py                  |       21 |        5 |        0 |        0 |     76% |     81-85 |
+| app/sep/apps/om\_bootstrap/migrations/versions/2026\_09\_09\_1100-9b1f4a6e5c3d\_add\_cancel\_requested.py                    |       15 |        2 |        0 |        0 |     87% |     60-61 |
+| app/sep/apps/om\_bootstrap/migrations/versions/2026\_09\_09\_1200-4d7a2e9c1b6f\_add\_member\_configs.py                      |       16 |        2 |        0 |        0 |     88% |     64-65 |
+| app/sep/apps/om\_bootstrap/models.py                                                                                         |       35 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/om\_bootstrap/persistence.py                                                                                    |       31 |        2 |        4 |        2 |     89% |    63, 70 |
-| app/sep/apps/om\_bootstrap/reconcile.py                                                                                      |       66 |        0 |       22 |        1 |     99% | 255-\>248 |
+| app/sep/apps/om\_bootstrap/reconcile.py                                                                                      |       68 |        1 |       24 |        2 |     97% |266-\>259, 300 |
 | app/sep/apps/om\_bootstrap/schema.py                                                                                         |        2 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/om\_bootstrap/strategies/packages.py                                                                            |      116 |        2 |       18 |        2 |     97% |  389, 492 |
-| app/sep/apps/om\_bootstrap/strategy.py                                                                                       |       52 |        0 |        8 |        0 |    100% |           |
+| app/sep/apps/om\_bootstrap/strategies/packages.py                                                                            |      142 |        2 |       24 |        2 |     98% |  434, 572 |
+| app/sep/apps/om\_bootstrap/strategy.py                                                                                       |       72 |        3 |       16 |        3 |     93% |136, 138, 140 |
 | app/sep/apps/om\_inventory/api\_routes.py                                                                                    |      124 |       25 |       28 |        2 |     73% |280, 291-292, 304-306, 324-325, 368, 381-383, 411-412, 429-430, 481-484, 535-\>534, 536, 543-544, 547-548 |
 | app/sep/apps/om\_inventory/app.py                                                                                            |       12 |        1 |        2 |        1 |     86% |        59 |
 | app/sep/apps/om\_inventory/app\_owned\_settings.py                                                                           |        3 |        0 |        0 |        0 |    100% |           |
@@ -520,7 +523,7 @@
 | app/tasks/run\_result.py                                                                                                     |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                    |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                    | **33052** | **1892** | **8002** |  **667** | **93%** |           |
+| **TOTAL**                                                                                                                    | **33216** | **1904** | **8030** |  **671** | **93%** |           |
 
 
 ## Setup coverage badge
