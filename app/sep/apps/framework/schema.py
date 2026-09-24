@@ -495,7 +495,7 @@ class YamlField(BaseField):
 class HostField(BaseField):
     """Represent an executor-target (Nomad / Celery) selector field.
 
-    The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
+    The React renderer loads options from ``GET /api/extensions/hosts/`` (an SEP
     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
     Inventory display names server-side). When ``depends_on`` is set (typically
     a ``ServiceField``), the renderer may auto-select an executor from the

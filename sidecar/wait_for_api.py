@@ -65,7 +65,7 @@ GATED_SERVICES: tuple[tuple[str, BaseYamlAppSettings], ...] = (
 def wait_for_apis() -> bool:
     """Wait for every gated service to answer ``GET /health`` with ``200``.
 
-    The services share a single budget — ``SEP.API_READINESS_TIMEOUT``, the knob the
+    The services share a single budget — ``EXTENSIONS.API_READINESS_TIMEOUT``, the knob the
     ``--start-celery`` gate already exposes — rather than one each, so a container
     start cannot spend it three times over. A service that has run out of budget is
     still reported, so the log names every listener beat did not wait for.

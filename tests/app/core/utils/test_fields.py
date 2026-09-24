@@ -172,14 +172,17 @@ class TestBoundedIntFromEmptyStrFactory:
 class TestUriPathPrefix:
     """Cover the ``URIPathPrefix`` URL mount-prefix field type."""
 
-    @pytest.mark.parametrize("value", ["", "/sep", "/a/b"])
+    @pytest.mark.parametrize("value", ["", "/extensions", "/a/b"])
     def test_accepts_the_unprefixed_default_and_mount_prefixes(
         self, value: str
     ) -> None:
         """Accept the empty default and one or more ``/``-prefixed segments."""
         assert TypeAdapter(URIPathPrefix).validate_python(value) == value
 
-    @pytest.mark.parametrize("value", ["/sep/", "sep", "/a b", "/sep?x", "/sep#x"])
+    @pytest.mark.parametrize(
+        "value",
+        ["/extensions/", "extensions", "/a b", "/extensions?x", "/extensions#x"],
+    )
     def test_rejects_values_that_would_not_concatenate_cleanly(
         self, value: str
     ) -> None:

@@ -2927,8 +2927,8 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform — inventory (nodes, services, schemas, tables).",
-    "title": "SEP Inventory API",
+    "description": "PMM Extensions — inventory (nodes, services, schemas, tables).",
+    "title": "PMM Extensions Inventory API",
     "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",

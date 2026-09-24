@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define dependencies for the SEP-level ``/api/sep/`` JSON routes.
+"""Define dependencies for the SEP-level ``/api/extensions/`` JSON routes.
 
 They live here rather than in ``app/sep/deps.py`` because the scheduling guard
 resolves the owning app through ``get_app_registry()``, and the registry module

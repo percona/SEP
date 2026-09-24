@@ -16,9 +16,9 @@
 """Define the ATW plugin settings section.
 
 The section is read straight off YAML/env rather than mounted as a field on
-``SEPSettings``: importing this module runs the ATW package ``__init__``, which
+``ExtensionsSettings``: importing this module runs the ATW package ``__init__``, which
 pulls in the app definition and, transitively, ``sep_settings`` -- so a field
-default typed with :class:`AtwSettings` would cycle while ``SEPSettings`` is
+default typed with :class:`AtwSettings` would cycle while ``ExtensionsSettings`` is
 still being constructed. Consumers import :data:`atw_settings` at call time (the app's
 ``periodic_task_schedules`` factory and Celery tasks), matching how alerts
 reads its section.
@@ -42,8 +42,8 @@ class AtwSettings(BaseYamlSettings):
     """Configure the ATW plugin's diagnostics-send staging and housekeeping.
 
     :cvar SETTINGS_PREFIXES: The prefixes for ATW-plugin settings in the
-        configuration file. Set to ``["SEP", "ATW"]`` so the section lives under
-        ``SEP.ATW``.
+        configuration file. Set to ``["EXTENSIONS", "ATW"]`` so the section lives under
+        ``EXTENSIONS.ATW``.
     :cvar model_config: The base YAML configuration plus ``env_parse_none_str``,
         without which the ``null`` opt-out both intervals document is unreachable
         from an environment variable. They are optional models, so
@@ -75,7 +75,7 @@ class AtwSettings(BaseYamlSettings):
     model_config = SettingsConfigDict(
         **{**BaseYamlSettings.model_config, "env_parse_none_str": "null"}
     )
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "ATW"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "ATW"]
     bundle_dir: StrRelativePath = "data/atw-bundles"
     bundle_ttl: PositiveInt = 3600
     cleanup_interval: IntervalSchedule | None = IntervalSchedule(

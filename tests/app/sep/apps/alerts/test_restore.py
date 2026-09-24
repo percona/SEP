@@ -58,7 +58,7 @@ def _sample_backup_data():
                 "labels": {"template_name": "t1"},
                 "folder_uid": "f1",
                 "for": "5m",
-                "group": "SEP Alerts",
+                "group": "PMM Extensions Alerts",
             },
         ],
         "contact_points": [
@@ -97,7 +97,7 @@ class TestRestoreFromBackup:
             AlertRule(uid="existing1", title="Old Rule"),
         ]
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.side_effect = [False, True, True]
         mock_api.create_template.return_value = PMMAlertTemplate(
@@ -140,7 +140,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
@@ -163,7 +163,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = [
@@ -190,7 +190,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = [
@@ -217,7 +217,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = [
@@ -244,7 +244,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.list_contact_points.return_value = []
 
@@ -271,7 +271,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.list_contact_points.return_value = []
 
@@ -294,7 +294,7 @@ class TestRestoreFromBackup:
             AlertRule(uid="r1", title="Rule 1"),
         ]
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
@@ -315,7 +315,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.side_effect = [True, True, False]
         mock_api.create_rule.return_value = AlertRule(uid="new1", title="Rule 1")
@@ -353,7 +353,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.side_effect = [True, True, False]
         mock_api.list_contact_points.return_value = []
@@ -377,7 +377,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
@@ -392,14 +392,14 @@ class TestRestoreFromBackup:
                 "title": "Rule With Bad Template",
                 "labels": {"template_name": "nonexistent"},
                 "for": "5m",
-                "group": "SEP Alerts",
+                "group": "PMM Extensions Alerts",
             },
             {
                 "uid": "r2",
                 "title": "Rule With Missing Label",
                 "labels": {},
                 "for": "5m",
-                "group": "SEP Alerts",
+                "group": "PMM Extensions Alerts",
             },
         ]
 
@@ -417,7 +417,7 @@ class TestRestoreFromBackup:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = [
-            Folder(uid="f1", title="SEP Alerts", id=1),
+            Folder(uid="f1", title="PMM Extensions Alerts", id=1),
         ]
         mock_api.template_exists.return_value = True
         mock_api.list_contact_points.return_value = []
@@ -430,7 +430,7 @@ class TestRestoreFromBackup:
                 "title": "Conflicting Rule",
                 "labels": {"template_name": "nonexistent"},
                 "for": "5m",
-                "group": "SEP Alerts",
+                "group": "PMM Extensions Alerts",
             },
         ]
 
@@ -463,7 +463,7 @@ class TestRestoreFromBackup:
         mock_api.list_rules.return_value = []
         mock_api.list_folders.return_value = []
         mock_api.create_folder.return_value = Folder(
-            uid="new-f1", title="SEP Alerts", id=2
+            uid="new-f1", title="PMM Extensions Alerts", id=2
         )
         mock_api.template_exists.side_effect = [False, False, True]
         mock_api.create_template.return_value = PMMAlertTemplate(
@@ -480,7 +480,7 @@ class TestRestoreFromBackup:
 
         await restore_from_backup(mock_api, backup)
 
-        mock_api.create_folder.assert_awaited_once_with("SEP Alerts")
+        mock_api.create_folder.assert_awaited_once_with("PMM Extensions Alerts")
         mock_api.create_rule.assert_awaited_once()
         call_kwargs = mock_api.create_rule.call_args.kwargs
         assert call_kwargs["folder_uid"] == "new-f1"

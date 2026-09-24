@@ -52,7 +52,7 @@ from app.core.settings_override.models import (
     SettingOverride,
 )
 from app.core.utils import json_serializer
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -85,7 +85,9 @@ async def override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
 def _sep_proxies() -> dict:
     """Return the SEP-side proxy registry mirroring the SEP lifespan wiring."""
     return {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            sep_settings, ExtensionsSettings
+        ),
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
         ),
@@ -188,7 +190,7 @@ async def test_sep_proxy_visible_after_refresh(
     override_value = not yaml_default
     await _insert_override(
         override_session_maker,
-        SEPSettings,
+        ExtensionsSettings,
         "CONNECTIVITY_CHECK_DEFAULT",
         value=override_value,
     )

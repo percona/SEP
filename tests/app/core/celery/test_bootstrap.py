@@ -379,7 +379,7 @@ def test_readiness_follows_an_overridden_store(
     """Wait on the store ``CELERY__BEAT_DBURI`` names, not the SEP database.
 
     Pointing beat at a separate store is a documented deployment input, so a
-    readiness wait keyed on ``SEP_DB_HOST`` would watch the wrong host.
+    readiness wait keyed on ``EXTENSIONS_DB_HOST`` would watch the wrong host.
     """
     monkeypatch.setattr(
         settings.CELERY, "beat_dburi", OVERRIDDEN_STORE.format(password="pw")

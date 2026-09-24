@@ -29,7 +29,7 @@ import {
 import { server } from '../../../../tests/msw-server';
 import { makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
 
-const SEP_URL = 'http://localhost/api/sep/admin/settings/';
+const SEP_URL = 'http://localhost/api/extensions/admin/settings/';
 const TASKS_URL = 'http://localhost/api/tasks/admin/settings/';
 
 /** All groups now arrive in one SEP response (TasksSettings proxied server-side). */
@@ -95,7 +95,7 @@ describe('useSettingsList', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const classes = result.current.data?.map((g) => g.setting_class);
-    expect(classes).toEqual(['SEPSettings', 'SnippetsSettings', 'TasksSettings']);
+    expect(classes).toEqual(['ExtensionsSettings', 'SnippetsSettings', 'TasksSettings']);
     expect(directCall).not.toHaveBeenCalled();
   });
 
@@ -130,15 +130,18 @@ describe('usePatchSetting', () => {
   it('PATCHes a local class through the SEP endpoint', async () => {
     const patched = vi.fn();
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/SEPSettings', async ({ request }) => {
-        patched(await request.json());
-        return HttpResponse.json([{ ...sepListResponse.groups[0].settings[0], value: 9 }]);
-      }),
+      http.patch(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings',
+        async ({ request }) => {
+          patched(await request.json());
+          return HttpResponse.json([{ ...sepListResponse.groups[0].settings[0], value: 9 }]);
+        },
+      ),
     );
 
     const { result } = renderHook(() => usePatchSetting(), { wrapper: makeWrapper() });
     await result.current.mutateAsync({
-      settingClass: 'SEPSettings',
+      settingClass: 'ExtensionsSettings',
       key: 'SYNC_REFRESH_TIME',
       value: 9,
     });
@@ -150,10 +153,13 @@ describe('usePatchSetting', () => {
     const directCall = failOnTasksCall();
     const patched = vi.fn();
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', async ({ request }) => {
-        patched(await request.json());
-        return HttpResponse.json([{ ...tasksListResponse.groups[0].settings[0], value: 7200 }]);
-      }),
+      http.patch(
+        'http://localhost/api/extensions/admin/settings/TasksSettings',
+        async ({ request }) => {
+          patched(await request.json());
+          return HttpResponse.json([{ ...tasksListResponse.groups[0].settings[0], value: 7200 }]);
+        },
+      ),
     );
 
     const { result } = renderHook(() => usePatchSetting(), { wrapper: makeWrapper() });
@@ -169,7 +175,7 @@ describe('usePatchSetting', () => {
 
   it('surfaces the proxied 422 body so settingErrorMessage can read it', async () => {
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', () =>
+      http.patch('http://localhost/api/extensions/admin/settings/TasksSettings', () =>
         HttpResponse.json(
           {
             detail: [
@@ -206,7 +212,7 @@ describe('useResetSetting', () => {
     const deleted = vi.fn();
     server.use(
       http.delete(
-        'http://localhost/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
+        'http://localhost/api/extensions/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
         () => {
           deleted();
           return new HttpResponse(null, { status: 204 });
@@ -227,15 +233,18 @@ describe('useResetSetting', () => {
   it('DELETEs a local class through its own SEP path', async () => {
     const deleted = vi.fn();
     server.use(
-      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME', () => {
-        deleted();
-        return new HttpResponse(null, { status: 204 });
-      }),
+      http.delete(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME',
+        () => {
+          deleted();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
     );
 
     const { result } = renderHook(() => useResetSetting(), { wrapper: makeWrapper() });
     await result.current.mutateAsync({
-      settingClass: 'SEPSettings',
+      settingClass: 'ExtensionsSettings',
       key: 'SYNC_REFRESH_TIME',
     });
 

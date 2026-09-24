@@ -28,7 +28,7 @@ from cryptography.fernet import Fernet
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
 from app.inventory.config import InventorySettings
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.sidecar.conftest import SETTINGS_ENV_HELPER, SIDECAR_DIR
 
@@ -43,7 +43,7 @@ CALLER_SHELL_OPTIONS = "set -o errexit -o nounset -o pipefail"
 
 SHELL_LOCAL_NAMES = frozenset({"PATH", "PWD", "SHLVL", "_"})
 
-DATABASE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
+DATABASE_PREFIXES = ("EXTENSIONS", "INVENTORY", "TASKS")
 
 BLANK_BEAT_URI = {"CELERY__BEAT_DBURI": ""}
 """A blank inherited beat URI, the shape the helper has to clear."""
@@ -175,8 +175,8 @@ def test_database_host_and_port_defaults_are_exported():
     """
     environment = exported(source_helper(SECRET_KEY="k"))
 
-    assert environment["SEP_DB_HOST"] == "pmm-server"
-    assert environment["SEP_DB_PORT"] == "5432"
+    assert environment["EXTENSIONS_DB_HOST"] == "pmm-server"
+    assert environment["EXTENSIONS_DB_PORT"] == "5432"
     assert all(
         environment[f"{prefix}__DATABASE__{field}"]
         for prefix in DATABASE_PREFIXES
@@ -203,7 +203,7 @@ def test_supervisord_expansions_are_exported_unconditionally():
 
 def test_password_reaches_every_canonical_destination():
     """Assert one input fans out to the three services and nowhere else."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
+    environment = exported(source_helper(SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw"))
 
     assert [
         environment[f"{prefix}__DATABASE__PASSWORD"] for prefix in DATABASE_PREFIXES
@@ -218,11 +218,11 @@ def test_password_reaches_every_canonical_destination():
 def test_explicit_canonical_variable_outranks_the_derived_one():
     """Keep the value an operator sets directly on one service."""
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_HOST="a", TASKS__DATABASE__HOST="b")
+        source_helper(SECRET_KEY="k", EXTENSIONS_DB_HOST="a", TASKS__DATABASE__HOST="b")
     )
 
     assert environment["TASKS__DATABASE__HOST"] == "b"
-    assert environment["SEP__DATABASE__HOST"] == "a"
+    assert environment["EXTENSIONS__DATABASE__HOST"] == "a"
 
 
 def test_an_inherited_beat_uri_is_neither_read_nor_rewritten():
@@ -262,7 +262,9 @@ GRAFANA_FAN_OUT_NAMES = (
 
 def test_grafana_token_reaches_every_canonical_destination():
     """Assert one token serves Grafana sign-in, the PMM syncer and the Nomad executor."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP_GRAFANA_TOKEN="glsa_x"))
+    environment = exported(
+        source_helper(SECRET_KEY="k", EXTENSIONS_GRAFANA_TOKEN="glsa_x")
+    )
 
     assert {
         name: environment.get(name) for name in GRAFANA_FAN_OUT_NAMES
@@ -326,7 +328,9 @@ def test_an_explicit_single_name_outranks_a_minted_token(explicit: str):
 )
 def test_pmm_endpoint_reaches_the_client_and_the_grafana_provider(endpoint: str):
     """Append PMM's ``/graph`` prefix, trimming a trailing slash that would double it."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP_PMM_ENDPOINT=endpoint))
+    environment = exported(
+        source_helper(SECRET_KEY="k", EXTENSIONS_PMM_ENDPOINT=endpoint)
+    )
 
     assert environment["PMM__ENDPOINT"] == "https://h:1"
     assert environment["AUTH__PROVIDER__GRAFANA__ENDPOINT"] == "https://h:1/graph"
@@ -336,7 +340,9 @@ def test_nomad_endpoint_is_forwarded_verbatim():
     """Forward the Nomad endpoint verbatim, since its credentials live in the URL."""
     endpoint = "https://a:b@h/nomad"
 
-    environment = exported(source_helper(SECRET_KEY="k", SEP_NOMAD_ENDPOINT=endpoint))
+    environment = exported(
+        source_helper(SECRET_KEY="k", EXTENSIONS_NOMAD_ENDPOINT=endpoint)
+    )
 
     assert environment["TASKS__NOMAD__ENDPOINT"] == endpoint
 
@@ -346,7 +352,7 @@ def test_derived_environment_resolves_against_the_baked_profile(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Assert the shell contract and the settings contract agree at their seam."""
-    environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
+    environment = exported(source_helper(SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw"))
     for name, value in environment.items():
         if name not in SHELL_LOCAL_NAMES:
             monkeypatch.setenv(name, value)
@@ -354,7 +360,7 @@ def test_derived_environment_resolves_against_the_baked_profile(
     assert "CELERY__BEAT_DBURI" not in environment
     assert (
         Settings().CELERY.beat_dburi
-        == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        == "postgresql+psycopg2://pmm_extensions:pw@pmm-server:5432/pmm_extensions"
     )
     assert (
         AuthSettings().PROVIDER["grafana"].service_account_token.get_secret_value()
@@ -362,7 +368,7 @@ def test_derived_environment_resolves_against_the_baked_profile(
     )
     assert [
         settings_class().DATABASE.PASSWORD.get_secret_value()
-        for settings_class in (SEPSettings, InventorySettings, TasksSettings)
+        for settings_class in (ExtensionsSettings, InventorySettings, TasksSettings)
     ] == ["pw", "pw", "pw"]
 
 
@@ -376,14 +382,16 @@ def test_reserved_character_password_reaches_a_usable_service_dsn(
     the shell says nothing about the DSN the settings classes build from it.
     """
     password = "p@ss:w/rd"
-    environment = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD=password))
+    environment = exported(
+        source_helper(SECRET_KEY="k", EXTENSIONS_DB_PASSWORD=password)
+    )
     for name, value in environment.items():
         if name not in SHELL_LOCAL_NAMES:
             monkeypatch.setenv(name, value)
 
     assert [
         unquote(urlsplit(settings_class().DATABASE.URL).password)
-        for settings_class in (SEPSettings, InventorySettings, TasksSettings)
+        for settings_class in (ExtensionsSettings, InventorySettings, TasksSettings)
     ] == [password, password, password]
 
 
@@ -488,18 +496,19 @@ def test_no_encryption_key_is_exported_when_nothing_supplies_one():
 
 def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(tmp_path: Path):
     """Clear a blank inherited name, which pydantic would rank above the file."""
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="from-file")
 
     environment = exported(
         source_helper(
             SECRET_KEY="k",
-            SEP_DB_PASSWORD="pw",
+            EXTENSIONS_DB_PASSWORD="pw",
             SECRETS_DIR=secrets_dir,
-            SEP__DATABASE__PASSWORD="",
+            EXTENSIONS__DATABASE__PASSWORD="",
         )
     )
 
-    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert environment
+    assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
 
 
 @pytest.mark.parametrize(
@@ -533,7 +542,7 @@ def test_a_blank_beat_uri_still_resolves_the_derived_store(
     validation, taking every supervisord child down with it.
     """
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", **BLANK_BEAT_URI)
+        source_helper(SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw", **BLANK_BEAT_URI)
     )
     for name, value in environment.items():
         if name not in SHELL_LOCAL_NAMES:
@@ -541,7 +550,7 @@ def test_a_blank_beat_uri_still_resolves_the_derived_store(
 
     assert (
         Settings().CELERY.beat_dburi
-        == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+        == "postgresql+psycopg2://pmm_extensions:pw@pmm-server:5432/pmm_extensions"
     )
 
 
@@ -550,11 +559,13 @@ def test_a_mounted_canonical_name_is_left_unexported(tmp_path: Path):
     secrets_dir = write_secrets(tmp_path, TASKS__DATABASE__PASSWORD="from-file")
 
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+        source_helper(
+            SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir
+        )
     )
 
     assert "TASKS__DATABASE__PASSWORD" not in environment
-    assert environment["SEP__DATABASE__PASSWORD"] == "pw"
+    assert environment["EXTENSIONS__DATABASE__PASSWORD"] == "pw"
     assert environment["INVENTORY__DATABASE__PASSWORD"] == "pw"
 
 
@@ -564,33 +575,35 @@ def test_an_explicit_variable_outranks_the_file_and_the_derived_value(tmp_path: 
     The seed is skipped too, so the wait loops follow the value in force rather
     than the shadowed file.
     """
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__HOST="from-file")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__HOST="from-file")
 
     environment = exported(
         source_helper(
             SECRET_KEY="k",
-            SEP__DATABASE__HOST="from-env",
-            SEP_DB_HOST="from-raw",
+            EXTENSIONS__DATABASE__HOST="from-env",
+            EXTENSIONS_DB_HOST="from-raw",
             SECRETS_DIR=secrets_dir,
         )
     )
 
-    assert environment["SEP__DATABASE__HOST"] == "from-env"
-    assert environment["SEP_DB_HOST"] == "from-raw"
+    assert environment["EXTENSIONS__DATABASE__HOST"] == "from-env"
+    assert environment["EXTENSIONS_DB_HOST"] == "from-raw"
 
 
 def test_mounted_host_and_port_seed_the_supervisord_wait_loops(tmp_path: Path):
     """Point the migrate wait loops at the database the services connect to."""
     secrets_dir = write_secrets(
-        tmp_path, SEP__DATABASE__HOST="db.internal", SEP__DATABASE__PORT="6543"
+        tmp_path,
+        EXTENSIONS__DATABASE__HOST="db.internal",
+        EXTENSIONS__DATABASE__PORT="6543",
     )
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
-    assert environment["SEP_DB_HOST"] == "db.internal"
-    assert environment["SEP_DB_PORT"] == "6543"
-    assert "SEP__DATABASE__HOST" not in environment
-    assert "SEP__DATABASE__PORT" not in environment
+    assert environment["EXTENSIONS_DB_HOST"] == "db.internal"
+    assert environment["EXTENSIONS_DB_PORT"] == "6543"
+    assert "EXTENSIONS__DATABASE__HOST" not in environment
+    assert "EXTENSIONS__DATABASE__PORT" not in environment
     assert environment["INVENTORY__DATABASE__HOST"] == "db.internal"
     assert environment["TASKS__DATABASE__PORT"] == "6543"
 
@@ -602,21 +615,22 @@ def test_a_mounted_password_never_reaches_the_environment(tmp_path: Path):
     the settings classes, so nothing has to put the password back in the
     environment to reach it.
     """
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="p@ss:w/rd")
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
-    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert environment
+    assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
     assert "CELERY__BEAT_DBURI" not in environment
 
 
 def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Path):
-    """Leave sibling services unsupplied in the shell, since only ``SEP_DB_PASSWORD`` fans out.
+    """Leave sibling services unsupplied in the shell, since only ``EXTENSIONS_DB_PASSWORD`` fans out.
 
     The settings classes still read a global ``DATABASE__PASSWORD`` mount for every
     service; this test pins what the shell exports, not what settings resolve.
     """
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="from-file")
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
@@ -626,23 +640,25 @@ def test_a_mounted_password_supplies_only_the_name_it_is_named_for(tmp_path: Pat
 
 def test_a_file_value_is_stripped(tmp_path: Path):
     """Strip a file the way the settings classes strip it, so both read one value."""
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__HOST="  padded  \n")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__HOST="  padded  \n")
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
-    assert environment["SEP_DB_HOST"] == "padded"
+    assert environment["EXTENSIONS_DB_HOST"] == "padded"
     assert environment["INVENTORY__DATABASE__HOST"] == "padded"
 
 
 def test_an_empty_file_counts_as_a_supplied_value(tmp_path: Path):
     """Treat a blank mount as supplied, which is how the settings classes read it."""
-    secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="")
+    secrets_dir = write_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="")
 
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+        source_helper(
+            SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir
+        )
     )
 
-    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
     assert environment["INVENTORY__DATABASE__PASSWORD"] == "pw"
     assert environment["TASKS__DATABASE__PASSWORD"] == "pw"
 
@@ -652,12 +668,12 @@ def test_a_symlink_escaping_the_directory_does_not_supply_a_name(tmp_path: Path)
     outside = tmp_path / "outside"
     outside.write_text("escaped-value", encoding="utf-8")
     secrets_dir = write_secrets(tmp_path)
-    (Path(secrets_dir) / "SEP__DATABASE__HOST").symlink_to(outside)
+    (Path(secrets_dir) / "EXTENSIONS__DATABASE__HOST").symlink_to(outside)
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
-    assert environment["SEP__DATABASE__HOST"] == "pmm-server"
-    assert environment["SEP_DB_HOST"] == "pmm-server"
+    assert environment["EXTENSIONS__DATABASE__HOST"] == "pmm-server"
+    assert environment["EXTENSIONS_DB_HOST"] == "pmm-server"
 
 
 def test_a_symlink_escaping_the_directory_does_not_satisfy_the_gate(tmp_path: Path):
@@ -692,13 +708,15 @@ def test_a_lowercase_file_name_supplies_the_canonical_name(tmp_path: Path):
     An exact-match lookup would export the derived value instead, and an
     exported name outranks every secret file.
     """
-    secrets_dir = write_secrets(tmp_path, sep__database__password="from-file")
+    secrets_dir = write_secrets(tmp_path, extensions__database__password="from-file")
 
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="raw", SECRETS_DIR=secrets_dir)
+        source_helper(
+            SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="raw", SECRETS_DIR=secrets_dir
+        )
     )
 
-    assert "SEP__DATABASE__PASSWORD" not in environment
+    assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
     assert environment["INVENTORY__DATABASE__PASSWORD"] == "raw"
     assert environment["TASKS__DATABASE__PASSWORD"] == "raw"
 
@@ -717,11 +735,11 @@ def test_a_secret_in_a_subdirectory_does_not_supply_a_name(tmp_path: Path):
     secrets_dir = Path(write_secrets(tmp_path))
     nested = secrets_dir / "sub"
     nested.mkdir()
-    (nested / "SEP__DATABASE__HOST").write_text("nested-value", encoding="utf-8")
+    (nested / "EXTENSIONS__DATABASE__HOST").write_text("nested-value", encoding="utf-8")
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=str(secrets_dir)))
 
-    assert environment["SEP__DATABASE__HOST"] == "pmm-server"
+    assert environment["EXTENSIONS__DATABASE__HOST"] == "pmm-server"
 
 
 @pytest.mark.parametrize(
@@ -738,10 +756,12 @@ def test_an_unusable_secrets_directory_changes_nothing(
 ):
     """Leave today's exported environment untouched when no file matches a name."""
     secrets_dir = build_secrets_dir(tmp_path)
-    baseline = exported(source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw"))
+    baseline = exported(source_helper(SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw"))
 
     environment = exported(
-        source_helper(SECRET_KEY="k", SEP_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir)
+        source_helper(
+            SECRET_KEY="k", EXTENSIONS_DB_PASSWORD="pw", SECRETS_DIR=secrets_dir
+        )
     )
 
     assert {
@@ -756,10 +776,10 @@ def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
     """Assert the shell's suppression and the settings classes' file read compose."""
     password = "p@ss:w/rd"
     secrets_dir = write_secrets(
-        tmp_path, SECRET_KEY="from-file", SEP__DATABASE__PASSWORD=password
+        tmp_path, SECRET_KEY="from-file", EXTENSIONS__DATABASE__PASSWORD=password
     )
     environment = exported(source_helper(SECRETS_DIR=secrets_dir))
-    for name in ("SECRET_KEY", "SEP__DATABASE__PASSWORD"):
+    for name in ("SECRET_KEY", "EXTENSIONS__DATABASE__PASSWORD"):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():
         if name not in SHELL_LOCAL_NAMES:
@@ -771,27 +791,29 @@ def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
         Settings(_secrets_dir=secrets_dir).SECRET_KEY.get_secret_value() == "from-file"
     )
     assert (
-        SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+        ExtensionsSettings(
+            _secrets_dir=secrets_dir
+        ).DATABASE.PASSWORD.get_secret_value()
         == password
     )
     assert (
         Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
-        == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+        == "postgresql+psycopg2://pmm_extensions:p%40ss%3Aw%2Frd@pmm-server:5432/pmm_extensions"
     )
 
 
 class TestBlankNamesWhoseGuardMightNeverFire:
-    """Clear a canonical name inherited blank while its ``SEP_*`` guard is inactive.
+    """Clear a canonical name inherited blank while its ``EXTENSIONS_*`` guard is idle.
 
     ``export_canonical`` only clears a blank when it actually runs, and four
-    guards skip calling it whenever their raw input is absent. Two more names
-    -- ``SEP_INTERNAL_TOKEN`` and ``BASE_URL`` -- have no guard at all and are
+    guards skip calling it whenever their raw input is absent. Two more names,
+    ``EXTENSIONS_INTERNAL_TOKEN`` and ``BASE_URL``, have no guard at all and are
     never touched by the script. Every canonical name the script manages must
     clear blanks unconditionally so a mounted secret file is never shadowed.
     """
 
     ALL_BLANK_CLEARED_NAMES: tuple[str, ...] = (
-        "SEP__DATABASE__PASSWORD",
+        "EXTENSIONS__DATABASE__PASSWORD",
         "INVENTORY__DATABASE__PASSWORD",
         "TASKS__DATABASE__PASSWORD",
         "DATABASE__PASSWORD",
@@ -801,7 +823,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         "AUTH__PROVIDER__GRAFANA__ENDPOINT",
         "TASKS__NOMAD__ENDPOINT",
         "TASKS__NOMAD__API_KEY",
-        "SEP_INTERNAL_TOKEN",
+        "EXTENSIONS_INTERNAL_TOKEN",
         "BASE_URL",
     )
 
@@ -850,22 +872,28 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     def test_a_mounted_password_resolves_even_with_its_guard_inactive(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Assert the file resolves though nothing sets ``SEP_DB_PASSWORD``.
+        """Assert the file resolves though nothing sets ``EXTENSIONS_DB_PASSWORD``.
 
         Before the fix this blank had nothing to clear it: the password guard
         never fires without a raw input, so ``export_canonical`` never runs and
         the file stays shadowed.
         """
-        secrets_dir = write_secrets(tmp_path, SEP__DATABASE__PASSWORD="from-file")
+        secrets_dir = write_secrets(
+            tmp_path, EXTENSIONS__DATABASE__PASSWORD="from-file"
+        )
         environment = exported(
             source_helper(
-                SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP__DATABASE__PASSWORD=""
+                SECRET_KEY="k",
+                SECRETS_DIR=secrets_dir,
+                EXTENSIONS__DATABASE__PASSWORD="",
             )
         )
         apply_environment(monkeypatch, environment)
 
         assert (
-            SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+            ExtensionsSettings(
+                _secrets_dir=secrets_dir
+            ).DATABASE.PASSWORD.get_secret_value()
             == "from-file"
         )
 
@@ -873,7 +901,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     def test_a_mounted_internal_token_resolves_even_with_its_guard_inactive(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Assert the file resolves though nothing derives ``SEP_INTERNAL_TOKEN``.
+        """Assert the file resolves though nothing derives ``EXTENSIONS_INTERNAL_TOKEN``.
 
         Unlike the URL-typed names, an uncleared blank here would not crash:
         ``derive_internal_token`` treats an empty ``SecretStr`` the same as an
@@ -882,16 +910,18 @@ class TestBlankNamesWhoseGuardMightNeverFire:
         "absent from the environment" assertion can't tell that apart from
         this -- the derived fallback also leaves the name unexported.
         """
-        secrets_dir = write_secrets(tmp_path, SEP_INTERNAL_TOKEN="from-file")
+        secrets_dir = write_secrets(tmp_path, EXTENSIONS_INTERNAL_TOKEN="from-file")
         environment = exported(
             source_helper(
-                SECRET_KEY="k", SECRETS_DIR=secrets_dir, SEP_INTERNAL_TOKEN=""
+                SECRET_KEY="k", SECRETS_DIR=secrets_dir, EXTENSIONS_INTERNAL_TOKEN=""
             )
         )
         apply_environment(monkeypatch, environment)
 
         assert (
-            Settings(_secrets_dir=secrets_dir).SEP_INTERNAL_TOKEN.get_secret_value()
+            Settings(
+                _secrets_dir=secrets_dir
+            ).EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
             == "from-file"
         )
 
@@ -899,7 +929,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     def test_mounted_grafana_credentials_resolve_even_with_their_guard_inactive(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """Assert both files resolve though nothing sets ``SEP_GRAFANA_TOKEN``.
+        """Assert both files resolve though nothing sets ``EXTENSIONS_GRAFANA_TOKEN``.
 
         The token guard never fires without a raw input, so without the
         unconditional clear both files would stay shadowed the same way the
@@ -934,7 +964,7 @@ class TestBlankNamesWhoseGuardMightNeverFire:
     @pytest.mark.usefixtures("embedded_profile_cwd")
     @pytest.mark.parametrize(
         "mount",
-        [{}, {"BASE_URL": "https://mounted:9443/sep"}],
+        [{}, {"BASE_URL": "https://mounted:9443/extensions"}],
         ids=["falls-through-to-none", "resolves-through-the-file"],
     )
     def test_a_blank_base_url_resolves_through_the_file_or_to_none(
@@ -1029,7 +1059,7 @@ class TestGuardInactiveEndpointsResolveWithoutCrashing:
         environment = exported(
             source_helper(
                 SECRET_KEY="k",
-                SEP_DB_PASSWORD="pw",
+                EXTENSIONS_DB_PASSWORD="pw",
                 SECRETS_DIR=secrets_dir,
                 TASKS__NOMAD__ENDPOINT="",
             )

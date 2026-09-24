@@ -21,7 +21,7 @@ default:
     # ALLOWED_KEYS:
     #   - Settings.LOGGING
     #   - Settings.PMM__annotations_enabled
-    #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+    #   - ExtensionsSettings.CONNECTIVITY_CHECK_DEFAULT
     #   - TasksSettings.LOG_RETENTION_DAYS
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
@@ -43,7 +43,7 @@ default:
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     ANNOTATIONS_ENABLED: false
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
-  SEP:
+  EXTENSIONS:
     INVENTORY:
       # Tombstone collection. A retired node/service/schema/table is deleted
       # permanently once it has been retired for COLLECTION_RETENTION AND
@@ -107,6 +107,8 @@ default:
       - MODULE_NAME: report
       - MODULE_NAME: om_inventory
         ENABLED: true
+      - MODULE_NAME: om_bootstrap
+        ENABLED: true
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
@@ -146,7 +148,7 @@ default:
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     # OM inventory's own knobs (app.sep.apps.om_inventory.config.OmInventorySettings)
-    # are read from SEP.OM_INVENTORY, entirely commented out below: every value
+    # are read from EXTENSIONS.OM_INVENTORY, entirely commented out below: every value
     # shown is that class's own default, and the sidecar ships defaults-only.
     # OM_INVENTORY:
     #   SCHEDULE: {EVERY: 10, PERIOD: minutes}  # null unregisters the periodic sweep
@@ -340,7 +342,7 @@ default:
     # than sending the mask to the receiver as the credential.
     #
     # Staging and housekeeping for the diagnostics sends that use the plan above.
-    # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
+    # Read from YAML/env only (env prefix `EXTENSIONS__ATW__`); defaults shown.
     #   ATW:
     #     bundle_dir: data/atw-bundles     # where a bundle is staged while it uploads
     #     bundle_ttl: 3600                 # seconds before an abandoned bundle is reaped
@@ -414,7 +416,7 @@ default:
     INVENTORY_SYNC_SYNCER: null  # Dotted "module.ClassName" syncer the seeded schedule targets; null runs every configured syncer
     # Per-syncer schedules seeded beside the pair above, for a syncer whose useful
     # cadence differs from it. SYNCER takes the full BaseSyncer.get_name() form,
-    # not the short SEP.SYNCERS spelling. Rejected at validation if an entry
+    # not the short EXTENSIONS.SYNCERS spelling. Rejected at validation if an entry
     # duplicates INVENTORY_SYNC_SYNCER, repeats another entry's syncer, or sits
     # beside a sync-all default (an interval with no syncer pinned). While the pinned
     # default above is seeded, an entry's first run waits for that syncer's first
@@ -456,7 +458,7 @@ development:
   TASKS:
     ANONYMIZER:
       DEFAULT_ENTITIES: []
-  SEP:
+  EXTENSIONS:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:
     #   - /path/to/extra/dir
@@ -556,7 +558,7 @@ production_docker:
       USER: postgres
     SSL_CERTFILE: /data/certs/sep/inventory_api-cert.pem
     SSL_KEYFILE: /data/certs/sep/inventory_api-cert-key.pem
-  SEP:
+  EXTENSIONS:
     DATABASE:
       ENGINE: postgresql
       HOST: sep-db

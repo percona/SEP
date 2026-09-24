@@ -760,22 +760,22 @@ class TestCreateFolder:
         """Test create_folder sends POST and returns a Folder object."""
         mock_request.return_value = {
             "uid": "new-folder-uid",
-            "title": "SEP Alerts",
+            "title": "PMM Extensions Alerts",
             "id": 42,
         }
 
         expected_id = 42
 
-        result = await pmm_remote_api.create_folder("SEP Alerts")
+        result = await pmm_remote_api.create_folder("PMM Extensions Alerts")
 
         assert isinstance(result, Folder)
         assert result.uid == "new-folder-uid"
-        assert result.title == "SEP Alerts"
+        assert result.title == "PMM Extensions Alerts"
         assert result.id == expected_id
         mock_request.assert_awaited_once_with(
             "POST",
             "/graph/api/folders/",
-            json={"title": "SEP Alerts"},
+            json={"title": "PMM Extensions Alerts"},
             headers=ALERTING_HEADERS,
         )
 
@@ -788,7 +788,7 @@ class TestCreateFolder:
         mock_request.side_effect = HTTPException(status_code=error_status)
 
         with pytest.raises(HTTPException) as exc_info:
-            await pmm_remote_api.create_folder("SEP Alerts")
+            await pmm_remote_api.create_folder("PMM Extensions Alerts")
 
         assert exc_info.value.status_code == error_status
 

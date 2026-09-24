@@ -17,7 +17,7 @@
 
 Topology renders a bespoke React Flow graph, so it ships a hand-written
 ``api_router`` and a custom UI rather than the framework's schema-driven
-surface. Enablement is purely a function of app registration (``SEP.APPS``);
+surface. Enablement is purely a function of app registration (``EXTENSIONS.APPS``);
 there is no separate feature flag.
 """
 

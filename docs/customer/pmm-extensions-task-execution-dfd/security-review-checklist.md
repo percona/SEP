@@ -1,9 +1,9 @@
-# Security Review Checklist — SEP Task Execution DFD
+# Security Review Checklist — PMM Extensions Task Execution DFD
 
 Complete this checklist before sending customer-facing task-execution or Nomad materials.
 
-**DFD deliverables:** [`exports/sep-task-execution-dfd.pdf`](exports/sep-task-execution-dfd.pdf) (and optional sequence PDF)
-**Diagram sources:** `sep-task-execution-dfd.mmd`, `sep-task-execution-sequence.mmd`
+**DFD deliverables:** [`exports/pmm-extensions-task-execution-dfd.pdf`](exports/pmm-extensions-task-execution-dfd.pdf) (and optional sequence PDF)
+**Diagram sources:** `pmm-extensions-task-execution-dfd.mmd`, `pmm-extensions-task-execution-sequence.mmd`
 **Companion docs:** [`README.md`](README.md), [`../nomad-driver-deployment.md`](../nomad-driver-deployment.md)
 
 ---
@@ -23,9 +23,9 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 1.1 | Diagram states engineers authenticate via **Grafana session exchange** (PMM session → short-lived SEP bearer), not client-certificate user login | ☐ | ☐ | |
-| 1.2 | mTLS is shown only on **service-to-service** links (SEP↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
-| 1.3 | Token lifecycle: exchange returns a short-lived SEP bearer in the response body; no SEP cookie is set; no refresh token is issued. When the bearer expires the SPA repeats the exchange. | ☐ | ☐ | |
+| 1.1 | Diagram states engineers authenticate via **Grafana session exchange** (PMM session → short-lived PMM Extensions bearer), not client-certificate user login | ☐ | ☐ | |
+| 1.2 | mTLS is shown only on **service-to-service** links (Extensions↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
+| 1.3 | Token lifecycle: exchange returns a short-lived PMM Extensions bearer in the response body; no PMM Extensions cookie is set; no refresh token is issued. When the bearer expires the SPA repeats the exchange. | ☐ | ☐ | |
 | 1.4 | `SEP_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
 
 ---
@@ -38,7 +38,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | 2.2 | Snippet **approval** gate is represented (Path A) | ☐ | ☐ | |
 | 2.3 | **Path B** (checksums / proxy apps): create vs execute phases shown; command fixed at create | ☐ | ☐ | |
 | 2.4 | Server-side construction of `meta` / Nomad job type is clear for both paths | ☐ | ☐ | |
-| 2.5 | No diagram implication that users can run arbitrary shell via SEP UI | ☐ | ☐ | |
+| 2.5 | No diagram implication that users can run arbitrary shell via PMM Extensions UI | ☐ | ☐ | |
 
 ---
 
@@ -68,9 +68,9 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 5.1 | Browser ↔ PMM Nginx: HTTPS (PMM's Nginx terminates TLS and fronts SEP on a sub-path) | ☐ | ☐ | |
+| 5.1 | Browser ↔ PMM Nginx: HTTPS (PMM's Nginx terminates TLS and fronts PMM Extensions on a sub-path) | ☐ | ☐ | |
 | 5.1a | Session exchange endpoint (`/api/oauth/session/exchange`) is same-origin behind PMM's Nginx — no separate IdP port | ☐ | ☐ | |
-| 5.2 | SEP ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
+| 5.2 | Extensions ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 
 ---
@@ -91,7 +91,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | 7.1 | PDF was regenerated from the reviewed `.mmd` commit | ☐ | ☐ | |
 | 7.2 | README code-mapping table spot-checked against current codebase | ☐ | ☐ | |
 | 7.3 | Sequence diagram (if provided) consistent with main DFD | ☐ | ☐ | |
-| 7.4 | [`nomad-driver-deployment.md`](../nomad-driver-deployment.md) spot-checked against GAS `automation/nomad.yaml` and SEP job templates (if sending Nomad doc) | ☐ | ☐ | N/A if DFD only |
+| 7.4 | [`nomad-driver-deployment.md`](../nomad-driver-deployment.md) spot-checked against GAS `automation/nomad.yaml` and PMM Extensions job templates (if sending Nomad doc) | ☐ | ☐ | N/A if DFD only |
 
 ---
 
@@ -101,13 +101,13 @@ Complete **§8** when delivering [`nomad-driver-deployment.md`](../nomad-driver-
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 8.1 | Doc states **SEP dispatches `raw_exec` jobs only** and **filters Nomad nodes by `raw_exec` availability**; whether the `exec` driver is also enabled on customer Nomad agents is a customer-cluster configuration choice (SEP does not dispatch to it either way) | ☐ | ☐ | |
+| 8.1 | Doc states **PMM Extensions dispatches `raw_exec` jobs only** and **filters Nomad nodes by `raw_exec` availability**; whether the `exec` driver is also enabled on customer Nomad agents is a customer-cluster configuration choice (PMM Extensions does not dispatch to it either way) | ☐ | ☐ | |
 | 8.2 | Links to official HashiCorp **exec** and **raw_exec** driver documentation are present and correct | ☐ | ☐ | |
 | 8.3 | **Nomad agent does not run as root** — default user systemd + automation OS user accurately described | ☐ | ☐ | Spot-check: `ps` / `systemctl` on a Nomad host |
 | 8.4 | **Server vs client** topology matches customer inventory (`nomad_server_enabled` / `nomad_enabled` hosts) | ☐ | ☐ | |
 | 8.5 | Task execution targets **DB (client) nodes** via `${node.unique.name}` = `NOMAD_META_target` constraint | ☐ | ☐ | |
 | 8.6 | **Nomad ACL is not enabled**; API access scoped by **mTLS client certificates** is stated (no overstatement of ACL “users”) | ☐ | ☐ | |
-| 8.7 | SEP Tasks → Nomad uses **`global-client-nomad`** cert paths consistent with customer `prod-settings` / cert mount layout | ☐ | ☐ | |
+| 8.7 | PMM Extensions Tasks → Nomad uses **`global-client-nomad`** cert paths consistent with customer `prod-settings` / cert mount layout | ☐ | ☐ | |
 | 8.8 | Optional `sep_nomad_readable_by_all` widening of key permissions called out if enabled in customer env | ☐ | ☐ | N/A if false |
 | 8.9 | Nomad doc **engineering lead sign-off** (§8 of nomad doc) completed | ☐ | ☐ | |
 

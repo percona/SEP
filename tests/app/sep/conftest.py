@@ -59,7 +59,7 @@ from tests.app.conftest import (  # noqa: F401
 
 REDUCED_ACTIVATION = [
     App(module_name=name)
-    for name in ("inventory", "atw", "mysql_backups", "om_inventory")
+    for name in ("inventory", "atw", "mysql_backups", "om_inventory", "om_bootstrap")
 ]
 """The PMM-embedded side-car activation list (``sidecar/settings.yaml``)."""
 

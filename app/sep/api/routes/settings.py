@@ -15,7 +15,7 @@
 
 """Compose the SEP sub-app's settings REST API."""
 
-__all__ = ["SEP_ADMIN_SETTINGS_CLASSES", "router"]
+__all__ = ["EXTENSIONS_ADMIN_SETTINGS_CLASSES", "router"]
 
 from dataclasses import dataclass, field
 from typing import Annotated, Any
@@ -43,7 +43,7 @@ from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
 )
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.deps import (
     ApiAdminUsername,
     IsApiAdmin,
@@ -55,9 +55,10 @@ from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 # TasksSettings is owned by the Tasks sub-app, so SEP proxies it server-side
 # through ``tasks_api`` (mounted at ``/admin/settings``) rather than registering
-# it as a local class -- the React Settings page reaches it via ``/api/sep`` only.
-SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
-    (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
+# it as a local class. The React Settings page reaches it via ``/api/extensions``
+# only.
+EXTENSIONS_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
+    (SettingClassEnum.EXTENSIONS_SETTINGS, ExtensionsSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
     (SettingClassEnum.ALERT_SETTINGS, AlertSettings, alert_settings),
     # The global ``Settings`` class is refreshed only by the SEP web process, so
@@ -77,17 +78,17 @@ def _sep_setting_applicable(cls: str, field: FieldMetadata) -> bool:
     :return: Whether the field applies under the active auth provider.
     """
     if (
-        cls == SettingClassEnum.SEP_SETTINGS
+        cls == SettingClassEnum.EXTENSIONS_SETTINGS
         and field.key == "AMBIENT_SESSION_SSO_ENABLED"
     ):
         return auth_config.get_active_auth_provider().supports_ambient_session
     return True
 
 
-SEP_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()
+EXTENSIONS_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()
 
 router = build_settings_router(
-    classes=SEP_ADMIN_SETTINGS_CLASSES,
+    classes=EXTENSIONS_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
     admin_dep=IsApiAdmin,
     actor_dep=ApiAdminUsername,
@@ -95,7 +96,7 @@ router = build_settings_router(
     remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
     remote_api_dep=TaskAPI,
     applicability=_sep_setting_applicable,
-    app_owned_classes=SEP_APP_OWNED_SETTINGS_CLASSES,
+    app_owned_classes=EXTENSIONS_APP_OWNED_SETTINGS_CLASSES,
     resolve_app_metadata=resolve_app_settings_metadata,
 )
 
@@ -180,7 +181,7 @@ def _parse_export_selectors(
     Each selector is either ``Class.KEY`` (a single key within a settings class)
     or a bare ``Class`` (the whole class). Splitting on the first ``.`` is safe
     because nested leaves use the ``__`` delimiter, never ``.`` (so
-    ``SEPSettings.PMM__endpoint`` resolves to class ``SEPSettings`` and key
+    ``ExtensionsSettings.PMM__endpoint`` resolves to class ``ExtensionsSettings`` and key
     ``PMM__endpoint``). Class names are validated here against ``allowed_classes``
     so a typo fails before any value is collected or any upstream call is made;
     per-key existence is validated later against each class's built key set.
@@ -188,16 +189,13 @@ def _parse_export_selectors(
     A whole-class selector dominates the *output* for its class (every key is
     emitted) but does not suppress validation of any named sibling selector: a
     ``Class.KEY`` is always recorded so its existence is checked later, even when
-    a bare ``Class`` selector is also present (AC 6). Overlapping or duplicate
+    a bare ``Class`` selector is also present. Overlapping or duplicate
     selectors are otherwise benign and never error.
 
     :param keys: The raw, repeatable ``keys`` query values.
-    :type keys: list[str]
     :param allowed_classes: The set of wired settings-class names a selector may
         reference (core SEP classes, app-owned classes, and ``TasksSettings``).
-    :type allowed_classes: set[str]
     :return: A mapping from class name to its parsed :class:`_ClassRequest`.
-    :rtype: dict[str, _ClassRequest]
     :raises HTTPBadRequestException: If a selector is blank, malformed (empty
         class or empty key), or names a class that is not wired -- the detail
         names the offending selector.
@@ -262,8 +260,10 @@ def _wired_export_class_names() -> set[str]:
     :return: Core SEP, app-owned, and proxied Tasks class names.
     :rtype: set[str]
     """
-    names = {str(member) for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
-    names.update(str(entry.setting_class) for entry in SEP_APP_OWNED_SETTINGS_CLASSES)
+    names = {str(member) for member, _, _ in EXTENSIONS_ADMIN_SETTINGS_CLASSES}
+    names.update(
+        str(entry.setting_class) for entry in EXTENSIONS_APP_OWNED_SETTINGS_CLASSES
+    )
     names.add(str(SettingClassEnum.TASKS_SETTINGS))
     return names
 
@@ -352,7 +352,7 @@ def _export_yaml_response(payload: dict[str, dict[str, Any]]) -> Response:
         default_flow_style=False,
         sort_keys=False,
     )
-    filename = f"sep-config-{utc_now():%Y-%m-%d}.yaml"
+    filename = f"pmm-extensions-config-{utc_now():%Y-%m-%d}.yaml"
     return Response(
         content=yaml_body,
         media_type="application/x-yaml",
@@ -384,18 +384,14 @@ async def export_settings(
     upstream call; the Tasks fan-out is skipped entirely unless a selector
     targets ``TasksSettings``, and Tasks keys are validated against the fetched
     block. Output blocks always follow the canonical declaration order
-    (``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
+    (``EXTENSIONS_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
     ``TasksSettings``), independent of selector order.
 
     :param session: The active database session for SEP override queries.
-    :type session: AsyncSession
     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
-    :type tasks_api: TaskAPI
     :param keys: Optional, repeatable selectors restricting the export to a
         subset of classes/keys. ``None`` (omitted) means the full export.
-    :type keys: list[str] | None
     :return: YAML bytes with ``Content-Disposition`` set for download.
-    :rtype: Response
     :raises HTTPBadRequestException: If a selector is blank, malformed, names an
         unwired class, or names a key that does not exist on its class.
     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
@@ -411,7 +407,7 @@ async def export_settings(
     )
 
     payload: dict[str, dict[str, Any]] = {}
-    for setting_class, settings_cls, proxy in SEP_ADMIN_SETTINGS_CLASSES:
+    for setting_class, settings_cls, proxy in EXTENSIONS_ADMIN_SETTINGS_CLASSES:
         await _append_local_class_export(
             payload,
             session=session,
@@ -420,7 +416,7 @@ async def export_settings(
             proxy=proxy,
             requested=requested,
         )
-    for entry in SEP_APP_OWNED_SETTINGS_CLASSES:
+    for entry in EXTENSIONS_APP_OWNED_SETTINGS_CLASSES:
         await _append_local_class_export(
             payload,
             session=session,

@@ -37,7 +37,7 @@ class InventoryAppSettings(BaseYamlSettings):
     beat-schedule declaration, and all of them are hot-reloadable.
 
     :cvar SETTINGS_PREFIXES: The prefixes for Inventory-app settings in the
-        configuration file, placing the section under ``SEP.INVENTORY``.
+        configuration file, placing the section under ``EXTENSIONS.INVENTORY``.
     :param COLLECTION_INTERVAL: The schedule on which the collection job runs.
         ``None`` seeds no beat entry, which is the shipped default: collection
         deletes rows irreversibly, so a deployment carrying that default does
@@ -58,7 +58,7 @@ class InventoryAppSettings(BaseYamlSettings):
         the worker for an unbounded time.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "INVENTORY"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "INVENTORY"]
     COLLECTION_INTERVAL: ManageableInterval | None = (  # ty: ignore[invalid-assignment]
         hot_field(None)
     )

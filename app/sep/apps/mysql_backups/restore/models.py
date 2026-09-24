@@ -977,7 +977,8 @@ class RestoreCreate(TaskFormModel):
         Ui(
             section="General",
             description=(
-                "Port SEP connects to on the target host when it queries the server "
+                "Port PMM Extensions connects to on the target host when it queries "
+                "the server "
                 "during an XtraBackup restore (defaults to 3306). A Mydumper restore "
                 "loads over the destination service's own address and a Binlog restore "
                 "replays through a local client, so neither uses it."

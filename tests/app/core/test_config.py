@@ -64,7 +64,7 @@ from app.inventory.config import InventorySettings
 from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.atw.config import AtwSettings
 from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
@@ -455,11 +455,11 @@ def test_create_app_defaults_to_no_root_path():
 
 def test_create_app_forwards_root_path():
     """``create_app`` forwards ``root_path`` to FastAPI."""
-    assert create_app(root_path="/sep").root_path == "/sep"
+    assert create_app(root_path="/extensions").root_path == "/extensions"
 
 
 class TestDeriveInternalToken:
-    """Cover SEP_INTERNAL_TOKEN derivation from SECRET_KEY."""
+    """Cover EXTENSIONS_INTERNAL_TOKEN derivation from SECRET_KEY."""
 
     @staticmethod
     def _expected_token(secret_key: str) -> str:
@@ -471,46 +471,50 @@ class TestDeriveInternalToken:
         """An explicitly configured token is used verbatim, never derived."""
         instance = Settings(
             SECRET_KEY=SecretStr("any-secret"),
-            SEP_INTERNAL_TOKEN=SecretStr("explicit-token"),
+            EXTENSIONS_INTERNAL_TOKEN=SecretStr("explicit-token"),
         )
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == "explicit-token"
+        assert instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value() == "explicit-token"
 
     def test_derives_from_secret_key_when_unset(self):
         """An unset token is derived as HMAC-SHA256 over the secret key."""
         instance = Settings(
             SECRET_KEY=SecretStr("derivation-secret"),
-            SEP_INTERNAL_TOKEN=None,
+            EXTENSIONS_INTERNAL_TOKEN=None,
         )
-        assert instance.SEP_INTERNAL_TOKEN is not None
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == self._expected_token(
-            "derivation-secret"
+        assert instance.EXTENSIONS_INTERNAL_TOKEN is not None
+        assert (
+            instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
+            == self._expected_token("derivation-secret")
         )
 
     def test_empty_token_is_derived(self):
         """An empty-string token is treated as unset and derived."""
         instance = Settings(
             SECRET_KEY=SecretStr("derivation-secret"),
-            SEP_INTERNAL_TOKEN=SecretStr(""),
+            EXTENSIONS_INTERNAL_TOKEN=SecretStr(""),
         )
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == self._expected_token(
-            "derivation-secret"
+        assert (
+            instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
+            == self._expected_token("derivation-secret")
         )
 
     def test_derivation_is_identical_across_instances(self):
         """Two settings sharing a secret key derive the identical token."""
-        first = Settings(SECRET_KEY=SecretStr("shared-secret"), SEP_INTERNAL_TOKEN=None)
+        first = Settings(
+            SECRET_KEY=SecretStr("shared-secret"), EXTENSIONS_INTERNAL_TOKEN=None
+        )
         second = Settings(
-            SECRET_KEY=SecretStr("shared-secret"), SEP_INTERNAL_TOKEN=None
+            SECRET_KEY=SecretStr("shared-secret"), EXTENSIONS_INTERNAL_TOKEN=None
         )
         assert (
-            first.SEP_INTERNAL_TOKEN.get_secret_value()
-            == second.SEP_INTERNAL_TOKEN.get_secret_value()
+            first.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
+            == second.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
         )
 
     def test_empty_secret_key_without_token_raises(self):
         """An empty secret key with no explicit token fails fast at construction."""
         with pytest.raises(ValidationError, match="SECRET_KEY must be set"):
-            Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)
+            Settings(SECRET_KEY=SecretStr(""), EXTENSIONS_INTERNAL_TOKEN=None)
 
 
 class TestEncryptionKey:
@@ -659,16 +663,16 @@ SECRET_FILE_MATRIX = [
         id="InventorySettings",
     ),
     pytest.param(
-        SEPSettings,
-        "SEP__DATABASE__PASSWORD",
+        ExtensionsSettings,
+        "EXTENSIONS__DATABASE__PASSWORD",
         "matrix-sep-pw",
         "matrix-sep-pw",
         lambda s: s.DATABASE.PASSWORD.get_secret_value(),
-        id="SEPSettings",
+        id="ExtensionsSettings",
     ),
     pytest.param(
         AlertsSettings,
-        "SEP__ALERTS__ALERT_FOLDER_NAME",
+        "EXTENSIONS__ALERTS__ALERT_FOLDER_NAME",
         "Matrix Folder",
         "Matrix Folder",
         lambda s: s.ALERT_FOLDER_NAME,
@@ -676,7 +680,7 @@ SECRET_FILE_MATRIX = [
     ),
     pytest.param(
         HealthReportSettings,
-        "SEP__HEALTH_REPORT__API_KEY",
+        "EXTENSIONS__HEALTH_REPORT__API_KEY",
         "matrix-health-report-key",
         "matrix-health-report-key",
         lambda s: s.api_key.get_secret_value(),
@@ -684,7 +688,7 @@ SECRET_FILE_MATRIX = [
     ),
     pytest.param(
         AtwSettings,
-        "SEP__ATW__BUNDLE_TTL",
+        "EXTENSIONS__ATW__BUNDLE_TTL",
         "77",
         77,
         lambda s: s.bundle_ttl,
@@ -692,7 +696,7 @@ SECRET_FILE_MATRIX = [
     ),
     pytest.param(
         SnippetsSettings,
-        "SEP__SNIPPETS__PREVIEW_MAX_CHARS",
+        "EXTENSIONS__SNIPPETS__PREVIEW_MAX_CHARS",
         "123",
         123,
         lambda s: s.PREVIEW_MAX_CHARS,
@@ -721,14 +725,14 @@ SECRET_FILE_MATRIX = [
 def aliased_settings_class():
     """Build a prefixed settings class whose field carries a validation alias.
 
-    ``SEPSettings.APPS`` declares ``AliasChoices("APPS", "PLUGINS")``. An aliased
+    ``ExtensionsSettings.APPS`` declares ``AliasChoices("APPS", "PLUGINS")``. An aliased
     field is looked up without ``env_prefix`` unless ``env_prefix_target`` opts in,
     so the source's native ``secrets_prefix`` would silently drop its secret file;
     the key-rewriting loop this class exercises is what makes it resolve.
     """
 
     class AliasedSettings(BaseYamlAppSettings):
-        SETTINGS_PREFIXES = ["SEP"]
+        SETTINGS_PREFIXES = ["EXTENSIONS"]
         APPS: list[str] = Field(
             default_factory=list,
             validation_alias=AliasChoices("APPS", "PLUGINS"),
@@ -759,7 +763,7 @@ def test_prefixed_class_reads_nested_secret_file(tmp_path):
 
 def test_aliased_field_resolves_from_secret_file(tmp_path, aliased_settings_class):
     """Resolve a prefixed secret file for a field declaring a validation alias."""
-    (tmp_path / "SEP__APPS").write_text('["alerts"]', encoding="utf-8")
+    (tmp_path / "EXTENSIONS__APPS").write_text('["alerts"]', encoding="utf-8")
 
     instance = aliased_settings_class(_secrets_dir=tmp_path)
 
@@ -767,30 +771,30 @@ def test_aliased_field_resolves_from_secret_file(tmp_path, aliased_settings_clas
 
 
 def test_sep_settings_reads_aliased_secret_file(tmp_path):
-    """Resolve ``SEP__APPS`` from a file through the production override of the hook."""
-    (tmp_path / "SEP__APPS").write_text(
+    """Resolve ``EXTENSIONS__APPS`` from a file through the production override of the hook."""
+    (tmp_path / "EXTENSIONS__APPS").write_text(
         '[{"module_name": "tasks", "uri_path": "/tasks"}]', encoding="utf-8"
     )
 
-    instance = SEPSettings(_secrets_dir=tmp_path)
+    instance = ExtensionsSettings(_secrets_dir=tmp_path)
 
     assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
 
 
 def test_file_backed_legacy_plugins_key_does_not_warn(tmp_path):
-    """Populate the app list from a ``SEP__PLUGINS`` file without deprecating it.
+    """Populate the app list from an ``EXTENSIONS__PLUGINS`` file without deprecating it.
 
-    ``SEPSettings.settings_customise_sources`` inspects only the environment and
+    ``ExtensionsSettings.settings_customise_sources`` inspects only the environment and
     dotenv sources, so the file-backed spelling is outside the deprecation
     contract even though the alias still resolves it.
     """
-    (tmp_path / "SEP__PLUGINS").write_text(
+    (tmp_path / "EXTENSIONS__PLUGINS").write_text(
         '[{"module_name": "tasks", "uri_path": "/tasks"}]', encoding="utf-8"
     )
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        instance = SEPSettings(_secrets_dir=tmp_path)
+        instance = ExtensionsSettings(_secrets_dir=tmp_path)
 
     assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
     assert not [w for w in caught if "PLUGINS" in str(w.message)]
@@ -990,7 +994,7 @@ def test_unprefixed_file_resolves_for_prefixed_class(tmp_path):
 
 def test_foreign_prefix_file_does_not_resolve(tmp_path):
     """Leave a class untouched by a secret file spelled with another class's prefix."""
-    (tmp_path / "SEP__DATABASE__PASSWORD").write_text("sep-pw", encoding="utf-8")
+    (tmp_path / "EXTENSIONS__DATABASE__PASSWORD").write_text("sep-pw", encoding="utf-8")
 
     instance = InventorySettings(_secrets_dir=tmp_path)
 
@@ -1000,8 +1004,8 @@ def test_foreign_prefix_file_does_not_resolve(tmp_path):
 @pytest.mark.parametrize(
     "env_order",
     [
-        ("DATABASE__PASSWORD", "SEP__DATABASE__PASSWORD"),
-        ("SEP__DATABASE__PASSWORD", "DATABASE__PASSWORD"),
+        ("DATABASE__PASSWORD", "EXTENSIONS__DATABASE__PASSWORD"),
+        ("EXTENSIONS__DATABASE__PASSWORD", "DATABASE__PASSWORD"),
     ],
     ids=["global-first", "per-service-first"],
 )
@@ -1009,14 +1013,14 @@ def test_per_service_env_beats_global_env(monkeypatch, env_order):
     """Prefer a per-service environment variable over the global spelling."""
     values = {
         "DATABASE__PASSWORD": "globalpw",
-        "SEP__DATABASE__PASSWORD": "seppw",
+        "EXTENSIONS__DATABASE__PASSWORD": "seppw",
     }
     for name in values:
         monkeypatch.delenv(name, raising=False)
     for name in env_order:
         monkeypatch.setenv(name, values[name])
 
-    assert SEPSettings().DATABASE.PASSWORD.get_secret_value() == "seppw"
+    assert ExtensionsSettings().DATABASE.PASSWORD.get_secret_value() == "seppw"
 
 
 def test_shipped_profile_resolves_the_bounded_pool_defaults():
@@ -1025,7 +1029,7 @@ def test_shipped_profile_resolves_the_bounded_pool_defaults():
     The profile's own ``DATABASE`` blocks set no sizing, so each service
     takes this class's defaults; its SQLite engine still emits none of them.
     """
-    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+    for settings_cls in (ExtensionsSettings, InventorySettings, TasksSettings):
         database = settings_cls().DATABASE
         assert (database.POOL_SIZE, database.MAX_OVERFLOW, database.POOL_TIMEOUT) == (
             3,
@@ -1038,8 +1042,8 @@ def test_shipped_profile_resolves_the_bounded_pool_defaults():
 @pytest.mark.parametrize(
     "dotenv_lines",
     [
-        "DATABASE__PASSWORD=globalpw\nSEP__DATABASE__PASSWORD=seppw\n",
-        "SEP__DATABASE__PASSWORD=seppw\nDATABASE__PASSWORD=globalpw\n",
+        "DATABASE__PASSWORD=globalpw\nEXTENSIONS__DATABASE__PASSWORD=seppw\n",
+        "EXTENSIONS__DATABASE__PASSWORD=seppw\nDATABASE__PASSWORD=globalpw\n",
     ],
     ids=["global-first", "per-service-first"],
 )
@@ -1049,7 +1053,8 @@ def test_per_service_dotenv_beats_global_dotenv(tmp_path, dotenv_lines):
     env_file.write_text(dotenv_lines, encoding="utf-8")
 
     assert (
-        SEPSettings(_env_file=env_file).DATABASE.PASSWORD.get_secret_value() == "seppw"
+        ExtensionsSettings(_env_file=env_file).DATABASE.PASSWORD.get_secret_value()
+        == "seppw"
     )
 
 
@@ -1058,17 +1063,21 @@ def test_per_service_secret_file_beats_global_secret_file(tmp_path):
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir()
     (secrets_dir / "DATABASE__PASSWORD").write_text("globalpw", encoding="utf-8")
-    (secrets_dir / "SEP__DATABASE__PASSWORD").write_text("seppw", encoding="utf-8")
+    (secrets_dir / "EXTENSIONS__DATABASE__PASSWORD").write_text(
+        "seppw", encoding="utf-8"
+    )
 
     assert (
-        SEPSettings(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
+        ExtensionsSettings(
+            _secrets_dir=secrets_dir
+        ).DATABASE.PASSWORD.get_secret_value()
         == "seppw"
     )
 
 
 @pytest.mark.parametrize(
     "settings_cls",
-    [SEPSettings, InventorySettings, TasksSettings],
+    [ExtensionsSettings, InventorySettings, TasksSettings],
 )
 def test_global_database_password_resolves_for_every_service(tmp_path, settings_cls):
     """Resolve one global password file for every service when none overrides it."""
@@ -1171,22 +1180,24 @@ def test_env_var_beats_secret_file_for_the_yaml_profile(tmp_path, monkeypatch):
 CELERY_PROFILE_BLOCK = "  CELERY:\n    BROKER_URL: redis://127.0.0.1:6379/0\n"
 """A minimal ``CELERY`` block, since ``Settings.CELERY`` carries no default."""
 
-SEP_POSTGRES_PROFILE_BLOCK = """\
-  SEP:
+EXTENSIONS_POSTGRES_PROFILE_BLOCK = """\
+  EXTENSIONS:
     DATABASE:
       ENGINE: postgresql
       HOST: pmm-server
-      NAME: sep
+      NAME: pmm_extensions
       PORT: 5432
-      USER: sep
+      USER: pmm_extensions
 """
-"""The embedded profile's SEP database block, which the beat store derives from."""
+"""The embedded profile's Extensions service database block, which the beat store derives from."""
 
-SEP_SQLITE_PROFILE_BLOCK = "  SEP:\n    DATABASE:\n      NAME: sep.db\n"
-"""A SQLite SEP database block, whose derived store nulls ``beat_schema``."""
+EXTENSIONS_SQLITE_PROFILE_BLOCK = "  EXTENSIONS:\n    DATABASE:\n      NAME: sep.db\n"
+"""A SQLite Extensions service database block, whose derived store nulls ``beat_schema``."""
 
-DERIVED_BEAT_DBURI = "postgresql+psycopg2://sep@pmm-server:5432/sep"
-"""The store :data:`SEP_POSTGRES_PROFILE_BLOCK` derives with no password supplied."""
+DERIVED_BEAT_DBURI = (
+    "postgresql+psycopg2://pmm_extensions@pmm-server:5432/pmm_extensions"
+)
+"""The store :data:`EXTENSIONS_POSTGRES_PROFILE_BLOCK` derives with no password supplied."""
 
 
 def _use_profile(tmp_path, monkeypatch, body):
@@ -1233,7 +1244,9 @@ class TestDerivedBeatStoreDefault:
         using the default arrangement.
         """
         _use_profile(
-            tmp_path, monkeypatch, CELERY_PROFILE_BLOCK + SEP_POSTGRES_PROFILE_BLOCK
+            tmp_path,
+            monkeypatch,
+            CELERY_PROFILE_BLOCK + EXTENSIONS_POSTGRES_PROFILE_BLOCK,
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
@@ -1280,7 +1293,7 @@ class TestDerivedBeatStoreDefault:
             monkeypatch,
             CELERY_PROFILE_BLOCK
             + "    BEAT_DBURI: postgresql://profile@elsewhere:5432/beat\n"
-            + SEP_POSTGRES_PROFILE_BLOCK,
+            + EXTENSIONS_POSTGRES_PROFILE_BLOCK,
         )
 
         assert (
@@ -1303,11 +1316,11 @@ class TestDerivedBeatStoreDefault:
     @pytest.mark.usefixtures("_postgres_profile")
     def test_mounted_password_reaches_the_derived_store(self, tmp_path):
         """Carry a mounted password into the store without exporting it anywhere."""
-        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="pw")
+        secrets_dir = _mounted_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="pw")
 
         assert (
             Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
-            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+            == "postgresql+psycopg2://pmm_extensions:pw@pmm-server:5432/pmm_extensions"
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
@@ -1317,23 +1330,25 @@ class TestDerivedBeatStoreDefault:
 
         assert (
             Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
-            == "postgresql+psycopg2://sep:pw@pmm-server:5432/sep"
+            == "postgresql+psycopg2://pmm_extensions:pw@pmm-server:5432/pmm_extensions"
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
     def test_reserved_password_characters_are_percent_encoded(self, tmp_path):
         """Encode a password carrying URI syntax, which would corrupt the authority."""
-        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="p@ss:w/rd")
+        secrets_dir = _mounted_secrets(
+            tmp_path, EXTENSIONS__DATABASE__PASSWORD="p@ss:w/rd"
+        )
 
         assert (
             Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi
-            == "postgresql+psycopg2://sep:p%40ss%3Aw%2Frd@pmm-server:5432/sep"
+            == "postgresql+psycopg2://pmm_extensions:p%40ss%3Aw%2Frd@pmm-server:5432/pmm_extensions"
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
     def test_an_empty_password_file_yields_a_passwordless_store(self, tmp_path):
         """Omit the password entirely for a blank mount, as an empty secret is falsy."""
-        secrets_dir = _mounted_secrets(tmp_path, SEP__DATABASE__PASSWORD="")
+        secrets_dir = _mounted_secrets(tmp_path, EXTENSIONS__DATABASE__PASSWORD="")
 
         assert Settings(_secrets_dir=secrets_dir).CELERY.beat_dburi == (
             DERIVED_BEAT_DBURI
@@ -1343,11 +1358,13 @@ class TestDerivedBeatStoreDefault:
     def test_dotenv_password_reaches_the_derived_store(self, tmp_path):
         """Read the password from the caller's ``_env_file``, which the probe inherits."""
         env_file = tmp_path / "dotenv"
-        env_file.write_text("SEP__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8")
+        env_file.write_text(
+            "EXTENSIONS__DATABASE__PASSWORD=from-dotenv\n", encoding="utf-8"
+        )
 
         assert (
             Settings(_env_file=env_file).CELERY.beat_dburi
-            == "postgresql+psycopg2://sep:from-dotenv@pmm-server:5432/sep"
+            == "postgresql+psycopg2://pmm_extensions:from-dotenv@pmm-server:5432/pmm_extensions"
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
@@ -1372,7 +1389,9 @@ class TestDerivedBeatStoreDefault:
         _use_profile(
             tmp_path,
             monkeypatch,
-            CELERY_PROFILE_BLOCK + "    BEAT_SCHEMA: sep\n" + SEP_SQLITE_PROFILE_BLOCK,
+            CELERY_PROFILE_BLOCK
+            + "    BEAT_SCHEMA: sep\n"
+            + EXTENSIONS_SQLITE_PROFILE_BLOCK,
         )
 
         resolved = Settings().CELERY
@@ -1383,7 +1402,7 @@ class TestDerivedBeatStoreDefault:
     @pytest.mark.usefixtures("_postgres_profile")
     def test_an_invalid_sep_database_fails_settings_construction(self, monkeypatch):
         """Reject an unusable SEP database rather than derive a malformed store URI."""
-        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+        monkeypatch.setenv("EXTENSIONS__DATABASE__PORT", "notanumber")
 
         with pytest.raises(ValidationError, match="DATABASE.PORT"):
             Settings()
@@ -1397,7 +1416,7 @@ class TestDerivedBeatStoreDefault:
         would fail an Inventory-only or Tasks-only start-up over a SEP-namespaced
         value nothing in that process reads.
         """
-        monkeypatch.setenv("SEP__DATABASE__PORT", "notanumber")
+        monkeypatch.setenv("EXTENSIONS__DATABASE__PORT", "notanumber")
         monkeypatch.setenv(
             "CELERY__BEAT_DBURI", "postgresql://elsewhere@host:5432/beat"
         )
@@ -1408,14 +1427,14 @@ class TestDerivedBeatStoreDefault:
         )
 
     def test_the_probe_default_matches_the_sep_settings_field(self):
-        """Pin the probe's database default to ``SEPSettings``', which it cannot import.
+        """Pin the probe's database default to ``ExtensionsSettings``', which it cannot import.
 
         ``app/sep/config.py`` imports ``app/core/config.py``, so the probe duplicates
         the default rather than reading it; this fails if the two drift apart.
         """
         assert (
             _SEPDatabaseSettings.model_fields["DATABASE"].default
-            == SEPSettings.model_fields["DATABASE"].default
+            == ExtensionsSettings.model_fields["DATABASE"].default
         )
 
 

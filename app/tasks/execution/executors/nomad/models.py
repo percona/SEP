@@ -41,7 +41,6 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
-from pydantic import computed_field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -763,21 +762,20 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             "Authorization": f"{self.auth_scheme} {api_key}",
         }
 
-    @computed_field
-    @property
-    def base_url(self) -> str:
+    def _compute_base_url(self) -> str:
         """Compute the base URL, dropping userinfo once an API key is configured.
 
         ``__aenter__`` builds the aiohttp session from this value, so this is
         where the asynchronous path takes the strip that
         :func:`~app.core.utils.fields.strip_credential_url_userinfo` explains.
-        It stays a computed field, so it continues to appear in ``model_dump``
-        and therefore in the config fingerprint
-        :class:`~app.tasks.execution.nomad_lifecycle.NomadLifecycle` compares.
+
+        Overriding the hook rather than the ``base_url`` computed field keeps
+        the base class's JSON redaction in force, and ``base_url`` still appears
+        in ``model_dump`` as the inherited computed field.
 
         :return: The base URL of the Nomad endpoint.
         """
-        url = super().base_url
+        url = super()._compute_base_url()
         if self._configured_api_key is None:
             return url
         return strip_credential_url_userinfo(url)

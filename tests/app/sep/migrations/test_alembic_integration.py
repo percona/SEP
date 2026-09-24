@@ -22,6 +22,7 @@ any misconfigured ``version_locations`` or plugin-discovery regression.
 """
 
 import io
+import json
 import logging
 import os
 import subprocess
@@ -36,6 +37,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util import CommandError
+from cryptography.fernet import Fernet
 from rich.logging import RichHandler
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
@@ -73,6 +75,12 @@ _SETTING_CLASS_CHECK_PARENT = "d1e2f3a4b5c6"
 _SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
 #: The add_sync_run_state_and_entity_absence revision under test.
 _SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
+
+#: The revision preceding rename_sep_settings_override_token: override rows
+#: for the service settings class are still stored under ``SEP_SETTINGS``.
+_SEP_PRE_RETOKEN_REVISION = "cbc3026013de"
+#: The rename_sep_settings_override_token revision under test.
+_SEP_RETOKEN_REVISION = "ee2b220c8c73"
 
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
@@ -648,7 +656,7 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
     try:
         with engine.begin() as conn:
             _insert_override(conn, "UNREGISTERED_SETTINGS")
-            _insert_override(conn, "SEP_SETTINGS")
+            _insert_override(conn, "EXTENSIONS_SETTINGS")
     finally:
         engine.dispose()
 
@@ -675,6 +683,108 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
                 _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()
+
+
+def _setting_classes(sync_url: str) -> list[str]:
+    """Return every stored ``settingoverride.setting_class``, sorted."""
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+    finally:
+        engine.dispose()
+    return sorted(row[0] for row in rows)
+
+
+def test_retoken_revision_moves_the_service_settings_rows_and_back(
+    sep_alembic_config,
+):
+    """Rewrite ``SEP_SETTINGS`` rows to ``EXTENSIONS_SETTINGS`` and restore them.
+
+    A row of another class is seeded alongside to prove the rewrite is scoped to
+    the renamed token.
+    """
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "SEP_SETTINGS")
+            _insert_override(conn, "TASKS_SETTINGS")
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _SEP_RETOKEN_REVISION)
+    assert _setting_classes(sync_url) == ["EXTENSIONS_SETTINGS", "TASKS_SETTINGS"]
+
+    command.downgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    assert _setting_classes(sync_url) == ["SEP_SETTINGS", "TASKS_SETTINGS"]
+
+
+def _stored_value(sync_url: str) -> dict[str, str]:
+    """Return the decoded value of the single stored ``settingoverride`` row."""
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            raw = conn.exec_driver_sql("SELECT value FROM settingoverride").scalar_one()
+    finally:
+        engine.dispose()
+    return json.loads(raw)
+
+
+def test_retoken_revision_moves_the_ciphertext_marker_forward_only(
+    sep_alembic_config,
+):
+    """Move ``sep.enc.v1.`` envelopes to ``extensions.enc.v1.`` and keep them there.
+
+    The credential URL carries its marked token inside the userinfo segment, so
+    the rewrite has to reach an envelope that is not the whole leaf. Plaintext
+    carrying the old marker rides along in the same row, as a whole leaf over a
+    non-token payload, as a URL password over one, and as a prefix in the middle
+    of prose, to prove only a well-formed envelope moves. The downgrade keeps
+    the new marker because the earlier revisions' downgrades run this release's
+    code, which reads the new marker alone.
+    """
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    token = Fernet(Fernet.generate_key()).encrypt(b"secret").decode()
+    plaintext = {
+        "plain_leaf": "sep.enc.v1.operator-secret",
+        "plain_endpoint": "https://user:sep.enc.v1.operator-secret@pmm.example.com/",
+        "note": f"rotate sep.enc.v1.{token} next week",
+        "name": "plain",
+    }
+    legacy = {
+        "password": f"sep.enc.v1.{token}",
+        "endpoint": f"https://user:sep.enc.v1.{token}@pmm.example.com/",
+        **plaintext,
+    }
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "INSERT INTO settingoverride "
+                "(created_at, setting_class, key, value, is_active) "
+                "VALUES ('2026-01-01 00:00:00', 'SEP_SETTINGS', 'X', ?, 1)",
+                (json.dumps(legacy),),
+            )
+    finally:
+        engine.dispose()
+
+    migrated = {
+        "password": f"extensions.enc.v1.{token}",
+        "endpoint": f"https://user:extensions.enc.v1.{token}@pmm.example.com/",
+        **plaintext,
+    }
+    command.upgrade(cfg, _SEP_RETOKEN_REVISION)
+    assert _stored_value(sync_url) == migrated
+
+    command.downgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    assert _stored_value(sync_url) == migrated
 
 
 def test_app_lifecycle_backfill_maps_enabled_to_state(sep_alembic_config):
@@ -951,8 +1061,8 @@ def test_check_is_clean_after_upgrade_to_heads(tmp_path: Path) -> None:
     """
     env = {
         **os.environ,
-        "SEP__DATABASE__HOST": "",
-        "SEP__DATABASE__NAME": str(tmp_path / "sep.sqlite"),
+        "EXTENSIONS__DATABASE__HOST": "",
+        "EXTENSIONS__DATABASE__NAME": str(tmp_path / "sep.sqlite"),
     }
     for verb in (("upgrade", "heads"), ("check",)):
         result = subprocess.run(
