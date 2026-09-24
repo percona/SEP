@@ -448,7 +448,10 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/extensions/api
   compose project is now `pmm-extensions-fb`, so the old `sep-pmm-fb` containers
   are not replaced — they keep holding ports 8443 and 9000-9002 — and none of
   their volumes are reused. Stop them
-  with `docker compose -p sep-pmm-fb down`, remove its volumes with
+  with `docker compose -p sep-pmm-fb down --remove-orphans` (`--remove-orphans`
+  is load-bearing: the current `compose.yaml`'s service names no longer match
+  the old containers', so a plain `down` under this project name stops nothing
+  and leaves them running), remove its volumes with
   `docker volume rm $(docker volume ls -q --filter label=com.docker.compose.project=sep-pmm-fb)`,
   and delete the `SEP_MYSQL_*` lines from `.env` — `./bootstrap.sh` appends the
   `EXTENSIONS_MYSQL_*` slots that replace them.
