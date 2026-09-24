@@ -50,8 +50,6 @@ OWNER_FILTER_MATCH_TOTAL = 3
 OWNER_FILTER_PAGE_LIMIT = 2
 OWNER_NAME = "BACKUPS"
 
-PERIODIC_TASK_NAME_COLUMN_LIMIT = PeriodicTask.__table__.c.name.type.length
-
 #: A day count well inside ``timedelta``'s range, so the cadence builds, whose
 #: upcoming runs still land past ``datetime.max``. Guarding only the cadence
 #: would let this one through.
@@ -1030,7 +1028,7 @@ class TestCreatePeriodicTaskChainValidation:
 #: ``blake2b`` digest-based name generated for ``("my-task", "every 10
 #: minutes", '{"task_name": null}')``, pinned so a derivation that varies per
 #: process cannot pass the stability test by agreeing with itself.
-_STABLE_GENERATED_NAME = "run_my-task_every_10_minutes_155a3e5b7a4aca52"
+_STABLE_GENERATED_NAME = "run_my-task_every_10_minutes_01263f4315fc8f0f"
 
 
 class TestGeneratedPeriodicTaskName:
@@ -1088,18 +1086,22 @@ class TestGeneratedPeriodicTaskName:
 
         assert re.search(r"_[0-9a-f]{16}$", name)
 
-    def test_long_task_name_can_exceed_the_name_column_budget(self):
-        """Document, without fixing, that a long task name can overflow.
+    def test_space_and_underscore_task_names_do_not_collide(self):
+        """Give task names differing only by a space vs. an underscore distinct names.
 
-        Capping the full generated name is a pre-existing gap shared with
-        today's decimal ``hash()`` suffix, not something this digest width
-        introduces or is asked to repair.
+        The returned name's visible prefix collapses every space to an
+        underscore, so ``"foo bar"`` and ``"foo_bar"`` render identically
+        there; only a digest computed over the raw, un-collapsed task name
+        keeps their generated names apart.
         """
-        name = _generate_periodic_task_name(
-            "t" * 240, "every 10 minutes", '{"task_name": null}'
+        space_name = _generate_periodic_task_name(
+            "foo bar", "every 10 minutes", '{"task_name": null}'
+        )
+        underscore_name = _generate_periodic_task_name(
+            "foo_bar", "every 10 minutes", '{"task_name": null}'
         )
 
-        assert len(name) > PERIODIC_TASK_NAME_COLUMN_LIMIT
+        assert space_name != underscore_name
 
 
 class TestDuplicateUnnamedPeriodicTaskAttach:
