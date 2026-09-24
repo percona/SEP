@@ -56,7 +56,7 @@ passwords live in the datadir. Re-bootstrapping means dropping **both**
 
 ```bash
 docker compose --profile mysql down
-docker volume rm extensions-pmm-fb_extensions-mysql-data extensions-pmm-fb_extensions-mysql-pmm-config
+docker volume rm pmm-extensions-fb_extensions-mysql-data pmm-extensions-fb_extensions-mysql-pmm-config
 ```
 
 Drop the datadir alone and the exporters keep authenticating with the old `pmm`
