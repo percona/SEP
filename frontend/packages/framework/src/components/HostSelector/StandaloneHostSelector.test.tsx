@@ -23,11 +23,11 @@ import { SnackbarProvider } from 'notistack';
 import type { PropsWithChildren } from 'react';
 import { StandaloneHostSelector } from './StandaloneHostSelector';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { ApiError, apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@pmm-extensions/api';
 
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
@@ -168,7 +168,7 @@ describe('StandaloneHostSelector', () => {
     expect(await screen.findByText('No hosts available')).toBeInTheDocument();
   });
 
-  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+  it('refetches /api/extensions/hosts/ when the dropdown is opened', async () => {
     const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
     mocked.get.mockResolvedValue(makeResponse(hosts));
 

@@ -16,7 +16,7 @@
  */
 
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { apiClient, emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
+import { apiClient, emitUnauthorized, getToken, refreshAccessToken } from '@pmm-extensions/api';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -80,9 +80,9 @@ async function fetchExecutionEvents(taskHistoryId: string): Promise<ExecutionEve
  *
  * Running tasks stream via SSE /stream-logs/{id}/execution-events.
  * Completed tasks fetch REST /execution-events/{id} through react-query for
- * consistent error/loading/cache semantics with the rest of @sep/framework.
+ * consistent error/loading/cache semantics with the rest of @pmm-extensions/framework.
  *
- * Both paths attach the Bearer token from @sep/api's token provider so the
+ * Both paths attach the Bearer token from @pmm-extensions/api's token provider so the
  * SPA OAuth session is honoured without a session cookie.
  */
 export function useExecutionEvents(
@@ -124,7 +124,7 @@ export function useExecutionEvents(
     // Guards state setters so stale callbacks from an aborted stream cannot
     // write into a subsequent stream's state (e.g. on rapid id changes).
     let disposed = false;
-    // Tracks intentional terminal events (finish / sep-error) so onclose can
+    // Tracks intentional terminal events (finish / extensions-error) so onclose can
     // distinguish a clean shutdown from an unexpected connection drop.
     let terminatedCleanly = false;
     // Consecutive transient failures, reset on every successful open. Bounds the
@@ -193,7 +193,7 @@ export function useExecutionEvents(
           return;
         }
 
-        if (ev.event === 'sep-error') {
+        if (ev.event === 'extensions-error') {
           terminatedCleanly = true;
           let payload: unknown = ev.data;
           try {
@@ -258,7 +258,7 @@ export function useExecutionEvents(
         if (disposed || terminatedCleanly) {
           return;
         }
-        // Stream closed unexpectedly without a finish/sep-error frame.
+        // Stream closed unexpectedly without a finish/extensions-error frame.
         setSseError({ message: 'Execution events stream connection closed.' });
         setSseLoading(false);
       },

@@ -23,7 +23,7 @@ import re
 from enum import StrEnum
 from typing import Any, TYPE_CHECKING
 
-from pydantic import field_validator, JsonValue
+from pydantic import BaseModel, field_validator, JsonValue
 from sqlalchemy import Column, Index, String
 from sqlalchemy.types import TypeDecorator
 from sqlmodel import Field as SQLField
@@ -35,23 +35,27 @@ from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
-    from app.core.config import BaseYamlSettings
-
-#: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
+#: Acronym-aware CamelCase split: ``PMMSettings`` -> ``PMM_Settings``,
 #: ``HealthReportSettings`` -> ``Health_Report_Settings``.
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
-def setting_class_token(settings_cls: type[BaseYamlSettings]) -> str:
+def setting_class_token(settings_cls: type[BaseModel]) -> str:
     """Return the storage token written to ``settingoverride.setting_class``.
 
     The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
-    an acronym-aware CamelCase split so ``SEPSettings`` stores as
-    ``SEP_SETTINGS``, the spelling every existing override row already uses.
-    A class may pin a different token by declaring ``__setting_class_token__``,
-    the same escape hatch shape as SQLAlchemy's ``__tablename__``.
+    an acronym-aware CamelCase split so ``ExtensionsSettings`` stores as
+    ``EXTENSIONS_SETTINGS``. A class may pin a different token by declaring
+    ``__setting_class_token__``, the same escape hatch shape as SQLAlchemy's
+    ``__tablename__``.
 
-    :param settings_cls: The settings class whose override rows are stored.
+    The bound is :class:`~pydantic.BaseModel` rather than ``BaseYamlSettings``
+    because the re-encryption revisions pass frozen replica models that declare
+    their token through that escape hatch instead of inheriting the settings
+    base; those replicas and the live settings classes share no tighter base.
+
+    :param settings_cls: The settings class or frozen replica whose override
+        rows are stored.
     :return: The token written to ``settingoverride.setting_class``.
     """
     override = getattr(settings_cls, "__setting_class_token__", None)
@@ -64,7 +68,7 @@ class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
     Members are the core-wired classes only. A settings class owned by an app
-    declares itself under ``app/sep/apps/<app>/`` and needs no member here.
+    declares itself under ``app/extensions/apps/<app>/`` and needs no member here.
 
     Members are in-process constants. The ``settingoverride.setting_class``
     column is a plain string whose stored token is derived by
@@ -75,10 +79,10 @@ class SettingClassEnum(StrEnum):
 
     1. Add a member here whose value matches the Pydantic class ``__name__``.
     2. Wire a ``ProxyEntry`` for the new class in the relevant service's
-       lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
+       lifespan (``app/extensions/main.py`` or ``app/tasks/main.py``).
     """
 
-    SEP_SETTINGS = "SEPSettings"
+    EXTENSIONS_SETTINGS = "ExtensionsSettings"
     TASKS_SETTINGS = "TasksSettings"
     SNIPPETS_SETTINGS = "SnippetsSettings"
     SETTINGS = "Settings"
@@ -176,10 +180,10 @@ class SettingOverride(BaseSQLModel, table=True):
         at bind time.
 
         A ``StrEnum`` is a ``str`` whose content is the member *value*
-        (``SEPSettings``). Without this coercion, constructing
-        ``SettingOverride(setting_class=SettingClassEnum.SEP_SETTINGS)``
+        (``ExtensionsSettings``). Without this coercion, constructing
+        ``SettingOverride(setting_class=SettingClassEnum.EXTENSIONS_SETTINGS)``
         would store that value and orphan every existing row, which stores
-        the member *name* (``SEP_SETTINGS``).
+        the member *name* (``EXTENSIONS_SETTINGS``).
 
         :param value: The raw ``setting_class`` being assigned.
         :return: The storage token when ``value`` is an enum member, otherwise

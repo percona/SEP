@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ChoiceOption } from '@sep/api';
+import type { ChoiceOption } from '@pmm-extensions/api';
 import { normalizeChange, toDisplayValue } from './choiceFreeSoloValue';
 
 const OPTIONS: ChoiceOption[] = [

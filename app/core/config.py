@@ -431,7 +431,7 @@ class PMMSettings(BaseLowercaseModel):
         return None
 
 
-_INTERNAL_TOKEN_LABEL = b"sep-internal-token"
+_INTERNAL_TOKEN_LABEL = b"extensions-internal-token"
 
 
 def _encryption_key_error() -> str:
@@ -483,7 +483,7 @@ class SettingsOverrideOptions(BaseCaseInsensitiveModel):
         timer; the same value is also the hang budget passed to
         ``bounded_refresh``, so lowering it for fresher overrides also
         tightens how long a due task may stall. A child running both the
-        SEP-side and Tasks-side refreshers can pay that budget twice when
+        PMM Extensions side and Tasks-side refreshers can pay that budget twice when
         both are due at the same boundary. A non-positive value is rejected
         so neither path can hammer the database every iteration.
     :param REFRESHER_ENABLED: Master kill-switch for the DB-override
@@ -567,25 +567,25 @@ def detect_removed_settings_override_keys() -> None:
     )
 
 
-class _SEPDatabaseSettings(BaseYamlSettings):
-    """Resolve the SEP service's database options in isolation.
+class _ExtensionsDatabaseSettings(BaseYamlSettings):
+    """Resolve the PMM Extensions service's database options in isolation.
 
-    ``Settings`` cannot read ``sep_settings`` while it is being constructed:
+    ``Settings`` cannot read ``extensions_settings`` while it is being constructed:
     ``BaseYamlAppSettings.BACKEND_CORS_ORIGINS`` defaults off ``settings``, so
-    forcing the SEP proxy re-enters the global proxy that is still resolving. This
-    reads the same ``SEP__DATABASE__*`` sources without either proxy.
+    forcing the PMM Extensions proxy re-enters the global proxy that is still resolving. This
+    reads the same ``EXTENSIONS__DATABASE__*`` sources without either proxy.
 
     :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML
-        sources under. Set to ["SEP"].
-    :param DATABASE: The SEP service's database connection options.
+        sources under. Set to ["EXTENSIONS"].
+    :param DATABASE: The PMM Extensions service's database connection options.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
-    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="extensions.db")
 
 
 class BeatStoreDefaultSource(PydanticBaseSettingsSource):
-    """Supply the celery-beat store URI derived from the SEP database.
+    """Supply the celery-beat store URI derived from the PMM Extensions database.
 
     Ranked last, and skipped entirely once a real source — init kwarg, environment,
     dotenv, secret file, or YAML profile — supplies ``CELERY__BEAT_DBURI``. The
@@ -631,10 +631,10 @@ class BeatStoreDefaultSource(PydanticBaseSettingsSource):
         sources above this one already merged, so withholding the key whenever one
         of them supplies it keeps the collision from arising at all.
 
-        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database, or an
+        :return: The ``CELERY.BEAT_DBURI`` default derived from PMM Extensions' database, or an
             empty payload when a configured source already supplies the store.
-        :raises ValidationError: When the resolved ``SEP__DATABASE__*`` values do
-            not validate, so an unusable SEP database fails ``Settings``
+        :raises ValidationError: When the resolved ``EXTENSIONS__DATABASE__*`` values do
+            not validate, so an unusable PMM Extensions database fails ``Settings``
             construction instead of yielding a malformed store URI. Only a
             deployment that leaves the beat store to be derived is held to this.
         """
@@ -643,7 +643,7 @@ class BeatStoreDefaultSource(PydanticBaseSettingsSource):
             key.lower() == "beat_dburi" for key in configured
         ):
             return {}
-        database = _SEPDatabaseSettings(
+        database = _ExtensionsDatabaseSettings(
             _env_file=self._env_file, _secrets_dir=self._secrets_dir
         ).DATABASE
         return {"CELERY": {"BEAT_DBURI": database.URL}}
@@ -653,8 +653,8 @@ class Settings(BaseYamlSettings):
     """Define the main application settings.
 
     :param CELERY: Celery configuration options. ``BEAT_DBURI`` defaults to the
-        resolved SEP database connection, so the beat store follows
-        ``SEP__DATABASE__*`` unless a source configures it explicitly.
+        resolved PMM Extensions database connection, so the beat store follows
+        ``EXTENSIONS__DATABASE__*`` unless a source configures it explicitly.
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
@@ -673,7 +673,7 @@ class Settings(BaseYamlSettings):
         with ``openssl rand -hex 32`` to rotate it independently of
         ``SECRET_KEY``.
     :param ENCRYPTION_KEY: The Fernet key :mod:`app.core.encryption` uses to
-        encrypt values SEP stores in its own databases. It has no default and is
+        encrypt values PMM Extensions stores in its own databases. It has no default and is
         never derived from ``SECRET_KEY``: ciphertext outlives the process that
         wrote it, so a key that changed on restart would orphan every encrypted
         row. Every environment supplies its own, as an environment variable or
@@ -685,7 +685,7 @@ class Settings(BaseYamlSettings):
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
     :param BASE_URL: The application's base URL. Its path is preserved, with composed
         URLs appended to it rather than replacing it, so it must already include
-        ``SEP.ROOT_PATH`` when a URL prefix is configured.
+        ``EXTENSIONS.ROOT_PATH`` when a URL prefix is configured.
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
         the default BACKEND_CORS_ORIGINS setting across all apps.
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
@@ -796,7 +796,7 @@ class Settings(BaseYamlSettings):
         """Populate ``SEP_INTERNAL_TOKEN``, deriving it from ``SECRET_KEY``.
 
         Every process sharing ``SECRET_KEY`` derives the identical token via
-        HMAC-SHA256, so SEP-internal service-to-service authentication works
+        HMAC-SHA256, so PMM Extensions internal service-to-service authentication works
         across the web apps and the lifespan-less Celery worker without
         persisting or distributing a separate secret. An explicitly configured
         ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
@@ -804,8 +804,8 @@ class Settings(BaseYamlSettings):
         the token is derived, and it runs on every constructed instance, which
         is what lets ``SEP_INTERNAL_TOKEN`` be typed as always set.
 
-        :return: Validated settings with ``SEP_INTERNAL_TOKEN`` guaranteed set.
-        :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
+        :return: Validated settings with ``EXTENSIONS_INTERNAL_TOKEN`` guaranteed set.
+        :raises ValueError: If ``EXTENSIONS_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
             is empty, so no token can be derived.
         """
         if (
@@ -817,7 +817,7 @@ class Settings(BaseYamlSettings):
         secret_key = self.SECRET_KEY.get_secret_value()
         if not secret_key:
             raise ValueError(
-                "SECRET_KEY must be set to a non-empty value so SEP_INTERNAL_TOKEN "
+                "SECRET_KEY must be set to a non-empty value so EXTENSIONS_INTERNAL_TOKEN "
                 "can be derived for service-to-service authentication "
                 "(e.g. `openssl rand -hex 32`)."
             )

@@ -22,7 +22,7 @@ import threading
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Final
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -36,6 +36,8 @@ from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from itsdangerous import URLSafeTimedSerializer
 from pytest_mock import MockerFixture
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncEngine,
@@ -59,18 +61,23 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.health import HEALTH_PATH
 from app.core.requests import RemoteAPI
 from app.core.utils import json_serializer
-from app.inventory.models import ServiceTypeEnum
-from app.sep.config import sep_settings
-from app.sep.deps import (
+from app.extensions.config import extensions_settings
+from app.extensions.deps import (
     get_current_user,
     get_inventory_api,
     get_session,
     get_tasks_api,
     require_bearer_for_unsafe_methods,
 )
-from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
-from app.sep.main import sep_app
-from app.sep.snippets.config import snippets_settings
+from app.extensions.inventory import (
+    CreatedNode,
+    CreatedSchema,
+    CreatedService,
+    CreatedTable,
+)
+from app.extensions.main import extensions_app
+from app.extensions.snippets.config import snippets_settings
+from app.inventory.models import ServiceTypeEnum
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from tests.app.db_schema import apply_schema
@@ -191,6 +198,44 @@ def health_probe_server_fixture() -> Iterator[HealthProbeServer]:
     server.stop()
 
 
+@event.listens_for(Engine, "connect")
+def _attach_declared_schemas_on_sqlite(dbapi_connection: Any, _record: Any) -> None:
+    """Make every declared symbolic schema a real one on every SQLite connection.
+
+    An app's tables declare a token under ``extensions_settings.DATABASE.
+    SCHEMA_TRANSLATE_MAP`` and the application engine translates it — to a real
+    schema on PostgreSQL, to the default schema on SQLite, where PMM Extensions and inventory
+    are separate database files and cannot collide. This suite is the one place
+    they *can*: it creates every service's metadata in a single in-memory
+    database, where a token-scoped ``service`` table would be PMM Extensions inventory's
+    ``service``.
+
+    So rather than translate the token here, satisfy it: SQLite has no schemas but it
+    has ``ATTACH``, and an attached in-memory database *is* a schema as far as SQL is
+    concerned. Attaching one under each declared token's own name means the
+    untranslated ``<token>.service`` resolves, and no fixture needs a
+    ``schema_translate_map`` — which matters because the suite builds engines in
+    some thirty places, and each one that forgot would fail with "unknown database
+    <token>".
+
+    Registered on the ``Engine`` class so it covers engines that do not exist yet.
+    It fires when the DBAPI connection is opened, before any statement, so
+    ``create_all`` already sees the schema. Every SQLite engine here is in-memory and
+    single-connection, so the attached database lives exactly as long as the main
+    one. Non-SQLite binds are left alone — they have real schemas, and the
+    PostgreSQL fixture below routes each token into its per-worker one.
+
+    :param dbapi_connection: The freshly opened DBAPI connection.
+    :param _record: The pool's record for it. Unused.
+    """
+    if "sqlite" not in type(dbapi_connection).__module__:
+        return
+    cursor = dbapi_connection.cursor()
+    for token in extensions_settings.DATABASE.SCHEMA_TRANSLATE_MAP:
+        cursor.execute(f"ATTACH DATABASE ':memory:' AS {token}")
+    cursor.close()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _disable_settings_override_refresher_for_session() -> Iterator[None]:
     """Disable the DB-override background refresher for the entire test session.
@@ -217,7 +262,7 @@ def _override_snapshot_cleared() -> None:
     snapshot entry would shadow the monkey-patched value and confuse the test.
     """
     settings._set_snapshot({})  # noqa: SLF001
-    sep_settings._set_snapshot({})  # noqa: SLF001
+    extensions_settings._set_snapshot({})  # noqa: SLF001
     tasks_settings._set_snapshot({})  # noqa: SLF001
     snippets_settings._set_snapshot({})  # noqa: SLF001
     alert_settings._set_snapshot({})  # noqa: SLF001
@@ -369,6 +414,17 @@ def resolve_casdoor_as_role(
     return resolve_as
 
 
+#: A made-up token in the measured ``glsa_`` shape, presented as a caller's
+#: Bearer credential (not PMM Extensions' own service-account token). It is assembled
+#: from its parts so no committed line carries a string secret scanners would
+#: report as a live Grafana credential.
+_FAKE_GRAFANA_TOKEN_SECRET: Final = "Qx7Rk2mZp9LwYc4Vb8Nt3Hs6Jd1Fg5Ae"
+_FAKE_GRAFANA_TOKEN_CHECKSUM: Final = "3f9c01ab"
+GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN: Final = (
+    f"glsa_{_FAKE_GRAFANA_TOKEN_SECRET}_{_FAKE_GRAFANA_TOKEN_CHECKSUM}"
+)
+
+
 @pytest.fixture
 def grafana_service_account_token() -> str:
     """Provide a fake Grafana service-account token."""
@@ -495,7 +551,7 @@ def mock_remote_api() -> AsyncMock:
     return AsyncMock(spec=RemoteAPI)
 
 
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+POSTGRES_DSN_ENV = "EXTENSIONS_TEST_POSTGRES_DSN"
 
 
 def postgres_worker_schema() -> str:
@@ -504,7 +560,7 @@ def postgres_worker_schema() -> str:
     Each xdist worker gets its own schema so parallel workers never collide on
     ``CREATE``/``DROP`` against a shared database.
     """
-    return f"sep_test_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
+    return f"extensions_test_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
 
 
 @pytest_asyncio.fixture
@@ -512,7 +568,7 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     """Provide a real-PostgreSQL ``AsyncEngine`` for dialect-specific SQL tests.
 
     Connect through the already-present ``asyncpg`` driver to the DSN in
-    ``$SEP_TEST_POSTGRES_DSN``. This is chosen over ``pytest-postgresql`` or
+    ``$EXTENSIONS_TEST_POSTGRES_DSN``. This is chosen over ``pytest-postgresql`` or
     ``testcontainers`` because it adds no dependency and the CI
     ``services: postgres`` container supplies the server. An unset env var skips
     the test (local runs without PostgreSQL); a set env var must connect, so a
@@ -536,7 +592,20 @@ async def postgres_engine() -> AsyncGenerator[AsyncEngine, None]:
     try:
         async with base.begin() as conn:
             await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-        yield base.execution_options(schema_translate_map={None: schema})
+        # Every declared symbolic schema token (OM's ``om_schema``, and any other
+        # app's) has to translate somewhere. PostgreSQL has no ``ATTACH`` for the
+        # SQLite trick above, so translate them -- into the *same* per-worker schema
+        # as everything else, because that is what teardown drops. Routing one to
+        # its literal resolved name would escape the worker schema and collide
+        # across xdist workers.
+        yield base.execution_options(
+            schema_translate_map={
+                None: schema,
+                **dict.fromkeys(
+                    extensions_settings.DATABASE.SCHEMA_TRANSLATE_MAP, schema
+                ),
+            }
+        )
     finally:
         try:
             async with base.begin() as conn:
@@ -584,9 +653,9 @@ async def postgres_session(
 
 
 # The client/session fixtures below live here — the always-loaded ancestor conftest —
-# rather than in ``tests/app/sep/conftest.py`` so they resolve regardless of single-process
-# collection order. ``tests/app/sep/conftest.py`` re-exports them for the sep
-# subtree; nearer conftests (tasks, inventory, sep/apps/*) still shadow them as before.
+# rather than in ``tests/app/extensions/conftest.py`` so they resolve regardless of single-process
+# collection order. ``tests/app/extensions/conftest.py`` re-exports them for the extensions
+# subtree; nearer conftests (tasks, inventory, extensions/apps/*) still shadow them as before.
 
 
 @pytest_asyncio.fixture(name="session")
@@ -648,7 +717,7 @@ async def celery_beat_session_fixture(
 def test_client(
     regular_user: CasdoorUser, session: AsyncSession
 ) -> Iterator[TestClient]:
-    """Yield an authenticated cookie-auth TestClient for the SEP app.
+    """Yield an authenticated cookie-auth TestClient for the PMM Extensions app.
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
     mutations under ``/api/apps/*`` are not blocked by the framework
@@ -664,12 +733,16 @@ def test_client(
     DB. Tests that exercise the disabled path override ``get_session`` again
     with a session that carries an ``enabled=False`` row.
     """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
-    sep_app.dependency_overrides[get_session] = lambda: session
-    yield TestClient(sep_app, raise_server_exceptions=False)
-    sep_app.dependency_overrides = {}
+    extensions_app.dependency_overrides[require_bearer_for_unsafe_methods] = (
+        lambda: None
+    )
+    extensions_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
+    extensions_app.dependency_overrides[get_current_user] = lambda: regular_user
+    extensions_app.dependency_overrides[get_session] = lambda: session
+    yield TestClient(extensions_app, raise_server_exceptions=False)
+    extensions_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -681,39 +754,43 @@ def api_admin_client_no_bearer(admin_user: CasdoorUser) -> Iterator[TestClient]:
     JSON mutations to ``/api/apps/*`` are rejected by the framework
     Bearer gate. Use in tests that assert the 401 path.
     """
-    sep_app.dependency_overrides[get_current_user] = lambda: admin_user
-    yield TestClient(sep_app, raise_server_exceptions=False)
-    sep_app.dependency_overrides = {}
+    extensions_app.dependency_overrides[get_current_user] = lambda: admin_user
+    yield TestClient(extensions_app, raise_server_exceptions=False)
+    extensions_app.dependency_overrides = {}
 
 
 @pytest.fixture
 def unauthenticated_client() -> Iterator[TestClient]:
     """Yield a test client with authentication dependency overrides cleared."""
-    previous = sep_app.dependency_overrides
-    sep_app.dependency_overrides = {}
+    previous = extensions_app.dependency_overrides
+    extensions_app.dependency_overrides = {}
     try:
-        yield TestClient(sep_app, raise_server_exceptions=False)
+        yield TestClient(extensions_app, raise_server_exceptions=False)
     finally:
-        sep_app.dependency_overrides = previous
+        extensions_app.dependency_overrides = previous
 
 
 @pytest_asyncio.fixture
 async def async_test_client(
     regular_user: CasdoorUser,
 ) -> AsyncGenerator[AsyncClient, None]:
-    """Yield an authenticated async cookie-auth client for the SEP app.
+    """Yield an authenticated async cookie-auth client for the PMM Extensions app.
 
     See :func:`test_client` for the gate-override rationale.
     """
-    sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = lambda: None
-    sep_app.dependency_overrides[get_current_user] = lambda: regular_user
+    extensions_app.dependency_overrides[require_bearer_for_unsafe_methods] = (
+        lambda: None
+    )
+    extensions_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (
+        lambda: None
+    )
+    extensions_app.dependency_overrides[get_current_user] = lambda: regular_user
 
-    transport = ASGITransport(app=sep_app)
+    transport = ASGITransport(app=extensions_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
 
-    sep_app.dependency_overrides = {}
+    extensions_app.dependency_overrides = {}
 
 
 def make_roleless_grafana_assertion(token_type: str) -> str:
@@ -784,9 +861,9 @@ def dummy_request() -> Request:
 def mock_task_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
     """Mock the TaskAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
-    sep_app.dependency_overrides[get_tasks_api] = lambda: mock
+    extensions_app.dependency_overrides[get_tasks_api] = lambda: mock
     yield mock
-    sep_app.dependency_overrides = {}
+    extensions_app.dependency_overrides = {}
 
 
 @pytest.fixture
@@ -799,6 +876,6 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> Iterator[AsyncMock]:
         "offset": 0,
         "limit": 50,
     }
-    sep_app.dependency_overrides[get_inventory_api] = lambda: mock
+    extensions_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
-    sep_app.dependency_overrides = {}
+    extensions_app.dependency_overrides = {}

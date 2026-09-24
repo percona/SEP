@@ -35,13 +35,13 @@ HEALTHCHECK = SIDECAR_DIR / "healthcheck.sh"
 GATE_INVOCATION = "./wait_for_schema.sh"
 
 GATED_PROGRAMS = {
-    "sep": "python -m app.sep.main",
+    "extensions": "python -m app.extensions.main",
     "inventory": "python -m app.inventory.main",
     "tasks": "python -m app.tasks.main",
 }
 """Each gated API program and the command the gate must precede."""
 
-ALEMBIC_ONE_SHOTS = ("migrate-sep", "migrate-inventory", "migrate-tasks")
+ALEMBIC_ONE_SHOTS = ("migrate-extensions", "migrate-inventory", "migrate-tasks")
 
 RunGate = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -283,29 +283,31 @@ def test_the_beat_schema_step_publishes_its_sentinel_only_on_success(
     assert "&& touch /tmp/migrate-beat.ok" in command
 
 
-def test_the_beat_schema_step_does_not_probe_the_sep_database(
+def test_the_beat_schema_step_does_not_probe_the_extensions_database(
     program_settings: dict[str, dict[str, str]],
 ):
     """Keep the readiness wait in the bootstrap, which knows the resolved store.
 
-    ``CELERY__BEAT_DBURI`` may point beat at a store other than the SEP database,
-    so the ``until nc -z %(ENV_SEP_DB_HOST)s`` idiom its three siblings use would
-    watch the wrong host here.
+    ``CELERY__BEAT_DBURI`` may point beat at a store other than the PMM Extensions database,
+    so the ``until nc -z %(ENV_EXTENSIONS_DB_HOST)s`` idiom its sibling migrate
+    programs use would watch the wrong host here.
     """
     command = program_settings["migrate-beat"]["command"]
 
     assert "nc -z" not in command
-    assert "ENV_SEP_DB_" not in command
+    assert "ENV_EXTENSIONS_DB_" not in command
 
 
 @pytest.mark.parametrize("program", ALEMBIC_ONE_SHOTS)
 def test_the_alembic_one_shots_keep_their_own_wait(
     program_settings: dict[str, dict[str, str]], program: str
 ):
-    """Keep the SEP-database wait where it is right — the asymmetry is deliberate."""
+    """Keep the PMM Extensions database wait where it is right — the asymmetry is deliberate."""
     command = program_settings[program]["command"]
 
-    assert "until nc -z %(ENV_SEP_DB_HOST)s %(ENV_SEP_DB_PORT)s" in command
+    assert (
+        "until nc -z %(ENV_EXTENSIONS_DB_HOST)s %(ENV_EXTENSIONS_DB_PORT)s" in command
+    )
 
 
 def test_the_beat_schema_step_is_excluded_from_the_running_assertion(

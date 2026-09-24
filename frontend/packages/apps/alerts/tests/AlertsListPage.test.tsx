@@ -25,8 +25,8 @@ import type { AlertIndexResponse } from '../src/types';
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
 

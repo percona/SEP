@@ -45,7 +45,9 @@ def test_crypto_timestamp_serializer_basic():
 
 def test_get_internal_token_returns_secret(mocker):
     """``get_internal_token`` returns the configured token's secret value."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("internal-secret"))
+    mocker.patch.object(
+        settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr("internal-secret")
+    )
     assert get_internal_token() == "internal-secret"
 
 

@@ -36,7 +36,7 @@ import {
   useSetAppState,
   type AdminApp,
   type AppLifecycleState,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 import { useAuth } from '../contexts/auth';
 import { useNotification } from '../contexts/notification';

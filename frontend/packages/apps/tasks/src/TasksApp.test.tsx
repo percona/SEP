@@ -19,7 +19,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSchema } from '@sep/api';
+import type { AppSchema } from '@pmm-extensions/api';
 import { TasksApp } from './TasksApp';
 import { useTasksList, useTasksAppSchema } from './hooks';
 
@@ -33,7 +33,7 @@ vi.mock('./TaskDetailPage', () => ({
   TaskDetailPage: () => <div data-testid="task-detail-page">Task detail</div>,
 }));
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   SchemaListView: ({ data }: { data: Record<string, unknown>[] }) => (
     <div data-testid="schema-list">
       {data.map((row) => (

@@ -18,7 +18,7 @@
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { apiClient, setTokenProvider, type AppListResult } from '@sep/api';
+import { apiClient, setTokenProvider, type AppListResult } from '@pmm-extensions/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   useApproveSnippet,

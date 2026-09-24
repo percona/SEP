@@ -23,7 +23,7 @@ import Typography from '@mui/material/Typography';
 import DownloadIcon from '@mui/icons-material/Download';
 import LockIcon from '@mui/icons-material/Lock';
 import { LoadableChildren } from '@percona/percona-ui';
-import { useConfigExport, useSettingsList } from '@sep/api';
+import { useConfigExport, useSettingsList } from '@pmm-extensions/api';
 
 import { useAuth } from '../contexts/auth';
 import SettingsGroup from '../components/settings/SettingsGroup';

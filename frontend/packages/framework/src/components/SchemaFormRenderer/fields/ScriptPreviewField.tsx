@@ -23,7 +23,7 @@ import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import bash from 'react-syntax-highlighter/dist/esm/languages/prism/bash';
 import python from 'react-syntax-highlighter/dist/esm/languages/prism/python';
 import { vs, vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import type { ScriptPreviewField as ScriptPreviewFieldType } from '../types';
 
 SyntaxHighlighter.registerLanguage('bash', bash);

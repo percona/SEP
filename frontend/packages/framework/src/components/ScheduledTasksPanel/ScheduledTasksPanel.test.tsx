@@ -33,8 +33,8 @@ const { apiMock, useAppTasksMock, authMock } = vi.hoisted(() => ({
   authMock: { canMutate: true },
 }));
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: apiMock,
   useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
   useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
@@ -42,9 +42,9 @@ vi.mock('@sep/api', async (importOriginal) => ({
 // `fetchAllAppListPages` (used by `useScheduledTasksForApp`) calls the
 // package-internal `apiClient` bound in `../client`, not the barrel export
 // above, so it needs its own mock pointing at the same spy.
-vi.mock('@sep/api/src/client', () => ({ apiClient: apiMock }));
+vi.mock('@pmm-extensions/api/src/client', () => ({ apiClient: apiMock }));
 
-import { DEFAULT_APP_LIST_LIMIT } from '@sep/api';
+import { DEFAULT_APP_LIST_LIMIT } from '@pmm-extensions/api';
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
 import type { PeriodicTaskResponse } from './hooks';
 
@@ -123,7 +123,7 @@ describe('ScheduledTasksPanel', () => {
       expect(screen.getByTestId('scheduled-task-row-1')).toBeInTheDocument();
     });
     expect(apiMock.get).toHaveBeenCalledTimes(1);
-    expect(apiMock.get).toHaveBeenCalledWith('/sep/periodic-tasks/', {
+    expect(apiMock.get).toHaveBeenCalledWith('/extensions/periodic-tasks/', {
       params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
     });
   });
@@ -171,13 +171,13 @@ describe('ScheduledTasksPanel', () => {
     });
     expect(screen.queryByTestId('scheduled-task-row-2')).not.toBeInTheDocument();
     expect(apiMock.get).toHaveBeenCalledTimes(3);
-    expect(apiMock.get).toHaveBeenNthCalledWith(1, '/sep/periodic-tasks/', {
+    expect(apiMock.get).toHaveBeenNthCalledWith(1, '/extensions/periodic-tasks/', {
       params: { offset: 0, limit: DEFAULT_APP_LIST_LIMIT },
     });
-    expect(apiMock.get).toHaveBeenNthCalledWith(2, '/sep/periodic-tasks/', {
+    expect(apiMock.get).toHaveBeenNthCalledWith(2, '/extensions/periodic-tasks/', {
       params: { offset: 1, limit: DEFAULT_APP_LIST_LIMIT },
     });
-    expect(apiMock.get).toHaveBeenNthCalledWith(3, '/sep/periodic-tasks/', {
+    expect(apiMock.get).toHaveBeenNthCalledWith(3, '/extensions/periodic-tasks/', {
       params: { offset: 2, limit: DEFAULT_APP_LIST_LIMIT },
     });
   });
@@ -268,7 +268,7 @@ describe('ScheduledTasksPanel', () => {
 
     await waitFor(() => expect(apiMock.put).toHaveBeenCalledTimes(1));
     expect(apiMock.put).toHaveBeenCalledWith(
-      '/sep/periodic-tasks/7',
+      '/extensions/periodic-tasks/7',
       expect.objectContaining({ enabled: false }),
     );
   });
@@ -290,7 +290,9 @@ describe('ScheduledTasksPanel', () => {
     await user.click(await screen.findByTestId('scheduled-task-delete-9'));
     await user.click(screen.getByRole('button', { name: /^Delete$/ }));
 
-    await waitFor(() => expect(apiMock.delete).toHaveBeenCalledWith('/sep/periodic-tasks/9'));
+    await waitFor(() =>
+      expect(apiMock.delete).toHaveBeenCalledWith('/extensions/periodic-tasks/9'),
+    );
   });
 
   it('creates an interval task via POST when filling the create form', async () => {
@@ -311,7 +313,7 @@ describe('ScheduledTasksPanel', () => {
 
     await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(1));
     const [url, body] = apiMock.post.mock.calls[0];
-    expect(url).toBe('/sep/periodic-tasks/plugin-task/');
+    expect(url).toBe('/extensions/periodic-tasks/plugin-task/');
     expect(body).toMatchObject({
       task: 'plugin-task',
       enabled: true,
@@ -433,7 +435,7 @@ describe('ScheduledTasksPanel', () => {
 
     await waitFor(() => expect(apiMock.put).toHaveBeenCalledTimes(1));
     const [url, body] = apiMock.put.mock.calls[0];
-    expect(url).toBe('/sep/periodic-tasks/21');
+    expect(url).toBe('/extensions/periodic-tasks/21');
     expect(body.interval).toBeNull();
     expect(body.crontab).toMatchObject({
       minute: '*/15',
@@ -529,7 +531,7 @@ describe('ScheduledTasksPanel', () => {
 
     await waitFor(() => expect(apiMock.put).toHaveBeenCalledTimes(1));
     const [url, body] = apiMock.put.mock.calls[0];
-    expect(url).toBe('/sep/periodic-tasks/11');
+    expect(url).toBe('/extensions/periodic-tasks/11');
     expect(body.interval).toMatchObject({ every: 10, period: 'hours' });
   });
 });

@@ -437,15 +437,15 @@ class TestConnectTimeoutBudget:
             == CONNECT_TIMEOUT * 1000
         )
 
-    def test_sep_and_tasks_connect_budgets_match(self):
-        """Verify the SEP-side and Tasks-side connect budgets cannot drift.
+    def test_extensions_and_tasks_connect_budgets_match(self):
+        """Verify the PMM Extensions side and Tasks-side connect budgets cannot drift.
 
-        SEP sends ``CHECK_TIMEOUT`` as ``request.timeout``; the Tasks API charges
+        PMM Extensions sends ``CHECK_TIMEOUT`` as ``request.timeout``; the Tasks API charges
         the connect phase against ``CONNECTIVITY_CHECK_TIMEOUT``. They are
         declared in separate modules with no shared source, so this pins them
         equal to catch a silent drift.
         """
-        from app.sep.connectivity import CHECK_TIMEOUT
+        from app.extensions.connectivity import CHECK_TIMEOUT
         from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
 
         assert CHECK_TIMEOUT == CONNECTIVITY_CHECK_TIMEOUT
@@ -453,7 +453,7 @@ class TestConnectTimeoutBudget:
     def test_total_server_budget_stays_under_remote_read_timeout(self):
         """Verify the worst-case server wait stays under the client read timeout.
 
-        SEP's ``RemoteAPI`` holds the request open with ``sock_read=120`` while
+        PMM Extensions' ``RemoteAPI`` holds the request open with ``sock_read=120`` while
         the Tasks API waits up to ``PROVISIONING_TIMEOUT`` plus the connect
         budget. If that sum approaches 120s the call surfaces as "Could not reach
         the Tasks API" instead of the diagnostic timeout response, so keep a

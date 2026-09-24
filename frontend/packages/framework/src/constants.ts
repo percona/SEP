@@ -17,4 +17,4 @@
 
 // Project-prefixed class applied to MRT paper containers so theme.ts can scope
 // overrides without using MUI's reserved "Mui*" prefix.
-export const SEP_TABLE_CLASS = 'SepTable';
+export const EXTENSIONS_TABLE_CLASS = 'ExtensionsTable';

@@ -22,7 +22,7 @@ import { createMemoryRouter, RouterProvider, Link } from 'react-router';
 import { Controller, useFormContext } from 'react-hook-form';
 import Slider from '@mui/material/Slider';
 import Typography from '@mui/material/Typography';
-import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
+import { ALERT_CONFIG_QUERY_KEY } from '@pmm-extensions/api';
 import type { FormSection, RenderFieldOverride } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 

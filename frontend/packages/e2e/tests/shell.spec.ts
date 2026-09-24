@@ -60,8 +60,8 @@ const MOCK_APP_SCHEMA = {
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
  *   /api/apps/:name/schema    -> minimal valid AppSchema (renders heading)
- *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
- *   /api/sep/task-history/       -> empty paginated response (prevents refetchInterval crash)
+ *   /api/extensions/dashboard/          -> zero counts for dashboard stat cards
+ *   /api/extensions/task-history/       -> empty paginated response (prevents refetchInterval crash)
  *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
@@ -98,7 +98,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.endsWith('/sep/dashboard/')) {
+    if (pathname.endsWith('/extensions/dashboard/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -106,7 +106,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/sep/task-history/')) {
+    if (pathname.includes('/extensions/task-history/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -167,7 +167,7 @@ test.describe('shell sanity smoke', () => {
 
   test('ambient Grafana session auto-logs-in without showing the login form', async ({ page }) => {
     await mockAuthenticatedApis(page);
-    // No SEP refresh cookie, but a valid ambient Grafana session: the bootstrap
+    // No PMM Extensions refresh cookie, but a valid ambient Grafana session: the bootstrap
     // falls back to POST /api/oauth/session and lands authenticated. Registered
     // after the catch-all so these specific routes take precedence.
     await page.route('**/api/oauth/refresh', (route) =>

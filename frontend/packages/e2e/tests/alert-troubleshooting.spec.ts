@@ -116,7 +116,7 @@ async function mockAlertTroubleshootingRoutes(page: Page) {
     if (pathname.includes('/apps/snippets') && pathname.endsWith('/schema')) {
       return route.fulfill({ json: MOCK_SNIPPET_SCHEMA });
     }
-    if (pathname.includes('/sep/hosts/')) {
+    if (pathname.includes('/extensions/hosts/')) {
       return route.fulfill({ json: [] });
     }
 

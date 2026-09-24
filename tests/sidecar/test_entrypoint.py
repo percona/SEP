@@ -40,6 +40,7 @@ SENTINEL_PATH = re.compile(r"/tmp/migrate-([a-z]+)\.ok")
 CANONICAL_NAMES = (
     "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN",
     "PMM__API_KEY",
+    "TASKS__NOMAD__API_KEY",
 )
 
 MINTED_TOKEN = "glsa_minted_at_container_start"
@@ -242,7 +243,7 @@ def container(tmp_path: Path) -> FakeContainer:
     return FakeContainer(tmp_path)
 
 
-def test_a_minted_token_reaches_both_canonical_names(container: FakeContainer):
+def test_a_minted_token_reaches_every_canonical_name(container: FakeContainer):
     """Hand the minted token to every supervised program, through one function."""
     result = container.start()
 
@@ -276,10 +277,79 @@ def test_a_failing_helper_does_not_take_the_container_down(container: FakeContai
 
 def test_an_explicit_token_still_outranks_the_mint(container: FakeContainer):
     """Keep the operator's own value, which the pre-flight resolves beneath."""
-    container.start(SEP_GRAFANA_TOKEN="glsa_explicit")
+    container.start(EXTENSIONS_GRAFANA_TOKEN="glsa_explicit")
 
     for name in CANONICAL_NAMES:
         assert container.supervised_environment[name] == "glsa_explicit"
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    ["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN", "PMM__API_KEY"],
+)
+def test_a_supplied_mint_gate_token_still_fills_nomad(
+    container: FakeContainer, supplied: str
+):
+    """Export a helper-resolved mint-gate token to Nomad without displacing it.
+
+    The stub prints what ``grafana_service_account.py`` prints when either
+    mint-gate name already resolves: the entrypoint must still call
+    ``export_grafana_token``, or ``TASKS__NOMAD__API_KEY`` stays unset.
+    """
+    token = "glsa_supplied_by_the_operator"
+    result = container.start(token=token, **{supplied: token})
+
+    assert result.returncode == 0, result.stderr
+    supervised = container.supervised_environment
+    assert supervised[supplied] == token
+    assert supervised["TASKS__NOMAD__API_KEY"] == token
+
+
+@pytest.mark.parametrize(
+    "mounted",
+    ["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN", "PMM__API_KEY"],
+)
+def test_a_mounted_mint_gate_token_still_fills_nomad(
+    container: FakeContainer, tmp_path: Path, mounted: str
+):
+    """Export a SECRETS_DIR-mounted mint-gate value to every unset sibling, leaving the file alone."""
+    token = "glsa_mounted"
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / mounted).write_text(f"{token}\n", encoding="utf-8")
+    sibling = (
+        "PMM__API_KEY"
+        if mounted == "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"
+        else "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"
+    )
+
+    result = container.start(token=token, SECRETS_DIR=str(secrets_dir))
+
+    assert result.returncode == 0, result.stderr
+    supervised = container.supervised_environment
+    assert mounted not in supervised
+    assert supervised[sibling] == token
+    assert supervised["TASKS__NOMAD__API_KEY"] == token
+
+
+def test_differing_mint_gate_names_fill_nomad_from_the_helper_value(
+    container: FakeContainer,
+):
+    """Keep an explicit PMM key and still fill Nomad from the helper's SAT."""
+    result = container.start(
+        token="glsa_service_account",
+        AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="glsa_service_account",
+        PMM__API_KEY="glsa_pmm_api_key",
+    )
+
+    assert result.returncode == 0, result.stderr
+    supervised = container.supervised_environment
+    assert (
+        supervised["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN"]
+        == "glsa_service_account"
+    )
+    assert supervised["PMM__API_KEY"] == "glsa_pmm_api_key"
+    assert supervised["TASKS__NOMAD__API_KEY"] == "glsa_service_account"
 
 
 def test_the_token_never_enters_the_helpers_argv(container: FakeContainer):

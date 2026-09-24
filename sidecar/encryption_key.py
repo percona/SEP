@@ -22,7 +22,7 @@ channels are re-read here anyway so a run outside the entrypoint answers the
 same thing the container would.
 
 Unlike the Grafana token beside it, this key is not re-mintable. Every
-``settingoverride`` row SEP has encrypted is readable only under the key that
+``settingoverride`` row PMM Extensions has encrypted is readable only under the key that
 wrote it, and :mod:`~app.core.settings_override.cache` warns and skips a row it
 cannot decrypt rather than failing the load, so minting a replacement over
 surviving ciphertext brings the container up green with the affected overrides
@@ -36,8 +36,8 @@ same ``<PREFIX>__DATABASE__*`` sources (environment, dotenv, ``SECRETS_DIR``
 file, YAML profile) while requiring no ``ENCRYPTION_KEY`` of their own, which
 the key-less path this helper runs on could not supply.
 
-Deployment inputs, all optional: ``SEP_STATE_DIR`` and
-``SEP_ENCRYPTION_PROBE_TIMEOUT``.
+Deployment inputs, all optional: ``EXTENSIONS_STATE_DIR`` and
+``EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT``.
 """
 
 import asyncio
@@ -60,7 +60,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import BaseYamlSettings
 from app.core.db.config import DatabaseOptions
-from app.core.encryption import is_encrypted
+from app.core.encryption import is_encrypted, is_stored_ciphertext
 from app.core.settings_override.models import SettingOverride
 from app.core.utils.fields import credential_url_password
 from sidecar.runtime import (
@@ -113,6 +113,14 @@ KEY_BYTES = 32
 """What Fernet's URL-safe base64 key decodes to: a 16-byte signing half and a
 16-byte encryption half."""
 
+PRE_RENAME_CIPHERTEXT_MARKER = "sep.enc.v1."
+"""The envelope marker stored ciphertext carried before it was renamed.
+
+This probe runs before Alembic, so it can meet a database whose markers the
+renaming revisions have not moved yet. Missing such a value would read the
+database as fresh and mint a key over ciphertext the lost key wrote.
+"""
+
 
 class EncryptionKeyError(Exception):
     """Raise when no key can be served and the pre-flight has to give up."""
@@ -125,7 +133,7 @@ class _ServiceDatabase(BaseYamlSettings):
     :meth:`~app.core.config.BaseYamlSettings.settings_customise_sources` ranks
     the prefixed spelling of a name above the unprefixed one from
     ``SETTINGS_PREFIXES``, which is a class-level declaration. Mirrors
-    ``app.core.config._SEPDatabaseSettings``, which reads the SEP database the
+    ``app.core.config._ExtensionsDatabaseSettings``, which reads the PMM Extensions database the
     same way for the same reason: to stay clear of a proxy it cannot resolve.
 
     :param DATABASE: The service's database connection options. Left without a
@@ -136,15 +144,15 @@ class _ServiceDatabase(BaseYamlSettings):
     DATABASE: DatabaseOptions
 
 
-class _SEPDatabase(_ServiceDatabase):
-    """Resolve the ``sep`` service's database options.
+class _ExtensionsDatabase(_ServiceDatabase):
+    """Resolve the ``extensions`` service's database options.
 
     :cvar SETTINGS_PREFIXES: The prefix this probe reads its sources under.
     :param DATABASE: The service's database connection options.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
-    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="extensions.db")
 
 
 class _InventoryDatabase(_ServiceDatabase):
@@ -170,7 +178,7 @@ class _TasksDatabase(_ServiceDatabase):
 
 
 SERVICE_DATABASES: dict[str, type[_ServiceDatabase]] = {
-    "sep": _SEPDatabase,
+    "extensions": _ExtensionsDatabase,
     "inventory": _InventoryDatabase,
     "tasks": _TasksDatabase,
 }
@@ -187,7 +195,7 @@ def probe_timeout() -> float:
     :return: The bound in seconds.
     """
     return positive_timeout(
-        "SEP_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
+        "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
     )
 
 
@@ -340,7 +348,7 @@ def state_lock(directory: Path) -> Iterator[None]:
     ``umask`` narrows the mode at creation, the way ``write_persisted_token``
     in the token helper beside this one narrows it. Which of the two creates
     the directory changed here: key resolution runs ahead of the Grafana mint,
-    so on a ``SEP_STATE_DIR`` the image does not pre-create, this is the first
+    so on an ``EXTENSIONS_STATE_DIR`` the image does not pre-create, this is the first
     writer and owns the mode the other one used to set.
 
     :param directory: The state directory to lock within, created when absent.
@@ -391,7 +399,7 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
                     f"minting together leave each unable to read the rows the "
                     f"other wrote. Check whether a second side-car runs against "
                     f"this state directory, or raise "
-                    f"SEP_ENCRYPTION_PROBE_TIMEOUT, which this bound follows. "
+                    f"EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT, which this bound follows. "
                     f"Nothing was minted or written."
                 ) from error
         else:
@@ -402,24 +410,38 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
 
 
 def _has_encrypted_url_password(value: str) -> bool:
-    """Return whether ``value`` is a URL whose embedded password is a Fernet token.
+    """Return whether ``value`` is a URL whose embedded password is stored ciphertext.
 
     A URL that cannot be parsed answers ``False`` rather than propagating: the
     caller has already tested the whole string, and a value malformed enough to
-    defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
+    defeat ``urlparse`` is not a stored endpoint whose password PMM Extensions encrypted.
 
     :param value: One string leaf of a stored override value.
-    :return: Whether its userinfo password is structurally ciphertext.
+    :return: Whether its userinfo password holds ciphertext under any at-rest
+        envelope.
     """
     try:
         password = credential_url_password(value)
     except ValueError:
         return False
-    return password is not None and is_encrypted(password)
+    return password is not None and _is_ciphertext_leaf(password)
+
+
+def _is_ciphertext_leaf(value: str) -> bool:
+    """Return whether ``value`` is stored ciphertext under any envelope it can carry.
+
+    :param value: A whole string leaf or a URL password segment.
+    :return: Whether it is marked, pre-rename marked, or bare ciphertext.
+    """
+    if is_stored_ciphertext(value):
+        return True
+    return value.startswith(PRE_RENAME_CIPHERTEXT_MARKER) and is_encrypted(
+        value.removeprefix(PRE_RENAME_CIPHERTEXT_MARKER)
+    )
 
 
 def contains_ciphertext(value: Any) -> bool:
-    """Return whether any string leaf of ``value`` is structurally a Fernet token.
+    """Return whether any string leaf of ``value`` holds ciphertext at rest.
 
     The stored value is JSON and the ciphertext sits at its *leaves*: an alert
     provider's routing key inside a list, a delivery input's API key inside a
@@ -433,18 +455,27 @@ def contains_ciphertext(value: Any) -> bool:
     parsed password — or a deployment whose only encrypted data is an endpoint
     password reads as holding none and clears the mint path.
 
-    Deciding structurally is safe in this direction, and only this one. The
-    write path must not (``secret_storage.encrypt_secret_leaves``: a credential
-    that happens to be base64 would be misread as ciphertext and stored in the
-    clear), but here a false positive merely refuses to mint, which is loud and
-    an operator resolves by supplying the key. A false negative is the
-    dangerous direction, and it has none that reading annotations would avoid.
+    The decision is no longer purely structural, which is why the leaf test is
+    :func:`~app.core.encryption.is_stored_ciphertext` rather than
+    ``is_encrypted``: a leaf ``secret_storage`` wrote carries an envelope marker
+    the structural check answers ``False`` for. Missing it would be the false
+    negative named below as the dangerous direction, in its widest form — a
+    deployment whose overrides were all written after the envelope shipped holds
+    nothing the structural check can recognise, so it reads as fresh and the
+    caller mints over every row.
+
+    Structure still decides for a value the envelope declines, and is safe in
+    this direction and only this one. The write path must not
+    (``secret_storage.encrypt_secret_leaves``: a credential that happens to be
+    base64 would be misread as ciphertext and stored in the clear), but here a
+    false positive merely refuses to mint, which is loud and an operator
+    resolves by supplying the key.
 
     :param value: The decoded stored value, at any depth.
-    :return: Whether a Fernet token appears anywhere within it.
+    :return: Whether ciphertext appears anywhere within it, marked or bare.
     """
     if isinstance(value, str):
-        return is_encrypted(value) or _has_encrypted_url_password(value)
+        return _is_ciphertext_leaf(value) or _has_encrypted_url_password(value)
     if isinstance(value, dict):
         return any(contains_ciphertext(leaf) for leaf in value.values())
     if isinstance(value, list):
@@ -558,7 +589,7 @@ def _ciphertext_remedy() -> str:
         "Refusing to mint a new ENCRYPTION_KEY: a new key cannot decrypt values "
         "written under the old one, and every affected override would silently "
         f"revert to its YAML value. Restore {state_dir() / PERSISTED_FILENAME} "
-        "from a backup of the sep-state volume, pass the deployment's original "
+        "from a backup of the pmm-extensions-state volume, pass the deployment's original "
         "key as ENCRYPTION_KEY, or pass any newly generated key if this "
         "deployment was never encrypted and the value is plaintext that merely "
         "looks like a token."
@@ -578,8 +609,8 @@ def _unproven_remedy() -> str:
     return (
         "Refusing to mint a new ENCRYPTION_KEY without proving the deployment "
         "holds no data a new key could not decrypt. Bring the database up and "
-        "restart the container, check SEP_DB_HOST and SEP_DB_PORT, or raise "
-        "SEP_ENCRYPTION_PROBE_TIMEOUT. Nothing was minted or written."
+        "restart the container, check EXTENSIONS_DB_HOST and EXTENSIONS_DB_PORT, or raise "
+        "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT. Nothing was minted or written."
     )
 
 

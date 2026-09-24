@@ -30,7 +30,7 @@ from app.core.db.utils import (
     column_exists,
     table_exists,
 )
-from app.core.encryption import DecryptionError
+from app.core.encryption import DecryptionError, is_encrypted
 from app.core.settings_override.constants import (
     SETTING_CLASS_CHECK_MEMBERS_LEGACY,
     SETTING_CLASS_MAX_LENGTH,
@@ -43,14 +43,18 @@ from app.core.settings_override.secret_storage import (
     decrypt_secret_leaves,
     reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
+    unmark_secret_leaves,
+)
+from app.core.utils.fields import (
+    credential_url_password,
+    map_credential_url_password,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from pydantic import BaseModel
     from sqlalchemy.engine import Connection
-
-    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +148,7 @@ def downgrade_restore_setting_class_check() -> None:
 def upgrade_add_updated_by() -> None:
     """Add the nullable ``updated_by`` column, once across all three tracks.
 
-    Idempotent on a shared PostgreSQL database: whichever of the ``sep``,
+    Idempotent on a shared PostgreSQL database: whichever of the ``extensions``,
     ``tasks`` and ``inventory`` tracks runs first adds the column and the other
     two no-op. A missing table is also a no-op, matching the sibling
     ``settingoverride`` guards.
@@ -175,16 +179,19 @@ def downgrade_drop_updated_by() -> None:
 
 
 def upgrade_encrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted secret leaf stored in ``settingoverride``.
 
-    Idempotent in two directions: ``is_encrypted`` short-circuits a leaf an
-    earlier run already rewrote, and a row whose ``setting_class`` none of
-    ``settings_classes`` owns is left untouched, so a track sharing one physical
-    database with another never rewrites the other's rows.
+    Idempotent in two directions: a leaf an earlier run already rewrote carries
+    the envelope marker and is short-circuited on that, and a row whose
+    ``setting_class`` none of ``settings_classes`` owns is left untouched, so a
+    track sharing one physical database with another never rewrites the other's
+    rows. A leaf encrypted before the envelope shipped carries no marker and is
+    short-circuited by the structural check instead.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -193,7 +200,7 @@ def upgrade_encrypt_secret_override_values(
 
 
 def downgrade_decrypt_secret_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted secret leaf to the plaintext the previous code reads.
 
@@ -202,7 +209,8 @@ def downgrade_decrypt_secret_override_values(
     downgrade, and refusing to complete would block the rollback the operator is
     performing.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -211,7 +219,7 @@ def downgrade_decrypt_secret_override_values(
 
 
 def upgrade_encrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Encrypt every not-yet-encrypted credential-URL password in ``settingoverride``.
 
@@ -224,7 +232,8 @@ def upgrade_encrypt_credential_url_override_values(
     Only the userinfo password is rewritten, so the endpoint an operator reads
     out of a raw dump stays legible.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
@@ -233,7 +242,7 @@ def upgrade_encrypt_credential_url_override_values(
 
 
 def downgrade_decrypt_credential_url_override_values(
-    settings_classes: Iterable[type[BaseYamlSettings]],
+    settings_classes: Iterable[type[BaseModel]],
 ) -> None:
     """Restore every encrypted credential-URL password to plaintext.
 
@@ -244,12 +253,134 @@ def downgrade_decrypt_credential_url_override_values(
     would stay in the clear while the release being rolled back to still reads
     them as ciphertext.
 
-    :param settings_classes: The settings classes this track can resolve.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
     """
     bind = _locked_bind()
     if bind is None:
         return
     _rewrite_secret_leaves(bind, settings_classes, decrypt_credential_url_leaves)
+
+
+def downgrade_unmark_secret_override_values(
+    settings_classes: Iterable[type[BaseModel]],
+) -> None:
+    """Strip the envelope marker from every stored secret leaf this track owns.
+
+    The rollback half of the ciphertext envelope. Its upgrade partner is a
+    no-op, because the envelope ships with the code rather than with the schema:
+    there is no forward work to do, and re-marking existing rows is not
+    something a migration can decide (see
+    :func:`~app.core.settings_override.secret_storage.unmark_secret_leaves`).
+
+    Needs no ``ENCRYPTION_KEY`` and never decrypts, so unlike
+    :func:`downgrade_decrypt_secret_override_values` it cannot fail on a row
+    encrypted under a key this process does not hold — that row is unmarked and
+    left encrypted, which is exactly what the older release expects.
+
+    :param settings_classes: The settings classes this track can resolve.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    _rewrite_secret_leaves(bind, settings_classes, unmark_secret_leaves)
+
+
+def rename_ciphertext_marker(old: str, new: str) -> None:
+    """Rewrite the envelope marker of every stored ciphertext from ``old`` to ``new``.
+
+    Only a structurally valid envelope moves: ``old`` followed by a well-formed
+    Fernet token, occupying either a whole string leaf or a credential URL's
+    password segment. Any other occurrence of ``old`` is plaintext that happens
+    to contain it and is kept byte-identical. Every row is visited whatever its
+    ``setting_class``: the marker names the envelope, not a settings class, so a
+    track sharing one physical database with another rewrites the other's rows
+    too, and the rewrite is idempotent across the tracks that repeat it. Needs
+    no ``ENCRYPTION_KEY`` and never decrypts.
+
+    :param old: The marker the stored leaves carry.
+    :param new: The marker to store instead.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    table = _settingoverride_value_table()
+    rows = bind.execute(sa.select(table.c.id, table.c.value)).all()
+    rewritten = 0
+    for row in rows:
+        value = _rename_marker_in_leaves(row.value, old, new)
+        if value == row.value:
+            continue
+        bind.execute(table.update().where(table.c.id == row.id).values(value=value))
+        rewritten += 1
+    logger.info(
+        "Moved %s settingoverride row(s) from the %r marker to %r.",
+        rewritten,
+        old,
+        new,
+    )
+
+
+def _rename_marker_in_leaves(value: Any, old: str, new: str) -> Any:
+    """Return ``value`` with every ``old`` envelope it holds moved to ``new``.
+
+    :param value: A decoded JSON value.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: The value with every string leaf rewritten, in the same shape.
+    """
+    if isinstance(value, str):
+        return _rename_marker_in_leaf(value, old, new)
+    if isinstance(value, list):
+        return [_rename_marker_in_leaves(item, old, new) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _rename_marker_in_leaves(item, old, new) for key, item in value.items()
+        }
+    return value
+
+
+def _rename_marker_in_leaf(leaf: str, old: str, new: str) -> str:
+    """Return ``leaf`` with its ``old`` envelope moved to ``new``, or unchanged.
+
+    The envelope is recognised as the whole leaf first and as a credential URL's
+    password segment second. A leaf that cannot be parsed as a URL carries no
+    password to rewrite, so it is returned unchanged rather than aborting the
+    migration.
+
+    :param leaf: The stored string leaf.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: The rewritten leaf, or ``leaf`` when it holds no ``old`` envelope.
+    """
+    renamed = _renamed_envelope(leaf, old, new)
+    if renamed is not None:
+        return renamed
+    try:
+        password = credential_url_password(leaf)
+    except ValueError:
+        return leaf
+    if password is None:
+        return leaf
+    renamed_password = _renamed_envelope(password, old, new)
+    if renamed_password is None:
+        return leaf
+    return map_credential_url_password(leaf, lambda _segment: renamed_password)
+
+
+def _renamed_envelope(value: str, old: str, new: str) -> str | None:
+    """Return ``value`` under the ``new`` marker when it is an ``old`` envelope.
+
+    :param value: A whole leaf or a URL password segment.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: ``new`` followed by the token, or ``None`` when ``value`` is not
+        ``old`` followed by a well-formed Fernet token.
+    """
+    if not value.startswith(old):
+        return None
+    token = value.removeprefix(old)
+    return f"{new}{token}" if is_encrypted(token) else None
 
 
 def _settingoverride_value_table() -> sa.TableClause:
@@ -273,15 +404,16 @@ def _settingoverride_value_table() -> sa.TableClause:
 
 def _rewrite_secret_leaves(
     bind: Connection,
-    settings_classes: Iterable[type[BaseYamlSettings]],
-    rewrite: Callable[[type[BaseYamlSettings], str, Any], Any],
+    settings_classes: Iterable[type[BaseModel]],
+    rewrite: Callable[[type[BaseModel], str, Any], Any],
 ) -> None:
     """Apply ``rewrite`` to every resolvable row's value, updating only what changed.
 
     :param bind: The migration's bound connection.
-    :param settings_classes: The settings classes this track can resolve.
-    :param rewrite: The per-row transformation, taking the owning settings class,
-        the row key and the stored value.
+    :param settings_classes: The settings classes, or frozen coverage
+        declarations, this track owns.
+    :param rewrite: The per-row transformation, taking the coverage declaration
+        owning the row, the row key and the stored value.
     """
     classes_by_token = {
         setting_class_token(settings_cls): settings_cls
@@ -302,8 +434,9 @@ def _rewrite_secret_leaves(
         try:
             value = rewrite(settings_cls, row.key, row.value)
         except DecryptionError as exc:
-            # Only reachable on the downgrade: the encrypt direction decides
-            # with is_encrypted and never attempts a decrypt.
+            # Only reachable on the downgrade: the encrypt and unmark
+            # directions both decide from the stored shape and never attempt a
+            # decrypt.
             undecryptable += 1
             logger.warning(
                 "Left %s.%s as it stands, it could not be decrypted: %s",

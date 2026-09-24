@@ -100,7 +100,7 @@ def test_ordering_passes_on_the_real_containerfile():
 
 def test_comment_naming_apt_is_not_an_instruction(tmp_path):
     """Ignore a post-purge comment naming apt-get, since comments are not instructions."""
-    body = f"{RECIPE_PREFIX}{PURGE_LAYER}\n# apt-get install is impossible from here on.\nUSER sep\n"
+    body = f"{RECIPE_PREFIX}{PURGE_LAYER}\n# apt-get install is impossible from here on.\nUSER extensions\n"
     assert check_sidecar_purge.check_ordering(_instructions(tmp_path, body)) == []
 
 

@@ -21,7 +21,7 @@ import { flushPromises, mockStreamFetch } from '../../../../tests/eventSourceStu
 import { useTaskLogs } from '../../../hooks/useTaskLogs';
 import { LogOutputPane } from '../LogOutputPane';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   getToken: () => null,
   refreshAccessToken: vi.fn(),
   emitUnauthorized: vi.fn(),
@@ -118,4 +118,86 @@ describe('LogOutputPane with the real log renderer', () => {
       await waitFor(() => expect(renderedLines(container)).toEqual(liveLines));
     },
   );
+
+  it('keeps the rendered lines while the log grows', async () => {
+    const { container, rerender } = render(<LogOutputPane text={'first\nsecond\n'} wrap={false} />);
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second']));
+    const firstLine = container.querySelector('.log-content');
+
+    rerender(<LogOutputPane text={'first\nsecond\nthird\n'} wrap={false} />);
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second', 'third']));
+
+    expect(container.querySelector('.log-content')).toBe(firstLine);
+  });
+
+  it('rebuilds the log when a later chunk continues its last line', async () => {
+    const { container, rerender } = render(<LogOutputPane text={'first\nsec'} wrap={false} />);
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'sec']));
+
+    rerender(<LogOutputPane text={'first\nsecond\nthird'} wrap={false} />);
+
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second', 'third']));
+  });
+
+  it('ends a line held open by an earlier chunk without rebuilding', async () => {
+    const { container, rerender } = render(<LogOutputPane text={'first\nsecond'} wrap={false} />);
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second']));
+    const firstLine = container.querySelector('.log-content');
+
+    rerender(<LogOutputPane text={'first\nsecond\n\nthird\n'} wrap={false} />);
+
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second', '', 'third']));
+    expect(container.querySelector('.log-content')).toBe(firstLine);
+  });
+
+  it('appends normally once a newline alone ends a held-open line', async () => {
+    const { container, rerender } = render(<LogOutputPane text={'first\nsecond'} wrap={false} />);
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second']));
+    const firstLine = container.querySelector('.log-content');
+
+    rerender(<LogOutputPane text={'first\nsecond\n'} wrap={false} />);
+    rerender(<LogOutputPane text={'first\nsecond\nthird\n'} wrap={false} />);
+
+    await waitFor(() => expect(renderedLines(container)).toEqual(['first', 'second', 'third']));
+    expect(container.querySelector('.log-content')).toBe(firstLine);
+  });
+
+  it('starts over when the text is replaced rather than extended', async () => {
+    const { container, rerender } = render(
+      <LogOutputPane text={'stdout-1\nstdout-2\n'} wrap={false} />,
+    );
+    await waitFor(() => expect(renderedLines(container)).toEqual(['stdout-1', 'stdout-2']));
+
+    rerender(<LogOutputPane text={'stderr-1\n'} wrap={false} />);
+
+    await waitFor(() => expect(renderedLines(container)).toEqual(['stderr-1']));
+  });
+
+  it.each([
+    ['progress lines ending in carriage returns', ['45%\r', '45%\r46%\r']],
+    ['an open line ended by CRLF', ['abc', 'abc\r\ndef\n']],
+    ['an open line ended by a bare carriage return', ['abc', 'abc\rdef']],
+    [
+      'an open line ended by a carriage return, then its newline',
+      ['abc', 'abc\r', 'abc\r\n', 'abc\r\ndef\n'],
+    ],
+    ['a blank line between two carriage returns', ['a\r', 'a\r\rb\n']],
+    ['a CRLF split across chunks', ['a\r', 'a\r\nb\n']],
+  ])('appends %s like the full text, without rebuilding', async (_, chunks) => {
+    const fullText = chunks[chunks.length - 1] ?? '';
+    const whole = render(<LogOutputPane text={fullText} wrap={false} />);
+    await waitFor(() => expect(whole.container.querySelector('.log-content')).not.toBeNull());
+    const expectedLines = renderedLines(whole.container);
+    whole.unmount();
+
+    const { container, rerender } = render(<LogOutputPane text={chunks[0] ?? ''} wrap={false} />);
+    await waitFor(() => expect(container.querySelector('.log-content')).not.toBeNull());
+    const firstLine = container.querySelector('.log-content');
+    for (const chunk of chunks.slice(1)) {
+      rerender(<LogOutputPane text={chunk} wrap={false} />);
+    }
+
+    await waitFor(() => expect(renderedLines(container)).toEqual(expectedLines));
+    expect(container.querySelector('.log-content')).toBe(firstLine);
+  });
 });

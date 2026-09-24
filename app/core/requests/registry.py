@@ -155,7 +155,9 @@ class ClientRegistry:
         )
         for (_key, client), result in zip(matching, results, strict=False):
             if isinstance(result, Exception):
-                logger.warning("Error closing client %r: %s", client.base_url, result)
+                logger.warning(
+                    "Error closing client %s: %s", client.redacted_base_url, result
+                )
 
     async def close_all(self) -> None:
         """Close all RemoteAPI clients and clear the registry.
@@ -177,7 +179,9 @@ class ClientRegistry:
             for client, result in zip(clients, results, strict=False):
                 if isinstance(result, Exception):
                     logger.warning(
-                        "Error closing client %r: %s", client.base_url, result
+                        "Error closing client %s: %s",
+                        client.redacted_base_url,
+                        result,
                     )
         finally:
             self._clients.clear()

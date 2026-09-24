@@ -10,31 +10,31 @@ additive change when a regenerated golden is part of the diff.
 ## What it covers
 
 The harness is driven by two test modules plus a shared helper, all under
-`tests/app/sep/`:
+`tests/app/extensions/`:
 
-- `tests/app/sep/test_openapi_snapshot.py` — one golden per configured app
-  key (`tests/app/sep/snapshots/openapi/<key>.json`).
-- `tests/app/sep/test_schema_snapshot.py` — one golden per parameterless
+- `tests/app/extensions/test_openapi_snapshot.py` — one golden per configured app
+  key (`tests/app/extensions/snapshots/openapi/<key>.json`).
+- `tests/app/extensions/test_schema_snapshot.py` — one golden per parameterless
   `GET …/schema` route under a configured app prefix
-  (`tests/app/sep/snapshots/schema/<slug>.json`).
-- `tests/app/sep/snapshot_utils.py` — pure helpers (canonical JSON, subtree
+  (`tests/app/extensions/snapshots/schema/<slug>.json`).
+- `tests/app/extensions/snapshot_utils.py` — pure helpers (canonical JSON, subtree
   slicing, `$ref` closure, route discovery, compare/update).
 
 Both modules **discover** their targets from the app rather than hardcoding
 app keys, so the harness self-maintains. The app inventory is derived from
-`sep_settings.APPS` (the committed `settings.yaml` default config), not from
+`extensions_settings.APPS` (the committed `settings.yaml` default config), not from
 live-app path discovery.
 
 The OpenAPI document is built from a **throwaway app over the config-built
 `api_router`** (`snapshot_utils.build_plugins_openapi`), not from the
-process-global `sep_app`. A sibling conftest (`backup_pg`) injects routers into
-`sep_app` at import time, which both freezes `sep_app`'s cached schema for other
+process-global `extensions_app`. A sibling conftest (`backup_pg`) injects routers into
+`extensions_app` at import time, which both freezes `extensions_app`'s cached schema for other
 tests and perturbs shared `components/schemas` names — so a snapshot read from
-`sep_app` would depend on test-suite composition. `api_router` is built once
-from `sep_settings.APPS` and is never mutated, so its schema is
+`extensions_app` would depend on test-suite composition. `api_router` is built once
+from `extensions_settings.APPS` and is never mutated, so its schema is
 deterministic; the snapshot uses the same `operationId` scheme `create_app`
-installs on `sep_app`. The schema snapshots (AC2) still issue real
-`GET …/schema` requests through the authenticated `test_client` over `sep_app`,
+installs on `extensions_app`. The schema snapshots (AC2) still issue real
+`GET …/schema` requests through the authenticated `test_client` over `extensions_app`,
 so the recorded payloads reflect the live serialization stack. Content is
 sliced strictly within configured `/api/apps/{key}` prefixes.
 
@@ -48,15 +48,15 @@ missing/orphaned-golden failure rather than silent under-coverage.
 - **Default-config set.** Goldens cover the apps enabled by the default test
   config. `backup_pg` is **not** covered: it appears only in the
   `env/settings-*team*.yaml` deployment profiles, so it is absent from
-  `sep_settings.APPS`. When it (or any app) is later added to the default
+  `extensions_settings.APPS`. When it (or any app) is later added to the default
   config, the completeness guard fails until a reviewed regeneration adds its
   goldens.
 - **Recorded for the default test environment (`development`).** The app set
-  comes from `sep_settings.APPS`, which the YAML loader resolves against the
+  comes from `extensions_settings.APPS`, which the YAML loader resolves against the
   active `FASTAPI_ENV` overlay. The whole `test_client`-based suite boots with
   `FASTAPI_ENV` unset → `development`, and the goldens are recorded for that
   profile. Running the snapshot tests under a different `FASTAPI_ENV` changes the
-  active app set (and the running `sep_app`), so it requires a regeneration
+  active app set (and the running `extensions_app`), so it requires a regeneration
   under that profile — the harness pins the suite's environment, not a hardcoded
   list.
 - **The parameterized `snippets/snippet/schema` route is excluded** from the
@@ -74,7 +74,7 @@ The snapshot tests are ordinary tests collected by the standard suite. To run
 just the harness:
 
 ```bash
-pytest tests/app/sep/test_openapi_snapshot.py tests/app/sep/test_schema_snapshot.py
+pytest tests/app/extensions/test_openapi_snapshot.py tests/app/extensions/test_schema_snapshot.py
 ```
 
 On any drift the failing case reports the golden it diverged from and the
@@ -88,11 +88,11 @@ When a change to the OpenAPI surface or a schema payload is **intentional**,
 regenerate the affected goldens with the update switch:
 
 ```bash
-SEP_UPDATE_SNAPSHOTS=1 pytest tests/app/sep/test_openapi_snapshot.py tests/app/sep/test_schema_snapshot.py
+EXTENSIONS_UPDATE_SNAPSHOTS=1 pytest tests/app/extensions/test_openapi_snapshot.py tests/app/extensions/test_schema_snapshot.py
 ```
 
 In update mode each snapshot case rewrites its golden and reports `skipped`; the
-completeness guards still run. `SEP_UPDATE_SNAPSHOTS` is truthy for any value
+completeness guards still run. `EXTENSIONS_UPDATE_SNAPSHOTS` is truthy for any value
 other than unset, `""`, `0`, `false`, or `False`.
 
 ### When regeneration is legitimate
@@ -114,7 +114,7 @@ un-reviewed contract change.
 
 Migration tickets must **not** build a duplicate behavioral characterization
 suite. Per-app behavioral tests already exist (e.g.
-`tests/app/sep/apps/checksums/test_route_args.py`) and must keep passing
+`tests/app/extensions/apps/checksums/test_route_args.py`) and must keep passing
 **unmodified** through a migration — that is the no-op proof.
 
 Instead, each migration runs a kickoff **coverage gap-check** on the app's
@@ -135,10 +135,10 @@ Where the snapshot harness pins each app's *byte-for-byte* contract, the
 conformance suite enforces the app-framework's *structural* invariants
 mechanically, so they are caught in `make test`/CI instead of by reviewer memory.
 
-- `app/sep/apps/framework/conformance.py` — pure detector functions, each
+- `app/extensions/apps/framework/conformance.py` — pure detector functions, each
   taking one registry input plane and returning a list of violation strings
   (empty when the invariant holds).
-- `tests/app/sep/apps/framework/test_conformance.py` — per-detector unit
+- `tests/app/extensions/apps/framework/test_conformance.py` — per-detector unit
   tests, a synthetic `TaskExecutionApp` exercising the migrated-only detectors
   before any app is migrated, and a suite that iterates `get_app_registry()`.
 
@@ -173,5 +173,5 @@ capability), and the submitted payload, the response models, the `alert_on_fail`
 task field, and the OpenAPI request bodies are all retained. The schema goldens
 were regenerated in the same change; the OpenAPI goldens stay green without
 regeneration. `backup_pg` is not in the default config (see the scope note above),
-so its removal is validated by `tests/app/sep/apps/backup_pg/test_models.py`,
+so its removal is validated by `tests/app/extensions/apps/backup_pg/test_models.py`,
 not the registry suite.

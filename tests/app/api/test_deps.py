@@ -37,15 +37,20 @@ from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import ContextFilter
-from app.sep.apps.alerts.api_routes import (
+from app.extensions.apps.alerts.api_routes import (
     alerts_api_pagerduty_delete,
     alerts_api_pagerduty_save,
     alerts_api_restore,
 )
 from app.tasks.routes import execute_task_name, latest_task_history
-from tests.app.conftest import make_request, make_roleless_grafana_assertion
+from tests.app.conftest import (
+    GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN,
+    make_request,
+    make_roleless_grafana_assertion,
+)
 
 SERVICE_TOKEN: Final = "supersecret"
+SERVICE_ACCOUNT_TOKEN: Final = GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
 
 #: Attempts at one credential the cache may never collapse into a single one.
 REPEATED_ATTEMPTS: Final = 2
@@ -107,9 +112,9 @@ async def test_authenticate_bearer_token_inactive_user(casdoor_mock, mocker):
 async def test_authenticate_bearer_token_internal_token_match(casdoor_mock, mocker):
     """Verify the service principal answers a token matching the internal secret."""
     secret = "supersecret"
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(secret))
     user = await authenticate_bearer_token(secret)
-    assert user.username == "sep-service"
+    assert user.username == "extensions-service"
     assert user.is_admin is False
     assert user.access_token == secret
     assert user.id == SERVICE_PRINCIPAL_ID
@@ -121,7 +126,7 @@ async def test_authenticate_bearer_token_internal_token_mismatch_falls_through(
     casdoor_mock, valid_username, mocker
 ):
     """Verify a token that does not match the secret falls through to the provider."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr("supersecret"))
     user = await authenticate_bearer_token("not-the-secret")
     assert user.username == valid_username
 
@@ -130,12 +135,12 @@ async def test_authenticate_bearer_token_internal_token_mismatch_falls_through(
 async def test_authenticate_bearer_token_internal_token_empty_falls_through(
     casdoor_mock, valid_username, mocker
 ):
-    """Verify an empty ``SEP_INTERNAL_TOKEN`` matches nothing.
+    """Verify an empty ``EXTENSIONS_INTERNAL_TOKEN`` matches nothing.
 
     An empty configured secret must not match an empty Bearer token; the
     request must continue down the Casdoor path.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(""))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(""))
     user = await authenticate_bearer_token("")
     assert user.username == valid_username
 
@@ -145,7 +150,7 @@ async def test_authenticate_bearer_token_internal_token_trailing_whitespace_mism
     casdoor_mock, valid_username, mocker
 ):
     """Verify a token differing only by trailing whitespace is not the secret."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr("supersecret"))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr("supersecret"))
     user = await authenticate_bearer_token("supersecret ")
     assert user.username == valid_username
 
@@ -174,7 +179,7 @@ async def test_get_current_admin_non_admin_user(casdoor_mock, valid_username):
 @pytest.mark.asyncio
 async def test_get_current_service_principal_admits_the_principal(mocker):
     """Test get_current_service_principal returns the principal itself."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     principal = await authenticate_bearer_token(SERVICE_TOKEN)
 
     assert await get_current_service_principal(principal) is principal
@@ -282,7 +287,7 @@ class TestAuthenticateBearerTokenTypes:
     ):
         """Verify a PMM Admin is no longer flattened to a non-admin principal.
 
-        This is what the nginx-injected ``SEP_INTERNAL_TOKEN`` cannot provide:
+        This is what the nginx-injected ``EXTENSIONS_INTERNAL_TOKEN`` cannot provide:
         its service principal hardcodes ``is_admin`` false, so every admin-gated
         surface 403s for a real PMM Admin.
         """
@@ -316,18 +321,18 @@ class TestAuthenticateBearerTokenTypes:
 
     @pytest.mark.asyncio
     async def test_internal_token_still_short_circuits_first(self, mocker):
-        """Verify ``SEP_INTERNAL_TOKEN`` is matched before the assertion validator.
+        """Verify ``EXTENSIONS_INTERNAL_TOKEN`` is matched before the assertion validator.
 
         The short-circuit must stay ahead of the Bearer validation, or every
         internal service-to-service call 401s.
         """
         secret = "supersecret"
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(secret))
         from_bearer = mocker.patch.object(GrafanaUser, "from_bearer")
 
         user = await authenticate_bearer_token(secret)
 
-        assert user.username == "sep-service"
+        assert user.username == "extensions-service"
         assert user.is_admin is False
         assert user.id == SERVICE_PRINCIPAL_ID
         from_bearer.assert_not_called()
@@ -336,7 +341,7 @@ class TestAuthenticateBearerTokenTypes:
     async def test_an_editor_clears_a_route_classified_at_editor(
         self, grafana_mock, grafana_user_orgs
     ):
-        """Verify a PMM Editor reaches a route SEP opened to that rank.
+        """Verify a PMM Editor reaches a route PMM Extensions opened to that rank.
 
         The realistic PMM path end to end: the role survives the mint and the
         unmint, so the rank the gate compares is the one Grafana reported rather
@@ -353,6 +358,74 @@ class TestAuthenticateBearerTokenTypes:
         )
 
         assert await require_minimum_role_for_unsafe_methods(request) is None
+
+    @pytest.fixture
+    def service_account_record(self, mocker):
+        """Stub Grafana's verdict on a service-account token (the SDK boundary)."""
+        return mocker.patch(
+            "app.core.auth.providers.grafana.sdk.GrafanaSDK.verify_service_account_token",
+            new=mocker.AsyncMock(
+                return_value={
+                    "id": 7,
+                    "login": "sa-1-ci-runner",
+                    "isDisabled": False,
+                    "role": "Admin",
+                }
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_admin_service_account_reaches_an_admin_gated_surface(
+        self, service_account_record
+    ):
+        """Verify an Admin service account is admitted as an admin."""
+        user = await get_current_admin(
+            await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+        )
+
+        assert user.username == "sa-1-ci-runner"
+        assert user.is_admin is True
+
+    @pytest.mark.asyncio
+    async def test_a_viewer_service_account_does_not_gain_admin(
+        self, service_account_record
+    ):
+        """Verify a Viewer service account stays below the admin gate."""
+        service_account_record.return_value = {
+            **service_account_record.return_value,
+            "role": "Viewer",
+        }
+
+        user = await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+
+        assert user.role is UserRole.VIEWER
+        with pytest.raises(HTTPForbiddenException):
+            await get_current_admin(user)
+
+    @pytest.mark.asyncio
+    async def test_a_glsa_shaped_internal_token_still_short_circuits(
+        self, service_account_record, mocker
+    ):
+        """Verify ``EXTENSIONS_INTERNAL_TOKEN`` wins even when it looks like an SA token."""
+        mocker.patch.object(
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_ACCOUNT_TOKEN)
+        )
+
+        user = await authenticate_bearer_token(SERVICE_ACCOUNT_TOKEN)
+
+        assert user.id == SERVICE_PRINCIPAL_ID
+        service_account_record.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_refused_bearer_is_never_logged(self, caplog):
+        """Verify the failed-authentication log does not echo the credential."""
+        bearer = "bogus-bearer-xyz"
+
+        with caplog.at_level(logging.DEBUG), pytest.raises(HTTPUnauthorizedException):
+            await authenticate_bearer_token(bearer)
+
+        assert caplog.records
+        assert bearer not in caplog.text
 
 
 class TestGetCurrentUserRequestCache:
@@ -538,7 +611,9 @@ class TestGetCurrentUserRequestCache:
         returning the stored instance has to keep carrying it — scheduled sync
         forwards it to the next service.
         """
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        mocker.patch.object(
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN)
+        )
         request = make_request("POST", authorization=f"Bearer {SERVICE_TOKEN}")
 
         first = await get_current_user(request, SERVICE_TOKEN)
@@ -721,7 +796,9 @@ class TestRequireMinimumRoleForUnsafeMethods:
         changes the answer — the route's own ``dependencies`` stay the only
         thing authenticating it.
         """
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        mocker.patch.object(
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN)
+        )
         request = make_request(
             "POST", authorization=authorization, endpoint=latest_task_history
         )
@@ -795,13 +872,15 @@ class TestRequireMinimumRoleForUnsafeMethods:
 
     @pytest.mark.asyncio
     async def test_service_principal_is_admitted_by_identity(self, mocker):
-        """Verify ``SEP_INTERNAL_TOKEN``'s principal passes the gate.
+        """Verify ``EXTENSIONS_INTERNAL_TOKEN``'s principal passes the gate.
 
         Scheduled inventory sync and scheduled execution authenticate with this
         token and write through the gated services. The principal holds
         ``VIEWER``, so only the identity check keeps them working.
         """
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        mocker.patch.object(
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN)
+        )
         request = make_request("POST", authorization=f"Bearer {SERVICE_TOKEN}")
 
         assert await require_minimum_role_for_unsafe_methods(request) is None
@@ -814,7 +893,9 @@ class TestRequireMinimumRoleForUnsafeMethods:
         the principal holds ``VIEWER``, so ``get_current_admin`` rejects it as
         before.
         """
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+        mocker.patch.object(
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN)
+        )
         principal = await authenticate_bearer_token(SERVICE_TOKEN)
 
         assert principal.role is UserRole.VIEWER
