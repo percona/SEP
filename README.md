@@ -674,7 +674,7 @@ PMM Extensions exposes interactive Swagger UI pages for each of its services:
 
 | Path | Scope |
 |---|---|
-| `/api/docs` | Merged core + PMM Extensions-web-app schema |
+| `/api/docs` | Merged core + PMM Extensions web-app schema |
 | `/api/inventory/docs` | Inventory service |
 | `/api/tasks/docs` | Tasks service |
 

@@ -239,7 +239,7 @@ Optional: `sep_nomad_readable_by_all: true` widens read access on `global-client
 
 ### 6.3 PMM Extensions application-layer control
 
-Nomad access does **not** replace PMM Extensions’s own controls:
+Nomad access does **not** replace PMM Extensions’ own controls:
 
 - Engineers authenticate to PMM Extensions via **Casdoor OAuth/JWT** (see task execution DFD).
 - PMM Extensions only dispatches **predefined** job types and merged `meta` (no arbitrary shell from the UI).
