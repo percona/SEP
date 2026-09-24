@@ -1,0 +1,64 @@
+{
+  "description": "Provisions MongoDB replica sets on inventory hosts over Nomad -- pre-flight checks, install, configuration, and rs.initiate -- and tracks each run's state so PMM can show live progress and recover after a failure.",
+  "detail_view": {
+    "sections": []
+  },
+  "display_name": "OpenManager Bootstrap",
+  "forms": [],
+  "item_display_name": "bootstrap run",
+  "item_display_name_plural": "bootstrap runs",
+  "list_view": {
+    "columns": [
+      {
+        "key": "run_id",
+        "label": "Run",
+        "sortable": false
+      }
+    ],
+    "default_sort": "run_id",
+    "overview_hidden_fields": []
+  },
+  "name": "om_bootstrap",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
+}

@@ -15,16 +15,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// SEP theme — sourced from @percona/percona-ui.
+// PMM Extensions theme — sourced from @percona/percona-ui.
 // SepTheme inherits BaseTheme (Poppins headings, semantic tokens) and layers
-// SEP brand (purple/yellow), AppBar override, and technology palette.
+// PMM Extensions brand (purple/yellow), AppBar override, and technology palette.
 
 // Example of how to customize the theme further with overrides and/or new tokens (this is for debugging purposes, do not delete):
 
 // import { typographyClasses } from '@mui/material/Typography';
 import { sepThemeOptions as sepThemeOptionsOriginal } from '@percona/percona-ui';
 import type { PaletteMode, ThemeOptions } from '@mui/material';
-import { SEP_TABLE_CLASS } from '@sep/framework';
+import { EXTENSIONS_TABLE_CLASS } from '@pmm-extensions/framework';
 
 import { deepmerge } from '@mui/utils';
 
@@ -59,11 +59,11 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
         styleOverrides: {
           root: ({ theme }) => ({
             ...(theme.palette.mode === 'light' && {
-              [`&.${SEP_TABLE_CLASS} .MuiToolbar-root`]: {
+              [`&.${EXTENSIONS_TABLE_CLASS} .MuiToolbar-root`]: {
                 backgroundColor: theme.palette.background.paper,
               },
               // Exclude running rows so action.hover highlight still applies.
-              [`&.${SEP_TABLE_CLASS} .MuiTableRow-root:not([data-running="true"])`]: {
+              [`&.${EXTENSIONS_TABLE_CLASS} .MuiTableRow-root:not([data-running="true"])`]: {
                 backgroundColor: theme.palette.background.paper + ' !important',
               },
             }),

@@ -99,7 +99,7 @@ class RetirableSQLModel(RetiredAtBase, BaseSQLModel):
     """Store the retirement state of a tombstoned entity.
 
     An entity that vanishes upstream is retired rather than deleted, so the
-    references SEP persisted to it keep resolving. Because a replacement may
+    references PMM Extensions persisted to it keep resolving. Because a replacement may
     reuse the retired row's unique key, ``retirement_key`` joins every unique
     index: it holds :data:`ACTIVE_RETIREMENT_KEY` while the row is active and
     the row's own primary key once retired, which keeps active rows mutually
@@ -972,7 +972,7 @@ class IdentityLinkDecisionWrite(SQLModel):
 class NodeIdentityCandidateResponse(SQLModel):
     """Pair a node with the successor a re-registration may have split it into.
 
-    :param predecessor: The older row — the one every SEP reference persisted
+    :param predecessor: The older row — the one every PMM Extensions reference persisted
         before the re-registration resolves through, and so the one a
         confirmation keeps.
     :param successor: The newer row PMM created when the node re-registered.

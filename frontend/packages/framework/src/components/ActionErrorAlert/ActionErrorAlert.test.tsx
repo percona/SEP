@@ -18,7 +18,7 @@
 import { act, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError } from '@sep/api';
+import { ApiError } from '@pmm-extensions/api';
 import { ActionErrorAlert } from './ActionErrorAlert';
 import { actionErrorMessage, DEFAULT_ACTION_ERROR_FALLBACK } from './actionErrorMessage';
 import { useActionError } from './useActionError';

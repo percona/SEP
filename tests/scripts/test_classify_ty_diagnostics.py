@@ -31,7 +31,7 @@ ARTIFACT_ROW = (
     "Argument `_env_file` does not match any known parameter"
 )
 FIRST_PARTY_ROW = (
-    "tests/app/sep/test_config.py:145:9: warning[unknown-argument] "
+    "tests/app/extensions/test_config.py:145:9: warning[unknown-argument] "
     "Argument `PMM` does not match any known parameter"
 )
 NOTE_BLOCK = (
@@ -155,11 +155,11 @@ def test_classify_confines_absent_modules_to_the_scaffolded_paths():
     """Treat an unresolvable import outside the known paths as a first-party defect."""
     scaffolded, mistyped = classify_ty_diagnostics.parse_diagnostics(
         _output(
-            "tests/app/sep/apps/framework/golden/task/app.py:9:20: "
+            "tests/app/extensions/apps/framework/golden/task/app.py:9:20: "
             "warning[unresolved-import] Cannot resolve imported module "
-            "`app.sep.apps.golden_task.models`",
-            "app/sep/routes/reports.py:9:20: warning[unresolved-import] "
-            "Cannot resolve imported module `app.sep.reprots`",
+            "`app.extensions.apps.golden_task.models`",
+            "app/extensions/routes/reports.py:9:20: warning[unresolved-import] "
+            "Cannot resolve imported module `app.extensions.reprots`",
         )
     )
 
@@ -175,11 +175,11 @@ def test_classify_names_the_proxy_installed_settings_helpers():
     """
     helper, typo = classify_ty_diagnostics.parse_diagnostics(
         _output(
-            "tests/app/sep/routes/test_stream_logs.py:325:5: "
-            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "tests/app/extensions/routes/test_stream_logs.py:325:5: "
+            "warning[unresolved-attribute] Object of type `ExtensionsSettings` has no "
             "attribute `_set_snapshot`",
-            "tests/app/sep/routes/test_stream_logs.py:326:5: "
-            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "tests/app/extensions/routes/test_stream_logs.py:326:5: "
+            "warning[unresolved-attribute] Object of type `ExtensionsSettings` has no "
             "attribute `PMM_typo`",
         )
     )
@@ -192,9 +192,9 @@ def test_classify_names_the_runtime_installed_celery_attribute():
     """Treat a misspelled attribute on a ``Celery`` receiver as first-party."""
     installed, typo = classify_ty_diagnostics.parse_diagnostics(
         _output(
-            "app/sep/apps/alerts/celery.py:58:5: warning[unresolved-attribute] "
+            "app/extensions/apps/alerts/celery.py:58:5: warning[unresolved-attribute] "
             "Object of type `Celery` has no attribute `loop`",
-            "app/sep/apps/alerts/celery.py:59:5: warning[unresolved-attribute] "
+            "app/extensions/apps/alerts/celery.py:59:5: warning[unresolved-attribute] "
             "Object of type `Celery` has no attribute `brokr_url`",
         )
     )
@@ -225,13 +225,13 @@ def test_check_fails_when_a_first_party_diagnostic_was_suppressed(tmp_path, caps
     """Name the first-party fingerprint a suppression removed, even when totals reconcile."""
     manifest = _manifest(tmp_path, _output(ARTIFACT_ROW, FIRST_PARTY_ROW))
     unrelated = (
-        "app/sep/config.py:474:5: warning[invalid-assignment] "
+        "app/extensions/config.py:474:5: warning[invalid-assignment] "
         "Object of type `FieldInfo` is not assignable to `int`"
     )
 
     assert _check(tmp_path, manifest, _output(unrelated)) == 1
     out = capsys.readouterr().out
-    assert "tests/app/sep/test_config.py" in out
+    assert "tests/app/extensions/test_config.py" in out
     assert "`PMM`" in out
 
 
@@ -345,14 +345,14 @@ def test_report_flags_a_line_holding_an_artifact_and_a_first_party_hit(
 ):
     """Flag a ``file:line:rule`` a per-site comment cannot discriminate."""
     collision = (
-        "tests/app/sep/test_config.py:145:40: warning[unknown-argument] "
+        "tests/app/extensions/test_config.py:145:40: warning[unknown-argument] "
         "Argument `_env_file` does not match any known parameter"
     )
     source = write_file(tmp_path, "run.txt", _output(FIRST_PARTY_ROW, collision))
 
     assert classify_ty_diagnostics.main(["report", "--from", str(source)]) == 0
     out = capsys.readouterr().out
-    assert "tests/app/sep/test_config.py:145" in out
+    assert "tests/app/extensions/test_config.py:145" in out
     assert "Unsuppressable-by-comment sites: 1" in out
 
 
@@ -384,12 +384,12 @@ def test_factory_built_alias_group_claims_only_the_module_it_is_confined_to():
     genuine defect.
     """
     confined = (
-        "app/sep/apps/mysql_backups/forms.py",
+        "app/extensions/apps/mysql_backups/forms.py",
         "invalid-type-form",
         CALL_IN_TYPE_EXPRESSION,
     )
     elsewhere = (
-        "app/sep/routes/users.py",
+        "app/extensions/routes/users.py",
         "invalid-type-form",
         CALL_IN_TYPE_EXPRESSION,
     )
@@ -406,7 +406,7 @@ def test_runtime_computed_model_group_does_not_claim_a_bare_call():
     which carries no evidence of a runtime-computed class.
     """
     fingerprint = (
-        "app/sep/apps/mysql_backups/forms.py",
+        "app/extensions/apps/mysql_backups/forms.py",
         "invalid-type-form",
         CALL_IN_TYPE_EXPRESSION,
     )
@@ -471,7 +471,7 @@ def test_group_constraint_audit_rejects_a_pattern_quoting_only_a_wildcard():
     assert "wildcard-attributes" in failure
     assert wildcard.claims(
         (
-            "app/sep/apps/alerts/celery.py",
+            "app/extensions/apps/alerts/celery.py",
             "unresolved-attribute",
             "Object of type `Celery` has no attribute `brokr_url`",
         )
@@ -511,10 +511,10 @@ def test_group_constraint_audit_requires_evidence_under_every_claimed_rule():
         f"^{CALL_IN_TYPE_EXPRESSION}$",
         "nothing",
     )
-    one = [("app/sep/config.py", RULE_CLAIMED_BY_NO_GROUP, "Some other message")]
+    one = [("app/extensions/config.py", RULE_CLAIMED_BY_NO_GROUP, "Some other message")]
     both = [
         *one,
-        ("app/sep/routes/users.py", SIBLING_RULE_CLAIMED_BY_NO_GROUP, "Another"),
+        ("app/extensions/routes/users.py", SIBLING_RULE_CLAIMED_BY_NO_GROUP, "Another"),
     ]
 
     assert classify_ty_diagnostics.group_constraint_failures(
@@ -544,7 +544,9 @@ def test_group_constraint_audit_tightens_when_the_corpus_yields_nothing():
         f"^{CALL_IN_TYPE_EXPRESSION}$",
         "nothing",
     )
-    declined = [("app/sep/routes/users.py", RULE_CLAIMED_BY_NO_GROUP, "Something else")]
+    declined = [
+        ("app/extensions/routes/users.py", RULE_CLAIMED_BY_NO_GROUP, "Something else")
+    ]
 
     assert (
         classify_ty_diagnostics.group_constraint_failures(
@@ -573,18 +575,18 @@ def test_corpus_read_resolves_a_message_bound_to_a_module_constant(tmp_path):
     source = write_file(
         tmp_path,
         "corpus.py",
-        f'INLINE = ("app/sep/routes/users.py", "{rule}", "inline message")\n'
+        f'INLINE = ("app/extensions/routes/users.py", "{rule}", "inline message")\n'
         f'BARE = "{CALL_IN_TYPE_EXPRESSION}"\n'
-        f'VIA_NAME = ("app/sep/config.py", "{rule}", BARE)\n'
+        f'VIA_NAME = ("app/extensions/config.py", "{rule}", BARE)\n'
         f'ANNOTATED: str = "{CALL_IN_TYPE_EXPRESSION} twice"\n'
-        f'VIA_ANNOTATED = ("app/sep/deps.py", "{rule}", ANNOTATED)\n',
+        f'VIA_ANNOTATED = ("app/extensions/deps.py", "{rule}", ANNOTATED)\n',
     )
 
     assert classify_ty_diagnostics.corpus_fingerprints(source) == frozenset(
         {
-            ("app/sep/routes/users.py", rule, "inline message"),
-            ("app/sep/config.py", rule, CALL_IN_TYPE_EXPRESSION),
-            ("app/sep/deps.py", rule, f"{CALL_IN_TYPE_EXPRESSION} twice"),
+            ("app/extensions/routes/users.py", rule, "inline message"),
+            ("app/extensions/config.py", rule, CALL_IN_TYPE_EXPRESSION),
+            ("app/extensions/deps.py", rule, f"{CALL_IN_TYPE_EXPRESSION} twice"),
         }
     )
 
@@ -604,12 +606,12 @@ def test_corpus_read_ignores_a_triple_that_is_not_a_fingerprint(tmp_path):
         "corpus.py",
         'BOGUS = ("a", "b", "c")\n'
         f'NO_PATH = ("not-a-path", "{rule}", "a message")\n'
-        f'PAIR = ("app/sep/config.py", "{rule}")\n'
-        f'REAL = ("app/sep/config.py", "{rule}", "a message")\n',
+        f'PAIR = ("app/extensions/config.py", "{rule}")\n'
+        f'REAL = ("app/extensions/config.py", "{rule}", "a message")\n',
     )
 
     assert classify_ty_diagnostics.corpus_fingerprints(source) == frozenset(
-        {("app/sep/config.py", rule, "a message")}
+        {("app/extensions/config.py", rule, "a message")}
     )
 
 
@@ -666,12 +668,12 @@ SYMBOL_ONLY_GROUPS = [
     (
         "pydantic-fieldinfo",
         (
-            "app/sep/apps/backup/models.py",
+            "app/extensions/apps/backup/models.py",
             "invalid-assignment",
             "Object of type `FieldInfo` is not assignable to `str`",
         ),
         (
-            "app/sep/apps/backup/models.py",
+            "app/extensions/apps/backup/models.py",
             "invalid-assignment",
             "Object of type `str` is not assignable to `int`",
         ),
@@ -718,12 +720,12 @@ SYMBOL_ONLY_GROUPS = [
     (
         "subscripted-generics-called",
         (
-            "app/sep/apps/framework/schema.py",
+            "app/extensions/apps/framework/schema.py",
             "call-non-callable",
             "Object of type `GenericAlias` is not callable",
         ),
         (
-            "app/sep/apps/framework/schema.py",
+            "app/extensions/apps/framework/schema.py",
             "call-non-callable",
             "Object of type `None` is not callable",
         ),
@@ -731,12 +733,12 @@ SYMBOL_ONLY_GROUPS = [
     (
         "fastapi-query-default",
         (
-            "app/sep/api/routes/delivery_connection.py",
+            "app/extensions/api/routes/delivery_connection.py",
             "invalid-parameter-default",
             "Default value of type `Query` is not assignable to `int`",
         ),
         (
-            "app/sep/api/routes/delivery_connection.py",
+            "app/extensions/api/routes/delivery_connection.py",
             "invalid-parameter-default",
             "Default value of type `None` is not assignable to `str`",
         ),

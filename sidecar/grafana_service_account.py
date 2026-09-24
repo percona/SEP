@@ -17,9 +17,10 @@
 ``entrypoint.sh`` runs this once, after ``settings-env.sh`` has expanded the
 deployment inputs and before it execs supervisord, and captures stdout. Stdout
 carries the resolved token and nothing else; every diagnostic goes to stderr.
-Printing nothing means there was nothing to resolve: a token already
-configured, a provider other than Grafana, or settings that did not
-resolve. None of those is a failure.
+An already-configured token under either mint-gate name is printed so
+``entrypoint.sh`` can export it, with no Grafana mint. Printing nothing means
+there was genuinely nothing to resolve: a provider other than Grafana, or
+settings that did not resolve. Neither of those is a failure.
 
 Configuration is read from the application's own settings classes rather than
 re-derived, so the endpoint, the TLS setting and the two canonical token names
@@ -29,7 +30,7 @@ build-time helpers beside it, this one runs where ``bundle.tgz`` has already put
 
 Deployment inputs, all optional: ``GF_SECURITY_ADMIN_USER`` and
 ``GF_SECURITY_ADMIN_PASSWORD`` (each defaulting to Grafana's own ``admin``),
-``SEP_STATE_DIR`` and ``SEP_GRAFANA_MINT_TIMEOUT``.
+``EXTENSIONS_STATE_DIR`` and ``EXTENSIONS_GRAFANA_MINT_TIMEOUT``.
 """
 
 import asyncio
@@ -71,7 +72,7 @@ __all__ = [
 
 warn = partial(runtime_warn, "grafana-mint")
 
-SERVICE_ACCOUNT_NAME = "sep"
+SERVICE_ACCOUNT_NAME = "pmm-extensions"
 SERVICE_ACCOUNT_ROLE = "Admin"
 
 PERSISTED_FILENAME = "grafana_service_account_token"
@@ -106,7 +107,7 @@ class MintError(Exception):
 
 
 class TokenStateEnum(StrEnum):
-    """Name what Grafana answered about a token SEP already holds."""
+    """Name what Grafana answered about a token PMM Extensions already holds."""
 
     ACCEPTED = "accepted"
     REJECTED = "rejected"
@@ -137,7 +138,7 @@ def mint_timeout() -> float:
     :return: The bound in seconds.
     """
     return positive_timeout(
-        "SEP_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
+        "EXTENSIONS_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
     )
 
 
@@ -213,7 +214,7 @@ def quiet_client_logging(api: RemoteAPI, floor: int) -> Generator[None]:
 
 
 async def validate_token(provider: GrafanaSDK, token: str) -> TokenStateEnum:
-    """Check what Grafana makes of a token SEP already holds.
+    """Check what Grafana makes of a token PMM Extensions already holds.
 
     The call is bounded independently of the client's own pool timeouts, so a
     stalled Grafana costs one probe rather than the whole start path. A 403 is
@@ -252,10 +253,10 @@ def token_name() -> str:
 
 
 async def search_account(provider: GrafanaSDK) -> int | None:
-    """Return the id of the service account named exactly ``sep``, if it exists.
+    """Return the id of the service account named exactly ``pmm-extensions``, if it exists.
 
     Grafana's ``query`` filters by substring, so the results are matched on the
-    exact name: an unrelated ``sep-legacy`` account comes back for a ``sep``
+    exact name: an unrelated ``pmm-extensions-legacy`` account comes back for a ``pmm-extensions``
     query, and minting onto it would be silent.
 
     :param provider: The open Grafana client, authenticated as the admin.
@@ -277,7 +278,7 @@ async def search_account(provider: GrafanaSDK) -> int | None:
 
 
 async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
-    """Return the id of SEP's service account, creating it when absent.
+    """Return the id of PMM Extensions' service account, creating it when absent.
 
     A refused creation is re-checked against a second lookup rather than
     reported: two side-cars starting together can both search before either
@@ -389,7 +390,7 @@ async def mint_with_retry(
     raise MintError(
         f"Could not mint a Grafana service-account token at {provider.endpoint} "
         f"after waiting {time.monotonic() - started:.1f}s (last failure: "
-        f"{last_failure}). SEP starts without Grafana-backed sign-in and "
+        f"{last_failure}). PMM Extensions starts without Grafana-backed sign-in and "
         "without the PMM syncer."
     )
 
@@ -403,7 +404,7 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
     """
     if error.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}:
         return MintError(
-            f"Grafana at {provider.endpoint} rejected SEP's admin credential "
+            f"Grafana at {provider.endpoint} rejected PMM Extensions' admin credential "
             f"(HTTP {error.status_code}). Set GF_SECURITY_ADMIN_USER and "
             "GF_SECURITY_ADMIN_PASSWORD to Grafana's current admin login."
         )
@@ -418,27 +419,38 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
     )
 
 
-def already_supplied(service_account_token: str, pmm_api_key: str) -> bool:
-    """Return whether a token is already configured for either canonical name.
+def supplied_token(service_account_token: str, pmm_api_key: str) -> str | None:
+    """Return the already-configured token under either canonical name, or ``None``.
 
-    A blank value counts as absent at every layer, which is why the profile's
-    baked empty token does not read as a configured one.
+    ``AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN`` wins when both resolve to
+    different values. A blank value counts as absent at every layer, which is
+    why the profile's baked empty token does not read as a configured one.
+    Strip is used only to detect blank input; the original non-blank value is
+    returned so export matches what the operator configured.
 
     :param service_account_token: The resolved Grafana service-account token.
     :param pmm_api_key: The resolved ``PMM.API_KEY``.
-    :return: Whether minting must be skipped.
+    :return: The non-blank token to export, or ``None`` when neither name
+        carries one.
     """
-    return bool(service_account_token.strip() or pmm_api_key.strip())
+    if service_account_token.strip():
+        return service_account_token
+    if pmm_api_key.strip():
+        return pmm_api_key
+    return None
 
 
-def resolve_provider() -> GrafanaSDK | None:
-    """Return the Grafana client to resolve a token through, if there is one.
+def resolve_provider() -> GrafanaSDK | str | None:
+    """Return a Grafana client to mint against, an already-resolved token, or ``None``.
 
-    Answers ``None`` for each case with nothing to do: settings that did not
-    resolve, a provider other than Grafana, and a token already configured under
-    either canonical name.
+    Distinguishes the two former ``None`` cases: a token already configured under
+    either canonical name is returned as that value so ``entrypoint.sh`` can
+    export it without minting, while settings that did not resolve and a
+    provider other than Grafana still answer ``None`` (genuinely nothing to
+    export).
 
-    :return: The open-able Grafana provider, or ``None``.
+    :return: The open-able Grafana provider, an already-resolved token, or
+        ``None``.
     """
     try:
         # import-time-settings: `auth_settings = AuthSettings()` runs at import
@@ -460,16 +472,17 @@ def resolve_provider() -> GrafanaSDK | None:
         return None
     if not isinstance(provider, GrafanaAuthProvider):
         return None
-    if already_supplied(
+    configured = supplied_token(
         provider.service_account_token.get_secret_value(),
         pmm_api_key.get_secret_value() if pmm_api_key else "",
-    ):
-        return None
+    )
+    if configured is not None:
+        return configured
     return provider
 
 
 def warn_role_gap(subject: str) -> None:
-    """Warn that SEP's service account ranks below Admin in its org.
+    """Warn that PMM Extensions' service account ranks below Admin in its org.
 
     :param subject: What Grafana accepted, e.g. ``"persisted token"``.
     """
@@ -494,27 +507,31 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     elif state is TokenStateEnum.UNREACHABLE:
         warn(
             f"Could not reach Grafana at {provider.endpoint} to revalidate "
-            "SEP's persisted token; using it unvalidated."
+            "PMM Extensions' persisted token; using it unvalidated."
         )
     return state is not TokenStateEnum.REJECTED
 
 
 async def resolve_token() -> str | None:
-    """Resolve the token for the three ranks below the mounted secrets channel.
+    """Resolve the token to export: an already-configured mint-gate name, or the three ranks below the mounted secrets channel.
 
-    When a token is minted onto a reused service account, the token is probed
-    with :func:`validate_token`. A ``FORBIDDEN`` answer means the account's
-    org role ranks below ``Admin``; a diagnostic is written and the token is
-    still returned, because a re-mint cannot raise the role. An
-    ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
+    An already-configured token under either mint-gate name is returned as-is,
+    with no Grafana call. When a token is minted onto a reused service account,
+    the token is probed with :func:`validate_token`. A ``FORBIDDEN`` answer
+    means the account's org role ranks below ``Admin``; a diagnostic is written
+    and the token is still returned, because a re-mint cannot raise the role.
+    An ``UNREACHABLE`` answer gets the same keep-the-token treatment with a
     reachability diagnostic, matching :func:`keep_persisted_token`.
 
     :return: The resolved token, or ``None`` when there is nothing to resolve.
     :raises MintError: When a token is needed and cannot be minted.
     """
-    provider = resolve_provider()
-    if provider is None:
+    resolved = resolve_provider()
+    if resolved is None:
         return None
+    if isinstance(resolved, str):
+        return resolved
+    provider = resolved
 
     directory = state_dir()
     persisted = read_persisted_token(directory)

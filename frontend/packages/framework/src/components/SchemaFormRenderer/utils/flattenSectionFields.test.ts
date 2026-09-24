@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { FormSection } from '@sep/api';
+import type { FormSection } from '@pmm-extensions/api';
 
 import {
   flattenSectionFields,

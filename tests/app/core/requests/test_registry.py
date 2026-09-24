@@ -19,6 +19,7 @@ import pytest
 
 from app.core.requests.registry import ClientRegistry
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.fields import CREDENTIAL_URL_MASK
 
 
 @pytest.mark.asyncio
@@ -89,3 +90,120 @@ async def test_invalidate_defers_the_close_while_a_consumer_holds() -> None:
         assert client._session is None
     finally:
         await registry.close_all()
+
+
+_CREDENTIAL_ENDPOINT = "https://svcuser:svcpass@a.example.org"
+_CREDENTIAL_SECRET = "svcpass"
+_CLOSE_FAILURE = "close boom"
+_REGISTRY_LOGGER = "app.core.requests.registry"
+_FAILING_CLIENTS = 2
+
+
+class _FailingCloseRemoteAPI(RemoteAPI):
+    """Stand in for a client whose session refuses to close."""
+
+    async def close(self) -> None:
+        """Raise instead of closing, so the registry has a failure to report."""
+        raise RuntimeError(_CLOSE_FAILURE)
+
+    async def close_when_idle(self) -> None:
+        """Raise on the eviction path the same way."""
+        raise RuntimeError(_CLOSE_FAILURE)
+
+
+@pytest.mark.asyncio
+async def test_invalidate_reports_a_close_failure_without_the_password(caplog) -> None:
+    """Report an eviction close failure with the endpoint password masked."""
+    registry = ClientRegistry()
+    try:
+        await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+
+        with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+            await registry.invalidate(_CREDENTIAL_ENDPOINT)
+    finally:
+        await registry.close_all()
+
+    assert _CREDENTIAL_SECRET not in caplog.text
+    assert "svcuser:****@a.example.org" in caplog.text
+    assert _CLOSE_FAILURE in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_all_reports_a_close_failure_without_the_password(caplog) -> None:
+    """Report a shutdown close failure with the endpoint password masked."""
+    registry = ClientRegistry()
+    await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+
+    with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+        await registry.close_all()
+
+    assert _CREDENTIAL_SECRET not in caplog.text
+    assert "svcuser:****@a.example.org" in caplog.text
+    assert _CLOSE_FAILURE in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_all_reports_every_failing_client(caplog) -> None:
+    """Keep reporting the remaining clients after the first failure."""
+    registry = ClientRegistry()
+    await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+    await registry.get(_FailingCloseRemoteAPI, endpoint="https://b.example.org")
+
+    with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+        await registry.close_all()
+
+    reported = [r for r in caplog.records if _CLOSE_FAILURE in r.getMessage()]
+    assert len(reported) == _FAILING_CLIENTS
+
+
+@pytest.mark.asyncio
+async def test_close_all_survives_a_base_url_it_cannot_redact(
+    caplog, monkeypatch
+) -> None:
+    """Report the close failure even when the base URL defeats the redaction.
+
+    Raising here would replace the failure being reported with a parse error
+    and strand the clients still to report on, so the mask stands in for the
+    whole URL instead. The broken value is introduced after the session is
+    open, because a client cannot be built from it in the first place.
+    """
+    registry = ClientRegistry()
+    await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+    monkeypatch.setattr(
+        _FailingCloseRemoteAPI,
+        "_compute_base_url",
+        lambda _self: "http://[::1:4646/",
+    )
+
+    with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+        await registry.close_all()
+
+    assert _CREDENTIAL_SECRET not in caplog.text
+    assert CREDENTIAL_URL_MASK in caplog.text
+    assert _CLOSE_FAILURE in caplog.text
+    assert registry._clients == {}
+
+
+@pytest.mark.asyncio
+async def test_invalidate_survives_a_base_url_it_cannot_redact(
+    caplog, monkeypatch
+) -> None:
+    """Report an eviction close failure even when the base URL defeats the redaction."""
+    registry = ClientRegistry()
+    try:
+        await registry.get(_FailingCloseRemoteAPI, endpoint=_CREDENTIAL_ENDPOINT)
+        monkeypatch.setattr(
+            _FailingCloseRemoteAPI,
+            "_compute_base_url",
+            lambda _self: "http://svcuser:svcpass@[::1:4646/",
+        )
+
+        with caplog.at_level("WARNING", logger=_REGISTRY_LOGGER):
+            await registry.invalidate(_CREDENTIAL_ENDPOINT)
+    finally:
+        monkeypatch.undo()
+        await registry.close_all()
+
+    assert _CREDENTIAL_SECRET not in caplog.text
+    assert CREDENTIAL_URL_MASK in caplog.text
+    assert _CLOSE_FAILURE in caplog.text

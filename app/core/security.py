@@ -49,7 +49,7 @@ def get_internal_token() -> str | None:
 
     :return: The internal token's secret value, or ``None`` when unset or empty.
     """
-    token = settings.SEP_INTERNAL_TOKEN
+    token = settings.EXTENSIONS_INTERNAL_TOKEN
     if token is None:
         return None
     return token.get_secret_value() or None
@@ -66,5 +66,5 @@ def require_internal_token() -> str:
     """
     token = get_internal_token()
     if token is None:
-        raise RuntimeError("SEP_INTERNAL_TOKEN must be configured.")
+        raise RuntimeError("EXTENSIONS_INTERNAL_TOKEN must be configured.")
     return token

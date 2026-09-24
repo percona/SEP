@@ -19,7 +19,9 @@ __all__ = [
     "AppOwnedClassEntry",
     "ClassEntry",
     "RemoteClassEntry",
+    "apply_class_overrides",
     "build_settings_router",
+    "clear_class_override",
     "collect_class_setting_responses",
 ]
 
@@ -95,7 +97,7 @@ ClassEntry = tuple[str, type[BaseYamlSettings], OverridableSettingsProxy]
 
 @dataclass(frozen=True, slots=True)
 class AppOwnedClassEntry:
-    """Expose one app-owned settings class on the SEP settings router.
+    """Expose one app-owned settings class on the PMM Extensions settings router.
 
     :param setting_class: The Pydantic class ``__name__`` of the settings class.
     :param settings_cls: The Pydantic settings model class.
@@ -127,7 +129,7 @@ RemoteClassEntry = tuple[str, str]
 ApplicabilityPredicate = Callable[[str, FieldMetadata], bool]
 
 #: Async callback resolving app identity and enabled state for one ``app_key``.
-#: Injected by the SEP wiring so this factory stays free of ``app.sep`` imports.
+#: Injected by the PMM Extensions wiring so this factory stays free of ``app.extensions`` imports.
 ResolveAppMetadata = Callable[[AsyncSession, str], Awaitable[SettingClassAppMetadata]]
 
 
@@ -163,10 +165,10 @@ async def _proxy_settings_request(
     per-field validation messages, which a blanket ``502`` would erase. Upstream
     **availability** failures (HTTP >= 500, or an ``OSError`` connection failure)
     become :class:`~app.core.exceptions.HTTPBadGatewayException` (``502``),
-    matching the other SEP proxy routes.
+    matching the other PMM Extensions proxy routes.
 
     :param remote_api: The async client for the owning sub-app, already
-        authenticated (the SEP wiring forwards the caller's Bearer token).
+        authenticated (the PMM Extensions wiring forwards the caller's Bearer token).
     :param method: The :class:`RemoteAPI` verb to call (``"get"`` / ``"patch"`` /
         ``"delete"``).
     :param path: The remote path to request, relative to the client's base URL.
@@ -863,23 +865,23 @@ def build_settings_router(
     dependency, and its admin-auth dependency. ``admin_dep`` is applied at
     the router level so every endpoint inherits the admin gate. State-changing
     endpoints (PATCH / DELETE) additionally take ``mutation_deps``, which the
-    SEP wiring uses to require Bearer authentication on mutations, so a
+    PMM Extensions wiring uses to require Bearer authentication on mutations, so a
     cross-site JSON request carrying only ambient cookies cannot mutate
     settings.
 
     :param classes: One ``(class_name, settings_cls, proxy)`` triple per
         core settings class to expose on this router.
     :param session_dep: An ``Annotated[AsyncSession, Depends(...)]`` type alias
-        for the sub-app's session dependency (e.g. ``app.sep.deps.SessionDep``
+        for the sub-app's session dependency (e.g. ``app.extensions.deps.SessionDep``
         or ``app.tasks.deps.SessionDep``). Used as the parameter annotation on
         each generated handler so FastAPI resolves the session per-request.
     :param admin_dep: A FastAPI ``Depends(...)`` callable that gates access to
-        admin users only (e.g. ``app.sep.deps.IsApiAdmin`` or
+        admin users only (e.g. ``app.extensions.deps.IsApiAdmin`` or
         ``app.api.deps.IsAdminDep``). Applied at the router level so every
         endpoint inherits the admin gate.
     :param actor_dep: An ``Annotated[str, Depends(...)]`` type alias yielding the
         calling admin's username, recorded on every override row PATCH writes
-        (e.g. ``app.sep.deps.ApiAdminUsername`` or
+        (e.g. ``app.extensions.deps.ApiAdminUsername`` or
         ``app.api.deps.AdminUsername``). Required rather than optional so a
         sub-app that forgets the wiring fails at import instead of silently
         recording no actor. Each in-tree alias resolves the same callable its
@@ -888,7 +890,7 @@ def build_settings_router(
         auth-provider round-trip.
     :param mutation_deps: Optional list of FastAPI ``Depends(...)`` callables
         applied only to the state-changing endpoints (PATCH / DELETE). The
-        SEP wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
+        PMM Extensions wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
         mutate settings; the Tasks wiring leaves this empty because its
         admin dependency is bearer-only via ``OAuth2PasswordBearer``.
     :param remote_classes: Optional ``(class_name, remote_base_path)`` pairs
@@ -899,7 +901,7 @@ def build_settings_router(
         remote sub-app via ``remote_api_dep``. Defaults to no remote classes, in
         which case the router is purely local and behaves exactly as before.
     :param remote_api_dep: An ``Annotated[RemoteAPI, Depends(...)]`` type alias
-        for the client used to reach the remote sub-app (e.g. ``app.sep.deps.TaskAPI``,
+        for the client used to reach the remote sub-app (e.g. ``app.extensions.deps.TaskAPI``,
         which forwards the caller's Bearer token). Required when ``remote_classes``
         is non-empty; ignored otherwise. Used as the parameter annotation on each
         handler so FastAPI resolves the client per-request.
@@ -910,12 +912,12 @@ def build_settings_router(
         applicable, so callers that omit it behave exactly as before. Display-only
         -- it never blocks PATCH/DELETE.
     :param app_owned_classes: Optional app-owned settings classes declared by
-        SEP plugins. Appended after core and remote groups on LIST; merged into
+        PMM Extensions plugins. Appended after core and remote groups on LIST; merged into
         the local class lookup so GET / PATCH / DELETE work unchanged.
     :param resolve_app_metadata: Async callback that resolves app identity and
         enabled state for one ``app_key``. Required when ``app_owned_classes``
-        is non-empty; ignored otherwise. Injected by the SEP wiring so this
-        factory stays free of ``app.sep`` imports.
+        is non-empty; ignored otherwise. Injected by the PMM Extensions wiring so this
+        factory stays free of ``app.extensions`` imports.
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
     :raises ValueError: If ``remote_classes`` is non-empty without
@@ -1060,30 +1062,16 @@ def build_settings_router(
                 remote_api, remote_lookup[setting_class], setting_class, body
             )
         settings_cls, proxy = _resolve(setting_class)
-        to_apply = _validate_patch_body(
-            settings_cls=settings_cls, proxy=proxy, body=body
-        )
-        provenance_by_key = await _persist_overrides(
+        return await apply_class_overrides(
+            request=request,
             session=session,
+            setting_class=setting_class,
             settings_cls=settings_cls,
-            to_apply=to_apply,
+            proxy=proxy,
+            body=body,
             actor=actor,
+            applicability=applicability,
         )
-        previous = proxy.get_snapshot()
-        await publish_snapshot(proxy, session, settings_cls)
-        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
-        field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
-        return [
-            _settings_response_from_field(
-                setting_class=setting_class,
-                settings_cls=settings_cls,
-                proxy=proxy,
-                field_meta=field_meta_by_key[key],
-                provenance=provenance_by_key[key],
-                applicability=applicability,
-            )
-            for key, _ in to_apply
-        ]
 
     @router.delete(
         "/{setting_class}/{key}",
@@ -1142,20 +1130,14 @@ def build_settings_router(
             )
             return
         settings_cls, proxy = _resolve(setting_class)
-        key = canonical_override_key(settings_cls, key)
-        field_meta = _field_meta_or_404(settings_cls, key)
-        token = setting_class_token(settings_cls)
-        rows = await override_rows_for_key(
-            session,
+        await clear_class_override(
+            request=request,
+            session=session,
+            setting_class=setting_class,
             settings_cls=settings_cls,
-            setting_class=token,
+            proxy=proxy,
             key=key,
         )
-        _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
-        await _delete_override_rows(session, token, rows)
-        previous = proxy.get_snapshot()
-        await publish_snapshot(proxy, session, settings_cls)
-        await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
 
     return router
 
@@ -1449,3 +1431,118 @@ async def _stage_and_commit_overrides(
         session.add(keep)
     await session.commit()
     return provenance
+
+
+async def apply_class_overrides(
+    *,
+    request: Request,
+    session: AsyncSession,
+    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    body: SettingsPatch,
+    actor: str,
+    applicability: ApplicabilityPredicate | None = None,
+) -> list[SettingResponse]:
+    """Validate, persist and publish a batch of overrides for one local class.
+
+    The whole of ``PATCH /{setting_class}`` for a locally-wired class, minus the
+    routing and the remote-class branch. It exists as a function — not only
+    inlined in :func:`build_settings_router`'s ``patch_settings`` closure —
+    because an app that owns its settings class (:class:`AppOwnedClassEntry`)
+    may also need to serve its *own* narrower ``/config`` endpoint: the shared
+    settings router is admin-gated, and not every caller of an app's
+    configuration is a PMM Extensions admin (e.g. PMM's ``--sep-token`` principal). A
+    second implementation of "validate the batch, write it atomically,
+    republish the snapshot, rebind" is exactly the kind of duplicate that
+    drifts into two different validation rules.
+
+    Phase A validates every key — existence on the class, HOT classification,
+    type and constraint coercion — and rejects the whole batch on any failure,
+    so a partial write is not a state this can reach. Phase B persists, publishes
+    the new snapshot inline, and fires the rebind callbacks for the changed keys
+    so a hot target rebinds without waiting for the background refresher.
+
+    :param request: The incoming request; its ``app.state`` carries the sub-app's
+        rebind-callback registry.
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the override targets.
+    :param settings_cls: The Pydantic settings class being overridden.
+    :param proxy: The proxy wrapping it.
+    :param body: The batch of ``{key: value, ...}`` overrides.
+    :param actor: The username recorded on every row this call writes, and
+        reported back on each response.
+    :param applicability: Optional predicate driving ``is_applicable`` on the
+        returned rows; ``None`` marks every field applicable.
+    :return: One :class:`SettingResponse` per applied key, in input order.
+    :raises HTTPUnprocessableEntityException: If any key fails validation; no
+        rows are written.
+    :raises IntegrityError: When the replay of a batch that lost the
+        unique-index race conflicts again, which leaves nothing written.
+    """
+    to_apply = _validate_patch_body(settings_cls=settings_cls, proxy=proxy, body=body)
+    provenance_by_key = await _persist_overrides(
+        session=session, settings_cls=settings_cls, to_apply=to_apply, actor=actor
+    )
+    previous = proxy.get_snapshot()
+    await publish_snapshot(proxy, session, settings_cls)
+    await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)
+    field_meta_by_key = _applied_field_meta(settings_cls, to_apply)
+    return [
+        _settings_response_from_field(
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            proxy=proxy,
+            field_meta=field_meta_by_key[key],
+            provenance=provenance_by_key[key],
+            applicability=applicability,
+        )
+        for key, _ in to_apply
+    ]
+
+
+async def clear_class_override(
+    *,
+    request: Request,
+    session: AsyncSession,
+    setting_class: str,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    key: str,
+) -> None:
+    """Revert one override row for a local class to its YAML/env value.
+
+    The counterpart to :func:`apply_class_overrides`, extracted for the same
+    reason: an app serving its own ``/config`` needs "put this back the way the
+    deployment configured it", and without it an operator who once set a value can
+    only ever set another one — "no override" stops being reachable.
+
+    Idempotent: clearing a key with no row succeeds. A ``NOT_OVERRIDABLE`` field
+    with no row answers 409, because the intent cannot be satisfied rather than
+    having already been satisfied.
+
+    :param request: The incoming request; its ``app.state`` carries the sub-app's
+        rebind-callback registry.
+    :param session: The sub-app's database session.
+    :param setting_class: The settings class the field belongs to.
+    :param settings_cls: The Pydantic settings class being reverted.
+    :param proxy: The proxy wrapping it.
+    :param key: The field name, or a ``__``-delimited nested key.
+    :raises HTTPNotFoundException: If ``key`` is not a field on the class.
+    :raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has no row.
+    :raises HTTPUnprocessableEntityException: If ``key`` names a NESTED_ONLY parent.
+    """
+    key = canonical_override_key(settings_cls, key)
+    field_meta = _field_meta_or_404(settings_cls, key)
+    token = setting_class_token(settings_cls)
+    rows = await override_rows_for_key(
+        session,
+        settings_cls=settings_cls,
+        setting_class=token,
+        key=key,
+    )
+    _assert_key_deletable(settings_cls, field_meta, has_override_row=bool(rows))
+    await _delete_override_rows(session, token, rows)
+    previous = proxy.get_snapshot()
+    await publish_snapshot(proxy, session, settings_cls)
+    await _fire_inline_rebind_callbacks(request, setting_class, proxy, previous)

@@ -25,7 +25,7 @@ import NestedSettingGroup from '../NestedSettingGroup';
 import { buildSettingTree, type GroupNode } from '../settingField';
 import { makeSetting, makeWrapper } from './fixtures';
 
-const SEP_BASE = 'http://localhost/api/sep/admin/settings/SEPSettings';
+const EXTENSIONS_BASE = 'http://localhost/api/extensions/admin/settings/ExtensionsSettings';
 
 function nomadGroup(): GroupNode {
   const tree = buildSettingTree([
@@ -71,7 +71,7 @@ describe('NestedSettingGroup', () => {
   it('saves an edited leaf via PATCH keyed by its __-delimited key', async () => {
     const body = vi.fn();
     server.use(
-      http.patch(SEP_BASE, async ({ request }) => {
+      http.patch(EXTENSIONS_BASE, async ({ request }) => {
         body(await request.json());
         return HttpResponse.json([]);
       }),
@@ -91,7 +91,7 @@ describe('NestedSettingGroup', () => {
   it('resets an overridden leaf via DELETE on its __-delimited key', async () => {
     const deleted = vi.fn();
     server.use(
-      http.delete(`${SEP_BASE}/NOMAD__TOKEN`, () => {
+      http.delete(`${EXTENSIONS_BASE}/NOMAD__TOKEN`, () => {
         deleted();
         return new HttpResponse(null, { status: 204 });
       }),
@@ -106,7 +106,7 @@ describe('NestedSettingGroup', () => {
 
   it('surfaces a 422 inline next to the offending leaf', async () => {
     server.use(
-      http.patch(SEP_BASE, () =>
+      http.patch(EXTENSIONS_BASE, () =>
         HttpResponse.json(
           { detail: [{ loc: ['body', 'NOMAD__ENDPOINT'], msg: 'Invalid endpoint URL' }] },
           { status: 422 },

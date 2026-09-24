@@ -72,7 +72,7 @@ export async function postSession(): Promise<SPAOAuthTokenResponse> {
 /**
  * POST /api/oauth/session/exchange
  *
- * Exchange an ambient PMM/Grafana session cookie for a short-lived SEP bearer.
+ * Exchange an ambient PMM/Grafana session cookie for a short-lived PMM Extensions bearer.
  * The browser sends the `grafana_session` cookie automatically; there is no
  * request body. Unlike `postSession`, no cookie is set and no refresh token is
  * issued — the caller holds the token in memory and re-exchanges before

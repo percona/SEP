@@ -25,8 +25,13 @@ import {
   useDebouncedValue,
   buildFieldLabelMap,
   type RenderFieldOverride,
-} from '@sep/framework';
-import { parseFieldErrors, useAuth, type FormSection, type SectionField } from '@sep/api';
+} from '@pmm-extensions/framework';
+import {
+  parseFieldErrors,
+  useAuth,
+  type FormSection,
+  type SectionField,
+} from '@pmm-extensions/api';
 import { CategoryBrowser } from './CategoryBrowser';
 import { useAtwBatchExecute, useAtwMergedSchema, useAtwSnippetSearch } from './hooks';
 import type {

@@ -18,13 +18,13 @@
 /**
  * React Query hooks for the runtime Settings admin API.
  *
- * Every settings group is reached through the single SEP gateway endpoint
- * `/api/sep/admin/settings`. SEP serves its own classes (SEPSettings,
+ * Every settings group is reached through the single PMM Extensions gateway endpoint
+ * `/api/extensions/admin/settings`. PMM Extensions serves its own classes (ExtensionsSettings,
  * SnippetsSettings) locally and proxies `TasksSettings`
  * server-side from the Tasks sub-app, so the frontend never calls
  * `/api/tasks/admin/settings/*` directly (API-First Rule 1). The list response
  * already carries all groups, so there is no client-side fan-out or merge, and
- * PATCH/DELETE for any class — including `TasksSettings` — go to `/api/sep`.
+ * PATCH/DELETE for any class — including `TasksSettings` — go to `/api/extensions`.
  *
  * All request/response shapes come from the generated OpenAPI types — this file
  * never hand-rolls an API model.
@@ -33,12 +33,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { apiClient } from '../client';
 import type { ApiError } from '../errors';
-import type { components } from '../generated/sep';
+import type { components } from '../generated/extensions';
 
-// The settings models are declared identically in both the `sep` and `tasks`
-// specs; we treat the `sep` copy as the canonical source for the shared shapes.
+// The settings models are declared identically in both the `extensions` and `tasks`
+// specs; we treat the `extensions` copy as the canonical source for the shared shapes.
 // Path params and response fields carry the Pydantic class __name__ (e.g.
-// "SEPSettings", "AlertsSettings") as a plain string, not a closed enum.
+// "ExtensionsSettings", "AlertsSettings") as a plain string, not a closed enum.
 export type SettingClass = string;
 export type ReloadClassification = components['schemas']['ReloadClassification'];
 export type SettingResponse = components['schemas']['SettingResponse'];
@@ -52,12 +52,12 @@ export const REDACTED_SECRET = '**********';
 export const SETTINGS_QUERY_KEY = ['settings', 'list'] as const;
 
 /** Base path (relative to the axios client's `/api` baseURL) for every class. */
-const SETTINGS_BASE = '/sep/admin/settings';
+const SETTINGS_BASE = '/extensions/admin/settings';
 
 /**
- * Fetch every overridable settings class from the SEP gateway as one request.
+ * Fetch every overridable settings class from the PMM Extensions gateway as one request.
  *
- * SEP aggregates its local classes and the proxied `TasksSettings` group into a
+ * PMM Extensions aggregates its local classes and the proxied `TasksSettings` group into a
  * single `groups` list, so there is no client-side fan-out or merge. Pass
  * `enabled: false` to skip fetching entirely (e.g. for non-admin viewers).
  */

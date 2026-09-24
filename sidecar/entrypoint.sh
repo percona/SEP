@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Side-car PID 1: expand the per-deployment inputs into canonical settings
 # variables, mint the bundled Valkey broker's credential for this container run,
-# resolve SEP's Grafana service-account token, then hand off to supervisord.
+# resolve PMM Extensions' Grafana service-account token, then hand off to supervisord.
 #
 # The credential reaches valkey-server through a generated config file rather
 # than a --requirepass flag, and reaches healthcheck.sh by being read back out of
@@ -84,7 +84,7 @@ unset grafana_token GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD
 # start and restart. A `supervisorctl restart` does not re-enter this script, so
 # re-running a schema step inside a running container clears its sentinel first
 # through clear_sentinels.sh -- the sequence sidecar/README.md documents.
-rm -f /tmp/migrate-sep.ok /tmp/migrate-inventory.ok /tmp/migrate-tasks.ok \
+rm -f /tmp/migrate-extensions.ok /tmp/migrate-inventory.ok /tmp/migrate-tasks.ok \
     /tmp/migrate-beat.ok
 
 exec supervisord -c "$app_dir/supervisord.conf" "$@"

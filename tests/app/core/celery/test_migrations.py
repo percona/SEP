@@ -55,9 +55,9 @@ def test_a_reflected_beat_table_is_kept_out_of_the_sweep():
     ("name", "type_", "reflected"),
     [
         pytest.param("celery_periodictask", "table", False, id="beat-name-in-metadata"),
-        pytest.param("syncinstance", "table", True, id="reflected-sep-table"),
+        pytest.param("syncinstance", "table", True, id="reflected-extensions-table"),
         pytest.param(
-            "celery_sync_state", "table", True, id="celery-prefixed-sep-table"
+            "celery_sync_state", "table", True, id="celery-prefixed-extensions-table"
         ),
         pytest.param(
             "celery_periodictask", "column", True, id="column-of-a-beat-table"

@@ -25,10 +25,10 @@ import { SchemaSelector } from './SchemaSelector';
 import type { ServiceOption } from '../../hooks/useServices';
 import type { SchemaOption } from '../../hooks/useSchemas';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function makeClient() {
@@ -98,7 +98,7 @@ describe('SchemaSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/7/schemas'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/services/7/schemas'));
   });
 
   it('resets value when parent service changes', async () => {
@@ -270,7 +270,9 @@ describe('SchemaSelector', () => {
         </Wrapper>,
       );
       expect(screen.getByLabelText('Schema')).not.toBeDisabled();
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/42/schemas'));
+      await waitFor(() =>
+        expect(mocked.get).toHaveBeenCalledWith('/extensions/services/42/schemas'),
+      );
     });
 
     it('resolves a stringified child schema id to its option name on edit', async () => {
