@@ -24,7 +24,7 @@ import { ICON_BY_KEY } from './appNavIcons';
 
 const SPEC_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  '../../../api/specs/sep.json',
+  '../../../api/specs/extensions.json',
 );
 const NAV_ICON_KEYS: string[] = JSON.parse(readFileSync(SPEC_PATH, 'utf8')).components.schemas
   .nav_icons__NavIcon.enum;

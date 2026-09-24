@@ -30,8 +30,11 @@ from app.core.auth.models import (
     SPAOAuthTokenResponse,
 )
 from app.core.auth.utils import get_user_model
-from app.sep.config import prefixed_cookie_path, sep_settings
-from app.sep.deps import resolve_ambient_exchange_token, resolve_ambient_session_token
+from app.extensions.config import extensions_settings, prefixed_cookie_path
+from app.extensions.deps import (
+    resolve_ambient_exchange_token,
+    resolve_ambient_session_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +62,14 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """Set the ``HttpOnly`` refresh-token cookie on ``response``.
 
     Pull cookie attributes (name, path, max-age, samesite, secure) from
-    ``sep_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly. The
+    ``extensions_settings.SESSION_REFRESH`` and set ``httponly=True`` explicitly. The
     ``path`` is anchored under the configured URL prefix so the browser sends
-    the cookie back to the refresh endpoint wherever SEP is served.
+    the cookie back to the refresh endpoint wherever PMM Extensions is served.
 
     :param response: The response on which to set the cookie.
     :param refresh_token: The refresh token value to store in the cookie.
     """
-    cookie_options = sep_settings.SESSION_REFRESH.model_dump(by_alias=True)
+    cookie_options = extensions_settings.SESSION_REFRESH.model_dump(by_alias=True)
     cookie_options["path"] = prefixed_cookie_path(cookie_options["path"])
     response.set_cookie(**cookie_options, value=refresh_token, httponly=True)
 
@@ -84,8 +87,8 @@ def _clear_refresh_cookie(response: Response) -> None:
     :param response: The response on which to delete the cookie.
     """
     response.delete_cookie(
-        key=sep_settings.SESSION_REFRESH.COOKIE_NAME,
-        path=prefixed_cookie_path(sep_settings.SESSION_REFRESH.PATH),
+        key=extensions_settings.SESSION_REFRESH.COOKIE_NAME,
+        path=prefixed_cookie_path(extensions_settings.SESSION_REFRESH.PATH),
     )
 
 
@@ -186,7 +189,7 @@ async def spa_session_exchange(
     request: Request,
     response: Response,
 ) -> SessionExchangeTokenResponse:
-    """Mint a short-lived SEP bearer from an ambient Grafana session.
+    """Mint a short-lived PMM Extensions bearer from an ambient Grafana session.
 
     Serves an embedded client that already carries the host's session cookie on
     the same origin. Unlike ``POST /session``, set no cookie and issue no refresh
@@ -198,9 +201,9 @@ async def spa_session_exchange(
     signed-out browser loses embedded access just as fast, because without the
     session cookie it cannot obtain another bearer -- though whether a
     *previously copied* host cookie stops working depends on the host revoking
-    its own session server-side, which is outside SEP's control.
+    its own session server-side, which is outside PMM Extensions' control.
 
-    Carries no auth dependency by design: the caller is not yet SEP-authenticated,
+    Carries no auth dependency by design: the caller is not yet PMM Extensions authenticated,
     and the ambient session cookie is the credential being presented. No CSRF
     primitive applies either: requiring a Bearer token cannot gate an
     endpoint whose purpose is to issue one. That is safe because a cross-origin

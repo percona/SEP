@@ -102,8 +102,8 @@ export function registerFetchResponse(urlPrefix: string, body: unknown): void {
 // HMR-safe install. Both the install flag and the captured original `fetch`
 // live on `globalThis` via well-known symbols so a re-evaluated preview
 // module reuses them instead of wrapping our own wrapper.
-const INSTALLED_KEY = Symbol.for('@sep/framework.storybook.sseMocks.installed');
-const ORIGINAL_FETCH_KEY = Symbol.for('@sep/framework.storybook.sseMocks.originalFetch');
+const INSTALLED_KEY = Symbol.for('@pmm-extensions/framework.storybook.sseMocks.installed');
+const ORIGINAL_FETCH_KEY = Symbol.for('@pmm-extensions/framework.storybook.sseMocks.originalFetch');
 
 interface MockGlobals {
   [INSTALLED_KEY]?: true;

@@ -33,7 +33,7 @@ import {
   type AppListResult,
   type AppSchema,
   type PaginatedAppList,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import {
   downloadBlob,
   SNIPPETS_APPS_API_BASE,
@@ -43,7 +43,7 @@ import {
   snippetAppHistoryPath,
   snippetAppSchemaPath,
   type PaginatedTaskHistory,
-} from '@sep/framework';
+} from '@pmm-extensions/framework';
 import type {
   BatchApprovalErrorResponse,
   BatchApprovalResponse,

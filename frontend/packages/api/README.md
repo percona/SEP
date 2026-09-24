@@ -1,9 +1,9 @@
-# @sep/api
+# @pmm-extensions/api
 
 Centralized HTTP client, React Query configuration, and OpenAPI type codegen
-for the SEP frontend.
+for the PMM Extensions frontend.
 
-This package is consumed by `@sep/shell`, `@sep/framework`, and plugin
+This package is consumed by `@pmm-extensions/shell`, `@pmm-extensions/framework`, and plugin
 packages. Anything that talks to the backend should go through here.
 
 ## What's in the package
@@ -12,13 +12,13 @@ packages. Anything that talks to the backend should go through here.
   token injection, unauthorized handling, dev logging, and structured error
   normalization into `ApiError`. Request/response bodies are passed through
   verbatim — field casing matches the OpenAPI spec.
-- **Typed clients** — `mainApi`, `sepApi` are
+- **Typed clients** — `mainApi`, `extensionsApi` are
   [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) clients typed
   against the generated `paths` under `src/generated/`. They share
   Bearer-token and unauthorized handling with `apiClient` via a middleware
   that reads the same `setTokenProvider` state.
-- **Generated types** — `src/generated/{main,inventory,tasks,sep}.ts` are
-  emitted by `pnpm --filter @sep/api codegen` from the four FastAPI specs.
+- **Generated types** — `src/generated/{main,inventory,tasks,extensions}.ts` are
+  emitted by `pnpm --filter @pmm-extensions/api codegen` from the four FastAPI specs.
   Files are committed so builds don't require a live backend; they are
   marked `linguist-generated` in `frontend/.gitattributes` to keep GitHub
   diffs collapsed.
@@ -32,7 +32,7 @@ packages. Anything that talks to the backend should go through here.
   let the auth layer plug in without the API package depending on auth state.
 - **Token minter seam** — `setTokenMinter()` replaces _how_ a fresh token is
   obtained. It defaults to the cookie-backed `POST /oauth/refresh`; a host that
-  embeds SEP and owns the session registers its own. Everything downstream — the
+  embeds PMM Extensions and owns the session registers its own. Everything downstream — the
   single-flight in `refreshAccessToken()`, the 401 retry in both transports,
   the `setOnRefreshed()` notification — is minter-agnostic.
 - **Hooks** — `useAppSchema`, `useAppTasks`, `useAppTask`,
@@ -40,7 +40,7 @@ packages. Anything that talks to the backend should go through here.
   (sample of the typed-hook pattern).
 - **Auth functions** — `postLogin`, `postRefresh`, `postSession`,
   `postSessionExchange`, `postLogout`, `fetchCurrentUser`. Thin request wrappers
-  consumed by the `AuthProvider` in `@sep/shell`, and by an embedding host's
+  consumed by the `AuthProvider` in `@pmm-extensions/shell`, and by an embedding host's
   token store for the session exchange.
 
 ## Usage
@@ -49,7 +49,7 @@ packages. Anything that talks to the backend should go through here.
 
 ```tsx
 import { QueryClientProvider } from '@tanstack/react-query';
-import { createQueryClient } from '@sep/api';
+import { createQueryClient } from '@pmm-extensions/api';
 
 const queryClient = createQueryClient();
 
@@ -58,10 +58,10 @@ const queryClient = createQueryClient();
 </QueryClientProvider>;
 ```
 
-### Wire up auth (from `@sep/shell`'s `AuthProvider`)
+### Wire up auth (from `@pmm-extensions/shell`'s `AuthProvider`)
 
 ```ts
-import { setTokenProvider, setOnUnauthorized } from '@sep/api';
+import { setTokenProvider, setOnUnauthorized } from '@pmm-extensions/api';
 
 setTokenProvider(() => currentAccessToken);
 setOnUnauthorized(() => redirectToLogin());
@@ -69,7 +69,7 @@ setOnUnauthorized(() => redirectToLogin());
 
 ### Wire up auth in an embedded host that owns the session
 
-PMM embeds SEP with no SEP login flow and no refresh cookie: it trades its own
+PMM embeds PMM Extensions with no PMM Extensions login flow and no refresh cookie: it trades its own
 session cookie for a short-lived bearer, holds it in memory, and re-exchanges
 before expiry. Only the minter differs — the retry, coalescing, and expiry
 plumbing are shared.
@@ -81,18 +81,18 @@ import {
   setOnUnauthorized,
   setTokenMinter,
   setTokenProvider,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 setTokenProvider(getHostToken); // synchronous read of the in-memory bearer
 setTokenMinter(() => postSessionExchange()); // POST /oauth/session/exchange
 setOnRefreshed(recordHostToken); // store it, schedule the next exchange
-setOnUnauthorized(markHostSignedOut); // no SEP login to redirect to
+setOnUnauthorized(markHostSignedOut); // no PMM Extensions login to redirect to
 ```
 
 ### Call the API
 
 ```ts
-import { apiClient, ApiError } from '@sep/api';
+import { apiClient, ApiError } from '@pmm-extensions/api';
 
 try {
   const { data } = await apiClient.get('/apps/checksums/');
@@ -125,13 +125,13 @@ apply client-side case conversion.
 
 ## Codegen
 
-`pnpm --filter @sep/api codegen` reads the committed spec fixtures in
-`specs/{main,inventory,tasks,sep}.json` and writes one typed client per spec
+`pnpm --filter @pmm-extensions/api codegen` reads the committed spec fixtures in
+`specs/{main,inventory,tasks,extensions}.json` and writes one typed client per spec
 into `src/generated/`. No running backend is required by default.
 
 ```bash
 # Default: regenerate the clients from the committed specs/*.json fixtures.
-pnpm --filter @sep/api codegen
+pnpm --filter @pmm-extensions/api codegen
 ```
 
 The specs are committed (and marked `linguist-generated`) so codegen, CI, and
@@ -147,16 +147,16 @@ specs from the backend, then regenerate the clients:
 python scripts/dump_openapi.py
 # 2. Regenerate the typed clients from the refreshed fixtures, then format them
 #    (CI compares against the formatted output).
-pnpm --filter @sep/api codegen
-pnpm --filter @sep/api exec oxfmt --write src/generated
+pnpm --filter @pmm-extensions/api codegen
+pnpm --filter @pmm-extensions/api exec oxfmt --write src/generated
 ```
 
 To regenerate directly from a live backend instead of the fixtures, point
 codegen at it (format afterward, as the CI guard does):
 
 ```bash
-CODEGEN_BASE_URL=http://localhost:8000 pnpm --filter @sep/api codegen
-pnpm --filter @sep/api exec oxfmt --write src/generated
+CODEGEN_BASE_URL=http://localhost:8000 pnpm --filter @pmm-extensions/api codegen
+pnpm --filter @pmm-extensions/api exec oxfmt --write src/generated
 ```
 
 ### Freshness is enforced in CI
@@ -170,29 +170,29 @@ Two guards keep the committed clients honest across the spec handoff:
   committed specs and fails on any `src/generated/` diff (the TS ↔ spec link):
 
 ```bash
-pnpm --filter @sep/api codegen
-pnpm --filter @sep/api exec oxfmt --write src/generated
+pnpm --filter @pmm-extensions/api codegen
+pnpm --filter @pmm-extensions/api exec oxfmt --write src/generated
 git diff --exit-code -- packages/api/src/generated/
 ```
 
 ## How to add a new typed hook
 
 1. Regenerate types if you're calling a newly-added endpoint.
-2. Pick the client matching the spec: `mainApi` or `sepApi`.
+2. Pick the client matching the spec: `mainApi` or `extensionsApi`.
 3. Wrap the call in `throwOnApiError` so errors propagate as `ApiError`:
 
 ```ts
 import { useQuery } from '@tanstack/react-query';
-import { sepApi, throwOnApiError, type SepComponents } from '@sep/api';
+import { extensionsApi, throwOnApiError, type ExtensionsComponents } from '@pmm-extensions/api';
 
-type Task = SepComponents['schemas']['framework__BaseTaskResponse'];
+type Task = ExtensionsComponents['schemas']['framework__BaseTaskResponse'];
 
 export function useChecksumTask(name: string) {
   return useQuery<Task>({
     queryKey: ['checksums', name],
     queryFn: () =>
       throwOnApiError(
-        sepApi.GET('/api/apps/checksums/{task_name}', {
+        extensionsApi.GET('/api/apps/checksums/{task_name}', {
           params: { path: { task_name: name } },
         }),
       ),
@@ -207,7 +207,7 @@ See `src/hooks/useCurrentUser.ts` for a minimal reference.
 Tests run under vitest with MSW:
 
 ```bash
-pnpm --filter @sep/api test
+pnpm --filter @pmm-extensions/api test
 ```
 
 Covered:

@@ -20,7 +20,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TaskSpecificationSection } from './TaskSpecificationSection';
 import type { TaskDetailTask } from './types';
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   detailSyntaxBlockSx: {},
   DetailSyntaxHighlighter: ({ value }: { value: unknown }) => (
     <pre data-testid="detail-syntax-highlighter">{JSON.stringify(value, null, 2)}</pre>
@@ -34,7 +34,7 @@ describe('TaskSpecificationSection', () => {
       name: 'monitor-task',
       data: {},
       backend: 'nomad',
-      owner: 'sep',
+      owner: 'extensions',
       is_template: false,
       protected: false,
       alert_on_fail: false,

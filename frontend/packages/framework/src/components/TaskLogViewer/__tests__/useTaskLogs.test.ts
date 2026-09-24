@@ -23,7 +23,7 @@ import { flushPromises, mockStreamFetch } from '../../../../tests/eventSourceStu
 // Manual mock keeps axios out of the resolution graph.
 // setTokenProvider / getToken are re-implemented with the same stateful semantics.
 let _tokenProvider: () => string | null = () => null;
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   setTokenProvider: (p: () => string | null) => {
     _tokenProvider = p;
   },
@@ -229,13 +229,13 @@ describe('useTaskLogs', () => {
     expect(result.current.finishStatus).toBe('success');
   });
 
-  it('handles sep-error event with a 410 payload', async () => {
+  it('handles extensions-error event with a 410 payload', async () => {
     const { result } = renderHook(() => useTaskLogs(1));
     await flushPromises();
 
     const handle = mock.pending[0];
     act(() => {
-      handle.pushNamed('sep-error', {
+      handle.pushNamed('extensions-error', {
         code: 410,
         detail: { resource_type: 'job', job_id: 'J', message: 'gone' },
       });
@@ -287,7 +287,7 @@ describe('useTaskLogs', () => {
   });
 
   it('refreshes token on 401 and reconnects with the new token', async () => {
-    const { refreshAccessToken } = await import('@sep/api');
+    const { refreshAccessToken } = await import('@pmm-extensions/api');
     vi.mocked(refreshAccessToken).mockResolvedValue('new-token');
 
     // First fetch returns 401; onopen calls refreshAccessToken() → new token →
@@ -305,7 +305,7 @@ describe('useTaskLogs', () => {
   });
 
   it('surfaces an error and stops retrying when token refresh returns null', async () => {
-    const { refreshAccessToken } = await import('@sep/api');
+    const { refreshAccessToken } = await import('@pmm-extensions/api');
     vi.mocked(refreshAccessToken).mockResolvedValue(null);
 
     mock.queueResponse({ status: 401 });

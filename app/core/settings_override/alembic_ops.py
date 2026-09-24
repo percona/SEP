@@ -30,7 +30,7 @@ from app.core.db.utils import (
     column_exists,
     table_exists,
 )
-from app.core.encryption import DecryptionError
+from app.core.encryption import DecryptionError, is_encrypted
 from app.core.settings_override.constants import (
     SETTING_CLASS_CHECK_MEMBERS_LEGACY,
     SETTING_CLASS_MAX_LENGTH,
@@ -44,6 +44,10 @@ from app.core.settings_override.secret_storage import (
     reencrypt_credential_url_leaves,
     reencrypt_secret_leaves,
     unmark_secret_leaves,
+)
+from app.core.utils.fields import (
+    credential_url_password,
+    map_credential_url_password,
 )
 
 if TYPE_CHECKING:
@@ -144,7 +148,7 @@ def downgrade_restore_setting_class_check() -> None:
 def upgrade_add_updated_by() -> None:
     """Add the nullable ``updated_by`` column, once across all three tracks.
 
-    Idempotent on a shared PostgreSQL database: whichever of the ``sep``,
+    Idempotent on a shared PostgreSQL database: whichever of the ``extensions``,
     ``tasks`` and ``inventory`` tracks runs first adds the column and the other
     two no-op. A missing table is also a no-op, matching the sibling
     ``settingoverride`` guards.
@@ -280,6 +284,103 @@ def downgrade_unmark_secret_override_values(
     if bind is None:
         return
     _rewrite_secret_leaves(bind, settings_classes, unmark_secret_leaves)
+
+
+def rename_ciphertext_marker(old: str, new: str) -> None:
+    """Rewrite the envelope marker of every stored ciphertext from ``old`` to ``new``.
+
+    Only a structurally valid envelope moves: ``old`` followed by a well-formed
+    Fernet token, occupying either a whole string leaf or a credential URL's
+    password segment. Any other occurrence of ``old`` is plaintext that happens
+    to contain it and is kept byte-identical. Every row is visited whatever its
+    ``setting_class``: the marker names the envelope, not a settings class, so a
+    track sharing one physical database with another rewrites the other's rows
+    too, and the rewrite is idempotent across the tracks that repeat it. Needs
+    no ``ENCRYPTION_KEY`` and never decrypts.
+
+    :param old: The marker the stored leaves carry.
+    :param new: The marker to store instead.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    table = _settingoverride_value_table()
+    rows = bind.execute(sa.select(table.c.id, table.c.value)).all()
+    rewritten = 0
+    for row in rows:
+        value = _rename_marker_in_leaves(row.value, old, new)
+        if value == row.value:
+            continue
+        bind.execute(table.update().where(table.c.id == row.id).values(value=value))
+        rewritten += 1
+    logger.info(
+        "Moved %s settingoverride row(s) from the %r marker to %r.",
+        rewritten,
+        old,
+        new,
+    )
+
+
+def _rename_marker_in_leaves(value: Any, old: str, new: str) -> Any:
+    """Return ``value`` with every ``old`` envelope it holds moved to ``new``.
+
+    :param value: A decoded JSON value.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: The value with every string leaf rewritten, in the same shape.
+    """
+    if isinstance(value, str):
+        return _rename_marker_in_leaf(value, old, new)
+    if isinstance(value, list):
+        return [_rename_marker_in_leaves(item, old, new) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _rename_marker_in_leaves(item, old, new) for key, item in value.items()
+        }
+    return value
+
+
+def _rename_marker_in_leaf(leaf: str, old: str, new: str) -> str:
+    """Return ``leaf`` with its ``old`` envelope moved to ``new``, or unchanged.
+
+    The envelope is recognised as the whole leaf first and as a credential URL's
+    password segment second. A leaf that cannot be parsed as a URL carries no
+    password to rewrite, so it is returned unchanged rather than aborting the
+    migration.
+
+    :param leaf: The stored string leaf.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: The rewritten leaf, or ``leaf`` when it holds no ``old`` envelope.
+    """
+    renamed = _renamed_envelope(leaf, old, new)
+    if renamed is not None:
+        return renamed
+    try:
+        password = credential_url_password(leaf)
+    except ValueError:
+        return leaf
+    if password is None:
+        return leaf
+    renamed_password = _renamed_envelope(password, old, new)
+    if renamed_password is None:
+        return leaf
+    return map_credential_url_password(leaf, lambda _segment: renamed_password)
+
+
+def _renamed_envelope(value: str, old: str, new: str) -> str | None:
+    """Return ``value`` under the ``new`` marker when it is an ``old`` envelope.
+
+    :param value: A whole leaf or a URL password segment.
+    :param old: The marker the stored envelopes carry.
+    :param new: The marker to store instead.
+    :return: ``new`` followed by the token, or ``None`` when ``value`` is not
+        ``old`` followed by a well-formed Fernet token.
+    """
+    if not value.startswith(old):
+        return None
+    token = value.removeprefix(old)
+    return f"{new}{token}" if is_encrypted(token) else None
 
 
 def _settingoverride_value_table() -> sa.TableClause:

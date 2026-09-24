@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 
 PathInput: TypeAlias = str | PathLike[str]
 _PLUGIN_APP_ALIASES = (
-    ("/app/sep/plugins/", "/app/sep/apps/"),
-    ("/app/sep/apps/", "/app/sep/plugins/"),
+    ("/app/extensions/plugins/", "/app/extensions/apps/"),
+    ("/app/extensions/apps/", "/app/extensions/plugins/"),
 )
 
 
@@ -85,8 +85,8 @@ def resolve_payload_reference(reference: str) -> Path:
     """Resolve a ``file://`` task payload reference to an existing file.
 
     Accept both the current ``BASE_DIR``-relative form and legacy absolute
-    references. When a candidate path sits under ``app/sep/plugins`` or
-    ``app/sep/apps``, also try the aliased sibling location so a
+    references. When a candidate path sits under ``app/extensions/plugins`` or
+    ``app/extensions/apps``, also try the aliased sibling location so a
     ``plugins``/``apps`` relocation re-anchors without a per-plugin change.
 
     Only relative references are containment-checked against ``BASE_DIR``.

@@ -42,12 +42,12 @@ import {
   ActionErrorAlert,
   ChainDisplay,
   RUNNING_STATUSES,
-  SEP_TABLE_CLASS,
+  EXTENSIONS_TABLE_CLASS,
   TaskHistoryTable,
   TaskLogViewer,
   useStopTaskHistory,
   type TaskHistoryEntry,
-} from '@sep/framework';
+} from '@pmm-extensions/framework';
 import { useTaskDetail } from './hooks';
 import { TaskSpecificationSection } from './TaskSpecificationSection';
 import { taskHistoryItems, type PeriodicTaskSummaryRow } from './types';
@@ -84,7 +84,7 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
 }
 
 function PeriodicSummaryTable({ rows }: { rows: PeriodicTaskSummaryRow[] }) {
-  // TODO(sep-frontend): Fold this read-only periodic schedule view into the framework
+  // TODO(extensions-frontend): Fold this read-only periodic schedule view into the framework
   // when another app needs the same surface.
   if (rows.length === 0) {
     return (
@@ -95,7 +95,7 @@ function PeriodicSummaryTable({ rows }: { rows: PeriodicTaskSummaryRow[] }) {
   }
 
   return (
-    <TableContainer component={Paper} variant="outlined" className={SEP_TABLE_CLASS}>
+    <TableContainer component={Paper} variant="outlined" className={EXTENSIONS_TABLE_CLASS}>
       <Table size="small">
         <TableHead>
           <TableRow>

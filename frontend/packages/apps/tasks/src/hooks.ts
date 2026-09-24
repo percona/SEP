@@ -25,8 +25,8 @@ import {
   type AppListQueryOptions,
   type AppListResult,
   type PaginatedAppList,
-} from '@sep/api';
-import { RUNNING_STATUSES } from '@sep/framework';
+} from '@pmm-extensions/api';
+import { RUNNING_STATUSES } from '@pmm-extensions/framework';
 import {
   TASKS_APP_NAME,
   TASKS_APPS_API_BASE,

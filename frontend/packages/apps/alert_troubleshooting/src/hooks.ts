@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import type { AlertDetailResponse, AlertGroup } from './types';
 
 const API_BASE = '/apps/alert_troubleshooting';

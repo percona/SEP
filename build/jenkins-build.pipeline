@@ -141,20 +141,20 @@ pipeline {
 					set -o errexit
 					set -o pipefail
 
-					podman image exists "sep:builder" && podman image rm "sep:builder" || true
-					buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+					podman image exists "extensions:builder" && podman image rm "extensions:builder" || true
+					buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "extensions:builder"
 				'''
 			}
 		}
 
-		stage('Build SEP image') {
+		stage('Build PMM Extensions image') {
 			options {
 				timeout(time: 10, unit: 'MINUTES')
 			}
 
 			// TODO: if possible, build this only when necessary - TBC how to automatically determine this
 			steps {
-				echo "Building SEP image for ${RELEASE_VER} .."
+				echo "Building PMM Extensions image for ${RELEASE_VER} .."
 				sh '''
 					set -o errexit
 					set -o pipefail
@@ -177,12 +177,12 @@ pipeline {
 
 					export CONTAINER_RUNTIME=podman
 
-					sidecar/verify_image_apps.sh "sep:${GIT_TAG}" restricted
+					sidecar/verify_image_apps.sh "extensions:${GIT_TAG}" restricted
 				'''
 			}
 		}
 
-		stage('Push SEP image') {
+		stage('Push PMM Extensions image') {
 			options {
 				timeout(time: 10, unit: 'MINUTES')
 			}
@@ -201,13 +201,13 @@ pipeline {
 						set -o errexit
 						set -o pipefail
 
-						podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
+						podman image push extensions:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG}
 
 						if [ "${PUSH_LATEST}" = "true" ]; then
-							podman image tag sep:${GIT_TAG} sep:${GIT_TAG_SHORT}
-							podman image push sep:${GIT_TAG_SHORT} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}
+							podman image tag extensions:${GIT_TAG} extensions:${GIT_TAG_SHORT}
+							podman image push extensions:${GIT_TAG_SHORT} labbox-mini.tp.int.percona.com:5555/sep:${GIT_TAG_SHORT}
 							echo "Pushing labbox-mini.tp.int.percona.com:5555/sep:latest"
-							podman image push sep:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:latest
+							podman image push extensions:${GIT_TAG} labbox-mini.tp.int.percona.com:5555/sep:latest
 						else
 							echo "Skipping internal :${GIT_TAG_SHORT} and :latest push (not a stable release tag): ${GIT_TAG}"
 						fi
@@ -220,12 +220,12 @@ pipeline {
 							set -o pipefail
 
 							echo -n "${DOCKER_TOKEN}" | podman login --authfile .dockerhub --username percona --password-stdin docker.io
-							podman image push --authfile .dockerhub sep:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
+							podman image push --authfile .dockerhub extensions:${GIT_TAG} docker.io/percona/percona-sep:${GIT_TAG}
 
 							if [ "${PUSH_LATEST}" = "true" ]; then
-								podman image push --authfile .dockerhub sep:${GIT_TAG_SHORT} docker.io/percona/percona-sep:${GIT_TAG_SHORT}
+								podman image push --authfile .dockerhub extensions:${GIT_TAG_SHORT} docker.io/percona/percona-sep:${GIT_TAG_SHORT}
 								echo "Pushing docker.io/percona/percona-sep:latest"
-								podman image push --authfile .dockerhub sep:${GIT_TAG} docker.io/percona/percona-sep:latest
+								podman image push --authfile .dockerhub extensions:${GIT_TAG} docker.io/percona/percona-sep:latest
 							else
 								echo "Skipping Docker Hub :${GIT_TAG_SHORT} and :latest push (not a stable release tag): ${GIT_TAG}"
 							fi

@@ -23,11 +23,11 @@ import { FormProvider, useForm } from 'react-hook-form';
 import type { PropsWithChildren } from 'react';
 import { RemoteChoiceSelector } from './RemoteChoiceSelector';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 const OPTIONS = [

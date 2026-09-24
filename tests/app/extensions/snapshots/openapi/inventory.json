@@ -1,0 +1,390 @@
+{
+  "components": {
+    "schemas": {
+      "ConnectivityCheckResponse": {
+        "description": "Represent a connectivity check result.\n\n:param success: Whether the connectivity check succeeded.\n:param error: Error message if the check failed. Defaults to ``None``.\n:param task_history_id: The ID of the task history record for this check.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "task_history_id": {
+            "title": "Task History Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "success",
+          "task_history_id"
+        ],
+        "title": "ConnectivityCheckResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "SyncStatusEnum": {
+        "description": "Enumerate the possible statuses of a synchronization process.\n\n:cvar PENDING: The synchronization is pending.\n:vartype PENDING: str\n:cvar RUNNING: The synchronization is currently running.\n:vartype RUNNING: str\n:cvar SUCCESS: The synchronization completed successfully.\n:vartype SUCCESS: str\n:cvar FAILED: The synchronization failed.\n:vartype FAILED: str",
+        "enum": [
+          "pending",
+          "running",
+          "success",
+          "failed"
+        ],
+        "title": "SyncStatusEnum",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "inventory__AvailableSyncer": {
+        "description": "Provide template-facing metadata for an available syncer.\n\n:param name: The fully qualified ``\"module.ClassName\"`` identifier matching\n    ``BaseSyncer.get_name()`` and the value persisted in\n    ``SyncInstance.syncer``. Used as the wire identifier in form payloads.\n:type name: str\n:param display_name: The human-readable label rendered in the dropdown\n    (the syncer class's short name with any trailing ``Syncer`` suffix\n    stripped).\n:type display_name: str",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "AvailableSyncer",
+        "type": "object"
+      },
+      "inventory__InventorySyncStatusResponse": {
+        "description": "Represent the inventory sync status response.\n\n:param is_running: ``True`` when an inventory-wide sync is currently\n    in progress; ``False`` otherwise.\n:param last_runs: The most recently recorded synchronization runs, newest first.",
+        "properties": {
+          "is_running": {
+            "title": "Is Running",
+            "type": "boolean"
+          },
+          "last_runs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/inventory__SyncRunSummary"
+            },
+            "title": "Last Runs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "is_running"
+        ],
+        "title": "InventorySyncStatusResponse",
+        "type": "object"
+      },
+      "inventory__InventorySyncTriggerWrite": {
+        "additionalProperties": false,
+        "description": "Carry the optional JSON body for the ad-hoc inventory sync trigger.\n\nA ``None`` or empty ``syncer`` selects the sync-all path; a non-empty\nstring targets a single configured syncer by its fully qualified\n``\"module.ClassName\"`` identifier. Unknown fields are rejected with\nHTTP 422 so a typo on the client never silently degrades to sync-all.\n\n:param syncer: Fully qualified syncer name, or ``None`` for sync-all.\n:type syncer: str | None",
+        "properties": {
+          "syncer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Syncer"
+          }
+        },
+        "title": "InventorySyncTriggerWrite",
+        "type": "object"
+      },
+      "inventory__PluginTaskResponse": {
+        "description": "Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:param display_name: Human-readable label for the schedule UI.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "PluginTaskResponse",
+        "type": "object"
+      },
+      "inventory__SyncRunSummary": {
+        "description": "Summarize one recorded synchronization run for the sync-status endpoint.\n\n:param syncer: The fully qualified name of the synchronizer that ran.\n:param started_at: When the run was recorded.\n:param finished_at: When the run last changed, or ``None`` while it is open.\n:param status: The run-level outcome.\n:param snapshot_complete: Whether the run observed a complete generation of the\n    remote inventory, or ``None`` when the syncer does not produce one.",
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "snapshot_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Complete"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SyncStatusEnum"
+          },
+          "syncer": {
+            "minLength": 1,
+            "title": "Syncer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncer",
+          "started_at",
+          "finished_at",
+          "status",
+          "snapshot_complete"
+        ],
+        "title": "SyncRunSummary",
+        "type": "object"
+      }
+    }
+  },
+  "paths": {
+    "/api/apps/inventory/": {
+      "get": {
+        "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin's periodic tasks are a fixed pair\n(``inventory-sync`` and ``inventory-collection``).\n\n:return: The plugin's periodic tasks, each with its name and display name.",
+        "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/inventory__PluginTaskResponse"
+                  },
+                  "title": "Response Inventory Inventory Plugin Tasks Api Apps Inventory  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Inventory Plugin Tasks",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/available-syncers/": {
+      "get": {
+        "description": "Return syncers capable of syncing inventory.\n\n:param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.\n:type available_syncers: list[AvailableSyncer]\n:return: Filtered list of syncers that can sync inventory.\n:rtype: list[AvailableSyncer]",
+        "operationId": "inventory_inventory_available_syncers_api_apps_inventory_available_syncers__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/inventory__AvailableSyncer"
+                  },
+                  "title": "Response Inventory Inventory Available Syncers Api Apps Inventory Available Syncers  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Inventory Available Syncers",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/services/{service_id}/check-connectivity/": {
+      "post": {
+        "description": "Run a database connectivity probe for a service from its executor host.\n\nA probe that ran but could not connect is reported as HTTP 200 with\n``success=false`` and the upstream message in ``error``; only a probe that\ncould not be attempted at all is an error status.\n\n:param service: The service to probe, resolved from the path id.\n:param tasks_api: Authenticated Tasks ``RemoteAPI`` client.\n:return: The upstream probe result.\n:raises HTTPBadRequestException: When the service cannot be probed —\n    unsupported type, missing node or port, or no executor registered for\n    the node address.\n:raises HTTPBadGatewayException: When the Tasks API is unreachable or\n    returns an unparseable body.",
+        "operationId": "inventory_inventory_service_check_connectivity_api_apps_inventory_services__service_id__check_connectivity__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectivityCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Service Check Connectivity",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/sync/": {
+      "post": {
+        "description": "Schedule an ad-hoc inventory sync as a background task.\n\nMirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an\noptional JSON body ``{\"syncer\": \"<qualified_name>\"}``. When ``syncer``\nis absent, ``None``, or empty, every configured syncer runs in\ndeclaration order; otherwise only the named syncer is forwarded. An\nunknown or inapplicable syncer raises HTTP 400 — never a silent no-op.\n\nAuthentication is enforced by the parent ``api_router``'s\n``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.\n\n:param syncers: Configured syncers from ``SyncersDep``.\n:type syncers: SyncersDep\n:param background_tasks: FastAPI's background task scheduler.\n:type background_tasks: BackgroundTasks\n:param internal_token: PMM Extensions internal service token injected by\n    ``InternalTokenDep`` and forwarded to the background sync task.\n:param body: Optional trigger body.\n:type body: InventorySyncTriggerWrite | None\n:return: Empty 202 Accepted response.\n:rtype: Response\n:raises HTTPBadRequestException: When ``body.syncer`` is set but does\n    not match any configured syncer that can sync inventory.",
+        "operationId": "inventory_inventory_sync_trigger_api_apps_inventory_sync__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/inventory__InventorySyncTriggerWrite"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Sync Trigger",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/apps/inventory/sync/status/": {
+      "get": {
+        "description": "Return whether an inventory-wide sync is running, plus recent run outcomes.\n\nLets an operator poll a sync they triggered through ``POST /sync/``\nwithout scraping any rendered page.\n\n:param session: SQLModel async session.\n:return: The running flag and the most recent runs, newest first.",
+        "operationId": "inventory_inventory_sync_status_api_apps_inventory_sync_status__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/inventory__InventorySyncStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Inventory Sync Status",
+        "tags": [
+          "inventory"
+        ]
+      }
+    }
+  }
+}

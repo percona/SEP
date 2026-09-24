@@ -745,7 +745,7 @@ class TaskHistoryManager(BaseSQLModelManager):
     ) -> dict[str, TaskHistoryLatestStatus | None]:
         """Return the latest known history projection for each task name.
 
-        Status resolution matches SEP list helpers: histories are considered in
+        Status resolution matches PMM Extensions list helpers: histories are considered in
         ``created_at`` descending order and the newest non-null status wins.
         ``finished_at`` is resolved independently as the ``max`` across all of a
         task's history rows, so an in-progress re-run (whose newest row has a
@@ -1338,7 +1338,7 @@ class TaskHistoryLogStateManager(BaseManager):
 
         Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` — the same
         set :meth:`NomadStep.is_persistable` tests — rather than by selecting the
-        Nomad steps SEP drains: ``source`` also carries non-Nomad producers
+        Nomad steps PMM Extensions drains: ``source`` also carries non-Nomad producers
         (the Celery executor writes ``"execution"``, legacy rows carry
         ``"step1"``), and selecting by Nomad step name would drop every one of
         them and report ``UNKNOWN`` for tasks whose capture is known-complete.

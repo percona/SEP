@@ -16,8 +16,8 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type AppSchema } from '@sep/api';
-import type { PaginatedTaskHistory } from '@sep/framework';
+import { apiClient, type AppSchema } from '@pmm-extensions/api';
+import type { PaginatedTaskHistory } from '@pmm-extensions/framework';
 import type { DipperCollectorType, DipperExecutionResponse, DipperExecutionWrite } from './types';
 
 const DIPPER_BASE = '/apps/dipper';

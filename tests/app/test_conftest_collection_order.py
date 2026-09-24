@@ -13,11 +13,11 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Regression guard for order-dependent loss of ``tests/app/sep/conftest.py`` fixtures.
+"""Regression guard for order-dependent loss of ``tests/app/extensions/conftest.py`` fixtures.
 
 A single-process ``pytest`` run given an explicit file list where a shallow
-``tests/app``-level module sits between two deep ``tests/app/sep/**`` modules used to
-drop every fixture defined in ``tests/app/sep/conftest.py`` for the second deep module,
+``tests/app``-level module sits between two deep ``tests/app/extensions/**`` modules used to
+drop every fixture defined in ``tests/app/extensions/conftest.py`` for the second deep module,
 raising ``fixture 'test_client' not found``. The fixtures now resolve from the
 always-loaded ancestor ``tests/app/conftest.py``, so ordering no longer matters.
 
@@ -39,15 +39,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: option but not ``PYTEST_ADDOPTS``, which the pre-push gate uses to inject its
 #: checkpoint plugin; the child would then deselect every node id the outer run
 #: already verified, collect nothing, and exit 5 on a resumed push.
-_INHERITED_PYTEST_VARS = ("PYTEST_ADDOPTS", "SEP_PREPUSH_CHECKPOINT")
+_INHERITED_PYTEST_VARS = ("PYTEST_ADDOPTS", "EXTENSIONS_PREPUSH_CHECKPOINT")
 
-PMM = "tests/app/sep/clients/test_pmm.py"
+PMM = "tests/app/extensions/clients/test_pmm.py"
 CELERY = "tests/app/test_celery_signals.py"
 MAIN = "tests/app/test_main.py"
-DOWNLOAD = "tests/app/sep/routes/test_download_files.py"
+DOWNLOAD = "tests/app/extensions/routes/test_download_files.py"
 
 ORDERINGS = [
-    # Shallow module between two deep sep modules — the two failing orderings.
+    # Shallow module between two deep extensions modules — the two failing orderings.
     pytest.param([PMM, CELERY, DOWNLOAD], id="deep-shallow-deep-celery"),
     pytest.param([PMM, MAIN, DOWNLOAD], id="deep-shallow-deep-main"),
     # Positive control: shallow last was always clean; assert it stays clean.
@@ -56,8 +56,10 @@ ORDERINGS = [
 
 
 @pytest.mark.parametrize("order", ORDERINGS)
-def test_sep_conftest_fixtures_survive_collection_order(order: list[str]) -> None:
-    """Assert the sep client/session fixtures resolve regardless of collection order.
+def test_extensions_conftest_fixtures_survive_collection_order(
+    order: list[str],
+) -> None:
+    """Assert the extensions client/session fixtures resolve regardless of collection order.
 
     ``-k test_returns_file_metadata`` keeps the child run tiny: ``-k`` deselects after
     collection, so all three modules are still collected in the pathological order and the

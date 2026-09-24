@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-APP_HOME = Path("/home/sep/app")
+APP_HOME = Path("/home/extensions/app")
 """The image's application root, holding both the baked profile and the tree.
 
 Written literally rather than read from ``$APP_HOME`` so a moved root fails on a
@@ -53,7 +53,7 @@ def activated_apps(profile: Path) -> frozenset[str]:
     """Return the app module names the baked profile activates.
 
     :param profile: The baked settings profile.
-    :return: The ``SEP.APPS`` module names.
+    :return: The ``EXTENSIONS.APPS`` module names.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
     :raises TypeError: When the profile's root is not a mapping.
@@ -66,7 +66,7 @@ def activated_apps(profile: Path) -> frozenset[str]:
             f"{profile} is not a settings mapping: parsed as {type(document).__name__}"
         )
     return frozenset(
-        entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]
+        entry["MODULE_NAME"] for entry in document["default"]["EXTENSIONS"]["APPS"]
     )
 
 
@@ -76,7 +76,7 @@ def present_packages(apps_root: Path) -> frozenset[str]:
     The bytecode cache is not filtered out: the strip removes it along with the
     unshipped packages, so an exact comparison keeps that guarded.
 
-    :param apps_root: The image's ``app/sep/apps`` directory.
+    :param apps_root: The image's ``app/extensions/apps`` directory.
     :return: Every directory name directly under it.
     :raises OSError: When ``apps_root`` cannot be listed.
     """
@@ -101,7 +101,7 @@ def restricted_problems(profile: Path, apps_root: Path) -> list[str]:
     """Report how a restricted image's app tree departs from its baked profile.
 
     :param profile: The baked settings profile.
-    :param apps_root: The image's ``app/sep/apps`` directory.
+    :param apps_root: The image's ``app/extensions/apps`` directory.
     :return: One entry per departure, empty when the tree matches.
     :raises OSError: When the profile cannot be read or ``apps_root`` cannot be
         listed.
@@ -127,7 +127,7 @@ def main() -> None:
     Prints the mode and the verified app set on success so a build log records
     which property was asserted over which set, and so a caller can tell a real
     pass from a checker that never ran. ``mode`` accepts only ``restricted``
-    because that is the only image SEP builds; it stays a required positional so
+    because that is the only image PMM Extensions builds; it stays a required positional so
     the asserted property is named at the call site rather than implied.
 
     :raises SystemExit: With the joined problems when the tree does not match,
@@ -143,7 +143,7 @@ def main() -> None:
     arguments = parser.parse_args()
 
     profile = arguments.app_home / "settings.yaml"
-    apps_root = arguments.app_home / "app" / "sep" / "apps"
+    apps_root = arguments.app_home / "app" / "extensions" / "apps"
 
     problems = restricted_problems(profile, apps_root)
     if problems:

@@ -16,11 +16,11 @@
  */
 
 /**
- * @sep/shared — Tiny constants & utility package.
+ * @pmm-extensions/shared — Tiny constants & utility package.
  *
  * API client, auth, types, and schema components have moved to:
- *   - @sep/api      — client, auth, types, hooks
- *   - @sep/framework — SchemaFormRenderer, SchemaDrivenApp, etc.
+ *   - @pmm-extensions/api      — client, auth, types, hooks
+ *   - @pmm-extensions/framework — SchemaFormRenderer, SchemaDrivenApp, etc.
  *
  * This package now only holds cross-cutting constants and tiny utilities
  * shared across all packages (e.g., route paths, feature flags).
@@ -62,5 +62,5 @@ export const ROUTES = {
 } as const;
 
 // ── App-wide constants ────────────────────────────────────────────────
-export const APP_NAME = 'Services Enablement Platform';
-export const APP_SHORT_NAME = 'SEP';
+export const APP_NAME = 'PMM Extensions';
+export const APP_SHORT_NAME = 'Extensions';

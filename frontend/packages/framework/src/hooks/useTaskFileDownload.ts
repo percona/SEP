@@ -16,7 +16,7 @@
  */
 
 import { useMutation } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import { downloadBlob } from '../utils/downloadBlob';
 
 export interface TaskFileDownloadParams {

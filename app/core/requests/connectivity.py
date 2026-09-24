@@ -15,7 +15,7 @@
 
 """Define the normalized connectivity-probe result model and outcome classifier.
 
-Shared by the overridable ``RemoteAPI.check_connectivity()`` probe and the SEP
+Shared by the overridable ``RemoteAPI.check_connectivity()`` probe and the PMM Extensions
 settings connectivity-check endpoint so both speak a single, stable shape.
 """
 

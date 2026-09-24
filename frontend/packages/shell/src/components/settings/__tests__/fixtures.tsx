@@ -17,14 +17,14 @@
 
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SettingClassGroup, SettingResponse } from '@sep/api';
+import type { SettingClassGroup, SettingResponse } from '@pmm-extensions/api';
 
 import { NotificationProvider } from '../../../contexts/notification';
 
 /** Build a SettingResponse with sensible defaults overridable per field. */
 export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingResponse {
   return {
-    setting_class: 'SEPSettings',
+    setting_class: 'ExtensionsSettings',
     key: 'SOME_KEY',
     value: 'value',
     default_value: 'value',
@@ -41,11 +41,11 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
   };
 }
 
-/** The SEP-endpoint list payload used across tests. */
-export const sepListResponse = {
+/** The PMM Extensions endpoint list payload used across tests. */
+export const extensionsListResponse = {
   groups: [
     {
-      setting_class: 'SEPSettings',
+      setting_class: 'ExtensionsSettings',
       is_app_owned: false,
       settings: [
         makeSetting({ key: 'SYNC_REFRESH_TIME', value: 5, default_value: 5, type: 'int' }),

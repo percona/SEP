@@ -40,16 +40,16 @@ from app.core.settings_override.cache import (
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.registry import MaterializerPurpose
 from app.core.utils.fields import LogLevel
-from app.sep.config import CookieOptions, SEPSettings
+from app.extensions.config import CookieOptions, ExtensionsSettings
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
     PMM_API_KEY,
     PMM_ENDPOINT,
     ROUTING_KEY,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -69,7 +69,7 @@ def _foreign_token(value: str = "written under another key") -> str:
 @pytest.mark.asyncio
 async def test_empty_table_yields_empty_snapshot(session: AsyncSession) -> None:
     """An empty override table produces an empty snapshot."""
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert dict(snapshot) == {}
 
 
@@ -78,12 +78,12 @@ async def test_active_hot_row_appears_in_snapshot(session: AsyncSession) -> None
     """Active rows whose key is HOT are surfaced through the snapshot."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="CONNECTIVITY_CHECK_DEFAULT",
         value=False,
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert snapshot["CONNECTIVITY_CHECK_DEFAULT"] is False
 
 
@@ -92,12 +92,12 @@ async def test_inactive_rows_skipped(session: AsyncSession) -> None:
     """Rows with ``is_active=False`` do not enter the snapshot."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="CONNECTIVITY_CHECK_DEFAULT",
         value=False,
         is_active=False,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "CONNECTIVITY_CHECK_DEFAULT" not in snapshot
 
 
@@ -109,12 +109,12 @@ async def test_non_hot_field_skipped_with_warning(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="PROXY_HEADERS",
         value=True,
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "PROXY_HEADERS" not in snapshot
     assert any("non-HOT" in r.getMessage() for r in caplog.records)
 
@@ -127,12 +127,12 @@ async def test_unknown_field_skipped_with_warning(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="DOES_NOT_EXIST",
         value=True,
         is_active=True,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "DOES_NOT_EXIST" not in snapshot
     assert any("unknown field" in r.getMessage() for r in caplog.records)
 
@@ -143,11 +143,11 @@ async def test_coerces_int_for_positive_int_field(session: AsyncSession) -> None
     override_ttl = 120
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="ARTIFACT_DOWNLOAD_TTL",
         value=override_ttl,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert snapshot["ARTIFACT_DOWNLOAD_TTL"] == override_ttl
 
 
@@ -174,11 +174,11 @@ async def test_coercion_failure_skipped_and_logged(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="ARTIFACT_DOWNLOAD_TTL",
         value="not-a-number",
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "ARTIFACT_DOWNLOAD_TTL" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -191,11 +191,11 @@ async def test_dict_for_scalar_field_skipped(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="CONNECTIVITY_CHECK_DEFAULT",
         value={"nested": True},
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "CONNECTIVITY_CHECK_DEFAULT" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -214,11 +214,11 @@ async def test_positive_int_constraint_rejects_zero(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="ARTIFACT_DOWNLOAD_TTL",
         value=0,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "ARTIFACT_DOWNLOAD_TTL" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -245,17 +245,17 @@ async def test_other_entries_remain_after_failure(session: AsyncSession) -> None
     """A single coercion failure does not drop other valid entries."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="ARTIFACT_DOWNLOAD_TTL",
         value="not-a-number",
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="CONNECTIVITY_CHECK_DEFAULT",
         value=False,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert snapshot == {"CONNECTIVITY_CHECK_DEFAULT": False}
 
 
@@ -296,11 +296,11 @@ async def test_footer_template_materialized_to_template(session: AsyncSession) -
     """``FOOTER_TEMPLATE`` snapshots a ``Template`` without crashing the build."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="FOOTER_TEMPLATE",
         value="$summary v$version",
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
     assert snapshot["FOOTER_TEMPLATE"].template == "$summary v$version"
 
@@ -318,12 +318,12 @@ async def test_snapshot_build_materializes_with_the_snapshot_purpose(
     materialize = mocker.spy(cache, "materialize_override_value")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="FOOTER_TEMPLATE",
         value="$summary",
     )
 
-    await build_snapshot(session, SEPSettings)
+    await build_snapshot(session, ExtensionsSettings)
 
     assert materialize.call_args.kwargs["purpose"] is MaterializerPurpose.SNAPSHOT
 
@@ -336,11 +336,11 @@ async def test_invalid_footer_template_value_logged_and_skipped(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="FOOTER_TEMPLATE",
         value=123,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "FOOTER_TEMPLATE" not in snapshot
     assert any("coercion" in r.getMessage() for r in caplog.records)
 
@@ -375,17 +375,17 @@ async def test_nested_override_appears_as_model_copy_under_top_level_key(
     """A nested row merges into a copy stored under the top-level key."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     merged = snapshot["SESSION_REFRESH"]
     assert isinstance(merged, CookieOptions)
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # Untouched leaves keep the field's own declared default, which is not the
     # bare ``CookieOptions()`` default (``SESSION_REFRESH`` pins its own).
-    declared_default = SEPSettings.model_fields["SESSION_REFRESH"].default
+    declared_default = ExtensionsSettings.model_fields["SESSION_REFRESH"].default
     assert merged.COOKIE_NAME == declared_default.COOKIE_NAME
     assert merged.SAMESITE == declared_default.SAMESITE
 
@@ -398,11 +398,11 @@ async def test_nested_override_merges_onto_base_settings_value(
     base = SimpleNamespace(SESSION_REFRESH=CookieOptions(SAMESITE="strict"))
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
-    snapshot = await build_snapshot(session, SEPSettings, base_settings=base)
+    snapshot = await build_snapshot(session, ExtensionsSettings, base_settings=base)
     merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # The non-overridden SAMESITE keeps the base (YAML/env) value, not the default.
@@ -422,17 +422,17 @@ async def test_mixed_case_sibling_rows_merge_into_one_parent(
     """
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="session_refresh__max_age",
         value=3600,
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__SAMESITE",
         value="strict",
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     assert merged.SAMESITE == "strict"
@@ -452,17 +452,17 @@ async def test_duplicate_canonical_leaf_keeps_newest_row(
     """
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="session_refresh__max_age",
         value=3600,
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value=7200,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert timedelta(seconds=7200) == snapshot["SESSION_REFRESH"].MAX_AGE
 
 
@@ -474,11 +474,11 @@ async def test_nested_override_falls_back_when_parent_not_overridable(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="DATABASE__NAME",
         value="other.db",
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "DATABASE" not in snapshot
     assert any("non-overridable parent" in r.getMessage() for r in caplog.records)
 
@@ -534,11 +534,11 @@ async def test_unknown_nested_leaf_skipped_with_warning(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__BOGUS_FIELD",
         value=1,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     assert "SESSION_REFRESH" not in snapshot
     assert any(
         "unknown or not-overridable field" in r.getMessage() for r in caplog.records
@@ -552,17 +552,17 @@ async def test_nested_coercion_failure_skips_only_failing_leaf(
     """One bad nested leaf is dropped while a sibling leaf still merges."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value="not-a-number",
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__SAMESITE",
         value="strict",
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     merged = snapshot["SESSION_REFRESH"]
     assert merged.SAMESITE == "strict"
     # The failed MAX_AGE leaf keeps the default.
@@ -577,17 +577,17 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH",
         value={"MAX_AGE": 10, "SAMESITE": "none"},
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value=3600,
     )
-    snapshot = await build_snapshot(session, SEPSettings)
+    snapshot = await build_snapshot(session, ExtensionsSettings)
     merged = snapshot["SESSION_REFRESH"]
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # The whole-object row did not take effect (SAMESITE stays default).
@@ -683,18 +683,18 @@ async def test_snapshot_refresh_replaces_merged_copy(session: AsyncSession) -> N
     """Deleting the only nested row drops the merged parent on the next build."""
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
         value=100,
     )
-    first = await build_snapshot(session, SEPSettings)
+    first = await build_snapshot(session, ExtensionsSettings)
     assert "SESSION_REFRESH" in first
     await SettingsOverrideManager.delete_where(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key="SESSION_REFRESH__MAX_AGE",
     )
-    second = await build_snapshot(session, SEPSettings)
+    second = await build_snapshot(session, ExtensionsSettings)
     assert "SESSION_REFRESH" not in second
 
 
@@ -804,7 +804,7 @@ def test_parent_base_value_prefers_whole_object_snapshot_entry() -> None:
     silently reverted.
     """
     whole_object = CookieOptions(MAX_AGE=timedelta(seconds=111))
-    field_info = SEPSettings.model_fields["SESSION_REFRESH"]
+    field_info = ExtensionsSettings.model_fields["SESSION_REFRESH"]
     result = _parent_base_value(
         {"SESSION_REFRESH": whole_object},
         field_info,
@@ -816,7 +816,7 @@ def test_parent_base_value_prefers_whole_object_snapshot_entry() -> None:
 
 def test_parent_base_value_falls_back_to_field_default() -> None:
     """With no snapshot entry and no base settings, the field default seeds the merge."""
-    field_info = SEPSettings.model_fields["SESSION_REFRESH"]
+    field_info = ExtensionsSettings.model_fields["SESSION_REFRESH"]
     result = _parent_base_value({}, field_info, "SESSION_REFRESH", base_settings=None)
     assert isinstance(result, CookieOptions)
 

@@ -16,8 +16,8 @@
  */
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiClient, type InventoryComponents } from '@sep/api';
-import { sepRetry } from './sepRetry';
+import { apiClient, type InventoryComponents } from '@pmm-extensions/api';
+import { extensionsRetry } from './extensionsRetry';
 
 export type ServiceType = InventoryComponents['schemas']['ServiceTypeEnum'];
 
@@ -66,7 +66,7 @@ async function fetchServicesPage(
   if (serviceType) {
     params.service_type = serviceType;
   }
-  const { data } = await apiClient.get<PaginatedServices>('/sep/services/', { params });
+  const { data } = await apiClient.get<PaginatedServices>('/extensions/services/', { params });
   return data;
 }
 
@@ -98,11 +98,11 @@ async function fetchServicesForType(
 }
 
 /**
- * Fetch services through the SEP gateway (`/api/sep/services/`), optionally
+ * Fetch services through the PMM Extensions gateway (`/api/extensions/services/`), optionally
  * filtered to one or more service types. Multiple types fan out to parallel
  * paginated requests because the upstream `/services/` endpoint accepts a
  * single `service_type` only. The frontend must not call `/api/inventory/`
- * directly (see `app/sep/api/router.py`).
+ * directly (see `app/extensions/api/router.py`).
  */
 export function useServices(
   options: UseServicesOptions = {},
@@ -110,10 +110,10 @@ export function useServices(
   const { enabled = true } = options;
   const types = normaliseTypes(options.serviceTypes);
   return useQuery<ServiceOption[], Error>({
-    queryKey: ['sep', 'services', { types }],
+    queryKey: ['extensions', 'services', { types }],
     enabled,
     staleTime: 60_000,
-    retry: sepRetry,
+    retry: extensionsRetry,
     queryFn: async () => {
       if (types.length === 0) {
         return fetchServicesForType(undefined);

@@ -25,8 +25,8 @@ const { mockApiGet, mockApiPost } = vi.hoisted(() => ({
   mockApiPost: vi.fn(),
 }));
 
-vi.mock('@sep/api', async () => {
-  const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
+vi.mock('@pmm-extensions/api', async () => {
+  const actual = await vi.importActual<typeof import('@pmm-extensions/api')>('@pmm-extensions/api');
   return {
     ...actual,
     apiClient: { get: mockApiGet, post: mockApiPost },
@@ -76,12 +76,12 @@ describe('useTaskHistoryByNames', () => {
     expect(mockApiGet).not.toHaveBeenCalled();
   });
 
-  it('calls /api/sep/task-history/ with deduplicated sorted task_names', async () => {
+  it('calls /api/extensions/task-history/ with deduplicated sorted task_names', async () => {
     renderHook(() => useTaskHistoryByNames(['task-b', 'task-a', 'task-b']), {
       wrapper: wrapper(),
     });
     await waitFor(() => {
-      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+      expect(mockApiGet).toHaveBeenCalledWith('/extensions/task-history/', {
         params: {
           task_names: ['task-a', 'task-b'],
         },
@@ -101,7 +101,7 @@ describe('useTaskHistoryByNames', () => {
       { wrapper: wrapper() },
     );
     await waitFor(() => {
-      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+      expect(mockApiGet).toHaveBeenCalledWith('/extensions/task-history/', {
         params: {
           status: 'running',
           offset: 5,
@@ -115,18 +115,18 @@ describe('useTaskHistoryByNames', () => {
 });
 
 describe('useTaskHistory', () => {
-  it('lists through /api/sep/task-history/ and never /api/tasks/...', async () => {
+  it('lists through /api/extensions/task-history/ and never /api/tasks/...', async () => {
     renderHook(() => useTaskHistory(), { wrapper: wrapper() });
     await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
     const [url] = mockApiGet.mock.calls[0];
-    expect(url).toBe('/sep/task-history/');
+    expect(url).toBe('/extensions/task-history/');
     expect(mockApiGet.mock.calls.every(([u]) => !String(u).startsWith('/tasks/'))).toBe(true);
   });
 
   it('sends exclude_internal=true when excludeInternal option is set', async () => {
     renderHook(() => useTaskHistory({ excludeInternal: true }), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+      expect(mockApiGet).toHaveBeenCalledWith('/extensions/task-history/', {
         params: { exclude_internal: true },
       });
     });
@@ -141,12 +141,12 @@ describe('useTaskHistory', () => {
 });
 
 describe('useStopTaskHistory', () => {
-  it('stops through /api/sep/task-history/{id}/stop/ and never /api/tasks/...', async () => {
+  it('stops through /api/extensions/task-history/{id}/stop/ and never /api/tasks/...', async () => {
     const { result } = renderHook(() => useStopTaskHistory(), { wrapper: wrapper() });
     await act(async () => {
       await result.current.mutateAsync(42);
     });
-    expect(mockApiPost).toHaveBeenCalledWith('/sep/task-history/42/stop/');
+    expect(mockApiPost).toHaveBeenCalledWith('/extensions/task-history/42/stop/');
     expect(mockApiPost.mock.calls.every(([u]) => !String(u).startsWith('/tasks/'))).toBe(true);
   });
 });

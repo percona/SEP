@@ -16,7 +16,7 @@
  */
 
 import { Alert, Box, Paper, Skeleton, Typography } from '@mui/material';
-import { ApiError } from '@sep/api';
+import { ApiError } from '@pmm-extensions/api';
 import { useTaskStats } from '../../hooks/useTaskStats';
 
 const PLACEHOLDER = '—';
