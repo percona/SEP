@@ -396,7 +396,7 @@ MigrationBackup/
 *.key
 *.srl
 *.p12
-static/sep-db.sql.txt
+static/extensions-db.sql.txt
 data/nomad.hcl
 data/casdoor_init_data.json
 data/atw-bundles/

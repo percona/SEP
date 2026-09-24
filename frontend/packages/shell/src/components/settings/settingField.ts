@@ -23,7 +23,7 @@
  * machine-readable schema. These helpers centralise the dispatch so the React
  * components stay declarative and the logic is unit-testable in isolation.
  */
-import { REDACTED_SECRET, type SettingResponse } from '@sep/api';
+import { REDACTED_SECRET, type SettingResponse } from '@pmm-extensions/api';
 
 export type FieldKind = 'complex' | 'secret' | 'bool' | 'number' | 'choice' | 'text';
 

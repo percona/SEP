@@ -23,7 +23,7 @@ import {
   normalizeAppListResponse,
   type AppListResult,
   type PaginatedAppList,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import type {
   AtwBatchExecuteResponse,
   AtwBatchExecuteWrite,

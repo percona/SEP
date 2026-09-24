@@ -22,7 +22,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useAuth, useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
+import { useAuth, useCreateAppEntity, useCreateAppTask, type AppSchema } from '@pmm-extensions/api';
 import { ReadOnlyNotice } from '../ReadOnlyNotice';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';

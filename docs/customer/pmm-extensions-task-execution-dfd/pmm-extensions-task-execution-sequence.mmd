@@ -1,0 +1,72 @@
+%% PMM Extensions Task Execution — Sequence diagrams
+%% Path A: Snippets. Path B: Checksums (proxy app, two-phase).
+%% Avoid semicolons and parentheses inside Note lines (mermaid-cli parse bug).
+
+sequenceDiagram
+    autonumber
+    actor Eng as Engineer
+    participant UI as PMM Extensions UI
+    participant Grafana as Grafana IdP
+    participant Ext as PMM Extensions app API
+    participant Inv as Inventory API
+    participant Tasks as Tasks API
+    participant DB as Tasks PostgreSQL
+    participant Celery as Celery worker
+    participant Nomad as Nomad cluster
+    participant Node as Remote Nomad client
+
+    rect rgb(232, 244, 252)
+        Note over Eng,Grafana: Authentication Grafana session exchange
+        Eng->>UI: Navigate to PMM Extensions within PMM
+        UI->>Ext: POST api oauth session exchange with PMM session cookie
+        Ext->>Grafana: Validate session, map org role
+        Grafana-->>Ext: User identity and role
+        Ext-->>UI: Short-lived PMM Extensions bearer in response body, no cookie, no refresh token
+        Eng->>UI: API calls with Authorization Bearer PMM Extensions token
+    end
+
+    rect rgb(255, 248, 225)
+        Note over Eng,Node: Path A Snippets one-shot execute
+        Eng->>UI: Submit snippet form
+        UI->>Ext: POST snippets execute
+        Ext->>Ext: Verify approved snippet and validate args
+        Ext->>Tasks: POST execute exec-artifact with meta
+        Tasks->>DB: INSERT taskhistory
+        Tasks->>Celery: dispatch
+        Celery->>Nomad: dispatch_job
+        Nomad->>Node: raw_exec on target node
+    end
+
+    rect rgb(232, 245, 233)
+        Note over Eng,Node: Path B Checksums create phase
+        Eng->>UI: Create checksum task form
+        UI->>Ext: POST api apps checksums
+        Ext->>Inv: GET service schemas tables
+        Inv-->>Ext: MySQL service details
+        Ext->>Ext: Build meta pt-table-checksum args target
+        Ext->>Tasks: POST store PROXY task
+        Tasks->>DB: INSERT task row CHECKSUMS owner
+        Tasks-->>UI: task name
+    end
+
+    rect rgb(220, 237, 220)
+        Note over Eng,Node: Path B Checksums execute phase
+        Eng->>UI: Execute saved task
+        UI->>Ext: POST execute task_name
+        Ext->>Tasks: POST execute with eta and chain only
+        Tasks->>Tasks: PROXY merge stored meta
+        Tasks->>DB: INSERT taskhistory with executed_by
+        Tasks->>Celery: dispatch
+        Celery->>Nomad: dispatch_job run-command
+        Nomad->>Node: pt-table-checksum on target
+        Node-->>Nomad: stdout and stderr
+        Celery->>DB: taskhistory_log append
+    end
+
+    rect rgb(252, 228, 236)
+        Note over Eng,DB: Audit read-back both paths
+        Eng->>UI: View logs
+        UI->>Tasks: GET history logs
+        Tasks->>DB: read log chunks
+        Tasks-->>UI: stream output
+    end

@@ -21,7 +21,7 @@ import { flushPromises, mockStreamFetch } from '../../../../tests/eventSourceStu
 import { useTaskLogs } from '../../../hooks/useTaskLogs';
 import { LogOutputPane } from '../LogOutputPane';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   getToken: () => null,
   refreshAccessToken: vi.fn(),
   emitUnauthorized: vi.fn(),

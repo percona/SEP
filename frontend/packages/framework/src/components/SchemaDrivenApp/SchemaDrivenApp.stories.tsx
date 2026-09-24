@@ -22,7 +22,7 @@ import { MemoryRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
 import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
-import type { AppSchema } from '@sep/api';
+import type { AppSchema } from '@pmm-extensions/api';
 import { SchemaDrivenApp } from './SchemaDrivenApp';
 import type { RenderFormSlot } from './types';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';

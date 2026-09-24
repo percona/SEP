@@ -65,7 +65,7 @@ class BaseAuthProvider(ABC):
     async def resolve_ambient_session(
         self, cookies: Mapping[str, str]
     ) -> OAuthToken | None:
-        """Mint a SEP token from an ambient session cookie carried on the request.
+        """Mint a PMM Extensions token from an ambient session cookie carried on the request.
 
         A provider that sets ``supports_ambient_session`` overrides this to read
         its session cookie from ``cookies`` and validate it upstream. The base

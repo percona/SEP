@@ -24,8 +24,8 @@ vi.mock('../contexts/auth', () => ({
   useAuth: () => ({ user: { username: 'dba' } }),
 }));
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   useDashboardStats: () => ({
     data: { nodes: 1, tasks: 2, snippets: 3, targets: 4 },
     isLoading: false,
@@ -36,8 +36,8 @@ vi.mock('@sep/api', async (importOriginal) => ({
 
 const mockUseTaskHistory = vi.fn();
 
-vi.mock('@sep/framework', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/framework')>()),
+vi.mock('@pmm-extensions/framework', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/framework')>()),
   useTaskHistory: (...args: unknown[]) => mockUseTaskHistory(...args),
 }));
 

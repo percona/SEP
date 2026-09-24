@@ -32,14 +32,15 @@ from app.core.settings_override.models import (
     SettingClassEnum,
     SettingOverride,
 )
+from app.extensions import apps
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.apps.framework.registry import collect_app_owned_settings_classes
+from app.extensions.apps.inventory.config import InventoryAppSettings
+from app.extensions.apps.om_inventory.config import OmInventorySettings
+from app.extensions.apps.report.config import HealthReportSettings
+from app.extensions.config import App, ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep import apps
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.framework.registry import collect_app_owned_settings_classes
-from app.sep.apps.inventory.config import InventoryAppSettings
-from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import App, SEPSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
@@ -57,7 +58,8 @@ _HISTORICAL_TOKENS: tuple[tuple[type[BaseYamlSettings], str], ...] = (
     (HealthReportSettings, "HEALTH_REPORT_SETTINGS"),
     (InventoryAppSettings, "INVENTORY_APP_SETTINGS"),
     (InventorySettings, "INVENTORY_SETTINGS"),
-    (SEPSettings, "SEP_SETTINGS"),
+    (OmInventorySettings, "OM_INVENTORY_SETTINGS"),
+    (ExtensionsSettings, "EXTENSIONS_SETTINGS"),
     (Settings, "SETTINGS"),
     (SnippetsSettings, "SNIPPETS_SETTINGS"),
     (TasksSettings, "TASKS_SETTINGS"),
@@ -132,7 +134,7 @@ def test_updated_by_defaults_to_none() -> None:
     omits it stays valid.
     """
     row = SettingOverride(
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
         key="SYNC_REFRESH_TIME",
         value=5,
     )
@@ -150,7 +152,7 @@ async def test_long_updated_by_round_trips(session: AsyncSession) -> None:
     actor = "a" * LONG_USERNAME_LENGTH
     await insert_override_row(
         session,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
         key="SYNC_REFRESH_TIME",
         value=5,
         updated_by=actor,

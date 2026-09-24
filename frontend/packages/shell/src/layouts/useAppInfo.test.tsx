@@ -20,11 +20,11 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
-import { useAppInfo } from '@sep/api';
+import { useAppInfo } from '@pmm-extensions/api';
 
 import { server } from '../../tests/msw-server';
 
-const APP_INFO_URL = 'http://localhost/api/sep/app-info/';
+const APP_INFO_URL = 'http://localhost/api/extensions/app-info/';
 
 function wrapper({ children }: { children: ReactNode }) {
   // Disable retries so an error case resolves deterministically in one tick.

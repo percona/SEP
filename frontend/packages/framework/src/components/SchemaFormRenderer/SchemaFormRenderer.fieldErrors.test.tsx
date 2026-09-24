@@ -21,7 +21,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useFormContext, type UseFormReturn } from 'react-hook-form';
-import type { FieldValidationError } from '@sep/api';
+import type { FieldValidationError } from '@pmm-extensions/api';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import type { FormSection } from './types';
 

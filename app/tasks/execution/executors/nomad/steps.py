@@ -24,7 +24,7 @@ from enum import StrEnum
 
 
 class NomadStep(StrEnum):
-    """Represent Nomad task ``Name`` values used by SEP job-spec templates.
+    """Represent Nomad task ``Name`` values used by PMM Extensions job-spec templates.
 
     ``STEP1`` is legacy — only historical task logs / the frozen Alembic
     migration still emit it. Do not wire new job specs to ``step1``.
@@ -50,7 +50,7 @@ class NomadStep(StrEnum):
 
     @classmethod
     def is_persistable(cls, step: str) -> bool:
-        """Return whether SEP persists ``step``'s streams and gates release on it.
+        """Return whether PMM Extensions persists ``step``'s streams and gates release on it.
 
         Tests against :data:`NON_PERSISTABLE_STEPS`, which is also what the
         capture-status aggregate filters on in SQL. Sharing one definition is
@@ -64,7 +64,7 @@ class NomadStep(StrEnum):
         viewer and leave its capture unclassified.
 
         :param step: The Nomad task (step) name to classify.
-        :return: ``True`` for every step SEP treats as a log producer.
+        :return: ``True`` for every step PMM Extensions treats as a log producer.
         """
         return step not in NON_PERSISTABLE_STEPS
 
@@ -74,7 +74,7 @@ class NomadStep(StrEnum):
 #: ``${NOMAD_TASK_DIR}/output_files`` (``run-python``, ``exec-artifact``,
 #: ``exec-python-artifact``). It is the
 #: :attr:`~app.tasks.models.TaskBase.output_files_path` those specs run under,
-#: so a payload's working directory and the path SEP reads its files back from
+#: so a payload's working directory and the path PMM Extensions reads its files back from
 #: are the same place. ``run-command`` pins no ``work_dir`` and so has no
 #: output-files path. Derived from the step name rather than spelled out, so
 #: renaming the step cannot leave the path behind; ``local`` is

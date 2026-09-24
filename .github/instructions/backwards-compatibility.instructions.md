@@ -1,10 +1,10 @@
 ---
-applyTo: "app/**/models.py,app/**/schema.py,app/**/config.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
+applyTo: "app/**/models.py,app/**/schema.py,app/**/config.py,app/**/migrations/**/*.py,app/*/db/seed.py,app/extensions/apps/**/api_routes.py,settings.yaml"
 ---
 
 # Backwards Compatibility
 
-SEP runs three API services (SEP, Inventory, Tasks) consumed by the web UI, CLI tools, and background executors. Changes to public contracts can break consumers silently.
+Extensions runs three API services (Extensions, Inventory, Tasks) consumed by the web UI, CLI tools, and background executors. Changes to public contracts can break consumers silently.
 
 ## Released-ness is the precondition
 
@@ -44,7 +44,7 @@ Members appear in API responses, DB columns, task payloads, and config. Removing
 
 Widening, narrowing, or gating a shared predicate or dispatch surface changes behaviour at every existing call site, and the reroute is invisible at the definition site. *Widening* looks purely additive — nothing removed, no signature narrowed — but a value that used to fall through to a default now matches a specific handler. *Narrowing or gating* looks like a local tightening, but silently **removes** inputs from every consumer's selected set, and the consumers that break are the ones asking a *different question* than the new condition answers.
 
-Before changing one in either direction, enumerate what **dispatches on** it: `except` sites, `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/sep/main.py` registers a dedicated handler for it. This applies to an enum, a response model, a settings class, or a DI alias just as much as to an exception class. Exempt: a refactor whose truth table is unchanged, and module-local helpers — *shared* is the trigger, not call-site count.
+Before changing one in either direction, enumerate what **dispatches on** it: `except` sites, `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/extensions/main.py` registers a dedicated handler for it. This applies to an enum, a response model, a settings class, or a DI alias just as much as to an exception class. Exempt: a refactor whose truth table is unchanged, and module-local helpers — *shared* is the trigger, not call-site count.
 
 ## Config Keys (`settings.yaml` / env vars)
 
@@ -68,7 +68,7 @@ Serialized at task creation, deserialized by executors — potentially on a diff
 
 ## Seed Data (`app/*/db/seed.py`)
 
-System and periodic tasks are seeded at startup via `get_or_create`. Orphaned periodic tasks matching the service prefix (`sep__`, `tasks__`) are deleted automatically by `init_periodic_tasks_db`.
+System and periodic tasks are seeded at startup via `get_or_create`. Orphaned periodic tasks matching the service prefix (`extensions__`, `tasks__`) are deleted automatically by `init_periodic_tasks_db`.
 
 - Renaming a system task's `name` creates a new entry and orphans the old — scheduled jobs or user periodic tasks referencing the old name break.
 - Removing a seed entry deletes it on next startup. Dependent user-configured periodic tasks or Nomad jobs fail silently.

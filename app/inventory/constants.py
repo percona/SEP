@@ -59,8 +59,8 @@ class RetirableEntityName(StrEnum):
     """Name the inventory entity types that carry a retirement tombstone.
 
     Values are spelled out rather than derived, because they cross a service
-    boundary: SEP names an entity type by these strings when it asks inventory
-    to collect. Inventory-local on purpose — SEP's own
+    boundary: PMM Extensions names an entity type by these strings when it asks inventory
+    to collect. Inventory-local on purpose — PMM Extensions' own
     ``SyncInventoryEntityTypeEnum`` lives in a package this service must not
     import.
     """

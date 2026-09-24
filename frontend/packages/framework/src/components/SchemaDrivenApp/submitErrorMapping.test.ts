@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ApiError } from '@sep/api';
+import { ApiError } from '@pmm-extensions/api';
 import type { FormSection } from '../SchemaFormRenderer/types';
 import { mapSubmitError } from './submitErrorMapping';
 

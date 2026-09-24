@@ -118,10 +118,13 @@ class TestGenerateTagPrefixedUniqueId:
         """Use an ``Enum`` tag's ``.value``, not its ``repr``."""
 
         class TagEnum(str, Enum):
-            SEP = "sep"
+            EXTENSIONS = "extensions"
 
-        route = _make_route("list_things", "/things", [TagEnum.SEP])
-        assert generate_tag_prefixed_unique_id(route) == "sep_list_things_things_get"
+        route = _make_route("list_things", "/things", [TagEnum.EXTENSIONS])
+        assert (
+            generate_tag_prefixed_unique_id(route)
+            == "extensions_list_things_things_get"
+        )
 
     def test_non_alphanumeric_tag_collapses_to_underscores(self) -> None:
         """Collapse spaces, slashes, and punctuation in a tag to a single ``_``."""
@@ -215,7 +218,7 @@ class TestMergeOpenapiDocuments:
         merged = merge_openapi_documents(primary, secondary)
         schemas = merged["components"]["schemas"]
         assert "Item" in schemas
-        assert "Item_sep" in schemas
+        assert "Item_extensions" in schemas
         # primary kept
         assert schemas["Item"] == {
             "type": "object",
@@ -225,11 +228,11 @@ class TestMergeOpenapiDocuments:
         new_ref = merged["paths"]["/b"]["get"]["responses"]["200"]["content"][
             "application/json"
         ]["schema"]["$ref"]
-        assert new_ref == "#/components/schemas/Item_sep"
+        assert new_ref == "#/components/schemas/Item_extensions"
         # secondary component internal ref rewritten
         assert (
             schemas["Wrapper"]["properties"]["item"]["$ref"]
-            == "#/components/schemas/Item_sep"
+            == "#/components/schemas/Item_extensions"
         )
 
     def test_merge_security_schemes_union(self) -> None:
@@ -277,39 +280,39 @@ class TestMergeOpenapiDocuments:
         merged = merge_openapi_documents(primary, secondary_doc)
 
         schemes = merged["components"]["securitySchemes"]
-        assert set(schemes) == {"Bearer", "Bearer_sep"}
+        assert set(schemes) == {"Bearer", "Bearer_extensions"}
         assert schemes["Bearer"] == {"type": "http", "scheme": "bearer"}
-        assert schemes["Bearer_sep"] == {
+        assert schemes["Bearer_extensions"] == {
             "type": "apiKey",
             "in": "header",
             "name": "X-A",
         }
         # Operation-level security on secondary path rewritten.
         op_sec = merged["paths"]["/secured"]["get"]["security"]
-        assert op_sec == [{"Bearer_sep": []}]
+        assert op_sec == [{"Bearer_extensions": []}]
         # Document-level security from secondary rewritten and merged.
-        assert {"Bearer_sep": []} in merged.get("security", [])
+        assert {"Bearer_extensions": []} in merged.get("security", [])
 
     def test_merge_security_schemes_rename_target_in_secondary_raises(self) -> None:
-        """Raise when the secondary holds both colliding ``Bearer`` and ``Bearer_sep``."""
+        """Raise when the secondary holds both colliding ``Bearer`` and ``Bearer_extensions``."""
         primary = _spec(
             security_schemes={"Bearer": {"type": "http", "scheme": "bearer"}}
         )
         secondary = _spec(
             security_schemes={
                 "Bearer": {"type": "apiKey", "in": "header", "name": "X-A"},
-                "Bearer_sep": {"type": "oauth2", "flows": {}},
+                "Bearer_extensions": {"type": "oauth2", "flows": {}},
             }
         )
-        with pytest.raises(ValueError, match="Bearer_sep"):
+        with pytest.raises(ValueError, match="Bearer_extensions"):
             merge_openapi_documents(primary, secondary)
 
     def test_merge_security_schemes_rename_target_in_primary_raises(self) -> None:
-        """Raise when the primary holds ``Bearer_sep`` and the secondary's ``Bearer`` collides."""
+        """Raise when the primary holds ``Bearer_extensions`` and the secondary's ``Bearer`` collides."""
         primary = _spec(
             security_schemes={
                 "Bearer": {"type": "http", "scheme": "bearer"},
-                "Bearer_sep": {"type": "oauth2", "flows": {}},
+                "Bearer_extensions": {"type": "oauth2", "flows": {}},
             }
         )
         secondary = _spec(
@@ -317,7 +320,7 @@ class TestMergeOpenapiDocuments:
                 "Bearer": {"type": "apiKey", "in": "header", "name": "X-A"}
             }
         )
-        with pytest.raises(ValueError, match="Bearer_sep"):
+        with pytest.raises(ValueError, match="Bearer_extensions"):
             merge_openapi_documents(primary, secondary)
 
     def test_merge_preserves_info_from_primary(self) -> None:
@@ -338,27 +341,27 @@ class TestMergeOpenapiDocuments:
             merge_openapi_documents(primary, secondary)
 
     def test_merge_schema_rename_target_in_secondary_raises(self) -> None:
-        """Raise when the secondary holds both colliding ``Item`` and ``Item_sep``."""
+        """Raise when the secondary holds both colliding ``Item`` and ``Item_extensions``."""
         primary = _spec(schemas={"Item": {"type": "string"}})
         secondary = _spec(
             schemas={
                 "Item": {"type": "integer"},
-                "Item_sep": {"type": "boolean"},
+                "Item_extensions": {"type": "boolean"},
             }
         )
-        with pytest.raises(ValueError, match="Item_sep"):
+        with pytest.raises(ValueError, match="Item_extensions"):
             merge_openapi_documents(primary, secondary)
 
     def test_merge_schema_rename_target_in_primary_raises(self) -> None:
-        """Raise when the primary holds ``Item_sep`` and the secondary's ``Item`` needs a rename."""
+        """Raise when the primary holds ``Item_extensions`` and the secondary's ``Item`` needs a rename."""
         primary = _spec(
             schemas={
                 "Item": {"type": "string"},
-                "Item_sep": {"type": "number"},
+                "Item_extensions": {"type": "number"},
             }
         )
         secondary = _spec(schemas={"Item": {"type": "integer"}})
-        with pytest.raises(ValueError, match="Item_sep"):
+        with pytest.raises(ValueError, match="Item_extensions"):
             merge_openapi_documents(primary, secondary)
 
     def test_merge_does_not_mutate_inputs(self) -> None:
@@ -394,7 +397,7 @@ class TestNamespaceAppSchemaNames:
                                 "content": {
                                     "application/json": {
                                         "schema": {
-                                            "$ref": "#/components/schemas/app__sep__apps__backup_pg__models__BackupTaskResponse"
+                                            "$ref": "#/components/schemas/app__extensions__apps__backup_pg__models__BackupTaskResponse"
                                         }
                                     }
                                 }
@@ -404,11 +407,11 @@ class TestNamespaceAppSchemaNames:
                 }
             },
             schemas={
-                "app__sep__apps__backup_pg__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_pg__models__BackupTaskResponse": {
                     "type": "object",
                     "properties": {"id": {"type": "integer"}},
                 },
-                "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_mongo__models__BackupTaskResponse": {
                     "type": "object",
                     "properties": {"id": {"type": "string"}},
                 },
@@ -433,17 +436,17 @@ class TestNamespaceAppSchemaNames:
         """
         doc = _spec(
             schemas={
-                "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_mongo__models__BackupTaskResponse": {
                     "type": "object"
                 },
-                "app__sep__apps__backup_pg__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_pg__models__BackupTaskResponse": {
                     "type": "object"
                 },
                 "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1": _paginated_wrapper(
-                    "app__sep__apps__backup_mongo__models__BackupTaskResponse"
+                    "app__extensions__apps__backup_mongo__models__BackupTaskResponse"
                 ),
                 "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2": _paginated_wrapper(
-                    "app__sep__apps__backup_pg__models__BackupTaskResponse"
+                    "app__extensions__apps__backup_pg__models__BackupTaskResponse"
                 ),
             },
         )
@@ -463,14 +466,14 @@ class TestNamespaceAppSchemaNames:
         """Return the same document whether the pass runs once or twice."""
         doc = _spec(
             schemas={
-                "app__sep__apps__backup_pg__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_pg__models__BackupTaskResponse": {
                     "type": "object"
                 },
-                "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_mongo__models__BackupTaskResponse": {
                     "type": "object"
                 },
                 "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1": _paginated_wrapper(
-                    "app__sep__apps__backup_pg__models__BackupTaskResponse"
+                    "app__extensions__apps__backup_pg__models__BackupTaskResponse"
                 ),
             },
         )
@@ -504,7 +507,7 @@ class TestNamespaceAppSchemaNames:
         """
         doc = _spec(
             schemas={
-                "app__sep__apps__example__models__PaginatedResponseMeta": {
+                "app__extensions__apps__example__models__PaginatedResponseMeta": {
                     "type": "object",
                     "properties": {"page": {"type": "integer"}},
                 },
@@ -524,7 +527,7 @@ class TestNamespaceAppSchemaNames:
         """
         doc = _spec(
             schemas={
-                "app__sep__apps__example__models__PaginatedResponse_Metadata": {
+                "app__extensions__apps__example__models__PaginatedResponse_Metadata": {
                     "type": "object",
                     "properties": {"page": {"type": "integer"}},
                 },
@@ -549,11 +552,11 @@ class TestNamespaceAppSchemaNames:
         """Raise when two qualified keys collapse to the same ``<app>__<Class>`` target."""
         doc = _spec(
             schemas={
-                "app__sep__apps__backup_pg__models__Foo": {
+                "app__extensions__apps__backup_pg__models__Foo": {
                     "type": "object",
                     "properties": {"a": {"type": "integer"}},
                 },
-                "app__sep__apps__backup_pg__restore__models__Foo": {
+                "app__extensions__apps__backup_pg__restore__models__Foo": {
                     "type": "object",
                     "properties": {"b": {"type": "string"}},
                 },
@@ -566,10 +569,10 @@ class TestNamespaceAppSchemaNames:
         """Deep-copy the input document and leave the original unchanged."""
         doc = _spec(
             schemas={
-                "app__sep__apps__backup_pg__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_pg__models__BackupTaskResponse": {
                     "type": "object"
                 },
-                "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
+                "app__extensions__apps__backup_mongo__models__BackupTaskResponse": {
                     "type": "object"
                 },
             },
@@ -615,12 +618,12 @@ class TestNamespaceAppSchemaNames:
             namespace_app_schema_names(doc)
 
     def test_malformed_app_key_without_models_boundary_raises(self) -> None:
-        """Raise on an ``app__sep__apps__…`` key lacking the ``__models__`` boundary.
+        """Raise on an ``app__extensions__apps__…`` key lacking the ``__models__`` boundary.
 
         A well-formed app-model key always carries ``__models__``; a key without
         it is malformed and must fail loudly rather than produce a mangled name.
         """
-        doc = _spec(schemas={"app__sep__apps__backup_pg": {"type": "object"}})
+        doc = _spec(schemas={"app__extensions__apps__backup_pg": {"type": "object"}})
         with pytest.raises(ValueError, match="__models__"):
             namespace_app_schema_names(doc)
 
@@ -628,7 +631,7 @@ class TestNamespaceAppSchemaNames:
         """Raise when an app model's target name collides with a pre-existing bare name."""
         doc = _spec(
             schemas={
-                "app__sep__apps__backup_pg__models__Foo": {
+                "app__extensions__apps__backup_pg__models__Foo": {
                     "type": "object",
                     "properties": {"a": {"type": "integer"}},
                 },
@@ -648,7 +651,7 @@ class TestNamespacedOpenapi:
     @pytest.mark.parametrize(
         ("core_ref", "expected"),
         [
-            ("app.sep.apps.backup_pg.models.BackupTaskResponse:140", None),
+            ("app.extensions.apps.backup_pg.models.BackupTaskResponse:140", None),
             (
                 "app.core.pagination.models.PaginatedResponse:32[BackupTaskResponse:9]",
                 "app.core.pagination.models.PaginatedResponse[BackupTaskResponse]",
@@ -658,58 +661,58 @@ class TestNamespacedOpenapi:
     def test_strip_core_ref_ids(self, core_ref: str, expected: str | None) -> None:
         """Strip per-component object ids, keeping generic brackets intact."""
         if expected is None:
-            expected = "app.sep.apps.backup_pg.models.BackupTaskResponse"
+            expected = "app.extensions.apps.backup_pg.models.BackupTaskResponse"
         assert _strip_core_ref_ids(core_ref) == expected
 
     @pytest.mark.parametrize(
         ("core_ref_no_id", "expected"),
         [
             (
-                "app.sep.apps.backup_pg.models.BackupTaskResponse",
+                "app.extensions.apps.backup_pg.models.BackupTaskResponse",
                 "backup_pg__BackupTaskResponse",
             ),
             (
-                "app.sep.apps.backup_mongo.restore.models.RestoreTaskResponse",
+                "app.extensions.apps.backup_mongo.restore.models.RestoreTaskResponse",
                 "backup_mongo__RestoreTaskResponse",
             ),
             (
-                "app.sep.apps.framework.responses.BackupPgCreateResponse",
+                "app.extensions.apps.framework.responses.BackupPgCreateResponse",
                 "framework__BackupPgCreateResponse",
             ),
             ("app.core.pagination.models.PaginatedResponse", None),
             ("app.inventory.models.ServiceResponse", None),
             ("app.core.pagination.models.PaginatedResponse[BackupTaskResponse]", None),
             # Bare app segment with no dotted class part yields no namespaced name.
-            ("app.sep.apps.backup_pg", None),
+            ("app.extensions.apps.backup_pg", None),
         ],
     )
     def test_app_namespaced_defs_name(
         self, core_ref_no_id: str, expected: str | None
     ) -> None:
-        """Derive ``<app>__<Class>`` only for non-generic ``app.sep.apps`` models."""
+        """Derive ``<app>__<Class>`` only for non-generic ``app.extensions.apps`` models."""
         assert _app_namespaced_defs_name(core_ref_no_id) == expected
 
     def test_namespaces_every_app_model(self) -> None:
         """Namespace all app models — colliding or not — and wrappers by owning app.
 
         Uses ``create_model`` with an explicit ``__module__`` so the models carry an
-        ``app.sep.apps.<app>`` module path. ``SoloResponse`` has no cross-app
+        ``app.extensions.apps.<app>`` module path. ``SoloResponse`` has no cross-app
         collision yet is still namespaced (``backup_pg__SoloResponse``), proving the
         name does not depend on the installed app set.
         """
         pg = create_model(
             "BackupTaskResponse",
-            __module__="app.sep.apps.backup_pg.models",
+            __module__="app.extensions.apps.backup_pg.models",
             id=(int, ...),
         )
         mongo = create_model(
             "BackupTaskResponse",
-            __module__="app.sep.apps.backup_mongo.models",
+            __module__="app.extensions.apps.backup_mongo.models",
             id=(str, ...),
         )
         solo = create_model(
             "SoloResponse",
-            __module__="app.sep.apps.backup_pg.models",
+            __module__="app.extensions.apps.backup_pg.models",
             x=(int, ...),
         )
 
@@ -755,12 +758,12 @@ class TestNamespacedOpenapi:
         app-namespaced (``backup_pg__DualModel-Input``/``-Output``) — the reason
         :meth:`_AppNamespacedJsonSchema.get_defs_ref` injects a mode-suffixed
         preferred name alongside the bare one. ``__module__`` is set in the class
-        body so Pydantic bakes the ``app.sep.apps`` path into the core ref at
+        body so Pydantic bakes the ``app.extensions.apps`` path into the core ref at
         schema-build time (assigning it after creation is too late).
         """
 
         class DualModel(BaseModel):
-            __module__ = "app.sep.apps.backup_pg.models"
+            __module__ = "app.extensions.apps.backup_pg.models"
             id: int
 
             @computed_field
