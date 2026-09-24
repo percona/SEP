@@ -441,7 +441,7 @@ def test_shared_db_extensions_then_tasks_upgrade_is_clean(shared_postgres_db):
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
 def test_shared_db_tasks_then_extensions_upgrade_is_clean(shared_postgres_db):
-    """Apply the Tasks-then-SEP upgrade — the reverse order must be equally clean."""
+    """Apply the Tasks upgrade, then the PMM Extensions one — the reverse order must be equally clean."""
     sync_url = shared_postgres_db
     extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
