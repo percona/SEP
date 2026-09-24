@@ -41,13 +41,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
 
 POSTGRES_DSN_ENV = "EXTENSIONS_TEST_POSTGRES_DSN"
 
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
-
-PRE_RENAME_LEGACY_PREFIX = "sep-legacy:"
 
 _MANDATORY_COLUMNS = (
     ("node", "external_id"),

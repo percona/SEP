@@ -26,10 +26,10 @@ classification, backfill and cascade logic, which is dialect-neutral.
 from alembic import command
 from sqlalchemy import create_engine, inspect
 
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
+
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
-
-PRE_RENAME_LEGACY_PREFIX = "sep-legacy:"
 
 _INSERT_NODE = (
     "INSERT INTO node "

@@ -44,6 +44,7 @@ from tests.app.inventory.conftest import (
     sync_health_payload,
     SYNC_HEALTH_RESPONSE_KEYS,
 )
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -53,8 +54,6 @@ OBSERVED_NODE_COUNT = 2
 # Pinned verbatim rather than imported from app.inventory.constants: the wording is
 # part of the API contract, so an edit to the constant must fail the test.
 UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
-
-PRE_RENAME_LEGACY_PREFIX = "sep-legacy:"
 
 
 class TestListNodes:

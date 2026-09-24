@@ -1140,7 +1140,9 @@ def test_table_rename_revision_moves_the_rows_and_their_names_and_back(
 
     command.upgrade(cfg, _EXTENSIONS_TABLE_RENAME_REVISION)
 
-    assert PRE_RENAME_APP_PERIODIC_TASK_TABLE not in _get_table_names(sync_url)
+    tables = _get_table_names(sync_url)
+    assert "extensionsappperiodictask" in tables
+    assert PRE_RENAME_APP_PERIODIC_TASK_TABLE not in tables
     assert _app_periodic_task_rows(sync_url, "extensionsappperiodictask") == [
         ("custom", 1),
         ("extensions__purge_atw_bundles", 0),
@@ -1148,7 +1150,9 @@ def test_table_rename_revision_moves_the_rows_and_their_names_and_back(
 
     command.downgrade(cfg, _EXTENSIONS_RETOKEN_REVISION)
 
-    assert "extensionsappperiodictask" not in _get_table_names(sync_url)
+    tables = _get_table_names(sync_url)
+    assert PRE_RENAME_APP_PERIODIC_TASK_TABLE in tables
+    assert "extensionsappperiodictask" not in tables
     assert _app_periodic_task_rows(sync_url, PRE_RENAME_APP_PERIODIC_TASK_TABLE) == [
         ("custom", 1),
         (PRE_RENAME_SCHEDULE_NAME, 0),

@@ -91,7 +91,7 @@ IGNORED_COMPANIONS = ("CLAUDE.md", "AGENTS.md")
 Replacement = str | Callable[[re.Match[str]], str]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Rule:
     """Carry one pattern attributed to one map row.
 

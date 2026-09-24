@@ -188,6 +188,7 @@ def test_absent_row_contributes_no_rule() -> None:
     report = rename.Report()
     rules = rename.build_rules(rename_map, report)
     assert "sse" in report.absent_rows
+    assert rules
     assert all(rule.row != "sse" for rule in rules)
 
 
