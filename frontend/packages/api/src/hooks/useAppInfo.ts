@@ -27,8 +27,8 @@ export interface AppInfo {
 export const APP_INFO_QUERY_KEY = ['sep', 'app-info'] as const;
 
 /**
- * Fetches shell metadata for the sidebar footer (`footer_text`), mirroring the
- * value the legacy Jinja interface renders from `EXTENSIONS__FOOTER_TEMPLATE`.
+ * Fetches shell metadata for the sidebar footer (`footer_text`), rendered
+ * server-side from the live `EXTENSIONS__FOOTER_TEMPLATE` setting.
  *
  * The footer reflects a deployment-specific override but changes rarely within
  * a session, so the result is cached for 5 minutes.

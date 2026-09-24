@@ -354,7 +354,7 @@ def _export_yaml_response(payload: dict[str, dict[str, Any]]) -> Response:
         default_flow_style=False,
         sort_keys=False,
     )
-    filename = f"sep-config-{utc_now():%Y-%m-%d}.yaml"
+    filename = f"pmm-extensions-config-{utc_now():%Y-%m-%d}.yaml"
     return Response(
         content=yaml_body,
         media_type="application/x-yaml",

@@ -56,7 +56,7 @@ beforeEach(() => {
       HttpResponse.text('ExtensionsSettings: {}\n', {
         headers: {
           'Content-Type': 'application/x-yaml',
-          'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+          'Content-Disposition': 'attachment; filename="pmm-extensions-config-2026-06-14.yaml"',
         },
       }),
     ),
@@ -91,7 +91,7 @@ describe('SettingsPage', () => {
         return HttpResponse.text('ExtensionsSettings: {}\n', {
           headers: {
             'Content-Type': 'application/x-yaml',
-            'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+            'Content-Disposition': 'attachment; filename="pmm-extensions-config-2026-06-14.yaml"',
           },
         });
       }),

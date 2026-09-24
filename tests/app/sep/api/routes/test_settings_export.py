@@ -234,7 +234,10 @@ class TestSepConfigExportYaml:
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"].startswith("application/x-yaml")
         assert response.headers["content-disposition"].startswith("attachment;")
-        assert 'filename="sep-config-' in response.headers["content-disposition"]
+        assert (
+            'filename="pmm-extensions-config-'
+            in response.headers["content-disposition"]
+        )
         assert response.headers["content-disposition"].endswith('.yaml"')
 
         payload = yaml.safe_load(response.text)
