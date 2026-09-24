@@ -224,7 +224,7 @@ class TestSepConfigExportAuth:
 
 @pytest.mark.asyncio
 class TestSepConfigExportYaml:
-    """Tests for ``GET /api/extensions/admin/settings/export`` happy-path YAML rendering."""
+    """Cover ``GET /api/extensions/admin/settings/export`` happy-path YAML rendering."""
 
     async def test_returns_yaml_attachment(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock

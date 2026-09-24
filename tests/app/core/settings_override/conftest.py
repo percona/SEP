@@ -31,7 +31,11 @@ from app.core.config import Settings, settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import RefreshCallback, SnapshotChange
 from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import setting_class_token, SettingOverride
+from app.core.settings_override.models import (
+    setting_class_token,
+    SettingClassEnum,
+    SettingOverride,
+)
 from app.core.utils import json_serializer
 from app.inventory.config import InventorySettings
 from app.sep.config import ExtensionsSettings
@@ -62,6 +66,17 @@ EXTENSIONS_SETTINGS_TOKEN = setting_class_token(ExtensionsSettings)
 SETTINGS_TOKEN = setting_class_token(Settings)
 SNIPPETS_SETTINGS_TOKEN = setting_class_token(SnippetsSettings)
 TASKS_SETTINGS_TOKEN = setting_class_token(TasksSettings)
+
+#: The token every revision up to the class rename stored the service settings'
+#: rows under. The frozen revisions predate that rename, so the rows seeded
+#: beneath them carry it rather than the live :data:`EXTENSIONS_SETTINGS_TOKEN`.
+LEGACY_SEP_SETTINGS_TOKEN = "SEP_SETTINGS"
+
+#: The callback key :func:`seed_connectivity_override` fires on.
+CONNECTIVITY_CALLBACK_KEY = (
+    SettingClassEnum.EXTENSIONS_SETTINGS,
+    "CONNECTIVITY_CHECK_DEFAULT",
+)
 
 #: A username far longer than any bounded column would have allowed. Both the
 #: SQLite round-trip and its real-PostgreSQL sibling write one this long to

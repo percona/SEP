@@ -73,6 +73,7 @@ from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     EXTENSIONS_SETTINGS_TOKEN,
+    LEGACY_SEP_SETTINGS_TOKEN,
     LONG_USERNAME_LENGTH,
     PMM_API_KEY,
     ROUTING_KEY,
@@ -101,11 +102,6 @@ _CREDENTIAL_PASSWORD = "inv-secret"
 #: revision's downgrade is its own inverse rather than the broad helper's.
 _PMM_CREDENTIAL_ENDPOINT = "https://pmm-user:pmm-secret@pmm.example.com:8443/"
 
-#: The token the service settings' rows carried before ``ee2b220c8c73`` renamed
-#: it. The rows below are seeded beneath the encryption revisions, so they carry
-#: it too, and are read back at heads under :data:`EXTENSIONS_SETTINGS_TOKEN`.
-_LEGACY_SEP_SETTINGS_TOKEN = "SEP_SETTINGS"
-
 _SEED_ROWS = [
     (
         SETTINGS_TOKEN,
@@ -120,7 +116,7 @@ _SEED_ROWS = [
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS", 7200),
-    (_LEGACY_SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
+    (LEGACY_SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
 ]
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``

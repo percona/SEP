@@ -229,8 +229,8 @@ async def test_per_class_isolation_prevents_key_leak(
 ) -> None:
     """A row for one class never bleeds into another class's snapshot.
 
-    Insert a ``(EXTENSIONS_SETTINGS, ENABLE_MANUAL_SYNC)`` row -- the key only exists
-    on ``SnippetsSettings``. The cache must drop it as "unknown field" rather
+    Insert a ``(EXTENSIONS_SETTINGS, ENABLE_MANUAL_SYNC)`` row, a key that only
+    exists on ``SnippetsSettings``. The cache must drop it as "unknown field" rather
     than apply it to the wrong class.
     """
     yaml_default = snippets_settings.ENABLE_MANUAL_SYNC

@@ -507,6 +507,7 @@ def test_a_blank_variable_does_not_shadow_the_file_it_defers_to(tmp_path: Path):
         )
     )
 
+    assert environment
     assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
 
 
@@ -618,6 +619,7 @@ def test_a_mounted_password_never_reaches_the_environment(tmp_path: Path):
 
     environment = exported(source_helper(SECRET_KEY="k", SECRETS_DIR=secrets_dir))
 
+    assert environment
     assert "EXTENSIONS__DATABASE__PASSWORD" not in environment
     assert "CELERY__BEAT_DBURI" not in environment
 
@@ -801,11 +803,11 @@ def test_a_mounted_secret_resolves_through_the_shell_into_the_settings_classes(
 
 
 class TestBlankNamesWhoseGuardMightNeverFire:
-    """Clear a canonical name inherited blank while its ``SEP_*`` guard is inactive.
+    """Clear a canonical name inherited blank while its ``EXTENSIONS_*`` guard is idle.
 
     ``export_canonical`` only clears a blank when it actually runs, and four
-    guards skip calling it whenever their raw input is absent. Two more names
-    -- ``EXTENSIONS_INTERNAL_TOKEN`` and ``BASE_URL`` -- have no guard at all and are
+    guards skip calling it whenever their raw input is absent. Two more names,
+    ``EXTENSIONS_INTERNAL_TOKEN`` and ``BASE_URL``, have no guard at all and are
     never touched by the script. Every canonical name the script manages must
     clear blanks unconditionally so a mounted secret file is never shadowed.
     """

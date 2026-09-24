@@ -28,7 +28,7 @@ from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
 
 
 class TestSepTaskStatsEndpoint:
-    """Tests for ``GET /api/extensions/task-stats/{task_name}`` proxy behavior."""
+    """Cover ``GET /api/extensions/task-stats/{task_name}`` proxy behavior."""
 
     def test_returns_upstream_stats_payload(
         self,
@@ -86,7 +86,7 @@ class TestSepTaskStatsEndpoint:
 
 
 class TestSepTaskStatsAuth:
-    """Tests for ``/api/extensions/task-stats/{task_name}`` authentication enforcement."""
+    """Cover ``/api/extensions/task-stats/{task_name}`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:

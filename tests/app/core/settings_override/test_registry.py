@@ -272,7 +272,7 @@ def test_is_hot_reloadable_false_for_missing_field() -> None:
 
 
 def test_hot_field_names_sep_settings() -> None:
-    """``ExtensionsSettings`` ships the promoted HOT fields plus runtime toggles.
+    """Check that ``ExtensionsSettings`` ships the promoted HOT fields and toggles.
 
     Includes the endpoint and footer promotions and the ambient-SSO toggle.
     """

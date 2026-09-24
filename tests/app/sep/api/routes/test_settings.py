@@ -349,7 +349,7 @@ class TestReducedActivationSettings:
 
 @pytest.mark.asyncio
 class TestSepSettingsList:
-    """Tests for ``GET /api/extensions/admin/settings/``."""
+    """Cover ``GET /api/extensions/admin/settings/``."""
 
     async def test_returns_local_proxied_and_app_owned_groups(
         self, api_admin_client: TestClient
@@ -578,7 +578,7 @@ class TestSepSettingsList:
 
 @pytest.mark.asyncio
 class TestSepSettingsGet:
-    """Tests for ``GET /api/extensions/admin/settings/{setting_class}/{key}``."""
+    """Cover ``GET /api/extensions/admin/settings/{setting_class}/{key}``."""
 
     async def test_existing_field_returns_metadata(
         self, api_admin_client: TestClient
@@ -644,7 +644,7 @@ class TestSepSettingsGet:
 
 @pytest.mark.asyncio
 class TestSepSettingsPatch:
-    """Tests for ``PATCH /api/extensions/admin/settings/{setting_class}``."""
+    """Cover ``PATCH /api/extensions/admin/settings/{setting_class}``."""
 
     async def test_single_key_creates_override_row(
         self,
@@ -1406,7 +1406,7 @@ class TestSepSettingsPatch:
 
 @pytest.mark.asyncio
 class TestSepSettingsDelete:
-    """Tests for ``DELETE /api/extensions/admin/settings/{setting_class}/{key}``."""
+    """Cover ``DELETE /api/extensions/admin/settings/{setting_class}/{key}``."""
 
     async def test_delete_existing_override(
         self,

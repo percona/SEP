@@ -324,7 +324,7 @@ class TestSepPeriodicTasksErrorSplit:
 
 
 class TestSepPeriodicTasksAuth:
-    """Tests for ``/api/extensions/periodic-tasks/`` authentication enforcement."""
+    """Cover ``/api/extensions/periodic-tasks/`` authentication enforcement."""
 
     def test_unauthenticated_returns_json_401(
         self, unauthenticated_client: TestClient

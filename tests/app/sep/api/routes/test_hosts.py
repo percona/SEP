@@ -67,7 +67,7 @@ def _observation(node_id: int, *, can_elevate: bool | None) -> dict[str, Any]:
 
 
 class TestSepHostsEndpoint:
-    """Tests for ``GET /api/extensions/hosts/`` happy-path and edge cases."""
+    """Cover ``GET /api/extensions/hosts/`` happy-path and edge cases."""
 
     def test_returns_hosts_with_inventory_display_names_sorted(
         self,
@@ -632,7 +632,7 @@ class TestSepHostsEndpoint:
 
 
 class TestSepHostsAuth:
-    """Tests for ``/api/extensions/hosts/`` authentication enforcement."""
+    """Cover ``/api/extensions/hosts/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:

@@ -379,7 +379,7 @@ class TestFooterTemplate:
 
 
 class TestHealthReportFieldRemoved:
-    """``ExtensionsSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
+    """Check that ``ExtensionsSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
 
     def test_sep_settings_has_no_health_report_field(self):
         """Assert ``ExtensionsSettings`` no longer declares a ``HEALTH_REPORT`` field."""
@@ -387,14 +387,14 @@ class TestHealthReportFieldRemoved:
 
 
 class TestDeprecatedPMMRemoved:
-    """The deprecated ``EXTENSIONS.PMM`` section is gone; PMM lives only top-level."""
+    """Confirm the removed ``EXTENSIONS.PMM`` section stays gone; PMM is top-level only."""
 
     def test_sep_settings_has_no_pmm_field(self):
-        """``ExtensionsSettings`` no longer declares a ``PMM`` field."""
+        """Check that ``ExtensionsSettings`` no longer declares a ``PMM`` field."""
         assert "PMM" not in ExtensionsSettings.model_fields
 
     def test_stray_sep_pmm_mapping_is_rejected(self):
-        """A leftover ``EXTENSIONS.PMM`` mapping is rejected at construction.
+        """Reject a leftover ``EXTENSIONS.PMM`` mapping at construction.
 
         Connection config must now come from the top-level ``PMM`` section. The
         stale ``EXTENSIONS.PMM`` block (including the ``EXTENSIONS__PMM__*`` env-var path) is
@@ -405,7 +405,7 @@ class TestDeprecatedPMMRemoved:
             ExtensionsSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
 
     def test_clean_build_without_stray_pmm(self):
-        """A clean ``ExtensionsSettings`` build (no ``PMM`` key) constructs without error."""
+        """Construct a clean ``ExtensionsSettings`` (no ``PMM`` key) without error."""
         assert ExtensionsSettings() is not None
 
 

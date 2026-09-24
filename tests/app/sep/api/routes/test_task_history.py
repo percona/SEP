@@ -76,7 +76,7 @@ def _history_page(
 
 
 class TestSepTaskHistoryEndpoint:
-    """Tests for ``GET /api/extensions/task-history/`` proxy and merge behavior."""
+    """Cover ``GET /api/extensions/task-history/`` proxy and merge behavior."""
 
     def test_merges_history_for_multiple_task_names(
         self,
@@ -457,7 +457,7 @@ class TestSepTaskHistoryEndpoint:
 
 
 class TestSepTaskHistoryAuth:
-    """Tests for ``/api/extensions/task-history/`` authentication enforcement."""
+    """Cover ``/api/extensions/task-history/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -484,7 +484,7 @@ class TestSepTaskHistoryAuth:
 
 
 class TestSepTaskHistoryListAll:
-    """``GET /api/extensions/task-history/`` with no ``task_names`` proxies the upstream list."""
+    """Forward ``GET /api/extensions/task-history/`` without names to the upstream list."""
 
     def test_passthrough_when_task_names_omitted(
         self,
@@ -657,7 +657,7 @@ class TestSepTaskHistoryListAll:
 
 
 class TestSepStopTaskHistoryEndpoint:
-    """``POST /api/extensions/task-history/{id}/stop/`` proxies the upstream stop call."""
+    """Forward ``POST /api/extensions/task-history/{id}/stop/`` to the upstream stop."""
 
     def test_stop_proxies_and_returns_upstream_json(
         self,

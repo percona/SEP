@@ -117,7 +117,8 @@ def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
     """The schema-helper route must not appear in the core ``/openapi.json``."""
     core_spec = test_client.get("/openapi.json").json()
 
-    assert "/api/extensions/openapi.json" not in core_spec.get("paths", {})
+    assert core_spec["paths"]
+    assert "/api/extensions/openapi.json" not in core_spec["paths"]
 
 
 def test_api_openapi_json_merges_core_and_sep(test_client):
@@ -165,14 +166,15 @@ def test_existing_core_openapi_json_unchanged(test_client):
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
     assert {"openapi", "info", "paths"} <= spec.keys()
-    paths = spec.get("paths", {})
+    paths = spec["paths"]
+    assert paths
     assert "/api/openapi.json" not in paths
     assert "/api/docs" not in paths
     assert "/api/extensions/openapi.json" not in paths
 
 
 def test_existing_sep_openapi_json_unchanged(test_client):
-    """``GET /api/extensions/openapi.json`` still returns the sep_app spec."""
+    """Serve the sep_app spec at ``GET /api/extensions/openapi.json``."""
     response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK

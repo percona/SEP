@@ -156,7 +156,7 @@ def cookie_admin_client_fixture(
 
 
 class TestListAggregation:
-    """``GET /api/extensions/admin/settings/`` aggregates the proxied Tasks group."""
+    """Check that ``GET /api/extensions/admin/settings/`` aggregates the Tasks group."""
 
     def test_appends_tasks_group_fetched_server_side(
         self, admin_client: TestClient, mock_tasks: AsyncMock

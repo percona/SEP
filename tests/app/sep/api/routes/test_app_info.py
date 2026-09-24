@@ -46,7 +46,7 @@ class TestRenderFooterText:
 
 
 class TestAppInfoEndpoint:
-    """Tests for ``GET /api/extensions/app-info/`` rendering and live overrides."""
+    """Cover ``GET /api/extensions/app-info/`` rendering and live overrides."""
 
     def test_returns_default_footer_text(self, test_client: TestClient) -> None:
         """Return the footer text rendered from the default ``FOOTER_TEMPLATE``."""
@@ -72,7 +72,7 @@ class TestAppInfoEndpoint:
 
 
 class TestAppInfoAuth:
-    """Tests for ``/api/extensions/app-info/`` authentication enforcement."""
+    """Cover ``/api/extensions/app-info/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:

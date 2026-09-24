@@ -56,7 +56,7 @@ def _service_payload(service_id: int = 1, name: str = "svc1", type_: str = "mysq
 
 
 class TestSepServicesEndpoint:
-    """Tests for ``GET /api/extensions/services/``."""
+    """Cover ``GET /api/extensions/services/``."""
 
     def test_proxies_inventory_list(
         self,

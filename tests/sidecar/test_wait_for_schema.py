@@ -289,8 +289,8 @@ def test_the_beat_schema_step_does_not_probe_the_sep_database(
     """Keep the readiness wait in the bootstrap, which knows the resolved store.
 
     ``CELERY__BEAT_DBURI`` may point beat at a store other than the SEP database,
-    so the ``until nc -z %(ENV_EXTENSIONS_DB_HOST)s`` idiom its three siblings use would
-    watch the wrong host here.
+    so the ``until nc -z %(ENV_EXTENSIONS_DB_HOST)s`` idiom its sibling migrate
+    programs use would watch the wrong host here.
     """
     command = program_settings["migrate-beat"]["command"]
 

@@ -57,6 +57,7 @@ from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
 from tests.app.core.settings_override.conftest import (
     clear_connectivity_override,
+    CONNECTIVITY_CALLBACK_KEY,
     EXTENSIONS_SETTINGS_TOKEN,
     hanging_session_maker_factory,
     recording_callback,
@@ -516,7 +517,6 @@ async def test_bounded_refresh_logs_exception_raised_while_unwinding(
     )
 
 
-_CALLBACK_KEY = (SettingClassEnum.EXTENSIONS_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
@@ -638,7 +638,9 @@ async def test_refresh_all_fires_callback_for_changed_key(
     async def _callback(_: object) -> None:
         fired.append(True)
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _callback}
+    )
     assert fired == [True]
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
@@ -654,7 +656,7 @@ async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> Non
         received.append(change)
 
     await fire_change_callbacks(
-        {_CALLBACK_KEY: _callback},
+        {CONNECTIVITY_CALLBACK_KEY: _callback},
         SettingClassEnum.EXTENSIONS_SETTINGS,
         previous,
         current,
@@ -689,7 +691,7 @@ async def test_fire_change_callbacks_hands_every_callback_the_whole_change() -> 
 
     await fire_change_callbacks(
         {
-            _CALLBACK_KEY: _recorder("connectivity"),
+            CONNECTIVITY_CALLBACK_KEY: _recorder("connectivity"),
             (SettingClassEnum.EXTENSIONS_SETTINGS, "APP_DRAIN"): _recorder("drain"),
         },
         SettingClassEnum.EXTENSIONS_SETTINGS,
@@ -717,7 +719,9 @@ async def test_refresh_all_skips_callback_for_unchanged_key(
     async def _callback(_: object) -> None:
         fired.append(True)
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _callback}
+    )
     assert fired == []
 
 
@@ -733,7 +737,9 @@ async def test_refresh_all_isolates_callback_exception(
     async def _boom(_: object) -> None:
         raise RuntimeError("callback boom")
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _boom})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _boom}
+    )
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
 
@@ -754,7 +760,7 @@ async def test_start_refresh_task_initial_does_not_fire_unmarked_callbacks(
         lambda: session_maker,
         registry,
         interval=timedelta(seconds=3600),
-        callbacks={_CALLBACK_KEY: _callback},
+        callbacks={CONNECTIVITY_CALLBACK_KEY: _callback},
     )
     try:
         assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
@@ -780,7 +786,7 @@ async def test_start_refresh_task_fires_callback_on_loop_change(
         lambda: session_maker,
         registry,
         interval=timedelta(milliseconds=50),
-        callbacks={_CALLBACK_KEY: _callback},
+        callbacks={CONNECTIVITY_CALLBACK_KEY: _callback},
     )
     try:
         assert not fired.is_set()
@@ -887,7 +893,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert len(fired) == 1
@@ -907,7 +915,7 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: recording_callback(fired)},
+            callbacks={CONNECTIVITY_CALLBACK_KEY: recording_callback(fired)},
         )
 
         assert fired == []
@@ -925,7 +933,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert fired == []
@@ -976,7 +986,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert seeded is True
@@ -1001,7 +1013,7 @@ class TestFireBootCallbacks:
                 lambda: session_maker,
                 registry,
                 seed_timeout=None,
-                callbacks={_CALLBACK_KEY: _boom},
+                callbacks={CONNECTIVITY_CALLBACK_KEY: _boom},
             )
 
         assert seeded is True
@@ -1026,7 +1038,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         (change,) = fired
@@ -1077,7 +1091,9 @@ class TestFireBootCallbacks:
                 lambda: session_maker,
                 registry,
                 seed_timeout=0.05,
-                callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+                callbacks={
+                    CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+                },
             ),
             timeout=1.0,
         )
@@ -1101,7 +1117,7 @@ class TestFireBootCallbacks:
         base_value = ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=not base_value)
         fired: list[SnapshotChange] = []
-        callbacks = {_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
 
         await bounded_seed(
             lambda: session_maker, registry, seed_timeout=None, callbacks=callbacks
@@ -1133,7 +1149,7 @@ class TestFireBootCallbacks:
             registry,
             interval=timedelta(seconds=3600),
             callbacks={
-                _CALLBACK_KEY: fire_on_boot(recording_callback(marked)),
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(marked)),
                 (SettingClassEnum.EXTENSIONS_SETTINGS, "INVENTORY_ENDPOINT"): (
                     recording_callback(unmarked)
                 ),

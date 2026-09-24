@@ -38,7 +38,7 @@ def mock_session_dep() -> Iterator[AsyncMock]:
 
 
 class TestDashboardStatsEndpoint:
-    """Tests for ``GET /api/extensions/dashboard/`` happy-path and degradation cases."""
+    """Cover ``GET /api/extensions/dashboard/`` happy-path and degradation cases."""
 
     def test_returns_all_counts_no_error_header(
         self,
@@ -204,7 +204,7 @@ class TestDashboardStatsEndpoint:
 
 
 class TestDashboardStatsAuth:
-    """Tests for ``/api/extensions/dashboard/`` authentication enforcement."""
+    """Cover ``/api/extensions/dashboard/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:

@@ -42,6 +42,7 @@ from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     BOUNDED_SEED,
     clear_connectivity_override,
+    CONNECTIVITY_CALLBACK_KEY,
     HangingSession,
     recording_bounded_seed,
     recording_callback,
@@ -95,7 +96,6 @@ def _make_registry() -> ProxyRegistry:
 
 
 CALLBACKS: CallbackRegistry = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
-_CALLBACK_KEY = (SettingClassEnum.EXTENSIONS_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 
 
 class _CountingRegistry:
@@ -312,7 +312,7 @@ class TestWorkerRefresherStart:
         fired: list[SnapshotChange] = []
         clock = _FakeClock()
         override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
-        callbacks = {_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
 
         loop.run_until_complete(
             seed_connectivity_override(session_maker, value=override_value)
@@ -352,7 +352,7 @@ class TestWorkerRefresherStart:
         }
         fired: list[SnapshotChange] = []
         override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
-        callbacks = {_CALLBACK_KEY: recording_callback(fired)}
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: recording_callback(fired)}
 
         loop.run_until_complete(
             seed_connectivity_override(session_maker, value=override_value)
@@ -668,7 +668,9 @@ class TestWorkerRefresherMaybeRefresh:
         refresher = WorkerRefresher(
             lambda: loop, lambda: session_maker, lambda: registry, now=clock
         )
-        refresher.start(INTERVAL, enabled=True, callbacks={_CALLBACK_KEY: _callback})
+        refresher.start(
+            INTERVAL, enabled=True, callbacks={CONNECTIVITY_CALLBACK_KEY: _callback}
+        )
         override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
 
         loop.run_until_complete(

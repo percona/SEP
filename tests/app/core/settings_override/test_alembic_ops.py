@@ -84,6 +84,7 @@ from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
     EXTENSIONS_SETTINGS_TOKEN,
     INVENTORY_SETTINGS_TOKEN,
+    LEGACY_SEP_SETTINGS_TOKEN,
     PMM_API_KEY,
     PMM_ENDPOINT,
     ROUTING_KEY,
@@ -130,11 +131,6 @@ _CREDENTIAL_URL_ROWS: list[tuple[str, str, Any]] = [
     (SETTINGS_TOKEN, "PMM__endpoint", _CREDENTIAL_URL),
 ]
 
-#: The token every revision up to the class rename stored the service settings'
-#: rows under. The frozen revisions below predate that rename, so the rows they
-#: are fed carry it rather than the live :data:`EXTENSIONS_SETTINGS_TOKEN`.
-_LEGACY_SEP_SETTINGS_TOKEN = "SEP_SETTINGS"
-
 
 def _as_legacy(rows: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
     """Return ``rows`` with the live service-settings token swapped for the legacy one.
@@ -144,7 +140,7 @@ def _as_legacy(rows: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
     """
     return [
         (
-            _LEGACY_SEP_SETTINGS_TOKEN if token == EXTENSIONS_SETTINGS_TOKEN else token,
+            LEGACY_SEP_SETTINGS_TOKEN if token == EXTENSIONS_SETTINGS_TOKEN else token,
             key,
             value,
         )
@@ -656,7 +652,7 @@ def _frozen_coverage(glob: str) -> set[str]:
     :param glob: The revision-filename glob selecting one family.
     :return: The storage tokens the family's frozen replicas answer for.
     """
-    retokened = {_LEGACY_SEP_SETTINGS_TOKEN: EXTENSIONS_SETTINGS_TOKEN}
+    retokened = {LEGACY_SEP_SETTINGS_TOKEN: EXTENSIONS_SETTINGS_TOKEN}
     return {
         retokened.get(token, token)
         for track in _TRACKS
@@ -1137,35 +1133,35 @@ _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "DATABASE__PASSWORD",
         "sep-db-password",
         _SECRET_LEAF,
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "INVENTORY_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "TASKS_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__endpoint",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__endpoint",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
@@ -1207,13 +1203,13 @@ _FROZEN_CONTAINER_CASES: list[tuple[str, str, str, Any]] = [
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__secrets",
         dict(_DELIVERY_SECRETS),
     ),
     (
         "sep",
-        _LEGACY_SEP_SETTINGS_TOKEN,
+        LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
         dict(_DELIVERY_SECRETS),
     ),
@@ -1429,7 +1425,7 @@ class TestFrozenSecretRevisionOutcomes:
         provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
         assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
         assert provider["PROVIDER"] == "pagerduty"
-        inputs = stored[(_LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
+        inputs = stored[(LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
         assert {
             name: stored_plaintext(value) for name, value in inputs["secrets"].items()
         } == _DELIVERY_SECRETS
@@ -1489,7 +1485,7 @@ class TestFrozenSecretRevisionOutcomes:
             [
                 (SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY),
                 (
-                    _LEGACY_SEP_SETTINGS_TOKEN,
+                    LEGACY_SEP_SETTINGS_TOKEN,
                     "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
                     dict(_DELIVERY_SECRETS),
                 ),
@@ -1505,7 +1501,7 @@ class TestFrozenSecretRevisionOutcomes:
         stored = _stored(engine)
         assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
         secrets = stored[
-            (_LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS__secrets")
+            (LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS__secrets")
         ]
         assert {
             name: stored_plaintext(value) for name, value in secrets.items()
@@ -1626,7 +1622,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
 
         stored = _stored(engine)
         for key in ("INVENTORY_ENDPOINT", "TASKS_ENDPOINT"):
-            parsed = urlparse(stored[(_LEGACY_SEP_SETTINGS_TOKEN, key)])
+            parsed = urlparse(stored[(LEGACY_SEP_SETTINGS_TOKEN, key)])
             assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
             assert parsed.port == _CREDENTIAL_PORT

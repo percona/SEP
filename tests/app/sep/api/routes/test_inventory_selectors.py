@@ -26,7 +26,7 @@ from app.core.pagination import MAX_PAGINATION_LIMIT
 
 
 class TestSepServiceSchemasEndpoint:
-    """Tests for ``GET /api/extensions/services/{service_id}/schemas``."""
+    """Cover ``GET /api/extensions/services/{service_id}/schemas``."""
 
     def test_list_schemas(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
@@ -96,7 +96,7 @@ class TestSepServiceSchemasEndpoint:
 
 
 class TestSepSchemaTablesEndpoint:
-    """Tests for ``GET /api/extensions/schemas/{schema_id}/tables``."""
+    """Cover ``GET /api/extensions/schemas/{schema_id}/tables``."""
 
     def test_list_tables(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
