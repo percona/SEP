@@ -14,19 +14,19 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Sync the ``[sep] version_locations`` value in ``alembic.ini`` from disk.
+"""Sync the ``[extensions] version_locations`` value in ``alembic.ini`` from disk.
 
-Keeps a static ``version_locations`` line so bare ``alembic --name sep ...``
+Keeps a static ``version_locations`` line so bare ``alembic --name extensions ...``
 keeps working (``ScriptDirectory.from_config`` reads it before ``env.py``),
 but regenerates the value from the migrations-first filesystem walk so new
-apps under ``app/sep/apps/<name>/migrations/versions`` need no hand edit.
+apps under ``app/extensions/apps/<name>/migrations/versions`` need no hand edit.
 
 Run without arguments to rewrite in place; run with ``--check`` to fail
 without writing when the committed value has drifted.
 
 A regeneration that would drop an entry already listed in the ini is
 refused unless ``--allow-removals`` is passed — see
-``app/sep/migrations/_orphan_heads.py`` for why a configured location
+``app/extensions/migrations/_orphan_heads.py`` for why a configured location
 that contributes no revisions has to survive.
 """
 
@@ -40,14 +40,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INI = REPO_ROOT / "alembic.ini"
-DEFAULT_APPS_ROOT = REPO_ROOT / "app" / "sep" / "apps"
-MAIN_VERSIONS_ENTRY = "%(here)s/app/sep/migrations/versions"
+DEFAULT_APPS_ROOT = REPO_ROOT / "app" / "extensions" / "apps"
+MAIN_VERSIONS_ENTRY = "%(here)s/app/extensions/migrations/versions"
 ENTRY_SEPARATOR = ":"
 
 GENERATED_COMMENT = """\
 # GENERATED — do not hand-edit. Rewritten by
 # ``scripts/sync_alembic_version_locations.py`` from a deterministic
-# filesystem walk of ``app/sep/apps/*/migrations/versions`` (main chain
+# filesystem walk of ``app/extensions/apps/*/migrations/versions`` (main chain
 # first, then plugin dirs sorted). Entries are joined with ``:``
 # (matching ``version_path_separator = :`` above). Bare ``alembic``
 # reads this before ``env.py``, so the list must stay here; regenerate
@@ -73,13 +73,13 @@ class VersionLocationsRemovalError(ValueError):
         """
         self.removed = removed
         super().__init__(
-            "regenerating [sep] version_locations would remove "
+            "regenerating [extensions] version_locations would remove "
             f"{len(removed)} entry(ies): {', '.join(removed)}"
         )
 
 
 def compute_version_locations(apps_root: Path) -> str:
-    """Build the ``version_locations`` value for the ``[sep]`` section.
+    """Build the ``version_locations`` value for the ``[extensions]`` section.
 
     :param apps_root: Directory of plugin packages to scan.
     :return: Colon-joined ``%(here)s/...`` entries, main chain first.
@@ -87,39 +87,41 @@ def compute_version_locations(apps_root: Path) -> str:
     repo_root = str(REPO_ROOT)
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
-    from app.sep.migrations._discovery import discover_plugin_version_dirs
+    from app.extensions.migrations._discovery import discover_plugin_version_dirs
 
     entries = [MAIN_VERSIONS_ENTRY]
     for versions_dir in discover_plugin_version_dirs(apps_root):
         plugin_name = Path(versions_dir).parent.parent.name
-        entries.append(f"%(here)s/app/sep/apps/{plugin_name}/migrations/versions")
+        entries.append(
+            f"%(here)s/app/extensions/apps/{plugin_name}/migrations/versions"
+        )
     return ENTRY_SEPARATOR.join(entries)
 
 
-def _sep_section_bounds(lines: list[str]) -> tuple[int, int]:
-    """Return ``(start, end)`` line indices for the ``[sep]`` section body.
+def _extensions_section_bounds(lines: list[str]) -> tuple[int, int]:
+    """Return ``(start, end)`` line indices for the ``[extensions]`` section body.
 
-    ``start`` is the first line after ``[sep]``; ``end`` is the index of the
+    ``start`` is the first line after ``[extensions]``; ``end`` is the index of the
     next section header (or ``len(lines)``).
 
     :param lines: ``alembic.ini`` lines (``keepends`` optional).
-    :return: Inclusive-exclusive body span after the ``[sep]`` header.
-    :raises ValueError: If no ``[sep]`` section header is present.
+    :return: Inclusive-exclusive body span after the ``[extensions]`` header.
+    :raises ValueError: If no ``[extensions]`` section header is present.
     """
-    sep_header: int | None = None
+    extensions_header: int | None = None
     for index, line in enumerate(lines):
         match = _SECTION_HEADER.match(line)
         if match is None:
             continue
-        if match.group("name") == "sep":
-            sep_header = index
+        if match.group("name") == "extensions":
+            extensions_header = index
             continue
-        if sep_header is not None:
-            return sep_header + 1, index
-    if sep_header is None:
-        msg = "alembic.ini has no [sep] section"
+        if extensions_header is not None:
+            return extensions_header + 1, index
+    if extensions_header is None:
+        msg = "alembic.ini has no [extensions] section"
         raise ValueError(msg)
-    return sep_header + 1, len(lines)
+    return extensions_header + 1, len(lines)
 
 
 def _reject_multiline_version_locations(
@@ -132,9 +134,9 @@ def _reject_multiline_version_locations(
 
     :param lines: ``alembic.ini`` lines (``keepends`` optional).
     :param assignment_idx: Index of the ``version_locations =`` line.
-    :param body_end: Exclusive end of the ``[sep]`` section body.
+    :param body_end: Exclusive end of the ``[extensions]`` section body.
     :raises ValueError: If an indented ConfigParser continuation follows
-        the assignment inside the ``[sep]`` section.
+        the assignment inside the ``[extensions]`` section.
     """
     for index in range(assignment_idx + 1, body_end):
         content = lines[index].rstrip("\r\n")
@@ -145,7 +147,7 @@ def _reject_multiline_version_locations(
             continue
         if content[0].isspace():
             msg = (
-                "[sep] version_locations must be a single line; "
+                "[extensions] version_locations must be a single line; "
                 "indented continuation lines are not supported"
             )
             raise ValueError(msg)
@@ -153,20 +155,20 @@ def _reject_multiline_version_locations(
 
 
 def _locate_version_locations(lines: list[str]) -> tuple[int, int]:
-    """Return the ``[sep]`` body start and its ``version_locations`` line index.
+    """Return the ``[extensions]`` body start and its ``version_locations`` line index.
 
     :param lines: ``alembic.ini`` lines (``keepends`` optional).
-    :return: The first line index after ``[sep]`` and the index of the
+    :return: The first line index after ``[extensions]`` and the index of the
         ``version_locations =`` assignment inside it.
-    :raises ValueError: If ``[sep]`` is missing, the assignment is missing
+    :raises ValueError: If ``[extensions]`` is missing, the assignment is missing
         inside it, or the value uses indented continuations.
     """
-    body_start, body_end = _sep_section_bounds(lines)
+    body_start, body_end = _extensions_section_bounds(lines)
     for index in range(body_start, body_end):
         if _VERSION_LOCATIONS.match(lines[index]):
             _reject_multiline_version_locations(lines, index, body_end)
             return body_start, index
-    msg = "[sep] section has no version_locations assignment"
+    msg = "[extensions] section has no version_locations assignment"
     raise ValueError(msg)
 
 
@@ -185,14 +187,14 @@ def _normalize_entry(entry: str) -> str:
 
 
 def _current_version_locations(text: str) -> tuple[str, ...]:
-    """Return the entries currently listed in ``[sep] version_locations``.
+    """Return the entries currently listed in ``[extensions] version_locations``.
 
     The raw ``%(here)s`` entries are returned uninterpolated, matching what
     :func:`compute_version_locations` produces, so the two are comparable.
 
     :param text: Full ``alembic.ini`` contents.
     :return: Non-empty entries in configuration order.
-    :raises ValueError: If ``[sep]`` is missing, the assignment is missing
+    :raises ValueError: If ``[extensions]`` is missing, the assignment is missing
         inside it, or the value uses indented continuations.
     """
     lines = text.splitlines(keepends=True)
@@ -229,11 +231,11 @@ def _removed_version_locations(text: str, value: str) -> tuple[str, ...]:
     )
 
 
-def render_sep_version_locations(text: str, value: str) -> str:
-    """Return ``text`` with the ``[sep] version_locations`` block rewritten.
+def render_extensions_version_locations(text: str, value: str) -> str:
+    """Return ``text`` with the ``[extensions] version_locations`` block rewritten.
 
     Replaces the contiguous comment lines immediately above
-    ``version_locations =`` (and that assignment line) inside ``[sep]``.
+    ``version_locations =`` (and that assignment line) inside ``[extensions]``.
     Leaves every other section and line untouched. Re-emits the same
     line ending style present in ``text`` (``LF`` or ``CRLF``).
 
@@ -241,7 +243,7 @@ def render_sep_version_locations(text: str, value: str) -> str:
         preserved (not universal-newline-normalized).
     :param value: The computed ``version_locations`` value.
     :return: Updated file contents.
-    :raises ValueError: If ``[sep]`` is missing, ``version_locations`` is
+    :raises ValueError: If ``[extensions]`` is missing, ``version_locations`` is
         missing inside it, or the existing value uses indented continuations.
     """
     newline = "\r\n" if "\r\n" in text else "\n"
@@ -289,19 +291,19 @@ def sync_alembic_ini(
         ``False`` when ``check`` found drift.
     :raises VersionLocationsRemovalError: When the write would drop
         configured entries and ``allow_removals`` is false.
-    :raises ValueError: When the ini is missing ``[sep]``, missing
+    :raises ValueError: When the ini is missing ``[extensions]``, missing
         ``version_locations``, or uses a multi-line value.
     """
     value = compute_version_locations(apps_root)
     # newline="" disables universal-newline translation so a CRLF file still
-    # contains "\r\n" for render_sep_version_locations to detect and re-emit.
+    # contains "\r\n" for render_extensions_version_locations to detect and re-emit.
     with ini_path.open(encoding="utf-8", newline="") as handle:
         original = handle.read()
     if not allow_removals:
         removed = _removed_version_locations(original, value)
         if removed:
             raise VersionLocationsRemovalError(removed)
-    updated = render_sep_version_locations(original, value)
+    updated = render_extensions_version_locations(original, value)
     if original == updated:
         return True
     if check:
@@ -312,7 +314,7 @@ def sync_alembic_ini(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Sync or check ``[sep] version_locations`` in ``alembic.ini``.
+    """Sync or check ``[extensions] version_locations`` in ``alembic.ini``.
 
     :param argv: CLI arguments (defaults to ``sys.argv[1:]``).
     :return: ``0`` on success / in sync; ``1`` when ``--check`` finds drift,
@@ -365,13 +367,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             f"{args.ini}: {action} {len(exc.removed)} "
-            f"[sep] version_locations entry(ies): {', '.join(exc.removed)}. "
+            f"[extensions] version_locations entry(ies): {', '.join(exc.removed)}. "
             "A configured location that is absent from disk or contributes "
             "no migration scripts is how the orphan-head filter recognises a "
             "stripped app, so removing it silently would disarm that check. "
             "Restore the migration directory; or, on a tree with an app "
             "deliberately stripped, skip this script and run "
-            "`alembic --name sep upgrade heads` directly — leaving the "
+            "`alembic --name extensions upgrade heads` directly — leaving the "
             f"entry in place is what arms the filter. {opt_in}",
             file=sys.stderr,
         )
@@ -382,15 +384,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         if not matched:
             print(
-                f"{args.ini}: [sep] version_locations is out of date; "
+                f"{args.ini}: [extensions] version_locations is out of date; "
                 "regenerate with `python scripts/sync_alembic_version_locations.py`",
                 file=sys.stderr,
             )
             return 1
-        print(f"{args.ini}: [sep] version_locations is in sync.")
+        print(f"{args.ini}: [extensions] version_locations is in sync.")
         return 0
 
-    print(f"Synced [sep] version_locations in {args.ini}")
+    print(f"Synced [extensions] version_locations in {args.ini}")
     return 0
 
 

@@ -34,8 +34,8 @@ from app.core.settings_override.api.routes import (
     ClassEntry,
 )
 from app.core.utils import json_serializer
-from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
-from app.sep.snippets.config import snippets_settings, SnippetsSettings
+from app.extensions.apps.alerts.config import alerts_settings, AlertsSettings
+from app.extensions.snippets.config import snippets_settings, SnippetsSettings
 from tests.app.db_schema import apply_schema
 
 LIST_URL = "/settings/"

@@ -17,7 +17,7 @@
 
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
-import type { RelatedApp } from '@sep/api';
+import type { RelatedApp } from '@pmm-extensions/api';
 import { Link } from 'react-router';
 
 export interface RelatedAppTabBarProps {

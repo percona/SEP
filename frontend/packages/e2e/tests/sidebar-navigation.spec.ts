@@ -68,7 +68,7 @@ const MOCK_USER = {
 // Heading served for schema-driven apps whose display name we don't assert
 // individually (the URL already identifies them). Schema-driven pages render
 // `schema.display_name` as their h4, so this is a deterministic sentinel.
-const GENERIC_APP_HEADING = 'SEP App';
+const GENERIC_APP_HEADING = 'PMM Extensions App';
 
 // Apps whose display-name heading we assert explicitly (keyed by the
 // `<name>` in /api/apps/<name>/schema). These are the schema-driven entries
@@ -121,7 +121,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.endsWith('/sep/dashboard/')) {
+    if (pathname.endsWith('/extensions/dashboard/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -129,7 +129,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/sep/task-history/')) {
+    if (pathname.includes('/extensions/task-history/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

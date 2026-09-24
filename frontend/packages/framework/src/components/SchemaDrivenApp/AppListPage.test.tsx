@@ -20,7 +20,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import type { AppSchema } from '@sep/api';
+import type { AppSchema } from '@pmm-extensions/api';
 
 // `vi.mock` is hoisted above imports, so the factory must not close over
 // module-scope bindings (TDZ risk). Route the useAppTasks mock through a
@@ -43,7 +43,7 @@ vi.mock('../SchemaListView', () => ({
   },
 }));
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   DEFAULT_APP_LIST_OFFSET: 0,
   DEFAULT_APP_LIST_LIMIT: 50,
   RUNNING_STATUSES: new Set(['running', 'pending']),

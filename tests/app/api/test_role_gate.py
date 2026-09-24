@@ -30,21 +30,25 @@ from app.api.deps import (
 )
 from app.core.auth.models import UserRole
 from app.core.security import SAFE_HTTP_METHODS
+from app.extensions.main import extensions_app
 from app.inventory.main import inventory_app
-from app.sep.main import sep_app
 from app.tasks.main import tasks_app
 from app.tasks.routes import latest_task_history
 
-UNGATED_SEP_API_PREFIXES = ("/api/oauth/", "/api/users/", "/api/config/")
+UNGATED_EXTENSIONS_API_PREFIXES = ("/api/oauth/", "/api/users/", "/api/config/")
 
-GATED_APPS: Final = {"sep": sep_app, "inventory": inventory_app, "tasks": tasks_app}
+GATED_APPS: Final = {
+    "extensions": extensions_app,
+    "inventory": inventory_app,
+    "tasks": tasks_app,
+}
 
-#: Every unsafe route SEP opens below the gate's ``ADMIN`` default, keyed by the
+#: Every unsafe route PMM Extensions opens below the gate's ``ADMIN`` default, keyed by the
 #: service, method and path it answers on. Sub-app paths carry no mount prefix.
 NON_ADMIN_MINIMUMS: Final = {
-    ("sep", "POST", "/api/apps/alerts/restore"): UserRole.EDITOR,
-    ("sep", "POST", "/api/apps/alerts/push"): UserRole.EDITOR,
-    ("sep", "POST", "/api/apps/om_inventory/runs"): UserRole.EDITOR,
+    ("extensions", "POST", "/api/apps/alerts/restore"): UserRole.EDITOR,
+    ("extensions", "POST", "/api/apps/alerts/push"): UserRole.EDITOR,
+    ("extensions", "POST", "/api/apps/om_inventory/runs"): UserRole.EDITOR,
     ("tasks", "POST", "/history/latest"): UserRole.NONE,
 }
 
@@ -119,7 +123,9 @@ def test_every_unsafe_route_authenticates_itself_as_well(app: FastAPI) -> None:
         assert get_current_user in set(_resolved_callables(route.dependant)), route.path
 
 
-def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> None:
+def test_extensions_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> (
+    None
+):
     """Assert ``/api`` inherits the gate while the identity tree stays outside it.
 
     The prefixes are an assertion about the current mount layout, not a runtime
@@ -128,7 +134,7 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
     """
     gated: set[str] = set()
     ungated: set[str] = set()
-    for route in _api_routes(sep_app):
+    for route in _api_routes(extensions_app):
         if not route.path.startswith("/api/"):
             continue
         bucket = (
@@ -140,12 +146,16 @@ def test_sep_api_routes_inherit_the_gate_and_the_identity_tree_does_not() -> Non
 
     assert gated
     assert ungated
-    assert all(path.startswith(UNGATED_SEP_API_PREFIXES) for path in ungated), ungated
-    assert not any(path.startswith(UNGATED_SEP_API_PREFIXES) for path in gated), gated
+    assert all(path.startswith(UNGATED_EXTENSIONS_API_PREFIXES) for path in ungated), (
+        ungated
+    )
+    assert not any(
+        path.startswith(UNGATED_EXTENSIONS_API_PREFIXES) for path in gated
+    ), gated
 
 
 def test_every_unsafe_route_resolves_to_its_classified_minimum() -> None:
-    """Assert each gated unsafe route resolves to the minimum SEP classified it at.
+    """Assert each gated unsafe route resolves to the minimum PMM Extensions classified it at.
 
     Every route below ``ADMIN`` is a surface opened past the default, so opening
     or closing one has to mean editing a map that names it: the equality below
@@ -162,9 +172,12 @@ def test_every_unsafe_route_resolves_to_its_classified_minimum() -> None:
         for method in sorted(route.methods - SAFE_HTTP_METHODS)
     }
 
-    assert resolved[("sep", "POST", "/api/apps/alerts/pagerduty")] is UserRole.ADMIN
     assert (
-        resolved[("sep", "POST", "/api/apps/alerts/pagerduty/delete")] is UserRole.ADMIN
+        resolved[("extensions", "POST", "/api/apps/alerts/pagerduty")] is UserRole.ADMIN
+    )
+    assert (
+        resolved[("extensions", "POST", "/api/apps/alerts/pagerduty/delete")]
+        is UserRole.ADMIN
     )
     non_admin = {
         key: role for key, role in resolved.items() if role is not UserRole.ADMIN

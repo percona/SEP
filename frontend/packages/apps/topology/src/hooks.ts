@@ -9,7 +9,7 @@
 
 import { useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import type { TopologyCollectResponse, TopologyResultResponse } from './types';
 
 const TOPOLOGY_BASE = '/apps/topology';

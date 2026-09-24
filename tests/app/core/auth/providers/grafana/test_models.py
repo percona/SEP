@@ -94,7 +94,7 @@ class TestGrafanaUserIdentity:
         assert user.is_admin is True
 
     def test_id_is_stable_and_distinct_per_grafana_id(self, grafana_user_record):
-        """Verify the SEP id is deterministic per Grafana numeric id."""
+        """Verify the PMM Extensions id is deterministic per Grafana numeric id."""
         first = GrafanaUser._from_grafana_record(grafana_user_record, [])
         again = GrafanaUser._from_grafana_record(grafana_user_record, [])
         other = GrafanaUser._from_grafana_record(
@@ -261,7 +261,7 @@ class TestGrafanaAssertionRoleRoundTrip:
     def test_a_claim_spelled_as_the_member_name_is_accepted(self, grafana_mock):
         """Verify the field coercion reads a member name as well as its value.
 
-        Only SEP's own signing key can produce a payload at all, so the wider
+        Only PMM Extensions' own signing key can produce a payload at all, so the wider
         acceptance is documented here rather than narrowed.
         """
         payload = _TOKEN_SERIALIZER.dumps(
@@ -645,7 +645,7 @@ class TestGrafanaUnsupportedGrants:
 
 
 class TestGrafanaRefreshGrant:
-    """Test the SPA refresh grant (SEP-minted refresh assertions)."""
+    """Test the SPA refresh grant (PMM Extensions minted refresh assertions)."""
 
     @pytest.mark.asyncio
     async def test_refresh_remints_a_rotated_pair(
@@ -1311,7 +1311,7 @@ class TestGrafanaServiceAccountBearer:
 
     @pytest.mark.asyncio
     async def test_forwards_a_minted_exchange_assertion(self, verify_service_account):
-        """Verify downstream calls carry a SEP assertion, never the SA token."""
+        """Verify downstream calls carry a PMM Extensions assertion, never the SA token."""
         user = await GrafanaUser.from_bearer(_SA_TOKEN)
 
         assert user.access_token != _SA_TOKEN

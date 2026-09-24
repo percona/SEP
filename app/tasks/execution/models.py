@@ -281,7 +281,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             Defaults to 1 MiB.
         :param anonymize: Whether to redact the task's configured entities from the
             streamed content. Defaults to ``True``, as every read served to a user
-            must be redacted; internal reads of content SEP itself produced may opt
+            must be redacted; internal reads of content PMM Extensions itself produced may opt
             out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
         """

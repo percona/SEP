@@ -15,7 +15,7 @@
 
 """Test the shared-database guards on the ``settingoverride`` migrations.
 
-The ``settingoverride`` table is created by the SEP, Tasks and Inventory
+The ``settingoverride`` table is created by the Extensions, Tasks and Inventory
 Alembic tracks alike, and every track also drops the ``setting_class`` CHECK
 and adds the ``updated_by`` actor column. On a shared PostgreSQL database the
 tracks run ``upgrade heads`` against one physical schema, so the guarded
@@ -66,16 +66,17 @@ from app.core.settings_override.constants import (
 from app.core.settings_override.models import SettingOverride
 from app.core.utils import json_serializer
 from app.core.utils.fields import AsyncDatabaseEngine
+from app.extensions.config import extensions_settings
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
+    LEGACY_SEP_SETTINGS_TOKEN,
     LONG_USERNAME_LENGTH,
     PMM_API_KEY,
     ROUTING_KEY,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -85,9 +86,9 @@ _SETTING_CLASS_VARCHAR_LENGTH = 255
 #: The ``SYNC_REFRESH_TIME`` value seeded before a downgrade, read back through
 #: the JSONB column to prove the drop left the row's data intact.
 _SEEDED_OVERRIDE_VALUE = 5
-# The SEP revision immediately below the secret re-encryption one, so a test can
+# The PMM Extensions revision immediately below the secret re-encryption one, so a test can
 # seed plaintext rows into the state a deployment carrying overrides upgrades from.
-_SEP_PRE_ENCRYPTION_REVISION = "c9880f0ac1bd"
+_EXTENSIONS_PRE_ENCRYPTION_REVISION = "c9880f0ac1bd"
 
 
 #: A credential-bearing endpoint, whose userinfo password the credential-URL
@@ -115,18 +116,18 @@ _SEED_ROWS = [
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS", 7200),
-    (SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
+    (LEGACY_SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
 ]
 
-# The SEP and Tasks revisions immediately below ``add_setting_override_table``
+# The PMM Extensions and Tasks revisions immediately below ``add_setting_override_table``
 # on each track — downgrading to them drops the shared table and runs the other
 # track's enum-narrowing downgrades against the now-missing table.
-_SEP_PRE_SETTINGOVERRIDE_REVISION = "810c31754b54"
+_EXTENSIONS_PRE_SETTINGOVERRIDE_REVISION = "810c31754b54"
 _TASKS_PRE_SETTINGOVERRIDE_REVISION = "e42ce8324da7"
 
-# The SEP revision immediately below ``add_settingoverride_updated_by``, so a
+# The PMM Extensions revision immediately below ``add_settingoverride_updated_by``, so a
 # downgrade to it runs exactly the column drop.
-_SEP_PRE_UPDATED_BY_REVISION = "867df844fe17"
+_EXTENSIONS_PRE_UPDATED_BY_REVISION = "867df844fe17"
 
 
 def _sqlite_engine_with_setting_class_check(members):
@@ -359,7 +360,7 @@ def test_advisory_lock_is_noop_off_postgres():
 
 @pytest.fixture
 def shared_postgres_db(postgres_sync_url, monkeypatch):
-    """Configure the SEP, Tasks and Inventory tracks to share one real-PostgreSQL database.
+    """Configure the Extensions, Tasks and Inventory tracks to share one real-PostgreSQL database.
 
     ``command.upgrade`` builds its own engine from ``<svc>_settings.DATABASE.URL``
     via each track's ``env.py`` and writes to the ``public`` schema — it does not
@@ -368,7 +369,7 @@ def shared_postgres_db(postgres_sync_url, monkeypatch):
     occur. Yield the sync URL for verification and drop every table the upgrade
     created on teardown so the shared schema is left clean for sibling tests.
     """
-    for settings in (sep_settings, tasks_settings, inventory_settings):
+    for settings in (extensions_settings, tasks_settings, inventory_settings):
         monkeypatch.setattr(settings.DATABASE, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
         monkeypatch.setattr(settings.DATABASE, "USER", postgres_sync_url.username)
         monkeypatch.setattr(
@@ -409,20 +410,23 @@ def _setting_class_check_haystack(sync_url) -> str:
 
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
-def test_shared_db_sep_then_tasks_upgrade_is_clean(shared_postgres_db):
-    """Apply the SEP-then-Tasks upgrade on one shared database with no duplicate-table error."""
+def test_shared_db_extensions_then_tasks_upgrade_is_clean(shared_postgres_db):
+    """Apply PMM Extensions, then Tasks, on one shared database cleanly.
+
+    Neither upgrade may raise a duplicate-table error.
+    """
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
 
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
     command.upgrade(tasks_cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
         inspector = inspect(engine)
         assert inspector.has_table("settingoverride")
-        assert inspector.has_table("alembic_version_sep")
+        assert inspector.has_table("alembic_version_extensions")
         assert inspector.has_table("alembic_version_tasks")
         setting_class_type = next(
             column["type"]
@@ -439,20 +443,20 @@ def test_shared_db_sep_then_tasks_upgrade_is_clean(shared_postgres_db):
 
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
-def test_shared_db_tasks_then_sep_upgrade_is_clean(shared_postgres_db):
-    """Apply the Tasks-then-SEP upgrade — the reverse order must be equally clean."""
+def test_shared_db_tasks_then_extensions_upgrade_is_clean(shared_postgres_db):
+    """Apply Tasks, then PMM Extensions — the reverse order must be equally clean."""
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
 
     command.upgrade(tasks_cfg, "heads")
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
 
     engine = create_engine(sync_url)
     try:
         inspector = inspect(engine)
         assert inspector.has_table("settingoverride")
-        assert inspector.has_table("alembic_version_sep")
+        assert inspector.has_table("alembic_version_extensions")
         assert inspector.has_table("alembic_version_tasks")
         setting_class_type = next(
             column["type"]
@@ -470,20 +474,20 @@ def test_shared_db_tasks_then_sep_upgrade_is_clean(shared_postgres_db):
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
 def test_shared_db_downgrade_either_order_is_clean(shared_postgres_db):
-    """Drop the shared table via SEP, then downgrade Tasks over the missing table.
+    """Drop the shared table via PMM Extensions, then downgrade Tasks over the missing table.
 
-    The Tasks enum-narrowing downgrades run after the SEP track already dropped
+    The Tasks enum-narrowing downgrades run after the PMM Extensions track already dropped
     ``settingoverride``; their guards must no-op instead of raising
     ``NoSuchTableError``.
     """
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
 
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
     command.upgrade(tasks_cfg, "heads")
 
-    command.downgrade(sep_cfg, _SEP_PRE_SETTINGOVERRIDE_REVISION)
+    command.downgrade(extensions_cfg, _EXTENSIONS_PRE_SETTINGOVERRIDE_REVISION)
     command.downgrade(tasks_cfg, _TASKS_PRE_SETTINGOVERRIDE_REVISION)
 
     engine = create_engine(sync_url)
@@ -533,8 +537,10 @@ def _stored_override_values(sync_url: URL) -> dict[tuple[str, str], Any]:
 
 @pytest.mark.xdist_group("shared_postgres_db")
 @pytest.mark.postgres
-def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db):
-    """Encrypt the secret leaves of pre-existing rows when the SEP chain reaches them.
+def test_shared_db_secret_rows_are_encrypted_by_the_extensions_track(
+    shared_postgres_db,
+):
+    """Encrypt the secret leaves of pre-existing rows when the PMM Extensions chain reaches them.
 
     Seeds at the revision below the re-encryption one so the rows already exist
     when it runs, which is the upgrade path a deployment carrying overrides
@@ -546,18 +552,18 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
     surrounding endpoint stays legible.
 
     The Tasks chain then runs over the same physical table and must neither
-    re-encrypt what the SEP chain rewrote nor touch the rows whose
+    re-encrypt what the PMM Extensions chain rewrote nor touch the rows whose
     ``setting_class`` it cannot resolve.
     """
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     tasks_cfg = Config(str(ALEMBIC_INI), ini_section="tasks")
 
-    command.upgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+    command.upgrade(extensions_cfg, _EXTENSIONS_PRE_ENCRYPTION_REVISION)
     _seed_override_rows(sync_url, _SEED_ROWS)
     before = _stored_override_values(sync_url)
 
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
 
     stored = _stored_override_values(sync_url)
     assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM")]["api_key"]) == PMM_API_KEY
@@ -570,7 +576,7 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
     provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
     assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
     assert provider["PROVIDER"] == "pagerduty"
-    endpoint = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
+    endpoint = urlparse(stored[(EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
     assert stored_plaintext(endpoint.password) == _CREDENTIAL_PASSWORD
     assert endpoint.username == "inv-user"
     assert endpoint.hostname == "inventory.internal"
@@ -581,9 +587,9 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
         == (before[(TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS")])
     )
 
-    after_sep = _stored_override_values(sync_url)
+    after_extensions = _stored_override_values(sync_url)
     command.upgrade(tasks_cfg, "heads")
-    assert _stored_override_values(sync_url) == after_sep
+    assert _stored_override_values(sync_url) == after_extensions
 
 
 @pytest.mark.xdist_group("shared_postgres_db")
@@ -591,15 +597,15 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
 def test_shared_db_downgrade_restores_the_original_plaintext(shared_postgres_db):
     """Return every secret leaf to the plaintext the previous release reads."""
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
 
-    command.upgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+    command.upgrade(extensions_cfg, _EXTENSIONS_PRE_ENCRYPTION_REVISION)
     _seed_override_rows(sync_url, _SEED_ROWS)
     before = _stored_override_values(sync_url)
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
     assert _stored_override_values(sync_url) != before
 
-    command.downgrade(sep_cfg, _SEP_PRE_ENCRYPTION_REVISION)
+    command.downgrade(extensions_cfg, _EXTENSIONS_PRE_ENCRYPTION_REVISION)
 
     assert _stored_override_values(sync_url) == before
 
@@ -729,11 +735,11 @@ def _updated_by_columns(sync_url: str) -> list[ReflectedColumn]:
 @pytest.mark.parametrize(
     "order",
     [
-        ("sep", "tasks", "inventory"),
-        ("tasks", "sep", "inventory"),
-        ("inventory", "sep", "tasks"),
+        ("extensions", "tasks", "inventory"),
+        ("tasks", "extensions", "inventory"),
+        ("inventory", "extensions", "tasks"),
     ],
-    ids=["sep-first", "tasks-first", "inventory-first"],
+    ids=["extensions-first", "tasks-first", "inventory-first"],
 )
 def test_shared_db_three_track_upgrade_adds_updated_by_once(shared_postgres_db, order):
     """Add ``updated_by`` exactly once whichever track reaches the column first."""
@@ -744,7 +750,7 @@ def test_shared_db_three_track_upgrade_adds_updated_by_once(shared_postgres_db, 
     engine = create_engine(sync_url)
     try:
         inspector = inspect(engine)
-        assert inspector.has_table("alembic_version_sep")
+        assert inspector.has_table("alembic_version_extensions")
         assert inspector.has_table("alembic_version_tasks")
         assert inspector.has_table("alembic_version_inventory")
     finally:
@@ -760,11 +766,11 @@ def test_shared_db_three_track_upgrade_adds_updated_by_once(shared_postgres_db, 
 def test_shared_db_rerunning_a_track_upgrade_is_a_noop(shared_postgres_db):
     """Re-run one track's ``upgrade heads`` without a duplicate-column error."""
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
-    command.upgrade(sep_cfg, "heads")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
+    command.upgrade(extensions_cfg, "heads")
     command.upgrade(Config(str(ALEMBIC_INI), ini_section="tasks"), "heads")
 
-    command.upgrade(sep_cfg, "heads")
+    command.upgrade(extensions_cfg, "heads")
 
     assert len(_updated_by_columns(sync_url)) == 1
 
@@ -779,7 +785,7 @@ def test_shared_db_long_actor_round_trips(shared_postgres_db):
     SQLite, which ignores ``VARCHAR`` lengths.
     """
     sync_url = shared_postgres_db
-    command.upgrade(Config(str(ALEMBIC_INI), ini_section="sep"), "heads")
+    command.upgrade(Config(str(ALEMBIC_INI), ini_section="extensions"), "heads")
     actor = "a" * LONG_USERNAME_LENGTH
 
     engine = create_engine(sync_url)
@@ -789,7 +795,7 @@ def test_shared_db_long_actor_round_trips(shared_postgres_db):
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
                     ":actor)"
                 ),
                 {"actor": actor},
@@ -806,8 +812,8 @@ def test_shared_db_long_actor_round_trips(shared_postgres_db):
 def test_shared_db_downgrade_drops_updated_by_and_keeps_the_rows(shared_postgres_db):
     """Drop ``updated_by`` on downgrade while the override rows and values survive."""
     sync_url = shared_postgres_db
-    sep_cfg = Config(str(ALEMBIC_INI), ini_section="sep")
-    command.upgrade(sep_cfg, "heads")
+    extensions_cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
+    command.upgrade(extensions_cfg, "heads")
     command.upgrade(Config(str(ALEMBIC_INI), ini_section="tasks"), "heads")
 
     engine = create_engine(sync_url)
@@ -817,14 +823,14 @@ def test_shared_db_downgrade_drops_updated_by_and_keeps_the_rows(shared_postgres
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
                     "'alice')"
                 )
             )
     finally:
         engine.dispose()
 
-    command.downgrade(sep_cfg, _SEP_PRE_UPDATED_BY_REVISION)
+    command.downgrade(extensions_cfg, _EXTENSIONS_PRE_UPDATED_BY_REVISION)
 
     assert _updated_by_columns(sync_url) == []
     engine = create_engine(sync_url)
@@ -855,32 +861,36 @@ def _column_exists_in(engine, column_name) -> bool:
 
 
 @pytest.fixture
-def sep_sqlite_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL for the sep track on temp SQLite.
+def extensions_sqlite_alembic_config(tmp_path, monkeypatch):
+    """Return an Alembic ``Config`` and sync URL for the extensions track on temp SQLite.
 
     SQLite is the default engine, and ``batch_alter_table`` recreates the table
     rather than altering it in place, so the add and the drop take a different
     code path there than the PostgreSQL cases above exercise.
 
     :param tmp_path: pytest's per-test temporary directory.
-    :param monkeypatch: pytest's attribute patcher, pointing the sep settings at
+    :param monkeypatch: pytest's attribute patcher, pointing the extensions settings at
         the temp database file.
-    :return: The sep-track ``Config`` and the sync URL of the database it targets.
+    :return: The extensions-track ``Config`` and the sync URL of the database it targets.
     """
-    db_path = tmp_path / "test_sep.sqlite"
-    monkeypatch.setattr(sep_settings.DATABASE, "ENGINE", AsyncDatabaseEngine.SQLITE)
-    monkeypatch.setattr(sep_settings.DATABASE, "HOST", "")
-    monkeypatch.setattr(sep_settings.DATABASE, "NAME", str(db_path))
-    return Config(str(ALEMBIC_INI), ini_section="sep"), f"sqlite:///{db_path}"
+    db_path = tmp_path / "test_extensions.sqlite"
+    monkeypatch.setattr(
+        extensions_settings.DATABASE, "ENGINE", AsyncDatabaseEngine.SQLITE
+    )
+    monkeypatch.setattr(extensions_settings.DATABASE, "HOST", "")
+    monkeypatch.setattr(extensions_settings.DATABASE, "NAME", str(db_path))
+    return Config(str(ALEMBIC_INI), ini_section="extensions"), f"sqlite:///{db_path}"
 
 
-def test_sqlite_updated_by_round_trips_through_batch_alter(sep_sqlite_alembic_config):
+def test_sqlite_updated_by_round_trips_through_batch_alter(
+    extensions_sqlite_alembic_config,
+):
     """Add, re-add and drop ``updated_by`` on SQLite, leaving the seeded row intact.
 
     The drop goes through a batch table rebuild, so this pins that the rebuild
     carries the surviving rows and their values across.
     """
-    cfg, sync_url = sep_sqlite_alembic_config
+    cfg, sync_url = extensions_sqlite_alembic_config
     command.upgrade(cfg, "heads")
 
     engine = create_engine(sync_url)
@@ -891,7 +901,7 @@ def test_sqlite_updated_by_round_trips_through_batch_alter(sep_sqlite_alembic_co
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', 1, "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', 1, "
                     "'2026-01-01 00:00:00', 'alice')"
                 )
             )
@@ -899,7 +909,7 @@ def test_sqlite_updated_by_round_trips_through_batch_alter(sep_sqlite_alembic_co
         engine.dispose()
 
     command.upgrade(cfg, "heads")
-    command.downgrade(cfg, _SEP_PRE_UPDATED_BY_REVISION)
+    command.downgrade(cfg, _EXTENSIONS_PRE_UPDATED_BY_REVISION)
 
     engine = create_engine(sync_url)
     try:

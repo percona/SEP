@@ -28,7 +28,7 @@ describe('SettingsSearchBar', () => {
       <SettingsSearchBar
         filters={DEFAULT_SETTINGS_FILTERS}
         onChange={vi.fn()}
-        settingClasses={['SEPSettings']}
+        settingClasses={['ExtensionsSettings']}
       />,
     );
     // The select shows its current value's label; default is hidden.
@@ -41,7 +41,7 @@ describe('SettingsSearchBar', () => {
       <SettingsSearchBar
         filters={DEFAULT_SETTINGS_FILTERS}
         onChange={onChange}
-        settingClasses={['SEPSettings']}
+        settingClasses={['ExtensionsSettings']}
       />,
     );
 

@@ -295,11 +295,11 @@ def test_deleted_paths_are_excluded_by_the_diff_filter(monkeypatch, tmp_path):
 def test_renames_map_the_base_pass_back_to_the_old_path():
     """Read a renamed file at its old path in the base tree."""
     changed = check_ty_diff.parse_name_status(
-        "R088\tapp/sep/apps/snippets/models.py\tapp/sep/snippets/models.py\n"
+        "R088\tapp/extensions/apps/snippets/models.py\tapp/extensions/snippets/models.py\n"
     )
 
-    assert changed.head == ("app/sep/snippets/models.py",)
-    assert changed.base == ("app/sep/apps/snippets/models.py",)
+    assert changed.head == ("app/extensions/snippets/models.py",)
+    assert changed.base == ("app/extensions/apps/snippets/models.py",)
 
 
 def test_a_move_out_of_tests_leaves_the_base_pass_empty():

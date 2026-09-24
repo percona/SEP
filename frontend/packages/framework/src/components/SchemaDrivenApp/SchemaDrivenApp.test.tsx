@@ -20,7 +20,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import { ApiError, type AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@pmm-extensions/api';
 import { SchemaDrivenApp } from './SchemaDrivenApp';
 import type { RenderFormSlot } from './types';
 
@@ -85,7 +85,7 @@ const taskRecord = {
 // Schema the mocked useAppSchema serves; per-test override, reset after each.
 let activeSchema: AppSchema = schema;
 
-// Stub sibling page modules so their @sep/api imports stay out of the graph;
+// Stub sibling page modules so their @pmm-extensions/api imports stay out of the graph;
 // this test exercises only the SchemaDrivenApp → edit-page threading.
 vi.mock('./AppListPage', () => ({
   AppListPage: ({ pluginName }: { pluginName: string }) => <div>list:{pluginName}</div>,
@@ -99,7 +99,7 @@ vi.mock('./AppSchedulePage', () => ({ AppSchedulePage: () => <div>schedule</div>
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
   useAppSchema: (pluginName: string) => {
     if (pluginName === 'mysql_backups/restore') {

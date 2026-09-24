@@ -37,7 +37,7 @@ from app.core.settings_override.secret_preservation import (
     preserve_secrets_in_model_payload,
 )
 from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
-from app.sep.config import SEPSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 
@@ -276,7 +276,7 @@ class TestAbsentStoredValue:
 
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
     """Assert scalar credential URL PATCH values restore the stored password when redacted."""
-    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    field = ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"]
     current = "http://inv-user:inv-secret@inventory.internal:8080"
     incoming = "http://inv-user:****@inventory.internal:8080"
     assert preserve_patch_credential_url_value(field, current, incoming) == current

@@ -20,7 +20,7 @@ import { ThemeContextProvider, sepThemeOptions } from '@percona/percona-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Preview } from '@storybook/react-vite';
 import { MemoryRouter } from 'react-router';
-import { ADMIN_SESSION, apiClient, AuthContext } from '@sep/api';
+import { ADMIN_SESSION, apiClient, AuthContext } from '@pmm-extensions/api';
 import {
   installStorybookSseMocks,
   registerFetchResponse,

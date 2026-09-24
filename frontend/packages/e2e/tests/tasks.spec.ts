@@ -76,7 +76,7 @@ const MOCK_HISTORY_ENTRY = {
     id: 1,
     name: MOCK_TASK_NAME,
     backend: 'nomad',
-    owner: 'sep',
+    owner: 'extensions',
     is_template: false,
   },
   execution_request: {
@@ -92,7 +92,7 @@ const MOCK_TASK_DETAIL = {
     id: 1,
     name: MOCK_TASK_NAME,
     backend: 'nomad',
-    owner: 'sep',
+    owner: 'extensions',
     is_template: false,
     created_at: '2026-05-19T12:00:00Z',
     created_by: 'SYSTEM',

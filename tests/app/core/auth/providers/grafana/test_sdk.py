@@ -322,7 +322,7 @@ class TestVerifyServiceAccountToken:
 
     @pytest.mark.asyncio
     async def test_returns_the_record_after_both_calls(self):
-        """Verify the token is proven by Grafana, then read back through SEP's SA."""
+        """Verify the token is proven by Grafana, then read back through PMM Extensions' SA."""
         sdk = _sdk()
         session = _attach_sequence(sdk, *_verified_pair())
 
@@ -628,7 +628,7 @@ class TestServiceAccountBearerRevocationWindow:
 
 @pytest.mark.asyncio
 async def test_get_service_accounts_reads_every_page():
-    """Verify the listing follows ``totalCount`` across pages with SEP's token."""
+    """Verify the listing follows ``totalCount`` across pages with PMM Extensions' token."""
     GrafanaSDK.get_service_accounts.cache_clear()
     sdk = _sdk()
     first = [{"id": n, "login": f"sa-1-{n}"} for n in range(100)]

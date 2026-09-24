@@ -26,10 +26,10 @@ classification, backfill and cascade logic, which is dialect-neutral.
 from alembic import command
 from sqlalchemy import create_engine, inspect
 
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
+
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
-
-_LEGACY_PREFIX = "sep-legacy:"
 
 _INSERT_NODE = (
     "INSERT INTO node "
@@ -175,7 +175,7 @@ def test_origin_less_node_gets_a_synthetic_origin(inventory_alembic_config):
         with engine.begin() as conn:
             node = _row(conn, "node", node_id)
             assert node["source"] == "PMM"
-            assert node["external_id"] == f"{_LEGACY_PREFIX}{node_id}"
+            assert node["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node_id}"
     finally:
         engine.dispose()
 
@@ -284,7 +284,7 @@ def test_origin_less_service_under_a_healthy_node(inventory_alembic_config):
         with engine.begin() as conn:
             service = _row(conn, "service", service_id)
             assert service["retired_at"] is not None
-            assert service["external_id"] == f"{_LEGACY_PREFIX}{service_id}"
+            assert service["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{service_id}"
 
             node = _row(conn, "node", node_id)
             assert node["retired_at"] is None
@@ -349,7 +349,7 @@ def test_already_retired_row_keeps_its_original_timestamp(inventory_alembic_conf
             node = _row(conn, "node", node_id)
             assert str(node["retired_at"]).startswith("2025-06-01")
             assert node["source"] == "PMM"
-            assert node["external_id"] == f"{_LEGACY_PREFIX}{node_id}"
+            assert node["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node_id}"
     finally:
         engine.dispose()
 

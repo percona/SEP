@@ -38,7 +38,7 @@ const SPEC_PATH = path.resolve(
   '..',
   'api',
   'specs',
-  'sep.json',
+  'extensions.json',
 );
 
 /** Return every pattern the spec publishes on a shared field-definition property. */

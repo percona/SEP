@@ -197,10 +197,10 @@ class TaskLogType(StrEnum):
 
 
 class LogCaptureStatusEnum(StrEnum):
-    """Describe how completely SEP captured a task's log stream.
+    """Describe how completely PMM Extensions captured a task's log stream.
 
     Distinguishes a stream that genuinely produced nothing from one whose bytes
-    were lost before SEP could read them — the stored offsets alone cannot tell
+    were lost before PMM Extensions could read them — the stored offsets alone cannot tell
     those apart, since both leave the cursors at zero.
 
     ``UNKNOWN`` is the honest verdict where no evidence survives: rows written
@@ -733,7 +733,7 @@ class TaskExecuteRequest(BaseModel):
 
 
 #: Maximum stored length of ``TaskHistory.failure_reason``. Above every reason
-#: SEP composes from fixed prose alone; the bound is for the three that
+#: PMM Extensions composes from fixed prose alone; the bound is for the three that
 #: interpolate a value — the payload reference's error, a Nomad step name and
 #: the resolved callable path — none of which is bounded at composition time.
 MAX_FAILURE_REASON_LENGTH = 500
@@ -1036,7 +1036,7 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     :param staging: Bytes pending flush to the chunk store.
     :param staging_updated_at: When ``staging`` was last modified; used to age
         out small buffers after ``MAX_AGE_SEC``.
-    :param capture_status: How completely SEP captured this ``(source, stream)``
+    :param capture_status: How completely PMM Extensions captured this ``(source, stream)``
         pair. New rows start ``INCOMPLETE`` and are upgraded once the stream is
         drained to EOF; rows predating the column take ``UNKNOWN`` from the
         column's server default.
@@ -1172,7 +1172,7 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :param has_logs: Whether this task history has any readable log content --
         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
         Populated by list/retrieve routes; defaults to ``False``.
-    :param log_capture: How completely SEP captured this execution's logs,
+    :param log_capture: How completely PMM Extensions captured this execution's logs,
         aggregated over its state rows: any incomplete stream reports
         ``"incomplete"``, else any unknown reports ``"unknown"``, else
         ``"complete"``. Populated by list/retrieve routes; defaults to
@@ -1201,7 +1201,7 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     def _resolve_unreadable_request_leaves(self) -> Self:
         """Derive the indicator from a loaded row, or keep one already resolved.
 
-        A declared field rather than a ``computed_field`` because the SEP
+        A declared field rather than a ``computed_field`` because the PMM Extensions
         gateway re-validates this body into its own response model, and Pydantic
         does not accept a computed field on validation. By then the leaf is
         already ``null`` and the indicator cannot be re-derived, so a computed

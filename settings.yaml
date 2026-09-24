@@ -2,7 +2,7 @@ default:
   ALLOWED_HOSTS:
     - "localhost"
     - "127.0.0.1"
-    # pmm-managed reaches SEP from inside the pmm-server container, where the host is
+    # pmm-managed reaches PMM Extensions from inside the pmm-server container, where the host is
     # only addressable by this name. Without it TrustedHostMiddleware answers 400 to
     # every cross-container request, whatever the credentials.
     - "host.docker.internal"
@@ -21,7 +21,7 @@ default:
     # ALLOWED_KEYS:
     #   - Settings.LOGGING
     #   - Settings.PMM__annotations_enabled
-    #   - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
+    #   - ExtensionsSettings.CONNECTIVITY_CHECK_DEFAULT
     #   - TasksSettings.LOG_RETENTION_DAYS
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
@@ -35,7 +35,7 @@ default:
           - http://localhost:9999
           - http://127.0.0.1:9999
         certificate_path: null  # Path to JWT key certificate
-        application_name: sep-app
+        application_name: extensions-app
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: true
@@ -43,11 +43,11 @@ default:
     EXECUTION_TARGET: null  # Optional: explicit Nomad node for PMM tasks
     ANNOTATIONS_ENABLED: false
     ANNOTATIONS_TIMEOUT: 5  # Optional: PMM annotation request timeout in seconds
-  SEP:
+  EXTENSIONS:
     INVENTORY:
       # Tombstone collection. A retired node/service/schema/table is deleted
       # permanently once it has been retired for COLLECTION_RETENTION AND
-      # nothing SEP persisted still resolves it. Deletion is irreversible and
+      # nothing PMM Extensions persisted still resolves it. Deletion is irreversible and
       # cascades to the entity's subtree, so shortening the retention widens
       # what a run removes. Nothing is ever deleted while the interval is null.
       COLLECTION_INTERVAL: null  # Celery beat interval seeded for inventory-collection, e.g. "1 days"
@@ -68,7 +68,7 @@ default:
     SSL_KEYFILE: null
     SSL_CERTFILE: null
     PROXY_HEADERS: False
-    # The URL prefix a reverse proxy serves SEP under, passed through unstripped.
+    # The URL prefix a reverse proxy serves PMM Extensions under, passed through unstripped.
     # "" is the origin root. Read once at startup, so env and this file are the
     # only ways to set it. BASE_URL must include the prefix when one is set.
     ROOT_PATH: ""
@@ -76,7 +76,7 @@ default:
     # Celery beat waits this long for the HTTP API to answer /health before
     # starting ungated. Raise it on a deployment whose application startup runs
     # long; starting ungated is what lets an overdue periodic task fail on
-    # connect to SEP's own API.
+    # connect to PMM Extensions' own API.
     API_READINESS_TIMEOUT: 60.0
     API_READINESS_POLL_INTERVAL: 0.5
     CONNECTIVITY_CHECK_DEFAULT: False
@@ -147,8 +147,8 @@ default:
       ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
       ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
       CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
-    # OM inventory's own knobs (app.sep.apps.om_inventory.config.OmInventorySettings)
-    # are read from SEP.OM_INVENTORY, entirely commented out below: every value
+    # OM inventory's own knobs (app.extensions.apps.om_inventory.config.OmInventorySettings)
+    # are read from EXTENSIONS.OM_INVENTORY, entirely commented out below: every value
     # shown is that class's own default, and the sidecar ships defaults-only.
     # OM_INVENTORY:
     #   SCHEDULE: {EVERY: 10, PERIOD: minutes}  # null unregisters the periodic sweep
@@ -342,7 +342,7 @@ default:
     # than sending the mask to the receiver as the credential.
     #
     # Staging and housekeeping for the diagnostics sends that use the plan above.
-    # Read from YAML/env only (env prefix `SEP__ATW__`); defaults shown.
+    # Read from YAML/env only (env prefix `EXTENSIONS__ATW__`); defaults shown.
     #   ATW:
     #     bundle_dir: data/atw-bundles     # where a bundle is staged while it uploads
     #     bundle_ttl: 3600                 # seconds before an abandoned bundle is reaped
@@ -363,14 +363,14 @@ default:
       PASSWORD: null
       HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
       PORT: null
-      NAME: sep.db
+      NAME: extensions.db
       # Symbolic schema tokens declared by apps that share this database, resolved
       # to a real schema on a bind that has one. Automatically ignored off
       # PostgreSQL: SQLite has no schemas, and MySQL's "schema" is a database, so on
       # either of those every value here is forced to the default schema instead
       # (app/core/db/config.py).
       #
-      # `om_schema` is shared by every OM app (app/sep/apps/shared/om/__init__.py),
+      # `om_schema` is shared by every OM app (app/extensions/apps/shared/om/__init__.py),
       # so it lives here rather than under one of them. `null` would put OM's tables
       # in the default schema alongside everything else.
       SCHEMA_TRANSLATE_MAP:
@@ -416,7 +416,7 @@ default:
     INVENTORY_SYNC_SYNCER: null  # Dotted "module.ClassName" syncer the seeded schedule targets; null runs every configured syncer
     # Per-syncer schedules seeded beside the pair above, for a syncer whose useful
     # cadence differs from it. SYNCER takes the full BaseSyncer.get_name() form,
-    # not the short SEP.SYNCERS spelling. Rejected at validation if an entry
+    # not the short EXTENSIONS.SYNCERS spelling. Rejected at validation if an entry
     # duplicates INVENTORY_SYNC_SYNCER, repeats another entry's syncer, or sits
     # beside a sync-all default (an interval with no syncer pinned). While the pinned
     # default above is seeded, an entry's first run waits for that syncer's first
@@ -424,11 +424,11 @@ default:
     # an operator-managed schedule already covers is not seeded, and that schedule
     # does not wait. Example:
     #   INVENTORY_SYNC_SCHEDULES:
-    #     - SYNCER: app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer
+    #     - SYNCER: app.extensions.sync.syncers.system_facts.syncer.SystemFactsSyncer
     #       INTERVAL: 1 days
     INVENTORY_SYNC_SCHEDULES: []
     HOOK_MODULE_ALLOWLIST:  # Module roots a task hook path may import from; extend for out-of-tree apps
-      - app.sep.apps
+      - app.extensions.apps
     NOMAD:
       ENDPOINT: http://127.0.0.1:4646
       SECURE: False
@@ -458,7 +458,7 @@ development:
   TASKS:
     ANONYMIZER:
       DEFAULT_ENTITIES: []
-  SEP:
+  EXTENSIONS:
     UVICORN_RELOAD: true
     # UVICORN_EXTRA_RELOAD_DIRS:
     #   - /path/to/extra/dir
@@ -525,16 +525,16 @@ production_docker:
     PROVIDER:
       casdoor:
         allowed_issuers: '*'
-        application_name: sep-app
-        certificate_path: /data/certs/casdoor/sep_token_jwt_key.pem
+        application_name: extensions-app
+        certificate_path: /data/certs/casdoor/extensions_token_jwt_key.pem
         client_id: redacted_match_casdoor_json
         client_secret: redacted_match_casdoor_json
         endpoint: http://127.0.0.1:8000
         front_endpoint: //:9999
-        organization_name: sep
+        organization_name: extensions
   CELERY:
-    BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
-    BEAT_SCHEMA: sep
+    BEAT_DBURI: postgresql://postgres:xxx@extensions-db:5432
+    BEAT_SCHEMA: extensions
     BROKER_URL: redis://redis:6379/0
     RESULT_BACKEND: redis://redis:6379/1
     RESULT_EXPIRES: 3600
@@ -543,26 +543,26 @@ production_docker:
       POOL_PRE_PING: true  # Test beat/worker pooled connections on checkout; set false to opt out
   DATABASE:
     ENGINE: postgresql
-    HOST: sep-db
-    NAME: sep
+    HOST: extensions-db
+    NAME: extensions
     PASSWORD: xxx
     PORT: 5432
     USER: postgres
   INVENTORY:
     DATABASE:
       ENGINE: postgresql
-      HOST: sep-db
-      NAME: sep
+      HOST: extensions-db
+      NAME: extensions
       PASSWORD: xxx
       PORT: 5432
       USER: postgres
     SSL_CERTFILE: /data/certs/sep/inventory_api-cert.pem
     SSL_KEYFILE: /data/certs/sep/inventory_api-cert-key.pem
-  SEP:
+  EXTENSIONS:
     DATABASE:
       ENGINE: postgresql
-      HOST: sep-db
-      NAME: sep
+      HOST: extensions-db
+      NAME: extensions
       PASSWORD: xxx
       PORT: 5432
       USER: postgres
@@ -597,12 +597,12 @@ production_docker:
       - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     TASKS_ENDPOINT: https://127.0.0.1:9002
-  SSL_CAFILE: /data/certs/sep-ca.pem
+  SSL_CAFILE: /data/certs/extensions-ca.pem
   TASKS:
     DATABASE:
       ENGINE: postgresql
-      HOST: sep-db
-      NAME: sep
+      HOST: extensions-db
+      NAME: extensions
       PASSWORD: xxx
       PORT: 5432
       USER: postgres

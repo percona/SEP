@@ -176,7 +176,7 @@ def refresh_tasks_overrides_if_due(**_: Any) -> None:
     """Refresh Tasks-side overrides at this task boundary when the interval is due.
 
     Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when
-    disarmed or inside the interval. Each refresher (SEP-side and Tasks-side)
+    disarmed or inside the interval. Each refresher (PMM Extensions side and Tasks-side)
     keeps its own due-check state, so a boundary that is due for both pays two
     refreshes.
 
@@ -237,7 +237,7 @@ def execute_task_by_name(
     periodic_task_name: str | None = None,
     execution_data: PeriodicTaskExecuteRequest | None = None,
 ) -> dict[str, Any]:
-    """Define Celery task to execute a SEP task by name.
+    """Define Celery task to execute a PMM Extensions task by name.
 
     :param self: The Celery task instance.
     :type self: CeleryTask
@@ -314,7 +314,7 @@ async def _pre_dispatch_health_check(
     :param task_history: The unsaved TaskHistory from
         :func:`prepare_periodic_task_history`.
     :type task_history: TaskHistory
-    :param task_name: The SEP task name (used for dedup key and alert source).
+    :param task_name: The PMM Extensions task name (used for dedup key and alert source).
     :type task_name: str
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).
@@ -353,7 +353,7 @@ async def _persist_failed_dispatch(
     without raising so Celery's ``autoretry_for=(Exception,)`` does not fire.
 
     :param task_history: The unsaved TaskHistory to fail.
-    :param task_name: The SEP task name (used for the dedup key and alert source).
+    :param task_name: The PMM Extensions task name (used for the dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (enriches the alert
         source).
     :param reason: The operator-facing failure reason, written to stderr and used
@@ -429,7 +429,7 @@ async def _skip_dispatch_unhealthy_target(
 
     :param task_history: The unsaved TaskHistory built by
         :func:`prepare_periodic_task_history`.
-    :param task_name: The SEP task name (used for dedup key and alert source).
+    :param task_name: The PMM Extensions task name (used for dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).
     :return: The saved, FAILED TaskHistory.
@@ -470,7 +470,7 @@ async def _pre_dispatch_payload_check(
 
     :param task_history: The TaskHistory to dispatch, from any gated path
         (sync, connectivity, chain, queue, or periodic).
-    :param task_name: The SEP task name (used for dedup key and alert source).
+    :param task_name: The PMM Extensions task name (used for dedup key and alert source).
     :param periodic_task_name: The periodic-task name, if any (used to enrich
         the alert source).
     :param session: The caller's session, forwarded to
@@ -1225,7 +1225,7 @@ async def _check_nomad_cert_expiry() -> None:
             summary = (
                 f"Nomad {label} certificate {path.name!r} has expired or expires "
                 f"today (not_valid_after_utc={not_after.isoformat()}). "
-                "Renew the certificate and restart SEP so task dispatch continues."
+                "Renew the certificate and restart PMM Extensions so task dispatch continues."
             )
         else:
             severity = AlertSeverity.WARNING

@@ -18,7 +18,7 @@
 /**
  * React Query hook for the admin config YAML export (SEP-984).
  *
- * Fetches ``GET /api/sep/admin/settings/export`` through ``apiClient`` so the
+ * Fetches ``GET /api/extensions/admin/settings/export`` through ``apiClient`` so the
  * Bearer interceptor attaches the in-memory access token, then triggers a
  * browser download from the response blob and server-provided filename.
  */
@@ -27,15 +27,15 @@ import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import type { ApiError } from '../errors';
 
-const CONFIG_EXPORT_PATH = '/sep/admin/settings/export';
-const DEFAULT_FILENAME = 'sep-config.yaml';
+const CONFIG_EXPORT_PATH = '/extensions/admin/settings/export';
+const DEFAULT_FILENAME = 'pmm-extensions-config.yaml';
 
 function filenameFromContentDisposition(header: string | undefined): string | null {
   const match = /filename="([^"]+)"/.exec(header ?? '');
   return match?.[1] ?? null;
 }
 
-/** Trigger a browser download for an in-memory blob (mirrors ``@sep/framework``). */
+/** Trigger a browser download for an in-memory blob (mirrors ``@pmm-extensions/framework``). */
 function triggerBlobDownload(data: Blob, filename: string): void {
   const url = URL.createObjectURL(data);
   const anchor = document.createElement('a');

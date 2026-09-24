@@ -42,8 +42,8 @@ from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
 from app.core.utils import utc_now
 from app.core.utils.date_time import make_datetime_utc
-from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
-from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.extensions.apps.archives.alerts import ALERT_DETAIL_BUILDER
+from app.extensions.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks import hook_resolver
 from app.tasks.config import PreExecutionCheckMode, tasks_settings
 from app.tasks.connectivity.models import ConnectivityServiceType
@@ -232,12 +232,14 @@ async def test_create_task_success(test_client):
 async def test_create_task_persists_run_result_recorder(test_client):
     """Assert a created task's run_result_recorder round-trips through the POST body."""
     task_data = TaskFactory.build(
-        name="recorder-task", run_result_recorder="app.sep.apps.pkg.mod:recorder"
+        name="recorder-task", run_result_recorder="app.extensions.apps.pkg.mod:recorder"
     )
     payload = TaskWrite.model_validate(task_data).model_dump(mode="json")
     response = test_client.post("/", json=payload)
     assert response.status_code == status.HTTP_201_CREATED
-    assert response.json()["run_result_recorder"] == "app.sep.apps.pkg.mod:recorder"
+    assert (
+        response.json()["run_result_recorder"] == "app.extensions.apps.pkg.mod:recorder"
+    )
 
 
 @pytest.mark.asyncio
@@ -290,7 +292,7 @@ class TestTaskHookPathAllowList:
         response = test_client.post("/", json=payload)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        assert "app.sep.apps" in response.text
+        assert "app.extensions.apps" in response.text
 
     @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
     @pytest.mark.parametrize("hook_path", REJECTED_HOOK_PATHS)
@@ -462,10 +464,10 @@ async def test_create_task_history_normalizes_failure_reason(
 
     The create route takes the ``TaskHistory`` table model as its body, so the
     field is settable over HTTP; the bound is a property of the column, not just
-    of the reasons SEP composes. Driven as a real request because only an actual
+    of the reasons PMM Extensions composes. Driven as a real request because only an actual
     POST delivers the body to the handler the way FastAPI does.
 
-    The posted row carries ``failed`` so the fixture models a pair SEP's own
+    The posted row carries ``failed`` so the fixture models a pair PMM Extensions' own
     writers can produce.
     """
     response = test_client.post(
@@ -1415,7 +1417,7 @@ async def test_sync_task_history_populates_has_logs(
 class TestSyncTaskHistoryChainDispatch:
     """Cover chain dispatch and sync-lock semantics on POST /history/{id}/sync/.
 
-    When the SEP log-stream SSE finishes and posts to the sync route, the
+    When the PMM Extensions log-stream SSE finishes and posts to the sync route, the
     route must claim the celery sync lock, save the terminal status, and
     dispatch any chained task. Without these, the celery
     ``sync_running_tasks`` periodic loses the race against the HTTP route
@@ -3279,7 +3281,9 @@ class TestSyncTaskHistoryRealSession:
             recorded.append(run_result)
 
         mocker.patch.dict(
-            hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder}, clear=True
+            hook_resolver._RESOLVED,
+            {"app.extensions.apps.pkg:rec": _recorder},
+            clear=True,
         )
 
         task = await TaskManager.create(
@@ -3291,7 +3295,7 @@ class TestSyncTaskHistoryRealSession:
                     is_template=False,
                     protected=False,
                     alert_on_fail=False,
-                    run_result_recorder="app.sep.apps.pkg:rec",
+                    run_result_recorder="app.extensions.apps.pkg:rec",
                     output_files_path=RUN_SCRIPT_OUTPUT_FILES_PATH,
                 )
             ),

@@ -347,7 +347,7 @@ def _decrypt_leaf(leaf: str) -> str:
     A value carrying the marker over a *damaged* payload is returned as-is
     rather than raised on, and that is a deliberate choice with a cost worth
     naming: the marker is evidence the writer stored ciphertext there, so
-    passing it through hands the caller a ``sep.enc.v1.``-prefixed string as if
+    passing it through hands the caller an ``extensions.enc.v1.``-prefixed string as if
     it were the credential. Raising instead would drop the row with a warning,
     which :mod:`app.core.settings_override.cache` already handles.
 

@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-// Minimal ImportMeta declaration so @sep/api can read `import.meta.env.DEV`
-// without depending on Vite directly. Consuming apps (e.g. @sep/shell) pull
+// Minimal ImportMeta declaration so @pmm-extensions/api can read `import.meta.env.DEV`
+// without depending on Vite directly. Consuming apps (e.g. @pmm-extensions/shell) pull
 // in the full `vite/client` types via their own vite-env.d.ts.
 declare global {
   interface ImportMetaEnv {

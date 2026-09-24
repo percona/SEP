@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { FormSection, OneOfGroup, AppField, SectionField } from '@sep/api';
+import type { FormSection, OneOfGroup, AppField, SectionField } from '@pmm-extensions/api';
 
 /** Type guard for the `one_of` section container. */
 export function isOneOfGroup(field: SectionField): field is OneOfGroup {

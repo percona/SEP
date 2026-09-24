@@ -30,7 +30,7 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { MaterialReactTable, type MRT_ColumnDef } from 'material-react-table';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import { ActionErrorAlert } from '../ActionErrorAlert';
 import {
   isRunningStatus,
@@ -39,7 +39,7 @@ import {
   useTaskHistoryByName,
 } from '../../hooks/useTaskHistory';
 import { useTaskHistoryFiles } from '../../hooks/useTaskHistoryFiles';
-import { SEP_TABLE_CLASS } from '../../constants';
+import { EXTENSIONS_TABLE_CLASS } from '../../constants';
 import { ChainDisplay } from './ChainDisplay';
 import { StatusBadge } from './StatusBadge';
 import { TaskFilesDialog } from './TaskFilesDialog';
@@ -107,7 +107,7 @@ interface DownloadFilesButtonProps {
  * Render the Download files action only when the run has user-visible files.
  *
  * ``has_logs`` is the wrong signal: logs can exist when the output directory
- * is empty (e.g. only the hidden ``.sep-run-result.json`` marker). Probe the
+ * is empty (e.g. only the hidden ``.pmm-extensions-run-result.json`` marker). Probe the
  * files API and hide the button until a non-empty listing is confirmed.
  */
 function DownloadFilesButton({ entry, onDownloadFiles, onOpenBuiltIn }: DownloadFilesButtonProps) {
@@ -343,7 +343,7 @@ function TaskHistoryTableView({
         enablePagination
         enableSorting
         muiTablePaperProps={{
-          className: SEP_TABLE_CLASS,
+          className: EXTENSIONS_TABLE_CLASS,
         }}
         initialState={{
           density: 'compact',

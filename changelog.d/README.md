@@ -11,7 +11,7 @@ If your change is user-facing (a new feature, a bug fix, a behaviour change, a
 security fix, or a config change), run:
 
 ```bash
-make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
+make changelog-add TICKET=PMM-NNNNN SECTION=<section> MSG="Brief description"
 ```
 
 Ticket keys may use either the `SEP` or `PMM` project prefix. For example:

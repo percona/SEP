@@ -41,13 +41,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
 
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+POSTGRES_DSN_ENV = "EXTENSIONS_TEST_POSTGRES_DSN"
 
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
-
-_LEGACY_PREFIX = "sep-legacy:"
 
 _MANDATORY_COLUMNS = (
     ("node", "external_id"),
@@ -69,7 +68,7 @@ pytestmark = pytest.mark.postgres
 def postgres_async_url():
     """Return an ``asyncpg`` URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     dsn = os.environ.get(POSTGRES_DSN_ENV)
@@ -214,7 +213,7 @@ def test_backfill_writes_a_valid_enum_label(inventory_postgres_config):
 
     node = _await(url, lambda conn: _row(conn, "node", node_id))
     assert node["source"] == "PMM"
-    assert node["external_id"] == f"{_LEGACY_PREFIX}{node_id}"
+    assert node["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node_id}"
 
 
 def test_set_not_null_lands_on_the_native_path(inventory_postgres_config):

@@ -45,11 +45,11 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/sep_app': {
+      '/extensions_app': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      // Task log SSE and related routes live outside /api (see app/sep/main.py).
+      // Task log SSE and related routes live outside /api (see app/extensions/main.py).
       '/stream-logs': {
         target: 'http://localhost:8000',
         changeOrigin: true,

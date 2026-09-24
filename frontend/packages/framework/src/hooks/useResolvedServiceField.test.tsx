@@ -24,11 +24,11 @@ import { FormFieldsProvider } from '../components/SchemaFormRenderer/formFieldsC
 import type { AppField } from '../components/SchemaFormRenderer/types';
 import { useResolvedServiceField } from './useResolvedServiceField';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 const SERVICE_FIELDS: AppField[] = [
@@ -79,7 +79,7 @@ describe('useResolvedServiceField', () => {
 
   it('rehydrates a scalar service id via useServices', async () => {
     mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         expect(config?.params).toMatchObject({ service_type: 'mongodb' });
         return Promise.resolve({
           data: {

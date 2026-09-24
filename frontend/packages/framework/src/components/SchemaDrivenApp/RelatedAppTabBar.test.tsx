@@ -18,7 +18,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { MemoryRouter } from 'react-router';
-import type { RelatedApp } from '@sep/api';
+import type { RelatedApp } from '@pmm-extensions/api';
 import { RelatedAppTabBar, resolveRelatedAppActiveSegment } from './RelatedAppTabBar';
 
 const ROUTE_BASE = '/apps/mysql_backups';

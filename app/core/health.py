@@ -180,7 +180,7 @@ def wait_for_api_ready(
     """Poll the local health path until it answers ``200`` or the deadline passes.
 
     Only ``200`` opens the gate. A ``503`` means the listener is up but its
-    database is not, which is not a state a caller of SEP's own API can use, and
+    database is not, which is not a state a caller of PMM Extensions' own API can use, and
     a ``400`` means the host header was rejected — neither is readiness. The
     first attempt happens immediately, so an API that is already serving costs
     nothing.
