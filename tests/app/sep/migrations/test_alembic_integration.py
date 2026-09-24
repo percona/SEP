@@ -22,6 +22,7 @@ any misconfigured ``version_locations`` or plugin-discovery regression.
 """
 
 import io
+import json
 import logging
 import os
 import subprocess
@@ -720,6 +721,60 @@ def test_retoken_revision_moves_the_service_settings_rows_and_back(
 
     command.downgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
     assert _setting_classes(sync_url) == ["SEP_SETTINGS", "TASKS_SETTINGS"]
+
+
+def _stored_value(sync_url: str) -> dict[str, str]:
+    """Return the decoded value of the single stored ``settingoverride`` row."""
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            raw = conn.exec_driver_sql("SELECT value FROM settingoverride").scalar_one()
+    finally:
+        engine.dispose()
+    return json.loads(raw)
+
+
+def test_retoken_revision_moves_the_ciphertext_marker_forward_only(
+    sep_alembic_config,
+):
+    """Move ``sep.enc.v1.`` markers to ``extensions.enc.v1.`` and keep them there.
+
+    The credential URL carries its marked token inside the userinfo segment, so
+    the rewrite has to reach a marker that is not at the start of its leaf, and
+    a plaintext leaf rides along to prove it is left byte-identical. The
+    downgrade keeps the new marker because the earlier revisions' downgrades run
+    this release's code, which reads the new marker alone.
+    """
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    legacy = {
+        "password": "sep.enc.v1.gAAAAB-token",
+        "endpoint": "https://user:sep.enc.v1.gAAAAB-token@pmm.example.com/",
+        "name": "plain",
+    }
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "INSERT INTO settingoverride "
+                "(created_at, setting_class, key, value, is_active) "
+                "VALUES ('2026-01-01 00:00:00', 'SEP_SETTINGS', 'X', ?, 1)",
+                (json.dumps(legacy),),
+            )
+    finally:
+        engine.dispose()
+
+    migrated = {
+        "password": "extensions.enc.v1.gAAAAB-token",
+        "endpoint": "https://user:extensions.enc.v1.gAAAAB-token@pmm.example.com/",
+        "name": "plain",
+    }
+    command.upgrade(cfg, _SEP_RETOKEN_REVISION)
+    assert _stored_value(sync_url) == migrated
+
+    command.downgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    assert _stored_value(sync_url) == migrated
 
 
 def test_app_lifecycle_backfill_maps_enabled_to_state(sep_alembic_config):

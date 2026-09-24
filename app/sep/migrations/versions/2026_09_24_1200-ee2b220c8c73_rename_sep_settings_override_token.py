@@ -31,12 +31,21 @@ Only this track writes rows for that class, and on a shared database the three
 tracks share one physical ``settingoverride`` table, so the rename runs here
 alone. Both tokens are frozen literals: the revision must keep meaning the same
 thing whatever the class is called on the release that executes it.
+
+The ciphertext envelope marker moves from ``sep.enc.v1.`` to
+``extensions.enc.v1.`` in the same release. A leaf still carrying the old marker
+is recognised as neither marked nor bare ciphertext, so it would be read back as
+the credential itself; every track rewrites its own table's markers, and this
+revision does so for this one. The marker moves forward only: every earlier
+revision's downgrade runs this release's code, which reads the new marker alone,
+so restoring the old one would strand the downgrades below this revision.
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 from app.core.db.utils import acquire_pg_advisory_xact_lock, table_exists
+from app.core.settings_override.alembic_ops import rename_ciphertext_marker
 from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
 # revision identifiers, used by Alembic.
@@ -47,6 +56,8 @@ depends_on = None
 
 _OLD_TOKEN = "SEP_SETTINGS"
 _NEW_TOKEN = "EXTENSIONS_SETTINGS"
+_OLD_MARKER = "sep.enc.v1."
+_NEW_MARKER = "extensions.enc.v1."
 
 
 def _retoken(source: str, target: str) -> None:
@@ -68,8 +79,9 @@ def _retoken(source: str, target: str) -> None:
 
 
 def upgrade() -> None:
-    """Store the service settings' override rows under ``EXTENSIONS_SETTINGS``."""
+    """Move the service settings' rows and every stored marker to the new names."""
     _retoken(_OLD_TOKEN, _NEW_TOKEN)
+    rename_ciphertext_marker(_OLD_MARKER, _NEW_MARKER)
 
 
 def downgrade() -> None:

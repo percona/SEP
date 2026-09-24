@@ -282,6 +282,57 @@ def downgrade_unmark_secret_override_values(
     _rewrite_secret_leaves(bind, settings_classes, unmark_secret_leaves)
 
 
+def rename_ciphertext_marker(old: str, new: str) -> None:
+    """Rewrite the envelope marker of every stored ciphertext from ``old`` to ``new``.
+
+    Each string leaf is rewritten wherever the marker occurs in it, not only as a
+    prefix, because a credential URL carries its marked token inside the userinfo
+    segment. Every row is visited whatever its ``setting_class``: the marker names
+    the envelope, not a settings class, so a track sharing one physical database
+    with another rewrites the other's rows too, and the replacement is idempotent
+    across the tracks that repeat it. Needs no ``ENCRYPTION_KEY`` and never
+    decrypts.
+
+    :param old: The marker the stored leaves carry.
+    :param new: The marker to store instead.
+    """
+    bind = _locked_bind()
+    if bind is None:
+        return
+    table = _settingoverride_value_table()
+    rows = bind.execute(sa.select(table.c.id, table.c.value)).all()
+    rewritten = 0
+    for row in rows:
+        value = _replace_in_strings(row.value, old, new)
+        if value == row.value:
+            continue
+        bind.execute(table.update().where(table.c.id == row.id).values(value=value))
+        rewritten += 1
+    logger.info(
+        "Moved %s settingoverride row(s) from the %r marker to %r.",
+        rewritten,
+        old,
+        new,
+    )
+
+
+def _replace_in_strings(value: Any, old: str, new: str) -> Any:
+    """Return ``value`` with ``old`` replaced by ``new`` in every string it holds.
+
+    :param value: A decoded JSON value.
+    :param old: The substring to replace.
+    :param new: The replacement.
+    :return: The value with every string leaf rewritten, in the same shape.
+    """
+    if isinstance(value, str):
+        return value.replace(old, new)
+    if isinstance(value, list):
+        return [_replace_in_strings(item, old, new) for item in value]
+    if isinstance(value, dict):
+        return {key: _replace_in_strings(item, old, new) for key, item in value.items()}
+    return value
+
+
 def _settingoverride_value_table() -> sa.TableClause:
     """Return a lightweight ``settingoverride`` table carrying the JSON value type.
 
