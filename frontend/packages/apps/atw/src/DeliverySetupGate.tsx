@@ -56,7 +56,7 @@ interface StoredDeliveryInputs {
   isPresent: boolean;
 }
 
-/** Locate one setting inside the `SEPSettings` group of a LIST response. */
+/** Locate one setting inside the `ExtensionsSettings` group of a LIST response. */
 const findSepSetting = (
   groups: SettingClassGroup[] | undefined,
   key: string,

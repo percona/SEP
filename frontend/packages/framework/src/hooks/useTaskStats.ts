@@ -56,7 +56,7 @@ export function useTaskStats(taskName: string | undefined, enabled = true) {
     enabled: enabled && Boolean(trimmed),
     queryFn: async () => {
       const data = await throwOnApiError(
-        sepApi.GET('/api/sep/task-stats/{task_name}', {
+        sepApi.GET('/api/extensions/task-stats/{task_name}', {
           params: { path: { task_name: trimmed as string } },
         }),
       );

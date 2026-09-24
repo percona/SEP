@@ -31,7 +31,7 @@ __all__ = ["ARTIFACT_DOWNLOAD_SALT", "STATIC_ARTIFACT_BASE_DIRS"]
 
 ARTIFACT_DOWNLOAD_SALT = "artifact-download"
 
-#: Artifact base dirs seeding the download map. Not owned by a ``SEP.APPS`` app,
+#: Artifact base dirs seeding the download map. Not owned by an ``EXTENSIONS.APPS`` app,
 #: so they are not registry-derived; ``collect_base_dirs`` seeds them ahead of
 #: the per-app declarations. The snippet directory is declared here because
 #: snippet execution is library-owned: signed snippet-download URLs are built

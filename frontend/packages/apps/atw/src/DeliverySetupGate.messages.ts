@@ -26,7 +26,7 @@ export const SUPPORT_DIAGNOSTICS_DOCS_URL = 'https://docs.percona.com';
 export const PERCONA_SUPPORT_URL = 'https://www.percona.com/services/support';
 
 /** The settings class and key an admin has to supply to enable delivery. */
-export const DELIVERY_SETTING_CLASS = 'SEPSettings';
+export const DELIVERY_SETTING_CLASS = 'ExtensionsSettings';
 export const DELIVERY_INPUTS_KEY = 'DIAGNOSTICS_DELIVERY_INPUTS';
 export const DELIVERY_PLAN_KEY = 'DIAGNOSTICS_DELIVERY';
 
@@ -35,8 +35,8 @@ export const DELIVERY_PLAN_KEY = 'DIAGNOSTICS_DELIVERY';
  *
  * `heading`, `title`, `description` and `consentNote` are shared with the
  * PMM-embedded copy of this app (`ServiceNowSetupGate.messages.ts`) and must
- * stay word-for-word identical — only the call to action differs, because SEP
- * has no guided ServiceNow form to send an operator to.
+ * stay word-for-word identical — only the call to action differs, because the
+ * side-car has no guided ServiceNow form to send an operator to.
  */
 export const Messages = {
   loading: 'Checking the ServiceNow connection…',
@@ -49,9 +49,9 @@ export const Messages = {
   subscriptionPrompt: "Don't have a Percona Support subscription?",
   subscriptionLinkText: 'Learn about Percona Support',
 
-  // ── Call to action (SEP-specific) ───────────────────────────────────
+  // ── Call to action (side-car-specific) ──────────────────────────────
   notConfigured:
-    "Diagnostics delivery isn't configured on this SEP deployment. Ask an administrator to configure it.",
+    "Diagnostics delivery isn't configured on this deployment. Ask an administrator to configure it.",
   adminInstructions:
     `Supply the ${DELIVERY_INPUTS_KEY} key of the ${DELIVERY_SETTING_CLASS} class in Settings. ` +
     `The delivery plan itself (${DELIVERY_PLAN_KEY}) comes from settings.yaml or the environment ` +

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/services/`` JSON endpoint exposing inventory services.
+"""Define the ``/api/extensions/services/`` JSON endpoint exposing inventory services.
 
 Proxy the Inventory ``/services/`` listing so the React frontend can populate
 schema-driven service selectors without bypassing the SEP layer (see the

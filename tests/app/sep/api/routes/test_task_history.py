@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP merged task-history JSON API at ``/api/sep/task-history/``."""
+"""Tests for the SEP merged task-history JSON API at ``/api/extensions/task-history/``."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -76,7 +76,7 @@ def _history_page(
 
 
 class TestSepTaskHistoryEndpoint:
-    """Tests for ``GET /api/sep/task-history/`` proxy and merge behavior."""
+    """Cover ``GET /api/extensions/task-history/`` proxy and merge behavior."""
 
     def test_merges_history_for_multiple_task_names(
         self,
@@ -99,7 +99,7 @@ class TestSepTaskHistoryEndpoint:
             ]
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "parent"), ("task_names", "parent-logical")],
         )
         assert response.status_code == status.HTTP_200_OK
@@ -124,7 +124,7 @@ class TestSepTaskHistoryEndpoint:
             }
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[
                 ("task_names", "task-a"),
                 ("task_names", "task-b"),
@@ -201,7 +201,7 @@ class TestSepTaskHistoryEndpoint:
             ]
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[
                 ("task_names", "task-1"),
                 ("task_names", "task-2"),
@@ -229,7 +229,7 @@ class TestSepTaskHistoryEndpoint:
         mock_task_api_dep.get = AsyncMock(return_value=page)
 
         response = test_client.get(
-            "/api/sep/task-history/", params=[("task_names", "parent")]
+            "/api/extensions/task-history/", params=[("task_names", "parent")]
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -247,7 +247,7 @@ class TestSepTaskHistoryEndpoint:
             return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[
                 ("task_names", "task-a"),
                 ("task_names", "task-a"),
@@ -264,7 +264,7 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Return 422 when every supplied task name is blank."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", ""), ("task_names", "   ")],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -277,7 +277,7 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Return 422 when ``offset`` is negative."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a"), ("offset", "-1")],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -290,7 +290,7 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Return 422 when ``limit`` is negative."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a"), ("limit", "-1")],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -303,7 +303,7 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Return 422 when ``limit`` is zero."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a"), ("limit", "0")],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -316,7 +316,7 @@ class TestSepTaskHistoryEndpoint:
     ) -> None:
         """Return 422 when ``limit`` exceeds the upper cap of 200."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a"), ("limit", str(MAX_PAGINATION_LIMIT + 1))],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -369,7 +369,7 @@ class TestSepTaskHistoryEndpoint:
         mock_task_api_dep.get = AsyncMock(side_effect=_upstream_page)
 
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[
                 ("task_names", "task-a"),
                 ("task_names", "task-b"),
@@ -417,7 +417,7 @@ class TestSepTaskHistoryEndpoint:
             )
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a")],
         )
         assert response.status_code == upstream_status
@@ -435,7 +435,7 @@ class TestSepTaskHistoryEndpoint:
             )
         )
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a")],
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
@@ -449,7 +449,7 @@ class TestSepTaskHistoryEndpoint:
         """Fail the merged fan-out with ``502`` on a connection-level ``OSError``."""
         mock_task_api_dep.get = AsyncMock(side_effect=OSError("connection refused"))
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "task-a")],
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
@@ -457,7 +457,7 @@ class TestSepTaskHistoryEndpoint:
 
 
 class TestSepTaskHistoryAuth:
-    """Tests for ``/api/sep/task-history/`` authentication enforcement."""
+    """Cover ``/api/extensions/task-history/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -474,7 +474,7 @@ class TestSepTaskHistoryAuth:
     ) -> None:
         """Reject anonymous requests with a JSON 401 response."""
         response = unauthenticated_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", "foo")],
             follow_redirects=False,
         )
@@ -484,7 +484,7 @@ class TestSepTaskHistoryAuth:
 
 
 class TestSepTaskHistoryListAll:
-    """``GET /api/sep/task-history/`` with no ``task_names`` proxies the upstream list."""
+    """Forward ``GET /api/extensions/task-history/`` without names to the upstream list."""
 
     def test_passthrough_when_task_names_omitted(
         self,
@@ -505,7 +505,7 @@ class TestSepTaskHistoryListAll:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
         mock_task_api_dep.get.return_value = payload
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert [item["id"] for item in body["items"]] == [7]
@@ -539,7 +539,7 @@ class TestSepTaskHistoryListAll:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["items"][0]["failure_reason"] == "The run failed."
@@ -567,7 +567,7 @@ class TestSepTaskHistoryListAll:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["items"][0]["failure_reason"] is None
@@ -585,7 +585,7 @@ class TestSepTaskHistoryListAll:
             "limit": PROPAGATED_TEST_LIMIT,
         }
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[
                 ("status", "running"),
                 ("offset", str(PROPAGATED_TEST_OFFSET)),
@@ -612,7 +612,7 @@ class TestSepTaskHistoryListAll:
     ) -> None:
         """Reject provided-but-all-blank ``task_names`` with 422, never list-all."""
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params=[("task_names", ""), ("task_names", "   ")],
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -631,7 +631,7 @@ class TestSepTaskHistoryListAll:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
         response = test_client.get(
-            "/api/sep/task-history/",
+            "/api/extensions/task-history/",
             params={"exclude_internal": "true"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -650,14 +650,14 @@ class TestSepTaskHistoryListAll:
             "offset": DEFAULT_PAGINATION_OFFSET,
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
         assert response.status_code == status.HTTP_200_OK
         call_params = mock_task_api_dep.get.call_args.kwargs["params"]
         assert "exclude_internal" not in call_params
 
 
 class TestSepStopTaskHistoryEndpoint:
-    """``POST /api/sep/task-history/{id}/stop/`` proxies the upstream stop call."""
+    """Forward ``POST /api/extensions/task-history/{id}/stop/`` to the upstream stop."""
 
     def test_stop_proxies_and_returns_upstream_json(
         self,
@@ -667,7 +667,7 @@ class TestSepStopTaskHistoryEndpoint:
         """Return the upstream stop JSON verbatim (not a redirect)."""
         upstream = {"id": 42, "status": "stopped"}
         mock_task_api_dep.post.return_value = upstream
-        response = test_client.post("/api/sep/task-history/42/stop/")
+        response = test_client.post("/api/extensions/task-history/42/stop/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upstream
         mock_task_api_dep.post.assert_awaited_once_with("/history/42/stop/")
@@ -686,7 +686,7 @@ class TestSepStopTaskHistoryEndpoint:
         mock_task_api_dep.post.side_effect = HTTPException(
             status_code=upstream_status, detail="task is not running"
         )
-        response = test_client.post("/api/sep/task-history/42/stop/")
+        response = test_client.post("/api/extensions/task-history/42/stop/")
         assert response.status_code == upstream_status
         assert response.json() == {"detail": "task is not running"}
 
@@ -699,7 +699,7 @@ class TestSepStopTaskHistoryEndpoint:
         mock_task_api_dep.post.side_effect = HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
         )
-        response = test_client.post("/api/sep/task-history/42/stop/")
+        response = test_client.post("/api/extensions/task-history/42/stop/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "boom"}
 
@@ -710,7 +710,7 @@ class TestSepStopTaskHistoryEndpoint:
     ) -> None:
         """Fail the proxy with ``502`` on a connection-level ``OSError``."""
         mock_task_api_dep.post.side_effect = OSError("connection refused")
-        response = test_client.post("/api/sep/task-history/42/stop/")
+        response = test_client.post("/api/extensions/task-history/42/stop/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "connection refused"}
 
@@ -720,7 +720,9 @@ class TestSepStopTaskHistoryEndpoint:
         mock_task_api_dep: AsyncMock,
     ) -> None:
         """Reject a cookie-only stop that lacks a Bearer token with 401."""
-        response = api_admin_client_no_bearer.post("/api/sep/task-history/42/stop/")
+        response = api_admin_client_no_bearer.post(
+            "/api/extensions/task-history/42/stop/"
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_task_api_dep.post.assert_not_awaited()
 
@@ -749,7 +751,7 @@ def _actor_history_page(*, executed_by: str | None = ACTOR_EXECUTOR_ID) -> dict:
 
 
 class TestSepTaskHistoryActorResolution:
-    """Cover actor resolution on both read paths of ``GET /api/sep/task-history/``."""
+    """Cover actor resolution on both read paths of ``GET /api/extensions/task-history/``."""
 
     @pytest.fixture
     def patched_username_map(self, mocker) -> Mock:
@@ -768,7 +770,7 @@ class TestSepTaskHistoryActorResolution:
         """Resolve the executor and both nested task actors on the list-all path."""
         mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         row = response.json()["items"][0]
@@ -786,7 +788,7 @@ class TestSepTaskHistoryActorResolution:
         mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
 
         response = test_client.get(
-            "/api/sep/task-history/", params=[("task_names", "backup")]
+            "/api/extensions/task-history/", params=[("task_names", "backup")]
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -806,7 +808,7 @@ class TestSepTaskHistoryActorResolution:
             return_value=_actor_history_page(executed_by="SYSTEM")
         )
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["items"][0]["executed_by"] == "System"
@@ -823,7 +825,7 @@ class TestSepTaskHistoryActorResolution:
         )
 
         response = test_client.get(
-            "/api/sep/task-history/", params=[("task_names", "backup")]
+            "/api/extensions/task-history/", params=[("task_names", "backup")]
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -840,7 +842,7 @@ class TestSepTaskHistoryActorResolution:
             return_value=_actor_history_page(executed_by=ACTOR_UNKNOWN_ID)
         )
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["items"][0]["executed_by"] == ACTOR_UNKNOWN_ID
@@ -858,7 +860,7 @@ class TestSepTaskHistoryActorResolution:
         )
         mock_task_api_dep.get = AsyncMock(return_value=_actor_history_page())
 
-        response = test_client.get("/api/sep/task-history/")
+        response = test_client.get("/api/extensions/task-history/")
 
         assert response.status_code == status.HTTP_200_OK
         row = response.json()["items"][0]

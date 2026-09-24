@@ -89,7 +89,7 @@ _ALERT_TEMPLATES: Mapping[ServiceType, tuple[AlertTemplate, ...]] = {
     ServiceType.POSTGRESQL: (),
 }
 
-_FOLDER = Folder(uid="folder-1", title="SEP Alerts", id=1)
+_FOLDER = Folder(uid="folder-1", title="PMM Extensions Alerts", id=1)
 
 
 @pytest.fixture
@@ -183,12 +183,12 @@ async def seeded_backup(session: AsyncSession) -> AlertBackup:
             "rules": [{"title": "High CPU"}],
             "contact_points": [
                 {
-                    "name": "SEP PagerDuty",
+                    "name": "PMM Extensions PagerDuty",
                     "type": "pagerduty",
                     "settings": {"integrationKey": "k"},
                 }
             ],
-            "folders": [{"title": "SEP Alerts"}],
+            "folders": [{"title": "PMM Extensions Alerts"}],
             "notification_policy": {"receiver": "default", "routes": []},
         },
         metadata_={"templates": 1, "rules": 1, "contact_points": 1, "folders": 1},
@@ -239,7 +239,7 @@ class TestAlertsIndexApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "k"},
             ),
@@ -354,7 +354,7 @@ class TestApiInputHardening:
         """
         mock_pmm_api.list_contact_points.return_value = []
         mock_pmm_api.create_contact_point.return_value = ContactPoint(
-            uid="new", name="SEP PagerDuty", type="pagerduty", settings={}
+            uid="new", name="PMM Extensions PagerDuty", type="pagerduty", settings={}
         )
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default", routes=[]
@@ -528,8 +528,8 @@ class TestBackupDetail:
         assert body["id"] == seeded_backup.id
         assert body["templates"][0]["name"] == "High CPU"
         assert body["rules"][0]["title"] == "High CPU"
-        assert body["contact_points"][0]["name"] == "SEP PagerDuty"
-        assert body["folders"][0]["title"] == "SEP Alerts"
+        assert body["contact_points"][0]["name"] == "PMM Extensions PagerDuty"
+        assert body["folders"][0]["title"] == "PMM Extensions Alerts"
         assert body["notification_policy_receiver"] == "default"
 
     async def test_returns_404_when_not_found(self, api_client):
@@ -563,7 +563,7 @@ class TestPagerDutySaveApi:
         """Create the PagerDuty contact point when none exists."""
         mock_pmm_api.list_contact_points.return_value = []
         mock_pmm_api.create_contact_point.return_value = ContactPoint(
-            uid="new-cp", name="SEP PagerDuty", type="pagerduty", settings={}
+            uid="new-cp", name="PMM Extensions PagerDuty", type="pagerduty", settings={}
         )
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default", routes=[]
@@ -582,14 +582,14 @@ class TestPagerDutySaveApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="existing-cp",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "old"},
             ),
         ]
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default",
-            routes=[{"receiver": "SEP PagerDuty"}],
+            routes=[{"receiver": "PMM Extensions PagerDuty"}],
         )
 
         response = api_client.post(
@@ -629,7 +629,7 @@ class TestPagerDutySaveApi:
         """Never log the PagerDuty integration key (it is a secret)."""
         mock_pmm_api.list_contact_points.return_value = []
         mock_pmm_api.create_contact_point.return_value = ContactPoint(
-            uid="new-cp", name="SEP PagerDuty", type="pagerduty", settings={}
+            uid="new-cp", name="PMM Extensions PagerDuty", type="pagerduty", settings={}
         )
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default", routes=[]
@@ -652,7 +652,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "key"},
             ),
@@ -660,7 +660,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.get_notification_policy.return_value = NotificationPolicy(
             receiver="default",
             routes=[
-                {"receiver": "SEP PagerDuty"},
+                {"receiver": "PMM Extensions PagerDuty"},
                 {"receiver": "other"},
             ],
         )
@@ -700,7 +700,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "secretkey"},
             ),
@@ -718,7 +718,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "k"},
             ),
@@ -740,7 +740,7 @@ class TestPagerDutyDeleteApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "supersecretkey-xyz"},
             ),
@@ -1054,7 +1054,7 @@ class TestRestoreApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-existing",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "old"},
             ),
@@ -1081,7 +1081,7 @@ class TestRestoreApi:
         mock_pmm_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-existing",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "old"},
             ),
@@ -1294,11 +1294,11 @@ class TestRoleGate:
         """
         client = gate_live_client(UserRole.EDITOR)
 
-        response = client.post("/api/sep/periodic-tasks/some-task/")
+        response = client.post("/api/extensions/periodic-tasks/some-task/")
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     def test_an_admitted_rank_is_admitted_under_a_url_prefix(
         self, gate_live_client, mock_pmm_api: AsyncMock, root_path: str
     ):
@@ -1324,7 +1324,7 @@ class TestRoleGate:
             self._PUSH_BODY["selected_templates"]
         )
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     @pytest.mark.usefixtures("mock_pmm_api")
     def test_a_refused_rank_is_refused_under_a_url_prefix(
         self, gate_live_client, root_path: str

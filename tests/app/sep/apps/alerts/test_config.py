@@ -45,7 +45,7 @@ class TestAlertsSettings:
         config = AlertsSettings(_env_file=None)
         assert IntervalSchedule(every=24, period=Period.HOURS) == config.BACKUP_INTERVAL
         assert config.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
-        assert config.ALERT_FOLDER_NAME == "SEP Alerts"
+        assert config.ALERT_FOLDER_NAME == "PMM Extensions Alerts"
 
     def test_custom_values(self) -> None:
         """Assert custom values are accepted."""
@@ -57,8 +57,8 @@ class TestAlertsSettings:
         assert config.ALERT_FOLDER_NAME == "Custom Alerts"
 
     def test_settings_prefixes(self) -> None:
-        """Assert the section is scoped under ``SEP.ALERTS``."""
-        assert AlertsSettings.SETTINGS_PREFIXES == ["SEP", "ALERTS"]
+        """Assert the section is scoped under ``EXTENSIONS.ALERTS``."""
+        assert AlertsSettings.SETTINGS_PREFIXES == ["EXTENSIONS", "ALERTS"]
 
     @pytest.mark.parametrize("bad", [0, -1, -10])
     def test_backup_retention_rejects_non_positive(self, bad: int) -> None:
@@ -85,7 +85,7 @@ class TestAlertsSettingsProxy:
 
     def test_proxy_reads_default_fields(self) -> None:
         """Reads through the proxy resolve to the section's defaults."""
-        assert alerts_settings.ALERT_FOLDER_NAME == "SEP Alerts"
+        assert alerts_settings.ALERT_FOLDER_NAME == "PMM Extensions Alerts"
         assert alerts_settings.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
 
     def test_proxy_uses_class_name_identifier(self) -> None:

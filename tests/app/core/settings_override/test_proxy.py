@@ -36,7 +36,7 @@ def _factory() -> _Sample:
 @pytest.fixture
 def proxy() -> OverridableSettingsProxy[_Sample]:
     """Return a fresh proxy wrapping ``_Sample``."""
-    return OverridableSettingsProxy(_factory, setting_class="SEPSettings")
+    return OverridableSettingsProxy(_factory, setting_class="ExtensionsSettings")
 
 
 def test_empty_snapshot_delegates_to_factory(
@@ -91,7 +91,7 @@ def test_class_property_reflects_wrapped_class(
 
 def test_setting_class_stored(proxy: OverridableSettingsProxy[_Sample]) -> None:
     """Store the class ``__name__`` identifier passed at construction."""
-    assert proxy._setting_class == "SEPSettings"
+    assert proxy._setting_class == "ExtensionsSettings"
 
 
 def test_concurrent_swap_is_atomic(
@@ -169,7 +169,7 @@ def test_per_class_isolation_with_unknown_field() -> None:
     This test exercises that guarantee with a snapshot that contains an
     unrelated rogue key and an access for a distinct never-defined key.
     """
-    proxy = OverridableSettingsProxy(_factory, setting_class="SEPSettings")
+    proxy = OverridableSettingsProxy(_factory, setting_class="ExtensionsSettings")
     proxy._set_snapshot({"unknown_field": "should-not-leak"})
     with pytest.raises(AttributeError):
         _ = proxy.also_absent

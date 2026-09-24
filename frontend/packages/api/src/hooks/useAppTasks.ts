@@ -57,7 +57,7 @@ const MOCK_FALLBACKS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_MOCK_
  * ``sepRetry`` short-circuits on it — the two predicates serve different
  * goals: ``sepRetry`` wants to stop hammering a known-bad gateway, while this
  * gate decides whether to substitute mock data in dev builds. A 502 from
- * ``/api/sep/*`` means the upstream Tasks-API is unreachable, which is
+ * ``/api/extensions/*`` means the upstream Tasks-API is unreachable, which is
  * exactly the dev-without-backend scenario the mock fallback targets.
  */
 export function isBackendUnavailable(error: unknown): boolean {

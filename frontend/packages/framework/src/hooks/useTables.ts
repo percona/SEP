@@ -41,7 +41,7 @@ export interface UseTablesResult {
 
 /**
  * Fetch tables for one or more schemas via the SEP inventory gateway
- * (`GET /sep/schemas/{id}/tables` → `[{id, name}]`).
+ * (`GET /extensions/schemas/{id}/tables` → `[{id, name}]`).
  *
  * Disabled when no schema ids are provided.
  */
@@ -63,7 +63,7 @@ export function useTables(options: UseTablesOptions): UseTablesResult {
       enabled: enabled && ids.length > 0,
       staleTime: 60_000,
       queryFn: async () => {
-        const { data } = await apiClient.get<TableOption[]>(`/sep/schemas/${id}/tables`);
+        const { data } = await apiClient.get<TableOption[]>(`/extensions/schemas/${id}/tables`);
         return { schemaId: id, tables: data };
       },
     })),

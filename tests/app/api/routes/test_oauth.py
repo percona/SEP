@@ -161,7 +161,7 @@ def test_spa_login_scopes_the_refresh_cookie_under_the_prefix(
     The cookie ``Path`` is derived from the configured prefix rather than from
     the request, so the request itself needs no prefix to exercise it.
     """
-    mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+    mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
     mocker.patch.object(
         User,
         "get_oauth_token",
@@ -185,7 +185,7 @@ def test_spa_login_scopes_the_refresh_cookie_under_the_prefix(
         response.headers.get_list("set-cookie"), "refreshToken"
     )
     assert len(refresh_headers) == 1
-    assert "Path=/sep/api/oauth" in refresh_headers[0]
+    assert "Path=/extensions/api/oauth" in refresh_headers[0]
 
 
 def test_spa_login_inactive_user(
@@ -457,7 +457,7 @@ def test_logout_clears_the_cookie_at_the_prefixed_path(
     access_token = "bearer-access-token"
     logged_in_user = _build_user(faker, valid_username)
     logged_in_user.access_token = access_token
-    mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+    mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
     mocker.patch.object(
         User,
         "from_jwt",
@@ -479,7 +479,7 @@ def test_logout_clears_the_cookie_at_the_prefixed_path(
         response.headers.get_list("set-cookie"), "refreshToken"
     )
     assert len(refresh_headers) == 1
-    assert "Path=/sep/api/oauth" in refresh_headers[0]
+    assert "Path=/extensions/api/oauth" in refresh_headers[0]
 
 
 def test_logout_invalidate_fails_still_clears_cookie(

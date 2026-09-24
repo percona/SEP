@@ -395,7 +395,7 @@ def render_footer_text() -> str:
     """Render the sidebar footer text from the live ``FOOTER_TEMPLATE`` setting.
 
     Read :attr:`sep_settings.FOOTER_TEMPLATE` per call (it is a hot,
-    materializer-backed setting) so a live ``SEP__FOOTER_TEMPLATE`` override is
+    materializer-backed setting) so a live ``EXTENSIONS__FOOTER_TEMPLATE`` override is
     reflected without restarting the application.
 
     :return: The rendered footer text (application summary and version by default).

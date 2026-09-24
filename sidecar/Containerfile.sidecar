@@ -12,10 +12,10 @@ FROM localhost/sep:builder AS builder
 # under one supervisord. No frontend SPA — the UI is served by PMM.
 FROM docker.io/library/python:3.11.16-slim
 
-RUN groupadd --gid 1001 sep && \
-    useradd --gid sep --shell /usr/sbin/nologin --home-dir /home/sep --uid 1001 --create-home sep
+RUN groupadd --gid 1001 extensions && \
+    useradd --gid extensions --shell /usr/sbin/nologin --home-dir /home/extensions --uid 1001 --create-home extensions
 
-ENV HOME=/home/sep
+ENV HOME=/home/extensions
 ENV APP_HOME=$HOME/app
 RUN install -d -o 1001 -g 1001 -m 0750 $APP_HOME
 WORKDIR $APP_HOME
@@ -31,7 +31,7 @@ RUN install -d -o 1001 -g 1001 -m 0700 $HOME/state
 #
 # No rendering libraries are installed. libpango-1.0-0, libpangoft2-1.0-0,
 # fontconfig, fonts-dejavu and shared-mime-info must return if `report` is
-# ever added to sidecar/settings.yaml's SEP.APPS: app/sep/apps/report/service.py
+# ever added to sidecar/settings.yaml's EXTENSIONS.APPS: app/sep/apps/report/service.py
 # imports weasyprint at module scope, and this image strips that package
 # instead of backing it.
 RUN apt-get update && \
@@ -130,9 +130,9 @@ COPY --chown=0:1001 --chmod=440 ./sidecar/settings.yaml ./settings.yaml
 
 # Strip every app package the baked profile does not activate. The retained set
 # is derived from settings.yaml and named nowhere in this recipe.
-ARG SEP_RESTRICT_APPS=0
+ARG EXTENSIONS_RESTRICT_APPS=0
 COPY --chown=0:0 --chmod=400 ./sidecar/restrict_apps.py /tmp/restrict_apps.py
-RUN if [ "$SEP_RESTRICT_APPS" = "1" ]; then \
+RUN if [ "$EXTENSIONS_RESTRICT_APPS" = "1" ]; then \
         python /tmp/restrict_apps.py settings.yaml app/sep/apps; \
     fi && \
     rm -f /tmp/restrict_apps.py
@@ -147,9 +147,9 @@ ENV PYTHONUNBUFFERED=1
 
 RUN chmod -R u+X,g+X $APP_HOME
 
-USER sep
+USER extensions
 
 HEALTHCHECK --interval=15s --timeout=15s --start-period=150s --retries=5 \
-    CMD ["/home/sep/app/healthcheck.sh"]
+    CMD ["/home/extensions/app/healthcheck.sh"]
 
-ENTRYPOINT ["/home/sep/app/entrypoint.sh"]
+ENTRYPOINT ["/home/extensions/app/entrypoint.sh"]

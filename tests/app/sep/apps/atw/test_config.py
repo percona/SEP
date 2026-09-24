@@ -105,8 +105,8 @@ class TestAtwSettingsEnvironmentOptOut:
     @pytest.mark.parametrize(
         ("env_var", "field_name"),
         [
-            ("SEP__ATW__CLEANUP_INTERVAL", "cleanup_interval"),
-            ("SEP__ATW__RECONCILE_INTERVAL", "reconcile_interval"),
+            ("EXTENSIONS__ATW__CLEANUP_INTERVAL", "cleanup_interval"),
+            ("EXTENSIONS__ATW__RECONCILE_INTERVAL", "reconcile_interval"),
         ],
     )
     def test_a_null_env_var_unregisters_a_sweep(
@@ -122,7 +122,7 @@ class TestAtwSettingsEnvironmentOptOut:
     ) -> None:
         """Ensure reading ``null`` as an opt-out leaves an ordinary override intact."""
         monkeypatch.setenv(
-            "SEP__ATW__RECONCILE_INTERVAL", '{"every": 30, "period": "seconds"}'
+            "EXTENSIONS__ATW__RECONCILE_INTERVAL", '{"every": 30, "period": "seconds"}'
         )
 
         assert AtwSettings().reconcile_interval == IntervalSchedule(

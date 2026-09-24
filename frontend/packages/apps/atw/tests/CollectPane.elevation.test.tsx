@@ -53,7 +53,7 @@ const PT_MYSQL_SUMMARY: AtwSnippetSummary = {
 };
 
 /**
- * Executors as `GET /api/sep/hosts/` reports them: measured unable to elevate,
+ * Executors as `GET /api/extensions/hosts/` reports them: measured unable to elevate,
  * measured able, and never observed.
  */
 const HOSTS = [
@@ -98,7 +98,7 @@ function schemaFor(snippets: AtwSnippetSummary[]) {
 
 function mockApis(snippets: AtwSnippetSummary[]) {
   mockedApi.get.mockImplementation((url: string, config?: { params?: { search?: string } }) => {
-    if (url === '/sep/hosts/') {
+    if (url === '/extensions/hosts/') {
       return Promise.resolve({ data: HOSTS });
     }
     if (url.startsWith('/apps/atw/snippets/')) {

@@ -25,7 +25,7 @@ import NestedSettingGroup from '../NestedSettingGroup';
 import { buildSettingTree, type GroupNode } from '../settingField';
 import { makeSetting, makeWrapper } from './fixtures';
 
-const SEP_BASE = 'http://localhost/api/sep/admin/settings/SEPSettings';
+const SEP_BASE = 'http://localhost/api/extensions/admin/settings/ExtensionsSettings';
 
 function nomadGroup(): GroupNode {
   const tree = buildSettingTree([

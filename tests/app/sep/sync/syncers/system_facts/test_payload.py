@@ -200,7 +200,7 @@ class TestHostFacts:
         """Report a non-root task user with no sudo as unable.
 
         This is the single row of the launch check's truth table that aborts with
-        ``SEP_UNLAUNCHABLE``, and the only one the collector reports ``False`` for.
+        ``EXTENSIONS_UNLAUNCHABLE``, and the only one the collector reports ``False`` for.
         """
         mocker.patch(f"{MODULE}.os.geteuid", return_value=1000)
         mocker.patch(f"{MODULE}.shutil.which", return_value=None)

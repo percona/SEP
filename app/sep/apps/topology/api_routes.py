@@ -17,7 +17,7 @@
 
 Mounted at ``/api/apps/topology/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Enablement is governed by app registration
-(``SEP.APPS``) and the shared ``require_app_enabled`` dependency, so this
+(``EXTENSIONS.APPS``) and the shared ``require_app_enabled`` dependency, so this
 router carries no bespoke feature flag.
 
 Topology collection dispatches ``run-python`` executor tasks (via ``TaskAPI``)

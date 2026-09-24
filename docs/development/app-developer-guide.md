@@ -159,14 +159,14 @@ filtering.
 ### How the registry discovers and activates apps
 
 Apps are **not** wired by hand into a router file. Activation is data, in
-`settings.yaml`: one `MODULE_NAME` entry per app under `SEP.APPS`. `ENABLED`
+`settings.yaml`: one `MODULE_NAME` entry per app under `EXTENSIONS.APPS`. `ENABLED`
 defaults to `true` and is normally omitted; an app opts out of shipping enabled
 by setting it to `false`, as `topology` does:
 
 <!-- src: settings.yaml -->
 ```yaml
 default:
-  SEP:
+  EXTENSIONS:
     APPS:
       - MODULE_NAME: checksums
       ...
@@ -174,7 +174,7 @@ default:
         ENABLED: false
 ```
 
-At startup, `build_app_registry` walks the `SEP.APPS` list in order, imports each
+At startup, `build_app_registry` walks the `EXTENSIONS.APPS` list in order, imports each
 module, and uses its exported `app` object (a `BaseApp` / `TaskExecutionApp`):
 
 <!-- src: app/sep/apps/framework/registry.py :: get_app_registry -->
@@ -360,7 +360,7 @@ For **`base`**: `api_routes.py`, `app.py`, `__init__.py`, `schema.py`, plus
 ### What the scaffolder writes automatically
 
 The scaffolder registers the app in `settings.yaml` — and **only** `settings.yaml`.
-It inserts a `SEP.APPS` entry, **disabled** unless you pass `ENABLE`:
+It inserts a `EXTENSIONS.APPS` entry, **disabled** unless you pass `ENABLE`:
 
 ```text
 Scaffolded 'task' app 'myapp':

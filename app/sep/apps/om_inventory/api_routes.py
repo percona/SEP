@@ -559,7 +559,7 @@ async def trigger_probe(
 async def get_config(session: SessionDep) -> list[SettingResponse]:
     """Return this app's configuration: every field, its value and its origin.
 
-    Served here rather than pointing the caller at ``/api/sep/admin/settings``
+    Served here rather than pointing the caller at ``/api/extensions/admin/settings``
     because that router is admin-gated and PMM's principal is not an admin: the
     ``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built
     with ``is_admin=False`` deliberately, since it is a deployment-level shared

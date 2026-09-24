@@ -436,7 +436,7 @@
           "type": "host"
         },
         {
-          "description": "Database service to back up; SEP resolves its host and port from inventory",
+          "description": "Database service to back up; PMM Extensions resolves its host and port from inventory",
           "label": "Database Host",
           "name": "service_id",
           "required": true,
@@ -549,7 +549,7 @@
           "type": "bool"
         },
         {
-          "description": "Extra arguments for the mydumper command. They are placed ahead of the arguments SEP sets, so one that clashes is overridden.",
+          "description": "Extra arguments for the mydumper command. They are placed ahead of the arguments PMM Extensions sets, so one that clashes is overridden.",
           "forbidden": [
             {
               "when": {
@@ -841,7 +841,7 @@
           "type": "choice"
         },
         {
-          "description": "Unused: SEP always runs XtraBackup on the database host itself, so the backup is never streamed to another host.",
+          "description": "Unused: PMM Extensions always runs XtraBackup on the database host itself, so the backup is never streamed to another host.",
           "forbidden": [
             {
               "when": {
@@ -963,7 +963,7 @@
           "type": "integer"
         },
         {
-          "description": "Extra arguments for the binlog streaming command. They are placed ahead of the arguments SEP sets, so one that clashes is overridden.",
+          "description": "Extra arguments for the binlog streaming command. They are placed ahead of the arguments PMM Extensions sets, so one that clashes is overridden.",
           "forbidden": [
             {
               "when": {
@@ -1215,7 +1215,7 @@
           "type": "string"
         },
         {
-          "description": "MySQL defaults file used for the connections SEP makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
+          "description": "MySQL defaults file used for the connections PMM Extensions makes to the server, and for the mydumper or binlog command. The XtraBackup binary reads 'XtraBackup defaults file' instead.",
           "label": "MySQL defaults file",
           "min_length": 1,
           "name": "defaults_file",

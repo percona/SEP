@@ -35,7 +35,7 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     ReloadClassification,
 )
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
@@ -56,8 +56,10 @@ class TestReclassification:
 
     def test_app_drain_is_nested_only(self) -> None:
         """Assert ``APP_DRAIN`` becomes a NESTED_ONLY overridable parent."""
-        assert _reload(SEPSettings, "APP_DRAIN") is ReloadClassification.NESTED_ONLY
-        assert is_nested_overridable_parent(SEPSettings, "APP_DRAIN") is True
+        assert (
+            _reload(ExtensionsSettings, "APP_DRAIN") is ReloadClassification.NESTED_ONLY
+        )
+        assert is_nested_overridable_parent(ExtensionsSettings, "APP_DRAIN") is True
 
     @pytest.mark.parametrize("field", ["SNIPPETS_BASE_URL", "SYNC_FILTER"])
     def test_snippets_fields_are_hot(self, field: str) -> None:
@@ -143,8 +145,11 @@ class TestAdvancedMarkers:
 
     def test_sep_artifact_download_ttl_advanced(self) -> None:
         """Assert ``ARTIFACT_DOWNLOAD_TTL`` is HOT and advanced."""
-        assert _advanced(SEPSettings, "ARTIFACT_DOWNLOAD_TTL") is True
-        assert _reload(SEPSettings, "ARTIFACT_DOWNLOAD_TTL") is ReloadClassification.HOT
+        assert _advanced(ExtensionsSettings, "ARTIFACT_DOWNLOAD_TTL") is True
+        assert (
+            _reload(ExtensionsSettings, "ARTIFACT_DOWNLOAD_TTL")
+            is ReloadClassification.HOT
+        )
 
     @pytest.mark.parametrize(
         "field",

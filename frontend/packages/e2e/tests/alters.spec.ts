@@ -255,23 +255,23 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname.startsWith('/api/sep/task-history')) {
+    if (pathname.startsWith('/api/extensions/task-history')) {
       return route.fulfill({
         json: { items: [], total: 0, offset: 0, limit: 50 },
       });
     }
 
-    if (pathname.startsWith('/api/sep/task-stats')) {
+    if (pathname.startsWith('/api/extensions/task-stats')) {
       return route.fulfill({ json: {} });
     }
 
-    if (pathname.endsWith('/sep/hosts/')) {
+    if (pathname.endsWith('/extensions/hosts/')) {
       return route.fulfill({
         json: [{ id: 'host1', name: 'host1', address: '127.0.0.1' }],
       });
     }
 
-    if (pathname.endsWith('/sep/services/')) {
+    if (pathname.endsWith('/extensions/services/')) {
       return route.fulfill({
         json: {
           items: [{ id: 1, name: 'svc1', type: 'mysql' }],
@@ -282,11 +282,11 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname.match(/^\/api\/sep\/services\/\d+\/schemas\/?$/)) {
+    if (pathname.match(/^\/api\/extensions\/services\/\d+\/schemas\/?$/)) {
       return route.fulfill({ json: [{ id: 10, name: 'app' }] });
     }
 
-    if (pathname.match(/^\/api\/sep\/schemas\/\d+\/tables\/?$/)) {
+    if (pathname.match(/^\/api\/extensions\/schemas\/\d+\/tables\/?$/)) {
       return route.fulfill({ json: [{ id: 20, name: 'users' }] });
     }
 
@@ -375,6 +375,21 @@ test.describe(`${APP_DISPLAY_NAME} app smoke`, () => {
 
     await altersPage.selectRecursionMethod(/^DSN$/);
     await expect(altersPage.dsnTableField()).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('loads schema and table options for the selected service', async ({ page }) => {
+    const altersPage = new AltersPage(page);
+    await altersPage.goto();
+    await altersPage.openCreateForm();
+
+    await page.getByLabel('Database Host').click();
+    await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
+
+    await page.getByLabel('Schema', { exact: true }).click();
+    await page.getByRole('option', { name: 'app' }).click();
+
+    await page.getByLabel('Table', { exact: true }).click();
+    await expect(page.getByRole('option', { name: 'users' })).toBeVisible({ timeout: 5_000 });
   });
 
   test('creates a task with manual schema/table names and lists it', async ({ page }) => {

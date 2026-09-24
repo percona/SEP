@@ -30,7 +30,7 @@ from pathlib import Path
 
 import yaml
 
-APP_HOME = Path("/home/sep/app")
+APP_HOME = Path("/home/extensions/app")
 """The image's application root, holding both the baked profile and the tree.
 
 Written literally rather than read from ``$APP_HOME`` so a moved root fails on a
@@ -53,7 +53,7 @@ def activated_apps(profile: Path) -> frozenset[str]:
     """Return the app module names the baked profile activates.
 
     :param profile: The baked settings profile.
-    :return: The ``SEP.APPS`` module names.
+    :return: The ``EXTENSIONS.APPS`` module names.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
     :raises TypeError: When the profile's root is not a mapping.
@@ -66,7 +66,7 @@ def activated_apps(profile: Path) -> frozenset[str]:
             f"{profile} is not a settings mapping: parsed as {type(document).__name__}"
         )
     return frozenset(
-        entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]
+        entry["MODULE_NAME"] for entry in document["default"]["EXTENSIONS"]["APPS"]
     )
 
 
