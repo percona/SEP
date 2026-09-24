@@ -866,7 +866,7 @@ def extensions_sqlite_alembic_config(tmp_path, monkeypatch):
     code path there than the PostgreSQL cases above exercise.
 
     :param tmp_path: pytest's per-test temporary directory.
-    :param monkeypatch: pytest's attribute patcher, pointing the sep settings at
+    :param monkeypatch: pytest's attribute patcher, pointing the extensions settings at
         the temp database file.
     :return: The extensions-track ``Config`` and the sync URL of the database it targets.
     """

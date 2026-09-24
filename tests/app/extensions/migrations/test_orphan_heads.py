@@ -47,7 +47,7 @@ _MYSQL_BACKUPS_HEAD = "f0a1b2c3d4e5"
 
 @pytest.fixture
 def extensions_script() -> ScriptDirectory:
-    """Return the script directory built from the real sep Alembic config.
+    """Return the script directory built from the real extensions Alembic config.
 
     :return: The ``ScriptDirectory`` for the extensions track's revision map.
     """

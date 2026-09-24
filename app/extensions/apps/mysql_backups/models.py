@@ -18,7 +18,7 @@
 This module is intentionally **self-contained** — it imports only from
 ``app.core``, ``pydantic``, ``sqlalchemy``, ``sqlmodel``, and ``yaml`` (for the
 shared config parser), never from ``app.inventory`` / ``app.tasks`` / the app
-framework's form DSL, and **never from a sibling in its own package**. The sep
+framework's form DSL, and **never from a sibling in its own package**. The extensions
 Alembic discovery loads this file *by path* to register the table in the
 migration metadata, so a package-qualified sibling import executes
 ``mysql_backups/__init__.py``, which imports the whole app and re-enters this

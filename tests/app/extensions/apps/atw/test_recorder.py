@@ -41,7 +41,7 @@ def _recorder_uses_test_session(mocker: MockerFixture, session: AsyncSession) ->
     ``record_atw_run`` writes on a session it opens itself: ``atw_incident_execution``
     is extensions-owned, not on the tasks database the recorder seam hands in. Patching the
     maker to yield the test session lets the write and the assertions share one
-    in-memory database, and pins the recorder to the *sep* maker.
+    in-memory database, and pins the recorder to the *extensions* maker.
     """
     maker = MagicMock()
     maker.return_value.__aenter__ = AsyncMock(return_value=session)

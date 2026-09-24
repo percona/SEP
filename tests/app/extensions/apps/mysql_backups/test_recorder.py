@@ -47,11 +47,11 @@ _OMITTED = object()
 def _recorder_uses_test_session(mocker, session) -> None:
     """Point the recorder's own extensions session at the test's in-memory session.
 
-    ``record_backup_run`` writes on a session it opens itself via the sep
+    ``record_backup_run`` writes on a session it opens itself via the extensions
     ``get_async_session_maker`` — the ``mysql_backup_run`` table is extensions-owned,
     not on the tasks database the recorder seam hands in. Patching that maker to
     yield the test session lets the write and the assertions share one in-memory
-    database, and pins the recorder to the *sep* maker.
+    database, and pins the recorder to the *extensions* maker.
     """
     maker = MagicMock()
     maker.return_value.__aenter__ = AsyncMock(return_value=session)

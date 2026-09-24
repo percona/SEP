@@ -47,7 +47,7 @@ MAIN = "tests/app/test_main.py"
 DOWNLOAD = "tests/app/extensions/routes/test_download_files.py"
 
 ORDERINGS = [
-    # Shallow module between two deep sep modules — the two failing orderings.
+    # Shallow module between two deep extensions modules — the two failing orderings.
     pytest.param([PMM, CELERY, DOWNLOAD], id="deep-shallow-deep-celery"),
     pytest.param([PMM, MAIN, DOWNLOAD], id="deep-shallow-deep-main"),
     # Positive control: shallow last was always clean; assert it stays clean.
@@ -59,7 +59,7 @@ ORDERINGS = [
 def test_extensions_conftest_fixtures_survive_collection_order(
     order: list[str],
 ) -> None:
-    """Assert the sep client/session fixtures resolve regardless of collection order.
+    """Assert the extensions client/session fixtures resolve regardless of collection order.
 
     ``-k test_returns_file_metadata`` keeps the child run tiny: ``-k`` deselects after
     collection, so all three modules are still collected in the pathological order and the

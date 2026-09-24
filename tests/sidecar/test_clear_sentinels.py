@@ -186,7 +186,7 @@ def test_a_named_step_loses_only_its_own_sentinel(
 
 @pytest.mark.parametrize(
     "unknown",
-    ["nosuchstep", "migrate-extensions", "sep inventory", "", "../extensions"],
+    ["nosuchstep", "migrate-extensions", "extensions inventory", "", "../extensions"],
     ids=["unknown", "program-name", "two-words", "empty", "path"],
 )
 def test_an_unknown_step_is_refused_before_anything_is_removed(
@@ -200,7 +200,7 @@ def test_an_unknown_step_is_refused_before_anything_is_removed(
     Validating every name first makes a typo free to retry.
 
     ``migrate-extensions`` is the natural mistake, since ``supervisorctl`` takes program
-    names, and ``sep inventory`` is what a substring membership test would
+    names, and ``extensions inventory`` is what a substring membership test would
     wrongly accept; ``""`` and ``../extensions`` are refused before any path is built
     from them.
     """

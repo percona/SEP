@@ -166,7 +166,7 @@ async def authenticated_get(
     params: dict[str, Any] | None = None,
     tasks: AsyncMock | None = None,
 ) -> Response:
-    """GET ``url`` against the sep app with the given session + inventory mock.
+    """GET ``url`` against the extensions app with the given session + inventory mock.
 
     Installs the authentication overrides an ``/api/apps/*`` route needs, so a
     route test asserts on the route's own behavior rather than on the auth gate,

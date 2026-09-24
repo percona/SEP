@@ -654,8 +654,8 @@ async def postgres_session(
 
 # The client/session fixtures below live here — the always-loaded ancestor conftest —
 # rather than in ``tests/app/extensions/conftest.py`` so they resolve regardless of single-process
-# collection order. ``tests/app/extensions/conftest.py`` re-exports them for the sep
-# subtree; nearer conftests (tasks, inventory, sep/apps/*) still shadow them as before.
+# collection order. ``tests/app/extensions/conftest.py`` re-exports them for the extensions
+# subtree; nearer conftests (tasks, inventory, extensions/apps/*) still shadow them as before.
 
 
 @pytest_asyncio.fixture(name="session")

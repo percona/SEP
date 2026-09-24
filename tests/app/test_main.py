@@ -130,7 +130,7 @@ def test_extensions_openapi_helper_is_hidden_from_core_spec(test_client):
 
 
 def test_api_openapi_json_merges_core_and_extensions(test_client):
-    """``GET /api/openapi.json`` returns a merged spec containing core + sep paths."""
+    """``GET /api/openapi.json`` returns a merged spec containing core + extensions paths."""
     response = test_client.get("/api/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
@@ -145,7 +145,7 @@ def test_api_openapi_json_merges_core_and_extensions(test_client):
     merged_paths = set(paths)
 
     assert core_paths, "core spec should expose at least one path"
-    assert extensions_paths, "sep spec should expose at least one path"
+    assert extensions_paths, "extensions spec should expose at least one path"
     assert core_paths & merged_paths, "merged spec missing core paths"
     assert extensions_paths & merged_paths, "merged spec missing extensions_app paths"
 
