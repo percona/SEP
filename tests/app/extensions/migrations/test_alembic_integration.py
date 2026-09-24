@@ -1155,6 +1155,76 @@ def test_table_rename_revision_moves_the_rows_and_their_names_and_back(
     ]
 
 
+PRE_RENAME_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
+"""A syncer's stored name before ``93cf1ec26fcd``. A frozen literal."""
+
+
+def _stored_syncers(sync_url: str) -> dict[str, list[str]]:
+    """Return the sorted ``syncer`` values of each table that stores one.
+
+    :param sync_url: The synchronous database URL.
+    :return: ``{table: syncers}`` for the run and entity-absence tables.
+    """
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            return {
+                table: sorted(
+                    syncer
+                    for (syncer,) in conn.exec_driver_sql(f"SELECT syncer FROM {table}")
+                )
+                for table in ("syncinstance", "syncentityabsence")
+            }
+    finally:
+        engine.dispose()
+
+
+def test_table_rename_revision_moves_the_stored_syncers_and_back(
+    extensions_alembic_config,
+):
+    """Move a syncer stored under the old package to the new one, and back.
+
+    A syncer from another package rides along to prove the rewrite is scoped to
+    the old one.
+    """
+    cfg, sync_url = extensions_alembic_config
+    command.upgrade(cfg, _EXTENSIONS_RETOKEN_REVISION)
+    other = "custom.syncers.Syncer"
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            for index, syncer in enumerate((PRE_RENAME_SYNCER, other)):
+                conn.exec_driver_sql(
+                    "INSERT INTO syncinstance (id, created_at, syncer, status) "
+                    "VALUES (?, '2026-01-01 00:00:00', ?, 'SUCCESS')",
+                    (f"{index:032x}", syncer),
+                )
+                conn.exec_driver_sql(
+                    "INSERT INTO syncentityabsence "
+                    "(created_at, syncer, entity_type, entity_id, missing_generations) "
+                    "VALUES ('2026-01-01 00:00:00', ?, 'NODE', 1, 2)",
+                    (syncer,),
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _EXTENSIONS_TABLE_RENAME_REVISION)
+
+    renamed = sorted(["app.extensions.sync.syncers.pmm.PMMSyncer", other])
+    assert _stored_syncers(sync_url) == {
+        "syncinstance": renamed,
+        "syncentityabsence": renamed,
+    }
+
+    command.downgrade(cfg, _EXTENSIONS_RETOKEN_REVISION)
+
+    restored = sorted([PRE_RENAME_SYNCER, other])
+    assert _stored_syncers(sync_url) == {
+        "syncinstance": restored,
+        "syncentityabsence": restored,
+    }
+
+
 def test_the_main_branch_is_addressed_by_its_current_label(extensions_alembic_config):
     """Resolve ``extensions_main@head`` to the head of the track's main branch."""
     cfg, _ = extensions_alembic_config

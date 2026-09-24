@@ -534,3 +534,54 @@ def test_the_bootstrap_moves_pre_rename_schedules_forward(sqlite_beat_store: str
         assert bootstrap.move_pre_rename_periodic_tasks(session_factory) == 0
     finally:
         engine.dispose()
+
+
+def test_the_bootstrap_moves_pre_rename_paths_in_an_operator_schedule(
+    sqlite_beat_store: str,
+):
+    """Rewrite old package paths in any row's task and kwargs, whatever its name.
+
+    An operator names a schedule freely, so neither row carries the seeded
+    prefix: one fires a task under the old package, the other pins an inventory
+    sync to a syncer named by its old dotted path.
+    """
+    old_task, new_task = bootstrap.PRE_RENAME_TASK_PREFIX, bootstrap.TASK_PREFIX
+    syncer = "sync.syncers.pmm.PMMSyncer"
+    bootstrap.bootstrap_beat_schema()
+    engine, session_factory = SessionManager().create_session(sqlite_beat_store)
+    try:
+        with session_factory() as session:
+            interval = IntervalSchedule(every=1, period=Period.HOURS)
+            session.add(interval)
+            session.flush()
+            session.add_all(
+                [
+                    PeriodicTask(
+                        name="nightly purge",
+                        task=f"{old_task}apps.atw.celery.purge",
+                        schedule_model=interval,
+                    ),
+                    PeriodicTask(
+                        name="pinned sync",
+                        task="app.tasks.celery.execute_task_by_name",
+                        kwargs=f'{{"meta": {{"syncer": "{old_task}{syncer}"}}}}',
+                        schedule_model=interval,
+                    ),
+                ]
+            )
+            session.commit()
+
+        bootstrap.bootstrap_beat_schema()
+
+        with session_factory() as session:
+            rows = {
+                row.name: (row.task, row.kwargs) for row in session.query(PeriodicTask)
+            }
+    finally:
+        engine.dispose()
+
+    assert rows["nightly purge"][0] == f"{new_task}apps.atw.celery.purge"
+    assert rows["pinned sync"] == (
+        "app.tasks.celery.execute_task_by_name",
+        f'{{"meta": {{"syncer": "{new_task}{syncer}"}}}}',
+    )

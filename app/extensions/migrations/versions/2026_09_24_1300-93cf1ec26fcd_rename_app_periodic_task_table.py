@@ -32,6 +32,10 @@ whose name it no longer seeds, so a row left under the old prefix would be
 replaced, and the operator's ``user_enabled`` choice on it lost. The rows are
 renamed in place instead.
 
+A syncer is stored by its dotted class path, which named the package too, in the
+sync run and entity-absence tables. Those move with it, so a syncer keeps its
+run history and its absence counts across the upgrade.
+
 The track's main branch takes the ``extensions_main`` label here. Its first
 label, ``sep_main``, is history and stays on the revision that set it; the
 Makefile and tests address the branch through the new one.
@@ -51,6 +55,9 @@ _NEW_TABLE = "extensionsappperiodictask"
 _INDEXED_COLUMNS = (("app_key", False), ("periodic_task_name", True))
 _OLD_NAME_PREFIX = "sep__"
 _NEW_NAME_PREFIX = "extensions__"
+_SYNCER_TABLES = ("syncinstance", "syncentityabsence")
+_OLD_SYNCER_PREFIX = "app.sep."
+_NEW_SYNCER_PREFIX = "app.extensions."
 
 
 def _rename_table(source: str, target: str) -> None:
@@ -70,18 +77,19 @@ def _rename_table(source: str, target: str) -> None:
         op.execute(f"ALTER SEQUENCE {source}_id_seq RENAME TO {target}_id_seq")
 
 
-def _rename_names(table: str, source: str, target: str) -> None:
-    """Move every stored schedule name from one prefix to the other.
+def _rename_prefix(table: str, column: str, source: str, target: str) -> None:
+    """Move every stored value of one column from one prefix to the other.
 
-    :param table: The table holding the names.
-    :param source: The prefix the rows carry.
+    :param table: The table holding the values.
+    :param column: The column holding the values.
+    :param source: The prefix the values carry.
     :param target: The prefix to store instead.
     """
     op.execute(
         sa.text(
-            f"UPDATE {table} SET periodic_task_name = "
-            ":target || substr(periodic_task_name, :offset) "
-            "WHERE substr(periodic_task_name, 1, :length) = :source"
+            f"UPDATE {table} SET {column} = "
+            f":target || substr({column}, :offset) "
+            f"WHERE substr({column}, 1, :length) = :source"
         ).bindparams(
             target=target, source=source, offset=len(source) + 1, length=len(source)
         )
@@ -89,12 +97,16 @@ def _rename_names(table: str, source: str, target: str) -> None:
 
 
 def upgrade() -> None:
-    """Rename the table and move its stored schedule names to the new prefix."""
+    """Rename the table and move its schedule names and the stored syncers."""
     _rename_table(_OLD_TABLE, _NEW_TABLE)
-    _rename_names(_NEW_TABLE, _OLD_NAME_PREFIX, _NEW_NAME_PREFIX)
+    _rename_prefix(_NEW_TABLE, "periodic_task_name", _OLD_NAME_PREFIX, _NEW_NAME_PREFIX)
+    for table in _SYNCER_TABLES:
+        _rename_prefix(table, "syncer", _OLD_SYNCER_PREFIX, _NEW_SYNCER_PREFIX)
 
 
 def downgrade() -> None:
-    """Restore the table name and the prefix the earlier revisions expect."""
-    _rename_names(_NEW_TABLE, _NEW_NAME_PREFIX, _OLD_NAME_PREFIX)
+    """Restore the table name and the prefixes the earlier revisions expect."""
+    for table in _SYNCER_TABLES:
+        _rename_prefix(table, "syncer", _NEW_SYNCER_PREFIX, _OLD_SYNCER_PREFIX)
+    _rename_prefix(_NEW_TABLE, "periodic_task_name", _NEW_NAME_PREFIX, _OLD_NAME_PREFIX)
     _rename_table(_NEW_TABLE, _OLD_TABLE)

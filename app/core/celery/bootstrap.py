@@ -97,7 +97,7 @@ NAME_PREFIX = "extensions__"
 """The prefix :func:`app.core.celery.utils.init_periodic_tasks_db` seeds them under."""
 
 PRE_RENAME_TASK_PREFIX = "app.sep."
-"""The package the scheduled task paths named before the rename. A frozen literal."""
+"""The package stored dotted paths named before the rename. A frozen literal."""
 
 TASK_PREFIX = "app.extensions."
 """The package the scheduled task paths name now."""
@@ -106,9 +106,10 @@ TASK_PREFIX = "app.extensions."
 def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> int:
     """Move stored schedules forward from their pre-rename names and task paths.
 
-    A beat row stores both the schedule's name, seeded under a prefix, and the
-    dotted path of the task it fires, a module path under the package. The
-    rename moved both. Seeding reconciles only rows under the current prefix, so
+    A beat row stores the schedule's name, seeded under a prefix, the dotted
+    path of the task it fires, a module path under the package, and keyword
+    arguments that can name another such path, such as the syncer an inventory
+    sync is pinned to. The rename moved all three. Seeding reconciles only rows under the current prefix, so
     a row left under the old one would keep firing a task path that no longer
     resolves, alongside the new row seeded beside it. Renaming the row in place
     keeps its schedule state instead. A row whose new name was already seeded is
@@ -129,6 +130,9 @@ def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> in
                         PRE_RENAME_NAME_PREFIX, autoescape=True
                     ),
                     PeriodicTask.task.startswith(
+                        PRE_RENAME_TASK_PREFIX, autoescape=True
+                    ),
+                    PeriodicTask.kwargs.contains(
                         PRE_RENAME_TASK_PREFIX, autoescape=True
                     ),
                 )
@@ -152,6 +156,8 @@ def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> in
                 row.name = name
             if row.task.startswith(PRE_RENAME_TASK_PREFIX):
                 row.task = TASK_PREFIX + row.task.removeprefix(PRE_RENAME_TASK_PREFIX)
+            if row.kwargs and PRE_RENAME_TASK_PREFIX in row.kwargs:
+                row.kwargs = row.kwargs.replace(PRE_RENAME_TASK_PREFIX, TASK_PREFIX)
         session.commit()
     logger.info("Moved %d Celery beat schedules to their renamed names.", len(stale))
     return len(stale)
