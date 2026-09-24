@@ -47,6 +47,10 @@ from app.core.celery.migrations import BEAT_TABLE_NAMES
 from app.core.config import LOGGING_CONFIG, settings
 from app.core.db.utils import check_constraint_name
 from app.extensions.apps.alerts.models import AlertBackup
+from app.extensions.migrations._version_table import (
+    PRE_RENAME_VERSION_TABLE,
+    VERSION_TABLE,
+)
 from tests.app.alembic_paths import ALEMBIC_INI, REPO_ROOT
 from tests.app.beat_autogenerate import (
     autogenerate_diffs,
@@ -81,6 +85,14 @@ _EXTENSIONS_SYNC_RUN_STATE_REVISION = "867df844fe17"
 _EXTENSIONS_PRE_RETOKEN_REVISION = "cbc3026013de"
 #: The rename_sep_settings_override_token revision under test.
 _EXTENSIONS_RETOKEN_REVISION = "ee2b220c8c73"
+#: The rename_app_periodic_task_table revision under test.
+_EXTENSIONS_TABLE_RENAME_REVISION = "93cf1ec26fcd"
+
+PRE_RENAME_APP_PERIODIC_TASK_TABLE = "seppluginperiodictask"
+"""The ownership table's name before ``93cf1ec26fcd``. A frozen literal."""
+
+PRE_RENAME_SCHEDULE_NAME = "sep__purge_atw_bundles"
+"""A schedule name under the prefix used before ``93cf1ec26fcd``. A frozen literal."""
 
 _ORPHAN_HEADS_LOGGER = "app.extensions.migrations._orphan_heads"
 
@@ -1088,3 +1100,97 @@ def test_check_is_clean_after_upgrade_to_heads(tmp_path: Path) -> None:
             check=False,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _app_periodic_task_rows(sync_url: str, table: str) -> list[tuple[str, int]]:
+    """Return every ``(periodic_task_name, user_enabled)`` row of ``table``, sorted."""
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql(
+                f"SELECT periodic_task_name, user_enabled FROM {table}"
+            ).fetchall()
+    finally:
+        engine.dispose()
+    return sorted((name, enabled) for name, enabled in rows)
+
+
+def test_table_rename_revision_moves_the_rows_and_their_names_and_back(
+    extensions_alembic_config,
+):
+    """Rename the ownership table and its old-prefixed names, keeping each override.
+
+    A name outside the old prefix rides along to prove the rewrite is scoped to
+    it, and the disabled row proves the operator's choice survives the move.
+    """
+    cfg, sync_url = extensions_alembic_config
+    command.upgrade(cfg, _EXTENSIONS_RETOKEN_REVISION)
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            for name, enabled in ((PRE_RENAME_SCHEDULE_NAME, 0), ("custom", 1)):
+                conn.exec_driver_sql(
+                    f"INSERT INTO {PRE_RENAME_APP_PERIODIC_TASK_TABLE} "
+                    "(created_at, periodic_task_name, app_key, user_enabled) "
+                    "VALUES ('2026-01-01 00:00:00', ?, 'atw', ?)",
+                    (name, enabled),
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _EXTENSIONS_TABLE_RENAME_REVISION)
+
+    assert PRE_RENAME_APP_PERIODIC_TASK_TABLE not in _get_table_names(sync_url)
+    assert _app_periodic_task_rows(sync_url, "extensionsappperiodictask") == [
+        ("custom", 1),
+        ("extensions__purge_atw_bundles", 0),
+    ]
+
+    command.downgrade(cfg, _EXTENSIONS_RETOKEN_REVISION)
+
+    assert "extensionsappperiodictask" not in _get_table_names(sync_url)
+    assert _app_periodic_task_rows(sync_url, PRE_RENAME_APP_PERIODIC_TASK_TABLE) == [
+        ("custom", 1),
+        (PRE_RENAME_SCHEDULE_NAME, 0),
+    ]
+
+
+def test_the_main_branch_is_addressed_by_its_current_label(extensions_alembic_config):
+    """Resolve ``extensions_main@head`` to the head of the track's main branch."""
+    cfg, _ = extensions_alembic_config
+    script = ScriptDirectory.from_config(cfg)
+
+    heads = [rev.revision for rev in script.get_revisions("extensions_main@heads")]
+    ancestry = {
+        rev.revision
+        for rev in script.walk_revisions(base="base", head="extensions_main@head")
+    }
+
+    assert len(heads) == 1
+    assert _EXTENSIONS_TABLE_RENAME_REVISION in ancestry
+
+
+def test_upgrade_adopts_the_pre_rename_version_table(extensions_alembic_config):
+    """Resume a database that recorded its heads under the pre-rename table name.
+
+    Read through the new name alone, the database would look empty and have its
+    first revision replayed over tables it already holds, which fails.
+    """
+    cfg, sync_url = extensions_alembic_config
+    command.upgrade(cfg, "heads")
+    stamped = _get_stamped_revisions(sync_url)
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {VERSION_TABLE} RENAME TO {PRE_RENAME_VERSION_TABLE}"
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "heads")
+
+    tables = _get_table_names(sync_url)
+    assert VERSION_TABLE in tables
+    assert PRE_RENAME_VERSION_TABLE not in tables
+    assert _get_stamped_revisions(sync_url) == stamped

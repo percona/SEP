@@ -264,7 +264,12 @@ def _qa_not_required_client(present, events=()):
 def _sync_qa_not_required(client, *, eligible):
     """Run the ``qa not required`` sync against a mock client for one eligibility."""
     sync_pr_labels.sync_qa_not_required_label(
-        client, "percona", "SEP", 42, eligible=eligible, log=lambda _message: None
+        client,
+        "percona",
+        "SEP",
+        42,
+        eligible=eligible,
+        log=lambda _message: None,
     )
 
 

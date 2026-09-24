@@ -56,9 +56,9 @@ async def record_atw_run(
     because only ATW's own proxy task carries this recorder, but a filtered UPDATE
     is what makes that harmless rather than merely unlikely.
 
-    ``atw_incident_execution`` is owned by the **sep** database, while the recorder
+    ``atw_incident_execution`` is owned by the **extensions** database, while the recorder
     seam opens and passes a *tasks*-database session — two distinct engines under
-    SQLite. So the write goes on a fresh sep session opened here; the passed
+    SQLite. So the write goes on a fresh extensions session opened here; the passed
     ``session`` is intentionally unused, kept only for the seam's
     ``(session, history, result)`` contract. ``result`` is unused because a
     diagnostics run's outcome is its status, not anything its payload reports.

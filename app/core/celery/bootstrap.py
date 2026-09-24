@@ -36,8 +36,11 @@ import logging
 import logging.config
 from time import sleep
 
+from sqlalchemy import or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlalchemy_celery_beat.session import SessionManager
 
 from app.core.config import settings
@@ -87,8 +90,78 @@ def _wait_for_store(engine: Engine) -> None:
             sleep(STORE_READINESS_POLL_INTERVAL)
 
 
+PRE_RENAME_NAME_PREFIX = "sep__"
+"""The prefix system schedules were seeded under before the rename. A frozen literal."""
+
+NAME_PREFIX = "extensions__"
+"""The prefix :func:`app.core.celery.utils.init_periodic_tasks_db` seeds them under."""
+
+PRE_RENAME_TASK_PREFIX = "app.sep."
+"""The package the scheduled task paths named before the rename. A frozen literal."""
+
+TASK_PREFIX = "app.extensions."
+"""The package the scheduled task paths name now."""
+
+
+def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> int:
+    """Move stored schedules forward from their pre-rename names and task paths.
+
+    A beat row stores both the schedule's name, seeded under a prefix, and the
+    dotted path of the task it fires, a module path under the package. The
+    rename moved both. Seeding reconciles only rows under the current prefix, so
+    a row left under the old one would keep firing a task path that no longer
+    resolves, alongside the new row seeded beside it. Renaming the row in place
+    keeps its schedule state instead. A row whose new name was already seeded is
+    the duplicate, and is deleted.
+
+    The rows are changed through the ORM, so the library's change listener tells
+    a running scheduler to reload. Every later run finds nothing to move.
+
+    :param session_factory: Sessions bound to the resolved beat store.
+    :return: How many rows were renamed or deleted.
+    """
+    with session_factory() as session:
+        stale = (
+            session.query(PeriodicTask)
+            .filter(
+                or_(
+                    PeriodicTask.name.startswith(
+                        PRE_RENAME_NAME_PREFIX, autoescape=True
+                    ),
+                    PeriodicTask.task.startswith(
+                        PRE_RENAME_TASK_PREFIX, autoescape=True
+                    ),
+                )
+            )
+            .all()
+        )
+        if not stale:
+            return 0
+        seeded = {
+            name
+            for (name,) in session.query(PeriodicTask.name).filter(
+                PeriodicTask.name.startswith(NAME_PREFIX, autoescape=True)
+            )
+        }
+        for row in stale:
+            if row.name.startswith(PRE_RENAME_NAME_PREFIX):
+                name = NAME_PREFIX + row.name.removeprefix(PRE_RENAME_NAME_PREFIX)
+                if name in seeded:
+                    session.delete(row)
+                    continue
+                row.name = name
+            if row.task.startswith(PRE_RENAME_TASK_PREFIX):
+                row.task = TASK_PREFIX + row.task.removeprefix(PRE_RENAME_TASK_PREFIX)
+        session.commit()
+    logger.info("Moved %d Celery beat schedules to their renamed names.", len(stale))
+    return len(stale)
+
+
 def bootstrap_beat_schema() -> None:
     """Create the ``sqlalchemy_celery_beat`` schedule tables if they are absent.
+
+    Then move any schedule stored under its pre-rename name forward, through
+    :func:`move_pre_rename_periodic_tasks`, before a seeding service reads it.
 
     The store and schema are resolved exactly as
     :meth:`sqlalchemy_celery_beat.schedulers.DatabaseScheduler.__init__` resolves
@@ -114,13 +187,14 @@ def bootstrap_beat_schema() -> None:
         this surfaces immediately.
     """
     manager = SessionManager()
-    engine, _ = manager.create_session(
+    engine, session_factory = manager.create_session(
         settings.CELERY.beat_dburi,
         schema=settings.CELERY.beat_schema,
     )
     try:
         _wait_for_store(engine)
         manager.prepare_models(engine, schema=settings.CELERY.beat_schema)
+        move_pre_rename_periodic_tasks(session_factory)
     finally:
         engine.dispose()
 

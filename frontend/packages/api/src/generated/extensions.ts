@@ -4549,6 +4549,168 @@ export interface components {
       type: string;
     };
     /**
+     * ExtensionsTaskHistoryResponse
+     * @description Represent a task-history row as PMM Extensions serves it, with actors resolved.
+     *
+     *     :param task: The task this execution belongs to, carrying resolved actors.
+     *     :param executed_by: Display name for the actor that ran the task: the
+     *         provider's username when resolvable, a system label for
+     *         system-initiated work, otherwise the stored identifier. ``None`` when
+     *         none was recorded.
+     */
+    ExtensionsTaskHistoryResponse: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Display Name
+       * @description Return a user-meaningful display label for this task history row.
+       *
+       *     For normal tasks, returns ``task.name``. For generic executor templates
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+       *     are distinguishable: the filename comes from the snippet metadata or the
+       *     ``file://`` payload basename, the source directory from whichever of those
+       *     carries one, and the target from the execution request. Falls back to
+       *     ``"<task> on <target>"`` when no filename is available.
+       *
+       *     A ``PROXY`` task that leaves the payload to each dispatch is classified by the
+       *     root it names, not by its own name, because history binds to the
+       *     *dispatched* task: an app wrapping a generic executor to attach its own hooks
+       *     would otherwise collapse every one of its runs onto the wrapper's single
+       *     name. A proxy carrying its own ``payload`` is left alone, because
+       *     ``prepare_task_history`` substitutes that payload into every run: it is a
+       *     configured job, and its own name is the meaningful label. That is the shape
+       *     of every proxy the framework builds over ``run-python``. Only the
+       *     classification uses the root — a proxy over a non-generic task still reports
+       *     its own name.
+       *
+       *     :return: The display label for the task history entry.
+       */
+      readonly display_name: string;
+      /**
+       * Duration
+       * @description Return the duration of the task execution in seconds.
+       *
+       *     :return: The duration in seconds, or None if not available.
+       *     :rtype: float | None
+       */
+      readonly duration: number | null;
+      /**
+       * Executed By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      executed_by?: string | null;
+      execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Failure Reason */
+      failure_reason?: string | null;
+      /** Finished At */
+      finished_at?: string | null;
+      /**
+       * Has Logs
+       * @default false
+       */
+      has_logs: boolean;
+      /** Id */
+      id: number | null;
+      /** @default unknown */
+      log_capture: components['schemas']['LogCaptureStatusEnum'];
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['TaskHistoryStatusEnum'];
+      task: components['schemas']['ExtensionsTaskResponse'];
+      /**
+       * Unreadable Request Leaves
+       * @default []
+       */
+      unreadable_request_leaves: string[];
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * ExtensionsTaskResponse
+     * @description Represent a task definition as PMM Extensions serves it, with actors resolved.
+     *
+     *     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
+     *     actor fields carry.
+     *
+     *     :param created_by: Display name for the task's creator: the provider's
+     *         username when resolvable, a system label for system-initiated work,
+     *         otherwise the stored identifier. ``None`` when none was recorded.
+     *     :param last_updated_by: Display name for the user who last modified the
+     *         task, resolved on the same terms as ``created_by``. ``None`` when none
+     *         was recorded.
+     */
+    ExtensionsTaskResponse: {
+      /** Alert Detail Builder */
+      alert_detail_builder?: string | null;
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /**
+       * Created By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      created_by: string | null;
+      /** Data */
+      data: {
+        [key: string]: unknown;
+      };
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Id */
+      id: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
+      /**
+       * Last Updated By
+       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
+       */
+      last_updated_by: string | null;
+      /** Name */
+      name: string;
+      /** Output Files Path */
+      output_files_path?: string | null;
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
+      /** Run Result Recorder */
+      run_result_recorder?: string | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
      * FileMetadata
      * @description Represent file metadata for task artifacts.
      */
@@ -4778,168 +4940,6 @@ export interface components {
       service_id: number;
       /** Sync Failing Since */
       sync_failing_since?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
-     * ExtensionsTaskHistoryResponse
-     * @description Represent a task-history row as PMM Extensions serves it, with actors resolved.
-     *
-     *     :param task: The task this execution belongs to, carrying resolved actors.
-     *     :param executed_by: Display name for the actor that ran the task: the
-     *         provider's username when resolvable, a system label for
-     *         system-initiated work, otherwise the stored identifier. ``None`` when
-     *         none was recorded.
-     */
-    ExtensionsTaskHistoryResponse: {
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /**
-       * Display Name
-       * @description Return a user-meaningful display label for this task history row.
-       *
-       *     For normal tasks, returns ``task.name``. For generic executor templates
-       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
-       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
-       *     are distinguishable: the filename comes from the snippet metadata or the
-       *     ``file://`` payload basename, the source directory from whichever of those
-       *     carries one, and the target from the execution request. Falls back to
-       *     ``"<task> on <target>"`` when no filename is available.
-       *
-       *     A ``PROXY`` task that leaves the payload to each dispatch is classified by the
-       *     root it names, not by its own name, because history binds to the
-       *     *dispatched* task: an app wrapping a generic executor to attach its own hooks
-       *     would otherwise collapse every one of its runs onto the wrapper's single
-       *     name. A proxy carrying its own ``payload`` is left alone, because
-       *     ``prepare_task_history`` substitutes that payload into every run: it is a
-       *     configured job, and its own name is the meaningful label. That is the shape
-       *     of every proxy the framework builds over ``run-python``. Only the
-       *     classification uses the root — a proxy over a non-generic task still reports
-       *     its own name.
-       *
-       *     :return: The display label for the task history entry.
-       */
-      readonly display_name: string;
-      /**
-       * Duration
-       * @description Return the duration of the task execution in seconds.
-       *
-       *     :return: The duration in seconds, or None if not available.
-       *     :rtype: float | None
-       */
-      readonly duration: number | null;
-      /**
-       * Executed By
-       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
-       */
-      executed_by?: string | null;
-      execution_request: components['schemas']['TaskExecutionRequest'];
-      /** Failure Reason */
-      failure_reason?: string | null;
-      /** Finished At */
-      finished_at?: string | null;
-      /**
-       * Has Logs
-       * @default false
-       */
-      has_logs: boolean;
-      /** Id */
-      id: number | null;
-      /** @default unknown */
-      log_capture: components['schemas']['LogCaptureStatusEnum'];
-      /** Started At */
-      started_at?: string | null;
-      /** @default pending */
-      status: components['schemas']['TaskHistoryStatusEnum'];
-      task: components['schemas']['ExtensionsTaskResponse'];
-      /**
-       * Unreadable Request Leaves
-       * @default []
-       */
-      unreadable_request_leaves: string[];
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
-     * ExtensionsTaskResponse
-     * @description Represent a task definition as PMM Extensions serves it, with actors resolved.
-     *
-     *     Differ from :class:`~app.tasks.models.TaskResponse` only in what the two
-     *     actor fields carry.
-     *
-     *     :param created_by: Display name for the task's creator: the provider's
-     *         username when resolvable, a system label for system-initiated work,
-     *         otherwise the stored identifier. ``None`` when none was recorded.
-     *     :param last_updated_by: Display name for the user who last modified the
-     *         task, resolved on the same terms as ``created_by``. ``None`` when none
-     *         was recorded.
-     */
-    ExtensionsTaskResponse: {
-      /** Alert Detail Builder */
-      alert_detail_builder?: string | null;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Anonymized Entities
-       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
-       */
-      readonly anonymized_entities: string[];
-      /** @default nomad */
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /**
-       * Created By
-       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
-       */
-      created_by: string | null;
-      /** Data */
-      data: {
-        [key: string]: unknown;
-      };
-      /** Deleted At */
-      deleted_at: string | null;
-      /** Id */
-      id: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Last Updated By
-       * @description Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.
-       */
-      last_updated_by: string | null;
-      /** Name */
-      name: string;
-      /** Output Files Path */
-      output_files_path?: string | null;
-      /**
-       * Owner
-       * @default ANY
-       */
-      owner: string;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      /** Run Result Recorder */
-      run_result_recorder?: string | null;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -5988,6 +5988,32 @@ export interface components {
       total: number;
     };
     /**
+     * HostResponse
+     * @description Represent a single executor target enriched with an inventory display name.
+     *
+     *     :param id: The executor (Nomad / Celery) node name. This is the value
+     *         consumed by dispatch payloads as ``executor_host``.
+     *     :param name: Human-readable label sourced from inventory when available;
+     *         falls back to ``id`` if the host has no inventory match.
+     *     :param address: The network address reported by the executor.
+     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
+     *         host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,
+     *         ``False`` when neither holds, ``None`` when never observed. A ``True``
+     *         does not promise the task user is in sudoers, only that the launch check
+     *         lets the command through. ``None`` is permanent, not transient, for an
+     *         executor host with no inventory match.
+     */
+    app__extensions__api__routes__hosts__HostResponse: {
+      /** Address */
+      address: string;
+      /** Can Elevate */
+      can_elevate?: boolean | null;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /**
      * ServiceResponse
      * @description Define the service API response.
      *
@@ -6062,32 +6088,6 @@ export interface components {
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
-    };
-    /**
-     * HostResponse
-     * @description Represent a single executor target enriched with an inventory display name.
-     *
-     *     :param id: The executor (Nomad / Celery) node name. This is the value
-     *         consumed by dispatch payloads as ``executor_host``.
-     *     :param name: Human-readable label sourced from inventory when available;
-     *         falls back to ``id`` if the host has no inventory match.
-     *     :param address: The network address reported by the executor.
-     *     :param can_elevate: Whether a ``sudo``-prefixed command can start on this
-     *         host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,
-     *         ``False`` when neither holds, ``None`` when never observed. A ``True``
-     *         does not promise the task user is in sudoers, only that the launch check
-     *         lets the command through. ``None`` is permanent, not transient, for an
-     *         executor host with no inventory match.
-     */
-    app__extensions__api__routes__hosts__HostResponse: {
-      /** Address */
-      address: string;
-      /** Can Elevate */
-      can_elevate?: boolean | null;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
     };
     /**
      * ArchivesCreate

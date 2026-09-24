@@ -290,7 +290,7 @@ class TestSyncerNameConstants:
     def test_the_hand_kept_syncer_paths_match_their_classes(self) -> None:
         """Pin each shared syncer-path constant against the class it names.
 
-        The tasks service never imports the sep syncers, so the constants are a
+        The tasks service never imports the extensions syncers, so the constants are a
         hand-kept copy — but a test can import them, and nothing else compares the
         two. Settings validate a syncer path's shape and not its existence, so a
         renamed syncer module would otherwise leave these stale and every

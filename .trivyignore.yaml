@@ -67,7 +67,7 @@ vulnerabilities:
     statement: >-
       libacl1. Symlink traversal privilege escalation, CVSS 7.1 AV:L/AC:L/PR:L.
       Local vector requiring pre-existing privileges in the container; the image
-      runs as the unprivileged sep user. No upstream fix; required by coreutils,
+      runs as the unprivileged extensions user. No upstream fix; required by coreutils,
       tar, sed and passwd, so not removable. Remove when Debian ships a fix.
     expired_at: 2027-02-19
 

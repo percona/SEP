@@ -49,7 +49,7 @@ _MYSQL_BACKUPS_HEAD = "f0a1b2c3d4e5"
 def extensions_script() -> ScriptDirectory:
     """Return the script directory built from the real sep Alembic config.
 
-    :return: The ``ScriptDirectory`` for the sep track's revision map.
+    :return: The ``ScriptDirectory`` for the extensions track's revision map.
     """
     return ScriptDirectory.from_config(
         Config(str(ALEMBIC_INI), ini_section="extensions")

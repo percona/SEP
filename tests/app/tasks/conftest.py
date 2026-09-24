@@ -47,7 +47,7 @@ from tests.app.factories import build_task_history, TaskFactory
 
 #: Syncer names in ``BaseSyncer.get_name()`` form, as the inventory-sync settings and
 #: the schedules seeded from them spell a syncer. Shared so the tasks suite has one
-#: copy: the tasks service never imports the sep syncers, so these cannot be derived
+#: copy: the tasks service never imports the extensions syncers, so these cannot be derived
 #: from the classes here.
 PMM_SYNCER = "app.extensions.sync.syncers.pmm.PMMSyncer"
 MYSQL_SYNCER = "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"

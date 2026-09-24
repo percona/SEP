@@ -550,7 +550,7 @@ Predominantly first-party defects with a fix available here.
 |---|---:|---|
 | `invalid-return-type` | 168 | Nullable returns, and generator fixtures annotated as the yielded type rather than as a generator. |
 | `not-subscriptable` | 59 | 57 of 59 subscript a value ty knows may be `None`. |
-| `invalid-type-form` | 39 | SEP's own dynamic `type[BaseUser]` / `type[BaseModel]` values used as annotations. |
+| `invalid-type-form` | 39 | PMM Extensions' own dynamic `type[BaseUser]` / `type[BaseModel]` values used as annotations. |
 | `unsupported-operator` | 22 | 16 of 22 have an un-narrowed `X \| None` operand; the rest widen an operand to `object`. |
 | `invalid-method-override` | 19 | First-party overrides of first-party bases; these are Liskov violations. |
 | `not-iterable` | 12 | Includes `async for` over a coroutine that was never awaited. |

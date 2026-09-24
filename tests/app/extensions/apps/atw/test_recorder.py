@@ -36,7 +36,7 @@ _OTHER_HISTORY_ID = 99
 
 @pytest.fixture
 def _recorder_uses_test_session(mocker: MockerFixture, session: AsyncSession) -> None:
-    """Point the recorder's own sep session at the test's in-memory session.
+    """Point the recorder's own extensions session at the test's in-memory session.
 
     ``record_atw_run`` writes on a session it opens itself: ``atw_incident_execution``
     is extensions-owned, not on the tasks database the recorder seam hands in. Patching the

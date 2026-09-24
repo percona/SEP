@@ -25,7 +25,7 @@ migration metadata, so a package-qualified sibling import executes
 module mid-initialisation — an ``ImportError`` that only ``make
 checkmigrations`` reproduces, however import-free the sibling itself is.
 Pulling in the heavier modules would additionally bleed their tables into the
-sep autogenerate comparison.
+extensions autogenerate comparison.
 
 That constraint is also what decides where a piece two siblings both need goes
 — the ``backup_source`` resolution below, and the vocabulary enums the backup

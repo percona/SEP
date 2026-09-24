@@ -621,7 +621,7 @@ class PackagesInstallStrategy:
         defaults.
 
         Tolerates ``rs.initiate`` already having succeeded: a dispatch that
-        times out at the SEP/Nomad layer *after* the command actually took
+        times out at the PMM Extensions/Nomad layer *after* the command actually took
         effect on the host looks, to the stepper's retry policy, exactly like
         one that never ran — it retries. A bare retry fails with
         ``AlreadyInitialized`` and, retries exhausted, triggers rollback

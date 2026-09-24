@@ -466,6 +466,320 @@
         "title": "ExecutionEvent",
         "type": "object"
       },
+      "ExtensionsTaskHistoryResponse": {
+        "description": "Represent a task-history row as PMM Extensions serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task: the\n    provider's username when resolvable, a system label for\n    system-initiated work, otherwise the stored identifier. ``None`` when\n    none was recorded.",
+        "properties": {
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\nA ``PROXY`` task that leaves the payload to each dispatch is classified by the\nroot it names, not by its own name, because history binds to the\n*dispatched* task: an app wrapping a generic executor to attach its own hooks\nwould otherwise collapse every one of its runs onto the wrapper's single\nname. A proxy carrying its own ``payload`` is left alone, because\n``prepare_task_history`` substitutes that payload into every run: it is a\nconfigured job, and its own name is the meaningful label. That is the shape\nof every proxy the framework builds over ``run-python``. Only the\nclassification uses the root — a proxy over a non-generic task still reports\nits own name.\n\n:return: The display label for the task history entry.",
+            "readOnly": true,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Return the duration of the task execution in seconds.\n\n:return: The duration in seconds, or None if not available.\n:rtype: float | None",
+            "readOnly": true,
+            "title": "Duration"
+          },
+          "executed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Executed By"
+          },
+          "execution_request": {
+            "$ref": "#/components/schemas/TaskExecutionRequest"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "has_logs": {
+            "default": false,
+            "title": "Has Logs",
+            "type": "boolean"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "log_capture": {
+            "$ref": "#/components/schemas/LogCaptureStatusEnum",
+            "default": "unknown"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskHistoryStatusEnum",
+            "default": "pending"
+          },
+          "task": {
+            "$ref": "#/components/schemas/ExtensionsTaskResponse"
+          },
+          "unreadable_request_leaves": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Request Leaves",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "execution_request",
+          "task",
+          "duration",
+          "display_name"
+        ],
+        "title": "ExtensionsTaskHistoryResponse",
+        "type": "object"
+      },
+      "ExtensionsTaskResponse": {
+        "description": "Represent a task definition as PMM Extensions serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
+        "properties": {
+          "alert_detail_builder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Detail Builder"
+          },
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum",
+            "default": "nomad"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Created By"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "is_template": {
+            "default": false,
+            "title": "Is Template",
+            "type": "boolean"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
+            "title": "Last Updated By"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "output_files_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Files Path"
+          },
+          "owner": {
+            "default": "ANY",
+            "title": "Owner",
+            "type": "string"
+          },
+          "protected": {
+            "default": false,
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "run_result_recorder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Result Recorder"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "data",
+          "deleted_at",
+          "created_by",
+          "last_updated_by",
+          "anonymized_entities"
+        ],
+        "title": "ExtensionsTaskResponse",
+        "type": "object"
+      },
       "FileMetadata": {
         "description": "Represent file metadata for task artifacts.",
         "properties": {
@@ -864,320 +1178,6 @@
           "id"
         ],
         "title": "Schema",
-        "type": "object"
-      },
-      "ExtensionsTaskHistoryResponse": {
-        "description": "Represent a task-history row as PMM Extensions serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task: the\n    provider's username when resolvable, a system label for\n    system-initiated work, otherwise the stored identifier. ``None`` when\n    none was recorded.",
-        "properties": {
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "display_name": {
-            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\nA ``PROXY`` task that leaves the payload to each dispatch is classified by the\nroot it names, not by its own name, because history binds to the\n*dispatched* task: an app wrapping a generic executor to attach its own hooks\nwould otherwise collapse every one of its runs onto the wrapper's single\nname. A proxy carrying its own ``payload`` is left alone, because\n``prepare_task_history`` substitutes that payload into every run: it is a\nconfigured job, and its own name is the meaningful label. That is the shape\nof every proxy the framework builds over ``run-python``. Only the\nclassification uses the root — a proxy over a non-generic task still reports\nits own name.\n\n:return: The display label for the task history entry.",
-            "readOnly": true,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "duration": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Return the duration of the task execution in seconds.\n\n:return: The duration in seconds, or None if not available.\n:rtype: float | None",
-            "readOnly": true,
-            "title": "Duration"
-          },
-          "executed_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
-            "title": "Executed By"
-          },
-          "execution_request": {
-            "$ref": "#/components/schemas/TaskExecutionRequest"
-          },
-          "failure_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Failure Reason"
-          },
-          "finished_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Finished At"
-          },
-          "has_logs": {
-            "default": false,
-            "title": "Has Logs",
-            "type": "boolean"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "log_capture": {
-            "$ref": "#/components/schemas/LogCaptureStatusEnum",
-            "default": "unknown"
-          },
-          "started_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Started At"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskHistoryStatusEnum",
-            "default": "pending"
-          },
-          "task": {
-            "$ref": "#/components/schemas/ExtensionsTaskResponse"
-          },
-          "unreadable_request_leaves": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable Request Leaves",
-            "type": "array"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "execution_request",
-          "task",
-          "duration",
-          "display_name"
-        ],
-        "title": "ExtensionsTaskHistoryResponse",
-        "type": "object"
-      },
-      "ExtensionsTaskResponse": {
-        "description": "Represent a task definition as PMM Extensions serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
-        "properties": {
-          "alert_detail_builder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alert Detail Builder"
-          },
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum",
-            "default": "nomad"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
-            "title": "Created By"
-          },
-          "data": {
-            "additionalProperties": true,
-            "title": "Data",
-            "type": "object"
-          },
-          "deleted_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deleted At"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Display name for the actor: the provider's username when resolvable, a system label for system-initiated work, otherwise the stored identifier.",
-            "title": "Last Updated By"
-          },
-          "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "output_files_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output Files Path"
-          },
-          "owner": {
-            "default": "ANY",
-            "title": "Owner",
-            "type": "string"
-          },
-          "protected": {
-            "default": false,
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "run_result_recorder": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Run Result Recorder"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "data",
-          "deleted_at",
-          "created_by",
-          "last_updated_by",
-          "anonymized_entities"
-        ],
-        "title": "ExtensionsTaskResponse",
         "type": "object"
       },
       "ServiceEnum": {
@@ -2795,6 +2795,41 @@
         "title": "PaginatedResponse[ServiceResponse]",
         "type": "object"
       },
+      "app__extensions__api__routes__hosts__HostResponse": {
+        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:param address: The network address reported by the executor.\n:param can_elevate: Whether a ``sudo``-prefixed command can start on this\n    host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,\n    ``False`` when neither holds, ``None`` when never observed. A ``True``\n    does not promise the task user is in sudoers, only that the launch check\n    lets the command through. ``None`` is permanent, not transient, for an\n    executor host with no inventory match.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "can_elevate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Can Elevate"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "address"
+        ],
+        "title": "HostResponse",
+        "type": "object"
+      },
       "app__inventory__models__ServiceResponse": {
         "description": "Define the service API response.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:param external_id: An external identifier for the service.\n:param name: The name of the service.\n:param type: The type of the service (e.g., MYSQL, POSTGRESQL).\n:param port: The port number on which the service is running.\n:param environment: The environment in which the service is running, if set.\n:param cluster: The cluster in which the service is running, if set.\n:param replication_set: The replication set in which the service is running, if set.\n:param custom_labels: Custom labels associated with the service, if set.\n:param node_id: The unique identifier of the node on which the service is running.\n:param schemas: A list of schemas associated with the service.\n:param node: The node to which the service is associated.\n:param retired_at: When the service stopped being reported upstream, or None\n    while it is active.\n:param last_synced_at: When a syncer last confirmed the service against its\n    source, or None if that has never happened.\n:param last_sync_error: The message from the most recent failed attempt, or\n    None while the service is syncing cleanly.\n:param sync_failing_since: When the current run of failures began, or None\n    while not failing.\n:param consecutive_failures: Failed attempts since the last success.",
         "properties": {
@@ -2973,41 +3008,6 @@
           "node"
         ],
         "title": "ServiceResponse",
-        "type": "object"
-      },
-      "app__extensions__api__routes__hosts__HostResponse": {
-        "description": "Represent a single executor target enriched with an inventory display name.\n\n:param id: The executor (Nomad / Celery) node name. This is the value\n    consumed by dispatch payloads as ``executor_host``.\n:param name: Human-readable label sourced from inventory when available;\n    falls back to ``id`` if the host has no inventory match.\n:param address: The network address reported by the executor.\n:param can_elevate: Whether a ``sudo``-prefixed command can start on this\n    host: ``True`` when the task user is uid 0 or a bare ``sudo`` resolves,\n    ``False`` when neither holds, ``None`` when never observed. A ``True``\n    does not promise the task user is in sudoers, only that the launch check\n    lets the command through. ``None`` is permanent, not transient, for an\n    executor host with no inventory match.",
-        "properties": {
-          "address": {
-            "title": "Address",
-            "type": "string"
-          },
-          "can_elevate": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Can Elevate"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "address"
-        ],
-        "title": "HostResponse",
         "type": "object"
       },
       "archives__ArchivesCreate": {
@@ -23491,7 +23491,7 @@
     },
     "/api/extensions/dashboard/": {
       "get": {
-        "description": "Return aggregate counts for all four dashboard stat cards.\n\nSources (each degrades to ``0`` on failure):\n\n* ``nodes`` — ``GET /summary/`` on the Inventory API.\n* ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).\n* ``snippets`` — :meth:`SnippetManager.count` on the Extensions database.\n* ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.\n\nWhen one or more sources fail the names of the failed sources are joined\nwith commas and set on the ``X-Upstream-Error`` response header so the\ncaller can surface a partial-failure warning without treating all-zero\ncounts as healthy data.\n\n:param response: The outgoing response used to attach the error header.\n:param session: The active database session for snippet queries.\n:param tasks_api: Async client for the Tasks sub-app.\n:param inventory_api: Async client for the Inventory sub-app.\n:return: Aggregate counts for nodes, tasks, snippets, and targets.",
+        "description": "Return aggregate counts for all four dashboard stat cards.\n\nSources (each degrades to ``0`` on failure):\n\n* ``nodes`` — ``GET /summary/`` on the Inventory API.\n* ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).\n* ``snippets`` — :meth:`SnippetManager.count` on the PMM Extensions database.\n* ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.\n\nWhen one or more sources fail the names of the failed sources are joined\nwith commas and set on the ``X-Upstream-Error`` response header so the\ncaller can surface a partial-failure warning without treating all-zero\ncounts as healthy data.\n\n:param response: The outgoing response used to attach the error header.\n:param session: The active database session for snippet queries.\n:param tasks_api: Async client for the Tasks sub-app.\n:param inventory_api: Async client for the Inventory sub-app.\n:return: Aggregate counts for nodes, tasks, snippets, and targets.",
         "operationId": "extensions_get_dashboard_stats_api_extensions_dashboard__get",
         "responses": {
           "200": {
@@ -23513,7 +23513,7 @@
     },
     "/api/extensions/hosts/": {
       "get": {
-        "description": "Return executor hosts merged with inventory display names.\n\nCall ``tasks_api.get('/hosts/')`` for executor targets and the Inventory\nAPI for display-name and capability enrichment. The Tasks and Inventory\ncalls degrade differently: Inventory failures cause hosts without a match\nto keep the raw executor node name (the response still returns ``200``),\nbut a Tasks-API failure (HTTP or connection error) is re-raised as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the Extensions exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through its React Query error slot.\n\nThe two Inventory enrichments degrade **independently**, and on the same\nterms. The capability is the newer of them, and an Inventory old enough to\nanswer 422 on its route — or failing it for any other reason — must not cost\nthe host selector the display names it has always had. Both blocks also\nadmit a malformed page, which fails envelope validation rather than raising\na transport error: every way an Inventory read can fail leaves this route\nanswering ``200`` with whatever it still resolved.\n\nThe display name and the elevation capability are joined on **different\nkeys** — address and executor name respectively — and may resolve to\ndifferent inventory nodes. They answer different questions: the display name\nasks what inventory calls this address, the capability asks which executor\nwas measured. Collapsing them into one index misattributes the measurement.\n\n:param tasks_api: The Tasks API client used to fetch executor hosts.\n:param inventory_api: The Inventory API client used to enrich the hosts\n    with their display names and measured capabilities.\n:return: Sorted list of hosts, each with executor id, friendly name,\n    network address, and elevation capability.\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
+        "description": "Return executor hosts merged with inventory display names.\n\nCall ``tasks_api.get('/hosts/')`` for executor targets and the Inventory\nAPI for display-name and capability enrichment. The Tasks and Inventory\ncalls degrade differently: Inventory failures cause hosts without a match\nto keep the raw executor node name (the response still returns ``200``),\nbut a Tasks-API failure (HTTP or connection error) is re-raised as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the PMM Extensions exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through its React Query error slot.\n\nThe two Inventory enrichments degrade **independently**, and on the same\nterms. The capability is the newer of them, and an Inventory old enough to\nanswer 422 on its route — or failing it for any other reason — must not cost\nthe host selector the display names it has always had. Both blocks also\nadmit a malformed page, which fails envelope validation rather than raising\na transport error: every way an Inventory read can fail leaves this route\nanswering ``200`` with whatever it still resolved.\n\nThe display name and the elevation capability are joined on **different\nkeys** — address and executor name respectively — and may resolve to\ndifferent inventory nodes. They answer different questions: the display name\nasks what inventory calls this address, the capability asks which executor\nwas measured. Collapsing them into one index misattributes the measurement.\n\n:param tasks_api: The Tasks API client used to fetch executor hosts.\n:param inventory_api: The Inventory API client used to enrich the hosts\n    with their display names and measured capabilities.\n:return: Sorted list of hosts, each with executor id, friendly name,\n    network address, and elevation capability.\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
         "operationId": "extensions_list_hosts_api_extensions_hosts__get",
         "responses": {
           "200": {

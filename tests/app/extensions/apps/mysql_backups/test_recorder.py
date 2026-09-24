@@ -45,7 +45,7 @@ _OMITTED = object()
 
 @pytest.fixture
 def _recorder_uses_test_session(mocker, session) -> None:
-    """Point the recorder's own sep session at the test's in-memory session.
+    """Point the recorder's own extensions session at the test's in-memory session.
 
     ``record_backup_run`` writes on a session it opens itself via the sep
     ``get_async_session_maker`` — the ``mysql_backup_run`` table is extensions-owned,

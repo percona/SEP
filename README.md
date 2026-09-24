@@ -160,20 +160,20 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                              |
 | TASKS__DATABASE__HOST      | tasks     | no       | ""                                                  | ""                                               |
 | TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                              |
-| EXTENSIONS__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
-| EXTENSIONS__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
-| EXTENSIONS__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | /oauth/callback                                  |
-| EXTENSIONS__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
-| EXTENSIONS__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
-| EXTENSIONS__PROXY_HEADERS         | sep       | no       | False                                               | False                                            |
-| EXTENSIONS__SYNC_REFRESH_TIME     | sep       | no       | 5                                                   | 5                                                |
-| EXTENSIONS__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
-| EXTENSIONS__SESSION__SECURE       | sep       | no       | False                                               | False                                            |
-| EXTENSIONS__SESSION__HTTP_ONLY    | sep       | no       | True                                                | True                                             |
-| EXTENSIONS__SESSION__SAME_SITE    | sep       | no       | lax                                                 | lax                                              |
-| EXTENSIONS__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
-| EXTENSIONS__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
-| EXTENSIONS__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
+| EXTENSIONS__INVENTORY_ENDPOINT    | extensions | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
+| EXTENSIONS__TASKS_ENDPOINT        | extensions | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
+| EXTENSIONS__OAUTH__REDIRECT_URI   | extensions | yes      | N/A                                                 | /oauth/callback                                  |
+| EXTENSIONS__OAUTH__POST_LOGIN_URI | extensions | no       | /                                                   | N/A                                              |
+| EXTENSIONS__OAUTH__AUTH_LINK      | extensions | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
+| EXTENSIONS__PROXY_HEADERS         | extensions | no       | False                                               | False                                            |
+| EXTENSIONS__SYNC_REFRESH_TIME     | extensions | no       | 5                                                   | 5                                                |
+| EXTENSIONS__SESSION__COOKIE_NAME  | extensions | no       | authToken                                           | casdoorToken                                     |
+| EXTENSIONS__SESSION__SECURE       | extensions | no       | False                                               | False                                            |
+| EXTENSIONS__SESSION__HTTP_ONLY    | extensions | no       | True                                                | True                                             |
+| EXTENSIONS__SESSION__SAME_SITE    | extensions | no       | lax                                                 | lax                                              |
+| EXTENSIONS__SESSION__MAX_AGE      | extensions | no       | 3600                                                | 3600                                             |
+| EXTENSIONS__TEMPLATES_DIR         | extensions | no       | templates                                           | templates                                        |
+| EXTENSIONS__STATIC_DIR            | extensions | no       | static                                              | N/A                                              |
 | EXTENSIONS__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | extensions | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 

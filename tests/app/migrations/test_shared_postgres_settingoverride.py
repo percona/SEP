@@ -859,7 +859,7 @@ def _column_exists_in(engine, column_name) -> bool:
 
 @pytest.fixture
 def extensions_sqlite_alembic_config(tmp_path, monkeypatch):
-    """Return an Alembic ``Config`` and sync URL for the sep track on temp SQLite.
+    """Return an Alembic ``Config`` and sync URL for the extensions track on temp SQLite.
 
     SQLite is the default engine, and ``batch_alter_table`` recreates the table
     rather than altering it in place, so the add and the drop take a different

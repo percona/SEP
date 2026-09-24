@@ -28,6 +28,10 @@ from app.core.db.utils import compare_type, translate_metadata_schemas
 from app.extensions.config import extensions_settings
 from app.extensions.migrations._discovery import discover_plugin_migrations_and_models
 from app.extensions.migrations._orphan_heads import skip_unresolvable_heads
+from app.extensions.migrations._version_table import (
+    VERSION_TABLE,
+    adopt_pre_rename_version_table,
+)
 from app.core.settings_override.models import *
 from app.extensions.models import *
 from app.extensions.snippets.models import *
@@ -87,7 +91,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        version_table="alembic_version_extensions",
+        version_table=VERSION_TABLE,
         compare_type=compare_type,
         include_object=include_object,
     )
@@ -108,12 +112,13 @@ def do_run_migrations(connection: Connection) -> None:
 
     :param connection: The synchronous connection Alembic runs on.
     """
+    adopt_pre_rename_version_table(connection)
     context.configure(
         connection=connection,
         target_metadata=translate_metadata_schemas(target_metadata, _translate_map),
         include_schemas=bool(_real_schemas),
         include_name=_include_name,
-        version_table="alembic_version_extensions",
+        version_table=VERSION_TABLE,
         compare_type=compare_type,
         include_object=include_object,
     )

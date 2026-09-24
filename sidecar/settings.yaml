@@ -102,7 +102,7 @@ default:
       # No sizing keys. celery-beat runs as its own program here, never forked, so
       # its scheduler engine is a NullPool: MAX_OVERFLOW raises TypeError at beat
       # startup, and POOL_SIZE and POOL_TIMEOUT are dropped. The engines these
-      # options do size (one each in sep and tasks, one per worker child that runs
+      # options do size (one each in extensions and tasks, one per worker child that runs
       # inventory collection) therefore stay at SQLAlchemy's 5 + 10.
 
   # One database for all three services: PMM_ENABLE_EXTENSIONS provisions exactly
@@ -120,14 +120,14 @@ default:
   # pmm-managed (50) and Grafana (100). The side-car holds itself to 10% of it.
   # Worst case with every pool full, where an engine's ceiling is POOL_SIZE +
   # MAX_OVERFLOW:
-  #   sep          2 x 5 + celery-DB 15                    25
+  #   extensions   2 x 5 + celery-DB 15                    25
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25
   #   worker       parent 2 x 5, plus 4 children x 25     110
   #   beat         2 x 5 + NullPool scheduler              11
   #   sync locks   one held per configured syncer           2
   #                                                total  178 of 200
-  # Both sep and beat reach a service-DB engine they do not own: sep imports the
+  # Both extensions and beat reach a service-DB engine they do not own: extensions imports the
   # tasks one through periodic_tasks, and beat loads the worker's task modules
   # because celery beat runs init_worker() before starting the scheduler.
   # Not in the total: the four schema one-shots add 4 at boot, and every sync

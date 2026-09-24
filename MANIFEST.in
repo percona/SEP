@@ -1,2 +1,2 @@
-graft src/sep
+graft src/extensions
 global-exclude *.py[cod]

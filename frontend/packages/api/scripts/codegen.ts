@@ -46,7 +46,7 @@ const HTTP_PATHS: Record<string, string> = {
   main: '/openapi.json',
   inventory: '/api/inventory/openapi.json',
   tasks: '/api/tasks/openapi.json',
-  sep: '/api/extensions/openapi.json',
+  extensions: '/api/extensions/openapi.json',
 };
 
 const SPECS: SpecSource[] = Object.entries(HTTP_PATHS).map(([name, httpPath]) => ({

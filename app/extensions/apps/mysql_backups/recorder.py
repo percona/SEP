@@ -129,10 +129,10 @@ async def record_backup_run(
     a ``None`` or partial ``result`` leaves ``location``/``size_bytes``/
     ``upload_destination`` empty rather than failing.
 
-    The ``mysql_backup_run`` table is owned by the **sep** database, but the
+    The ``mysql_backup_run`` table is owned by the **extensions** database, but the
     recorder seam opens and passes a *tasks*-database session — the two are
     distinct engines under SQLite (and only coincidentally the same shared
-    database under Postgres). So the write is done on a fresh sep session this
+    database under Postgres). So the write is done on a fresh extensions session this
     function opens itself; the passed ``session`` is intentionally unused (all
     reads come off the already-loaded ``history``), kept only to satisfy the
     seam's ``(session, history, result)`` contract.

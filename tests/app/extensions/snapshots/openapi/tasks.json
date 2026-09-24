@@ -1,19 +1,6 @@
 {
   "components": {
     "schemas": {
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "ExtensionsTaskResponse": {
         "description": "Represent a task definition as PMM Extensions serves it, with actors resolved.\n\nDiffer from :class:`~app.tasks.models.TaskResponse` only in what the two\nactor fields carry.\n\n:param created_by: Display name for the task's creator: the provider's\n    username when resolvable, a system label for system-initiated work,\n    otherwise the stored identifier. ``None`` when none was recorded.\n:param last_updated_by: Display name for the user who last modified the\n    task, resolved on the same terms as ``created_by``. ``None`` when none\n    was recorded.",
         "properties": {
@@ -180,6 +167,19 @@
           "anonymized_entities"
         ],
         "title": "ExtensionsTaskResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "ServiceTypeEnum": {

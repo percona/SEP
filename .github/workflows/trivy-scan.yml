@@ -17,7 +17,7 @@
 #
 # Do not add --pull to the app image build: it re-resolves every FROM from a
 # registry, including the localhost/extensions:builder that --build-context supplies
-# locally, which fails as "pull access denied" for docker.io/library/sep:builder.
+# locally, which fails as "pull access denied" for docker.io/library/extensions:builder.
 
 name: Trivy scan
 

@@ -26,6 +26,8 @@ from pytest_mock import MockerFixture
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy_celery_beat.models import IntervalSchedule, Period, PeriodicTask
+from sqlalchemy_celery_beat.session import SessionManager
 
 from app import BASE_DIR
 from app.core.celery import bootstrap
@@ -101,11 +103,15 @@ def sqlite_beat_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
 def recording_manager(monkeypatch: pytest.MonkeyPatch) -> RecordingSessionManager:
     """Swap the library's session manager for a recording stand-in.
 
+    The stand-in hands back no session maker, and there is no store to read, so
+    the schedule move that follows table creation is stubbed out as well.
+
     :param monkeypatch: The attribute patcher.
     :return: The instance the bootstrap will drive.
     """
     manager = RecordingSessionManager()
     monkeypatch.setattr(bootstrap, "SessionManager", lambda: manager)
+    monkeypatch.setattr(bootstrap, "move_pre_rename_periodic_tasks", lambda _: 0)
     return manager
 
 
@@ -340,6 +346,7 @@ def test_the_readiness_wait_is_not_bounded(
 
     monkeypatch.setattr(Engine, "connect", connect)
     monkeypatch.setattr(bootstrap.SessionManager, "prepare_models", skip_creation)
+    monkeypatch.setattr(bootstrap, "move_pre_rename_periodic_tasks", lambda _: 0)
 
     bootstrap.bootstrap_beat_schema()
 
@@ -455,3 +462,75 @@ def test_the_migrate_target_bootstraps_the_beat_tables():
     assert upgrades, recipe
     assert len(bootstraps) == 1
     assert bootstraps[0] > max(upgrades)
+
+
+def _schedules(url: str) -> dict[str, str]:
+    """Return every stored schedule's name mapped to the task path it fires.
+
+    :param url: The beat store URL.
+    :return: ``{name: task}`` for every ``PeriodicTask`` row.
+    """
+    engine, session_factory = SessionManager().create_session(url)
+    try:
+        with session_factory() as session:
+            return {row.name: row.task for row in session.query(PeriodicTask)}
+    finally:
+        engine.dispose()
+
+
+def _seed_schedules(url: str, schedules: dict[str, str]) -> None:
+    """Store one interval schedule per ``{name: task}`` entry.
+
+    :param url: The beat store URL.
+    :param schedules: The schedules to store.
+    """
+    engine, session_factory = SessionManager().create_session(url)
+    try:
+        with session_factory() as session:
+            interval = IntervalSchedule(every=1, period=Period.HOURS)
+            session.add(interval)
+            session.flush()
+            session.add_all(
+                PeriodicTask(name=name, task=task, schedule_model=interval)
+                for name, task in schedules.items()
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+def test_the_bootstrap_moves_pre_rename_schedules_forward(sqlite_beat_store: str):
+    """Rename old-prefixed schedules and their task paths, and drop re-seeded ones.
+
+    A schedule already seeded under its new name is the duplicate, so the old
+    row goes. A schedule of another service is left alone, and a second run
+    finds nothing left to move.
+    """
+    old_name, old_task = (
+        bootstrap.PRE_RENAME_NAME_PREFIX,
+        bootstrap.PRE_RENAME_TASK_PREFIX,
+    )
+    new_name, new_task = bootstrap.NAME_PREFIX, bootstrap.TASK_PREFIX
+    bootstrap.bootstrap_beat_schema()
+    _seed_schedules(
+        sqlite_beat_store,
+        {
+            f"{old_name}purge_atw_bundles": f"{old_task}apps.atw.celery.purge",
+            f"{old_name}sync_snippets": f"{old_task}snippets.celery.sync",
+            f"{new_name}sync_snippets": f"{new_task}snippets.celery.sync",
+            "tasks__sync_running_tasks": "app.tasks.celery.sync_running_tasks",
+        },
+    )
+
+    bootstrap.bootstrap_beat_schema()
+
+    assert _schedules(sqlite_beat_store) == {
+        f"{new_name}purge_atw_bundles": f"{new_task}apps.atw.celery.purge",
+        f"{new_name}sync_snippets": f"{new_task}snippets.celery.sync",
+        "tasks__sync_running_tasks": "app.tasks.celery.sync_running_tasks",
+    }
+    engine, session_factory = SessionManager().create_session(sqlite_beat_store)
+    try:
+        assert bootstrap.move_pre_rename_periodic_tasks(session_factory) == 0
+    finally:
+        engine.dispose()
