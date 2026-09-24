@@ -282,11 +282,11 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname.match(/^\/api\/sep\/services\/\d+\/schemas\/?$/)) {
+    if (pathname.match(/^\/api\/extensions\/services\/\d+\/schemas\/?$/)) {
       return route.fulfill({ json: [{ id: 10, name: 'app' }] });
     }
 
-    if (pathname.match(/^\/api\/sep\/schemas\/\d+\/tables\/?$/)) {
+    if (pathname.match(/^\/api\/extensions\/schemas\/\d+\/tables\/?$/)) {
       return route.fulfill({ json: [{ id: 20, name: 'users' }] });
     }
 
@@ -375,6 +375,21 @@ test.describe(`${APP_DISPLAY_NAME} app smoke`, () => {
 
     await altersPage.selectRecursionMethod(/^DSN$/);
     await expect(altersPage.dsnTableField()).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('loads schema and table options for the selected service', async ({ page }) => {
+    const altersPage = new AltersPage(page);
+    await altersPage.goto();
+    await altersPage.openCreateForm();
+
+    await page.getByLabel('Database Host').click();
+    await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
+
+    await page.getByLabel('Schema', { exact: true }).click();
+    await page.getByRole('option', { name: 'app' }).click();
+
+    await page.getByLabel('Table', { exact: true }).click();
+    await expect(page.getByRole('option', { name: 'users' })).toBeVisible({ timeout: 5_000 });
   });
 
   test('creates a task with manual schema/table names and lists it', async ({ page }) => {
