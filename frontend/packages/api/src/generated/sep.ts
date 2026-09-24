@@ -1984,6 +1984,371 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/apps/om_bootstrap/runs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Bootstrap Runs
+     * @description Return runs, newest first, optionally narrowed to one status.
+     *
+     *     The intended caller is PMM's HA-leader-only stepper. It does not persist
+     *     its own copy of which runs exist or where they are, so on every tick, and
+     *     especially right after a leader failover, it re-discovers every run still
+     *     in flight from here (``status=running``) rather than from any state of its
+     *     own.
+     *
+     *     :param session: The database session.
+     *     :param status: Restrict to runs in this status. Omit for any status.
+     *     :param limit: How many to return.
+     *     :return: The runs. Does **not** reconcile in-flight steps — unlike
+     *         :func:`get_bootstrap_run`, a caller polling a specific run for the
+     *         purpose of driving it forward should use that route instead.
+     */
+    get: operations['om_bootstrap_list_bootstrap_runs_api_apps_om_bootstrap_runs_get'];
+    put?: never;
+    /**
+     * Trigger Run
+     * @description Create a bootstrap run, planning every host's steps up front.
+     *
+     *     Dispatches nothing: creating a run only plans it, so the caller (PMM's
+     *     driver) sees the full step list for every host before anything is touched.
+     *     Actually starting a host's first step is a separate call to
+     *     :func:`dispatch_run_step`.
+     *
+     *     :param session: The database session.
+     *     :param request: The requested run.
+     *     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
+     *         same host twice, has neither one nor three hosts, names an install
+     *         method with no registered strategy, ``member_configs`` names a host
+     *         outside ``hosts``, or ``member_configs`` leaves no host that both votes
+     *         and has a nonzero priority, since ``rs.initiate`` rejects a config with
+     *         no electable member.
+     *     :return: The created run, every host's steps ``pending``.
+     */
+    post: operations['om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Bootstrap Run
+     * @description Return one run, reconciling any of its running steps first.
+     *
+     *     Reconciling on every read (rather than relying solely on a periodic task)
+     *     means PMM's driver always sees a step's real outcome on its very next poll,
+     *     not after waiting for a separate schedule to catch up. The run is read under
+     *     its row lock, like every writing route (see the module docstring), since a
+     *     reconcile may write it back.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param session: The database session.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
+     *     :raises HTTPNotFoundException: When there is no such run.
+     *     :return: The run, with current step status.
+     */
+    get: operations['om_bootstrap_get_bootstrap_run_api_apps_om_bootstrap_runs__run_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/finalize/{step_name}:dispatch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispatch Finalize Step
+     * @description Dispatch one host's named finalize step now.
+     *
+     *     Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
+     *     docstring; the only difference is which list on
+     *     :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState` this reads
+     *     and writes. This route does not check that every run-level step has
+     *     succeeded first — deciding *when* it is safe to call this is PMM's
+     *     stepper's job, not this route's (see the module docstring, and
+     *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s
+     *     own docstring for why that ordering matters at all).
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param host: The host to dispatch the step on.
+     *     :param step_name: The finalize step to dispatch — one of the names the run
+     *         was planned with.
+     *     :param session: The database session.
+     *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
+     *     :raises HTTPNotFoundException: When there is no such run, host, or finalize step.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
+     *     :return: The run, with the dispatched finalize step now ``running``.
+     */
+    post: operations['om_bootstrap_dispatch_finalize_step_api_apps_om_bootstrap_runs__run_id__hosts__host__finalize__step_name__dispatch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/rollback/{step_name}:dispatch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispatch Rollback Step
+     * @description Dispatch one host's named rollback step now.
+     *
+     *     Same fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take
+     *     no ``params``: every
+     *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`
+     *     a strategy defines only ever tears down what its own forward steps already
+     *     wrote to the host, needing nothing new from the caller.
+     *
+     *     Whether a host should be rolled back at all, and if so whether to dispatch
+     *     its rollback steps in order or all at once, is PMM's stepper's call (its
+     *     partial-failure policy), not this route's. This route only ever dispatches
+     *     the one step it is asked to.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param host: The host to roll back.
+     *     :param step_name: The rollback step to dispatch — one of the names the run
+     *         was planned with.
+     *     :param session: The database session.
+     *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
+     *     :raises HTTPNotFoundException: When there is no such run, host, or rollback step.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
+     *     :return: The run, with the dispatched rollback step now ``running``.
+     */
+    post: operations['om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/steps/{step_name}:dispatch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispatch Run Step
+     * @description Dispatch one host's named step now.
+     *
+     *     Does **not** wait for the dispatch to finish — it returns as soon as the
+     *     Tasks API accepts it, the same fire-and-forget shape ``dispatch_step``
+     *     itself commits to. The caller polls :func:`get_bootstrap_run` for progress.
+     *
+     *     Only a ``pending`` or ``failed`` step is dispatched. Re-dispatching a
+     *     ``failed`` one is how PMM's driver implements its retry policy — this route
+     *     does not itself decide *whether* to retry, only executes the request.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param host: The host to dispatch the step on.
+     *     :param step_name: The step to dispatch — one of the names the run was
+     *         planned with.
+     *     :param session: The database session.
+     *     :param request: The current request, whose host builds the artifact
+     *         download URL the executor fetches the step's script from.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
+     *     :raises HTTPNotFoundException: When there is no such run, host, or step.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
+     *     :return: The run, with the dispatched step now ``running``.
+     */
+    post: operations['om_bootstrap_dispatch_run_step_api_apps_om_bootstrap_runs__run_id__hosts__host__steps__step_name__dispatch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}/run-steps/{step_name}:dispatch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispatch Run Run Step
+     * @description Dispatch one run-level step now, targeting the run's seed host.
+     *
+     *     Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
+     *     docstring. "Seed host" is ``run``'s first host, index 0, matching
+     *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
+     *     own convention for where a run-level step actually executes.
+     *
+     *     This route does not check that every per-host step succeeded first —
+     *     deciding *when* it is safe to call this is PMM's stepper's job, not this
+     *     route's (see the module docstring).
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param step_name: The run-level step to dispatch — one of the names the
+     *         run was planned with.
+     *     :param session: The database session.
+     *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
+     *     :raises HTTPNotFoundException: When there is no such run, run-level step, or
+     *         the run has no hosts to target.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
+     *     :return: The run, with the dispatched run-level step now ``running``.
+     */
+    post: operations['om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}:cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cancel Run
+     * @description Request that a running bootstrap run stop and roll back every host.
+     *
+     *     Records the request and best-effort interrupts whatever is currently
+     *     dispatching (:func:`_stop_running_steps`) so it doesn't keep running for
+     *     however long its own timeout is — it does not itself decide to roll
+     *     anything back. That is PMM's stepper's call, exactly like every other
+     *     rollback trigger (see the module docstring): it reads
+     *     ``cancel_requested`` on its next poll and treats it the same as a step
+     *     exhausting its retries.
+     *
+     *     Idempotent while the run is still running: calling this again after
+     *     cancellation was already requested is a no-op, not an error — an
+     *     operator clicking Abort twice should never see a failure.
+     *
+     *     Saves ``cancel_requested`` *before* attempting to stop anything: a poll
+     *     landing between the two would otherwise still see ``cancel_requested=false``
+     *     and the stepper could keep dispatching. Stopping is best-effort — the
+     *     saved flag is the signal that actually matters (see
+     *     :func:`_stop_running_steps`) — so it runs after, and its own failures
+     *     (including the Tasks API being unreachable) never undo the save above.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param session: The database session.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
+     *     :raises HTTPNotFoundException: When there is no such run.
+     *     :raises HTTPConflictException: When the run is already terminal —
+     *         rolled back or otherwise, there is nothing left to cancel.
+     *     :return: The run, with ``cancel_requested`` now set.
+     */
+    post: operations['om_bootstrap_cancel_run_api_apps_om_bootstrap_runs__run_id__cancel_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}:finish': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Finish Run
+     * @description Record the stepper's own decision that a run is done — failed or rolled back.
+     *
+     *     The one way ``run.status`` reaches
+     *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or
+     *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:
+     *     both are real calls only PMM's stepper makes (retries exhausted; rollback
+     *     finished), never something ``om_bootstrap`` infers on its own — see
+     *     ``reconcile.py``'s module docstring for the one status it *does* infer
+     *     (SUCCEEDED) and why that's different.
+     *
+     *     Also removes every step script the run still has on disk: no step of a
+     *     finished run is dispatched again, so nothing will download them.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param session: The database session.
+     *     :param body: The decided terminal status, and why.
+     *     :raises HTTPNotFoundException: When there is no such run.
+     *     :raises HTTPBadRequestException: When ``body.status`` is not one of
+     *         :data:`_FINISHABLE_STATUSES`.
+     *     :raises HTTPConflictException: When the run is already terminal.
+     *     :return: The run, now terminal.
+     */
+    post: operations['om_bootstrap_finish_run_api_apps_om_bootstrap_runs__run_id__finish_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['om_bootstrap_get_schema_api_apps_om_bootstrap_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/apps/om_inventory/config': {
     parameters: {
       query?: never;
@@ -2031,10 +2396,16 @@ export interface paths {
      *     to a driver as a URI, so making it settable here would widen "configure this
      *     app" into "read a chosen file across the estate".
      *
-     *     A ``SCHEDULE`` change lands without a restart - ``periodic_task_schedules`` is
-     *     a thunk re-read on registry rebuild - but beat runs as a forked side-car
-     *     process, which reaches the new value through its own settings refresher rather
-     *     than through this request.
+     *     An ``ENABLED`` or ``SCHEDULE`` change lands without a restart -
+     *     ``periodic_task_schedules`` is a thunk re-read on registry rebuild - but beat
+     *     runs as a forked side-car process, which reaches the new value through its own
+     *     settings refresher rather than through this request.
+     *
+     *     ``ENABLED`` is what PMM's OpenManager switch calls, via this same route with
+     *     its ``--sep-token`` credential (see ``require_minimum_role``'s service-principal
+     *     bypass): it flips independently of ``SCHEDULE``, so the configured cadence
+     *     survives OpenManager being turned off and back on rather than being
+     *     overwritten each time.
      *
      *     :param request: The incoming request; its ``app.state`` carries the rebind
      *         callbacks fired for the keys this changed.
@@ -2210,6 +2581,8 @@ export interface paths {
      *
      *     :param session: The database session.
      *     :param request: The optional scope. Absent, or an empty list, means everything.
+     *     :raises HTTPServiceUnavailableException: When PMM's OpenManager switch has
+     *         ``ENABLED`` off.
      *     :raises HTTPNotFoundException: When a requested node id is not in the estate.
      *     :raises HTTPConflictException: When a requested host is already being refreshed.
      *     :return: The queued sweep.
@@ -10231,6 +10604,360 @@ export interface components {
       | 'bar-chart'
       | 'account-tree';
     /**
+     * BootstrapRunStatus
+     * @description Enumerate the states of one bootstrap run.
+     *
+     *     Matches the decided partial-failure policy exactly: retry a failed host,
+     *     and if retries are exhausted, roll back the whole run. There is no "partial
+     *     success" status
+     *     here the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A
+     *     bootstrap either finishes with every host succeeded, or it did not finish.
+     *
+     *     :cvar RUNNING: The run is in flight — pre-flight checks, installing,
+     *         configuring, or verifying on at least one host.
+     *     :cvar SUCCEEDED: Every host reached
+     *         :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.SUCCEEDED`.
+     *     :cvar FAILED: A host failed and retries were exhausted; rollback has not
+     *         (yet, or ever) run.
+     *     :cvar ROLLED_BACK: A failure's rollback completed.
+     * @enum {string}
+     */
+    om_bootstrap__BootstrapRunStatus: 'running' | 'succeeded' | 'failed' | 'rolled_back';
+    /**
+     * DispatchStepRequest
+     * @description Carry the optional body of any ``:dispatch`` route.
+     *
+     *     :param params: Per-dispatch values the step being dispatched needs but
+     *         cannot compute itself — a keyFile's content, a generated
+     *         monitoring-user password. See
+     *         :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own
+     *         docstring for why these are never persisted by ``om_bootstrap``: PMM's
+     *         stepper holds their durable, encrypted copy and hands one to a single
+     *         dispatch, transiently, through this field.
+     *         Empty for a step that needs none.
+     */
+    om_bootstrap__DispatchStepRequest: {
+      /**
+       * Params
+       * @default {}
+       */
+      params: {
+        [key: string]: string;
+      };
+    };
+    /**
+     * FinishRunRequest
+     * @description Carry the body of :func:`finish_run`, the stepper recording its own decision.
+     *
+     *     :param status: The run's new terminal status. Must be one of
+     *         :data:`_FINISHABLE_STATUSES`;
+     *         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`
+     *         is never requested here (see :data:`_FINISHABLE_STATUSES`'s own
+     *         docstring).
+     *     :param error: A human-readable reason, if any — stored on
+     *         :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.
+     */
+    om_bootstrap__FinishRunRequest: {
+      /** Error */
+      error?: string | null;
+      status: components['schemas']['om_bootstrap__BootstrapRunStatus'];
+    };
+    /**
+     * HostBootstrapState
+     * @description Track one host's progress through its planned steps.
+     *
+     *     :param host: The node name being bootstrapped.
+     *     :param steps: This host's steps, in the order :meth:`InstallStrategy.plan_steps`
+     *         returned them — the full list is known before the first one starts.
+     *     :param rollback_steps: This host's teardown steps, in the order
+     *         :meth:`InstallStrategy.plan_rollback_steps` returned them — planned
+     *         up front alongside ``steps`` so a fresh run already shows what rollback
+     *         would consist of, even before anything fails. Every entry stays
+     *         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
+     *         this host back.
+     *     :param finalize_steps: This host's post-coordination steps, in the order
+     *         :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up
+     *         front alongside ``steps``, but not dispatched until every run-level step
+     *         has succeeded (PMM's stepper's call, mirroring how it gates run-level
+     *         steps on every host's ``steps`` first — see
+     *         :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
+     *         ordering exists at all).
+     */
+    om_bootstrap__HostBootstrapState: {
+      /**
+       * Finalize Steps
+       * @default []
+       */
+      finalize_steps: components['schemas']['om_bootstrap__StepRecord'][];
+      /** Host */
+      host: string;
+      /**
+       * Rollback Steps
+       * @default []
+       */
+      rollback_steps: components['schemas']['om_bootstrap__StepRecord'][];
+      /** Steps */
+      steps: components['schemas']['om_bootstrap__StepRecord'][];
+    };
+    /**
+     * InstallMethod
+     * @description Name the :class:`InstallStrategy` a run uses.
+     *
+     *     Only ``PACKAGES`` has an implementation
+     *     (:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).
+     *     ``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the API have
+     *     a closed set to switch on before a second strategy exists; requesting either
+     *     today is a 400.
+     * @enum {string}
+     */
+    om_bootstrap__InstallMethod: 'packages' | 'docker' | 'podman';
+    /**
+     * MemberConfig
+     * @description Hold one host's replica-set election settings, for ``rs.initiate``.
+     *
+     *     Defaults to MongoDB's own for a member (priority 1, votes on, not hidden,
+     *     no delay), so a host a run never names here gets exactly those.
+     *
+     *     :param priority: Relative election priority, 0-1000. A member with 0 can
+     *         never become primary.
+     *     :param votes: Whether this member gets a vote in elections.
+     *     :param hidden: Whether this member is hidden from client read preference
+     *         and ``db.hello()``'s own output.
+     *     :param delay_secs: Seconds this member's data intentionally lags the
+     *         primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
+     *         ``votes`` off whenever this is nonzero.
+     *     :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
+     *         non-voting, hidden, or delayed member names a nonzero ``priority`` —
+     *         each combination ``rs.initiate`` itself rejects, checked here so a bad
+     *         request fails at create time (422) rather than several steps into a
+     *         run.
+     */
+    om_bootstrap__MemberConfig: {
+      /**
+       * Delay Secs
+       * @default 0
+       */
+      delay_secs: number;
+      /**
+       * Hidden
+       * @default false
+       */
+      hidden: boolean;
+      /**
+       * Priority
+       * @default 1
+       */
+      priority: number;
+      /**
+       * Votes
+       * @default true
+       */
+      votes: boolean;
+    };
+    /**
+     * OperatingSystem
+     * @description Target host OS. First implementation supports exactly these two.
+     * @enum {string}
+     */
+    om_bootstrap__OperatingSystem: 'ubuntu' | 'rocky';
+    /**
+     * RunResponse
+     * @description Describe one bootstrap run in full.
+     *
+     *     :param id: The run's id.
+     *     :param status: The run's lifecycle state.
+     *     :param install_method: The run's install method.
+     *     :param os: The run's target OS.
+     *     :param mongodb_version: The run's MongoDB version.
+     *     :param replica_set_name: The replica set every host in this run joins.
+     *     :param data_path: Where mongod stores its data on every host in this run.
+     *     :param log_path: Where mongod writes its log file on every host in this run.
+     *     :param port: The port mongod listens on, on every host in this run.
+     *     :param bind_ip: The interface(s) mongod listens on, on every host in this run.
+     *     :param member_configs: Per-host election settings this run was created
+     *         with — see :class:`TriggerRunRequest`'s own docstring.
+     *     :param started_at: When the run began.
+     *     :param finished_at: When it reached a terminal status, if it has.
+     *     :param hosts: Every host's current step-by-step progress — the full,
+     *         run-specific step list each host was planned with (forward steps and
+     *         rollback steps both), not just the steps that have started.
+     *     :param run_steps: This run's run-level steps
+     *         (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),
+     *         planned up front the same way ``hosts``' steps are.
+     *     :param error: The run-level failure detail, when the run itself raised
+     *         outside any single host's steps.
+     *     :param cancel_requested: Whether an operator has asked this run to stop —
+     *         see :func:`cancel_run`. PMM's stepper treats this the same as a step
+     *         exhausting its retries (force every host's rollback), never something
+     *         ``om_bootstrap`` itself acts on.
+     */
+    om_bootstrap__RunResponse: {
+      /** Bind Ip */
+      bind_ip: string;
+      /** Cancel Requested */
+      cancel_requested: boolean;
+      /** Data Path */
+      data_path: string;
+      /** Error */
+      error: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /** Hosts */
+      hosts: components['schemas']['om_bootstrap__HostBootstrapState'][];
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      install_method: components['schemas']['om_bootstrap__InstallMethod'];
+      /** Log Path */
+      log_path: string;
+      /** Member Configs */
+      member_configs: {
+        [key: string]: components['schemas']['om_bootstrap__MemberConfig'];
+      };
+      /** Mongodb Version */
+      mongodb_version: string;
+      os: components['schemas']['om_bootstrap__OperatingSystem'];
+      /** Port */
+      port: number;
+      /** Replica Set Name */
+      replica_set_name: string;
+      /** Run Steps */
+      run_steps: components['schemas']['om_bootstrap__StepRecord'][];
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      status: components['schemas']['om_bootstrap__BootstrapRunStatus'];
+    };
+    /**
+     * StepRecord
+     * @description Record one step's progress, for a host or for a run.
+     *
+     *     The same shape serves both :attr:`HostBootstrapState.steps` (per-host) and
+     *     :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,
+     *     e.g. ``rs_initiate`` — see :meth:`InstallStrategy.plan_run_steps`): neither
+     *     context needs a field the other doesn't, so one type covers both rather than
+     *     two near-duplicates.
+     *
+     *     :param name: One of the names :meth:`InstallStrategy.plan_steps` (or
+     *         :meth:`InstallStrategy.plan_run_steps`, or
+     *         :meth:`InstallStrategy.plan_rollback_steps`)
+     *         returned for this spec — not a fixed enum, since the step list itself is
+     *         per-strategy and per-spec (see the module docstring).
+     *     :param status: This step's current status.
+     *     :param started_at: When the execution layer began this step, if it has.
+     *     :param finished_at: When this step reached a terminal status, if it has.
+     *     :param detail: A human-readable outcome — an error message on
+     *         :attr:`StepStatus.FAILED`, or ``None`` while pending/running.
+     *     :param task_history_id: The Tasks API history id backing this step's dispatch,
+     *         while it is running — the execution layer's own bookkeeping, not a
+     *         strategy concern. Still just data describing progress, so it lives here
+     *         rather than in a separate persisted-only sibling type: one shape for
+     *         planning, persistence, and API responses alike.
+     *     :param attempt_count: How many times this step has been dispatched.
+     *         Incremented on every dispatch, including the first — PMM's stepper reads
+     *         this to enforce its decided retry policy (retry, then roll back) without
+     *         needing a counter of its own, which would be lost on a leader failover.
+     *         ``om_bootstrap`` only ever records the fact that a dispatch happened;
+     *         deciding whether *another* one should is the stepper's call, not this
+     *         field's.
+     */
+    om_bootstrap__StepRecord: {
+      /**
+       * Attempt Count
+       * @default 0
+       */
+      attempt_count: number;
+      /** Detail */
+      detail?: string | null;
+      /** Finished At */
+      finished_at?: string | null;
+      /** Name */
+      name: string;
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['om_bootstrap__StepStatus'];
+      /** Task History Id */
+      task_history_id?: number | null;
+    };
+    /**
+     * StepStatus
+     * @description Name one step's progress, as the UI renders it.
+     * @enum {string}
+     */
+    om_bootstrap__StepStatus: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+    /**
+     * TriggerRunRequest
+     * @description Request one bootstrap run over a set of hosts, all sharing one spec.
+     *
+     *     :param hosts: The hosts to provision — one-member or three-member replica
+     *         sets only, the decided phase-1 scope. Each is a node name: letters,
+     *         digits, ``.``, ``_`` and ``-``, starting with a letter or digit.
+     *     :param install_method: Which strategy provisions every host in this run.
+     *     :param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.
+     *     :param mongodb_version: The Percona Server for MongoDB version to install,
+     *         as ``major.minor`` or ``major.minor.patch`` (e.g. ``"8.0"``, ``"8.0.4"``).
+     *     :param replica_set_name: The replica set every host joins: 1-64 letters,
+     *         digits, ``_`` or ``-``.
+     *     :param data_path: Where mongod stores its data on every host. Defaults to
+     *         the same value the column behind it carries
+     *         (``migrations/versions/..._add_run_config_fields.py``), so a caller
+     *         that omits it gets the path the fixed-path contract used.
+     *     :param log_path: Where mongod writes its log file on every host. Same
+     *         default story as ``data_path``.
+     *     :param port: The port mongod listens on, on every host. Same default
+     *         story as ``data_path``.
+     *     :param bind_ip: The interface(s) mongod listens on, on every host.
+     *         Defaults to ``127.0.0.1``, keeping mongod's pre-auth window local to
+     *         the host unless the caller passes a wider address.
+     *     :param member_configs: Per-host election settings for ``rs.initiate``,
+     *         keyed by entries of ``hosts``. A host missing from this mapping —
+     *         including every host, when this is left empty — gets
+     *         :class:`~app.sep.apps.om_bootstrap.strategy.MemberConfig`'s own
+     *         defaults.
+     */
+    om_bootstrap__TriggerRunRequest: {
+      /**
+       * Bind Ip
+       * @default 127.0.0.1
+       */
+      bind_ip: string;
+      /**
+       * Data Path
+       * @default /var/lib/mongo
+       */
+      data_path: string;
+      /** Hosts */
+      hosts: string[];
+      install_method: components['schemas']['om_bootstrap__InstallMethod'];
+      /**
+       * Log Path
+       * @default /var/log/mongodb/mongod.log
+       */
+      log_path: string;
+      /**
+       * Member Configs
+       * @default {}
+       */
+      member_configs: {
+        [key: string]: components['schemas']['om_bootstrap__MemberConfig'];
+      };
+      /** Mongodb Version */
+      mongodb_version: string;
+      os: components['schemas']['om_bootstrap__OperatingSystem'];
+      /**
+       * Port
+       * @default 27017
+       */
+      port: number;
+      /** Replica Set Name */
+      replica_set_name: string;
+    };
+    /**
      * HostResponse
      * @description Report one host, with the services OM knows are on it.
      *
@@ -14695,6 +15422,331 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_list_bootstrap_runs_api_apps_om_bootstrap_runs_get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['om_bootstrap__BootstrapRunStatus'] | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__TriggerRunRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_get_bootstrap_run_api_apps_om_bootstrap_runs__run_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_dispatch_finalize_step_api_apps_om_bootstrap_runs__run_id__hosts__host__finalize__step_name__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        host: string;
+        step_name: string;
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__DispatchStepRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        host: string;
+        step_name: string;
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_dispatch_run_step_api_apps_om_bootstrap_runs__run_id__hosts__host__steps__step_name__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        host: string;
+        step_name: string;
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__DispatchStepRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        step_name: string;
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__DispatchStepRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_cancel_run_api_apps_om_bootstrap_runs__run_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_finish_run_api_apps_om_bootstrap_runs__run_id__finish_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__FinishRunRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_get_schema_api_apps_om_bootstrap_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['framework__AppSchema'];
         };
       };
     };

@@ -350,6 +350,7 @@ include = [
     "app/inventory/models.py",
     "app/sep/apps/atw/models.py",
     "app/sep/apps/mysql_backups/models.py",
+    "app/sep/apps/om_bootstrap/models.py",
     "app/sep/apps/om_inventory/models.py",
 ]
 [tool.ty.overrides.rules]
