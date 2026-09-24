@@ -31,7 +31,7 @@ import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import { ScheduledTaskForm } from './ScheduledTaskForm';
 import { ScheduledTaskRow } from './ScheduledTaskRow';
 import {

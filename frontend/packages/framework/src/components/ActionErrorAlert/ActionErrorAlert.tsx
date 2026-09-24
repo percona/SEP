@@ -31,9 +31,9 @@ export interface ActionErrorAlertProps {
 }
 
 /**
- * Report a failed action from SEP's own component tree.
+ * Report a failed action from PMM Extensions' own component tree.
  *
- * Every mutation in SEP can be refused — the API restricts state-changing
+ * Every mutation in PMM Extensions can be refused — the API restricts state-changing
  * routes to admins — so a failure that is only enqueued as a toast is invisible
  * wherever the host application mounts no snackbar provider (the PMM-embedded
  * build compiles these packages into its own SPA). This alert renders in the

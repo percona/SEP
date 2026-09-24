@@ -195,12 +195,12 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
         },
       });
     }
-    if (pathname.endsWith('/sep/hosts/')) {
+    if (pathname.endsWith('/extensions/hosts/')) {
       return route.fulfill({
         json: [{ id: 'host1', name: 'host1', address: '127.0.0.1' }],
       });
     }
-    if (pathname.endsWith('/sep/services/')) {
+    if (pathname.endsWith('/extensions/services/')) {
       return route.fulfill({
         json: {
           items: [{ id: 1, name: 'svc1', type: 'mysql' }],

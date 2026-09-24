@@ -24,8 +24,8 @@ import { ResultsPane } from '../src/ResultsPane';
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn() },
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
@@ -39,7 +39,7 @@ beforeEach(() => {
 // reporting no logs. The files dialog stays closed throughout — so none of them
 // fires a query.
 
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function paginated<T>(items: T[]) {

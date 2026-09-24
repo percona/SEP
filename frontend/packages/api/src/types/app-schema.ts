@@ -512,7 +512,7 @@ export interface TaskStatusDescriptor {
   /** A `TaskHistoryStatusEnum` member, deliberately widened to `string` here
    * rather than typed as a literal union like `ColumnFormat`: the point of
    * publishing this list is that a client discovers the vocabulary at runtime
-   * instead of hardcoding it. The generated client in `generated/sep.ts`
+   * instead of hardcoding it. The generated client in `generated/extensions.ts`
    * narrows the same field to a union of the current members, so a consumer
    * that wants runtime discovery should read this type rather than that one. */
   value: string;

@@ -30,13 +30,13 @@ release = load_script("release")
 
 SAMPLE_PYPROJECT = """\
 [project]
-name = "sep"
+name = "pmm-extensions"
 version = "0.12.0.dev0"
-description = "SEP"
+description = "PMM Extensions"
 """
 
 SAMPLE_APP_INIT = '''\
-"""SEP package."""
+"""PMM Extensions package."""
 
 __version__ = "v0.12.0.dev0"
 '''
@@ -76,8 +76,8 @@ def test_bump_version_rewrites_pyproject_and_init(repo):
     assert '__version__ = "v0.12.0rc1"' in init_text
     assert '__version__ = "v0.12.0.dev0"' not in init_text
     # surrounding lines preserved
-    assert 'name = "sep"' in pyproject_text
-    assert '"""SEP package."""' in init_text
+    assert 'name = "pmm-extensions"' in pyproject_text
+    assert '"""PMM Extensions package."""' in init_text
 
 
 def test_bump_version_handles_dev_suffix(repo):
@@ -512,7 +512,7 @@ def test_cmd_rc_rc1_invokes_dev_version_bump(repo, monkeypatch):
     """RC1 dev-bumps main as part of scope-lock (atomic with the RC cut)."""
 
     def fake_run(cmd, **kwargs):
-        wheel = Path("dist") / "sep-0.13.0rc1-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.13.0rc1-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
@@ -563,7 +563,7 @@ def test_cmd_rc_rc1_patch_does_not_invoke_dev_version_bump(repo, monkeypatch):
     """
 
     def fake_run(cmd, **kwargs):
-        wheel = Path("dist") / "sep-0.12.1rc1-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.12.1rc1-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
@@ -608,7 +608,7 @@ def test_cmd_rc_rc2_does_not_invoke_dev_version_bump(repo, monkeypatch):
     """RC2+ must NOT redo the dev-bump (it was done atomically with RC1)."""
 
     def fake_run(cmd, **kwargs):
-        wheel = Path("dist") / "sep-0.13.0rc2-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.13.0rc2-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
@@ -1352,7 +1352,7 @@ def test_cmd_stable_back_merges_into_main(repo, monkeypatch):
 
     def fake_run(cmd, **kwargs):
         calls.append(tuple(cmd))
-        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.13.0-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         _is_ancestor_prefix = ["git", "merge-base", "--is-ancestor", "v0.13.0"]
@@ -1431,7 +1431,7 @@ def test_cmd_stable_aborts_if_ancestor_invariant_fails(repo, monkeypatch):
 
     def fake_run(cmd, **kwargs):
         calls.append(tuple(cmd))
-        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.13.0-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         _is_ancestor_prefix = ["git", "merge-base", "--is-ancestor", "v0.13.0"]
@@ -1475,7 +1475,7 @@ def test_cmd_stable_aborts_if_unexpected_merge_failure(repo, monkeypatch):
     """Abort cmd_stable when git merge fails AND no unmerged paths exist."""
 
     def fake_run(cmd, **kwargs):
-        wheel = Path("dist") / "sep-0.13.0-py3-none-any.whl"
+        wheel = Path("dist") / "pmm_extensions-0.13.0-py3-none-any.whl"
         wheel.parent.mkdir(exist_ok=True)
         wheel.write_text("", encoding="utf-8")
         # Simulate git merge failing unexpectedly (e.g., lockfile)

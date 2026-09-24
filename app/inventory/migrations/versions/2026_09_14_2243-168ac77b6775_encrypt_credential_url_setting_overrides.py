@@ -24,11 +24,23 @@ a ``settingoverride`` row this track can resolve, which the write path stored in
 the clear before this release. Only the password segment is rewritten, so the
 endpoint an operator reads out of a raw database dump stays legible.
 
-``InventorySettings`` reaches no credential-bearing URL field today, so this
-revision rewrites nothing on a database only Inventory writes to. It ships
-because ``settingoverride`` is a shared core model registered on all three
-tracks: the revision keeps the tracks symmetric, and it rewrites whatever the
-class reaches on a database reaching this revision for the first time.
+Coverage is **frozen** as the replica model below, which transcribes the shape
+``InventorySettings`` reaches today, at the moment of the freeze. Importing the live
+class instead would resolve coverage against whatever it looks like on the
+release the revision happens to execute against, so a deployment skipping a
+release between two renames would leave a legacy plaintext password in the
+clear.
+
+**Never edit the replica below to track a later rename.** Doing so restores
+exactly the coupling the freeze removes. The correct response to a renamed or
+retyped field is a new data migration carrying its own frozen shape.
+
+``InventorySettings`` reaches no credential-bearing URL field, so this revision
+rewrites nothing on a database only Inventory writes to. It ships because
+``settingoverride`` is a shared core model registered on all three tracks: the
+revision keeps the tracks symmetric. The replica carries the ``SecretStr`` leaf
+``74b2ad210981`` froze, mirroring the shape the live class presented to both
+families, even though ``reencrypt_credential_url_leaves`` never transforms it.
 
 That is the whole of its reach. Alembic never re-runs an applied revision, so a
 deployment that already carries this one is not covered by it when the class
@@ -42,11 +54,12 @@ leaves an earlier revision encrypted, and Alembic will not re-run that revision
 to put them back.
 """
 
+from pydantic import BaseModel, SecretStr
+
 from app.core.settings_override.alembic_ops import (
     downgrade_decrypt_credential_url_override_values,
     upgrade_encrypt_credential_url_override_values,
 )
-from app.inventory.config import InventorySettings
 
 # revision identifiers, used by Alembic.
 revision = "168ac77b6775"
@@ -54,14 +67,43 @@ down_revision = "74b2ad210981"
 branch_labels = None
 depends_on = None
 
-SETTINGS_CLASSES = (InventorySettings,)
+#: The ``settingoverride.setting_class`` values these replicas answer for,
+#: matching the tokens ``setting_class_token`` derives for the live classes.
+_INVENTORY_SETTINGS_CLASS = "INVENTORY_SETTINGS"
+
+
+class _FrozenDatabaseOptions(BaseModel):
+    """Declare the frozen credential leaves of ``DatabaseOptions``."""
+
+    PASSWORD: SecretStr | None = None
+
+
+class _FrozenInventorySettings(BaseModel):
+    """Declare the frozen credential-bearing fields of ``InventorySettings``."""
+
+    __setting_class_token__ = _INVENTORY_SETTINGS_CLASS
+
+    DATABASE: _FrozenDatabaseOptions | None = None
+
+
+SETTINGS_CLASSES = (_FrozenInventorySettings,)
 
 
 def upgrade() -> None:
-    """Encrypt every not-yet-encrypted credential-URL password this track owns."""
+    """Encrypt every not-yet-encrypted credential-URL password this track owns.
+
+    Coverage comes from the frozen replicas above rather than the live
+    settings classes, so this revision's reach cannot drift with a later rename
+    of a field it covers.
+    """
     upgrade_encrypt_credential_url_override_values(SETTINGS_CLASSES)
 
 
 def downgrade() -> None:
-    """Restore every encrypted credential-URL password this track owns."""
+    """Restore every encrypted credential-URL password this track owns.
+
+    Coverage comes from the frozen replicas above rather than the live
+    settings classes, so this revision's reach cannot drift with a later rename
+    of a field it covers.
+    """
     downgrade_decrypt_credential_url_override_values(SETTINGS_CLASSES)

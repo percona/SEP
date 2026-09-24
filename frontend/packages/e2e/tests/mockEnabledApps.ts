@@ -25,7 +25,7 @@ import type { Route } from '@playwright/test';
  * and an empty array collapses the sidebar to Dashboard alone.
  */
 
-/** Shape of one entry in the ``GET /api/apps/`` response (mirrors `@sep/api`'s `EnabledApp`). */
+/** Shape of one entry in the ``GET /api/apps/`` response (mirrors `@pmm-extensions/api`'s `EnabledApp`). */
 export interface MockEnabledApp {
   app_key: string;
   enabled: boolean;
@@ -190,7 +190,7 @@ export function fulfillEnabledApps(route: Route): Promise<void> {
 
 /** True when the request targets the runtime settings LIST the ATW gate reads. */
 export function isSettingsListPath(pathname: string): boolean {
-  return pathname === '/api/sep/admin/settings/';
+  return pathname === '/api/extensions/admin/settings/';
 }
 
 /**
@@ -207,7 +207,7 @@ export function fulfillConfiguredDelivery(route: Route): Promise<void> {
     body: JSON.stringify({
       groups: [
         {
-          setting_class: 'SEPSettings',
+          setting_class: 'ExtensionsSettings',
           is_app_owned: false,
           settings: [
             {

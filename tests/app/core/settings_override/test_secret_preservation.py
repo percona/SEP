@@ -28,6 +28,7 @@ from app.core.settings_override.registry import (
     dump_field_value,
     hot_field,
     SECRET_STR_MASK,
+    unwrap_secrets_for_storage,
 )
 from app.core.settings_override.secret_preservation import (
     preserve_credential_urls_in_model_payload,
@@ -36,8 +37,9 @@ from app.core.settings_override.secret_preservation import (
     preserve_secrets_in_model_payload,
 )
 from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
-from app.sep.config import SEPSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 
 
 class _SecretLeafModel(BaseModel):
@@ -274,7 +276,7 @@ class TestAbsentStoredValue:
 
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
     """Assert scalar credential URL PATCH values restore the stored password when redacted."""
-    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    field = ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"]
     current = "http://inv-user:inv-secret@inventory.internal:8080"
     incoming = "http://inv-user:****@inventory.internal:8080"
     assert preserve_patch_credential_url_value(field, current, incoming) == current
@@ -287,6 +289,26 @@ def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
     incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
     preserved = preserve_patch_credential_url_value(field, current, incoming)
     assert preserved["endpoint"] == current["endpoint"]
+
+
+def test_echoing_a_rendered_client_setting_restores_its_derived_base_url() -> None:
+    """Restore the real password when a rendered Nomad setting is PATCHed back verbatim.
+
+    The rendering carries the masked computed ``base_url`` next to the masked
+    ``endpoint``. Only the endpoint is an input, so the restored endpoint must
+    yield the real derived value and the mask must not reach storage.
+    """
+    field = TasksSettings.model_fields["NOMAD"]
+    current = NomadExecutor.model_validate(
+        {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    )
+    rendered = dump_field_value(field, current)
+
+    preserved = preserve_patch_credential_url_value(field, current, rendered)
+    restored = NomadExecutor.model_validate(preserved)
+
+    assert restored.base_url == "http://nomad-user:nomad-secret@nomad.internal:4646"
+    assert "base_url" not in unwrap_secrets_for_storage(restored)
 
 
 class _CredentialUrlModel(BaseModel):

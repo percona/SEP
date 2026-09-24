@@ -51,11 +51,12 @@ from app.core.settings_override.resolution import (
     resolve_nested_field,
     resolve_nested_field_metadata,
 )
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.apps.om_inventory.config import OmInventorySettings
+from app.extensions.apps.report.config import HealthReportSettings
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import SEPSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowlist
@@ -64,7 +65,7 @@ from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowli
 #: Pydantic class ``__name__`` (the REST / allowlist spelling).
 SETTINGS_CLASSES: dict[str, type] = {
     Settings.__name__: Settings,
-    SEPSettings.__name__: SEPSettings,
+    ExtensionsSettings.__name__: ExtensionsSettings,
     TasksSettings.__name__: TasksSettings,
     SnippetsSettings.__name__: SnippetsSettings,
     AlertSettings.__name__: AlertSettings,
@@ -72,14 +73,15 @@ SETTINGS_CLASSES: dict[str, type] = {
     HealthReportSettings.__name__: HealthReportSettings,
     AnonymizerSettings.__name__: AnonymizerSettings,
     InventorySettings.__name__: InventorySettings,
+    OmInventorySettings.__name__: OmInventorySettings,
 }
 
 #: Keys the ticket names as provisioned topology that the embedded image must
 #: never expose, plus the profile-pinned PMM connection leaves.
 TOPOLOGY_KEYS = [
-    "SEPSettings.INVENTORY_ENDPOINT",
-    "SEPSettings.TASKS_ENDPOINT",
-    "SEPSettings.AMBIENT_SESSION_SSO_ENABLED",
+    "ExtensionsSettings.INVENTORY_ENDPOINT",
+    "ExtensionsSettings.TASKS_ENDPOINT",
+    "ExtensionsSettings.AMBIENT_SESSION_SSO_ENABLED",
     "Settings.PMM__endpoint",
     "Settings.PMM__api_key",
     "TasksSettings.NOMAD__endpoint",
@@ -204,11 +206,11 @@ class TestSettingDeclaration:
         """Assert a bare env var carrying a JSON array reaches the field as a set."""
         monkeypatch.setenv(
             "SETTINGS_OVERRIDE__ALLOWED_KEYS",
-            '["Settings.LOGGING", "SEPSettings.SYNC_REFRESH_TIME"]',
+            '["Settings.LOGGING", "ExtensionsSettings.SYNC_REFRESH_TIME"]',
         )
         assert {
             "Settings.LOGGING",
-            "SEPSettings.SYNC_REFRESH_TIME",
+            "ExtensionsSettings.SYNC_REFRESH_TIME",
         } == Settings().SETTINGS_OVERRIDE.ALLOWED_KEYS
 
     @pytest.mark.parametrize(
@@ -254,7 +256,7 @@ class TestPredicates:
 
     def test_inactive_allows_every_key(self) -> None:
         """Assert every key stays allowed while the restriction is unset."""
-        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT")
+        assert is_key_allowed("ExtensionsSettings", "INVENTORY_ENDPOINT")
         assert has_allowed_key_under("TasksSettings", "NOMAD")
 
     def test_active_locks_unlisted_key(self, restrict: Callable[..., None]) -> None:
@@ -262,8 +264,8 @@ class TestPredicates:
         restrict("Settings.LOGGING")
         assert is_restriction_active() is True
         assert is_key_allowed("Settings", "LOGGING") is True
-        assert is_key_allowed("SEPSettings", "LOGGING") is False
-        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT") is False
+        assert is_key_allowed("ExtensionsSettings", "LOGGING") is False
+        assert is_key_allowed("ExtensionsSettings", "INVENTORY_ENDPOINT") is False
 
     def test_unknown_entry_allows_nothing(self, restrict: Callable[..., None]) -> None:
         """Assert an entry naming no real class or field grants no access."""
@@ -291,18 +293,22 @@ class TestPredicates:
         """Match a core class and an app-owned class by ``__name__``, not the token.
 
         ``AlertsSettings`` is no longer a ``SettingClassEnum`` member; the
-        allowlist must still address it the same way it addresses ``SEPSettings``.
-        The storage tokens (``SEP_SETTINGS``, ``ALERTS_SETTINGS``) grant nothing.
+        allowlist must still address it the same way it addresses ``ExtensionsSettings``.
+        The storage tokens (``EXTENSIONS_SETTINGS``, ``ALERTS_SETTINGS``) grant nothing.
         """
         restrict(
-            "SEPSettings.CONNECTIVITY_CHECK_DEFAULT",
+            "ExtensionsSettings.CONNECTIVITY_CHECK_DEFAULT",
             "AlertsSettings.BACKUP_RETENTION",
         )
-        assert is_key_allowed("SEPSettings", "CONNECTIVITY_CHECK_DEFAULT") is True
-        assert is_key_allowed("SEPSettings", "INVENTORY_ENDPOINT") is False
+        assert (
+            is_key_allowed("ExtensionsSettings", "CONNECTIVITY_CHECK_DEFAULT") is True
+        )
+        assert is_key_allowed("ExtensionsSettings", "INVENTORY_ENDPOINT") is False
         assert is_key_allowed("AlertsSettings", "BACKUP_RETENTION") is True
         assert is_key_allowed("AlertsSettings", "ALERT_FOLDER_NAME") is False
-        assert is_key_allowed("SEP_SETTINGS", "CONNECTIVITY_CHECK_DEFAULT") is False
+        assert (
+            is_key_allowed("EXTENSIONS_SETTINGS", "CONNECTIVITY_CHECK_DEFAULT") is False
+        )
         assert is_key_allowed("ALERTS_SETTINGS", "BACKUP_RETENTION") is False
 
     def test_parent_addressable_via_allowed_leaf(
@@ -324,8 +330,8 @@ class TestPredicates:
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert a shared textual prefix does not make an unrelated parent open."""
-        restrict("SEPSettings.SESSION_REFRESH__ENABLED")
-        assert has_allowed_key_under("SEPSettings", "SESSION") is False
+        restrict("ExtensionsSettings.SESSION_REFRESH__ENABLED")
+        assert has_allowed_key_under("ExtensionsSettings", "SESSION") is False
 
 
 class TestShippedValue:

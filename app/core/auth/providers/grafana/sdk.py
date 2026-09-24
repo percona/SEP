@@ -15,21 +15,81 @@
 
 """Provide the GrafanaSDK for interacting with Grafana services."""
 
+import re
+from contextlib import suppress
 from datetime import timedelta
-from typing import Annotated, Any
+from functools import cached_property
+from hashlib import sha256
+from time import monotonic
+from typing import Annotated, Any, Final, NotRequired
 
-from aiohttp import ClientConnectionError
-from annotated_types import Gt
+from aiohttp import (
+    ClientConnectionError,
+    ClientError,
+    ClientTimeout,
+    DummyCookieJar,
+)
+from aiohttp.abc import AbstractCookieJar
+from annotated_types import Ge, Gt
 from async_lru import _LRUCacheWrapper, alru_cache
-from fastapi import status
-from pydantic import ConfigDict, SecretStr
+from fastapi import HTTPException, status
+from pydantic import (
+    ConfigDict,
+    SecretStr,
+    TypeAdapter,
+    ValidationError,
+    with_config,
+)
+from typing_extensions import TypedDict
 
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPUnauthorizedException,
 )
 from app.core.requests import as_json_array, as_json_object, RemoteAPI
+from app.core.requests.remote_api import UPSTREAM_NON_JSON_HEADER
+from app.core.utils.cache import TTLCache
 from app.core.utils.fields import NonEmptyStr, TimedeltaSeconds
+
+_SERVICE_ACCOUNT_TOKEN_CACHE_SIZE: Final = 1024
+_SERVICE_ACCOUNT_CALL_TIMEOUT: Final = ClientTimeout(total=10)
+_SERVICE_ACCOUNT_UID_PATTERN: Final = re.compile(r"service-account:([0-9]+)")
+_SERVICE_ACCOUNTS_PAGE_SIZE: Final = 100
+
+
+@with_config(ConfigDict(strict=True))
+class GrafanaServiceAccountRecord(TypedDict):
+    """Describe a Grafana ``/api/serviceaccounts/{id}`` record or search row.
+
+    Validation is strict, so a field of the wrong JSON type is refused rather
+    than coerced. ``role`` is ``NotRequired`` and nullable because Grafana
+    models "holds no role" either way; the reader accesses it via ``.get()``.
+    """
+
+    id: int
+    login: str
+    role: NotRequired[str | None]
+    isDisabled: bool
+
+
+SERVICE_ACCOUNT_RECORD: Final = TypeAdapter(GrafanaServiceAccountRecord)
+SERVICE_ACCOUNT_RECORDS: Final = TypeAdapter(list[GrafanaServiceAccountRecord])
+
+
+def _is_grafana_verdict(exc: HTTPException, status_code: int) -> bool:
+    """Return whether Grafana itself answered ``exc`` with ``status_code``.
+
+    A non-JSON error body keeps its status but is stamped with
+    ``UPSTREAM_NON_JSON_HEADER``: it came from something in front of Grafana,
+    such as a proxy's HTML page, and says nothing about the credential.
+
+    :param exc: The error a Grafana call raised.
+    :param status_code: The status that would be Grafana's verdict.
+    :return: ``True`` when the status matches and the body was Grafana's JSON.
+    """
+    return exc.status_code == status_code and not (exc.headers or {}).get(
+        UPSTREAM_NON_JSON_HEADER
+    )
 
 
 class GrafanaException(BaseAuthProviderException):
@@ -73,6 +133,11 @@ class GrafanaSDK(RemoteAPI):
         deliberately does not fall back to ``access_token_max_age``. A
         non-positive value expires every assertion at mint time and is rejected
         at config load rather than silently disabling embedded-UI auth.
+    :param service_account_bearer_revocation_window: How long a validated or
+        refused service-account token verdict is reused, i.e. how long a
+        revoked, disabled or re-roled service account keeps its previous
+        verdict on new requests. ``0`` re-verifies on every request. Defaults to
+        5 minutes.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
     :param session_cookie_name: The name of the cookie Grafana sets on a
@@ -87,8 +152,25 @@ class GrafanaSDK(RemoteAPI):
     exchange_token_max_age: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(
         minutes=5
     )
+    service_account_bearer_revocation_window: Annotated[
+        TimedeltaSeconds, Ge(timedelta(0))
+    ] = timedelta(minutes=5)
     error_detail_key: NonEmptyStr = "message"
     session_cookie_name: NonEmptyStr = "grafana_session"
+
+    def _cookie_jar(self) -> AbstractCookieJar:
+        """Return a jar that keeps no cookies.
+
+        Grafana authenticates a request by its session cookie when the bearer
+        it carries fails, so a ``grafana_session`` a login stored would answer
+        for every later call's credential: a refused service-account token
+        would come back as the human who logged in. :meth:`login` reads the
+        cookie off its own response, and the session-bound reads pass theirs
+        explicitly, so nothing needs a stored one.
+
+        :return: A jar that stores nothing.
+        """
+        return DummyCookieJar()
 
     async def request(
         self,
@@ -188,3 +270,183 @@ class GrafanaSDK(RemoteAPI):
             return as_json_object(
                 await self.get("/api/users/lookup", params={"loginOrEmail": login})
             )
+
+    @alru_cache(ttl=300)
+    async def get_service_accounts(self) -> list[dict[str, Any]]:
+        """Read every service account in PMM Extensions' org via the service-account token.
+
+        Pages are read until the collected rows reach the listing's
+        ``totalCount`` or a page comes back empty. Only the pagination fields
+        are checked here; the rows are validated by their reader.
+
+        :return: The ``serviceAccounts`` rows of every page.
+        :raises HTTPException: Whatever a page request raised, including the 502
+            for a page that is not a JSON object.
+        :raises TimeoutError: If a page request times out.
+        :raises aiohttp.ClientError: If a page request fails in transport.
+        :raises ValueError: If a page body cannot be decoded.
+        :raises GrafanaException: If Grafana cannot be reached, or a page carries
+            no integer ``totalCount`` or no ``serviceAccounts`` list.
+        """
+        accounts: list[dict[str, Any]] = []
+        page = 1
+        with self.auth(self.service_account_token.get_secret_value()):
+            while True:
+                payload = as_json_object(
+                    await self.get(
+                        "/api/serviceaccounts/search",
+                        params={"perpage": _SERVICE_ACCOUNTS_PAGE_SIZE, "page": page},
+                    )
+                )
+                rows = payload.get("serviceAccounts")
+                total = payload.get("totalCount")
+                if not isinstance(rows, list) or not isinstance(total, int):
+                    raise GrafanaException(
+                        detail="Grafana returned an unreadable service-account list."
+                    )
+                accounts.extend(rows)
+                if not rows or len(accounts) >= total:
+                    return accounts
+                page += 1
+
+    @cached_property
+    def _service_account_verdicts(
+        self,
+    ) -> TTLCache[GrafanaServiceAccountRecord | None]:
+        """Return the verdict cache, sized once from this instance's settings.
+
+        :return: A cache mapping a token digest to its record, or ``None`` for a
+            refusal.
+        """
+        return TTLCache(
+            ttl=self.service_account_bearer_revocation_window.total_seconds(),
+            maxsize=_SERVICE_ACCOUNT_TOKEN_CACHE_SIZE,
+            typed=False,
+        )
+
+    async def verify_service_account_token(
+        self, token: str
+    ) -> GrafanaServiceAccountRecord | None:
+        """Verify a Grafana service-account token presented to PMM Extensions.
+
+        A verdict (the account record, or a refusal Grafana itself answered)
+        is reused for ``service_account_bearer_revocation_window``, keyed on the
+        token's SHA-256 digest so the cache never holds the secret. The window
+        is counted from when the check started rather than from when Grafana
+        answered, since the record is read after that moment, so a slow answer
+        cannot stretch a verdict past the window. An upstream failure is never
+        reused.
+
+        :param token: The ``glsa_`` token the caller presented.
+        :return: The ``/api/serviceaccounts/{id}`` record, or ``None`` when
+            Grafana rejected the token or the account is not in PMM Extensions' org.
+        :raises GrafanaException: If Grafana could not decide: unreachable,
+            slow, erroring, refusing PMM Extensions' own credential, or answering off
+            contract.
+        """
+        cache = self._service_account_verdicts
+        key = (sha256(token.encode()).hexdigest(),)
+        started = monotonic()
+        with cache.lock, suppress(KeyError):
+            return cache.get(key, started)
+        verdict = await self._fetch_service_account_verdict(token)
+        with cache.lock:
+            cache.set(key, verdict, started)
+            cache.evict_if_needed(monotonic())
+        return verdict
+
+    async def _fetch_service_account_verdict(
+        self, token: str
+    ) -> GrafanaServiceAccountRecord | None:
+        """Ask Grafana who ``token`` belongs to, then read that account's record.
+
+        ``/api/user`` proves the token and names the account in ``uid``, but it
+        reports every service account as enabled, so role and disabled flag are
+        read from the account record through PMM Extensions' own credential. That call is
+        org-scoped by Grafana, so a 404 covers an account in another org as well
+        as one deleted in between.
+
+        :param token: The presented service-account token.
+        :return: The account record, or ``None`` for a Grafana-answered refusal.
+        :raises GrafanaException: For every outcome that is not a verdict.
+        """
+        identity = await self._read_for_verification(
+            "/api/user", token, refusal=status.HTTP_401_UNAUTHORIZED
+        )
+        if identity is None:
+            return None
+        uid, login = identity.get("uid"), identity.get("login")
+        match = (
+            _SERVICE_ACCOUNT_UID_PATTERN.fullmatch(uid)
+            if isinstance(uid, str)
+            else None
+        )
+        if match is None or not isinstance(login, str) or not login.strip():
+            raise GrafanaException(
+                detail="Grafana returned an unreadable service-account identity."
+            )
+        account_id = int(match.group(1))
+        payload = await self._read_for_verification(
+            f"/api/serviceaccounts/{account_id}",
+            self.service_account_token.get_secret_value(),
+            refusal=status.HTTP_404_NOT_FOUND,
+        )
+        if payload is None:
+            return None
+        try:
+            record = SERVICE_ACCOUNT_RECORD.validate_python(payload)
+        except ValidationError:
+            raise GrafanaException(
+                detail="Grafana returned an unreadable service-account record."
+            ) from None
+        if record["id"] != account_id or record["login"] != login:
+            raise GrafanaException(
+                detail="Grafana returned an unreadable service-account record."
+            )
+        return record
+
+    async def _read_for_verification(
+        self, path: str, credential: str, *, refusal: int
+    ) -> dict[str, Any] | None:
+        """Read one verification record, separating a verdict from a failure.
+
+        :param path: The Grafana path to read.
+        :param credential: The bearer token to read it with.
+        :param refusal: The status that, answered by Grafana in JSON, is a
+            refusal rather than a failure.
+        :return: The JSON object, or ``None`` for a Grafana-answered refusal.
+        :raises GrafanaException: For any other status, a timeout, a transport
+            error, or a body that is not a JSON object.
+        """
+        try:
+            with self.auth(credential):
+                payload = await self.get(path, timeout=_SERVICE_ACCOUNT_CALL_TIMEOUT)
+        except GrafanaException:
+            raise
+        except HTTPException as exc:
+            if _is_grafana_verdict(exc, refusal):
+                return None
+            self.logger.exception(
+                "Grafana answered HTTP %s to %s while verifying a service-account "
+                "token.",
+                exc.status_code,
+                path,
+            )
+            raise GrafanaException(
+                detail=f"Grafana could not verify the service-account token "
+                f"(HTTP {exc.status_code})."
+            ) from None
+        except (TimeoutError, ClientError, ValueError):
+            self.logger.warning(
+                "Grafana did not answer %s while verifying a service-account token.",
+                path,
+                exc_info=True,
+            )
+            raise GrafanaException(
+                detail="Grafana could not verify the service-account token."
+            ) from None
+        if not isinstance(payload, dict):
+            raise GrafanaException(
+                detail=f"Grafana returned an unreadable {path} response."
+            )
+        return payload

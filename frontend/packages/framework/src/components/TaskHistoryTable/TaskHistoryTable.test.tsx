@@ -29,7 +29,7 @@ import type { TaskHistoryEntry, TaskHistoryStatus } from './TaskHistoryTable.typ
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', () => {
+vi.mock('@pmm-extensions/api', () => {
   const RUNNING_STATUSES = new Set(['running', 'pending']);
   return {
     useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
@@ -52,7 +52,7 @@ vi.mock('@sep/api', () => {
   };
 });
 
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 
 beforeEach(() => {
   mockCanMutate = true;
@@ -462,7 +462,7 @@ describe('TaskHistoryTable connected stop mutation', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
 
     await waitFor(() =>
-      expect(mockedApiClient.post).toHaveBeenCalledWith('/sep/task-history/42/stop/'),
+      expect(mockedApiClient.post).toHaveBeenCalledWith('/extensions/task-history/42/stop/'),
     );
 
     await waitFor(() => expect(screen.getByText('Stopped')).toBeInTheDocument());

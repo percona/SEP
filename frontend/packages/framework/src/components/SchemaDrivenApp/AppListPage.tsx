@@ -37,7 +37,7 @@ import {
   useAppTasks,
   type AppSchema,
   type TaskHistoryStatus,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import { ActionErrorAlert, useActionError } from '../ActionErrorAlert';
 import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';

@@ -236,9 +236,11 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             calls.append((history.id, result))
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -257,9 +259,11 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             results.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.FAILED
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.FAILED
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -284,10 +288,12 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             calls.append((history.id, result))
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _SessionBoundExecutor(endpoint=_NOMAD_ENDPOINT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -310,10 +316,12 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             calls.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _SessionBoundExecutor(endpoint=_NOMAD_ENDPOINT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -335,7 +343,9 @@ class TestMaybeRecordRun:
             nonlocal called
             called = True
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _fake_executor(_yielding(_result_bytes()))
         async with _recorder_db(
             recorder=None, status=TaskHistoryStatusEnum.SUCCESS
@@ -357,10 +367,12 @@ class TestMaybeRecordRun:
             nonlocal called
             called = True
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _fake_executor(_yielding(_result_bytes()))
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -374,7 +386,7 @@ class TestMaybeRecordRun:
     async def test_swallows_unresolvable_recorder(self, mocker):
         """Suppress (log) an unresolvable recorder path without failing the sync."""
         async with _recorder_db(
-            recorder="app.sep.apps.no_such_module:rec",
+            recorder="app.extensions.apps.no_such_module:rec",
             status=TaskHistoryStatusEnum.SUCCESS,
         ) as (maker, history_id):
             mocker.patch(
@@ -391,9 +403,11 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             raise RuntimeError("boom")
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -417,9 +431,11 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             seen.append((history.task.output_files_path, result))
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.SUCCESS
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -443,10 +459,12 @@ class TestMaybeRecordRun:
         async def _recorder(session, history, result):
             seen.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _fake_executor(_yielding(_result_bytes()))
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec",
+            recorder="app.extensions.apps.pkg:rec",
             status=TaskHistoryStatusEnum.SUCCESS,
             output_files_path=None,
         ) as (maker, history_id):
@@ -493,9 +511,11 @@ class TestSyncQueueItemSeam:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
         ) as (maker, history_id):
             mocker.patch("app.tasks.celery.get_async_session_maker", return_value=maker)
             mocker.patch(
@@ -519,9 +539,11 @@ class TestSyncQueueItemSeam:
         async def _recorder(session, history, result):
             results.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
         ) as (maker, history_id):
             mocker.patch("app.tasks.celery.get_async_session_maker", return_value=maker)
             mocker.patch(
@@ -552,9 +574,11 @@ class TestSyncRouteSeam:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
         ) as (maker, history_id):
             mocker.patch("app.tasks.routes.get_async_session_maker", return_value=maker)
             mocker.patch(
@@ -599,11 +623,13 @@ class TestStopPathCarveOut:
             item.finished_at = utc_now()
             return await TaskHistoryManager.save(session, item)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _fake_executor(_yielding(_result_bytes()))
         executor.stop_task = AsyncMock(side_effect=_stop)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.RUNNING
         ) as (maker, history_id):
             mocker.patch(
                 "app.tasks.run_result.get_async_session_maker", return_value=maker
@@ -684,10 +710,12 @@ class TestDispatchSeam:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
         ) as (maker, history_id):
             dispatched = await _run_dispatch(mocker, maker, history_id, executor)
 
@@ -702,10 +730,12 @@ class TestDispatchSeam:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _dispatch_to(TaskHistoryStatusEnum.FAILED)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
         ) as (maker, history_id):
             dispatched = await _run_dispatch(mocker, maker, history_id, executor)
 
@@ -720,10 +750,12 @@ class TestDispatchSeam:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _dispatch_to(TaskHistoryStatusEnum.RUNNING, result=_RESULT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
         ) as (maker, history_id):
             dispatched = await _run_dispatch(mocker, maker, history_id, executor)
 
@@ -738,10 +770,12 @@ class TestDispatchSeam:
         async def _recorder(session, history, result):
             raise RuntimeError("recorder exploded")
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
         ) as (maker, history_id):
             dispatched = await _run_dispatch(  # must not raise
                 mocker, maker, history_id, executor
@@ -766,10 +800,12 @@ class TestDispatchFailureCarveOut:
         async def _recorder(session, history, result):
             recorded.append(result)
 
-        mocker.patch.dict(hook_resolver._RESOLVED, {"app.sep.apps.pkg:rec": _recorder})
+        mocker.patch.dict(
+            hook_resolver._RESOLVED, {"app.extensions.apps.pkg:rec": _recorder}
+        )
         executor = _dispatch_to(TaskHistoryStatusEnum.SUCCESS, result=_RESULT)
         async with _recorder_db(
-            recorder="app.sep.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
+            recorder="app.extensions.apps.pkg:rec", status=TaskHistoryStatusEnum.PENDING
         ) as (maker, history_id):
             mocker.patch("app.tasks.celery.get_async_session_maker", return_value=maker)
             mocker.patch(

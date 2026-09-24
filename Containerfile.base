@@ -6,7 +6,7 @@
 FROM docker.io/library/python:3.11.14-slim AS builder
 
 # Set work directory
-WORKDIR /usr/src/sep
+WORKDIR /usr/src/extensions
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -21,11 +21,11 @@ RUN apt-get update && \
 
 # Export requirements
 RUN pip install --no-cache-dir wheel poetry==2.4.1 poetry-plugin-export
-COPY ./pyproject.toml ./poetry.lock /usr/src/sep/
+COPY ./pyproject.toml ./poetry.lock /usr/src/extensions/
 RUN poetry export --without dev --with postgresql --with syncpostgresql --with redis --with spacy_en_model_sm -f requirements.txt --output requirements.txt
 
 # Build Wheel archives for requirements
 RUN grep -v " @ git+" requirements.txt > requirements.pypi.txt
 RUN grep " @ git+" requirements.txt > requirements.vcs.txt || true
-RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.pypi.txt
-RUN if [ -s requirements.vcs.txt ]; then pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/sep/wheels -r requirements.vcs.txt; fi
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/extensions/wheels -r requirements.pypi.txt
+RUN if [ -s requirements.vcs.txt ]; then pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/extensions/wheels -r requirements.vcs.txt; fi
