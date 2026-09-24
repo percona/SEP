@@ -24,7 +24,7 @@ import type { ReactNode } from 'react';
 
 const useAlertConfigMock = vi.fn();
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   useAlertConfig: () => useAlertConfigMock(),
 }));
 

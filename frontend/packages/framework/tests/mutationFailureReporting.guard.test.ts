@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Every mutation in SEP can be refused — the API restricts state-changing
+ * Every mutation in PMM Extensions can be refused — the API restricts state-changing
  * routes to admins — so a call site that fires one and reports nothing leaves
  * the user with silence instead of a reason. Nine such sites existed before
  * this guard, all of them omissions rather than mistakes, which is why the
@@ -57,7 +57,7 @@ const PRIMITIVE_MARKERS = [
 ];
 
 /**
- * Call sites that already rendered a failure from SEP's own component tree
+ * Call sites that already rendered a failure from PMM Extensions' own component tree
  * before the primitive existed, each with the mechanism it uses. They are
  * correct as they stand; migrating them onto the primitive can happen
  * opportunistically. Every entry must name where the message is rendered.
@@ -144,7 +144,7 @@ describe('mutation failure reporting', () => {
     expect(
       unreported,
       [
-        'These files fire a mutation but render no failure from SEP’s own component tree.',
+        'These files fire a mutation but render no failure from PMM Extensions’ own component tree.',
         'Either report the error with ActionErrorAlert / useActionError (or mapSubmitError in a',
         'form), or add the file to REPORTS_ITS_OWN_WAY naming where its message is rendered.',
         'A toast alone does not count: the PMM-embedded host is not guaranteed to mount a',

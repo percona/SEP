@@ -17,7 +17,7 @@
 
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SettingClassGroup, SettingResponse } from '@sep/api';
+import type { SettingClassGroup, SettingResponse } from '@pmm-extensions/api';
 
 import { NotificationProvider } from '../../../contexts/notification';
 
@@ -41,8 +41,8 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
   };
 }
 
-/** The SEP-endpoint list payload used across tests. */
-export const sepListResponse = {
+/** The PMM Extensions endpoint list payload used across tests. */
+export const extensionsListResponse = {
   groups: [
     {
       setting_class: 'ExtensionsSettings',

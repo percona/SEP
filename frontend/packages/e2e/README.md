@@ -1,20 +1,20 @@
-# @sep/e2e — Playwright E2E smoke tests
+# @pmm-extensions/e2e — Playwright E2E smoke tests
 
-End-to-end smoke tests for the SEP React shell and schema-driven apps, powered by [Playwright](https://playwright.dev/).
+End-to-end smoke tests for the PMM Extensions React shell and schema-driven apps, powered by [Playwright](https://playwright.dev/).
 
 ## Quick start
 
 ```bash
 # From the repo root's frontend/ directory:
 pnpm test:e2e                  # run all E2E tests (headless)
-pnpm --filter @sep/e2e test:e2e:ui   # open Playwright UI mode for debugging
+pnpm --filter @pmm-extensions/e2e test:e2e:ui   # open Playwright UI mode for debugging
 ```
 
 > **Note:** The first run builds the shell with `VITE_MOCK_API=true` and serves the production bundle via `vite preview` on port 5174. Cold builds take longer than a dev-server start — Playwright's `webServer.timeout` is set to 180 s to accommodate that.
 
 ## How it works
 
-`playwright.config.ts` runs `VITE_MOCK_API=true pnpm --filter @sep/shell build && pnpm --filter @sep/shell preview --port 5174 --strictPort` as the `webServer`. All API calls are intercepted inside each spec via `page.route('**/api/**', …)` so no real backend is required.
+`playwright.config.ts` runs `VITE_MOCK_API=true pnpm --filter @pmm-extensions/shell build && pnpm --filter @pmm-extensions/shell preview --port 5174 --strictPort` as the `webServer`. All API calls are intercepted inside each spec via `page.route('**/api/**', …)` so no real backend is required.
 
 Testing the **production** bundle (not the dev server) is intentional: it exercises the same code path users get. The mock-data fallbacks inside `useAppTasks` are gated on `import.meta.env.DEV || import.meta.env.VITE_MOCK_API === 'true'`, and Vite statically replaces both expressions at build time. Setting `VITE_MOCK_API=true` for this build lights up the fallback branch in the bundle so the schema-driven app list pages render without a live `/api/apps/*` endpoint, while real production builds (which never set the flag) get the fallback dead-code-eliminated.
 
@@ -36,7 +36,7 @@ Testing the **production** bundle (not the dev server) is intentional: it exerci
 3. **Run and iterate:**
 
    ```bash
-   pnpm --filter @sep/e2e test:e2e:ui
+   pnpm --filter @pmm-extensions/e2e test:e2e:ui
    ```
 
    Playwright UI mode lets you step through actions, inspect locators, and record new steps.

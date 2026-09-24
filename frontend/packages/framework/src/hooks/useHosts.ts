@@ -16,8 +16,8 @@
  */
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
-import { sepRetry } from './sepRetry';
+import { apiClient } from '@pmm-extensions/api';
+import { extensionsRetry } from './extensionsRetry';
 
 export interface HostOption {
   /** Executor node name — the value sent to the dispatch payload as `executor_host`. */
@@ -41,7 +41,7 @@ export interface UseHostsOptions {
 /**
  * Fetch executor hosts merged with inventory display names.
  *
- * Calls the SEP-side proxy `GET /api/extensions/hosts/`, which performs the
+ * Calls the PMM Extensions side proxy `GET /api/extensions/hosts/`, which performs the
  * Tasks/Inventory merge server-side. Loading and error states are
  * first-class React Query states. When the Tasks API is unreachable the
  * route responds with `502` + `{"detail": "<upstream detail>"}`; the axios
@@ -52,13 +52,13 @@ export interface UseHostsOptions {
 export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostOption[], Error> {
   const { enabled = true } = options;
   return useQuery<HostOption[], Error>({
-    queryKey: ['sep', 'hosts'],
+    queryKey: ['extensions', 'hosts'],
     enabled,
     staleTime: 60_000,
     queryFn: async () => {
       const response = await apiClient.get<HostOption[]>('/extensions/hosts/');
       return response.data;
     },
-    retry: sepRetry,
+    retry: extensionsRetry,
   });
 }

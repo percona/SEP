@@ -28,13 +28,13 @@ sync_alembic_version_locations = load_script("sync_alembic_version_locations")
 
 _MINIMAL_INI = """\
 [alembic]
-databases = sep
+databases = extensions
 
-[sep]
+[extensions]
 # path to migration scripts.
-script_location = app/sep/migrations
+script_location = app/extensions/migrations
 # stale hand-written comment
-version_locations = %(here)s/app/sep/migrations/versions
+version_locations = %(here)s/app/extensions/migrations/versions
 
 [post_write_hooks]
 # keep this section marker
@@ -67,9 +67,9 @@ def test_sync_regenerates_from_synthetic_app_tree(tmp_path):
     assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
     text = ini_path.read_text()
     expected = (
-        "%(here)s/app/sep/migrations/versions:"
-        "%(here)s/app/sep/apps/alpha/migrations/versions:"
-        "%(here)s/app/sep/apps/zebra/migrations/versions"
+        "%(here)s/app/extensions/migrations/versions:"
+        "%(here)s/app/extensions/apps/alpha/migrations/versions:"
+        "%(here)s/app/extensions/apps/zebra/migrations/versions"
     )
     assert f"version_locations = {expected}" in text
     assert "GENERATED" in text
@@ -106,7 +106,7 @@ def test_sync_preserves_crlf_line_endings(tmp_path):
     rewritten = ini_path.read_bytes()
     assert b"\r\n" in rewritten
     assert b"\n" not in rewritten.replace(b"\r\n", b"")
-    assert b"app/sep/apps/alpha/migrations/versions" in rewritten
+    assert b"app/extensions/apps/alpha/migrations/versions" in rewritten
 
 
 def test_sync_rejects_multiline_version_locations(tmp_path):
@@ -117,9 +117,9 @@ def test_sync_rejects_multiline_version_locations(tmp_path):
     ini_path = tmp_path / "alembic.ini"
     ini_path.write_text(
         _MINIMAL_INI.replace(
-            "version_locations = %(here)s/app/sep/migrations/versions\n",
-            "version_locations = %(here)s/app/sep/migrations/versions:\n"
-            "    %(here)s/app/sep/apps/stale/migrations/versions\n",
+            "version_locations = %(here)s/app/extensions/migrations/versions\n",
+            "version_locations = %(here)s/app/extensions/migrations/versions:\n"
+            "    %(here)s/app/extensions/apps/stale/migrations/versions\n",
         )
     )
 
@@ -127,23 +127,25 @@ def test_sync_rejects_multiline_version_locations(tmp_path):
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
 
-def test_sync_rejects_missing_sep_section(tmp_path):
-    """Reject an ini that lacks a ``[sep]`` section."""
+def test_sync_rejects_missing_extensions_section(tmp_path):
+    """Reject an ini that lacks a ``[extensions]`` section."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("[alembic]\ndatabases = sep\n")
+    ini_path.write_text("[alembic]\ndatabases = extensions\n")
 
-    with pytest.raises(ValueError, match=r"no \[sep\] section"):
+    with pytest.raises(ValueError, match=r"no \[extensions\] section"):
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
 
 def test_sync_rejects_missing_version_locations_assignment(tmp_path):
-    """Reject a ``[sep]`` section that has no ``version_locations`` assignment."""
+    """Reject a ``[extensions]`` section that has no ``version_locations`` assignment."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("[alembic]\ndatabases = sep\n\n[sep]\nscript_location = x\n")
+    ini_path.write_text(
+        "[alembic]\ndatabases = extensions\n\n[extensions]\nscript_location = x\n"
+    )
 
     with pytest.raises(ValueError, match="no version_locations assignment"):
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
@@ -154,7 +156,7 @@ def test_main_reports_malformed_ini_cleanly(tmp_path, capsys):
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("[alembic]\ndatabases = sep\n")
+    ini_path.write_text("[alembic]\ndatabases = extensions\n")
 
     assert (
         sync_alembic_version_locations.main(
@@ -163,12 +165,12 @@ def test_main_reports_malformed_ini_cleanly(tmp_path, capsys):
         == 1
     )
     err = capsys.readouterr().err
-    assert "no [sep] section" in err
+    assert "no [extensions] section" in err
     assert "Traceback" not in err
 
 
 def test_sync_preserves_comment_block_and_other_sections(tmp_path):
-    """Keep ``script_location`` and non-``[sep]`` sections intact."""
+    """Keep ``script_location`` and non-``[extensions]`` sections intact."""
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     _migration_plugin(apps_root, "alpha")
@@ -177,10 +179,10 @@ def test_sync_preserves_comment_block_and_other_sections(tmp_path):
 
     sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
     text = ini_path.read_text()
-    assert "script_location = app/sep/migrations" in text
+    assert "script_location = app/extensions/migrations" in text
     assert "[post_write_hooks]" in text
     assert "# keep this section marker" in text
-    assert "databases = sep" in text
+    assert "databases = extensions" in text
     assert "GENERATED — do not hand-edit" in text
 
 
@@ -219,7 +221,7 @@ def test_entry_separator_matches_the_committed_version_path_separator():
     parser.read(_PROJECT_ROOT / "alembic.ini")
 
     assert (
-        parser.get("sep", "version_path_separator")
+        parser.get("extensions", "version_path_separator")
         == sync_alembic_version_locations.ENTRY_SEPARATOR
     )
 
@@ -232,10 +234,13 @@ def _ini_with_entries(*plugins: str) -> str:
     """
     entries = [
         sync_alembic_version_locations.MAIN_VERSIONS_ENTRY,
-        *(f"%(here)s/app/sep/apps/{name}/migrations/versions" for name in plugins),
+        *(
+            f"%(here)s/app/extensions/apps/{name}/migrations/versions"
+            for name in plugins
+        ),
     ]
     return _MINIMAL_INI.replace(
-        "version_locations = %(here)s/app/sep/migrations/versions",
+        "version_locations = %(here)s/app/extensions/migrations/versions",
         f"version_locations = "
         f"{sync_alembic_version_locations.ENTRY_SEPARATOR.join(entries)}",
     )
@@ -259,56 +264,56 @@ def stripped_tree(tmp_path) -> tuple[Path, Path]:
 
 
 class TestCurrentVersionLocations:
-    """Cover reading the entries already listed in the ``[sep]`` section."""
+    """Cover reading the entries already listed in the ``[extensions]`` section."""
 
     def test_splits_the_committed_value_on_the_separator(self):
         """Return one entry per colon-separated path, in file order."""
         text = _ini_with_entries("zebra", "alpha")
 
         assert sync_alembic_version_locations._current_version_locations(text) == (
-            "%(here)s/app/sep/migrations/versions",
-            "%(here)s/app/sep/apps/zebra/migrations/versions",
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/migrations/versions",
+            "%(here)s/app/extensions/apps/zebra/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
 
     def test_strips_padding_and_drops_empty_entries(self):
         """Tolerate a hand-spaced value without inventing phantom entries."""
         text = _MINIMAL_INI.replace(
-            "version_locations = %(here)s/app/sep/migrations/versions",
-            "version_locations =  %(here)s/app/sep/migrations/versions : "
-            "%(here)s/app/sep/apps/alpha/migrations/versions :",
+            "version_locations = %(here)s/app/extensions/migrations/versions",
+            "version_locations =  %(here)s/app/extensions/migrations/versions : "
+            "%(here)s/app/extensions/apps/alpha/migrations/versions :",
         )
 
         assert sync_alembic_version_locations._current_version_locations(text) == (
-            "%(here)s/app/sep/migrations/versions",
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
 
     def test_returns_nothing_for_an_empty_assignment(self):
         """Treat a blank value as zero entries rather than one empty entry."""
         text = _MINIMAL_INI.replace(
-            "version_locations = %(here)s/app/sep/migrations/versions",
+            "version_locations = %(here)s/app/extensions/migrations/versions",
             "version_locations =",
         )
 
         assert sync_alembic_version_locations._current_version_locations(text) == ()
 
-    def test_rejects_a_missing_sep_section(self):
+    def test_rejects_a_missing_extensions_section(self):
         """Raise rather than report an empty list for a malformed ini."""
-        with pytest.raises(ValueError, match=r"no \[sep\] section"):
+        with pytest.raises(ValueError, match=r"no \[extensions\] section"):
             sync_alembic_version_locations._current_version_locations(
-                "[alembic]\ndatabases = sep\n"
+                "[alembic]\ndatabases = extensions\n"
             )
 
-    def test_ignores_a_version_locations_line_outside_the_sep_section(self):
-        """Read only the ``[sep]`` value, not a same-named key elsewhere."""
+    def test_ignores_a_version_locations_line_outside_the_extensions_section(self):
+        """Read only the ``[extensions]`` value, not a same-named key elsewhere."""
         text = _MINIMAL_INI.replace(
             "[post_write_hooks]",
             "[other]\nversion_locations = %(here)s/decoy\n\n[post_write_hooks]",
         )
 
         assert sync_alembic_version_locations._current_version_locations(text) == (
-            "%(here)s/app/sep/migrations/versions",
+            "%(here)s/app/extensions/migrations/versions",
         )
 
 
@@ -326,7 +331,7 @@ class TestRemovalRefusal:
             sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
         assert excinfo.value.removed == (
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
         assert ini_path.read_text() == before
 
@@ -345,7 +350,7 @@ class TestRemovalRefusal:
             sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
         assert excinfo.value.removed == (
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
 
     def test_names_every_removed_entry_in_configuration_order(self, stripped_tree):
@@ -359,8 +364,8 @@ class TestRemovalRefusal:
             sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
         assert excinfo.value.removed == (
-            "%(here)s/app/sep/apps/zebra/migrations/versions",
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/apps/zebra/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
 
     def test_additive_only_change_still_writes(self, stripped_tree):
@@ -370,7 +375,7 @@ class TestRemovalRefusal:
         _migration_plugin(apps_root, "beta")
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
-        assert "app/sep/apps/beta/migrations/versions" in ini_path.read_text()
+        assert "app/extensions/apps/beta/migrations/versions" in ini_path.read_text()
 
     def test_reordering_alone_is_not_a_removal(self, stripped_tree):
         """Compare entry sets, so a re-sorted list writes without refusing."""
@@ -398,8 +403,8 @@ class TestRemovalRefusal:
             ini_path, apps_root, allow_removals=True
         )
         remaining = ini_path.read_text()
-        assert "app/sep/migrations/versions" in remaining
-        assert "app/sep/apps/alpha/migrations/versions" not in remaining
+        assert "app/extensions/migrations/versions" in remaining
+        assert "app/extensions/apps/alpha/migrations/versions" not in remaining
 
     def test_a_cosmetically_different_spelling_is_not_a_removal(self, stripped_tree):
         """Compare normalised paths, so a trailing slash still writes.
@@ -412,15 +417,16 @@ class TestRemovalRefusal:
         _migration_plugin(apps_root, "alpha")
         ini_path.write_text(
             _ini_with_entries("alpha").replace(
-                "%(here)s/app/sep/apps/alpha/migrations/versions",
-                "%(here)s/./app/sep/apps/alpha/migrations/versions/",
+                "%(here)s/app/extensions/apps/alpha/migrations/versions",
+                "%(here)s/./app/extensions/apps/alpha/migrations/versions/",
             )
         )
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
         assert (
-            "version_locations = %(here)s/app/sep/migrations/versions:"
-            "%(here)s/app/sep/apps/alpha/migrations/versions" in ini_path.read_text()
+            "version_locations = %(here)s/app/extensions/migrations/versions:"
+            "%(here)s/app/extensions/apps/alpha/migrations/versions"
+            in ini_path.read_text()
         )
 
     def test_duplicate_entries_collapse_without_refusing(self, stripped_tree):
@@ -430,7 +436,10 @@ class TestRemovalRefusal:
         ini_path.write_text(_ini_with_entries("alpha", "alpha"))
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
-        assert ini_path.read_text().count("app/sep/apps/alpha/migrations/versions") == 1
+        assert (
+            ini_path.read_text().count("app/extensions/apps/alpha/migrations/versions")
+            == 1
+        )
 
     def test_refuses_when_only_the_versions_directory_was_deleted(self, stripped_tree):
         """Catch a half-deleted package, not just a missing app directory."""
@@ -444,7 +453,7 @@ class TestRemovalRefusal:
             sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
         assert excinfo.value.removed == (
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
 
     def test_refuses_when_init_py_is_gone_but_versions_remains(self, stripped_tree):
@@ -460,7 +469,7 @@ class TestRemovalRefusal:
             sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
 
         assert excinfo.value.removed == (
-            "%(here)s/app/sep/apps/alpha/migrations/versions",
+            "%(here)s/app/extensions/apps/alpha/migrations/versions",
         )
         assert ini_path.read_text(encoding="utf-8") == before
 
@@ -470,7 +479,7 @@ class TestRemovalRefusal:
         _migration_plugin(apps_root, "alpha")
 
         assert sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
-        assert "app/sep/apps/alpha/migrations/versions" in ini_path.read_text(
+        assert "app/extensions/apps/alpha/migrations/versions" in ini_path.read_text(
             encoding="utf-8"
         )
 
@@ -489,9 +498,9 @@ class TestRemovalRefusal:
         ini_path, apps_root = stripped_tree
         ini_path.write_text(
             _MINIMAL_INI.replace(
-                "version_locations = %(here)s/app/sep/migrations/versions\n",
-                "version_locations = %(here)s/app/sep/migrations/versions:\n"
-                "    %(here)s/app/sep/apps/stale/migrations/versions\n",
+                "version_locations = %(here)s/app/extensions/migrations/versions\n",
+                "version_locations = %(here)s/app/extensions/migrations/versions:\n"
+                "    %(here)s/app/extensions/apps/stale/migrations/versions\n",
             )
         )
 
@@ -514,7 +523,7 @@ class TestRemovalRefusalCli:
             == 1
         )
         err = capsys.readouterr().err
-        assert "app/sep/apps/alpha/migrations/versions" in err
+        assert "app/extensions/apps/alpha/migrations/versions" in err
         assert "--allow-removals" in err
         assert "upgrade heads" in err
         assert "contributes no migration scripts" in err
@@ -537,7 +546,7 @@ class TestRemovalRefusalCli:
             == 1
         )
         err = capsys.readouterr().err
-        assert "app/sep/apps/alpha/migrations/versions" in err
+        assert "app/extensions/apps/alpha/migrations/versions" in err
         assert "regenerating would remove" in err
         assert "refusing to remove" not in err
         assert "without `--check`" in err
@@ -559,5 +568,5 @@ class TestRemovalRefusalCli:
             == 0
         )
         remaining = ini_path.read_text()
-        assert "app/sep/migrations/versions" in remaining
-        assert "app/sep/apps/alpha/migrations/versions" not in remaining
+        assert "app/extensions/migrations/versions" in remaining
+        assert "app/extensions/apps/alpha/migrations/versions" not in remaining

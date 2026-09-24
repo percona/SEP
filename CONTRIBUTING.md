@@ -172,7 +172,7 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
 
 ## App development
 
-PMM Extensions apps (checksums, backups, snippets, and the rest under `app/sep/apps/`) are
+PMM Extensions apps (checksums, backups, snippets, and the rest under `app/extensions/apps/`) are
 built on the declarative app framework: you describe an app with a single
 `TaskExecutionApp` object and the framework derives its whole HTTP surface. If
 you are adding an app, start with the

@@ -21,7 +21,12 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../../../../tests/msw-server';
-import { appsListResponse, makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
+import {
+  appsListResponse,
+  makeWrapper,
+  extensionsListResponse,
+  tasksListResponse,
+} from './fixtures';
 
 const authState = vi.hoisted(() => ({ isAdmin: true }));
 vi.mock('../../../contexts/auth', () => ({
@@ -30,18 +35,22 @@ vi.mock('../../../contexts/auth', () => ({
 
 import SettingsPage from '../../../pages/SettingsPage';
 
-const SEP_URL = 'http://localhost/api/extensions/admin/settings/';
+const EXTENSIONS_URL = 'http://localhost/api/extensions/admin/settings/';
 const EXPORT_URL = 'http://localhost/api/extensions/admin/settings/export';
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
 
 /**
- * SEP aggregates its local classes, the proxied TasksSettings, and app-owned
+ * PMM Extensions aggregates its local classes, the proxied TasksSettings, and app-owned
  * groups (both enabled and disabled) into one list.
  */
 const combinedListResponse = {
-  groups: [...sepListResponse.groups, ...tasksListResponse.groups, ...appsListResponse.groups],
+  groups: [
+    ...extensionsListResponse.groups,
+    ...tasksListResponse.groups,
+    ...appsListResponse.groups,
+  ],
 };
 
 function renderPage() {
@@ -51,7 +60,7 @@ function renderPage() {
 beforeEach(() => {
   authState.isAdmin = true;
   server.use(
-    http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)),
+    http.get(EXTENSIONS_URL, () => HttpResponse.json(combinedListResponse)),
     http.get(EXPORT_URL, () =>
       HttpResponse.text('ExtensionsSettings: {}\n', {
         headers: {
@@ -239,9 +248,9 @@ describe('SettingsPage', () => {
 
   it('omits the App settings region when no enabled app-owned groups remain', async () => {
     server.use(
-      http.get(SEP_URL, () =>
+      http.get(EXTENSIONS_URL, () =>
         HttpResponse.json({
-          groups: [...sepListResponse.groups, appsListResponse.groups[1]],
+          groups: [...extensionsListResponse.groups, appsListResponse.groups[1]],
         }),
       ),
     );

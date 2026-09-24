@@ -40,10 +40,14 @@ from app.core.health import wait_for_api_ready
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
+from app.extensions.apps.framework.registry import build_celery_include
+from app.extensions.config import extensions_settings
+from app.extensions.main import (
+    extensions_app,
+    extensions_overrides_lifespan,
+    extensions_startup,
+)
 from app.inventory.main import inventory_app, inventory_overrides_lifespan
-from app.sep.apps.framework.registry import build_celery_include
-from app.sep.config import sep_settings
-from app.sep.main import sep_app, sep_overrides_lifespan, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
 
 
@@ -56,18 +60,18 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     properly managed during the application's startup and shutdown phases.
 
     Starlette's ``Mount`` never forwards ``lifespan`` scope to the mounted
-    ``sep_app``/``inventory_app``, so their override refreshers are entered here
+    ``extensions_app``/``inventory_app``, so their override refreshers are entered here
     (alongside ``tasks_lifespan``) rather than from their own lifespans. Only
     ``tasks_lifespan`` enters :func:`app.core.config.default_lifespan`, so the
     shared ``settings.CASDOOR`` / client registry is entered exactly once.
 
-    ``sep_startup()``, which seeds the periodic-task database from each app's
+    ``extensions_startup()``, which seeds the periodic-task database from each app's
     *current* settings, runs inside the ``async with``, after
-    ``sep_overrides_lifespan`` has published its initial override snapshot: an
+    ``extensions_overrides_lifespan`` has published its initial override snapshot: an
     app-owned hot field reads its class
     default until that publish happens, so seeding before it can seed a sweep
     as off when a prior run had already turned it on. Same ordering as
-    :func:`app.sep.main.sep_lifespan`, which the standalone-app entry point
+    :func:`app.extensions.main.extensions_lifespan`, which the standalone-app entry point
     uses for the same reason.
 
     :param app: The FastAPI application instance.
@@ -75,22 +79,22 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     detect_removed_auth_user_model()
     detect_removed_settings_override_keys()
-    validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
+    validate_importable_settings(*(s.syncer for s in extensions_settings.SYNCERS))
     async with (
-        sep_overrides_lifespan(app),
+        extensions_overrides_lifespan(app),
         tasks_lifespan(app),
         inventory_overrides_lifespan(app),
     ):
-        await sep_startup()
+        await extensions_startup()
         yield
 
 
 app = create_app(
     api_router,
     lifespan=main_lifespan,
-    backend_cors_origins=sep_settings.BACKEND_CORS_ORIGINS,
-    allowed_hosts=sep_settings.ALLOWED_HOSTS,
-    security_headers=sep_settings.SECURITY_HEADERS,
+    backend_cors_origins=extensions_settings.BACKEND_CORS_ORIGINS,
+    allowed_hosts=extensions_settings.ALLOWED_HOSTS,
+    security_headers=extensions_settings.SECURITY_HEADERS,
     title="PMM Extensions HTTP API",
     version=__version__,
     description=(
@@ -114,17 +118,17 @@ app.add_middleware(LogContextMiddleware)
     response_model=None,
     include_in_schema=False,
 )
-def sep_openapi_json() -> JSONResponse:
-    """Return the OpenAPI document for the SEP web application (``sep_app``).
+def extensions_openapi_json() -> JSONResponse:
+    """Return the OpenAPI document for the PMM Extensions web application (``extensions_app``).
 
     Same pattern as the mounted Inventory and Tasks apps (each exposes its own
     ``/api/.../openapi.json``; the top-level ``/openapi.json`` on this app remains the
     core API only and does not merge other sub-applications).
 
-    :return: The OpenAPI 3.x JSON schema produced by ``sep_app.openapi()``.
+    :return: The OpenAPI 3.x JSON schema produced by ``extensions_app.openapi()``.
     :rtype: JSONResponse
     """
-    return JSONResponse(sep_app.openapi())
+    return JSONResponse(extensions_app.openapi())
 
 
 @functools.lru_cache(maxsize=1)
@@ -137,7 +141,7 @@ def _get_merged_openapi() -> dict[str, Any]:
     :return: The merged OpenAPI 3.x JSON document.
     :rtype: dict[str, Any]
     """
-    return merge_openapi_documents(app.openapi(), sep_app.openapi())
+    return merge_openapi_documents(app.openapi(), extensions_app.openapi())
 
 
 @app.get(
@@ -150,8 +154,8 @@ def _get_merged_openapi() -> dict[str, Any]:
 def merged_openapi_json() -> JSONResponse:
     """Return the merged OpenAPI document for the public ``/api/*`` surface.
 
-    Unions the core API spec (``app.openapi()``) with the SEP web app spec
-    (``sep_app.openapi()``) via
+    Unions the core API spec (``app.openapi()``) with the PMM Extensions web app spec
+    (``extensions_app.openapi()``) via
     :func:`app.core.utils.openapi.merge_openapi_documents`. The two upstream specs
     at ``/openapi.json`` and ``/api/extensions/openapi.json`` are unchanged — they remain
     the source of truth for the React frontend's ``openapi-typescript`` codegen.
@@ -185,14 +189,14 @@ def _disabled_top_level_docs() -> Response:
     ``docs_url=None`` / ``redoc_url=None`` on ``create_app``).  Use ``/api/docs``
     instead.
 
-    These explicit handlers must stay registered because ``sep_app`` keeps
+    These explicit handlers must stay registered because ``extensions_app`` keeps
     FastAPI's default ``docs_url="/docs"`` and ``redoc_url="/redoc"`` so it
     remains self-describing in standalone use.  Without these routes the
-    ``sep_app`` mount at ``/`` would answer ``/docs`` and ``/redoc`` with its own
+    ``extensions_app`` mount at ``/`` would answer ``/docs`` and ``/redoc`` with its own
     partial spec — and those paths are not in the CSP exemption list
     (``SECURITY_HEADERS.CONTENT_SECURITY_POLICY_EXCLUDE_PATHS``), so the pages
     would render broken.  By registering these 404 handlers before
-    ``app.mount("/", sep_app)``, mount-order precedence ensures the top-level app
+    ``app.mount("/", extensions_app)``, mount-order precedence ensures the top-level app
     wins and returns a clean 404.
     """
     return Response(status_code=status.HTTP_404_NOT_FOUND)
@@ -200,7 +204,7 @@ def _disabled_top_level_docs() -> Response:
 
 app.mount("/api/inventory", inventory_app)
 app.mount("/api/tasks", tasks_app)
-app.mount("/", sep_app)
+app.mount("/", extensions_app)
 
 
 def start_celery_worker() -> None:
@@ -216,7 +220,7 @@ def start_celery_beat() -> None:
     not wait out the interval: anything already overdue is dispatched about a
     second in. Under ``--start-celery`` that lands inside the window before
     ``uvicorn.run`` has opened its listening socket, and a periodic task whose
-    first act is to call SEP's own API fails on connect through no fault of its
+    first act is to call PMM Extensions' own API fails on connect through no fault of its
     own. Gating beat, not the worker, which idles harmlessly, closes that window
     without a fixed sleep.
 
@@ -233,11 +237,11 @@ def start_celery_beat() -> None:
     logging.config.dictConfig(settings.LOGGING_CONFIG)
     try:
         api_ready = wait_for_api_ready(
-            sep_settings.UVICORN_HOST,
-            sep_settings.UVICORN_PORT,
-            allowed_hosts=sep_settings.ALLOWED_HOSTS,
-            timeout=sep_settings.API_READINESS_TIMEOUT,
-            interval=sep_settings.API_READINESS_POLL_INTERVAL,
+            extensions_settings.UVICORN_HOST,
+            extensions_settings.UVICORN_PORT,
+            allowed_hosts=extensions_settings.ALLOWED_HOSTS,
+            timeout=extensions_settings.API_READINESS_TIMEOUT,
+            interval=extensions_settings.API_READINESS_POLL_INTERVAL,
         )
     except KeyboardInterrupt:
         logging.info("Celery beat start cancelled before the HTTP API became ready.")
@@ -246,7 +250,7 @@ def start_celery_beat() -> None:
     if not api_ready:
         logging.error(
             "Starting Celery beat without a ready HTTP API. An overdue periodic task "
-            "that calls SEP's own API may fail to connect on its first run."
+            "that calls PMM Extensions' own API may fail to connect on its first run."
         )
 
     beat = celery_app.Beat(
@@ -282,22 +286,22 @@ if __name__ == "__main__":
         try:
             uvicorn.run(
                 "app.main:app",
-                host=sep_settings.UVICORN_HOST,
-                port=sep_settings.UVICORN_PORT,
+                host=extensions_settings.UVICORN_HOST,
+                port=extensions_settings.UVICORN_PORT,
                 log_config=settings.LOGGING_CONFIG,
-                reload=sep_settings.UVICORN_RELOAD,
+                reload=extensions_settings.UVICORN_RELOAD,
                 reload_dirs=[
                     str(settings.BASE_DIR),
                     str(settings.BASE_DIR / "app"),
-                    *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+                    *extensions_settings.UVICORN_EXTRA_RELOAD_DIRS,
                 ],
                 reload_includes=[
                     f"{settings.BASE_DIR.name}/settings.yaml",
-                    *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+                    *extensions_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
                 ],
                 reload_excludes=[
                     f"{settings.BASE_DIR.name}/*.py",
-                    *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+                    *extensions_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
                 ],
             )
         except KeyboardInterrupt:
@@ -313,21 +317,21 @@ if __name__ == "__main__":
         logging.config.dictConfig(settings.LOGGING_CONFIG)
         uvicorn.run(
             "app.main:app",
-            host=sep_settings.UVICORN_HOST,
-            port=sep_settings.UVICORN_PORT,
+            host=extensions_settings.UVICORN_HOST,
+            port=extensions_settings.UVICORN_PORT,
             log_config=settings.LOGGING_CONFIG,
-            reload=sep_settings.UVICORN_RELOAD,
+            reload=extensions_settings.UVICORN_RELOAD,
             reload_dirs=[
                 str(settings.BASE_DIR),
                 str(settings.BASE_DIR / "app"),
-                *sep_settings.UVICORN_EXTRA_RELOAD_DIRS,
+                *extensions_settings.UVICORN_EXTRA_RELOAD_DIRS,
             ],
             reload_includes=[
                 f"{settings.BASE_DIR.name}/settings.yaml",
-                *sep_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
+                *extensions_settings.UVICORN_EXTRA_RELOAD_INCLUDES,
             ],
             reload_excludes=[
                 f"{settings.BASE_DIR.name}/*.py",
-                *sep_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
+                *extensions_settings.UVICORN_EXTRA_RELOAD_EXCLUDES,
             ],
         )

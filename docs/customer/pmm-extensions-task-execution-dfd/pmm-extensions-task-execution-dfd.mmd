@@ -22,7 +22,7 @@ flowchart LR
     end
 
     P_UI["P3: PMM Extensions UI"]
-    P_SEPApi["P5a: PMM Extensions /api/extensions/* gateway<br/>SPA never reaches Tasks API directly"]
+    P_ExtensionsApi["P5a: PMM Extensions /api/extensions/* gateway<br/>SPA never reaches Tasks API directly"]
     P_TasksAPI["P5b: Tasks API<br/>prepare history + dispatch<br/>internal-only, behind mTLS"]
     P_Celery["P6: Celery worker"]
     P_NomadExec["P7: Nomad executor"]
@@ -92,11 +92,11 @@ flowchart LR
     P_PMMAnnotate -.-> PMM
 
     %% Log read-back (via PMM Extensions gateway, never directly to Tasks API)
-    P_UI -->|"GET /api/extensions/task-history/.../logs SSE"| P_SEPApi
-    P_SEPApi --> P_TasksAPI
+    P_UI -->|"GET /api/extensions/task-history/.../logs SSE"| P_ExtensionsApi
+    P_ExtensionsApi --> P_TasksAPI
     TasksDB --> P_TasksAPI
-    P_TasksAPI --> P_SEPApi
-    P_SEPApi --> P_UI
+    P_TasksAPI --> P_ExtensionsApi
+    P_ExtensionsApi --> P_UI
     P_UI --> Engineer
 
     P_Validate --> P_AppLog
@@ -112,6 +112,6 @@ flowchart LR
     end
 
     class Engineer,Grafana,Inventory,NomadCluster,RemoteNode,PMM,InfraLogs entity
-    class P_Exchange,P_Validate,P_UI,P_SEPApi,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
+    class P_Exchange,P_Validate,P_UI,P_ExtensionsApi,P_SnippetAPI,P_ProxyCreate,P_ProxyExecute,P_TasksAPI,P_Celery,P_NomadExec process
     class P_Record,P_LogPersist,P_PMMAnnotate,P_AppLog audit
     class SnippetStore,TasksDB,TaskDefs,NomadRuntime store

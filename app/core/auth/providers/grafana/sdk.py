@@ -273,7 +273,7 @@ class GrafanaSDK(RemoteAPI):
 
     @alru_cache(ttl=300)
     async def get_service_accounts(self) -> list[dict[str, Any]]:
-        """Read every service account in SEP's org via the service-account token.
+        """Read every service account in PMM Extensions' org via the service-account token.
 
         Pages are read until the collected rows reach the listing's
         ``totalCount`` or a page comes back empty. Only the pagination fields
@@ -327,7 +327,7 @@ class GrafanaSDK(RemoteAPI):
     async def verify_service_account_token(
         self, token: str
     ) -> GrafanaServiceAccountRecord | None:
-        """Verify a Grafana service-account token presented to SEP.
+        """Verify a Grafana service-account token presented to PMM Extensions.
 
         A verdict (the account record, or a refusal Grafana itself answered)
         is reused for ``service_account_bearer_revocation_window``, keyed on the
@@ -339,9 +339,9 @@ class GrafanaSDK(RemoteAPI):
 
         :param token: The ``glsa_`` token the caller presented.
         :return: The ``/api/serviceaccounts/{id}`` record, or ``None`` when
-            Grafana rejected the token or the account is not in SEP's org.
+            Grafana rejected the token or the account is not in PMM Extensions' org.
         :raises GrafanaException: If Grafana could not decide: unreachable,
-            slow, erroring, refusing SEP's own credential, or answering off
+            slow, erroring, refusing PMM Extensions' own credential, or answering off
             contract.
         """
         cache = self._service_account_verdicts
@@ -362,7 +362,7 @@ class GrafanaSDK(RemoteAPI):
 
         ``/api/user`` proves the token and names the account in ``uid``, but it
         reports every service account as enabled, so role and disabled flag are
-        read from the account record through SEP's own credential. That call is
+        read from the account record through PMM Extensions' own credential. That call is
         org-scoped by Grafana, so a 404 covers an account in another org as well
         as one deleted in between.
 

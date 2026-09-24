@@ -44,8 +44,8 @@ from app import BASE_DIR
 from app.core.alerts.config import AlertSettings
 from app.core.auth.config import AuthSettings
 from app.core.config import (
+    _ExtensionsDatabaseSettings,
     _sanitize_client_kwargs,
-    _SEPDatabaseSettings,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
@@ -60,12 +60,12 @@ from app.core.settings_override.registry import (
     field_reload_classification,
     ReloadClassification,
 )
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.apps.atw.config import AtwSettings
+from app.extensions.apps.report.config import HealthReportSettings
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.atw.config import AtwSettings
-from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 
@@ -464,7 +464,7 @@ class TestDeriveInternalToken:
     @staticmethod
     def _expected_token(secret_key: str) -> str:
         return hmac.new(
-            secret_key.encode(), b"sep-internal-token", hashlib.sha256
+            secret_key.encode(), b"extensions-internal-token", hashlib.sha256
         ).hexdigest()
 
     def test_explicit_token_takes_precedence(self):
@@ -665,8 +665,8 @@ SECRET_FILE_MATRIX = [
     pytest.param(
         ExtensionsSettings,
         "EXTENSIONS__DATABASE__PASSWORD",
-        "matrix-sep-pw",
-        "matrix-sep-pw",
+        "matrix-extensions-pw",
+        "matrix-extensions-pw",
         lambda s: s.DATABASE.PASSWORD.get_secret_value(),
         id="ExtensionsSettings",
     ),
@@ -770,7 +770,7 @@ def test_aliased_field_resolves_from_secret_file(tmp_path, aliased_settings_clas
     assert instance.APPS == ["alerts"]
 
 
-def test_sep_settings_reads_aliased_secret_file(tmp_path):
+def test_extensions_settings_reads_aliased_secret_file(tmp_path):
     """Resolve ``EXTENSIONS__APPS`` from a file through the production override of the hook."""
     (tmp_path / "EXTENSIONS__APPS").write_text(
         '[{"module_name": "tasks", "uri_path": "/tasks"}]', encoding="utf-8"
@@ -778,7 +778,7 @@ def test_sep_settings_reads_aliased_secret_file(tmp_path):
 
     instance = ExtensionsSettings(_secrets_dir=tmp_path)
 
-    assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
+    assert [app.module_name for app in instance.APPS] == ["app.extensions.apps.tasks"]
 
 
 def test_file_backed_legacy_plugins_key_does_not_warn(tmp_path):
@@ -796,7 +796,7 @@ def test_file_backed_legacy_plugins_key_does_not_warn(tmp_path):
         warnings.simplefilter("always")
         instance = ExtensionsSettings(_secrets_dir=tmp_path)
 
-    assert [app.module_name for app in instance.APPS] == ["app.sep.apps.tasks"]
+    assert [app.module_name for app in instance.APPS] == ["app.extensions.apps.tasks"]
     assert not [w for w in caught if "PLUGINS" in str(w.message)]
 
 
@@ -994,7 +994,9 @@ def test_unprefixed_file_resolves_for_prefixed_class(tmp_path):
 
 def test_foreign_prefix_file_does_not_resolve(tmp_path):
     """Leave a class untouched by a secret file spelled with another class's prefix."""
-    (tmp_path / "EXTENSIONS__DATABASE__PASSWORD").write_text("sep-pw", encoding="utf-8")
+    (tmp_path / "EXTENSIONS__DATABASE__PASSWORD").write_text(
+        "extensions-pw", encoding="utf-8"
+    )
 
     instance = InventorySettings(_secrets_dir=tmp_path)
 
@@ -1191,7 +1193,9 @@ EXTENSIONS_POSTGRES_PROFILE_BLOCK = """\
 """
 """The embedded profile's Extensions service database block, which the beat store derives from."""
 
-EXTENSIONS_SQLITE_PROFILE_BLOCK = "  EXTENSIONS:\n    DATABASE:\n      NAME: sep.db\n"
+EXTENSIONS_SQLITE_PROFILE_BLOCK = (
+    "  EXTENSIONS:\n    DATABASE:\n      NAME: extensions.db\n"
+)
 """A SQLite Extensions service database block, whose derived store nulls ``beat_schema``."""
 
 DERIVED_BEAT_DBURI = (
@@ -1233,11 +1237,11 @@ def _mounted_secrets(tmp_path, **files):
 
 
 class TestDerivedBeatStoreDefault:
-    """Cover the beat-store URI ``Settings`` derives from the SEP database."""
+    """Cover the beat-store URI ``Settings`` derives from the PMM Extensions database."""
 
     @pytest.fixture
     def _postgres_profile(self, tmp_path, monkeypatch):
-        """Install the PostgreSQL SEP profile the derivation cases start from.
+        """Install the PostgreSQL PMM Extensions profile the derivation cases start from.
 
         The cases that vary the profile call ``_use_profile`` themselves, which
         overwrites this one, so requesting the fixture is what marks a case as
@@ -1250,8 +1254,8 @@ class TestDerivedBeatStoreDefault:
         )
 
     @pytest.mark.usefixtures("_postgres_profile")
-    def test_derives_the_store_from_the_sep_database(self):
-        """Resolve the beat store from the SEP database when nothing configures it."""
+    def test_derives_the_store_from_the_extensions_database(self):
+        """Resolve the beat store from the PMM Extensions database when nothing configures it."""
         assert Settings().CELERY.beat_dburi == DERIVED_BEAT_DBURI
 
     @pytest.mark.usefixtures("_postgres_profile")
@@ -1372,13 +1376,13 @@ class TestDerivedBeatStoreDefault:
         """Propagate ``_env_file=None`` to the probe, which then reads no dotenv."""
         assert Settings(_env_file=None).CELERY.beat_dburi == DERIVED_BEAT_DBURI
 
-    def test_an_unconfigured_sep_database_falls_back_to_the_field_default(
+    def test_an_unconfigured_extensions_database_falls_back_to_the_field_default(
         self, tmp_path, monkeypatch
     ):
-        """Resolve the probe's own default when the profile configures no SEP database."""
+        """Resolve the probe's own default when the profile configures no PMM Extensions database."""
         _use_profile(tmp_path, monkeypatch, CELERY_PROFILE_BLOCK)
 
-        assert Settings().CELERY.beat_dburi == "sqlite:///sep.db"
+        assert Settings().CELERY.beat_dburi == "sqlite:///extensions.db"
 
     def test_a_sqlite_store_still_nulls_the_beat_schema(self, tmp_path, monkeypatch):
         """Clear ``beat_schema`` for a SQLite-derived store, as the validator does.
@@ -1396,24 +1400,28 @@ class TestDerivedBeatStoreDefault:
 
         resolved = Settings().CELERY
 
-        assert resolved.beat_dburi == "sqlite:///sep.db"
+        assert resolved.beat_dburi == "sqlite:///extensions.db"
         assert resolved.beat_schema is None
 
     @pytest.mark.usefixtures("_postgres_profile")
-    def test_an_invalid_sep_database_fails_settings_construction(self, monkeypatch):
-        """Reject an unusable SEP database rather than derive a malformed store URI."""
+    def test_an_invalid_extensions_database_fails_settings_construction(
+        self, monkeypatch
+    ):
+        """Reject an unusable PMM Extensions database rather than derive a malformed store URI."""
         monkeypatch.setenv("EXTENSIONS__DATABASE__PORT", "notanumber")
 
         with pytest.raises(ValidationError, match="DATABASE.PORT"):
             Settings()
 
     @pytest.mark.usefixtures("_postgres_profile")
-    def test_a_configured_store_is_not_held_to_the_sep_database(self, monkeypatch):
-        """Accept an unusable SEP database when the store is configured outright.
+    def test_a_configured_store_is_not_held_to_the_extensions_database(
+        self, monkeypatch
+    ):
+        """Accept an unusable PMM Extensions database when the store is configured outright.
 
         ``InventorySettings`` and ``TasksSettings`` both resolve the global proxy
         through their ``BACKEND_CORS_ORIGINS`` default, so probing unconditionally
-        would fail an Inventory-only or Tasks-only start-up over a SEP-namespaced
+        would fail an Inventory-only or Tasks-only start-up over a PMM Extensions namespaced
         value nothing in that process reads.
         """
         monkeypatch.setenv("EXTENSIONS__DATABASE__PORT", "notanumber")
@@ -1426,14 +1434,14 @@ class TestDerivedBeatStoreDefault:
             == "postgresql+psycopg2://elsewhere@host:5432/beat"
         )
 
-    def test_the_probe_default_matches_the_sep_settings_field(self):
+    def test_the_probe_default_matches_the_extensions_settings_field(self):
         """Pin the probe's database default to ``ExtensionsSettings``', which it cannot import.
 
-        ``app/sep/config.py`` imports ``app/core/config.py``, so the probe duplicates
+        ``app/extensions/config.py`` imports ``app/core/config.py``, so the probe duplicates
         the default rather than reading it; this fails if the two drift apart.
         """
         assert (
-            _SEPDatabaseSettings.model_fields["DATABASE"].default
+            _ExtensionsDatabaseSettings.model_fields["DATABASE"].default
             == ExtensionsSettings.model_fields["DATABASE"].default
         )
 

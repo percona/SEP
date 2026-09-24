@@ -28,7 +28,7 @@ __pycache__/
 data/nomad.hcl
 data/casdoor_init_data.json
 data/atw-bundles/
-static/sep-db.sql.txt
+static/extensions-db.sql.txt
 
 # Misc
 .git/

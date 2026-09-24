@@ -23,6 +23,13 @@ from sqlalchemy import create_engine
 # The head immediately before payload references are relativized.
 _PRE_RELATIVIZE_REVISION = "d25887ee3fea"
 
+PRE_RENAME_PACKAGE = "app/sep"
+"""The package path stored rows carried before ``f0ee5b600303``. A frozen literal.
+
+Rows are seeded as that revision's predecessors found them, and every assertion
+reads them after ``heads``, where they carry the current package path.
+"""
+
 _INSERT_TASK = (
     "INSERT INTO task "
     "(created_at, updated_at, name, data, backend, owner, "
@@ -64,7 +71,7 @@ def test_heals_all_three_mysql_backup_types(tasks_alembic_config):
                     conn,
                     f"{backup_type}-task",
                     _proxy(
-                        "file:///srv/deploy/app/sep/plugins/backup/"
+                        f"file:///srv/deploy/{PRE_RENAME_PACKAGE}/plugins/backup/"
                         f"{backup_type}_payload"
                     ),
                 )
@@ -78,14 +85,14 @@ def test_heals_all_three_mysql_backup_types(tasks_alembic_config):
         with engine.begin() as conn:
             for backup_type in ("binlog", "xtrabackup", "mydumper"):
                 assert _payload_of(conn, f"{backup_type}-task") == (
-                    f"file://app/sep/plugins/mysql_backups/{backup_type}_payload"
+                    f"file://app/extensions/plugins/mysql_backups/{backup_type}_payload"
                 )
     finally:
         engine.dispose()
 
 
 def test_heals_doubled_app_prefix(tasks_alembic_config):
-    """Assert a doubled ``.../app/app/sep/...`` prefix slices from the last package segment."""
+    """Assert a doubled ``.../app/<package>/...`` prefix slices from the last package segment."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _PRE_RELATIVIZE_REVISION)
 
@@ -95,7 +102,9 @@ def test_heals_doubled_app_prefix(tasks_alembic_config):
             _seed(
                 conn,
                 "doubled-task",
-                _proxy("file:///opt/app/app/sep/plugins/backup/binlog_payload"),
+                _proxy(
+                    f"file:///opt/app/{PRE_RENAME_PACKAGE}/plugins/backup/binlog_payload"
+                ),
             )
     finally:
         engine.dispose()
@@ -106,7 +115,7 @@ def test_heals_doubled_app_prefix(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             assert _payload_of(conn, "doubled-task") == (
-                "file://app/sep/plugins/mysql_backups/binlog_payload"
+                "file://app/extensions/plugins/mysql_backups/binlog_payload"
             )
     finally:
         engine.dispose()
@@ -123,7 +132,7 @@ def test_heals_apps_backup_form(tasks_alembic_config):
             _seed(
                 conn,
                 "apps-task",
-                _proxy("file:///srv/app/sep/apps/backup/binlog_payload"),
+                _proxy(f"file:///srv/{PRE_RENAME_PACKAGE}/apps/backup/binlog_payload"),
             )
     finally:
         engine.dispose()
@@ -134,14 +143,14 @@ def test_heals_apps_backup_form(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             assert _payload_of(conn, "apps-task") == (
-                "file://app/sep/apps/mysql_backups/binlog_payload"
+                "file://app/extensions/apps/mysql_backups/binlog_payload"
             )
     finally:
         engine.dispose()
 
 
-def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
-    """Assert a deploy prefix that itself contains ``app/sep/`` slices from the last segment."""
+def test_heals_prefix_containing_app_extensions_substring(tasks_alembic_config):
+    """Assert a deploy prefix that itself contains the package path slices from the last segment."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _PRE_RELATIVIZE_REVISION)
 
@@ -152,7 +161,8 @@ def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
                 conn,
                 "myapp-task",
                 _proxy(
-                    "file:///srv/myapp/sep/releases/v1/app/sep/plugins/backup/binlog_payload"
+                    f"file:///srv/my{PRE_RENAME_PACKAGE}/releases/v1/"
+                    f"{PRE_RENAME_PACKAGE}/plugins/backup/binlog_payload"
                 ),
             )
     finally:
@@ -164,7 +174,7 @@ def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             assert _payload_of(conn, "myapp-task") == (
-                "file://app/sep/plugins/mysql_backups/binlog_payload"
+                "file://app/extensions/plugins/mysql_backups/binlog_payload"
             )
     finally:
         engine.dispose()
@@ -181,7 +191,9 @@ def test_relativizes_non_backup_plugin_without_renaming(tasks_alembic_config):
             _seed(
                 conn,
                 "pg-task",
-                _proxy("file:///srv/deploy/app/sep/plugins/backup_pg/pg_payload"),
+                _proxy(
+                    f"file:///srv/deploy/{PRE_RENAME_PACKAGE}/plugins/backup_pg/pg_payload"
+                ),
             )
     finally:
         engine.dispose()
@@ -192,7 +204,7 @@ def test_relativizes_non_backup_plugin_without_renaming(tasks_alembic_config):
     try:
         with engine.begin() as conn:
             assert _payload_of(conn, "pg-task") == (
-                "file://app/sep/plugins/backup_pg/pg_payload"
+                "file://app/extensions/plugins/backup_pg/pg_payload"
             )
     finally:
         engine.dispose()
@@ -228,7 +240,7 @@ def test_is_idempotent(tasks_alembic_config):
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _PRE_RELATIVIZE_REVISION)
 
-    healed = "file://app/sep/plugins/mysql_backups/binlog_payload"
+    healed = "file://app/extensions/plugins/mysql_backups/binlog_payload"
     engine = create_engine(sync_url)
     try:
         with engine.begin() as conn:

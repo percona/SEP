@@ -238,7 +238,7 @@ class TestResolveProbeHost:
             ("::1", "::1"),
             ("10.1.2.3", "10.1.2.3"),
             ("localhost", "localhost"),
-            ("sep.internal", "sep.internal"),
+            ("extensions.internal", "extensions.internal"),
             ("0.0.0.0.0", "0.0.0.0.0"),
         ],
         ids=[
@@ -280,7 +280,7 @@ class TestResolveProbeHostHeader:
 
     def test_listed_connect_host_is_preferred(self) -> None:
         """Send the dialled host when the allow-list already names it."""
-        allowed = ["sep.example.com", "127.0.0.1"]
+        allowed = ["extensions.example.com", "127.0.0.1"]
 
         assert _resolve_probe_host_header("127.0.0.1", allowed) == "127.0.0.1"
 
@@ -291,15 +291,19 @@ class TestResolveProbeHostHeader:
         ``Host: 127.0.0.1`` probe would be answered ``400`` for the whole
         deadline and the gate would never open.
         """
-        allowed = ["sep.example.com", "sep-alt.example.com"]
+        allowed = ["extensions.example.com", "extensions-alt.example.com"]
 
-        assert _resolve_probe_host_header("127.0.0.1", allowed) == "sep.example.com"
+        assert (
+            _resolve_probe_host_header("127.0.0.1", allowed) == "extensions.example.com"
+        )
 
     def test_exact_pattern_wins_over_a_wildcard_pattern(self) -> None:
         """Prefer an exact hostname over a pattern that cannot be sent verbatim."""
-        allowed = ["*.example.com", "sep.example.com"]
+        allowed = ["*.example.com", "extensions.example.com"]
 
-        assert _resolve_probe_host_header("127.0.0.1", allowed) == "sep.example.com"
+        assert (
+            _resolve_probe_host_header("127.0.0.1", allowed) == "extensions.example.com"
+        )
 
     def test_wildcard_only_allow_list_synthesizes_a_matching_hostname(self) -> None:
         """Build a hostname from the wildcard when there is none to borrow.
@@ -317,18 +321,18 @@ class TestResolveProbeHostHeader:
 
     def test_blank_entries_are_ignored(self) -> None:
         """Skip empty allow-list entries rather than sending an empty ``Host``."""
-        assert _resolve_probe_host_header("127.0.0.1", ["", "sep.example.com"]) == (
-            "sep.example.com"
-        )
+        assert _resolve_probe_host_header(
+            "127.0.0.1", ["", "extensions.example.com"]
+        ) == ("extensions.example.com")
 
     @pytest.mark.parametrize(
         ("connect_host", "allowed_hosts", "expected_status"),
         [
             ("127.0.0.1", ["*"], status.HTTP_200_OK),
             ("127.0.0.1", ["127.0.0.1"], status.HTTP_200_OK),
-            ("127.0.0.1", ["sep.example.com"], status.HTTP_200_OK),
-            ("127.0.0.1", ["", "sep.example.com"], status.HTTP_200_OK),
-            ("127.0.0.1", ["localhost", "sep.example.com"], status.HTTP_200_OK),
+            ("127.0.0.1", ["extensions.example.com"], status.HTTP_200_OK),
+            ("127.0.0.1", ["", "extensions.example.com"], status.HTTP_200_OK),
+            ("127.0.0.1", ["localhost", "extensions.example.com"], status.HTTP_200_OK),
             ("127.0.0.1", ["*.example.com"], status.HTTP_200_OK),
             ("127.0.0.1", ["*.a.example.com", "*.b.example.com"], status.HTTP_200_OK),
             ("::1", ["::1"], status.HTTP_400_BAD_REQUEST),
@@ -412,7 +416,7 @@ class TestWaitForApiReady:
         """Keep polling on any non-200 and open the gate only on a 200.
 
         A 503 means the listener is up but its database is not, which is exactly
-        the state a periodic task calling SEP's own API cannot use; a 400 means
+        the state a periodic task calling PMM Extensions' own API cannot use; a 400 means
         the host header was rejected; a 3xx means something other than the health
         route answered. None of them is readiness.
         """
@@ -535,7 +539,10 @@ class TestWaitForApiReady:
         factory = _patch_connection(mocker, [status.HTTP_200_OK])
 
         wait_for_api_ready(
-            "0.0.0.0", port, allowed_hosts=["sep.example.com"], request_timeout=1.0
+            "0.0.0.0",
+            port,
+            allowed_hosts=["extensions.example.com"],
+            request_timeout=1.0,
         )
 
         args, _ = factory.constructor_calls[0]
@@ -545,7 +552,7 @@ class TestWaitForApiReady:
             entry[1:] for entry in factory.journal if entry[0] == "request"
         )
         assert (method, path) == ("GET", HEALTH_PATH)
-        assert headers["Host"] == "sep.example.com"
+        assert headers["Host"] == "extensions.example.com"
 
     def test_sends_no_headers_beyond_host_and_connection(
         self, mocker: MockerFixture, no_sleep: MagicMock
@@ -594,7 +601,7 @@ class TestWaitForApiReady:
             wait_for_api_ready(
                 "127.0.0.1",
                 8000,
-                allowed_hosts=["sep.example.com\r\nX-Evil: 1"],
+                allowed_hosts=["extensions.example.com\r\nX-Evil: 1"],
                 timeout=0.0,
             )
             is False
@@ -702,26 +709,26 @@ class TestWaitForApiReadyAgainstARealSocket:
         Proves the borrowed host header works against a real server, so the gate
         opens on a deployment whose ``ALLOWED_HOSTS`` excludes loopback.
         """
-        health_probe_server.required_host = "sep.example.com"
+        health_probe_server.required_host = "extensions.example.com"
         health_probe_server.start()
 
         ready = wait_for_api_ready(
             "0.0.0.0",
             health_probe_server.port,
-            allowed_hosts=["sep.example.com"],
+            allowed_hosts=["extensions.example.com"],
             timeout=10.0,
             interval=0.05,
         )
 
         assert ready is True
         _, headers = health_probe_server.requests[0]
-        assert headers["Host"].split(":")[0] == "sep.example.com"
+        assert headers["Host"].split(":")[0] == "extensions.example.com"
 
     def test_a_wrong_host_header_never_opens_the_gate(
         self, health_probe_server: HealthProbeServer
     ) -> None:
         """Treat the 400 a host rejection produces as not ready, timing out instead."""
-        health_probe_server.required_host = "sep.example.com"
+        health_probe_server.required_host = "extensions.example.com"
         health_probe_server.start()
 
         ready = wait_for_api_ready(

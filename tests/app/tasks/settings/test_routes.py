@@ -514,7 +514,7 @@ class TestTasksSettingsNestedOverrides:
         Only the ``SECURITY_HEADERS`` parent is marked advanced; the
         real LIST projection must propagate the flag to every leaf — including the
         two-level HSTS ``max_age`` leaf — while a basic Tasks sibling stays False.
-        This exercises the live ``TasksSettings`` projection, not the SEP proxy's
+        This exercises the live ``TasksSettings`` projection, not the PMM Extensions proxy's
         mocked upstream payload.
         """
         settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
@@ -810,7 +810,7 @@ class TestTasksSettingsCredentialUrlWriteback:
 class TestTasksSettingsCredentialUrlAtRest:
     """Verify the Tasks write path encrypts ``NOMAD__endpoint``'s embedded password.
 
-    The Tasks service has its own settings router, so SEP-side coverage proves
+    The Tasks service has its own settings router, so PMM Extensions side coverage proves
     nothing about this wiring. ``NomadExecutor.endpoint`` is also the inherited
     non-``Optional`` case whose ``Annotated`` Pydantic hoists onto ``FieldInfo``
     and which the route coerces to a :class:`pydantic_core.Url` — the two

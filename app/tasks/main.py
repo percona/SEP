@@ -106,7 +106,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         settings_override_refresher(
             get_async_session_maker,
             # ALERT_SETTINGS is intentionally NOT wired here: ``alert_settings``
-            # is a single shared proxy owned by the SEP refresher. Wiring it here
+            # is a single shared proxy owned by the PMM Extensions refresher. Wiring it here
             # too would, in the combined ``app.main:app`` process, have both
             # refreshers publish into it from their separate databases and clobber
             # each other every cycle.

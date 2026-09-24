@@ -531,7 +531,7 @@ class TestArtifactLauncher:
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir()
         self._payload(task_dir)
-        (alloc_dir / "sep_interpreter").write_text("sh")
+        (alloc_dir / "pmm_extensions_interpreter").write_text("sh")
 
         result = self._run(
             self._launcher(NOMAD_EXEC_ARTIFACT),
@@ -574,7 +574,7 @@ class TestArtifactLauncher:
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir()
         self._payload(task_dir)
-        (alloc_dir / "sep_interpreter").write_text("")
+        (alloc_dir / "pmm_extensions_interpreter").write_text("")
 
         result = self._run(
             self._launcher(NOMAD_EXEC_ARTIFACT),
@@ -607,7 +607,7 @@ class TestArtifactLauncher:
         venv_python = alloc_dir / "venv" / "bin" / "python3"
         venv_python.write_text('#!/bin/sh\necho "python:$*"\n')
         venv_python.chmod(0o755)
-        (alloc_dir / "sep_interpreter").write_text(effective)
+        (alloc_dir / "pmm_extensions_interpreter").write_text(effective)
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
         sudo_stub = bin_dir / "sudo"
@@ -720,7 +720,7 @@ class TestLaunchCheckTemplateShape:
         """Assert the abort-only check leaves no handoff file behind.
 
         ``run-command``'s launcher reads its meta directly, so a file written
-        here would never be read — and its meta carries no SEP-applied ``sudo``
+        here would never be read — and its meta carries no PMM Extensions applied ``sudo``
         prefix to strip in the first place.
         """
         script = self._check_script(NOMAD_RUN_COMMAND)
@@ -793,7 +793,7 @@ class TestLaunchCheckShell:
         meta_key = kwargs["meta_key"]
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir(exist_ok=True)
-        handoff = alloc_dir / "sep_interpreter"
+        handoff = alloc_dir / "pmm_extensions_interpreter"
         script = _build_check(**kwargs).replace(
             EFFECTIVE_INTERPRETER_PATH, str(handoff)
         )
@@ -945,7 +945,7 @@ class TestLaunchCheckShell:
             custom.chmod(0o755)
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir(exist_ok=True)
-        handoff = alloc_dir / "sep_interpreter"
+        handoff = alloc_dir / "pmm_extensions_interpreter"
         script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
             EFFECTIVE_INTERPRETER_PATH, str(handoff)
         )
@@ -1025,7 +1025,7 @@ class TestLaunchCheckShell:
         (tmp_path / relative).chmod(0o755)
         alloc_dir = tmp_path / "alloc"
         alloc_dir.mkdir(exist_ok=True)
-        handoff = alloc_dir / "sep_interpreter"
+        handoff = alloc_dir / "pmm_extensions_interpreter"
         script = _build_check(**LAUNCH_CHECK_VARIANTS["artifact"]).replace(
             EFFECTIVE_INTERPRETER_PATH, str(handoff)
         )
@@ -1416,14 +1416,14 @@ class TestInventoryCollectionTask:
     def test_the_task_row_is_always_seeded(self) -> None:
         """Seed the collection ``Task`` row regardless of the schedule.
 
-        The interval decides whether a *schedule* fires, and it lives on the SEP
+        The interval decides whether a *schedule* fires, and it lives on the PMM Extensions
         side; the task itself must exist either way so an operator can attach a
         schedule from the UI.
         """
         task = next(t for t in SYSTEM_TASKS if t.name == INVENTORY_COLLECTION_TASK_NAME)
 
         assert task.data["callable"] == (
-            "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
+            "app.extensions.apps.inventory.collection.run_scheduled_inventory_collection"
         )
         assert task.protected is True
 

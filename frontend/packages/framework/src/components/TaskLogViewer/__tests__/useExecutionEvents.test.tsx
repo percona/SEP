@@ -28,7 +28,7 @@ import { flushPromises, mockStreamFetch } from '../../../../tests/eventSourceStu
 let _tokenProvider: () => string | null = () => null;
 const mockApiGet = vi.fn<(url: string, config: object) => Promise<{ data: unknown[] }>>();
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   setTokenProvider: (p: () => string | null) => {
     _tokenProvider = p;
   },
@@ -152,7 +152,7 @@ describe('useExecutionEvents', () => {
       await waitFor(() => expect(result.current.isLoading).toBe(false));
     });
 
-    it('handles sep-error by setting error and stopping the stream', async () => {
+    it('handles extensions-error by setting error and stopping the stream', async () => {
       const wrapper = makeWrapper(createClient());
       const { result } = renderHook(() => useExecutionEvents(1, true), { wrapper });
       await flushPromises();
@@ -160,7 +160,7 @@ describe('useExecutionEvents', () => {
       const handle = mock.pending[0];
 
       act(() => {
-        handle.pushNamed('sep-error', { code: 500, detail: 'boom' });
+        handle.pushNamed('extensions-error', { code: 500, detail: 'boom' });
       });
 
       await waitFor(() => expect(result.current.error).toBeDefined());

@@ -27,7 +27,7 @@ import {
   type ConnectivityCheckRequest,
   type ConnectivityResult,
   type ConnectivityStatus,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 /** Probe every external / inter-service endpoint on each click. */
 const ALL_TARGETS: ConnectivityCheckRequest['targets'] = [

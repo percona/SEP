@@ -16,7 +16,7 @@
 """Resolve plugin-specific failure-alert enrichment via a per-task hook.
 
 The tasks service owns the generic failure-alert path but must stay free of any
-static ``app.sep`` import: plugin domain knowledge (e.g. the archiver
+static ``app.extensions`` import: plugin domain knowledge (e.g. the archiver
 ``PURGE_LIST`` schema) lives in the plugin package, not here. Rather than the
 core enumerating plugins by owner, each task *carries* its enrichment builder:
 the owning plugin stamps a ``"module:function"`` string onto
@@ -30,7 +30,7 @@ plugin needs no edit here. This mirrors how the Celery executor resolves a task
 Resolving lazily from the task — rather than a core registry populated at import
 time — is what keeps this enumeration-free across the three processes that fire
 ``alert_for_status`` and share no plugin-bootstrap step: the Celery worker, the
-SEP app, and the tasks API. A core registry would only cover whichever process
+PMM Extensions app, and the tasks API. A core registry would only cover whichever process
 happened to import the plugin; a path carried on the task resolves identically
 in all three.
 """
