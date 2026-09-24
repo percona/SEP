@@ -20,12 +20,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
 
-import { ApiError, apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@pmm-extensions/api';
 import { useHosts } from './useHosts';
 
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };

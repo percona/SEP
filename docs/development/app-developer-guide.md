@@ -1,6 +1,6 @@
-# SEP App Developer Guide
+# PMM Extensions App Developer Guide
 
-SEP apps are the tools in the SEP sidebar — Checksums, MySQL Backups, Snippets,
+PMM Extensions apps are the tools in the PMM Extensions sidebar — Checksums, MySQL Backups, Snippets,
 and the rest. Each one presents a form, turns a submitted form into a task that
 runs against your inventory, and shows the results. This guide takes you from
 zero to a working app of your own, assuming no prior knowledge of the app
@@ -16,9 +16,9 @@ Before you start you need a running development setup — see
 > flavor to use — is the decision [§2 Snippet or framework app?](#2-snippet-or-framework-app)
 > teaches.
 
-The code examples are lifted from real, CI-exercised code in the SEP tree; each
+The code examples are lifted from real, CI-exercised code in the PMM Extensions tree; each
 carries an HTML comment naming its source file and symbol (e.g.
-`<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can
+`<!-- src: app/extensions/apps/checksums/models.py :: ChecksumsForm -->`) so you can
 diff it against the source as the framework evolves. Long docstrings are
 shortened to their summary line, and larger trims are noted inline. Examples
 labelled `constructed` illustrate features no current app uses.
@@ -31,9 +31,9 @@ A few terms this guide uses throughout:
 
 | Term | Meaning |
 |---|---|
-| **App** | One tool in the SEP sidebar: a form, the tasks it creates, and their list/detail pages. One package under `app/sep/apps/`. |
+| **App** | One tool in the PMM Extensions sidebar: a form, the tasks it creates, and their list/detail pages. One package under `app/extensions/apps/`. |
 | **Task** | One run of an app's job — created from the form, executed against a host or service, with stored status and output. |
-| **Inventory** | SEP's registry of services, schemas, tables, and hosts. Form fields can offer dropdowns resolved from it. |
+| **Inventory** | PMM Extensions' registry of services, schemas, tables, and hosts. Form fields can offer dropdowns resolved from it. |
 | **Form model** | The Python class declaring the app's form fields (the `create_model` knob) — both the validation of what users submit and the source of the rendered form. |
 | **Form schema** | The JSON description of the form that the UI renders, served at `GET /schema`. Not a database schema. |
 | **Knob** | A constructor argument on the app object (`create_model=...`, `capabilities=...`). You set knobs; the framework does the rest. |
@@ -91,7 +91,7 @@ A few terms this guide uses throughout:
 
 ### You describe the app; the framework builds it
 
-Open the Checksums app in SEP: it has a create form, a list of runs, and a
+Open the Checksums app in PMM Extensions: it has a create form, a list of runs, and a
 detail page per run. None of that is hand-written. The framework *derives* the
 entire HTTP surface — schema, list, detail, create, update, execute, delete —
 from a single `TaskExecutionApp` object whose constructor arguments ("knobs")
@@ -105,11 +105,11 @@ out of the framework entirely.
 
 ### `BaseApp` vs `TaskExecutionApp`
 
-- **`BaseApp`** (`app/sep/apps/framework/base.py`) is the minimal registry entry:
+- **`BaseApp`** (`app/extensions/apps/framework/base.py`) is the minimal registry entry:
   identity, navigation metadata, and an optional API router. Reach for it
   directly only when your app is *not* a task-execution app (the bottom rung of the
   ladder).
-- **`TaskExecutionApp`** (`app/sep/apps/framework/apps.py`) is the declarative spine
+- **`TaskExecutionApp`** (`app/extensions/apps/framework/apps.py`) is the declarative spine
   for the common case: an app that creates, lists, and runs **tasks**. It subclasses
   `BaseApp` and adds the create-model, views, capabilities, and spec-builder knobs
   from which the task router is derived. Almost every app you write is a
@@ -118,7 +118,7 @@ out of the framework entirely.
 A minimal task app is one object. Here is the core of the Checksums app
 definition (trimmed to the knobs this guide covers):
 
-<!-- src: app/sep/apps/checksums/app.py :: app -->
+<!-- src: app/extensions/apps/checksums/app.py :: app -->
 ```python
 app = TaskExecutionApp(
     name="checksums",
@@ -159,14 +159,14 @@ filtering.
 ### How the registry discovers and activates apps
 
 Apps are **not** wired by hand into a router file. Activation is data, in
-`settings.yaml`: one `MODULE_NAME` entry per app under `SEP.APPS`. `ENABLED`
+`settings.yaml`: one `MODULE_NAME` entry per app under `EXTENSIONS.APPS`. `ENABLED`
 defaults to `true` and is normally omitted; an app opts out of shipping enabled
 by setting it to `false`, as `topology` does:
 
 <!-- src: settings.yaml -->
 ```yaml
 default:
-  SEP:
+  EXTENSIONS:
     APPS:
       - MODULE_NAME: checksums
       ...
@@ -174,22 +174,22 @@ default:
         ENABLED: false
 ```
 
-At startup, `build_app_registry` walks the `SEP.APPS` list in order, imports each
+At startup, `build_app_registry` walks the `EXTENSIONS.APPS` list in order, imports each
 module, and uses its exported `app` object (a `BaseApp` / `TaskExecutionApp`):
 
-<!-- src: app/sep/apps/framework/registry.py :: get_app_registry -->
+<!-- src: app/extensions/apps/framework/registry.py :: get_app_registry -->
 ```python
 @lru_cache(maxsize=1)
 def get_app_registry() -> AppRegistry:
-    """Return the process-wide registry built over ``sep_settings.APPS``."""
-    return build_app_registry(sep_settings.APPS)
+    """Return the process-wide registry built over ``extensions_settings.APPS``."""
+    return build_app_registry(extensions_settings.APPS)
 ```
 
 The registry is a lazy `@lru_cache` accessor, built once per process from
-`sep_settings.APPS`. `build_apps_router` (`app/sep/api/router.py`) then iterates
+`extensions_settings.APPS`. `build_apps_router` (`app/extensions/api/router.py`) then iterates
 that registry and mounts each app's derived router under `/api/apps/{key}`:
 
-<!-- src: app/sep/api/router.py :: build_apps_router -->
+<!-- src: app/extensions/api/router.py :: build_apps_router -->
 ```python
     for app in registry:
         if app.api_router is None:
@@ -233,7 +233,7 @@ hook), copy only that **named construct** — never a whole module.
 
 ## 2. Snippet or framework app?
 
-Before you scaffold, decide **what kind** of thing you are writing. SEP has two
+Before you scaffold, decide **what kind** of thing you are writing. PMM Extensions has two
 ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
 
 ### The routing rule
@@ -302,7 +302,7 @@ Recognised variables:
 
 | Variable | Meaning |
 |---|---|
-| `NAME` | The app's module name under `app/sep/apps/`. No default — always required. |
+| `NAME` | The app's module name under `app/extensions/apps/`. No default — always required. |
 | `TYPE` | Scaffolder flavor: `task` / `script` / `base` ([§2](#mapping-the-three-scaffolder-flavors)). Defaults to `task`. |
 | `DISPLAY_NAME` | The name shown in the sidebar and page headings. |
 | `DESCRIPTION` | One-line blurb for the app's landing card and `description` knob. |
@@ -339,13 +339,13 @@ For **`task`** (`RUN_MODE=run-command` shown; with `RUN_MODE=run-python` the
 generated `spec.py` contains the run-python variant instead):
 
 ```text
-app/sep/apps/myapp/
+app/extensions/apps/myapp/
   __init__.py
   app.py          # the TaskExecutionApp definition
   models.py       # the create-form model (marker DSL)
   spec.py         # the run-command spec builder
   views.py        # section layout, list/detail views, capability flags
-tests/app/sep/apps/myapp/
+tests/app/extensions/apps/myapp/
   __init__.py
   test_contract.py   # subclasses DerivedRouterContractTests
 ```
@@ -360,12 +360,12 @@ For **`base`**: `api_routes.py`, `app.py`, `__init__.py`, `schema.py`, plus
 ### What the scaffolder writes automatically
 
 The scaffolder registers the app in `settings.yaml` — and **only** `settings.yaml`.
-It inserts a `SEP.APPS` entry, **disabled** unless you pass `ENABLE`:
+It inserts a `EXTENSIONS.APPS` entry, **disabled** unless you pass `ENABLE`:
 
 ```text
 Scaffolded 'task' app 'myapp':
-  app:   <repo-root>/app/sep/apps/myapp
-  tests: <repo-root>/tests/app/sep/apps/myapp
+  app:   <repo-root>/app/extensions/apps/myapp
+  tests: <repo-root>/tests/app/extensions/apps/myapp
 
 Registered 'myapp' DISABLED in settings.yaml. Manage it from the Apps page in
 the sidebar (/admin/apps) once you have filled in the skeleton.
@@ -443,7 +443,7 @@ Run the generated contract test — it exercises the whole derived HTTP surface
 against your definition:
 
 ```bash
-pytest tests/app/sep/apps/myapp/test_contract.py -v
+pytest tests/app/extensions/apps/myapp/test_contract.py -v
 ```
 
 Expect a green run with a substantial number of **skips** — that is normal, not
@@ -451,7 +451,7 @@ a misconfiguration. The suite is capability-gated: every case whose knob your
 app does not switch on (an undeclared list filter, a disabled capability, a
 form with no `HostRef`) skips with a reason rather than failing.
 
-Then run SEP locally — see
+Then run PMM Extensions locally — see
 [Setting Up Your Development Environment](../../CONTRIBUTING.md#setting-up-your-development-environment)
 for the commands — and open the app from the sidebar. Remember it is registered
 **disabled**, so enable it on the Apps page (`/admin/apps`) first. The form you
@@ -477,8 +477,8 @@ you attach to a field) and *rules* (things you build predicates out of):
 
 | Import from | Names |
 |---|---|
-| `app/sep/apps/framework/form_dsl` | `AppFormModel`, `TaskFormModel`, `Ui`, `Hidden`, `ArgFormat`, `Choices`, `Option`, `RemoteChoices`, `FieldWidget`, the four reference markers, `FormLayout` / `SectionLayout`, the rule **containers** `FormRules` / `SectionRules`, **and the per-field gate markers `Requires` / `Forbidden`** |
-| `app/sep/apps/framework/rules.py` | `F`, the truthiness predicates, the combinators, and the rule envelopes `FailRule` / `FieldGate` / `CardinalityRule` |
+| `app/extensions/apps/framework/form_dsl` | `AppFormModel`, `TaskFormModel`, `Ui`, `Hidden`, `ArgFormat`, `Choices`, `Option`, `RemoteChoices`, `FieldWidget`, the four reference markers, `FormLayout` / `SectionLayout`, the rule **containers** `FormRules` / `SectionRules`, **and the per-field gate markers `Requires` / `Forbidden`** |
+| `app/extensions/apps/framework/rules.py` | `F`, the truthiness predicates, the combinators, and the rule envelopes `FailRule` / `FieldGate` / `CardinalityRule` |
 | `app/core/utils/fields.py` | The helper field types the examples below use: `NonEmptyStr`, `StrippedNonEmptyStr`, `EmptyStrToNone` |
 
 `Requires` / `Forbidden` are the trap: this guide introduces them alongside the
@@ -512,7 +512,7 @@ section at all — a `TaskFormModel` subclass's layout must include one.
 `Ui(...)` carries the per-field presentation the type cannot express — label,
 section, description, display order, dependency:
 
-<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->
+<!-- src: app/extensions/apps/checksums/models.py :: ChecksumsForm -->
 ```python
 service_id: Annotated[
     int,
@@ -544,7 +544,7 @@ they already do for `description`, `requires` and `forbidden`. Consumers must
 treat an absent key and a null value identically and branch on the value,
 never on key presence.
 
-<!-- src: app/sep/apps/archives/models.py :: ArchivesCreate -->
+<!-- src: app/extensions/apps/archives/models.py :: ArchivesCreate -->
 ```python
 delete_data: Annotated[
     bool | None,
@@ -602,7 +602,7 @@ field name — `ArgFormat("--explain")` for a flag on a field named
 
 The bool/flag case, from Checksums:
 
-<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->
+<!-- src: app/extensions/apps/checksums/models.py :: ChecksumsForm -->
 ```python
 explain_arg: Annotated[
     bool,
@@ -636,7 +636,7 @@ With both fields set, `build_command_args` yields
 `Choices` provides explicit options for a choice field, winning over any
 type-derived options. The common form is a tuple of `(value, label)` pairs:
 
-<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->
+<!-- src: app/extensions/apps/checksums/models.py :: ChecksumsForm -->
 ```python
 recursion_method: Annotated[
     str,
@@ -683,8 +683,8 @@ remains the app's `FormRules` responsibility (see the predicate DSL below).
 When the options cannot be listed statically at all, `RemoteChoices` marks a
 field whose options the form fetches live from an endpoint the app serves (with
 optional `depends_on` cascading). MySQL Restores uses it for `backup_source`
-(see `app/sep/apps/mysql_backups/restore/models.py`); the marker docstring in
-`app/sep/apps/framework/form_dsl/markers.py` covers the contract.
+(see `app/extensions/apps/mysql_backups/restore/models.py`); the marker docstring in
+`app/extensions/apps/framework/form_dsl/markers.py` covers the contract.
 
 ### `FieldWidget`
 
@@ -692,7 +692,7 @@ optional `depends_on` cascading). MySQL Restores uses it for `backup_source`
 (`TEXTAREA`, `YAML`, `CHOICE`, `MULTI_CHOICE`). For a multi-line value,
 `FieldWidget.TEXTAREA`:
 
-<!-- src: app/sep/apps/backup_mongo/models.py :: BackupForm -->
+<!-- src: app/extensions/apps/backup_mongo/models.py :: BackupForm -->
 ```python
 backup_priority: Annotated[
     str | None,
@@ -718,7 +718,7 @@ each optionally takes `allow_custom=True` to also accept a typed name — and
 they drive the connectivity and cascade wiring. The Alters app uses all four
 together:
 
-<!-- src: app/sep/apps/alters/models.py :: AltersCreate -->
+<!-- src: app/extensions/apps/alters/models.py :: AltersCreate -->
 ```python
 hostname: Annotated[
     NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
@@ -772,7 +772,7 @@ Checksums capitalises (`section="Recursion"` / `key="Recursion"`), Alters does
 not (`section="data"` / `key="data"`) — which is why the examples here and just
 above disagree. Pick one convention per app and hold it.
 
-<!-- src: app/sep/apps/checksums/views.py :: checksums_views -->
+<!-- src: app/extensions/apps/checksums/views.py :: checksums_views -->
 ```python
 checksums_views = Views(
     layout=FormLayout(
@@ -843,7 +843,7 @@ DSL, in five parts:
   present fields). App-scoped rules collect in a `FormRules` object assigned to
   `__form_rules__` on the model.
 
-The full set lives in `app/sep/apps/framework/rules.py`.
+The full set lives in `app/extensions/apps/framework/rules.py`.
 
 **`FailRule` + `F`** — one rule rejects a form when its predicate holds. The
 shape is a `fail_when` predicate, the `error_fields` the message attaches to,
@@ -866,7 +866,7 @@ Rules are often *generated* rather than written one by one. MySQL Backups
 stamps out the same rule per mode-owned boolean, failing validation when one is
 set outside its mode:
 
-<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
+<!-- src: app/extensions/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 __form_rules__: ClassVar[FormRules] = FormRules(
     fail_when=tuple(
@@ -891,7 +891,7 @@ itself: `Requires` makes the field mandatory when its predicate holds,
 Backups' encryption recipient is required exactly when encryption is on, and
 rejected when it is off:
 
-<!-- src: app/sep/apps/mysql_backups/forms.py :: BackupCreate -->
+<!-- src: app/extensions/apps/mysql_backups/forms.py :: BackupCreate -->
 ```python
 encryption_recipient: Annotated[
     NonEmptyStr | EmptyStrToNone,
@@ -919,7 +919,7 @@ each of its non-boolean Mydumper-only fields.
 **`FieldGate`** — the same predicate DSL gates a whole section. Here the Mydumper
 section is forbidden unless `backup_type == "M"`:
 
-<!-- src: app/sep/apps/mysql_backups/views.py :: mysql_backups_views -->
+<!-- src: app/extensions/apps/mysql_backups/views.py :: mysql_backups_views -->
 ```python
 SectionLayout(
     key="Mydumper",
@@ -962,7 +962,7 @@ spine builds — `create`, `list`, `detail`, and `execute` default on; `update` 
 `delete` default off. (The seventh derived route, `GET /schema`, is always on
 and has no flag.) Checksums turns on the derived update and delete:
 
-<!-- src: app/sep/apps/checksums/app.py :: app -->
+<!-- src: app/extensions/apps/checksums/app.py :: app -->
 ```python
 app = TaskExecutionApp(
     name="checksums",
@@ -988,15 +988,15 @@ returns a task response resolves its own actor fields — see
 > **This rung means writing FastAPI directly.** Everything above it is
 > declarative — knobs and markers. From here down you are writing route
 > handlers, with FastAPI's dependency injection (the `dependencies=[...]`
-> list, the `user: ApiAdminUser` / `session: SessionDep` parameter aliases SEP
-> defines in `app/sep/deps.py`) and `async` request handling. If that is
+> list, the `user: ApiAdminUser` / `session: SessionDep` parameter aliases PMM Extensions
+> defines in `app/extensions/deps.py`) and `async` request handling. If that is
 > unfamiliar, FastAPI's own
 > [dependency-injection tutorial](https://fastapi.tiangolo.com/tutorial/dependencies/)
 > is the prerequisite; the example below assumes it.
 
 Snippets carries three:
 
-<!-- src: app/sep/apps/snippets/app.py :: app -->
+<!-- src: app/extensions/apps/snippets/app.py :: app -->
 ```python
 app = TaskExecutionApp(
     name="snippets",
@@ -1009,7 +1009,7 @@ app = TaskExecutionApp(
 
 Each router is an ordinary FastAPI `APIRouter`, mounted under the app's prefix:
 
-<!-- src: app/sep/apps/snippets/extra_routes.py :: maintenance_router -->
+<!-- src: app/extensions/apps/snippets/extra_routes.py :: maintenance_router -->
 ```python
 maintenance_router = APIRouter()
 
@@ -1034,7 +1034,7 @@ assembly, override the builder rather than replacing the route. PostgreSQL Backu
 overrides the list and detail response builders (and their models) to keep its
 response bodies in the exact shape its clients consume:
 
-<!-- src: app/sep/apps/backup_pg/app.py :: app -->
+<!-- src: app/extensions/apps/backup_pg/app.py :: app -->
 ```python
 app = TaskExecutionApp(
     name="backup_pg",
@@ -1051,7 +1051,7 @@ the builder's model, and every other `response_model` reader — including the
 `list_view` column gate — measures that field; construction rejects a mismatch.
 
 `TaskExecutionApp` also exposes `update_handler` / `delete_handler`
-(`app/sep/apps/framework/apps.py`) for fully replacing a mutation handler — no app
+(`app/extensions/apps/framework/apps.py`) for fully replacing a mutation handler — no app
 in the tree overrides those today; prefer the lighter response-builder override
 above. The derived PUT/DELETE guards are knobs of their own: `update_guard` /
 `delete_guard` default to the framework's protected-task and running-conflict
@@ -1067,7 +1067,7 @@ mapping, so an app on the framework's default response builder resolves
 `created_by` / `last_updated_by` to display names without naming a provider at
 all:
 
-<!-- src: app/sep/apps/framework/apps.py :: TaskExecutionApp -->
+<!-- src: app/extensions/apps/framework/apps.py :: TaskExecutionApp -->
 ```python
 class TaskExecutionApp(BaseApp):
     ...
@@ -1081,7 +1081,7 @@ a `context` keyword; the framework rejects one that does not when the app is
 constructed. Accepting it is not enough to resolve anything, though: a custom
 `response_builder` or `detail_response_builder` resolves the actor fields only if
 it spreads `task_actor_fields(task, context or {})` (from
-`app.sep.api.task_history_actors`) into its extras. The framework never renders
+`app.extensions.api.task_history_actors`) into its extras. The framework never renders
 an `extra_routes` handler's response, so a custom route that returns a task
 awaits `get_username_mapping()` itself and passes the map as the builder's
 `context`. A replacement provider replaces the username map, so it must still
@@ -1092,7 +1092,7 @@ and the contract suite fails its username assertions.
 
 The default provider is an ordinary async callable:
 
-<!-- src: app/sep/deps.py :: get_username_mapping -->
+<!-- src: app/extensions/deps.py :: get_username_mapping -->
 ```python
 async def get_username_mapping() -> dict[str, str]:
     """Create a mapping from user ID to username using the active auth provider."""
@@ -1112,7 +1112,7 @@ the same logical operation; a **predecessor** is a task that must run *before*
 the parent (a pre-flight check, say). Alters assembles a parent execute task, an
 imperative pre-checks predecessor, and a cascade closure:
 
-<!-- src: app/sep/apps/alters/deps.py :: build_alters_cascade_plan -->
+<!-- src: app/extensions/apps/alters/deps.py :: build_alters_cascade_plan -->
 ```python
 async def build_alters_cascade_plan(
     body: AltersCreate,
@@ -1134,7 +1134,7 @@ async def build_alters_cascade_plan(
 ```
 
 The `cascade_create_*` / `cascade_update_*` / `cascade_delete_*` helpers in
-`app/sep/apps/framework/cascade.py` are the toolbox the closure calls. The
+`app/extensions/apps/framework/cascade.py` are the toolbox the closure calls. The
 create helpers (`cascade_create_tasks` and its siblings) are fail-fast and
 return `None`: on any POST failure they delete the already-created tasks in
 reverse creation order and re-raise the original exception. The update/delete
@@ -1154,11 +1154,11 @@ router opts out of the contract suite's derived-surface guarantees.
 ### Script-backed apps: `ScriptSource`
 
 Apps that execute **scripts** rather than a typed form use the `ScriptSource`
-extension point (`app/sep/apps/framework/script_source.py`): each script supplies
+extension point (`app/extensions/apps/framework/script_source.py`): each script supplies
 its own form schema, and listing/execute/history derive from the source. Snippets
 wires one:
 
-<!-- src: app/sep/snippets/script_source.py :: snippet_source -->
+<!-- src: app/extensions/snippets/script_source.py :: snippet_source -->
 ```python
 snippet_source = ScriptSource(
     script_dir=snippets_settings.SNIPPETS_DIR,
@@ -1190,7 +1190,7 @@ extension point).
 
 Because the router is *derived*, the framework can test the whole HTTP surface
 generically. `DerivedRouterContractTests`
-(`tests/app/sep/apps/framework/contract_suite.py`) exercises schema, list, detail,
+(`tests/app/extensions/apps/framework/contract_suite.py`) exercises schema, list, detail,
 create, update, execute, delete, auth, 404, the protected-task and
 running-conflict guards, connectivity, and injected extras against the **real**
 app definition. Your app's contract test is a subclass
@@ -1199,7 +1199,7 @@ exactly this (the `script` and `base` flavors derive no model-first CRUD
 contract to subclass, so their generated tests hand-write smoke tests against
 `build_contract_client` instead):
 
-<!-- src: tests/app/sep/apps/checksums/test_contract.py :: TestChecksumsContract -->
+<!-- src: tests/app/extensions/apps/checksums/test_contract.py :: TestChecksumsContract -->
 ```python
 class TestChecksumsContract(DerivedRouterContractTests):
     """Assert the checksums app's full derived HTTP surface, knob by knob."""
@@ -1219,11 +1219,11 @@ route, **a form rule**) gets a standalone test beside the contract subclass.
 
 ### The shared fixtures
 
-The suite's fixtures live in `tests/app/sep/apps/conftest.py`: `contract_client` (an
+The suite's fixtures live in `tests/app/extensions/apps/conftest.py`: `contract_client` (an
 authenticated `TestClient` bound to the app definition under test), `mock_task_api`,
 and `mock_inventory_api` (the two boundary APIs, seeded per test):
 
-<!-- src: tests/app/sep/apps/conftest.py :: contract_client -->
+<!-- src: tests/app/extensions/apps/conftest.py :: contract_client -->
 ```python
 @pytest.fixture
 def contract_client(
@@ -1274,26 +1274,26 @@ Test data comes from `polyfactory` factories — build with `.build()` and custo
 inline (`CasdoorUserFactory.build(role=UserRole.ADMIN)`). Never hand-roll a `dict` for a
 model a factory already covers. The contract suite's own task/inventory seeding goes
 through the `MockTaskAPI` / `MockInventoryAPI` helpers in
-`tests/app/sep/apps/framework/kit.py`, not raw dicts.
+`tests/app/extensions/apps/framework/kit.py`, not raw dicts.
 
 **Your app's factories live in your app's test package** —
-`tests/app/sep/apps/<app>/factories.py`, imported by your tests as
-`from tests.app.sep.apps.<app>.factories import <App>CreateFactory`. Only core,
+`tests/app/extensions/apps/<app>/factories.py`, imported by your tests as
+`from tests.app.extensions.apps.<app>.factories import <App>CreateFactory`. Only core,
 cross-app factories (auth, tasks, inventory) belong in `tests/app/factories.py`; that
 module is imported by the whole test tree, so a factory for your models there couples
 the shared file to your app and outlives it. The directory already has an
 `__init__.py`, so no packaging step is needed — just add the module.
 `tests/app/test_factories_boundary.py` fails the build if a module at the root of the
-test tree imports `app.sep.apps.*`, or re-exports one of your factories from
-`tests.app.sep.apps.*`.
+test tree imports `app.extensions.apps.*`, or re-exports one of your factories from
+`tests.app.extensions.apps.*`.
 
 ### How conformance runs in CI
 
 Two CI gates keep apps honest beyond their own contract test:
 
-- **Conformance** — `app/sep/apps/framework/conformance.py` defines structural
+- **Conformance** — `app/extensions/apps/framework/conformance.py` defines structural
   rules every app must satisfy (the required knobs wired, disallowed shapes
-  absent), run per-app by `tests/app/sep/apps/framework/test_conformance.py`.
+  absent), run per-app by `tests/app/extensions/apps/framework/test_conformance.py`.
   It is driven off the live registry and parametrized per app key, so **your app
   is picked up automatically the moment it is in `settings.yaml` — including
   while it is still `ENABLED: false`**. A half-finished scaffold is already

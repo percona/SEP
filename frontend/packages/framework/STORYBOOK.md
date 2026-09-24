@@ -1,4 +1,4 @@
-# Storybook for `@sep/framework`
+# Storybook for `@pmm-extensions/framework`
 
 Storybook lives in `packages/framework/.storybook/` and hosts component stories
 for the React migration. The instance is shared across the framework package;
@@ -13,7 +13,7 @@ pnpm storybook        # dev server on http://localhost:6006
 pnpm build-storybook  # static bundle in packages/framework/storybook-static/
 ```
 
-Both scripts are passthroughs to `pnpm --filter @sep/framework <script>`.
+Both scripts are passthroughs to `pnpm --filter @pmm-extensions/framework <script>`.
 
 ## Layout
 

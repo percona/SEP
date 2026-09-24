@@ -20,21 +20,21 @@ import {
   apiClient,
   isRunningStatus,
   RUNNING_STATUSES,
-  type SepComponents,
+  type ExtensionsComponents,
   type TaskHistoryStatus,
   type TasksComponents,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
 export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
 /** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
-export type TaskExecuteBody = SepComponents['schemas']['framework__TaskExecuteWrite'];
+export type TaskExecuteBody = ExtensionsComponents['schemas']['framework__TaskExecuteWrite'];
 
 // The poll-while-running status set is owned by the ``api`` package (the lower
 // layer) so the schema-driven list page and this hook share one definition.
-// Re-exported here to keep the ``@sep/framework`` import surface stable.
+// Re-exported here to keep the ``@pmm-extensions/framework`` import surface stable.
 export { isRunningStatus, RUNNING_STATUSES };
 export type { TaskHistoryStatus };
 
@@ -101,7 +101,7 @@ function refetchIntervalFor(
 /**
  * List task history across all tasks.
  *
- * Requests are routed through ``GET /api/sep/task-history/`` (with no
+ * Requests are routed through ``GET /api/extensions/task-history/`` (with no
  * `task_names`) so the browser never calls the Tasks sub-app directly. Polling
  * activates only when at least one row is in a running state, matching the
  * legacy Jinja2 page reload behaviour. Server cursor pagination is deferred;
@@ -121,7 +121,7 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     queryKey: ['task-history', { status: status ?? null, offset, limit, excludeInternal }],
     enabled,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/extensions/task-history/', {
         params: buildParams({ status, offset, limit, excludeInternal }),
       });
       return data;
@@ -146,7 +146,7 @@ export function useTaskHistoryByName(
  *
  * Used by apps whose detail page represents a task group (parent plus derived
  * siblings) while executions are recorded on individual task names. Requests are
- * routed through ``GET /api/sep/task-history/`` so the browser never calls the
+ * routed through ``GET /api/extensions/task-history/`` so the browser never calls the
  * Tasks sub-app directly.
  */
 export function useTaskHistoryByNames(
@@ -166,7 +166,7 @@ export function useTaskHistoryByNames(
     queryKey: ['task-history', 'merged', names, { status: status ?? null, offset, limit }],
     enabled: enabled && names.length > 0,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/extensions/task-history/', {
         params: {
           ...buildParams({ status, offset, limit }),
           task_names: names,
@@ -190,7 +190,7 @@ export function useStopTaskHistory() {
   return useMutation<TaskHistoryEntry, Error, number>({
     mutationFn: async (taskHistoryId) => {
       const { data } = await apiClient.post<TaskHistoryEntry>(
-        `/sep/task-history/${taskHistoryId}/stop/`,
+        `/extensions/task-history/${taskHistoryId}/stop/`,
       );
       return data;
     },
@@ -203,7 +203,7 @@ export function useStopTaskHistory() {
 /**
  * Dispatch a saved task for immediate execution.
  *
- * The request is routed through the SEP-level app gateway
+ * The request is routed through the PMM Extensions level app gateway
  * (``POST /api/apps/{pluginName}/{taskName}/execute``) — the FE must not
  * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
  * browser in a production deployment. The app-task queries — the list and

@@ -1,5 +1,5 @@
 {
-  "name": "@sep/framework",
+  "name": "@pmm-extensions/framework",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@microsoft/fetch-event-source": "2.0.1",
-    "@sep/api": "workspace:*",
+    "@pmm-extensions/api": "workspace:*",
     "@types/react-syntax-highlighter": "^15.5.13",
     "cronstrue": "^3.14.0",
     "prism-react-renderer": "^2.4.1",

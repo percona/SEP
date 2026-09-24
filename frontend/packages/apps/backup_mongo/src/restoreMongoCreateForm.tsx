@@ -17,7 +17,11 @@
 
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { SchemaFormRenderer, type RenderFieldOverride, type RenderFormSlot } from '@sep/framework';
+import {
+  SchemaFormRenderer,
+  type RenderFieldOverride,
+  type RenderFormSlot,
+} from '@pmm-extensions/framework';
 import {
   isAutoMongoRestoreTaskName,
   suggestMongoRestoreTaskName,

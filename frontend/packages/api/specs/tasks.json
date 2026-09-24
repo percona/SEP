@@ -149,6 +149,57 @@
         "title": "ExecutionEvent",
         "type": "object"
       },
+      "ExecutorHostState": {
+        "description": "Describe one executor host in more detail than \"usable or absent\".\n\n:meth:`app.tasks.execution.models.BaseExecutor.get_hosts` answers a yes/no\nquestion - can a job be placed here - by collapsing several conditions into\npresence in a mapping. That is the right answer for *dispatching*, and the wrong\none for *reporting*: a host that is missing from it may never have been onboarded,\nor may be onboarded and down, or up with a broken driver, and those are three\ndifferent jobs for whoever has to fix it.\n\n:param name: The host's name as the backend knows it.\n:param address: Its network address.\n:param reachable: Whether the backend currently considers it ready. ``False``\n    covers several causes the backend does not distinguish here - down, stopped,\n    never registered, or still initializing; see ``status`` for the precise one.\n:param driver_healthy: Whether it can actually run this executor's job type. A\n    reachable host with an unhealthy driver is onboarded but broken - a different\n    problem from one that was never onboarded, and the distinction this type\n    exists for. When ``reachable`` is ``False`` this is the last-known value from\n    before the host dropped, not a current fact.\n:param status: The backend's own word for its state, passed through unmapped so a\n    reader can look it up in the backend's documentation.\n:param detail: Why the driver is unhealthy, or why the host is unreachable, when\n    the backend says.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "driver_healthy": {
+            "title": "Driver Healthy",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "name",
+          "address",
+          "reachable",
+          "driver_healthy"
+        ],
+        "title": "ExecutorHostState",
+        "type": "object"
+      },
       "FileMetadata": {
         "description": "Represent file metadata for task artifacts.",
         "properties": {
@@ -200,7 +251,7 @@
       },
       "JsonValue": {},
       "LogCaptureStatusEnum": {
-        "description": "Describe how completely SEP captured a task's log stream.\n\nDistinguishes a stream that genuinely produced nothing from one whose bytes\nwere lost before SEP could read them — the stored offsets alone cannot tell\nthose apart, since both leave the cursors at zero.\n\n``UNKNOWN`` is the honest verdict where no evidence survives: rows written\nbefore the column existed, and histories carrying no state rows at all.",
+        "description": "Describe how completely PMM Extensions captured a task's log stream.\n\nDistinguishes a stream that genuinely produced nothing from one whose bytes\nwere lost before PMM Extensions could read them — the stored offsets alone cannot tell\nthose apart, since both leave the cursors at zero.\n\n``UNKNOWN`` is the honest verdict where no evidence survives: rows written\nbefore the column existed, and histories carrying no state rows at all.",
         "enum": [
           "complete",
           "incomplete",
@@ -456,7 +507,7 @@
         "type": "object"
       },
       "PeriodicTaskResponse": {
-        "description": "Represent a response for a periodic task API call.\n\nThis model extends `BasePeriodicTask` and includes additional fields such as ID,\nlast run time, total run count, and date changed.\n\n:param name: The name of the periodic task.\n:param task: The SEP task name.\n:param start_time: The start time for the task execution.\n:param enabled: Whether the task is enabled.\n:param description: A description of the task.\n:param execute_request: The execution request details for the task.\n:param id: The unique identifier of the periodic task.\n:param last_run_at: The datetime of the last run.\n:param total_run_count: The total number of times the task has run.\n:param date_changed: The datetime when the task was last changed.\n:param last_run_status: The result of this schedule's own most recent\n    run, or ``None`` when the schedule has never run. Resolved as the\n    earliest system-triggered history for this task name at or after the\n    schedule's ``last_run_at``, so a later unrelated system run of the same\n    task name is not misattributed.\n:param interval: The interval schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_intervalschedule\".\n:param crontab: The crontab schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_crontabschedule\".",
+        "description": "Represent a response for a periodic task API call.\n\nThis model extends `BasePeriodicTask` and includes additional fields such as ID,\nlast run time, total run count, and date changed.\n\n:param name: The name of the periodic task.\n:param task: The PMM Extensions task name.\n:param start_time: The start time for the task execution.\n:param enabled: Whether the task is enabled.\n:param description: A description of the task.\n:param execute_request: The execution request details for the task.\n:param id: The unique identifier of the periodic task.\n:param last_run_at: The datetime of the last run.\n:param total_run_count: The total number of times the task has run.\n:param date_changed: The datetime when the task was last changed.\n:param last_run_status: The result of this schedule's own most recent\n    run, or ``None`` when the schedule has never run. Resolved as the\n    earliest system-triggered history for this task name at or after the\n    schedule's ``last_run_at``, so a later unrelated system run of the same\n    task name is not misattributed.\n:param interval: The interval schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_intervalschedule\".\n:param crontab: The crontab schedule for the task. Defaults to None. This field\n    is populated with the alias \"model_crontabschedule\".",
         "properties": {
           "crontab": {
             "anyOf": [
@@ -776,7 +827,7 @@
         "type": "object"
       },
       "SettingClassGroup": {
-        "description": "Group one settings class's fields for the LIST response.\n\n:param setting_class: The Pydantic class ``__name__`` this group represents.\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.",
+        "description": "Group one settings class's fields for the LIST response.\n\n:param setting_class: The Pydantic class ``__name__`` this group represents.\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:param is_app_owned: Whether this group belongs to a PMM Extensions app under\n    ``app/extensions/apps/`` rather than core PMM Extensions wiring.\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.",
         "properties": {
           "app_display_name": {
             "anyOf": [
@@ -1311,7 +1362,7 @@
         "type": "object"
       },
       "TaskHistoryResponse": {
-        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely SEP captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.\n:param failure_reason: A single-line, operator-facing reason for the run's\n    outcome, or None when the run did not fail or the reason is unknown. A\n    historic row predating the column reports None, which means \"unknown\"\n    rather than \"did not fail\".\n:param unreadable_request_leaves: Dotted paths of the ``execution_request``\n    leaves stored encrypted that this deployment's key could not read, for\n    example ``[\"meta.args\"]``. Each named leaf is serialised as ``null``\n    rather than as the stored ciphertext, so a client shows the value as\n    withheld instead of rendering an opaque token. Empty on every row that\n    read cleanly, which is every row on a healthy deployment.",
+        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:param status: The status of the task execution.\n:param started_at: The datetime when the task execution started.\n:param finished_at: The datetime when the task execution finished.\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:param task: The task associated with this execution history.\n:param executed_by: The user ID of the user who executed the task.\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:param log_capture: How completely PMM Extensions captured this execution's logs,\n    aggregated over its state rows: any incomplete stream reports\n    ``\"incomplete\"``, else any unknown reports ``\"unknown\"``, else\n    ``\"complete\"``. Populated by list/retrieve routes; defaults to\n    ``\"unknown\"``, which is also what a history carrying no state rows\n    reports.\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.\n:param failure_reason: A single-line, operator-facing reason for the run's\n    outcome, or None when the run did not fail or the reason is unknown. A\n    historic row predating the column reports None, which means \"unknown\"\n    rather than \"did not fail\".\n:param unreadable_request_leaves: Dotted paths of the ``execution_request``\n    leaves stored encrypted that this deployment's key could not read, for\n    example ``[\"meta.args\"]``. Each named leaf is serialised as ``null``\n    rather than as the stored ciphertext, so a client shows the value as\n    withheld instead of rendering an opaque token. Empty on every row that\n    read cleanly, which is every row on a healthy deployment.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -1872,8 +1923,8 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform — task execution, history, periodic jobs, connectivity.",
-    "title": "SEP Tasks API",
+    "description": "PMM Extensions — task execution, history, periodic jobs, connectivity.",
+    "title": "PMM Extensions Tasks API",
     "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",
@@ -2543,7 +2594,7 @@
         ]
       },
       "post": {
-        "description": "Create a new task history.\n\nNeither ``has_logs`` nor ``log_capture`` is populated on this response — a\nrow that was just created has no chunk-store entry, legacy tracking blob or\ncapture verdict yet, so both fall back to their serialization defaults.\n\nA caller-supplied ``failure_reason`` is routed back through\n:meth:`TaskHistory.set_failure_reason` so the single-line and length bounds\nhold on every write path, not only on the reasons SEP composes itself.\n\nThe saved row is re-read with ``task`` joined and ``execution_request``\nundeferred: ``save`` re-defers that column, and the response model requires\nboth, so serializing the save's own return value attempts lazy IO from an\nasync context.\n\n:param session: The SQLAlchemy asynchronous session.\n:param task: The task history to persist.\n:return: The saved task history record.\n:raises HTTPUnprocessableEntityException: If ``failure_reason`` conflicts\n    with a status that carries no operator-facing summary.",
+        "description": "Create a new task history.\n\nNeither ``has_logs`` nor ``log_capture`` is populated on this response — a\nrow that was just created has no chunk-store entry, legacy tracking blob or\ncapture verdict yet, so both fall back to their serialization defaults.\n\nA caller-supplied ``failure_reason`` is routed back through\n:meth:`TaskHistory.set_failure_reason` so the single-line and length bounds\nhold on every write path, not only on the reasons PMM Extensions composes itself.\n\nThe saved row is re-read with ``task`` joined and ``execution_request``\nundeferred: ``save`` re-defers that column, and the response model requires\nboth, so serializing the save's own return value attempts lazy IO from an\nasync context.\n\n:param session: The SQLAlchemy asynchronous session.\n:param task: The task history to persist.\n:return: The saved task history record.\n:raises HTTPUnprocessableEntityException: If ``failure_reason`` conflicts\n    with a status that carries no operator-facing summary.",
         "operationId": "tasks_create_task_history_history__post",
         "requestBody": {
           "content": {
@@ -3134,9 +3185,61 @@
         ]
       }
     },
+    "/hosts/states/": {
+      "get": {
+        "description": "Return every host the executor knows about, usable or not.\n\n``GET /hosts/`` answers \"where can I place a job\", which is what a dispatcher\nneeds and all it needs. This answers \"what is the state of the fleet\", which is a\ndifferent question: a host missing from the other list may never have been\nonboarded, or be onboarded and down, or be up with a broken driver, and those are\nthree different things for whoever has to fix it.\n\nWrapped the same way as ``/hosts/`` so an unreachable backend surfaces as a 502\nrather than a 500 with a text/plain body.\n\n:param executor: The task executor backend used to fetch host metadata.\n:return: One entry per host the backend knows about.\n:raises HTTPBadGatewayException: If the executor backend is unreachable or\n    answers with something the client cannot parse.",
+        "operationId": "tasks_get_executor_host_states_hosts_states__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "backend",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TaskBackendEnum",
+              "default": "nomad"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExecutorHostState"
+                  },
+                  "title": "Response Tasks Get Executor Host States Hosts States  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Executor Host States",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/periodic/": {
       "get": {
-        "description": "List periodic tasks for the requested page window.\n\n:param session: The beat-store session the schedules are read from.\n:param tasks_session: The tasks-database session used to resolve the\n    ``owner`` filter and to stamp each row's last-run status.\n:param pagination: Validated offset/limit window for this page.\n:param owner: Optional owner whose active tasks scope the page; omit to\n    page every SEP-managed schedule.\n:param enabled: Optional enabled-state filter.\n:return: A page of beat-store schedules, each carrying ``last_run_status``.",
+        "description": "List periodic tasks for the requested page window.\n\n:param session: The beat-store session the schedules are read from.\n:param tasks_session: The tasks-database session used to resolve the\n    ``owner`` filter and to stamp each row's last-run status.\n:param pagination: Validated offset/limit window for this page.\n:param owner: Optional owner whose active tasks scope the page; omit to\n    page every PMM Extensions managed schedule.\n:param enabled: Optional enabled-state filter.\n:return: A page of beat-store schedules, each carrying ``last_run_status``.",
         "operationId": "periodic_list_periodic_tasks_periodic__get",
         "parameters": [
           {
@@ -3232,7 +3335,7 @@
     },
     "/periodic/schedule/preview/": {
       "post": {
-        "description": "Report the upcoming runs of a schedule without saving it.\n\nAnswers for an unsaved request body what\n:class:`~app.tasks.periodic.models.PeriodicTaskResponse` answers for a stored\nschedule, through the same code path, so a client can preview a cron\nexpression while it is still being typed.\n\nTwo path segments so no single-segment ``/{param}`` sibling can match it,\nwhich is what keeps the SEP-side twin from reserving a task name.\n\n:param preview: The schedule to preview. Persisted nowhere.\n:return: The schedule's zone and its upcoming runs.",
+        "description": "Report the upcoming runs of a schedule without saving it.\n\nAnswers for an unsaved request body what\n:class:`~app.tasks.periodic.models.PeriodicTaskResponse` answers for a stored\nschedule, through the same code path, so a client can preview a cron\nexpression while it is still being typed.\n\nTwo path segments so no single-segment ``/{param}`` sibling can match it,\nwhich is what keeps the PMM Extensions side twin from reserving a task name.\n\n:param preview: The schedule to preview. Persisted nowhere.\n:return: The schedule's zone and its upcoming runs.",
         "operationId": "periodic_preview_schedule_periodic_schedule_preview__post",
         "requestBody": {
           "content": {

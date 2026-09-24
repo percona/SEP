@@ -25,7 +25,12 @@ import pytest
 from aiohttp import encode_basic_auth, web
 from aioresponses import aioresponses
 from fastapi import HTTPException, status
+from pydantic import computed_field, HttpUrl
 
+from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
+from app.core.auth.providers.grafana.sdk import GrafanaSDK
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPConflictException,
@@ -41,18 +46,30 @@ from app.core.requests.remote_api import (
     _WITHHELD_BODY,
     as_json_array,
     as_json_object,
+    BaseRemoteAPI,
     is_non_json_success,
     UPSTREAM_NON_JSON_HEADER,
 )
 from app.core.requests.remote_api import (
     _MAX_STREAM_LINE_BYTES as _REAL_CAP,
 )
+from app.core.utils.fields import (
+    CREDENTIAL_URL_MASK,
+    PRESERVE_CREDENTIALS_CONTEXT,
+    strip_credential_url_userinfo,
+)
+from app.extensions.clients.pmm import PMMRemoteAPI
+from app.tasks.execution.executors.nomad.models import NomadExecutor
 from tests.app.scan_recording import ScanRecordingBytearray
 
 _UPLOAD_URL = "http://localhost:8000/upload"
 _RESPONSE_URL = "http://localhost:8000/body"
 _BODY_SENTINEL = "sentinel-response-value"
 _LATER_BODY_SENTINEL = "later-response-value"
+_CREDENTIAL_ENDPOINT = "http://svcuser:svcpass@remote.internal:9000/api/inventory"
+_CREDENTIAL_SECRET = "svcpass"
+_REDACTED_BASE_URL = "http://svcuser:****@remote.internal:9000"
+_LIVE_BASE_URL = "http://svcuser:svcpass@remote.internal:9000"
 
 
 @pytest.fixture
@@ -1126,3 +1143,255 @@ class TestEndpointCredentialAndExplicitAuthHeader:
                 await api.get("/summary/")
 
         assert received[0]["Authorization"] == encode_basic_auth("svc/user", "p@ss")
+
+
+class TestBaseUrlRedaction:
+    """Cover the credential redaction on the derived base URL."""
+
+    @pytest.fixture
+    def api(self) -> RemoteAPI:
+        """Return a client whose endpoint embeds a password."""
+        return RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+
+    def test_json_dump_masks_the_password(self, api: RemoteAPI) -> None:
+        """Mask the password in a JSON-mode dump, as the endpoint field does."""
+        assert api.model_dump(mode="json")["base_url"] == _REDACTED_BASE_URL
+
+    def test_model_dump_json_masks_the_password(self, api: RemoteAPI) -> None:
+        """Mask the password in the serialized JSON string too."""
+        assert _CREDENTIAL_SECRET not in api.model_dump_json()
+        assert CREDENTIAL_URL_MASK in api.model_dump_json()
+
+    def test_python_dump_keeps_the_password(self, api: RemoteAPI) -> None:
+        """Keep the real credential in a python-mode dump."""
+        assert api.model_dump()["base_url"] == _LIVE_BASE_URL
+
+    def test_preserve_context_keeps_the_password(self, api: RemoteAPI) -> None:
+        """Keep the real credential for a caller that opts out of redaction."""
+        dumped = api.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["base_url"] == _LIVE_BASE_URL
+
+    def test_the_attribute_keeps_the_password(self, api: RemoteAPI) -> None:
+        """Leave the live attribute untouched; only serialization redacts."""
+        assert api.base_url == _LIVE_BASE_URL
+
+    def test_the_session_url_drops_the_userinfo(self, api: RemoteAPI) -> None:
+        """Build the session from a URL carrying no userinfo at all."""
+        assert api.session_base_url == "http://remote.internal:9000"
+
+    def test_a_username_only_endpoint_is_unchanged(self) -> None:
+        """Leave a URL with a username but no password as it is."""
+        api = RemoteAPI(endpoint="http://svcuser@remote.internal:9000/api")
+        assert (
+            api.model_dump(mode="json")["base_url"]
+            == "http://svcuser@remote.internal:9000"
+        )
+
+    def test_a_credential_free_endpoint_is_unchanged(self) -> None:
+        """Dump a credential-free endpoint exactly as the live value reads."""
+        api = RemoteAPI(endpoint="http://remote.internal:9000/api")
+        assert api.model_dump(mode="json")["base_url"] == api.base_url
+
+    def test_a_percent_encoded_password_is_masked(self) -> None:
+        """Mask a percent-encoded password and still send the decoded credential."""
+        api = RemoteAPI(endpoint="http://svc%2Fuser:p%40ss@remote.internal:9000/api")
+        assert (
+            api.model_dump(mode="json")["base_url"]
+            == "http://svc%2Fuser:****@remote.internal:9000"
+        )
+        assert api._endpoint_credential_header == encode_basic_auth("svc/user", "p@ss")
+
+    def test_an_ipv6_host_keeps_its_brackets_and_port(self) -> None:
+        """Preserve a bracketed IPv6 host and its port while masking."""
+        api = RemoteAPI(endpoint="http://svcuser:svcpass@[::1]:4646/api")
+        assert (
+            api.model_dump(mode="json")["base_url"] == "http://svcuser:****@[::1]:4646"
+        )
+
+    def test_the_base_path_is_dropped_from_the_base_url(self, api: RemoteAPI) -> None:
+        """Strip the endpoint's own path, which the base URL exists to remove."""
+        assert api.base_path == "/api/inventory"
+        assert "/api/inventory" not in api.base_url
+
+    def test_a_query_string_survives_the_base_path_removal(self) -> None:
+        """Remove the base path from the path alone, not from the whole URL.
+
+        A query value repeating the base path is the reachable case: dropping
+        every occurrence corrupts the URL, and a corrupted URL is one the
+        redaction helper can refuse to parse.
+        """
+        api = RemoteAPI(endpoint="http://remote.internal:9000/api?next=/api")
+        assert api.base_url == "http://remote.internal:9000?next=/api"
+
+    def test_a_path_params_segment_survives_the_base_path_removal(self) -> None:
+        """Remove a base path whose last segment carries ``;params``.
+
+        Pydantic keeps ``;v=2`` inside the path, so a parser that split it out
+        would miss the suffix and return the whole endpoint.
+        """
+        api = RemoteAPI(endpoint="http://h.io:9000/api;v=2")
+        assert api.base_path == "/api;v=2"
+        assert api.base_url == "http://h.io:9000"
+
+    @pytest.mark.parametrize(
+        "client_class",
+        [
+            RemoteAPI,
+            CasdoorSDK,
+            CasdoorAuthProvider,
+            GrafanaSDK,
+            GrafanaAuthProvider,
+            PMMRemoteAPI,
+            NomadExecutor,
+        ],
+    )
+    def test_every_client_class_masks_its_base_url(
+        self, client_class: type[BaseRemoteAPI]
+    ) -> None:
+        """Mask the password for every production client.
+
+        ``model_construct`` skips validation, so a client with required
+        credentials of its own still takes part without the test knowing what
+        they are.
+        """
+        client = client_class.model_construct(endpoint=HttpUrl(_CREDENTIAL_ENDPOINT))
+        assert _CREDENTIAL_SECRET not in client.model_dump_json()
+
+
+class _HookOverrideRemoteAPI(RemoteAPI):
+    """Stand in for a client that derives its base URL differently."""
+
+    def _compute_base_url(self) -> str:
+        """Return the inherited base URL with the userinfo removed."""
+        return strip_credential_url_userinfo(super()._compute_base_url())
+
+
+class _UnparseableRemoteAPI(RemoteAPI):
+    """Stand in for a client whose derived base URL cannot be parsed."""
+
+    def _compute_base_url(self) -> str:
+        """Return a URL whose bracketed host is unterminated."""
+        return "http://[::1:4646/"
+
+
+class _RaisingHookRemoteAPI(RemoteAPI):
+    """Stand in for a client whose base-URL hook itself fails to parse."""
+
+    def _compute_base_url(self) -> str:
+        """Raise the way a hook parsing a malformed URL does."""
+        return strip_credential_url_userinfo("http://[::1:4646/")
+
+
+class TestBaseUrlSubclassing:
+    """Cover how a subclass customises the base URL without dropping redaction."""
+
+    def test_redeclaring_the_computed_field_is_rejected(self) -> None:
+        """Refuse a subclass that redeclares ``base_url`` at class creation.
+
+        A redeclared computed field shadows the return annotation the serializer
+        rides on, so the password would return to every dump of that class while
+        every other class stays clean.
+        """
+        with pytest.raises(TypeError, match="_compute_base_url"):
+
+            class _RedeclaringRemoteAPI(RemoteAPI):
+                @computed_field
+                @property
+                def base_url(self) -> str:
+                    return str(self.endpoint)
+
+    def test_a_plain_attribute_named_base_url_is_rejected(self) -> None:
+        """Refuse any class-level ``base_url``, not only a computed field."""
+        with pytest.raises(TypeError, match="_compute_base_url"):
+
+            class _ShadowingRemoteAPI(RemoteAPI):
+                @property
+                def base_url(self) -> str:
+                    return str(self.endpoint)
+
+    def test_a_hook_override_is_still_masked(self) -> None:
+        """Redact a subclass's derived value through the inherited computed field."""
+        client = _HookOverrideRemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        assert client.base_url == "http://remote.internal:9000"
+        assert _CREDENTIAL_SECRET not in client.model_dump_json()
+
+    def test_the_serialization_schema_still_declares_a_string(self) -> None:
+        """Keep the derived field typed in the serialization schema.
+
+        A wrap serializer with no declared return type erases it, which would
+        publish an untyped property to every consumer of the schema.
+        """
+        schema = RemoteAPI.model_json_schema(mode="serialization")
+        assert schema["properties"]["BASE_URL"]["type"] == "string"
+
+
+class TestRedactedBaseUrl:
+    """Cover the logging-safe view of the derived base URL."""
+
+    def test_masks_the_password(self) -> None:
+        """Mask an embedded password for a log line."""
+        api = RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        assert api.redacted_base_url == _REDACTED_BASE_URL
+
+    def test_leaves_a_credential_free_url_unchanged(self) -> None:
+        """Return a URL with nothing to mask as it is."""
+        api = RemoteAPI(endpoint="http://remote.internal:9000/api")
+        assert api.redacted_base_url == "http://remote.internal:9000"
+
+    def test_falls_back_to_the_mask_when_the_url_cannot_be_parsed(self) -> None:
+        """Return the bare mask rather than raise over the failure being reported."""
+        api = _UnparseableRemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        assert api.redacted_base_url == CREDENTIAL_URL_MASK
+
+    def test_falls_back_to_the_mask_when_the_hook_raises(self) -> None:
+        """Return the bare mask when the base-URL hook, not the redaction, fails."""
+        api = _RaisingHookRemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        assert api.redacted_base_url == CREDENTIAL_URL_MASK
+
+
+class TestSessionLifecycleLogging:
+    """Cover the credential redaction on the session-lifecycle debug logs."""
+
+    @pytest.mark.asyncio
+    async def test_the_opening_log_masks_the_password(self, caplog) -> None:
+        """Mask the password on the line announcing a new session."""
+        api = RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            async with api:
+                pass
+
+        assert _CREDENTIAL_SECRET not in caplog.text
+        assert f"Opening ClientSession for {_REDACTED_BASE_URL}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_closing_log_masks_the_password(self, caplog) -> None:
+        """Mask the password on the line announcing a session close."""
+        api = RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            async with api:
+                pass
+
+        assert _CREDENTIAL_SECRET not in caplog.text
+        assert f"Closing ClientSession for {_REDACTED_BASE_URL}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_already_closed_log_masks_the_password(self, caplog) -> None:
+        """Mask the password on the line taken when there is nothing to close."""
+        api = RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        async with api:
+            pass
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            await api.__aexit__(None, None, None)
+
+        assert _CREDENTIAL_SECRET not in caplog.text
+        assert f"ClientSession already closed for {_REDACTED_BASE_URL}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_the_session_is_built_without_the_userinfo(self) -> None:
+        """Keep the credential out of the session URL, masked or not."""
+        api = RemoteAPI(endpoint=_CREDENTIAL_ENDPOINT)
+        async with api:
+            session_url = str(api._session._base_url)
+
+        assert _CREDENTIAL_SECRET not in session_url
+        assert CREDENTIAL_URL_MASK not in session_url

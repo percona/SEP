@@ -1,0 +1,303 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": false
+  },
+  "description": "Configure pgBackRest-based PostgreSQL backups and run incremental or differential backup tasks against a Percona-managed Postgres host.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Execution Host",
+            "path": "hostname"
+          },
+          {
+            "label": "Host",
+            "path": "host"
+          },
+          {
+            "label": "Port",
+            "path": "port"
+          },
+          {
+            "label": "Type",
+            "path": "backup_type",
+            "value_labels": {
+              "P": "pgBackRest"
+            }
+          },
+          {
+            "label": "Created at",
+            "path": "created_at"
+          },
+          {
+            "label": "Updated at",
+            "path": "updated_at"
+          }
+        ],
+        "title": "Overview"
+      }
+    ]
+  },
+  "display_name": "PostgreSQL Backups",
+  "forms": [
+    {
+      "advanced": false,
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "min_length": 1,
+          "name": "task_name",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Execution Host",
+          "name": "hostname",
+          "required": true,
+          "target_service": "service_id",
+          "type": "host"
+        },
+        {
+          "label": "Database Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "postgresql"
+          ],
+          "type": "service"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "advanced": false,
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. ``extensions-test``). Passed verbatim as ``--stanza`` to every pgbackrest invocation.",
+          "label": "Stanza",
+          "min_length": 1,
+          "name": "stanza",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "choices": [
+            {
+              "label": "Incremental",
+              "value": "incr"
+            },
+            {
+              "label": "Differential",
+              "value": "diff"
+            }
+          ],
+          "default": "incr",
+          "label": "pgBackRest Backup Type",
+          "name": "pgbackrest_backup_type",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "default": "/usr/bin/pgbackrest",
+          "description": "Absolute path to the pgbackrest binary on the host.",
+          "label": "pgBackRest Binary",
+          "name": "pgbackrest_bin",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "default": "/etc/pgbackrest.conf",
+          "description": "Path to the pgbackrest.conf used by the task.",
+          "label": "pgBackRest Config File",
+          "name": "pgbackrest_config_file",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Postgres Data Directory",
+          "name": "pgbackrest_datadir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "ge": 0,
+          "label": "Full Backup Retention",
+          "name": "pgbackrest_retention_full",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "ge": 0,
+          "label": "Archive Retention",
+          "name": "pgbackrest_retention_archive",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "choices": [
+            {
+              "label": "Daily",
+              "value": "daily"
+            },
+            {
+              "label": "Weekly (Monday)",
+              "value": "weekly"
+            },
+            {
+              "label": "Monday",
+              "value": "1"
+            },
+            {
+              "label": "Tuesday",
+              "value": "2"
+            },
+            {
+              "label": "Wednesday",
+              "value": "3"
+            },
+            {
+              "label": "Thursday",
+              "value": "4"
+            },
+            {
+              "label": "Friday",
+              "value": "5"
+            },
+            {
+              "label": "Saturday",
+              "value": "6"
+            },
+            {
+              "label": "Sunday",
+              "value": "7"
+            }
+          ],
+          "description": "``daily``, ``weekly``, or an ISO weekday number (1-7, Monday-Sunday) controlling when the FULL backup runs.",
+          "label": "Incremental Cycle",
+          "name": "pgbackrest_incremental_cycle",
+          "required": false,
+          "type": "choice"
+        },
+        {
+          "label": "Logging Directory",
+          "name": "logging_dir",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "label": "Backup Directory",
+          "min_length": 1,
+          "name": "backup_dir",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "pgBackRest"
+    }
+  ],
+  "item_display_name": "backup",
+  "item_display_name_plural": "backups",
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "key": "hostname",
+        "label": "Execution Host",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "backup_type",
+        "label": "Type",
+        "sortable": false,
+        "value_labels": {
+          "P": "pgBackRest"
+        }
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "default_sort": "name",
+    "overview_hidden_fields": []
+  },
+  "name": "backup_pg",
+  "task_statuses": [
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "failed"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "pending"
+    },
+    {
+      "output_available": false,
+      "terminal": false,
+      "value": "running"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "success"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stopped"
+    },
+    {
+      "output_available": false,
+      "terminal": true,
+      "value": "lost"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "stale"
+    },
+    {
+      "output_available": true,
+      "terminal": true,
+      "value": "unlaunchable"
+    }
+  ]
+}

@@ -70,7 +70,7 @@ Write the **member name** — the left column below — not the display label. T
 listing matches on the member name; a display label, or a name the taxonomy does
 not define, places the script in no cell at all and is discarded silently.
 
-The taxonomy is `ATWCategory` in `app/sep/apps/atw/categories.py`, twelve
+The taxonomy is `ATWCategory` in `app/extensions/apps/atw/categories.py`, twelve
 members under three parents:
 
 | Member name | Display label | Parent |
@@ -100,7 +100,7 @@ one) lands under **Generic**.
 
 `service_type` is not display-only: Alert Troubleshooting reads it too, and its
 vocabulary is narrower than the browser's. `AlertServiceType`
-(`app/sep/models.py`) defines only `generic`, `mysql`, `mongodb` and
+(`app/extensions/models.py`) defines only `generic`, `mysql`, `mongodb` and
 `postgresql`, so a script declaring `proxysql`, `haproxy` or `external` is not
 *moved* to some other alert group — it is dropped from Alert Troubleshooting
 altogether, leaving one `Unknown service_type` warning in the log as the only
@@ -117,7 +117,7 @@ when it is missing.
 
 ## What is enforced
 
-`tests/app/sep/snippets/test_frontmatter_authoring.py` parses every file under
+`tests/app/extensions/snippets/test_frontmatter_authoring.py` parses every file under
 `snippets/` and checks it against the numbered authoring rules in its module
 docstring. That docstring is the authoritative rule list; two of the rules are
 this document's subject:

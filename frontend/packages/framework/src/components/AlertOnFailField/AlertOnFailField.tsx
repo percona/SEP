@@ -20,7 +20,7 @@ import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Tooltip from '@mui/material/Tooltip';
 import { useController, useFormContext, type FieldValues } from 'react-hook-form';
-import { useAlertConfig } from '@sep/api';
+import { useAlertConfig } from '@pmm-extensions/api';
 
 /**
  * Form field name submitted to the task-creation API. Matches the snake_case

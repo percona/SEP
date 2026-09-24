@@ -44,18 +44,18 @@ from app.core.celery.models import IntervalSchedule as IntervalScheduleOption
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
-from app.sep.apps.inventory.sync import (
+from app.extensions.apps.inventory.sync import (
     run_scheduled_inventory_sync,
     start_follower_first_runs,
 )
-from app.sep.crud import SyncInstanceManager, SyncItemManager
-from app.sep.models import (
+from app.extensions.crud import SyncInstanceManager, SyncItemManager
+from app.extensions.models import (
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
     SyncItemWrite,
     SyncStatusEnum,
 )
-from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.extensions.sync.syncers.system_facts.syncer import SystemFactsSyncer
 from app.tasks.celery import execute_task_by_name
 from app.tasks.config import InventorySyncSchedule, tasks_settings
 from app.tasks.models import (
@@ -809,7 +809,8 @@ async def test_the_leader_kick_is_the_seeded_follower_request_as_a_first_run(
     (primary,) = await _seeded_rows(beat_maker)
     (follower,) = await _rows_named(beat_maker, with_system_facts_schedule)
     mocker.patch(
-        "app.sep.apps.inventory.sync.get_async_session_maker", return_value=tasks_maker
+        "app.extensions.apps.inventory.sync.get_async_session_maker",
+        return_value=tasks_maker,
     )
     async with tasks_maker() as session:
         run = await SyncInstanceManager.create(

@@ -19,7 +19,7 @@ import { useEffect, useMemo } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
+import { ALERT_CONFIG_QUERY_KEY } from '@pmm-extensions/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './AlertOnFailField';
 
 interface StoryArgs {

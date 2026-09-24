@@ -23,6 +23,7 @@ from typing import Any
 
 from sqlalchemy import ChunkedIteratorResult, CursorResult, delete, func, or_, update
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql import ColumnExpressionArgument
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -147,9 +148,10 @@ class TaskManager(BaseSQLModelManager):
     async def iter_active_batches(
         cls,
         session: AsyncSession,
-        *,
+        *whereclause: ColumnExpressionArgument[bool],
         owner: str | None = None,
         batch_size: int = ACTIVE_TASK_BATCH_SIZE,
+        query_options: Sequence = (),
     ) -> AsyncGenerator[list[Task], None]:
         """Yield every active task in ascending-id batches.
 
@@ -161,10 +163,14 @@ class TaskManager(BaseSQLModelManager):
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
+        :param whereclause: Extra SQL predicates ANDed onto the active-task
+            filter.
         :param owner: The owner of the tasks. If provided, only tasks for this
             owner are yielded.
         :param batch_size: The maximum number of tasks per batch.
-        :yield: Batches of active tasks, ordered by ascending id.
+        :param query_options: SQLAlchemy loader options applied to every batch
+            query, e.g. ``load_only`` to keep unread columns out of it.
+        :return: Batches of active tasks, ordered by ascending id.
         """
         kwargs: dict[str, Any] = {}
         if owner is not None:
@@ -175,8 +181,10 @@ class TaskManager(BaseSQLModelManager):
                 session,
                 col(Task.deleted_at).is_(None),
                 col(Task.id) > last_id,
+                *whereclause,
                 order_by=[col(Task.id)],
                 limit=batch_size,
+                query_options=query_options,
                 **kwargs,
             )
             if not batch:
@@ -737,7 +745,7 @@ class TaskHistoryManager(BaseSQLModelManager):
     ) -> dict[str, TaskHistoryLatestStatus | None]:
         """Return the latest known history projection for each task name.
 
-        Status resolution matches SEP list helpers: histories are considered in
+        Status resolution matches PMM Extensions list helpers: histories are considered in
         ``created_at`` descending order and the newest non-null status wins.
         ``finished_at`` is resolved independently as the ``max`` across all of a
         task's history rows, so an in-progress re-run (whose newest row has a
@@ -1330,7 +1338,7 @@ class TaskHistoryLogStateManager(BaseManager):
 
         Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` — the same
         set :meth:`NomadStep.is_persistable` tests — rather than by selecting the
-        Nomad steps SEP drains: ``source`` also carries non-Nomad producers
+        Nomad steps PMM Extensions drains: ``source`` also carries non-Nomad producers
         (the Celery executor writes ``"execution"``, legacy rows carry
         ``"step1"``), and selecting by Nomad step name would drop every one of
         them and report ``UNKNOWN`` for tasks whose capture is known-complete.

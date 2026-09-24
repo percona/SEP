@@ -25,13 +25,13 @@ import { OverviewCard, Table, LoadableChildren, DatabaseIcon } from '@percona/pe
 import type { MRT_ColumnDef } from 'material-react-table';
 import { useNavigate } from 'react-router';
 import { formatDistanceToNow } from 'date-fns';
-import { useDashboardStats } from '@sep/api';
+import { useDashboardStats } from '@pmm-extensions/api';
 import {
   useTaskHistory,
   TaskHistoryStatusBadge,
   type TaskHistoryEntry,
   type TaskHistoryStatus,
-} from '@sep/framework';
+} from '@pmm-extensions/framework';
 import { useAuth } from '../contexts/auth';
 
 interface RecentTask {
@@ -114,7 +114,7 @@ export default function DashboardPage() {
   const statsQuery = useDashboardStats();
   const historyQuery = useTaskHistory({ limit: 5, excludeInternal: true });
 
-  // Nodes and Targets carry no `to`: SEP ships no inventory browser page for
+  // Nodes and Targets carry no `to`: PMM Extensions ships no inventory browser page for
   // them to open, so they render as plain counts.
   const stats: {
     title: string;

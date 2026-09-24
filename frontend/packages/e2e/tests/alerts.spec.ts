@@ -98,9 +98,9 @@ const MOCK_BACKUP_DETAIL = {
   created_at: '2026-05-28T10:00:00Z',
   templates: [{ name: 'MySQL Slow Queries', summary: 'Slow queries alert' }],
   rules: [{ title: 'MySQL Slow Queries' }],
-  contact_points: [{ name: 'SEP PagerDuty', type: 'pagerduty' }],
-  folders: [{ title: 'SEP Alerts' }],
-  notification_policy_receiver: 'SEP PagerDuty',
+  contact_points: [{ name: 'PMM Extensions PagerDuty', type: 'pagerduty' }],
+  folders: [{ title: 'PMM Extensions Alerts' }],
+  notification_policy_receiver: 'PMM Extensions PagerDuty',
 };
 
 // ── Route mocking ──────────────────────────────────────────────────────────────
@@ -375,7 +375,9 @@ test.describe('Backup detail page', () => {
     // The name appears in both the Templates and Rules sections; the Templates
     // section renders first, so .first() targets it deterministically.
     await expect(page.getByText('MySQL Slow Queries').first()).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByText('SEP PagerDuty (pagerduty)')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('PMM Extensions PagerDuty (pagerduty)')).toBeVisible({
+      timeout: 5_000,
+    });
   });
 
   test('back link returns to list page', async ({ page }) => {
