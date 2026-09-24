@@ -33,7 +33,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, useAuth, type AppSchema } from '@sep/api';
+import { apiClient, useAuth, type AppSchema } from '@pmm-extensions/api';
 import {
   snippetAppExecutePath,
   snippetAppHistoryPath,

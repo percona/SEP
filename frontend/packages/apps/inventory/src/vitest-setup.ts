@@ -16,6 +16,6 @@
  */
 
 import '@testing-library/jest-dom/vitest';
-import { installReactFlowTestPolyfills } from '@sep/test-utils';
+import { installReactFlowTestPolyfills } from '@pmm-extensions/test-utils';
 
 installReactFlowTestPolyfills();

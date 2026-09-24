@@ -18,7 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ListView } from '@sep/api';
+import type { ListView } from '@pmm-extensions/api';
 
 const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
   useScheduledTasksForAppMock: vi.fn(),

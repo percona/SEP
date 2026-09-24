@@ -26,7 +26,7 @@ vi.mock('./hooks', () => ({
   useSnippetDownload: vi.fn(),
 }));
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   SnippetExecutionAccordion: ({ title, description }: { title?: string; description?: string }) => (
     <div data-testid="snippet-execution-accordion">
       {title && <span data-testid="accordion-title">{title}</span>}

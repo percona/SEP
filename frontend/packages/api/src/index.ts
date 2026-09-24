@@ -37,7 +37,7 @@ export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 export { ApiError, normalizeAxiosError, normalizeBlobError, parseFieldErrors } from './errors';
 export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
-// Auth context (provider lives in @sep/shell; the context lives here so the
+// Auth context (provider lives in @pmm-extensions/shell; the context lives here so the
 // framework and app packages can read it without depending on the shell)
 export {
   ADMIN_SESSION,
@@ -78,10 +78,13 @@ export type {
   components as InventoryComponents,
 } from './generated/inventory';
 export type { paths as TasksPaths, components as TasksComponents } from './generated/tasks';
-export type { paths as SepPaths, components as SepComponents } from './generated/sep';
+export type {
+  paths as ExtensionsPaths,
+  components as ExtensionsComponents,
+} from './generated/extensions';
 
 // Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
-export { mainApi, sepApi, throwOnApiError } from './typed-client';
+export { mainApi, extensionsApi, throwOnApiError } from './typed-client';
 
 export type {
   AppSchema,

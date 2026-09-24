@@ -536,7 +536,7 @@
         "type": "object"
       },
       "NodeIdentityCandidateResponse": {
-        "description": "Pair a node with the successor a re-registration may have split it into.\n\n:param predecessor: The older row — the one every SEP reference persisted\n    before the re-registration resolves through, and so the one a\n    confirmation keeps.\n:param successor: The newer row PMM created when the node re-registered.\n:param matched_on: The signals that agreed, informational only. Detection\n    never requires an address match, because PMM discards the address on a\n    non-``--force`` re-registration.",
+        "description": "Pair a node with the successor a re-registration may have split it into.\n\n:param predecessor: The older row — the one every PMM Extensions reference persisted\n    before the re-registration resolves through, and so the one a\n    confirmation keeps.\n:param successor: The newer row PMM created when the node re-registered.\n:param matched_on: The signals that agreed, informational only. Detection\n    never requires an address match, because PMM discards the address on a\n    non-``--force`` re-registration.",
         "properties": {
           "matched_on": {
             "items": {
@@ -1033,7 +1033,7 @@
         "type": "string"
       },
       "RetirableEntityName": {
-        "description": "Name the inventory entity types that carry a retirement tombstone.\n\nValues are spelled out rather than derived, because they cross a service\nboundary: SEP names an entity type by these strings when it asks inventory\nto collect. Inventory-local on purpose — SEP's own\n``SyncInventoryEntityTypeEnum`` lives in a package this service must not\nimport.",
+        "description": "Name the inventory entity types that carry a retirement tombstone.\n\nValues are spelled out rather than derived, because they cross a service\nboundary: PMM Extensions names an entity type by these strings when it asks inventory\nto collect. Inventory-local on purpose — PMM Extensions' own\n``SyncInventoryEntityTypeEnum`` lives in a package this service must not\nimport.",
         "enum": [
           "node",
           "service",
@@ -2328,7 +2328,7 @@
         "type": "object"
       },
       "SettingClassGroup": {
-        "description": "Group one settings class's fields for the LIST response.\n\n:param setting_class: The Pydantic class ``__name__`` this group represents.\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.",
+        "description": "Group one settings class's fields for the LIST response.\n\n:param setting_class: The Pydantic class ``__name__`` this group represents.\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:param is_app_owned: Whether this group belongs to a PMM Extensions app under\n    ``app/extensions/apps/`` rather than core PMM Extensions wiring.\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.",
         "properties": {
           "app_display_name": {
             "anyOf": [

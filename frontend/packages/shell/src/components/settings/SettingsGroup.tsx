@@ -22,7 +22,7 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Typography from '@mui/material/Typography';
-import type { SettingResponse } from '@sep/api';
+import type { SettingResponse } from '@pmm-extensions/api';
 
 import SettingRow from './SettingRow';
 import NestedSettingGroup from './NestedSettingGroup';
@@ -37,7 +37,7 @@ export interface SettingsGroupProps {
   /**
    * Owning app's display label for app-owned groups. When set, the group is
    * tagged with the app it belongs to so admins can tell it apart from core
-   * SEP settings.
+   * PMM Extensions settings.
    */
   appLabel?: string;
 }

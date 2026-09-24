@@ -16,7 +16,12 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, fetchAllAppListPages, useAppTasks, type TasksComponents } from '@sep/api';
+import {
+  apiClient,
+  fetchAllAppListPages,
+  useAppTasks,
+  type TasksComponents,
+} from '@pmm-extensions/api';
 
 export type PeriodicTaskResponse = TasksComponents['schemas']['PeriodicTaskResponse'];
 export type PeriodicTaskCreate = TasksComponents['schemas']['PeriodicTaskCreate'];

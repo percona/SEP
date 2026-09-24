@@ -2,13 +2,13 @@
 # BUILDER #
 ###########
 
-FROM localhost/sep:builder AS builder
+FROM localhost/extensions:builder AS builder
 
 #########
 # FINAL #
 #########
 
-# Consolidated SEP side-car: the five SEP services plus a bundled Valkey broker
+# Consolidated PMM Extensions side-car: the five PMM Extensions services plus a bundled Valkey broker
 # under one supervisord. No frontend SPA — the UI is served by PMM.
 FROM docker.io/library/python:3.11.16-slim
 
@@ -20,7 +20,7 @@ ENV APP_HOME=$HOME/app
 RUN install -d -o 1001 -g 1001 -m 0750 $APP_HOME
 WORKDIR $APP_HOME
 
-# SEP-owned writable state, owner-only: the minted Grafana token lives here. See
+# PMM Extensions owned writable state, owner-only: the minted Grafana token lives here. See
 # sidecar/README.md for why a deployment mounts a volume over it.
 RUN install -d -o 1001 -g 1001 -m 0700 $HOME/state
 
@@ -31,7 +31,7 @@ RUN install -d -o 1001 -g 1001 -m 0700 $HOME/state
 #
 # No rendering libraries are installed. libpango-1.0-0, libpangoft2-1.0-0,
 # fontconfig, fonts-dejavu and shared-mime-info must return if `report` is
-# ever added to sidecar/settings.yaml's EXTENSIONS.APPS: app/sep/apps/report/service.py
+# ever added to sidecar/settings.yaml's EXTENSIONS.APPS: app/extensions/apps/report/service.py
 # imports weasyprint at module scope, and this image strips that package
 # instead of backing it.
 RUN apt-get update && \
@@ -86,8 +86,8 @@ RUN dpkg --purge --force-remove-essential --force-remove-protected \
         libsmartcols1 \
         liblastlog2-2
 
-COPY --from=builder /usr/src/sep/wheels /wheels
-COPY --from=builder /usr/src/sep/requirements.txt .
+COPY --from=builder /usr/src/extensions/wheels /wheels
+COPY --from=builder /usr/src/extensions/requirements.txt .
 RUN pip install --no-cache-dir /wheels/*
 
 # Bundled Valkey broker: the server, plus the cli the healthcheck pings
@@ -133,7 +133,7 @@ COPY --chown=0:1001 --chmod=440 ./sidecar/settings.yaml ./settings.yaml
 ARG EXTENSIONS_RESTRICT_APPS=0
 COPY --chown=0:0 --chmod=400 ./sidecar/restrict_apps.py /tmp/restrict_apps.py
 RUN if [ "$EXTENSIONS_RESTRICT_APPS" = "1" ]; then \
-        python /tmp/restrict_apps.py settings.yaml app/sep/apps; \
+        python /tmp/restrict_apps.py settings.yaml app/extensions/apps; \
     fi && \
     rm -f /tmp/restrict_apps.py
 

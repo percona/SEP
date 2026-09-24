@@ -16,7 +16,7 @@
  */
 
 // Constants
-export { SEP_TABLE_CLASS } from './constants';
+export { EXTENSIONS_TABLE_CLASS } from './constants';
 
 // Components
 export {

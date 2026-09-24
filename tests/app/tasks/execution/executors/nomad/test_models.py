@@ -1146,7 +1146,7 @@ class TestFailedStepReason:
         """Assert a failed log-capture hold does not become the reason.
 
         The hold is the one step ``NomadStep.is_persistable`` excludes, so a
-        failure of SEP's own capture machinery cannot be reported as the run's.
+        failure of PMM Extensions' own capture machinery cannot be reported as the run's.
         """
         alloc = {
             "TaskStates": {
@@ -5139,7 +5139,7 @@ class TestListFiles:
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_list_files_excludes_the_run_result_file(self, mock_nomad_cls):
-        """Assert SEP's own run-result file never reaches the output-files browser."""
+        """Assert PMM Extensions' own run-result file never reaches the output-files browser."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
@@ -5514,7 +5514,9 @@ class TestStreamFile:
             chunks = [
                 chunk
                 async for chunk in executor.stream_file(
-                    queue_item, "/output/.sep-run-result.json", anonymize=False
+                    queue_item,
+                    "/output/.pmm-extensions-run-result.json",
+                    anonymize=False,
                 )
             ]
 
@@ -8004,7 +8006,7 @@ class TestNomadCaptureHoldDispatchMeta:
         """Assert the executor setting is passed per dispatch, as a string.
 
         Enforcement lives on the execution host, so the value has to travel
-        with the dispatch rather than being read by the shell from SEP.
+        with the dispatch rather than being read by the shell from PMM Extensions.
         """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend

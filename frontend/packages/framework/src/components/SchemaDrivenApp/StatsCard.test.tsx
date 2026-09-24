@@ -118,7 +118,7 @@ describe('StatsCard — render states', () => {
   });
 
   it('renders empty state for 404 error', async () => {
-    const { ApiError } = await import('@sep/api');
+    const { ApiError } = await import('@pmm-extensions/api');
     mockUseTaskStats.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -131,7 +131,7 @@ describe('StatsCard — render states', () => {
   });
 
   it('renders inline error for 401 (does not redirect)', async () => {
-    const { ApiError } = await import('@sep/api');
+    const { ApiError } = await import('@pmm-extensions/api');
     mockUseTaskStats.mockReturnValue({
       data: undefined,
       isLoading: false,
@@ -143,7 +143,7 @@ describe('StatsCard — render states', () => {
   });
 
   it('renders inline error for 502 upstream Tasks-API failure', async () => {
-    const { ApiError } = await import('@sep/api');
+    const { ApiError } = await import('@pmm-extensions/api');
     mockUseTaskStats.mockReturnValue({
       data: undefined,
       isLoading: false,

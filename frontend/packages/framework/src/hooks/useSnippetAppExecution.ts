@@ -16,13 +16,13 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 import type { SnippetExecutionRequest, SnippetExecutionResponse } from '../types/snippetApp';
 
 export interface UseSnippetAppExecutionOptions {
   /**
    * When set, invalidate per-snippet history after a successful execute
-   * (`useSnippetHistory` in `@sep/snippets` uses this query-key shape).
+   * (`useSnippetHistory` in `@pmm-extensions/snippets` uses this query-key shape).
    */
   invalidateHistoryForFilename?: string;
 }

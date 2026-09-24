@@ -18,7 +18,7 @@
 export { AtwApp } from './AtwApp';
 // The gate's derivation helpers and copy stay module-private: nothing outside
 // this package consumes them, and every symbol exported here is a surface the
-// SEP → PMM sync has to keep parity with.
+// PMM Extensions → PMM sync has to keep parity with.
 export { DeliverySetupGate } from './DeliverySetupGate';
 export type { DeliveryStatus } from './DeliverySetupGate';
 export { IncidentListPage } from './IncidentListPage';

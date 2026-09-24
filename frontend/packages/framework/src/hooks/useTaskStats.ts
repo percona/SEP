@@ -16,13 +16,13 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { sepApi, throwOnApiError } from '@sep/api';
-import { sepRetry } from './sepRetry';
+import { extensionsApi, throwOnApiError } from '@pmm-extensions/api';
+import { extensionsRetry } from './extensionsRetry';
 
 /**
  * Consumer-side view of the task-stats payload.
  *
- * The SEP proxy at ``app/sep/api/routes/task_stats.py`` returns the raw
+ * The PMM Extensions proxy at ``app/extensions/api/routes/task_stats.py`` returns the raw
  * upstream payload (``dict[str, Any]``) on success and a ``502`` with a
  * ``{"detail": ...}`` body on upstream failure (surfaced here as an
  * ``ApiError`` on the React Query error slot — not as ``{}``). Every field
@@ -56,14 +56,14 @@ export function useTaskStats(taskName: string | undefined, enabled = true) {
     enabled: enabled && Boolean(trimmed),
     queryFn: async () => {
       const data = await throwOnApiError(
-        sepApi.GET('/api/extensions/task-stats/{task_name}', {
+        extensionsApi.GET('/api/extensions/task-stats/{task_name}', {
           params: { path: { task_name: trimmed as string } },
         }),
       );
       return data as unknown as TaskStatsView;
     },
     refetchOnWindowFocus: false,
-    retry: sepRetry,
+    retry: extensionsRetry,
     staleTime: 30_000,
   });
 }

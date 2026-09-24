@@ -16,7 +16,7 @@
  */
 
 import { useMutation } from '@tanstack/react-query';
-import { apiClient, normalizeBlobError } from '@sep/api';
+import { apiClient, normalizeBlobError } from '@pmm-extensions/api';
 import { downloadBlob } from '../utils/downloadBlob';
 
 export interface SnippetDownloadParams {

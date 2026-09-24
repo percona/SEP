@@ -967,7 +967,7 @@ class AliasableManagerMixin(RetirableManagerMixin):
     ) -> list[ColumnExpressionArgument[bool]]:
         """Return the clauses making a pairing coherent to act on at all.
 
-        The lower autoincrement id is the older row. References SEP persisted
+        The lower autoincrement id is the older row. References PMM Extensions persisted
         before the split name that row's primary key, so it is the side a
         confirmation keeps.
 
@@ -1952,7 +1952,7 @@ class RetiredInclusiveTableManager(TableManager):
 
 
 #: The order collection walks the retirable entities in, deepest first, paired
-#: with the entity name SEP addresses each type by. Deleting a descendant before
+#: with the entity name PMM Extensions addresses each type by. Deleting a descendant before
 #: its ancestor mirrors :meth:`RetirableManagerMixin._retirement_statements`, so
 #: an interrupted run can only ever leave deleted descendants under a surviving
 #: ancestor — never an orphan, and never a live row beneath a deleted ancestor.

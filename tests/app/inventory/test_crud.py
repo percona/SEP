@@ -1758,7 +1758,7 @@ class TestIdentityCandidatePagination:
 class TestConfirmedLinkNeedsNoSyncerChange:
     """Test the inventory-side property the next sync tick relies on.
 
-    ``claim_identity`` (``app/sep/sync/models.py``) resolves an upstream id to
+    ``claim_identity`` (``app/extensions/sync/models.py``) resolves an upstream id to
     the **active** row when a tombstone shares it, and the syncer matches by
     upstream id alone. So a confirmation needs no syncer change provided it
     leaves exactly one active row holding the transferred id — the predecessor.

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Encrypt and decrypt values SEP stores at rest, keyed by ``ENCRYPTION_KEY``.
+"""Encrypt and decrypt values PMM Extensions stores at rest, keyed by ``ENCRYPTION_KEY``.
 
 The ciphertext is Fernet: authenticated AES-128-CBC carrying its own version
 marker, timestamp and HMAC, rendered as URL-safe base64 text that any ``str``

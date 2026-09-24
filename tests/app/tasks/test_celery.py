@@ -4095,7 +4095,7 @@ class TestPreDispatchPayloadCheck:
                     alert_on_fail=False,
                     data={
                         "task": "wrapped",
-                        "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+                        "payload": "file://app/extensions/plugins/mysql_backups/binlog_payload",
                     },
                 )
             )

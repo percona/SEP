@@ -34,8 +34,12 @@ from app.core.utils.pydantic import (
     loc_to_dot_sep,
     run_pydantic_type_validator,
 )
-from app.sep.snippets.config import SnippetFilter, SnippetFilterType, SnippetSudoOption
-from app.sep.snippets.models.meta import SnippetMetaParameterType
+from app.extensions.snippets.config import (
+    SnippetFilter,
+    SnippetFilterType,
+    SnippetSudoOption,
+)
+from app.extensions.snippets.models.meta import SnippetMetaParameterType
 from app.tasks.anonymizer.entities import PIIEntity
 
 
@@ -410,7 +414,7 @@ class TestLocToDotSep:
         """Convert location tuples to dot-separated string paths."""
         assert loc_to_dot_sep(loc) == expected
 
-    def test_loc_to_dot_sep_type_error(self):
+    def test_loc_to_dot_extensions_type_error(self):
         """Raise TypeError for non-str/int elements in the location tuple."""
         with pytest.raises(TypeError, match="Unexpected type"):
             loc_to_dot_sep(("field", 3.14))

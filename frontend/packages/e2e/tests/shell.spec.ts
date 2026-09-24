@@ -167,7 +167,7 @@ test.describe('shell sanity smoke', () => {
 
   test('ambient Grafana session auto-logs-in without showing the login form', async ({ page }) => {
     await mockAuthenticatedApis(page);
-    // No SEP refresh cookie, but a valid ambient Grafana session: the bootstrap
+    // No PMM Extensions refresh cookie, but a valid ambient Grafana session: the bootstrap
     // falls back to POST /api/oauth/session and lands authenticated. Registered
     // after the catch-all so these specific routes take precedence.
     await page.route('**/api/oauth/refresh', (route) =>

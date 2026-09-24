@@ -25,7 +25,7 @@ from tests.app.conftest import postgres_dsn_or_skip
 def postgres_sync_url() -> URL:
     """Return a sync (``psycopg2``) URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     return make_url(postgres_dsn_or_skip()).set(drivername="postgresql+psycopg2")

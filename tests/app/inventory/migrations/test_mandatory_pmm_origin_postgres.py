@@ -20,6 +20,10 @@ stores the ``source`` enum as free text, so a wrong label passes there and only
 ``sourceenum`` rejects it here; and ``batch_alter_table`` recreates the table on
 SQLite while emitting a plain ``ALTER`` here. These cases exercise the backfill
 and the DDL on the native path.
+
+Everything runs over ``asyncpg``: the inventory track's ``env.py`` builds its own
+async engine, and the ``test_postgres`` CI job installs the ``postgresql`` group
+only, so no sync driver is available to lean on.
 """
 
 from functools import partial
@@ -28,12 +32,11 @@ import pytest
 from alembic import command
 from sqlalchemy import text
 
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
 from tests.app.inventory.migrations.postgres_support import run_on_postgres
 
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
-
-_LEGACY_PREFIX = "sep-legacy:"
 
 _MANDATORY_COLUMNS = (
     ("node", "external_id"),
@@ -139,7 +142,7 @@ def test_backfill_writes_a_valid_enum_label(inventory_postgres_config):
 
     node = run_on_postgres(url, lambda conn: _row(conn, "node", node_id))
     assert node["source"] == "PMM"
-    assert node["external_id"] == f"{_LEGACY_PREFIX}{node_id}"
+    assert node["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node_id}"
 
 
 def test_set_not_null_lands_on_the_native_path(inventory_postgres_config):
