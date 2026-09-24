@@ -3487,14 +3487,10 @@ export interface paths {
      *     ``TasksSettings``), independent of selector order.
      *
      *     :param session: The active database session for SEP override queries.
-     *     :type session: AsyncSession
      *     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
-     *     :type tasks_api: TaskAPI
      *     :param keys: Optional, repeatable selectors restricting the export to a
      *         subset of classes/keys. ``None`` (omitted) means the full export.
-     *     :type keys: list[str] | None
      *     :return: YAML bytes with ``Content-Disposition`` set for download.
-     *     :rtype: Response
      *     :raises HTTPBadRequestException: If a selector is blank, malformed, names an
      *         unwired class, or names a key that does not exist on its class.
      *     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
@@ -3641,11 +3637,10 @@ export interface paths {
      * Get App Info
      * @description Return shell metadata for the React frontend.
      *
-     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
-     *     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
-     *     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
-     *     ``EXTENSIONS__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
-     *     gated by the router-level ``IsApiAuthenticated`` dependency.
+     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper.
+     *     The helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
+     *     ``EXTENSIONS__FOOTER_TEMPLATE`` override is reflected without a restart.
+     *     Access is gated by the router-level ``IsApiAuthenticated`` dependency.
      *
      *     :return: The rendered footer text.
      */
@@ -3682,15 +3677,10 @@ export interface paths {
      *     counts as healthy data.
      *
      *     :param response: The outgoing response used to attach the error header.
-     *     :type response: Response
      *     :param session: The active database session for snippet queries.
-     *     :type session: AsyncSession
      *     :param tasks_api: Async client for the Tasks sub-app.
-     *     :type tasks_api: RemoteAPI
      *     :param inventory_api: Async client for the Inventory sub-app.
-     *     :type inventory_api: RemoteAPI
      *     :return: Aggregate counts for nodes, tasks, snippets, and targets.
-     *     :rtype: DashboardStatsResponse
      */
     get: operations['extensions_get_dashboard_stats_api_extensions_dashboard__get'];
     put?: never;
