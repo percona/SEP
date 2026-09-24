@@ -22,6 +22,13 @@ credential would otherwise reach the database in the clear. The walker here maps
 a settings field's *annotation* onto the stored JSON positionally and transforms
 the leaves that carry a credential.
 
+That annotation comes from one of two sources. The read and write paths pass the
+live settings class, so they always track the current field set. A re-encryption
+data migration passes a frozen replica model declaring the shapes that revision
+was authored to cover, so its reach cannot drift with a later rename. Both are
+plain :class:`~pydantic.BaseModel` subclasses as far as this module is
+concerned, and nothing below distinguishes them.
+
 Two leaf kinds qualify, and they differ in how much of the leaf is rewritten. A
 **Pydantic secret** leaf is the credential, so the whole value is transformed. A
 **credential-bearing URL** leaf — recognized from the ``WrapSerializer`` marker
@@ -46,6 +53,15 @@ The three broad entry points cover both kinds, which the read and write paths
 need. The two ``*_credential_url_leaves`` entry points cover only the URL kind,
 so the data migrations that call them are exact inverses of each other and never
 rewrite a secret an earlier revision already owns.
+
+Every leaf written here carries the versioned envelope marker
+:func:`~app.core.encryption.mark_ciphertext` applies, so "is this already
+encrypted?" is answered from the stored value's own format. The structural
+:func:`~app.core.encryption.is_encrypted` check survives only as the fallback
+for rows written before the envelope shipped: nothing re-marks those, because
+deciding an unmarked row is ciphertext is exactly the guess the envelope exists
+to replace. :func:`unmark_secret_leaves` strips the marker for a rollback, which
+is why the envelope can be removed without the key.
 """
 
 from __future__ import annotations
@@ -56,6 +72,7 @@ __all__ = [
     "encrypt_secret_leaves",
     "reencrypt_credential_url_leaves",
     "reencrypt_secret_leaves",
+    "unmark_secret_leaves",
 ]
 
 import logging
@@ -63,26 +80,30 @@ import typing
 from collections.abc import Callable, Collection, Mapping
 from enum import Enum
 from types import UnionType
-from typing import Any, TYPE_CHECKING, Union
+from typing import Any, Union
 
 from pydantic import BaseModel, SecretBytes, SecretStr
 from pydantic_core import Url
 
-from app.core.encryption import decrypt, encrypt, is_encrypted
+from app.core.encryption import (
+    decrypt,
+    encrypt,
+    is_encrypted,
+    is_stored_ciphertext,
+    mark_ciphertext,
+    marked_ciphertext,
+)
 from app.core.settings_override.registry import (
     annotated_type,
     annotation_contains_credential_url,
     annotation_contains_secret,
     annotation_is_credential_url,
-    resolve_nested_field,
 )
+from app.core.settings_override.resolution import resolve_nested_field
 from app.core.utils.fields import (
     credential_url_password,
     map_credential_url_password,
 )
-
-if TYPE_CHECKING:
-    from app.core.config import BaseYamlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +111,7 @@ _SECRET_TYPES = (SecretStr, SecretBytes)
 
 
 def encrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -103,66 +124,62 @@ def encrypt_secret_leaves(
     structurally whether a leaf "looks encrypted" would misread a credential
     that happens to be base64 as ciphertext and store it in the clear.
 
+    Every leaf it writes carries the envelope marker, so a later reader
+    recognises what this stored from the value's own format rather than guessing
+    it from the bytes.
+
     Covers both leaf kinds: a Pydantic secret leaf is encrypted whole, and a
     credential-bearing URL has only its userinfo password encrypted.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The JSON-storable value about to be persisted.
     :return: A value of the same shape with its credential leaves encrypted.
     """
-    return _transform_leaves(
-        _annotation_for_key(settings_cls, key),
-        value,
-        encrypt,
-        kinds=_ALL_LEAF_KINDS,
-        context=f"{settings_cls.__name__}.{key}",
-    )
+    return _rewrite_leaves(settings_cls, key, value, _encrypt_leaf, _ALL_LEAF_KINDS)
 
 
 def reencrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
     """Return ``value`` with every not-yet-encrypted secret leaf encrypted.
 
     The idempotent variant the re-encryption migrations need, where the column
-    genuinely may already hold ciphertext. A leaf
-    :func:`~app.core.encryption.is_encrypted` accepts is left byte-identical, so
-    a second run rewrites nothing and ciphertext written under a different
-    ``ENCRYPTION_KEY`` is never re-encrypted, which would destroy the only copy
-    of its plaintext.
+    genuinely may already hold ciphertext. A leaf already holding ciphertext is
+    left byte-identical, so a second run rewrites nothing and ciphertext written
+    under a different ``ENCRYPTION_KEY`` is never re-encrypted, which would
+    destroy the only copy of its plaintext.
 
-    ``is_encrypted`` is structural, so a legacy plaintext secret that is itself
-    a well-formed Fernet token is skipped and stays in the clear. Attempting a
-    decrypt to tell the two apart is not an option: a failure there cannot
-    separate that case from the foreign-key one, and guessing wrong on the
-    second destroys data. Only the write path is free of the ambiguity, and it
-    uses :func:`encrypt_secret_leaves`.
+    The envelope marker decides first, so a leaf this module wrote is recognised
+    from its own format. :func:`~app.core.encryption.is_encrypted` survives as
+    the *fallback* for rows written before the envelope shipped, where nothing
+    but the bytes is available to decide on. That fallback is structural, so a
+    legacy plaintext secret that is itself a well-formed Fernet token is skipped
+    and stays in the clear. Attempting a decrypt to tell the two apart is not an
+    option: a failure there cannot separate that case from the foreign-key one,
+    and guessing wrong on the second destroys data. Only the write path is free
+    of the ambiguity, and it uses :func:`encrypt_secret_leaves`.
 
     Covers both leaf kinds. For a credential-bearing URL the idempotence check
-    runs on the *password*, not the leaf: ``is_encrypted`` on a whole URL is
-    always ``False`` — the URL is not a Fernet token — so testing the leaf
-    would re-encrypt an already-encrypted password on every run and destroy the
-    plaintext.
+    runs on the *password*, not the leaf: neither discriminator accepts a whole
+    ``https://user:<token>@host/`` string — it is not a Fernet token and carries
+    no marker of its own — so testing the leaf would re-encrypt an
+    already-encrypted password on every run and destroy the plaintext.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its plaintext credentials encrypted.
     """
-    return _transform_leaves(
-        _annotation_for_key(settings_cls, key),
-        value,
-        lambda leaf: leaf if is_encrypted(leaf) else encrypt(leaf),
-        kinds=_ALL_LEAF_KINDS,
-        context=f"{settings_cls.__name__}.{key}",
-    )
+    return _rewrite_leaves(settings_cls, key, value, _reencrypt_leaf, _ALL_LEAF_KINDS)
 
 
 def decrypt_secret_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -175,24 +192,19 @@ def decrypt_secret_leaves(
     would hand the snapshot a still-encrypted value for whichever kind it
     dropped.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The JSON value read out of the override row.
     :return: A value of the same shape with its credential leaves in plaintext.
     :raises DecryptionError: If a leaf is ciphertext the configured
         ``ENCRYPTION_KEY`` cannot decrypt.
     """
-    return _transform_leaves(
-        _annotation_for_key(settings_cls, key),
-        value,
-        lambda leaf: decrypt(leaf) if is_encrypted(leaf) else leaf,
-        kinds=_ALL_LEAF_KINDS,
-        context=f"{settings_cls.__name__}.{key}",
-    )
+    return _rewrite_leaves(settings_cls, key, value, _decrypt_leaf, _ALL_LEAF_KINDS)
 
 
 def reencrypt_credential_url_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -203,22 +215,19 @@ def reencrypt_credential_url_leaves(
     :class:`~pydantic.SecretStr` leaf an earlier revision encrypted is not this
     revision's to rewrite in either direction.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its plaintext URL passwords encrypted.
     """
-    return _transform_leaves(
-        _annotation_for_key(settings_cls, key),
-        value,
-        lambda leaf: leaf if is_encrypted(leaf) else encrypt(leaf),
-        kinds=_CREDENTIAL_URL_ONLY,
-        context=f"{settings_cls.__name__}.{key}",
+    return _rewrite_leaves(
+        settings_cls, key, value, _reencrypt_leaf, _CREDENTIAL_URL_ONLY
     )
 
 
 def decrypt_credential_url_leaves(
-    settings_cls: type[BaseYamlSettings],
+    settings_cls: type[BaseModel],
     key: str,
     value: Any,
 ) -> Any:
@@ -229,23 +238,147 @@ def decrypt_credential_url_leaves(
     object, so rolling this revision back does not undo the one before it —
     which Alembic would never re-run to put back.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :param value: The stored value being rewritten in place.
     :return: A value of the same shape with its URL passwords in plaintext.
     :raises DecryptionError: If a password is ciphertext the configured
         ``ENCRYPTION_KEY`` cannot decrypt.
     """
+    return _rewrite_leaves(
+        settings_cls, key, value, _decrypt_leaf, _CREDENTIAL_URL_ONLY
+    )
+
+
+def unmark_secret_leaves(
+    settings_cls: type[BaseModel],
+    key: str,
+    value: Any,
+) -> Any:
+    """Return ``value`` with the envelope marker stripped from every leaf.
+
+    The rollback transform, and the reason it can exist at all: stripping the
+    marker is a string operation over the stored text, so it leaves a bare
+    Fernet token a release predating the envelope reads correctly — without
+    holding ``ENCRYPTION_KEY``, without a decrypt, and without the plaintext
+    ever being written back to the column.
+
+    Covers both leaf kinds, because :func:`encrypt_secret_leaves` marks both. A
+    leaf carrying no marker is returned byte-identical, so this is idempotent
+    and a row written before the envelope is never touched.
+
+    There is deliberately no ``mark_secret_leaves`` counterpart. Marking an
+    existing row requires deciding it is ciphertext, which for an unmarked row
+    is exactly the structural guess the envelope exists to stop trusting, and
+    marking a legacy collision plaintext would freeze that misclassification
+    permanently.
+
+    :param settings_cls: The settings class owning ``key``.
+    :param key: The override row's key, ``__``-delimited for a nested leaf.
+    :param value: The stored value being rewritten in place.
+    :return: A value of the same shape with its leaves unmarked.
+    """
+    return _rewrite_leaves(settings_cls, key, value, _unmark_leaf, _ALL_LEAF_KINDS)
+
+
+def _rewrite_leaves(
+    settings_cls: type[BaseModel],
+    key: str,
+    value: Any,
+    transform: Callable[[str], str],
+    kinds: frozenset[_LeafKind],
+) -> Any:
+    """Return ``value`` with ``transform`` applied to every leaf of ``kinds``.
+
+    The shared body of the public entry points above. Each resolves the same
+    annotation for ``key`` and labels the walk with the same ``<class>.<key>``
+    context, differing only in the transform it applies and the leaf kinds it
+    selects — so the resolution and the label are settled here rather than
+    restated per entry point, where one copy could drift.
+
+    :param settings_cls: The settings class owning ``key``.
+    :param key: The override row's key, ``__``-delimited for a nested leaf.
+    :param value: The stored value being rewritten.
+    :param transform: The leaf transformation to apply.
+    :param kinds: The leaf kinds this walk transforms.
+    :return: A value of the same shape with its selected leaves transformed.
+    """
     return _transform_leaves(
         _annotation_for_key(settings_cls, key),
         value,
-        lambda leaf: decrypt(leaf) if is_encrypted(leaf) else leaf,
-        kinds=_CREDENTIAL_URL_ONLY,
+        transform,
+        kinds=kinds,
         context=f"{settings_cls.__name__}.{key}",
     )
 
 
-def _annotation_for_key(settings_cls: type[BaseYamlSettings], key: str) -> Any:
+def _encrypt_leaf(leaf: str) -> str:
+    """Return ``leaf`` encrypted and marked.
+
+    :param leaf: The plaintext credential.
+    :return: Marked ciphertext.
+    """
+    return mark_ciphertext(encrypt(leaf))
+
+
+def _reencrypt_leaf(leaf: str) -> str:
+    """Return ``leaf`` encrypted and marked unless it already holds ciphertext.
+
+    The envelope answers first: :func:`~app.core.encryption.marked_ciphertext`
+    accepts only a value carrying the marker over a well-formed payload, so a
+    leaf this module wrote is always recognised and a legacy plaintext that
+    merely starts with the marker is not. Anything it declines falls to the bare
+    structural check, the discriminator for rows written before the envelope
+    shipped — including a legacy plaintext that satisfies it by accident, an
+    ambiguity this cannot resolve and does not make worse.
+
+    :param leaf: The stored leaf being rewritten.
+    :return: The leaf unchanged, or marked ciphertext.
+    """
+    if is_stored_ciphertext(leaf):
+        return leaf
+    return _encrypt_leaf(leaf)
+
+
+def _decrypt_leaf(leaf: str) -> str:
+    """Return the plaintext behind ``leaf``, or ``leaf`` when it is not ciphertext.
+
+    A value carrying the marker over a *damaged* payload is returned as-is
+    rather than raised on, and that is a deliberate choice with a cost worth
+    naming: the marker is evidence the writer stored ciphertext there, so
+    passing it through hands the caller an ``extensions.enc.v1.``-prefixed string as if
+    it were the credential. Raising instead would drop the row with a warning,
+    which :mod:`app.core.settings_override.cache` already handles.
+
+    Passing through is kept because it matches the unmarked path exactly — a
+    corrupt bare token is returned untouched too — so no stored value changes
+    behaviour on the day the envelope ships, which is the property the whole
+    change is built around. Nothing in this module can produce the shape: it
+    needs a value that was marked and then damaged in the column.
+
+    :param leaf: The stored leaf being read.
+    :return: The plaintext, or the leaf unchanged.
+    :raises DecryptionError: If the leaf is ciphertext the configured
+        ``ENCRYPTION_KEY`` cannot decrypt.
+    """
+    token = marked_ciphertext(leaf)
+    if token is not None:
+        return decrypt(token)
+    return decrypt(leaf) if is_encrypted(leaf) else leaf
+
+
+def _unmark_leaf(leaf: str) -> str:
+    """Return ``leaf`` with the envelope marker removed, or unchanged.
+
+    :param leaf: The stored leaf being rewritten.
+    :return: The bare token, or the leaf unchanged.
+    """
+    token = marked_ciphertext(leaf)
+    return token if token is not None else leaf
+
+
+def _annotation_for_key(settings_cls: type[BaseModel], key: str) -> Any:
     """Return the annotation of the field ``key`` overrides, or ``None``.
 
     Resolved through :func:`~app.core.settings_override.registry.annotated_type`
@@ -253,7 +386,8 @@ def _annotation_for_key(settings_cls: type[BaseYamlSettings], key: str) -> Any:
     field's ``Annotated`` metadata onto ``FieldInfo``, and the credential-URL
     marker lives in exactly that metadata.
 
-    :param settings_cls: The settings class owning ``key``.
+    :param settings_cls: The settings class, or a migration's frozen replica of
+        one, owning ``key``.
     :param key: The override row's key, ``__``-delimited for a nested leaf.
     :return: The leaf annotation, or ``None`` when ``key`` resolves to no field.
     """

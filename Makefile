@@ -27,7 +27,7 @@ else
 	POETRY="${VENV_BIN}/poetry"
 endif
 PIP?="${VENV_BIN}/pip"
-APPS=tasks inventory sep
+APPS=tasks inventory extensions
 PYTEST_WORKERS?=auto
 # xdist's default `load` hands each free worker the next single test, so a long
 # test picked up late leaves the other workers idle at the tail. `worksteal`
@@ -84,15 +84,15 @@ else
 endif
 
 builder:
-	@podman image exists "sep:builder" && podman image rm "sep:builder" || true
-	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "sep:builder"
+	@podman image exists "extensions:builder" && podman image rm "extensions:builder" || true
+	@buildah build -f Containerfile.base --compress --force-rm --squash --no-cache --format oci --memory 100M --isolation rootless --tag "extensions:builder"
 
-# The app-restricted PMM-embedded image is the only artifact SEP ships. Which
-# apps survive is sidecar/settings.yaml's SEP.APPS.
+# The app-restricted PMM-embedded image is the only artifact PMM Extensions ships. Which
+# apps survive is sidecar/settings.yaml's EXTENSIONS.APPS.
 # docker format, not oci: OCI silently discards the HEALTHCHECK instruction
 image: pack
-	@podman image exists "sep:${RELEASE_VER}" && podman image rm "sep:${RELEASE_VER}" || true
-	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg SEP_RESTRICT_APPS=1 --tag "sep:${RELEASE_VER}"
+	@podman image exists "extensions:${RELEASE_VER}" && podman image rm "extensions:${RELEASE_VER}" || true
+	@buildah build -f sidecar/Containerfile.sidecar --compress --force-rm --squash --no-cache --format docker --memory 100M --isolation rootless --build-arg EXTENSIONS_RESTRICT_APPS=1 --tag "extensions:${RELEASE_VER}"
 
 format: venv
 	@"${VENV_BIN}"/ruff format .
@@ -139,11 +139,11 @@ dev-frontend:
 
 # One-time legacy data['_form'] backfill for framework-migrated task apps.
 backfill-legacy-forms: venv
-	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
+	@"${VENV_BIN}"/python -m app.extensions.apps.framework.form_backfill $(BACKFILL_ARGS)
 
 # Read-only counterpart: reports the saved stamps a create form now rejects.
 form-audit: venv
-	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_audit $(AUDIT_ARGS)
+	@"${VENV_BIN}"/python -m app.extensions.apps.framework.form_audit $(AUDIT_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -152,7 +152,7 @@ pip-audit: venv
 bandit: venv
 	@"${VENV_BIN}"/bandit -c pyproject.toml -r app
 
-makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/sep/models.py
+makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app/extensions/models.py
 	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@for app in $(APPS); do \
 		capitalized=$$(echo $$app | sed 's/^./\U&/'); \
@@ -166,8 +166,8 @@ makemigrations: venv alembic.ini app/tasks/models.py app/inventory/models.py app
 			elif grep -q "New upgrade operations detected" alembic_check.log; then \
 				echo "New upgrade operations detected for $$capitalized. Creating migration."; \
 				read -p "Enter description for new $$capitalized Migration: " desc; \
-				if [ "$$app" = "sep" ]; then \
-					extra_args="--head=sep_main@head"; \
+				if [ "$$app" = "extensions" ]; then \
+					extra_args="--head=extensions_main@head"; \
 				else \
 					extra_args=""; \
 				fi; \
@@ -190,13 +190,18 @@ ifndef PLUGIN
 endif
 	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
 	@read -p "Enter description for new $(PLUGIN) plugin migration: " desc; \
-	"${VENV_BIN}"/alembic --name sep revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
+	"${VENV_BIN}"/alembic --name extensions revision --autogenerate --head=$(PLUGIN)@head -m "$$desc"
 
-migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/sep/migrations/versions
+migrate: venv alembic.ini app/tasks/migrations/versions app/inventory/migrations/versions app/extensions/migrations/versions
 	@"${VENV_BIN}"/python scripts/sync_alembic_version_locations.py
-	@for app in $(APPS); do \
-		"${VENV_BIN}"/alembic --name $$app upgrade heads; \
-	done
+	@ret=0; \
+	for app in $(APPS); do \
+		"${VENV_BIN}"/alembic --name $$app upgrade heads || ret=1; \
+	done; \
+	if [ $$ret -ne 0 ]; then \
+	  echo "Error: One or more Alembic upgrades failed."; \
+	  exit $$ret; \
+	fi
 	@"${VENV_BIN}"/python -m app.core.celery.bootstrap
 
 checkmigrations: migrate
@@ -224,9 +229,9 @@ test: venv
 # goldens, the frontend OpenAPI spec, and the generated TS client. Run after
 # changing an app form model, review the diff, then commit.
 regen-specs: venv
-	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) EXTENSIONS_UPDATE_SNAPSHOTS=1 "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/extensions/test_schema_snapshot.py tests/app/extensions/test_openapi_snapshot.py tests/app/extensions/apps/framework/test_form_dsl_golden.py
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
-	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
+	@cd frontend && pnpm --filter @pmm-extensions/api codegen && pnpm --filter @pmm-extensions/api exec oxfmt --write src/generated
 
 regen-pbm-payloads: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/gen_pbm_payloads.py
@@ -288,7 +293,7 @@ changelog-list:
 # SERVICE_TYPE NAV_ICON RUN_MODE COMMAND PAYLOAD SCRIPT NO_INPUT ENABLE
 # DERIVE_UPDATE DERIVE_DELETE.
 startapp:
-	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py \
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/extensions/apps/framework/scaffold.py \
 		$(if $(NAME),--name "$$NAME") \
 		$(if $(TYPE),--type "$$TYPE") \
 		$(if $(DISPLAY_NAME),--display-name "$$DISPLAY_NAME") \

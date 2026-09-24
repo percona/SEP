@@ -19,7 +19,7 @@
 Groups each track's heads by the root revision they descend from and creates
 one merge revision inside every group that has more than one head. Heads that
 belong to different branches are never merged together, so a multi-branch
-track such as ``sep`` stays at one head per root rather than collapsing to a
+track such as ``extensions`` stays at one head per root rather than collapsing to a
 single chain.
 """
 

@@ -20,7 +20,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 
 import { server } from '../../tests/msw-server';
 import AppDisabledGuard from './AppDisabledGuard';

@@ -19,7 +19,7 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setOnRefreshed, setOnUnauthorized, setTokenMinter, setTokenProvider } from '../src/client';
 import { ApiError } from '../src/errors';
-import { mainApi, sepApi, throwOnApiError } from '../src/typed-client';
+import { mainApi, extensionsApi, throwOnApiError } from '../src/typed-client';
 import { server } from './msw-server';
 
 // openapi-fetch builds absolute URLs from a `baseUrl`. The generated paths
@@ -214,7 +214,7 @@ describe('typed-client — 401 recovery', () => {
     );
 
     await throwOnApiError(
-      sepApi.POST('/api/apps/inventory/sync/', { body: { syncer: 'mod.Cls' } }),
+      extensionsApi.POST('/api/apps/inventory/sync/', { body: { syncer: 'mod.Cls' } }),
     );
 
     expect(seenBodies).toEqual([{ syncer: 'mod.Cls' }, { syncer: 'mod.Cls' }]);

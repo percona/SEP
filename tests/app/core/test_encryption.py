@@ -26,6 +26,7 @@ from pydantic import SecretStr
 
 from app.core.config import settings
 from app.core.encryption import (
+    _CIPHERTEXT_V1_PREFIX,
     _FERNET_VERSION,
     _get_fernet,
     _MIN_TOKEN_BYTES,
@@ -33,6 +34,9 @@ from app.core.encryption import (
     DecryptionError,
     encrypt,
     is_encrypted,
+    is_stored_ciphertext,
+    mark_ciphertext,
+    marked_ciphertext,
 )
 from tests.app.encryption_fixtures import foreign_token
 
@@ -253,3 +257,115 @@ def test_fernet_is_cached(monkeypatch: pytest.MonkeyPatch):
     _get_fernet.cache_clear()
 
     assert Fernet(rotated).decrypt(encrypt("hunter2")) == b"hunter2"
+
+
+def test_mark_ciphertext_only_prefixes_the_token():
+    """Assert marking prepends the marker and leaves the token byte-identical."""
+    token = encrypt("hunter2")
+
+    assert mark_ciphertext(token) == f"{_CIPHERTEXT_V1_PREFIX}{token}"
+
+
+def test_marked_ciphertext_round_trips_a_marked_token():
+    """Assert the envelope gives back the bare token, which the key still decrypts."""
+    token = marked_ciphertext(mark_ciphertext(encrypt("hunter2")))
+
+    assert token is not None
+    assert decrypt(token) == "hunter2"
+
+
+def test_the_marker_carries_a_character_outside_the_base64_alphabet():
+    """Assert the marker cannot be read as base64, which is what makes it decisive.
+
+    A marker drawn only from the base64url alphabet would leave
+    :func:`is_encrypted`'s answer for a marked value depending on the token's
+    length and padding, so the two discriminators could both claim one value.
+    """
+    assert not set(_CIPHERTEXT_V1_PREFIX) <= URLSAFE_B64_ALPHABET
+
+
+def test_is_encrypted_false_for_a_marked_token():
+    """Assert a marked value is invisible to the structural check.
+
+    The property every marker-blind consumer depends on being told about: the
+    side-car's freshness probe reads a marked row as carrying no ciphertext
+    unless it tests the envelope first.
+    """
+    assert is_encrypted(mark_ciphertext(encrypt("hunter2"))) is False
+
+
+def test_marked_ciphertext_none_for_a_legacy_token():
+    """Assert an unmarked token written before the envelope is not claimed by it."""
+    assert marked_ciphertext(encrypt("hunter2")) is None
+
+
+def test_marked_ciphertext_none_for_a_plaintext_carrying_the_marker():
+    """Assert the payload check refuses a prefix the writer never produced.
+
+    A bare prefix test would read this legacy plaintext as ciphertext, leave it
+    in the clear through the migration, and fail every later read of it.
+    """
+    assert marked_ciphertext(f"{_CIPHERTEXT_V1_PREFIX}operator-secret") is None
+
+
+def test_marked_ciphertext_none_for_a_marker_over_a_corrupt_token():
+    """Assert a truncated payload falls back to plaintext rather than raising.
+
+    Matches what the unmarked path already does with a corrupt token, so the
+    two envelopes fail identically on a corrupted value.
+    """
+    truncated = encrypt("hunter2")[:40]
+
+    assert marked_ciphertext(f"{_CIPHERTEXT_V1_PREFIX}{truncated}") is None
+
+
+def test_marked_ciphertext_none_for_an_unmarked_plaintext():
+    """Assert an ordinary stored plaintext is never claimed by the envelope."""
+    assert marked_ciphertext("hunter2") is None
+
+
+def test_marked_ciphertext_accepts_a_foreign_token_behind_the_marker():
+    """Assert the envelope classifies by shape, not by whether this key can read it.
+
+    The property :func:`~app.core.settings_override.secret_storage.unmark_secret_leaves`
+    relies on: a marked token minted under a rotated-away key must still be
+    recognised, so the rollback strips its marker instead of skipping the row.
+    """
+    token = marked_ciphertext(mark_ciphertext(foreign_token()))
+
+    assert token is not None
+    with pytest.raises(DecryptionError):
+        decrypt(token)
+
+
+def test_is_stored_ciphertext_accepts_a_marked_token():
+    """Assert the envelope half of the discriminator claims a marked value."""
+    assert is_stored_ciphertext(mark_ciphertext(encrypt("hunter2"))) is True
+
+
+def test_is_stored_ciphertext_accepts_a_legacy_unmarked_token():
+    """Assert the structural fallback still claims a row written before the envelope.
+
+    The half that keeps every pre-envelope deployment readable: nothing
+    re-marks those rows, so a discriminator that dropped the fallback would
+    report a store full of them as holding no ciphertext.
+    """
+    assert is_stored_ciphertext(encrypt("hunter2")) is True
+
+
+def test_is_stored_ciphertext_rejects_a_plaintext():
+    """Assert an ordinary stored plaintext is claimed by neither half."""
+    assert is_stored_ciphertext("hunter2") is False
+
+
+def test_is_stored_ciphertext_rejects_a_marker_over_a_corrupt_token():
+    """Assert a marked value whose payload is damaged is not claimed as ciphertext.
+
+    Neither half accepts it: the envelope refuses the payload, and the marker's
+    ``.`` puts the whole string outside the structural check's alphabet. The
+    rollback therefore leaves it alone rather than stripping a marker off
+    something it cannot vouch for.
+    """
+    truncated = encrypt("hunter2")[:40]
+
+    assert is_stored_ciphertext(f"{_CIPHERTEXT_V1_PREFIX}{truncated}") is False

@@ -111,10 +111,11 @@ DEFAULT_RESPONSES = {
     StubRoute.VALIDATE: StubResponse([{"login": "admin", "role": "Admin"}]),
     StubRoute.SEARCH: StubResponse({"totalCount": 0, "serviceAccounts": []}),
     StubRoute.CREATE_ACCOUNT: StubResponse(
-        {"id": ACCOUNT_ID, "name": "sep", "login": "sa-sep"}, status=201
+        {"id": ACCOUNT_ID, "name": "pmm-extensions", "login": "sa-pmm-extensions"},
+        status=201,
     ),
     StubRoute.CREATE_TOKEN: StubResponse(
-        {"id": 1, "name": "sep-token", "key": MINTED_TOKEN}
+        {"id": 1, "name": "pmm-extensions-token", "key": MINTED_TOKEN}
     ),
 }
 
@@ -417,7 +418,7 @@ async def test_an_existing_account_is_reused_rather_than_duplicated(
         StubResponse(
             {
                 "totalCount": 1,
-                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
             }
         ),
     )
@@ -437,7 +438,10 @@ async def test_an_existing_account_is_reused_rather_than_duplicated(
 @pytest.mark.parametrize(
     "found",
     [
-        {"totalCount": 1, "serviceAccounts": [{"id": 9, "name": "sep-legacy"}]},
+        {
+            "totalCount": 1,
+            "serviceAccounts": [{"id": 9, "name": "pmm-extensions-legacy"}],
+        },
         {"totalCount": 0},
         {"unexpected": 1},
         [],
@@ -448,10 +452,10 @@ async def test_an_existing_account_is_reused_rather_than_duplicated(
 async def test_only_an_exact_name_counts_as_the_account(
     grafana_stub: GrafanaStub, provider: GrafanaAuthProvider, found: Any
 ):
-    """Create the account unless the search answered one named exactly ``sep``.
+    """Create the account unless the search answered one named exactly ``pmm-extensions``.
 
-    Grafana's ``query`` filters by substring, so a ``sep-legacy`` account comes
-    back for a ``sep`` query and taking the first result would mint onto it.
+    Grafana's ``query`` filters by substring, so a ``pmm-extensions-legacy`` account comes
+    back for a ``pmm-extensions`` query and taking the first result would mint onto it.
     """
     grafana_stub.queue(StubRoute.SEARCH, StubResponse(found))
 
@@ -478,7 +482,10 @@ async def test_a_lost_account_creation_race_mints_on_the_winner(
         StubRoute.SEARCH,
         StubResponse({"totalCount": 0, "serviceAccounts": []}),
         StubResponse(
-            {"totalCount": 1, "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}]}
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
+            }
         ),
     )
     grafana_stub.queue(
@@ -547,7 +554,11 @@ async def test_the_minted_token_is_asked_to_never_expire(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "created",
-    [{"id": 1, "name": "sep"}, {"id": 1, "key": ""}, {"id": 1, "key": "   "}],
+    [
+        {"id": 1, "name": "pmm-extensions"},
+        {"id": 1, "key": ""},
+        {"id": 1, "key": "   "},
+    ],
     ids=["absent", "blank", "whitespace"],
 )
 async def test_a_token_response_without_a_key_is_reported_not_retried(
@@ -857,9 +868,9 @@ def test_the_mint_bound_falls_back_rather_than_raising(
     a NaN one compares false against every reading, so the retry loop never runs
     a single attempt.
     """
-    monkeypatch.delenv("SEP_GRAFANA_MINT_TIMEOUT", raising=False)
+    monkeypatch.delenv("EXTENSIONS_GRAFANA_MINT_TIMEOUT", raising=False)
     if raw is not None:
-        monkeypatch.setenv("SEP_GRAFANA_MINT_TIMEOUT", raw)
+        monkeypatch.setenv("EXTENSIONS_GRAFANA_MINT_TIMEOUT", raw)
 
     assert helper.mint_timeout() == expected
 
@@ -876,7 +887,7 @@ async def test_a_first_start_mints_and_persists_a_token(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -900,7 +911,7 @@ async def test_a_reused_account_at_admin_probes_without_warning(
         StubResponse(
             {
                 "totalCount": 1,
-                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
             }
         ),
     )
@@ -908,7 +919,7 @@ async def test_a_reused_account_at_admin_probes_without_warning(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -934,7 +945,7 @@ async def test_a_reused_account_below_admin_warns_after_mint(
         StubResponse(
             {
                 "totalCount": 1,
-                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
             }
         ),
     )
@@ -943,7 +954,7 @@ async def test_a_reused_account_below_admin_warns_after_mint(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -972,7 +983,7 @@ async def test_a_reused_account_with_unreachable_probe_warns_after_mint(
         StubResponse(
             {
                 "totalCount": 1,
-                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}],
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
             }
         ),
     )
@@ -981,7 +992,7 @@ async def test_a_reused_account_with_unreachable_probe_warns_after_mint(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1002,14 +1013,17 @@ async def test_a_race_recovery_reuse_probes_the_minted_token(
 ):
     """Probe after minting onto the account a concurrent side-car created.
 
-    Losing the create race still reuses an account whose role SEP never set, so
+    Losing the create race still reuses an account whose role PMM Extensions never set, so
     the same FORBIDDEN diagnostic applies.
     """
     grafana_stub.queue(
         StubRoute.SEARCH,
         StubResponse({"totalCount": 0, "serviceAccounts": []}),
         StubResponse(
-            {"totalCount": 1, "serviceAccounts": [{"id": ACCOUNT_ID, "name": "sep"}]}
+            {
+                "totalCount": 1,
+                "serviceAccounts": [{"id": ACCOUNT_ID, "name": "pmm-extensions"}],
+            }
         ),
     )
     grafana_stub.queue(
@@ -1021,7 +1035,7 @@ async def test_a_race_recovery_reuse_probes_the_minted_token(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1050,7 +1064,7 @@ async def test_a_state_directory_it_cannot_write_still_resolves_a_token(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(directory),
+        EXTENSIONS_STATE_DIR=str(directory),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1068,7 +1082,7 @@ async def test_a_persisted_token_grafana_accepts_is_reused(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1087,7 +1101,7 @@ async def test_a_persisted_token_grafana_rejects_is_replaced(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1102,7 +1116,7 @@ async def test_a_persisted_token_survives_a_restart(
     """Read the token back on the next start, so a restart needs no admin credential."""
     environment = {
         "AUTH__PROVIDER__GRAFANA__ENDPOINT": grafana_stub.endpoint,
-        "SEP_STATE_DIR": str(state_dir),
+        "EXTENSIONS_STATE_DIR": str(state_dir),
     }
     cwd = profile_cwd(tmp_path)
 
@@ -1123,8 +1137,8 @@ async def test_an_unreachable_grafana_keeps_the_persisted_token_without_waiting(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=f"http://127.0.0.1:{unused_tcp_port}/graph",
-        SEP_STATE_DIR=str(state_dir),
-        SEP_GRAFANA_MINT_TIMEOUT=str(PATIENT_BOUND_SECONDS),
+        EXTENSIONS_STATE_DIR=str(state_dir),
+        EXTENSIONS_GRAFANA_MINT_TIMEOUT=str(PATIENT_BOUND_SECONDS),
     )
 
     assert run.returncode == 0, run.stderr
@@ -1140,39 +1154,83 @@ async def test_an_unreachable_grafana_keeps_the_persisted_token_without_waiting(
 async def test_a_configured_token_is_never_minted_on_top_of(
     grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path, configured: str
 ):
-    """Skip the pre-flight entirely when either canonical name already resolves."""
+    """Export either already-configured mint-gate name without minting on top."""
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
         **{configured: "glsa_configured_by_the_operator"},
     )
 
     assert run.returncode == 0, run.stderr
-    assert run.token == ""
+    assert run.token == "glsa_configured_by_the_operator"
     assert not grafana_stub.requests
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mounted",
+    ["AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN", "PMM__API_KEY"],
+)
 async def test_a_mounted_token_is_never_minted_on_top_of(
-    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path, mounted: str
 ):
-    """Use the mounted secrets channel, which resolves below the environment."""
+    """Export a SECRETS_DIR-mounted mint-gate name without minting on top."""
     secrets_dir = tmp_path / "secrets"
     secrets_dir.mkdir()
-    (secrets_dir / "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN").write_text(
-        "glsa_mounted\n", encoding="utf-8"
-    )
+    (secrets_dir / mounted).write_text("glsa_mounted\n", encoding="utf-8")
 
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
         SECRETS_DIR=str(secrets_dir),
     )
 
     assert run.returncode == 0, run.stderr
-    assert run.token == ""
+    assert run.token == "glsa_mounted"
+    assert not grafana_stub.requests
+
+
+@pytest.mark.asyncio
+async def test_service_account_token_wins_over_a_differing_pmm_api_key(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Prefer AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN when both differ."""
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        EXTENSIONS_STATE_DIR=str(state_dir),
+        AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN="glsa_service_account",
+        PMM__API_KEY="glsa_pmm_api_key",
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == "glsa_service_account"
+    assert not grafana_stub.requests
+
+
+@pytest.mark.asyncio
+async def test_a_mounted_service_account_token_wins_over_a_differing_pmm_api_key(
+    grafana_stub: GrafanaStub, tmp_path: Path, state_dir: Path
+):
+    """Prefer a mounted service-account token when both mint-gate files differ."""
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN").write_text(
+        "glsa_service_account\n", encoding="utf-8"
+    )
+    (secrets_dir / "PMM__API_KEY").write_text("glsa_pmm_api_key\n", encoding="utf-8")
+
+    run = await run_helper(
+        profile_cwd(tmp_path),
+        AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
+        EXTENSIONS_STATE_DIR=str(state_dir),
+        SECRETS_DIR=str(secrets_dir),
+    )
+
+    assert run.returncode == 0, run.stderr
+    assert run.token == "glsa_service_account"
     assert not grafana_stub.requests
 
 
@@ -1185,7 +1243,7 @@ async def test_a_non_grafana_provider_performs_no_grafana_work(
         profile_cwd(tmp_path, ROOT_PROFILE),
         FASTAPI_ENV="development",
         AUTH__PROVIDER__GRAFANA__ENDPOINT=grafana_stub.endpoint,
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
         AUTH__PROVIDER__CASDOOR__CLIENT_ID="client-id",
         AUTH__PROVIDER__CASDOOR__CLIENT_SECRET="client-secret",
     )
@@ -1203,7 +1261,7 @@ async def test_unresolvable_settings_do_not_stop_the_container(
     run = await run_helper(
         profile_cwd(tmp_path, ROOT_PROFILE),
         FASTAPI_ENV="development",
-        SEP_STATE_DIR=str(state_dir),
+        EXTENSIONS_STATE_DIR=str(state_dir),
     )
 
     assert run.returncode == 0
@@ -1222,8 +1280,8 @@ async def test_an_exhausted_bound_names_grafana_and_the_wait(
     run = await run_helper(
         profile_cwd(tmp_path),
         AUTH__PROVIDER__GRAFANA__ENDPOINT=endpoint,
-        SEP_STATE_DIR=str(state_dir),
-        SEP_GRAFANA_MINT_TIMEOUT="1",
+        EXTENSIONS_STATE_DIR=str(state_dir),
+        EXTENSIONS_GRAFANA_MINT_TIMEOUT="1",
     )
 
     assert run.returncode == 1

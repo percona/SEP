@@ -34,7 +34,12 @@ import Typography from '@mui/material/Typography';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useExecutionEvents } from '../../hooks/useExecutionEvents';
 import { useLogDownload } from '../../hooks/useLogDownload';
-import { useTaskLogs, type LogType, type StepText } from '../../hooks/useTaskLogs';
+import {
+  useTaskLogs,
+  type FinishStatus,
+  type LogType,
+  type StepText,
+} from '../../hooks/useTaskLogs';
 import { ExecutionEventsPanel } from './ExecutionEventsPanel';
 import { LogOutputPane } from './LogOutputPane';
 import { LogStepTabs } from './LogStepTabs';
@@ -69,7 +74,7 @@ const NUMERIC_LOG_TAIL_OPTIONS = LOG_TAIL_LINE_OPTIONS.map((option) => Number(op
 const SMALLEST_LOG_TAIL_OPTION =
   NUMERIC_LOG_TAIL_OPTIONS.length > 0 ? Math.min(...NUMERIC_LOG_TAIL_OPTIONS) : 0;
 
-const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
+const LOG_TAIL_STORAGE_KEY = 'extensions.taskLogViewer.tail';
 
 const DEFAULT_LOG_TAIL_CHOICE = '1000' satisfies LogTailLineChoice;
 
@@ -95,6 +100,29 @@ export interface TaskLogViewerProps {
   taskHistoryId: number | string;
   taskStatus?: string;
   height?: number | string;
+}
+
+/**
+ * The terminal statuses a `finish` frame is supposed to carry. The frame is
+ * parsed without validation, and the backend does send `finish` with a
+ * non-terminal status (e.g. `running`) when it reconciles a run whose
+ * allocation is placed but no step has started, so a live log is only treated
+ * as complete when its status is one of these. Keyed on the union so a new
+ * member cannot be added without deciding it here.
+ */
+const TERMINAL_FINISH_STATUS: Record<FinishStatus, true> = {
+  success: true,
+  failed: true,
+  stopped: true,
+  lost: true,
+  stale: true,
+  unlaunchable: true,
+};
+
+/** Where the uncapped stream a running history opened stands. */
+interface LiveLog {
+  historyId: TaskLogViewerProps['taskHistoryId'];
+  state: 'open' | 'complete' | 'ended';
 }
 
 function isRunningStatus(status?: string): boolean {
@@ -153,12 +181,51 @@ function resolveBadgeStatus(
 export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskLogViewerProps) {
   const running = isRunningStatus(taskStatus);
   const [logTailChoice, setLogTailChoice] = useState<LogTailLineChoice>(readStoredLogTailChoice);
+  // The uncapped stream a running history opened. Re-fetching it capped once
+  // the polled status turns terminal only blanks the pane and loses the scroll
+  // position, and that status can arrive before the stream's own `finish`, so
+  // the stream is kept until it ends. Ending with a terminal `finish` means it
+  // already holds the whole log and is kept for good; a stream cut short, or
+  // whose `finish` is non-terminal, is reloaded once the run is over. Under
+  // the "All" cap that reload has the same history and tail as the live
+  // stream, so it is requested explicitly rather than through the tail.
+  const [liveLog, setLiveLog] = useState<LiveLog | null>(null);
+  const liveLogState =
+    liveLog !== null && liveLog.historyId === taskHistoryId ? liveLog.state : undefined;
+  const keepLiveLog = liveLogState === 'open' || liveLogState === 'complete';
+  const reloadLiveLog = liveLogState === 'ended' && !running;
   const tailLines = logTailChoiceToParam(logTailChoice);
-  const effectiveTailLines = running ? undefined : tailLines;
+  const effectiveTailLines = running || keepLiveLog ? undefined : tailLines;
   const { textByStep, stepOrder, streamStatus, finishStatus, error } = useTaskLogs(
     taskHistoryId,
     effectiveTailLines,
+    reloadLiveLog ? 1 : 0,
   );
+
+  const liveLogHistoryIdRef = useRef(taskHistoryId);
+  useEffect(() => {
+    // On the render that switches histories, the stream state still belongs
+    // to the previous stream: useTaskLogs only resets it in this same commit.
+    if (liveLogHistoryIdRef.current !== taskHistoryId) {
+      liveLogHistoryIdRef.current = taskHistoryId;
+      setLiveLog(running ? { historyId: taskHistoryId, state: 'open' } : null);
+      return;
+    }
+    // Only the stream opened while running is tracked, and it settles once:
+    // the reload that follows an `ended` stream must not be taken for it.
+    if (streamStatus === 'finished' || streamStatus === 'error') {
+      if (liveLogState !== 'open') {
+        return;
+      }
+      const complete =
+        streamStatus === 'finished' &&
+        finishStatus !== undefined &&
+        Object.prototype.hasOwnProperty.call(TERMINAL_FINISH_STATUS, finishStatus);
+      setLiveLog({ historyId: taskHistoryId, state: complete ? 'complete' : 'ended' });
+    } else if (running && liveLogState === undefined) {
+      setLiveLog({ historyId: taskHistoryId, state: 'open' });
+    }
+  }, [running, streamStatus, finishStatus, taskHistoryId, liveLogState]);
   const { eventsByStep, stepOrder: eventStepOrder } = useExecutionEvents(taskHistoryId, running);
 
   const [topTab, setTopTab] = useState<TopTab>('stdout');
@@ -278,6 +345,12 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
   };
 
   const handleLogTailChange = (choice: LogTailLineChoice) => {
+    // Only a cap has to clear the live-log record to be fetched again. "All"
+    // keeps it tracked, so a stream still open after the run ends is reloaded
+    // if it ends cut short.
+    if (logTailChoiceToParam(choice) !== undefined) {
+      setLiveLog(null);
+    }
     setLogTailChoice(choice);
     if (globalThis.localStorage !== undefined) {
       globalThis.localStorage.setItem(LOG_TAIL_STORAGE_KEY, choice);

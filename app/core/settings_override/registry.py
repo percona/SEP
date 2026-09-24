@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "NESTED_VALUE_MISSING",
     "REMOTE_API_TLS_MARKERS",
     "SECRET_STR_MASK",
     "FieldMarkerKey",
@@ -29,12 +28,10 @@ __all__ = [
     "MaterializerContext",
     "MaterializerPurpose",
     "ReloadClassification",
-    "SettingProvenance",
     "annotated_type",
     "annotation_contains_credential_url",
     "annotation_contains_secret",
     "annotation_is_credential_url",
-    "canonical_override_key",
     "chain_has_advanced",
     "chain_has_explicit_not_overridable",
     "chain_is_locked",
@@ -57,19 +54,13 @@ __all__ = [
     "nested_overridable_field",
     "nested_overridable_field_names",
     "not_overridable_field",
-    "override_provenance_for_rows",
-    "override_rows_for_key",
-    "preserve_patch_credential_url_value",
     "rendered_leaf_keys",
-    "resolve_nested_field",
-    "resolve_nested_field_metadata",
-    "resolve_nested_value",
     "unwrap_secrets_for_storage",
 ]
 
 import functools
 import typing
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from string import Template
@@ -80,19 +71,13 @@ from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSeriali
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.policy import (
     has_allowed_key_under,
     is_key_allowed,
     is_restriction_active,
 )
-from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.utils.date_time import make_datetime_utc
-from app.core.utils.fields import (
-    _credential_url_serializer,
-    preserve_credential_url_password,
-)
+from app.core.settings_override.resolution import resolve_nested_segments
+from app.core.utils.fields import _credential_url_serializer
 from app.core.utils.pydantic import (
     annotation_pydantic_class,
     CustomFieldMetadata,
@@ -100,21 +85,12 @@ from app.core.utils.pydantic import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from pydantic.fields import FieldInfo
-    from sqlmodel.ext.asyncio.session import AsyncSession
 
     # Imported only for annotations: the override substrate must not depend on
     # the concrete settings classes at runtime, which lets ``app.core.config``
     # import this module at top level without a circular import.
     from app.core.config import BaseYamlSettings
-
-#: Sentinel returned by :func:`resolve_nested_value` when a segment along the
-#: chain is absent. Distinct from a present intermediate or leaf whose value is
-#: ``None`` (an optional intermediate collapsing to ``None``, or an unresolved
-#: secret leaf). The LIST response builder maps this to a JSON ``null``.
-NESTED_VALUE_MISSING = object()
 
 
 class ReloadClassification(StrEnum):
@@ -812,109 +788,6 @@ def nested_overridable_field_names(
     )
 
 
-def _resolve_field_in_model(
-    model_cls: type[BaseModel], segment: str
-) -> tuple[str, FieldInfo] | None:
-    """Return ``(canonical_attribute_name, FieldInfo)`` for ``segment`` on ``model_cls``.
-
-    Performs case-insensitive matching across:
-
-    1. The Pydantic attribute name in ``model_cls.model_fields``.
-    2. The field's ``alias`` / ``validation_alias`` / ``serialization_alias``.
-
-    Required so that ``SECURITY_HEADERS__X_FRAME_OPTIONS_DENY`` (uppercase, the
-    override-key convention) resolves to ``x_frame_options_deny`` on
-    :class:`app.core.middleware.security_headers.SecurityHeadersOptions` (a
-    ``BaseCaseInsensitiveModel`` declaring lowercase attribute names with an
-    uppercase alias).
-
-    :param model_cls: The Pydantic model class to search.
-    :type model_cls: type[BaseModel]
-    :param segment: The path segment to resolve.
-    :type segment: str
-    :return: ``(attribute_name, FieldInfo)`` on success, or ``None`` when no
-        field matches.
-    :rtype: tuple[str, FieldInfo] | None
-    """
-    if segment in model_cls.model_fields:
-        return segment, model_cls.model_fields[segment]
-    seg_lower = segment.lower()
-    for name, info in model_cls.model_fields.items():
-        if name.lower() == seg_lower:
-            return name, info
-        for alias in (info.alias, info.validation_alias, info.serialization_alias):
-            if isinstance(alias, str) and alias.lower() == seg_lower:
-                return name, info
-    return None
-
-
-def _resolve_nested_segments(
-    settings_cls: type[BaseModel],
-    key: str,
-) -> list[tuple[type[BaseModel], str, FieldInfo]] | None:
-    """Resolve every ``__`` segment of ``key`` to ``(owner_cls, canonical_name, FieldInfo)``.
-
-    Walks one segment at a time, descending into nested Pydantic models. Returns
-    ``None`` when any segment is unresolvable, the path hits a non-Pydantic
-    intermediate, or the key is empty. The list preserves order from the
-    top-level parent down to the leaf, so callers can inspect intermediate
-    fields (e.g. for an explicit ``not_overridable_field`` marker) and not just
-    the leaf. Each entry carries its owning class so classifiers can consult that
-    class's :data:`INHERITED_MARKERS_ATTR` overlay.
-
-    :param settings_cls: The top-level Pydantic settings class.
-    :type settings_cls: type[BaseModel]
-    :param key: The ``__``-delimited override key.
-    :type key: str
-    :return: One ``(owner_cls, canonical_name, FieldInfo)`` per segment, or ``None``.
-    :rtype: list[tuple[type[BaseModel], str, FieldInfo]] | None
-    """
-    if not key:
-        return None
-    segments = key.split("__")
-    resolved_chain = []
-    current_cls = settings_cls
-    for i, seg in enumerate(segments):
-        resolved = _resolve_field_in_model(current_cls, seg)
-        if resolved is None:
-            return None
-        canonical, info = resolved
-        resolved_chain.append((current_cls, canonical, info))
-        if i < len(segments) - 1:
-            next_cls = annotation_pydantic_class(info.annotation)
-            if next_cls is None:
-                return None
-            current_cls = next_cls
-    return resolved_chain
-
-
-def resolve_nested_field(
-    settings_cls: type[BaseModel],
-    key: str,
-) -> tuple[tuple[str, ...], FieldInfo] | None:
-    """Resolve a ``__``-delimited path to its canonical attribute chain and leaf field.
-
-    Walks one segment at a time, descending into nested Pydantic models.
-    Returns ``None`` when any segment is unresolvable, the path hits a
-    non-Pydantic intermediate, or the path is empty.
-
-    The returned chain uses canonical (case-corrected) attribute names so the
-    caller can plug it straight into nested ``model_copy(update=...)`` calls.
-
-    :param settings_cls: The top-level Pydantic settings class.
-    :type settings_cls: type[BaseModel]
-    :param key: The override key to resolve (e.g.
-        ``"SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"``).
-    :type key: str
-    :return: ``((canonical_segment, ...), leaf_FieldInfo)`` or ``None``.
-    :rtype: tuple[tuple[str, ...], FieldInfo] | None
-    """
-    resolved = _resolve_nested_segments(settings_cls, key)
-    if resolved is None:
-        return None
-    return tuple(name for _owner, name, _info in resolved), resolved[-1][2]
-
-
 def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) -> bool:
     """Return whether any segment of a nested key is explicitly not-overridable.
 
@@ -932,7 +805,7 @@ def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) 
     :return: ``True`` iff some segment is explicitly ``NOT_OVERRIDABLE``.
     :rtype: bool
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     return any(
@@ -956,7 +829,7 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     :param key: The ``__``-delimited override key.
     :return: ``True`` iff some segment in the chain is flagged ``advanced``.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     return any(
@@ -985,7 +858,7 @@ def chain_is_locked(settings_cls: type[BaseModel], key: str) -> bool:
     :param key: The ``__``-delimited override key.
     :return: ``True`` iff an override of ``key`` would be refused.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         return False
     if any(
@@ -1004,7 +877,8 @@ def coerce_nested_field_value(
 ) -> tuple[tuple[str, ...], Any]:
     """Resolve ``key`` to a nested attribute chain and coerce ``raw`` to the leaf type.
 
-    Combines :func:`resolve_nested_field` and :func:`coerce_field_value` so the
+    Combines :func:`app.core.settings_override.resolution.resolve_nested_field`
+    and :func:`coerce_field_value` so the
     cache and API layers have one entry point for the full nested-row coercion
     contract. A path whose leaf *or any intermediate* is explicitly classified
     ``NOT_OVERRIDABLE``, or whose leaf ``SETTINGS_OVERRIDE.ALLOWED_KEYS``
@@ -1021,7 +895,7 @@ def coerce_nested_field_value(
         ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` does not allow overriding the leaf.
     :raises ValidationError: If ``raw`` cannot be coerced to the leaf's type.
     """
-    resolved = _resolve_nested_segments(settings_cls, key)
+    resolved = resolve_nested_segments(settings_cls, key)
     if resolved is None:
         raise KeyError(key)
     if chain_is_locked(settings_cls, key):
@@ -1029,243 +903,6 @@ def coerce_nested_field_value(
     chain = tuple(name for _owner, name, _info in resolved)
     leaf_info = resolved[-1][2]
     return chain, coerce_field_value(leaf_info, raw)
-
-
-def _mapping_segment_or_default(
-    mapping: Mapping[str, Any], segment: str, default: Any
-) -> Any:
-    """Read ``segment`` from ``mapping`` (case-insensitive) or return ``default``."""
-    if segment in mapping:
-        return mapping[segment]
-    seg_lower = segment.lower()
-    for key, value in mapping.items():
-        if isinstance(key, str) and key.lower() == seg_lower:
-            return value
-    return default
-
-
-def resolve_nested_value(
-    *,
-    settings_cls: type[BaseModel],
-    proxy: OverridableSettingsProxy,
-    key: str,
-) -> tuple[FieldInfo, Any]:
-    """Return the leaf field metadata and current value for a nested key.
-
-    Walks the chain segment by segment using the resolver's canonical
-    (case-corrected) names, so the returned value reflects the merged snapshot
-    copy when an override is active and the YAML/env value otherwise. Each
-    segment is read as a :class:`~collections.abc.Mapping` key when the current
-    node is a mapping, and as an attribute otherwise. A **missing** segment
-    returns :data:`NESTED_VALUE_MISSING`; a present ``None`` intermediate
-    collapses the leaf to ``None`` (optional-intermediate contract).
-
-    :param settings_cls: The Pydantic settings class the key belongs to.
-    :type settings_cls: type[BaseModel]
-    :param proxy: The proxy whose attribute chain yields the current value.
-    :type proxy: OverridableSettingsProxy
-    :param key: The ``__``-delimited nested key.
-    :type key: str
-    :return: A ``(leaf_FieldInfo, current_value)`` pair. ``current_value`` may
-        be :data:`NESTED_VALUE_MISSING` when a segment is absent.
-    :rtype: tuple[FieldInfo, Any]
-    :raises KeyError: If ``key`` does not resolve to a nested field on
-        ``settings_cls``.
-    """
-    resolved = resolve_nested_field(settings_cls, key)
-    if resolved is None:
-        raise KeyError(key)
-    chain, leaf_info = resolved
-    current = proxy
-    for segment in chain:
-        if current is None:
-            return leaf_info, None
-        if isinstance(current, Mapping):
-            segment_value = _mapping_segment_or_default(
-                current, segment, NESTED_VALUE_MISSING
-            )
-            if segment_value is NESTED_VALUE_MISSING:
-                return leaf_info, NESTED_VALUE_MISSING
-            current = segment_value
-            continue
-        if not hasattr(current, segment):
-            return leaf_info, NESTED_VALUE_MISSING
-        current = getattr(current, segment)
-    return leaf_info, current
-
-
-def canonical_override_key(settings_cls: type[BaseModel], key: str) -> str:
-    """Return the canonical ``__``-joined attribute path for a nested key.
-
-    Case-insensitive spellings of the same nested path (e.g.
-    ``security_headers__x_frame_options_deny`` and its uppercase form) collapse
-    to one deterministic key so DB rows, snapshot lookups, and DELETE/GET by key
-    all agree. Top-level keys and keys that do not resolve are returned
-    unchanged.
-
-    :param settings_cls: The Pydantic settings class the key belongs to.
-    :type settings_cls: type[BaseModel]
-    :param key: The override key, possibly ``__``-delimited.
-    :type key: str
-    :return: The canonical key, or ``key`` unchanged when not a resolvable
-        nested path.
-    :rtype: str
-    """
-    if "__" not in key:
-        return key
-    resolved = resolve_nested_field(settings_cls, key)
-    if resolved is None:
-        return key
-    chain, _ = resolved
-    return "__".join(chain)
-
-
-class SettingProvenance(NamedTuple):
-    """Carry the last-written stamp reported for one overridden key.
-
-    :param updated_at: When the contributing row was last written, falling back
-        to its creation time for a row that predates explicit stamping. Stamps
-        carry second granularity.
-    :param updated_by: The username that last wrote the contributing row, or
-        ``None`` for a row written before the actor column existed.
-    """
-
-    updated_at: datetime
-    updated_by: str | None
-
-
-def _provenance_keys_for_row(
-    settings_cls: type[BaseModel],
-    row: SettingOverride,
-) -> Iterator[str]:
-    """Yield every key one override row reports an override for.
-
-    The row's own stored ``key`` always counts, which keeps the report correct
-    when a row was stored under a non-canonical casing. A ``__``-delimited row
-    additionally contributes every canonical prefix of its resolved chain: the
-    top-level parent, each intermediate sub-model path, and the canonical leaf
-    key. A promoted parent therefore reports an override when only deeper nested
-    rows exist.
-
-    :param settings_cls: The Pydantic settings class the row belongs to.
-    :param row: One active override row.
-    :return: The stored key followed by each canonical prefix of its chain.
-    """
-    yield row.key
-    if "__" not in row.key:
-        return
-    resolved = resolve_nested_field(settings_cls, row.key)
-    if resolved is None:
-        return
-    chain, _ = resolved
-    for i in range(1, len(chain) + 1):
-        yield "__".join(chain[:i])
-
-
-def override_provenance_for_rows(
-    settings_cls: type[BaseModel],
-    rows: list[SettingOverride],
-) -> dict[str, SettingProvenance]:
-    """Return the last-written stamp for every key with an active override.
-
-    The mapping's key set is exactly the set of keys carrying an override, so a
-    caller derives ``has_override`` as ``key in mapping`` and the flag cannot
-    drift from the stamps beside it. :func:`_provenance_keys_for_row` decides
-    which keys each row contributes.
-
-    When several rows contribute to one key, which is the ordinary case for a
-    nested parent, the row with the latest stamp wins, breaking ties on the
-    higher ``id``. Ties are the common case rather than a corner: ``utc_now``
-    zeroes microseconds and one PATCH batch stamps every key it writes with a
-    single shared timestamp.
-
-    ``id`` is creation order, not write order, so the tie-break orders rows the
-    same batch wrote but cannot order two separate writes that land in the same
-    second: there the reported pair comes from whichever contributing row was
-    created later, which need not be the one written later. Second-granularity
-    stamps make that distinction unrecoverable rather than merely unqueried, so
-    the tie-break buys determinism, not accuracy.
-
-    :param settings_cls: The Pydantic settings class the rows belong to.
-    :param rows: The active override rows for the class.
-    :return: One :class:`SettingProvenance` per key carrying an override.
-    """
-    ranked: dict[str, tuple[tuple[datetime, int], SettingOverride]] = {}
-    for row in rows:
-        # SQLModel skips validation on a ``table=True`` model, so a stamp loaded
-        # from the database bypasses the ``UTCDatetime`` normalizer and can
-        # arrive naive, which would not compare against an aware sibling.
-        rank = (make_datetime_utc(row.updated_at or row.created_at), row.id or 0)
-        for key in _provenance_keys_for_row(settings_cls, row):
-            current = ranked.get(key)
-            if current is None or rank > current[0]:
-                ranked[key] = (rank, row)
-    return {
-        key: SettingProvenance(updated_at=rank[0], updated_by=row.updated_by)
-        for key, (rank, row) in ranked.items()
-    }
-
-
-def _stored_key_matches_override_key(
-    settings_cls: type[BaseModel],
-    stored_key: str,
-    key: str,
-) -> bool:
-    """Return whether a stored override key resolves to the same field as ``key``.
-
-    Nested keys go through :func:`canonical_override_key`. Top-level keys also
-    match case-insensitively so mixed-case stored keys remain visible to
-    DELETE/PATCH after the filter moved into Python. Snapshot application still
-    ignores unknown casing via
-    :func:`app.core.settings_override.cache._apply_top_level_row`; DELETE
-    removes those inert rows, and PATCH heals their stored key to the
-    canonical spelling so the next snapshot can read them.
-
-    :param settings_cls: The Pydantic settings class the rows belong to.
-    :param stored_key: The key column value from an override row.
-    :param key: The canonical override key requested by the caller.
-    :return: ``True`` when ``stored_key`` should be treated as the same override.
-    """
-    if canonical_override_key(settings_cls, stored_key) == key:
-        return True
-    if "__" in key or "__" in stored_key:
-        return False
-    return stored_key.casefold() == key.casefold()
-
-
-async def override_rows_for_key(
-    session: AsyncSession,
-    *,
-    settings_cls: type[BaseModel],
-    setting_class: str,
-    key: str,
-) -> list[SettingOverride]:
-    """Return the :class:`SettingOverride` rows whose stored key resolves to ``key``.
-
-    Lists every row for ``setting_class`` and keeps those whose stored ``key``
-    matches via :func:`_stored_key_matches_override_key`. That makes a legacy
-    non-canonically-cased nested or top-level row visible to DELETE and PATCH,
-    which previously matched the stored column with dialect-dependent SQL
-    equality and, after the filter moved into Python, missed mixed-case
-    top-level rows.
-
-    Inactive rows are included: both write paths currently match on
-    ``(setting_class, key)`` alone, so an inactive row stays deletable and
-    re-activatable.
-
-    :param session: The sub-app's database session.
-    :param settings_cls: The Pydantic settings class the rows belong to.
-    :param setting_class: The class identifier used to filter override rows.
-    :param key: The canonical override key to resolve against.
-    :return: Every matching row, in the order :meth:`SettingsOverrideManager.list`
-        returns them.
-    """
-    rows = await SettingsOverrideManager.list(session, setting_class=setting_class)
-    return [
-        row
-        for row in rows
-        if _stored_key_matches_override_key(settings_cls, row.key, key)
-    ]
 
 
 def _clear_cached_properties(instance: BaseModel) -> None:
@@ -1533,167 +1170,6 @@ def is_credential_url_field(field_info: FieldInfo) -> bool:
     return annotation_contains_credential_url(annotated_type(field_info))
 
 
-def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
-    """Read ``name`` from a live model or a materializer fingerprint mapping.
-
-    :param current: The stored value, a model instance or a mapping.
-    :param name: The field name to read.
-    :return: The attribute or mapping entry, or ``None`` when either is absent.
-    """
-    if current is None:
-        return None
-    if isinstance(current, Mapping):
-        return current.get(name)
-    return getattr(current, name, None)
-
-
-def preserve_credential_urls_in_model_payload(
-    model_cls: type[BaseModel],
-    current: Any,
-    incoming: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Restore masked URL passwords inside a materializer PATCH payload.
-
-    Each child is classified with the **position** predicate rather than the
-    subtree one :func:`is_credential_url_field` asks. A model-typed child whose
-    own leaf is a credential URL answers the subtree question ``True``, would
-    take the scalar branch below, fail its ``isinstance(result[name], str)``
-    guard and ``continue`` — skipping the nested recursion that child needs.
-
-    :param model_cls: The model whose fields ``incoming`` is keyed by.
-    :param current: The effective stored value to restore passwords from.
-    :param incoming: The payload submitted in the PATCH body.
-    :return: ``incoming`` with any masked URL passwords restored.
-    """
-    result = dict(incoming)
-    for name, field_info in model_cls.model_fields.items():
-        if name not in result:
-            continue
-        leaf_current = _read_mapping_or_model_attr(current, name)
-        if annotation_is_credential_url(annotated_type(field_info)):
-            if isinstance(result[name], str) and leaf_current is not None:
-                result[name] = preserve_credential_url_password(
-                    str(leaf_current), result[name]
-                )
-            continue
-        nested_cls = annotation_pydantic_class(field_info.annotation)
-        if nested_cls and isinstance(result[name], Mapping):
-            result[name] = preserve_credential_urls_in_model_payload(
-                nested_cls, leaf_current, result[name]
-            )
-    return result
-
-
-def preserve_patch_credential_url_value(
-    field_info: FieldInfo,
-    current: Any,
-    incoming: Any,
-) -> Any:
-    """Restore masked credentials in a PATCH value before validation/persist.
-
-    Handles credential-bearing URL passwords (``****``) and
-    :class:`~pydantic.SecretStr` / :class:`~pydantic.SecretBytes` JSON masks
-    (:data:`SECRET_STR_MASK`). Non-mask submissions are left unchanged.
-
-    Routing is decided by the payload shape before
-    :func:`is_credential_url_field` is consulted. That predicate descends into
-    nested models, so it answers "does this subtree carry a credential URL",
-    not "is this field itself one". A model-typed field holding a
-    credential-URL leaf answers ``True`` to the first question while needing
-    the model-payload walk, not the scalar restore.
-
-    :param field_info: The Pydantic field metadata for the target attribute.
-    :param current: The effective stored value (model, mapping, or secret wrapper).
-    :param incoming: The value submitted in the PATCH body.
-    :return: ``incoming`` with any masked credentials restored from ``current``.
-    """
-    parent_cls = annotation_pydantic_class(field_info.annotation)
-    if parent_cls is not None and isinstance(incoming, Mapping):
-        value = preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
-    elif (
-        is_credential_url_field(field_info)
-        and isinstance(incoming, str)
-        and current is not None
-    ):
-        value = preserve_credential_url_password(str(current), incoming)
-    else:
-        value = incoming
-    return preserve_patch_secret_value(field_info, current, value)
-
-
-def _annotation_is_secret_valued_dict(annotation: Any) -> bool:
-    """Return whether ``annotation`` is a ``dict`` whose values are secrets.
-
-    Unwraps optional/union wrappers at the top level only (does not descend into
-    nested :class:`~pydantic.BaseModel` fields), matching
-    ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` shapes.
-
-    :param annotation: The field annotation to inspect.
-    :return: ``True`` when the annotation is a secret-valued mapping type.
-    """
-    candidates: list[Any] = [annotation]
-    origin = typing.get_origin(annotation)
-    if origin in {Union, UnionType}:
-        candidates = list(typing.get_args(annotation))
-    for candidate in candidates:
-        if candidate is None or candidate is type(None):
-            continue
-        dict_origin = typing.get_origin(candidate)
-        if dict_origin not in {dict, Mapping}:
-            continue
-        try:
-            _, value_ann = typing.get_args(candidate)
-        except ValueError:
-            continue
-        value_candidates: list[Any] = [value_ann]
-        value_origin = typing.get_origin(value_ann)
-        if value_origin in {Union, UnionType}:
-            value_candidates = list(typing.get_args(value_ann))
-        for value_type in value_candidates:
-            if isinstance(value_type, type) and issubclass(
-                value_type, SecretStr | SecretBytes
-            ):
-                return True
-    return False
-
-
-def _annotation_is_secret_valued_sequence(annotation: Any) -> bool:
-    """Return whether ``annotation`` is a collection whose elements are secrets.
-
-    Matches ``list[SecretStr]`` / ``set[SecretStr]`` /
-    ``tuple[SecretBytes, ...]``-style shapes (optional/union wrappers
-    unwrapped at the top level only).
-
-    :param annotation: The field annotation to inspect.
-    :return: ``True`` when the annotation is a secret-element collection type.
-    """
-    candidates: list[Any] = [annotation]
-    origin = typing.get_origin(annotation)
-    if origin in {Union, UnionType}:
-        candidates = list(typing.get_args(annotation))
-    collection_origins = {list, set, tuple, frozenset, Sequence}
-    for candidate in candidates:
-        if candidate is None or candidate is type(None):
-            continue
-        coll_origin = typing.get_origin(candidate)
-        if coll_origin not in collection_origins:
-            continue
-        args = typing.get_args(candidate)
-        if not args:
-            continue
-        element = args[0]
-        element_candidates: list[Any] = [element]
-        element_origin = typing.get_origin(element)
-        if element_origin in {Union, UnionType}:
-            element_candidates = list(typing.get_args(element))
-        for element_type in element_candidates:
-            if isinstance(element_type, type) and issubclass(
-                element_type, SecretStr | SecretBytes
-            ):
-                return True
-    return False
-
-
 def _stable_collection_sort_key(item: Any) -> tuple[Any, ...]:
     """Return a deterministic sort key for collection pairing and JSON dumps.
 
@@ -1737,409 +1213,6 @@ def _stable_collection_sort_key(item: Any) -> tuple[Any, ...]:
             ),
         )
     return (type(item).__qualname__, repr(item))
-
-
-def _stable_collection_items(current: Any) -> list[Any]:
-    """Return ``current`` as a list, sorting when the source is unordered.
-
-    :param current: A stored ``list``/``set``/``tuple``/``frozenset``, or
-        ``None``.
-    :return: A list of items; ``set``/``frozenset`` inputs are sorted by
-        :func:`_stable_collection_sort_key`.
-    """
-    if isinstance(current, set | frozenset):
-        return sorted(current, key=_stable_collection_sort_key)
-    if isinstance(current, list | tuple):
-        return list(current)
-    return []
-
-
-def _collection_item_value_score(
-    incoming: Mapping[str, Any], current: BaseModel
-) -> int:
-    """Score how well ``incoming`` identifies the stored model ``current``.
-
-    Masked secret fields are ignored so a round-tripped GET payload can still
-    match on stable non-secret identity (e.g. ``api_endpoint``). Equal
-    non-masked values raise the score; mismatches lower it.
-
-    :param incoming: One element of the PATCH collection payload.
-    :param current: A live stored model candidate.
-    :return: A higher score means a better identity match.
-    """
-    score = 0
-    for name in current.model_fields:
-        if name not in incoming:
-            continue
-        incoming_val = incoming[name]
-        if incoming_val == SECRET_STR_MASK:
-            continue
-        current_val = getattr(current, name, None)
-        unwrapped = _unwrap_secret_value(current_val)
-        compare: Any = unwrapped if unwrapped is not None else current_val
-        if incoming_val == compare or str(incoming_val) == str(compare):
-            score += 2
-        else:
-            score -= 10
-    return score
-
-
-def _preserve_masked_secret_scalar(current: Any, incoming: Any) -> Any:
-    """Restore a stored secret when ``incoming`` equals :data:`SECRET_STR_MASK`.
-
-    :param current: The live stored value, possibly a ``SecretStr``/``SecretBytes``.
-    :param incoming: The PATCH value that may be the secret JSON mask.
-    :return: The unwrapped stored secret when ``incoming`` is the mask and
-        ``current`` is a secret wrapper; otherwise ``incoming`` unchanged.
-    """
-    if incoming != SECRET_STR_MASK:
-        return incoming
-    stored = _unwrap_secret_value(current)
-    return incoming if stored is None else stored
-
-
-def _preserve_secrets_in_dict_payload(
-    current: Any,
-    incoming: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Restore masked secret values inside a ``dict[str, SecretStr|SecretBytes]`` payload.
-
-    :param current: The stored mapping of secret wrappers (or ``None``).
-    :param incoming: The PATCH mapping that may contain mask literals.
-    :return: A copy of ``incoming`` with masked keys restored from ``current``.
-    """
-    result = dict(incoming)
-    for key, value in result.items():
-        if value != SECRET_STR_MASK:
-            continue
-        leaf_current = current.get(key) if isinstance(current, Mapping) else None
-        stored = _unwrap_secret_value(leaf_current)
-        if stored is not None:
-            result[key] = stored
-    return result
-
-
-def _preserve_secrets_in_secret_sequence_payload(
-    current: Any,
-    incoming: Sequence[Any],
-) -> list[Any]:
-    """Restore masked secrets inside a secret-element collection payload.
-
-    Pairing is positional against :func:`_stable_collection_items`: index ``i``
-    of ``incoming`` is restored from index ``i`` of the stabilized ``current``
-    when the submitted value equals :data:`SECRET_STR_MASK`. Unordered stored
-    collections (``set``/``frozenset``) are sorted so GET/PATCH workers agree.
-
-    :param current: The stored collection of secret wrappers (or ``None``).
-    :param incoming: The PATCH sequence that may contain mask literals.
-    :return: A list copy of ``incoming`` with masked elements restored.
-    """
-    current_items = _stable_collection_items(current)
-    result: list[Any] = []
-    for index, value in enumerate(incoming):
-        if value != SECRET_STR_MASK:
-            result.append(value)
-            continue
-        leaf = current_items[index] if index < len(current_items) else None
-        stored = _unwrap_secret_value(leaf)
-        result.append(value if stored is None else stored)
-    return result
-
-
-def _annotation_collection_element_model(annotation: Any) -> type[BaseModel] | None:
-    """Return the ``BaseModel`` element type of a ``list``/``set``/``tuple`` annotation.
-
-    Unwraps optional/union wrappers at the top level. Matches shapes such as
-    ``set[SomeModel]`` or ``list[SomeModel]``; returns ``None`` for scalars,
-    mappings, and collections whose element type is not a Pydantic model.
-
-    :param annotation: The field annotation to inspect.
-    :return: The element ``BaseModel`` subclass, or ``None``.
-    """
-    candidates: list[Any] = [annotation]
-    origin = typing.get_origin(annotation)
-    if origin in {Union, UnionType}:
-        candidates = list(typing.get_args(annotation))
-    collection_origins = {list, set, tuple, frozenset, Sequence}
-    for candidate in candidates:
-        if candidate is None or candidate is type(None):
-            continue
-        coll_origin = typing.get_origin(candidate)
-        if coll_origin not in collection_origins:
-            continue
-        args = typing.get_args(candidate)
-        if not args:
-            continue
-        element = args[0]
-        element_candidates: list[Any] = [element]
-        element_origin = typing.get_origin(element)
-        if element_origin in {Union, UnionType}:
-            element_candidates = list(typing.get_args(element))
-        for element_type in element_candidates:
-            if isinstance(element_type, type) and issubclass(element_type, BaseModel):
-                return element_type
-    return None
-
-
-def _collection_discriminator_candidates(
-    incoming: Mapping[str, Any],
-    current_items: Sequence[Any],
-    used: set[int],
-) -> list[int]:
-    """Return unused model indexes matching an optional type discriminator.
-
-    :param incoming: One element of the PATCH collection payload.
-    :param current_items: The live stored collection as a sequence.
-    :param used: Indexes already paired with an earlier incoming element.
-    :return: Candidate indexes; empty when none match the discriminator filter.
-    """
-    provider = incoming.get("PROVIDER") or incoming.get("provider")
-    needle = str(provider).upper() if provider is not None else None
-    candidates: list[int] = []
-    for index, current in enumerate(current_items):
-        if index in used or not isinstance(current, BaseModel):
-            continue
-        if needle is not None and needle not in current.__class__.__name__.upper():
-            continue
-        candidates.append(index)
-    return candidates
-
-
-def _pick_best_scored_index(
-    incoming: Mapping[str, Any],
-    current_items: Sequence[Any],
-    candidates: Sequence[int],
-    preferred_index: int,
-) -> int:
-    """Pick the candidate with the best value-identity score.
-
-    Ties break on ``preferred_index`` when that slot is among the top scorers.
-
-    :param incoming: One element of the PATCH collection payload.
-    :param current_items: The live stored collection as a sequence.
-    :param candidates: Unused model indexes to score.
-    :param preferred_index: The incoming element's position (list order).
-    :return: The winning index into ``current_items``.
-    """
-    best_score = _collection_item_value_score(incoming, current_items[candidates[0]])
-    best_indices = [candidates[0]]
-    for index in candidates[1:]:
-        score = _collection_item_value_score(incoming, current_items[index])
-        if score > best_score:
-            best_score = score
-            best_indices = [index]
-        elif score == best_score:
-            best_indices.append(index)
-    if preferred_index in best_indices:
-        return preferred_index
-    return best_indices[0]
-
-
-def _match_by_field_name_overlap(
-    incoming: Mapping[str, Any],
-    current_items: Sequence[Any],
-    unused: Sequence[int],
-) -> int | None:
-    """Return the unused model with the largest field-name overlap, if any.
-
-    :param incoming: One element of the PATCH collection payload.
-    :param current_items: The live stored collection as a sequence.
-    :param unused: Indexes not yet paired.
-    :return: The best-overlap index, or ``None``.
-    """
-    best_index: int | None = None
-    best_overlap = 0
-    incoming_keys = set(incoming)
-    for index in unused:
-        current = current_items[index]
-        if not isinstance(current, BaseModel):
-            continue
-        overlap = len(set(current.model_fields) & incoming_keys)
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_index = index
-    return best_index if best_overlap > 0 else None
-
-
-def _match_collection_item_index(
-    incoming: Mapping[str, Any],
-    current_items: Sequence[Any],
-    used: set[int],
-    preferred_index: int,
-) -> int | None:
-    """Return the index of the stored collection item that ``incoming`` updates.
-
-    Matching order: optional type-discriminator (case-insensitive substring of
-    the concrete class name) narrows candidates; among those, non-masked field
-    value identity (:func:`_collection_item_value_score`) picks a winner;
-    ties break on ``preferred_index`` when that slot is still a candidate
-    (stable against :func:`_stable_collection_items` order); else the sole
-    remaining unused item; else largest field-name overlap.
-
-    :param incoming: One element of the PATCH collection payload.
-    :param current_items: The live stored collection as a sequence.
-    :param used: Indexes already paired with an earlier incoming element.
-    :param preferred_index: The incoming element's position (list order).
-    :return: The matched index into ``current_items``, or ``None``.
-    """
-    candidates = _collection_discriminator_candidates(incoming, current_items, used)
-    if candidates:
-        return _pick_best_scored_index(
-            incoming, current_items, candidates, preferred_index
-        )
-    if preferred_index < len(current_items) and preferred_index not in used:
-        return preferred_index
-    unused = [index for index in range(len(current_items)) if index not in used]
-    if len(unused) == 1:
-        return unused[0]
-    return _match_by_field_name_overlap(incoming, current_items, unused)
-
-
-def _preserve_secrets_in_sequence_payload(
-    current: Any,
-    incoming: Sequence[Any],
-) -> list[Any]:
-    """Restore masked secrets inside a list/set-of-models PATCH payload.
-
-    Pairs each mapping element with a live stored item via
-    :func:`_match_collection_item_index` against
-    :func:`_stable_collection_items`, then restores masks through
-    :func:`preserve_secrets_in_model_payload` using the item's concrete
-    runtime class (polymorphic bases often declare no secret fields of their
-    own). Fingerprint mappings restore masked keys shallowly.
-
-    :param current: The stored collection (``list``/``set``/``tuple``/
-        ``frozenset``) or ``None``.
-    :param incoming: The PATCH sequence that may contain mask literals.
-    :return: A list copy of ``incoming`` with masked secrets restored.
-    """
-    current_items = _stable_collection_items(current)
-    result: list[Any] = []
-    used: set[int] = set()
-    for index, item in enumerate(incoming):
-        if not isinstance(item, Mapping):
-            result.append(item)
-            continue
-        match_index = _match_collection_item_index(
-            item, current_items, used, preferred_index=index
-        )
-        if match_index is None:
-            result.append(dict(item))
-            continue
-        used.add(match_index)
-        matched = current_items[match_index]
-        if isinstance(matched, BaseModel):
-            result.append(
-                preserve_secrets_in_model_payload(type(matched), matched, item)
-            )
-            continue
-        if isinstance(matched, Mapping):
-            restored = dict(item)
-            for key, value in restored.items():
-                if value != SECRET_STR_MASK:
-                    continue
-                stored = _unwrap_secret_value(matched.get(key))
-                if stored is not None:
-                    restored[key] = stored
-            result.append(restored)
-            continue
-        result.append(dict(item))
-    return result
-
-
-def preserve_secrets_in_model_payload(
-    model_cls: type[BaseModel],
-    current: Any,
-    incoming: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Restore masked SecretStr/SecretBytes values inside a nested-model PATCH payload.
-
-    Recurses into nested models, secret-valued dicts, secret-element sequences,
-    and homogeneous list/set-of-model fields; scalar secret leaves use
-    :func:`_preserve_masked_secret_scalar`.
-
-    :param model_cls: The Pydantic model whose fields ``incoming`` addresses.
-    :param current: The live stored model or mapping fingerprint.
-    :param incoming: The PATCH mapping for this model.
-    :return: A copy of ``incoming`` with masked secrets restored from ``current``.
-    """
-    result = dict(incoming)
-    for name, field_info in model_cls.model_fields.items():
-        if name not in result:
-            continue
-        leaf_current = _read_mapping_or_model_attr(current, name)
-        nested_cls = annotation_pydantic_class(field_info.annotation)
-        if nested_cls and isinstance(result[name], Mapping):
-            result[name] = preserve_secrets_in_model_payload(
-                nested_cls, leaf_current, result[name]
-            )
-            continue
-        if _annotation_is_secret_valued_dict(field_info.annotation) and isinstance(
-            result[name], Mapping
-        ):
-            result[name] = _preserve_secrets_in_dict_payload(leaf_current, result[name])
-            continue
-        if _annotation_is_secret_valued_sequence(field_info.annotation) and isinstance(
-            result[name], list | tuple
-        ):
-            result[name] = _preserve_secrets_in_secret_sequence_payload(
-                leaf_current, result[name]
-            )
-            continue
-        if _annotation_collection_element_model(field_info.annotation) is not None and (
-            isinstance(result[name], list | tuple)
-        ):
-            result[name] = _preserve_secrets_in_sequence_payload(
-                leaf_current, result[name]
-            )
-            continue
-        if _field_contains_secret(field_info):
-            result[name] = _preserve_masked_secret_scalar(leaf_current, result[name])
-    return result
-
-
-def preserve_patch_secret_value(
-    field_info: FieldInfo,
-    current: Any,
-    incoming: Any,
-) -> Any:
-    """Restore masked SecretStr/SecretBytes values in a PATCH value before persist.
-
-    When a client resubmits Pydantic's secret JSON mask
-    (:data:`SECRET_STR_MASK`), replace it with the stored secret's plain value.
-    Non-mask submissions are left unchanged. Recurses into nested Pydantic
-    models, ``dict[str, SecretStr]`` / ``dict[str, SecretBytes]`` payloads,
-    ``list[SecretStr]`` / ``set[SecretStr]``-style collections, and homogeneous
-    ``list``/``set`` collections of models (including polymorphic bases whose
-    secrets live only on concrete subclasses).
-
-    :param field_info: The Pydantic field metadata for the target attribute.
-    :param current: The effective stored value (model, mapping, or secret wrapper).
-    :param incoming: The value submitted in the PATCH body.
-    :return: ``incoming`` with any masked secrets restored from ``current``.
-    """
-    parent_cls = annotation_pydantic_class(field_info.annotation)
-    if parent_cls and isinstance(incoming, Mapping):
-        return preserve_secrets_in_model_payload(parent_cls, current, incoming)
-    if _annotation_is_secret_valued_dict(field_info.annotation) and isinstance(
-        incoming, Mapping
-    ):
-        return _preserve_secrets_in_dict_payload(current, incoming)
-    if isinstance(incoming, list | tuple) and _annotation_is_secret_valued_sequence(
-        field_info.annotation
-    ):
-        return _preserve_secrets_in_secret_sequence_payload(current, incoming)
-    if isinstance(incoming, list | tuple) and (
-        _annotation_collection_element_model(field_info.annotation) is not None
-        or (
-            isinstance(current, list | set | tuple | frozenset)
-            and any(isinstance(item, BaseModel | Mapping) for item in current)
-        )
-    ):
-        return _preserve_secrets_in_sequence_payload(current, incoming)
-    if _field_contains_secret(field_info):
-        return _preserve_masked_secret_scalar(current, incoming)
-    return incoming
 
 
 def _field_is_complex(annotation: Any) -> bool:
@@ -2192,51 +1265,6 @@ def iter_class_fields(
         )
 
 
-def resolve_nested_field_metadata(
-    settings_cls: type[BaseModel], key: str
-) -> FieldMetadata | None:
-    """Return introspected metadata for a ``__``-delimited nested override key.
-
-    Resolves ``key`` to its leaf field and synthesises a :class:`FieldMetadata`
-    whose ``key`` is the full nested key while every other attribute
-    (annotation, default, description, secret/complex flags) is taken from the
-    leaf field. The reported ``reload`` is ``HOT`` for an override-eligible
-    leaf (the default under a nested-overridable parent) and
-    ``NOT_OVERRIDABLE`` when the leaf *or any intermediate in its chain* is
-    explicitly :func:`not_overridable_field`-marked, or when
-    ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withholds the leaf. That is the same chain
-    check that gates PATCH, so the reported classification matches what an
-    override would actually be allowed to do. ``is_advanced`` is chain-resolved
-    via
-    :func:`chain_has_advanced`, so a leaf inherits the flag from an advanced
-    parent.
-
-    :param settings_cls: The top-level Pydantic settings class.
-    :param key: The ``__``-delimited override key.
-    :return: The synthesised leaf metadata, or ``None`` when ``key`` does not
-        resolve to a nested field.
-    """
-    resolved = resolve_nested_field(settings_cls, key)
-    if resolved is None:
-        return None
-    _chain, leaf_info = resolved
-    reload = (
-        ReloadClassification.NOT_OVERRIDABLE
-        if chain_is_locked(settings_cls, key)
-        else ReloadClassification.HOT
-    )
-    return FieldMetadata(
-        key=key,
-        annotation=leaf_info.annotation,
-        default=_resolve_default(leaf_info),
-        description=leaf_info.description,
-        reload=reload,
-        is_secret=_field_contains_secret(leaf_info),
-        is_complex=_field_is_complex(leaf_info.annotation),
-        is_advanced=chain_has_advanced(settings_cls, key),
-    )
-
-
 def iter_nested_leaf_keys(
     settings_cls: type[BaseModel], parent_field_name: str
 ) -> Iterator[tuple[str, tuple[str, ...]]]:
@@ -2248,7 +1276,8 @@ def iter_nested_leaf_keys(
     ``list[...]`` or ``set[...]`` -- is a leaf, so collection-typed fields stay a
     single leaf (their items are not expanded). Segments are the canonical
     attribute names from ``model_fields``, so each yielded key matches the form
-    :func:`resolve_nested_field` and :func:`override_provenance_for_rows`
+    :func:`app.core.settings_override.resolution.resolve_nested_field` and
+    :func:`app.core.settings_override.resolution.override_provenance_for_rows`
     produce, and ``"__".join(chain) == key`` holds by construction.
 
     Yield nothing when ``parent_field_name`` is unknown or is not a Pydantic
@@ -2355,7 +1384,8 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
 
     Unordered collections (``set``/``frozenset``) are dumped as a list sorted by
     :func:`_stable_collection_sort_key` so GET order matches the PATCH restore
-    path in :func:`_stable_collection_items` across workers.
+    path in :func:`app.core.settings_override.secret_preservation._stable_collection_items`
+    across workers.
 
     When ``field_info.annotation`` is a non-Pydantic-compatible type (e.g.
     ``string.Template``) for which Pydantic cannot build a TypeAdapter, the

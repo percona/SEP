@@ -15,7 +15,7 @@
 
 """Define the Nomad-only system task names the tasks service seeds.
 
-Imports nothing from the rest of the tasks or sep packages so seed can use these
+Imports nothing from the rest of the tasks or extensions packages so seed can use these
 values without the Nomad executor import graph. Constants that name a Nomad
 job-spec step, or derive from one, belong in :mod:`.steps` instead.
 """

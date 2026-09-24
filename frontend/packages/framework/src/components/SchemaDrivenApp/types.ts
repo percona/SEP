@@ -16,7 +16,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { AppCapabilities, FieldValidationError } from '@sep/api';
+import type { AppCapabilities, FieldValidationError } from '@pmm-extensions/api';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 
 /**

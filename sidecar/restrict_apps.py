@@ -14,7 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Strip the app packages the embedded settings profile does not activate.
 
-Run as a build step in ``Containerfile.sidecar`` when the ``SEP_RESTRICT_APPS``
+Run as a build step in ``Containerfile.sidecar`` when the ``EXTENSIONS_RESTRICT_APPS``
 build argument is ``1``. The baked profile's activation list is the only
 declaration of which apps the restricted image ships, so the retained set is
 derived from it rather than repeated in the build recipe.
@@ -29,8 +29,8 @@ import yaml
 INFRASTRUCTURE_PACKAGES = frozenset({"framework", "shared"})
 """Packages the strip retains that are not activatable apps.
 
-The SEP core reaches ``framework`` and the backup apps reach ``shared``, so
-neither is removable even though neither appears in ``SEP.APPS``.
+The PMM Extensions core reaches ``framework`` and the backup apps reach ``shared``, so
+neither is removable even though neither appears in ``EXTENSIONS.APPS``.
 """
 
 
@@ -38,7 +38,7 @@ def activated_apps(profile: Path) -> set[str]:
     """Return the app module names the baked profile activates.
 
     :param profile: The baked settings profile.
-    :return: The ``SEP.APPS`` module names.
+    :return: The ``EXTENSIONS.APPS`` module names.
     :raises OSError: When the profile cannot be read.
     :raises yaml.YAMLError: When the profile is not parseable YAML.
     :raises TypeError: When the profile's root is not a mapping.
@@ -50,7 +50,7 @@ def activated_apps(profile: Path) -> set[str]:
         raise TypeError(
             f"{profile} is not a settings mapping: parsed as {type(document).__name__}"
         )
-    return {entry["MODULE_NAME"] for entry in document["default"]["SEP"]["APPS"]}
+    return {entry["MODULE_NAME"] for entry in document["default"]["EXTENSIONS"]["APPS"]}
 
 
 def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
@@ -60,7 +60,7 @@ def restrict(profile: Path, apps_root: Path) -> frozenset[str]:
     survive. Re-running against an already-stripped tree removes nothing.
 
     :param profile: The baked settings profile.
-    :param apps_root: The ``app/sep/apps`` directory to thin.
+    :param apps_root: The ``app/extensions/apps`` directory to thin.
     :return: The package directory names left in place.
     :raises FileNotFoundError: When a retained package — an activated app or an
         infrastructure one — has no directory.

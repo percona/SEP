@@ -15,12 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { TasksComponents } from '@sep/api';
+import type { TasksComponents } from '@pmm-extensions/api';
 
 /** App key used for ``/api/apps/{name}/`` routes and schema fetching. */
 export const TASKS_APP_NAME = 'tasks';
 
-/** Base path for the tasks app JSON API under the SEP layer. */
+/** Base path for the tasks app JSON API under the PMM Extensions layer. */
 export const TASKS_APPS_API_BASE = '/apps/tasks';
 
 /** One task row from ``GET /api/apps/tasks/``. */

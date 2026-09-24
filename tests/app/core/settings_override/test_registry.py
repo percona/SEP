@@ -15,19 +15,18 @@
 
 """Test settings-override classification, resolution, and PATCH preservation."""
 
+import functools
 from string import Template
 from typing import ClassVar
 
 import pytest
-from pydantic import BaseModel, HttpUrl, SecretStr
-from sqlmodel.ext.asyncio.session import AsyncSession
+from pydantic import BaseModel, SecretBytes, SecretStr
 
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
-from app.core.alerts.providers.pagerduty import PagerDutyEventsAlertProvider
 from app.core.settings_override.registry import (
+    _clear_cached_properties,
     chain_has_advanced,
-    dump_field_value,
     field_materializer,
     field_reload_classification,
     hot_field,
@@ -42,26 +41,42 @@ from app.core.settings_override.registry import (
     MaterializerContext,
     MaterializerPurpose,
     nested_overridable_field_names,
-    override_rows_for_key,
-    preserve_credential_urls_in_model_payload,
-    preserve_patch_credential_url_value,
-    preserve_secrets_in_model_payload,
     ReloadClassification,
-    resolve_nested_field_metadata,
-    SECRET_STR_MASK,
     unwrap_secrets_for_storage,
 )
-from app.core.utils.fields import CredentialHttpUrl, redact_credential_url
+from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils.pydantic import field_with_metadata
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.config import SEPSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
-from tests.app.core.settings_override.conftest import (
-    insert_override_row,
-    SEP_SETTINGS_TOKEN,
-    TASKS_SETTINGS_TOKEN,
-)
+
+
+class _CachedModel(BaseModel):
+    """Model with a ``cached_property`` to exercise the memo-clearing helper."""
+
+    value: int = 1
+
+    @functools.cached_property
+    def derived(self) -> int:
+        """Return a value derived from ``value`` (memoised)."""
+        return self.value * 10
+
+
+def test_clear_cached_properties_removes_memo() -> None:
+    """A populated ``cached_property`` memo is removed from ``__dict__``."""
+    instance = _CachedModel(value=2)
+    assert instance.derived == instance.value * 10  # populate the memo
+    assert "derived" in instance.__dict__
+    _clear_cached_properties(instance)
+    assert "derived" not in instance.__dict__
+
+
+def test_clear_cached_properties_noop_when_unpopulated() -> None:
+    """Clearing an instance with no populated memo is a no-op."""
+    instance = _CachedModel(value=2)
+    _clear_cached_properties(instance)
+    assert "derived" not in instance.__dict__
 
 
 def _ctx(settings_cls: type, field_name: str, raw: object) -> MaterializerContext:
@@ -95,7 +110,7 @@ def test_hot_field_without_materializer_returns_none() -> None:
 
 def test_field_materializer_unknown_field_returns_none() -> None:
     """Assert an unknown field name reports no materializer instead of raising."""
-    assert field_materializer(SEPSettings, "DOES_NOT_EXIST") is None
+    assert field_materializer(ExtensionsSettings, "DOES_NOT_EXIST") is None
 
 
 def test_materialize_via_owning_model_runs_before_validator() -> None:
@@ -114,7 +129,9 @@ def test_materialize_via_owning_model_runs_before_validator() -> None:
 
 def test_materialize_template_builds_template_from_string() -> None:
     """Assert ``materialize_template`` converts a raw string into a ``Template``."""
-    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary"))
+    result = materialize_template(
+        _ctx(ExtensionsSettings, "FOOTER_TEMPLATE", "$summary")
+    )
     assert isinstance(result, Template)
     assert result.template == "$summary"
 
@@ -122,14 +139,14 @@ def test_materialize_template_builds_template_from_string() -> None:
 def test_materialize_template_passes_through_existing_template() -> None:
     """Assert ``materialize_template`` returns an already-``Template`` value unchanged."""
     tmpl = Template("$version")
-    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", tmpl))
+    result = materialize_template(_ctx(ExtensionsSettings, "FOOTER_TEMPLATE", tmpl))
     assert result is tmpl
 
 
 def test_materialize_template_rejects_non_string() -> None:
     """Reject a non-string, non-``Template`` override instead of passing it through."""
     with pytest.raises(ValueError, match="must be a string"):
-        materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+        materialize_template(_ctx(ExtensionsSettings, "FOOTER_TEMPLATE", 1))
 
 
 def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
@@ -157,7 +174,7 @@ class TestMaterializerPurpose:
 
     def test_a_context_defaults_to_validating_a_submitted_payload(self) -> None:
         """Default to the strict purpose, so an unaware caller keeps write semantics."""
-        context = _ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary")
+        context = _ctx(ExtensionsSettings, "FOOTER_TEMPLATE", "$summary")
 
         assert context.purpose is MaterializerPurpose.VALIDATE
 
@@ -186,413 +203,11 @@ class TestMaterializerPurpose:
         assert seen == [MaterializerPurpose.SNAPSHOT]
 
 
-def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
-    """Assert scalar credential URL PATCH values restore the stored password when redacted."""
-    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
-    current = "http://inv-user:inv-secret@inventory.internal:8080"
-    incoming = "http://inv-user:****@inventory.internal:8080"
-    assert preserve_patch_credential_url_value(field, current, incoming) == current
-
-
-def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
-    """Assert whole-object materializer PATCH payloads preserve nested endpoint passwords."""
-    field = TasksSettings.model_fields["NOMAD"]
-    current = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
-    incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved["endpoint"] == current["endpoint"]
-
-
-class _CredentialUrlModel(BaseModel):
-    """Represent a model with an optional credential-bearing endpoint."""
-
-    endpoint: CredentialHttpUrl | None = HttpUrl.build(
-        scheme="https",
-        username="test-user",
-        host="service.test",
-        password="synthetic-test-value",
-    )
-
-
-def test_preserve_credential_urls_with_none_current_leaf() -> None:
-    """Leave a masked URL unchanged when no live password exists to restore."""
-    current = _CredentialUrlModel(endpoint=None)
-    incoming = _CredentialUrlModel().model_dump(mode="json")
-
-    preserved = preserve_credential_urls_in_model_payload(
-        _CredentialUrlModel, current, incoming
-    )
-
-    assert preserved == incoming
-    assert preserved is not incoming
-
-
-def test_preserve_patch_credential_url_value_recurses_into_nested_model() -> None:
-    """Restore a nested URL password while retaining an outer-field PATCH."""
-
-    class _ConnectionGroup(BaseModel):
-        connection: _CredentialUrlModel
-        label: str
-
-    class _ConnectionSettings(BaseModel):
-        group: _ConnectionGroup
-
-    current = _ConnectionGroup(
-        connection=_CredentialUrlModel(),
-        label="original",
-    )
-    incoming = current.model_dump(mode="json")
-    incoming["label"] = "updated"
-
-    preserved = preserve_patch_credential_url_value(
-        _ConnectionSettings.model_fields["group"], current, incoming
-    )
-
-    assert preserved == {
-        "connection": {"endpoint": str(current.connection.endpoint)},
-        "label": "updated",
-    }
-    assert incoming["connection"]["endpoint"] == redact_credential_url(
-        str(current.connection.endpoint)
-    )
-
-
 class _SecretLeafModel(BaseModel):
     """Nested model with a scalar SecretStr leaf (PMM-shaped)."""
 
     api_key: SecretStr
     label: str = "ok"
-
-
-class _TopLevelSecretSettings(BaseModel):
-    """Fixture settings class with a top-level SecretStr field."""
-
-    TOKEN: SecretStr = hot_field(SecretStr("stored-top-secret"))
-
-
-class _NestedSecretSettings(BaseModel):
-    """Fixture settings class with a nested model that holds a SecretStr."""
-
-    GROUP: _SecretLeafModel = hot_field(
-        _SecretLeafModel(api_key=SecretStr("stored-nested-secret"))
-    )
-
-
-class _DictSecretSettings(BaseModel):
-    """Fixture settings class with a ``dict[str, SecretStr]`` field."""
-
-    secrets: dict[str, SecretStr] = hot_field(
-        {"api_key": SecretStr("stored-dict-secret"), "token": SecretStr("keep-me")}
-    )
-
-
-def test_preserve_secrets_in_model_payload_with_secret_dict() -> None:
-    """Restore masked dictionary values without replacing an explicit new secret."""
-    current = _DictSecretSettings()
-    incoming = current.model_dump(mode="json")
-    incoming["secrets"]["token"] = "replacement-token"
-
-    preserved = preserve_secrets_in_model_payload(
-        _DictSecretSettings, current, incoming
-    )
-
-    assert preserved == {
-        "secrets": {
-            "api_key": current.secrets["api_key"].get_secret_value(),
-            "token": "replacement-token",
-        }
-    }
-    assert incoming["secrets"]["api_key"] == SECRET_STR_MASK
-
-
-def test_preserve_secrets_in_model_payload_with_secret_list() -> None:
-    """Restore masked list elements by position and keep explicitly replaced secrets."""
-
-    class _ListOfSecretsSettings(BaseModel):
-        tokens: list[SecretStr]
-
-    current = _ListOfSecretsSettings(
-        tokens=[SecretStr("keep-first"), SecretStr("replace-second")]
-    )
-    incoming = current.model_dump(mode="json")
-    incoming["tokens"][1] = "new-second"
-
-    preserved = preserve_secrets_in_model_payload(
-        _ListOfSecretsSettings, current, incoming
-    )
-
-    assert preserved == {"tokens": ["keep-first", "new-second"]}
-    assert incoming["tokens"][0] == SECRET_STR_MASK
-
-
-@pytest.mark.parametrize(
-    "order", [(2, 0, 1), (0, 2, 1)], ids=["last-first", "first-then-last"]
-)
-def test_preserve_secrets_in_model_payload_matches_reordered_models(
-    order: tuple[int, ...],
-) -> None:
-    """Pair homogeneous model items by their public values rather than PATCH position."""
-
-    class _ListSecretSettings(BaseModel):
-        items: list[_SecretLeafModel]
-
-    current = _ListSecretSettings(
-        items=[
-            _SecretLeafModel(api_key=SecretStr("secret-a"), label="a"),
-            _SecretLeafModel(api_key=SecretStr("secret-b"), label="b"),
-            _SecretLeafModel(api_key=SecretStr("secret-c"), label="c"),
-        ]
-    )
-    incoming = {
-        "items": [current.items[index].model_dump(mode="json") for index in order]
-    }
-
-    preserved = preserve_secrets_in_model_payload(
-        _ListSecretSettings, current, incoming
-    )
-
-    assert preserved == {
-        "items": [
-            {
-                "api_key": current.items[index].api_key.get_secret_value(),
-                "label": current.items[index].label,
-            }
-            for index in order
-        ]
-    }
-
-
-@pytest.mark.parametrize(
-    ("order", "expected_secrets"),
-    [
-        ((1,), ["secret-b", "secret-a", "secret-c"]),
-        ((2, 0), ["secret-c", "secret-a", "secret-b"]),
-    ],
-    ids=["field-overlap-then-position", "sole-unused-item"],
-)
-def test_preserve_secrets_in_model_payload_with_unrecognized_discriminator(
-    order: tuple[int, ...], expected_secrets: list[str]
-) -> None:
-    """Restore masks through fallback matching without reusing a stored item."""
-
-    class _ProviderSecretLeaf(_SecretLeafModel):
-        provider: str = "external"
-
-    class _ListSecretSettings(BaseModel):
-        items: list[_ProviderSecretLeaf]
-
-    current = _ListSecretSettings(
-        items=[
-            _ProviderSecretLeaf(api_key=SecretStr("secret-a"), label="a"),
-            _ProviderSecretLeaf(api_key=SecretStr("secret-b"), label="b"),
-            _ProviderSecretLeaf(api_key=SecretStr("secret-c"), label="c"),
-        ]
-    )
-    incoming_items = [
-        current.items[index].model_dump(mode="json", exclude={"provider"})
-        for index in order
-    ]
-    # This discriminator matches no class name; omit labels to force fallback pairing.
-    fallback = current.items[0].model_dump(mode="json", exclude={"label"})
-    incoming_items.extend(fallback.copy() for _ in range(4 - len(incoming_items)))
-    incoming = {"items": incoming_items}
-
-    preserved = preserve_secrets_in_model_payload(
-        _ListSecretSettings, current, incoming
-    )
-
-    assert preserved == {
-        "items": [
-            {**item, "api_key": secret}
-            for item, secret in zip(
-                incoming_items, [*expected_secrets, SECRET_STR_MASK], strict=True
-            )
-        ]
-    }
-
-
-def test_preserve_patch_secret_value_for_top_level_field() -> None:
-    """Assert a masked top-level SecretStr PATCH restores the stored secret."""
-    field = _TopLevelSecretSettings.model_fields["TOKEN"]
-    current = SecretStr("stored-top-secret")
-    assert (
-        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
-        == "stored-top-secret"
-    )
-
-
-def test_preserve_patch_secret_value_for_nested_leaf() -> None:
-    """Assert a masked SecretStr on a nested model's leaf FieldInfo restores the stored secret."""
-    field = _SecretLeafModel.model_fields["api_key"]
-    current = SecretStr("stored-nested-secret")
-    assert (
-        preserve_patch_credential_url_value(field, current, SECRET_STR_MASK)
-        == "stored-nested-secret"
-    )
-
-
-def test_preserve_patch_secret_value_overwrites_with_real_value() -> None:
-    """Assert a non-mask SecretStr PATCH keeps the newly submitted value."""
-    field = _TopLevelSecretSettings.model_fields["TOKEN"]
-    current = SecretStr("stored-top-secret")
-    assert (
-        preserve_patch_credential_url_value(field, current, "brand-new-secret")
-        == "brand-new-secret"
-    )
-
-
-def test_preserve_patch_secret_value_for_nested_model_payload() -> None:
-    """Assert a whole-object nested-model PATCH restores masked SecretStr leaves."""
-    field = _NestedSecretSettings.model_fields["GROUP"]
-    current = _SecretLeafModel(api_key=SecretStr("stored-nested-secret"), label="ok")
-    incoming = {"api_key": SECRET_STR_MASK, "label": "ok"}
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved["api_key"] == "stored-nested-secret"
-    assert preserved["label"] == "ok"
-
-
-def test_preserve_patch_secret_value_for_dict_of_secrets() -> None:
-    """Assert masked values inside ``dict[str, SecretStr]`` are restored per key."""
-    field = _DictSecretSettings.model_fields["secrets"]
-    current = {
-        "api_key": SecretStr("stored-dict-secret"),
-        "token": SecretStr("keep-me"),
-    }
-    incoming = {"api_key": SECRET_STR_MASK, "token": "replacement-token"}
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved["api_key"] == "stored-dict-secret"
-    assert preserved["token"] == "replacement-token"
-
-
-def test_preserve_patch_secret_value_for_polymorphic_provider_set() -> None:
-    """Assert masked subclass secrets in ``set[BaseAlertProvider]`` are restored."""
-    field = AlertSettings.model_fields["PROVIDERS"]
-    current = {PagerDutyEventsAlertProvider(routing_key=SecretStr("real-routing-key"))}
-    incoming = [
-        {
-            "PROVIDER": "pagerduty",
-            "routing_key": SECRET_STR_MASK,
-            "api_endpoint": "https://events.pagerduty.com/v2/",
-        }
-    ]
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved[0]["routing_key"] == "real-routing-key"
-    assert preserved[0]["PROVIDER"] == "pagerduty"
-
-
-def test_preserve_patch_secret_value_for_two_pagerduty_providers() -> None:
-    """Assert two same-type PROVIDERS restore by identity, not hash set order.
-
-    Distinct ``api_endpoint`` values identify each entry when both routing keys
-    are masked. Incoming order deliberately disagrees with sorted set order so
-    positional pairing alone would swap secrets.
-    """
-    field = AlertSettings.model_fields["PROVIDERS"]
-    first = PagerDutyEventsAlertProvider(
-        routing_key=SecretStr("routing-key-a"),
-        api_endpoint="https://events-a.example/v2/",
-    )
-    second = PagerDutyEventsAlertProvider(
-        routing_key=SecretStr("routing-key-b"),
-        api_endpoint="https://events-b.example/v2/",
-    )
-    incoming = [
-        {
-            "PROVIDER": "pagerduty",
-            "routing_key": SECRET_STR_MASK,
-            "api_endpoint": "https://events-b.example/v2/",
-        },
-        {
-            "PROVIDER": "pagerduty",
-            "routing_key": SECRET_STR_MASK,
-            "api_endpoint": "https://events-a.example/v2/",
-        },
-    ]
-    preserved = preserve_patch_credential_url_value(field, {first, second}, incoming)
-    assert preserved[0]["routing_key"] == "routing-key-b"
-    assert preserved[0]["api_endpoint"] == "https://events-b.example/v2/"
-    assert preserved[1]["routing_key"] == "routing-key-a"
-    assert preserved[1]["api_endpoint"] == "https://events-a.example/v2/"
-
-
-def test_preserve_patch_secret_value_for_two_pagerduty_providers_same_endpoint() -> (
-    None
-):
-    """Assert identical non-secret fields still restore via stable set order.
-
-    When both entries share ``api_endpoint`` and both secrets are masked, GET
-    dump order (stable sort by routing key) is the only identity signal.
-    """
-    field = AlertSettings.model_fields["PROVIDERS"]
-    first = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-a"))
-    second = PagerDutyEventsAlertProvider(routing_key=SecretStr("routing-key-b"))
-    dumped = dump_field_value(field, {second, first})
-    assert dumped[0]["routing_key"] == SECRET_STR_MASK
-    assert dumped[1]["routing_key"] == SECRET_STR_MASK
-    incoming = [
-        {
-            "PROVIDER": "pagerduty",
-            "routing_key": SECRET_STR_MASK,
-            "api_endpoint": dumped[0]["api_endpoint"],
-        },
-        {
-            "PROVIDER": "pagerduty",
-            "routing_key": SECRET_STR_MASK,
-            "api_endpoint": dumped[1]["api_endpoint"],
-        },
-    ]
-    preserved = preserve_patch_credential_url_value(field, {second, first}, incoming)
-    assert preserved[0]["routing_key"] == "routing-key-a"
-    assert preserved[1]["routing_key"] == "routing-key-b"
-
-
-def test_preserve_patch_secret_value_for_list_of_models() -> None:
-    """Assert masked secrets inside ``list[Model]`` whole-object PATCHes are restored."""
-
-    class _Leaf(BaseModel):
-        api_key: SecretStr
-        label: str = "ok"
-
-    class _ListSecretSettings(BaseModel):
-        items: list[_Leaf] = hot_field([])
-
-    field = _ListSecretSettings.model_fields["items"]
-    current = [_Leaf(api_key=SecretStr("stored-list-secret"), label="a")]
-    incoming = [{"api_key": SECRET_STR_MASK, "label": "a"}]
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved[0]["api_key"] == "stored-list-secret"
-    assert preserved[0]["label"] == "a"
-
-
-def test_preserve_patch_secret_value_for_list_of_secrets() -> None:
-    """Assert masked elements inside ``list[SecretStr]`` are restored by index."""
-
-    class _ListOfSecretsSettings(BaseModel):
-        tokens: list[SecretStr] = hot_field([])
-
-    field = _ListOfSecretsSettings.model_fields["tokens"]
-    current = [SecretStr("keep-first"), SecretStr("keep-second")]
-    incoming = [SECRET_STR_MASK, "brand-new-second"]
-    preserved = preserve_patch_credential_url_value(field, current, incoming)
-    assert preserved == ["keep-first", "brand-new-second"]
-
-
-def test_preserve_patch_secret_value_for_set_of_secrets() -> None:
-    """Assert masked elements inside ``set[SecretStr]`` restore via stable order."""
-
-    class _SetOfSecretsSettings(BaseModel):
-        tokens: set[SecretStr] = hot_field(set())
-
-    field = _SetOfSecretsSettings.model_fields["tokens"]
-    current = {SecretStr("keep-a"), SecretStr("keep-b")}
-    dumped = dump_field_value(field, current)
-    assert dumped == [SECRET_STR_MASK, SECRET_STR_MASK]
-    preserved = preserve_patch_credential_url_value(field, current, dumped)
-    assert preserved == ["keep-a", "keep-b"]
-    preserved_partial = preserve_patch_credential_url_value(
-        field, current, [SECRET_STR_MASK, "brand-new-b"]
-    )
-    assert preserved_partial == ["keep-a", "brand-new-b"]
 
 
 def test_providers_field_reports_is_secret() -> None:
@@ -638,30 +253,30 @@ def test_unwrap_secrets_for_storage_passes_through_non_secrets() -> None:
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:
     """Assert a field marked HOT via ``field_with_metadata`` is detected."""
-    assert is_hot_reloadable(SEPSettings, "CONNECTIVITY_CHECK_DEFAULT") is True
+    assert is_hot_reloadable(ExtensionsSettings, "CONNECTIVITY_CHECK_DEFAULT") is True
 
 
 def test_is_hot_reloadable_true_for_promoted_endpoint() -> None:
     """Assert ``INVENTORY_ENDPOINT`` is promoted to HOT for live endpoint rebind."""
-    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+    assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is True
 
 
 def test_is_hot_reloadable_false_for_structural_field() -> None:
     """Assert structural fields are never overridable."""
-    assert is_hot_reloadable(SEPSettings, "APPS") is False
+    assert is_hot_reloadable(ExtensionsSettings, "APPS") is False
 
 
 def test_is_hot_reloadable_false_for_missing_field() -> None:
     """Assert an unknown field returns False instead of raising."""
-    assert is_hot_reloadable(SEPSettings, "DOES_NOT_EXIST") is False
+    assert is_hot_reloadable(ExtensionsSettings, "DOES_NOT_EXIST") is False
 
 
-def test_hot_field_names_sep_settings() -> None:
-    """``SEPSettings`` ships the promoted HOT fields plus runtime toggles.
+def test_hot_field_names_extensions_settings() -> None:
+    """Check that ``ExtensionsSettings`` ships the promoted HOT fields and toggles.
 
     Includes the endpoint and footer promotions and the ambient-SSO toggle.
     """
-    assert hot_field_names(SEPSettings) == frozenset(
+    assert hot_field_names(ExtensionsSettings) == frozenset(
         {
             "CONNECTIVITY_CHECK_DEFAULT",
             "AMBIENT_SESSION_SSO_ENABLED",
@@ -691,9 +306,9 @@ def test_hot_field_names_tasks_settings() -> None:
     )
 
 
-def test_nested_overridable_field_names_sep_settings() -> None:
-    """Assert ``SEPSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
-    assert nested_overridable_field_names(SEPSettings) == frozenset(
+def test_nested_overridable_field_names_extensions_settings() -> None:
+    """Assert ``ExtensionsSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
+    assert nested_overridable_field_names(ExtensionsSettings) == frozenset(
         {"SESSION_REFRESH", "APP_DRAIN"}
     )
 
@@ -759,15 +374,15 @@ def test_reload_classification_values() -> None:
         "DIAGNOSTICS_DELIVERY_INPUTS",
     ],
 )
-def test_sep_settings_marked_advanced(field_name: str) -> None:
-    """Assert the promoted SEP settings carry the advanced flag."""
-    assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
+def test_extensions_settings_marked_advanced(field_name: str) -> None:
+    """Assert the promoted PMM Extensions settings carry the advanced flag."""
+    assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is True
 
 
 @pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE"])
-def test_sep_settings_not_marked_advanced(field_name: str) -> None:
-    """Assert SEP settings left basic do not carry the advanced flag (no over-marking)."""
-    assert is_advanced_field(SEPSettings.model_fields[field_name]) is False
+def test_extensions_settings_not_marked_advanced(field_name: str) -> None:
+    """Assert PMM Extensions settings left basic do not carry the advanced flag (no over-marking)."""
+    assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is False
 
 
 def test_security_headers_marked_advanced() -> None:
@@ -803,7 +418,9 @@ def test_tasks_settings_marked_advanced(field_name: str) -> None:
 
 def test_session_leaf_inherits_advanced() -> None:
     """Assert every ``SESSION_REFRESH`` leaf inherits the parent's advanced flag."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__COOKIE_NAME")
+    leaf = resolve_nested_field_metadata(
+        ExtensionsSettings, "SESSION_REFRESH__COOKIE_NAME"
+    )
     assert leaf is not None
     assert leaf.is_advanced is True
 
@@ -826,7 +443,7 @@ def test_security_headers_deep_leaf_inherits_advanced() -> None:
 
 def test_non_advanced_nested_leaf_stays_false() -> None:
     """Assert a leaf under a non-advanced parent reports ``is_advanced=False``."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "DATABASE__NAME")
+    leaf = resolve_nested_field_metadata(ExtensionsSettings, "DATABASE__NAME")
     assert leaf is not None
     assert leaf.is_advanced is False
 
@@ -837,8 +454,10 @@ def test_advanced_does_not_change_reload_classification() -> None:
     ``advanced`` is display-only: a marked-advanced HOT endpoint stays HOT (and
     thus still patchable), proving the flag does not gate override eligibility.
     """
-    assert is_advanced_field(SEPSettings.model_fields["INVENTORY_ENDPOINT"]) is True
-    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+    assert (
+        is_advanced_field(ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"]) is True
+    )
+    assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is True
 
 
 def test_is_advanced_field_false_without_metadata() -> None:
@@ -995,170 +614,15 @@ def test_overlay_malformed_or_absent_is_harmless(overlay: object) -> None:
     )
 
 
-_CANONICAL_NESTED = "NOMAD__timeout"
-_LEGACY_NESTED = "nomad__TIMEOUT"
-_TOP_LEVEL = "INVENTORY_ENDPOINT"
+class TestUnwrapSecretsForStorage:
+    """Cover the storage shapes the JSON override column has to accept."""
 
+    def test_secret_bytes_are_decoded_for_json_storage(self) -> None:
+        """Decode ``SecretBytes`` so the JSON column can hold the plaintext."""
+        assert unwrap_secrets_for_storage(SecretBytes(b"raw-bytes")) == "raw-bytes"
 
-@pytest.mark.asyncio
-async def test_override_rows_for_key_resolves_legacy_nested_casing(
-    session: AsyncSession,
-) -> None:
-    """Assert a mixed-case nested row is found under its canonical key."""
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_LEGACY_NESTED,
-        value=30,
-        is_active=True,
-    )
-    rows = await override_rows_for_key(
-        session,
-        settings_cls=TasksSettings,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_CANONICAL_NESTED,
-    )
-    assert [row.key for row in rows] == [_LEGACY_NESTED]
-
-
-@pytest.mark.asyncio
-async def test_override_rows_for_key_returns_legacy_and_canonical_duplicates(
-    session: AsyncSession,
-) -> None:
-    """Assert every row that canonicalizes to the requested key is returned."""
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_LEGACY_NESTED,
-        value=30,
-        is_active=True,
-    )
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_CANONICAL_NESTED,
-        value=45,
-        is_active=True,
-    )
-    rows = await override_rows_for_key(
-        session,
-        settings_cls=TasksSettings,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_CANONICAL_NESTED,
-    )
-    assert {row.key for row in rows} == {_LEGACY_NESTED, _CANONICAL_NESTED}
-
-
-@pytest.mark.asyncio
-async def test_override_rows_for_key_excludes_other_setting_class(
-    session: AsyncSession,
-) -> None:
-    """Assert a matching stored key on another class is not returned."""
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_LEGACY_NESTED,
-        value=30,
-        is_active=True,
-    )
-    await insert_override_row(
-        session,
-        setting_class=SEP_SETTINGS_TOKEN,
-        key=_LEGACY_NESTED,
-        value=99,
-        is_active=True,
-    )
-    rows = await override_rows_for_key(
-        session,
-        settings_cls=TasksSettings,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_CANONICAL_NESTED,
-    )
-    assert [row.key for row in rows] == [_LEGACY_NESTED]
-    assert rows[0].setting_class == TASKS_SETTINGS_TOKEN
-
-
-@pytest.mark.asyncio
-async def test_override_rows_for_key_includes_inactive_row(
-    session: AsyncSession,
-) -> None:
-    """Assert an inactive row is still resolved (write paths match on key alone)."""
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_LEGACY_NESTED,
-        value=30,
-        is_active=False,
-    )
-    rows = await override_rows_for_key(
-        session,
-        settings_cls=TasksSettings,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key=_CANONICAL_NESTED,
-    )
-    assert [row.key for row in rows] == [_LEGACY_NESTED]
-    assert rows[0].is_active is False
-
-
-@pytest.mark.asyncio
-async def test_override_rows_for_key_returns_empty_for_no_match(
-    session: AsyncSession,
-) -> None:
-    """Assert a missing key or an unresolvable stored key yields no rows."""
-    await insert_override_row(
-        session,
-        setting_class=TASKS_SETTINGS_TOKEN,
-        key="NOMAD__does_not_exist",
-        value=1,
-        is_active=True,
-    )
-    assert (
-        await override_rows_for_key(
-            session,
-            settings_cls=TasksSettings,
-            setting_class=TASKS_SETTINGS_TOKEN,
-            key=_CANONICAL_NESTED,
-        )
-        == []
-    )
-    assert (
-        await override_rows_for_key(
-            session,
-            settings_cls=TasksSettings,
-            setting_class=TASKS_SETTINGS_TOKEN,
-            key="NOMAD__unknown_leaf",
-        )
-        == []
-    )
-
-
-@pytest.mark.asyncio
-async def test_override_rows_for_key_matches_top_level_case_insensitively(
-    session: AsyncSession,
-) -> None:
-    """Assert a top-level key also matches a mixed-case stored spelling.
-
-    Keeps mixed-case stored keys reachable by DELETE/PATCH now that the ``key``
-    match moved from SQL into Python.
-    """
-    await insert_override_row(
-        session,
-        setting_class=SEP_SETTINGS_TOKEN,
-        key=_TOP_LEVEL,
-        value="https://canonical.example.com",
-        is_active=True,
-    )
-    await insert_override_row(
-        session,
-        setting_class=SEP_SETTINGS_TOKEN,
-        key=_TOP_LEVEL.lower(),
-        value="https://legacy.example.com",
-        is_active=True,
-    )
-    rows = await override_rows_for_key(
-        session,
-        settings_cls=SEPSettings,
-        setting_class=SEP_SETTINGS_TOKEN,
-        key=_TOP_LEVEL,
-    )
-    assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}
+    def test_collection_members_are_unwrapped_elementwise(self) -> None:
+        """Unwrap every secret inside a list or tuple, keeping plain members."""
+        assert unwrap_secrets_for_storage(
+            [SecretStr("first"), "plain", (SecretBytes(b"second"),)]
+        ) == ["first", "plain", ["second"]]

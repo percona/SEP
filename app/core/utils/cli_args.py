@@ -16,8 +16,8 @@
 """Resolve ``${value}`` CLI-argument templates to shell tokens.
 
 This is the single implementation the framework run-command path
-(:func:`app.sep.apps.framework.spec.build_command_args`) and the snippet
-exec-python-artifact path (:meth:`app.sep.snippets.models.snippet.BaseSnippetArgs.format_args`)
+(:func:`app.extensions.apps.framework.spec.build_command_args`) and the snippet
+exec-python-artifact path (:meth:`app.extensions.snippets.models.snippet.BaseSnippetArgs.format_args`)
 both delegate to for the shared ``${value}`` template convention and the
 value-arg vs flag discrimination. Surface-specific concerns — truthy gating,
 argument ordering, flag rendering, the ``${name}`` default-format placeholder,

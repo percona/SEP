@@ -119,16 +119,20 @@ class TestInventorySettingsBootstrap:
             entered += 1
             yield
 
-        async def _no_op_sep_startup() -> None:
-            """Stub ``sep_startup`` so the test does not hit the real SEP DB."""
+        async def _no_op_extensions_startup() -> None:
+            """Stub ``extensions_startup`` so the test does not hit the real PMM Extensions DB."""
 
         @asynccontextmanager
         async def _no_op_lifespan(_app: FastAPI) -> AsyncIterator[None]:
             """Stub the SEP/Tasks lifespans so the test stays hermetic."""
             yield
 
-        monkeypatch.setattr(main_module, "sep_startup", _no_op_sep_startup)
-        monkeypatch.setattr(main_module, "sep_overrides_lifespan", _no_op_lifespan)
+        monkeypatch.setattr(
+            main_module, "extensions_startup", _no_op_extensions_startup
+        )
+        monkeypatch.setattr(
+            main_module, "extensions_overrides_lifespan", _no_op_lifespan
+        )
         monkeypatch.setattr(main_module, "tasks_lifespan", _no_op_lifespan)
         monkeypatch.setattr(
             main_module, "inventory_overrides_lifespan", _spy_inventory_overrides

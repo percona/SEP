@@ -44,6 +44,7 @@ from tests.app.inventory.conftest import (
     sync_health_payload,
     SYNC_HEALTH_RESPONSE_KEYS,
 )
+from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
 
 CREATED_NODE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -84,12 +85,12 @@ class TestListNodes:
     ) -> None:
         """Serve a tombstone carrying the migration's synthetic origin.
 
-        The migration stamps ``sep-legacy:<pk>`` onto a brownfield row so the
-        NOT NULL constraint can land. ``NodeResponse`` now requires an origin, so
-        the stamped value is what keeps such a row readable at all through the
+        The migration stamps a legacy-prefixed ``external_id`` onto a brownfield row
+        so the NOT NULL constraint can land. ``NodeResponse`` now requires an origin,
+        so the stamped value is what keeps such a row readable at all through the
         retired-inclusive route the historical and sync paths use.
         """
-        node.external_id = f"sep-legacy:{node.id}"
+        node.external_id = f"{PRE_RENAME_LEGACY_PREFIX}{node.id}"
         node.source = SourceEnum.PMM
         session.add(node)
         await session.commit()
@@ -101,7 +102,7 @@ class TestListNodes:
         retired = test_client.get(f"/nodes/{node.id}", params={"include_retired": True})
         assert retired.status_code == status.HTTP_200_OK
         body = retired.json()
-        assert body["external_id"] == f"sep-legacy:{node.id}"
+        assert body["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node.id}"
         assert body["source"] == SourceEnum.PMM.value
         assert body["retired_at"] is not None
 

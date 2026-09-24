@@ -29,6 +29,7 @@ from app.tasks.crud import TaskHistoryManager
 from app.tasks.execution.utils import parse_payload
 from app.tasks.models import (
     ExecutionEvent,
+    ExecutorHostState,
     FileMetadata,
     Task,
     TaskHistory,
@@ -187,6 +188,28 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
         :rtype: list[str]
         """
 
+    def get_host_states(self) -> list[ExecutorHostState]:
+        """Describe every host the backend knows about, usable or not.
+
+        Deliberately concrete rather than abstract: a backend with nothing to add
+        should not have to say so, and for most of them there is nothing to add.
+        The default reports exactly what :meth:`get_hosts` returns as reachable and
+        healthy, which is true by construction - that method returns the usable
+        hosts - and reports nothing about hosts it cannot see, because a backend
+        with no notion of an unusable host has none to report.
+
+        Override it where the backend can distinguish "not registered" from
+        "registered and broken"; :class:`NomadExecutor` does.
+
+        :return: One entry per host the backend knows about.
+        """
+        return [
+            ExecutorHostState(
+                name=name, address=address, reachable=True, driver_healthy=True
+            )
+            for name, address in self.get_hosts().items()
+        ]
+
     @abstractmethod
     async def stream_logs(
         self,
@@ -258,7 +281,7 @@ class BaseExecutor(BaseCaseInsensitiveModel, ABC):
             Defaults to 1 MiB.
         :param anonymize: Whether to redact the task's configured entities from the
             streamed content. Defaults to ``True``, as every read served to a user
-            must be redacted; internal reads of content SEP itself produced may opt
+            must be redacted; internal reads of content PMM Extensions itself produced may opt
             out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
         """

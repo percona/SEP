@@ -81,7 +81,7 @@ STALENESS_PREAMBLE_SHELL = (
     "now=$(date +%s); "
     "elapsed=$((now - NOMAD_META_scheduled_at)); "
     'if [ "$elapsed" -gt "$NOMAD_META_staleness_threshold_seconds" ]; then '
-    'echo "SEP_STALE_SKIP: elapsed=$elapsed""s '
+    'echo "EXTENSIONS_STALE_SKIP: elapsed=$elapsed""s '
     'threshold=$NOMAD_META_staleness_threshold_seconds""s"; '
     "exit 75; "
     "fi; "
@@ -107,7 +107,7 @@ _STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
 #: effective interpreter to, and the artifact specs' ``run-script`` steps launch
 #: from. Mirrors the existing ``${NOMAD_ALLOC_DIR}/venv`` handoff between
 #: ``prepare-env`` and ``run-script``.
-EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/sep_interpreter"
+EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/pmm_extensions_interpreter"
 
 #: ``sudo`` options that consume the following token as their value. Walking
 #: past them is what keeps ``sudo -u postgres <cmd>`` resolving ``<cmd>`` rather
@@ -223,7 +223,7 @@ def _launch_check_shell(
 
     def abort(command: str) -> str:
         return (
-            f'echo "SEP_UNLAUNCHABLE: command={command} node=$NOMAD_META_target"; '
+            f'echo "EXTENSIONS_UNLAUNCHABLE: command={command} node=$NOMAD_META_target"; '
             f"exit {LAUNCH_CHECK_EXIT_CODE}"
         )
 
@@ -297,7 +297,7 @@ def _launch_check_shell(
             + resolve_or_abort(launches, launches)
         )
     announce = (
-        '[ -z "$stripped" ] || echo "SEP_SUDO_STRIPPED: node=$NOMAD_META_target"; '
+        '[ -z "$stripped" ] || echo "EXTENSIONS_SUDO_STRIPPED: node=$NOMAD_META_target"; '
         if allow_strip
         else ""
     )
@@ -358,8 +358,8 @@ def _check_launchable_task(
 
 
 #: POSIX sh body of the log-capture hold: keep the allocation non-terminal after
-#: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
-#: until either SEP signals the step or the deadline elapses.
+#: the payload exits so Nomad cannot garbage-collect logs PMM Extensions has not read yet,
+#: until either PMM Extensions signals the step or the deadline elapses.
 #:
 #: ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only
 #: between foreground commands -- ``trap ...; sleep N`` would ignore the signal
@@ -789,7 +789,7 @@ SYSTEM_TASKS = [
     Task(
         name=INVENTORY_SYNC_TASK_NAME,
         data={
-            "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
+            "callable": "app.extensions.apps.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
         },
         backend=TaskBackendEnum.CELERY,
@@ -800,7 +800,7 @@ SYSTEM_TASKS = [
         name=INVENTORY_COLLECTION_TASK_NAME,
         data={
             "callable": (
-                "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
+                "app.extensions.apps.inventory.collection.run_scheduled_inventory_collection"
             ),
             "target": "local",
         },
@@ -886,7 +886,7 @@ def _inventory_sync_schedule(
 
     ``inventory-sync`` is a ``Task`` row rather than a Celery function, so the
     entry uses the same indirection an operator-created schedule uses: it points
-    at ``execute_task_by_name`` and names the SEP task in ``kwargs``. Only that
+    at ``execute_task_by_name`` and names the PMM Extensions task in ``kwargs``. Only that
     shape appears in the sync UI's schedule list and produces the ``TaskHistory``
     rows the sync-health rollup reads.
 

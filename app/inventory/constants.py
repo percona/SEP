@@ -24,10 +24,9 @@ DEFAULT_POSTGRESQL_PORT = 5432
 
 #: Discriminator carried by an active row inside every unique index, so a retired
 #: row (which carries its own primary key instead) never collides with its
-#: replacement. It has to be truthy and outside the autoincrement range:
-#: ``BaseSQLModelManager.save`` guards its Python duplicate check with
-#: ``all(equal_filters.values())``, which a ``0`` or ``NULL`` sentinel would
-#: silently disable.
+#: replacement. It has to be non-NULL and outside the autoincrement range: a NULL
+#: never compares equal to another, so a NULL sentinel would silently stop the
+#: index constraining active rows at all.
 ACTIVE_RETIREMENT_KEY: Final = -1
 
 #: Part of the API contract: callers tell an uncollected observation apart from a
@@ -60,8 +59,8 @@ class RetirableEntityName(StrEnum):
     """Name the inventory entity types that carry a retirement tombstone.
 
     Values are spelled out rather than derived, because they cross a service
-    boundary: SEP names an entity type by these strings when it asks inventory
-    to collect. Inventory-local on purpose — SEP's own
+    boundary: PMM Extensions names an entity type by these strings when it asks inventory
+    to collect. Inventory-local on purpose — PMM Extensions' own
     ``SyncInventoryEntityTypeEnum`` lives in a package this service must not
     import.
     """

@@ -31,13 +31,13 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import setting_class_token, SettingOverride
 from app.core.settings_override.registry import (
     _clear_cached_properties,
-    _resolve_field_in_model,
     coerce_nested_field_value,
     is_hot_reloadable,
     is_nested_overridable_parent,
     materialize_override_value,
     MaterializerPurpose,
 )
+from app.core.settings_override.resolution import resolve_field_in_model
 from app.core.settings_override.secret_storage import decrypt_secret_leaves
 from app.core.utils.pydantic import annotation_pydantic_class
 
@@ -195,7 +195,7 @@ def _apply_nested_group(
     :param base_settings: The resolved settings instance seeding the parent
         base value, or ``None`` to fall back to the field default.
     """
-    resolved_parent = _resolve_field_in_model(settings_cls, prefix)
+    resolved_parent = resolve_field_in_model(settings_cls, prefix)
     if resolved_parent is None:
         logger.warning(
             "Nested override for unknown parent ignored: %s.%s",

@@ -32,8 +32,8 @@ const { stopMutate, stopState, authMock } = vi.hoisted(() => ({
   authMock: { canMutate: true },
 }));
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   useAuth: () => ({ isAdmin: authMock.canMutate, canMutate: authMock.canMutate }),
 }));
 
@@ -48,7 +48,7 @@ vi.mock('./hooks', () => ({
   useDipperExecution: vi.fn(),
 }));
 
-vi.mock('@sep/framework', async () => {
+vi.mock('@pmm-extensions/framework', async () => {
   const { useFormContext } = await import('react-hook-form');
   return {
     ServiceSelector: ({ name }: { name: string }) => {

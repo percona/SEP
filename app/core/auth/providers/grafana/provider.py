@@ -60,7 +60,7 @@ class GrafanaAuthProvider(GrafanaSDK, BaseAuthProvider):
     async def resolve_ambient_session(
         self, cookies: Mapping[str, str]
     ) -> OAuthToken | None:
-        """Mint a SEP token from an ambient Grafana session cookie.
+        """Mint a PMM Extensions token from an ambient Grafana session cookie.
 
         Read the Grafana session cookie (named per :attr:`session_cookie_name`)
         off ``cookies`` and validate it against Grafana; an absent cookie yields
@@ -78,7 +78,7 @@ class GrafanaAuthProvider(GrafanaSDK, BaseAuthProvider):
     async def exchange_ambient_session(
         self, cookies: Mapping[str, str]
     ) -> SessionExchangeTokenResponse | None:
-        """Mint a short-lived SEP bearer from an ambient Grafana session cookie.
+        """Mint a short-lived PMM Extensions bearer from an ambient Grafana session cookie.
 
         Read the Grafana session cookie (named per :attr:`session_cookie_name`)
         off ``cookies`` and validate it against Grafana; an absent cookie yields

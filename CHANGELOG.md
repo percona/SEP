@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Services Enablement Platform (SEP) are documented in this file.
+All notable changes to PMM Extensions are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 <!--
 Entries under [Unreleased] are assembled from per-PR fragments under
 `changelog.d/` at release time. To land a user-facing change, add a fragment
-via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
+via `make changelog-add TICKET=PMM-NNNNN SECTION=<section> MSG="..."` where
 <section> is one of: added, changed, breaking, config, fixed, security.
 See `changelog.d/README.md` for the full workflow.
 -->

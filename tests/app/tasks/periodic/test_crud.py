@@ -37,7 +37,7 @@ PAGE_SIZE = 2
 async def _seed_periodic_tasks(
     session: AsyncSession, *, other_task: str
 ) -> list[PeriodicTask]:
-    """Seed two SEP-managed periodic tasks plus one unmanaged row; return the managed rows.
+    """Seed two PMM Extensions managed periodic tasks plus one unmanaged row; return the managed rows.
 
     The managed rows carry ``task_name`` values ``backup-daily`` / ``restore-weekly``;
     the unmanaged row carries ``task_name`` ``unrelated``. ``other_task`` sets the
@@ -68,7 +68,7 @@ async def _seed_periodic_tasks(
             task=other_task,
             kwargs=json.dumps({"task_name": "unrelated"}),
             enabled=True,
-            description="Not managed by SEP",
+            description="Not managed by PMM Extensions",
             schedule_model=schedule,
         )
     )
@@ -88,7 +88,7 @@ async def periodic_tasks(celery_beat_session: AsyncSession) -> list[PeriodicTask
 
 
 async def _seed_numbered_periodic_tasks(session: AsyncSession, count: int) -> list[str]:
-    """Seed ``count`` SEP-managed periodic tasks; return their names in creation order.
+    """Seed ``count`` PMM Extensions managed periodic tasks; return their names in creation order.
 
     The names are deliberately not in alphabetical order relative to creation, so a
     test walking pages cannot pass by accident on a name-sorted result set.

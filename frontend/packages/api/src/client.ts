@@ -58,7 +58,7 @@ export function setTokenProvider(provider: TokenProvider) {
  * Replace how a fresh token is obtained. Defaults to the cookie-backed
  * `POST /oauth/refresh` this SPA uses.
  *
- * A host that embeds SEP and owns the session itself (PMM) registers a minter
+ * A host that embeds PMM Extensions and owns the session itself (PMM) registers a minter
  * that exchanges its own session cookie via `POST /oauth/session/exchange`:
  * there is no refresh cookie in that deployment, so the default would 401 on
  * every recovery attempt. Everything downstream — single-flight coalescing in

@@ -43,7 +43,7 @@ async def _hash_snippet_entries(
     :return: ``(digest, relative_path)`` pairs in sorted-path order.
     :raises OSError: If a snippet file cannot be opened or read.
     """
-    from app.sep.snippets.checksums import manifest_relative_path, sha256_file
+    from app.extensions.snippets.checksums import manifest_relative_path, sha256_file
 
     entries: list[tuple[str, str]] = []
     for path in sorted(snippets_dir.rglob("*")):
@@ -66,7 +66,7 @@ def generate_manifest() -> tuple[int, Path]:
     :raises SystemExit: If the snippets directory does not exist.
     :raises OSError: If a snippet file or the manifest cannot be read or written.
     """
-    from app.sep.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
+    from app.extensions.snippets.checksums import BUILTIN_CHECKSUM_MANIFEST
 
     if not SNIPPETS_DIR.is_dir():
         raise SystemExit(f"Snippets directory not found: {SNIPPETS_DIR}")

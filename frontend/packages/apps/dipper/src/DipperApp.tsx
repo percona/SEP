@@ -34,7 +34,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useSnackbar } from 'notistack';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import {
   ReadOnlyNotice,
   SchemaFormRenderer,
@@ -44,7 +44,7 @@ import {
   useStopTaskHistory,
   type ServiceOption,
   type TaskHistoryEntry,
-} from '@sep/framework';
+} from '@pmm-extensions/framework';
 import {
   useDipperExecution,
   useDipperFormSchema,

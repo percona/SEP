@@ -18,17 +18,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
 
-/** Shape returned by `GET /api/sep/app-info`. */
+/** Shape returned by `GET /api/extensions/app-info`. */
 export interface AppInfo {
   /** Rendered sidebar footer text (application summary and version by default). */
   footer_text: string;
 }
 
-export const APP_INFO_QUERY_KEY = ['sep', 'app-info'] as const;
+export const APP_INFO_QUERY_KEY = ['extensions', 'app-info'] as const;
 
 /**
- * Fetches shell metadata for the sidebar footer (`footer_text`), mirroring the
- * value the legacy Jinja interface renders from `SEP__FOOTER_TEMPLATE`.
+ * Fetches shell metadata for the sidebar footer (`footer_text`), rendered
+ * server-side from the live `EXTENSIONS__FOOTER_TEMPLATE` setting.
  *
  * The footer reflects a deployment-specific override but changes rarely within
  * a session, so the result is cached for 5 minutes.
@@ -37,7 +37,7 @@ export function useAppInfo() {
   return useQuery<AppInfo>({
     queryKey: APP_INFO_QUERY_KEY,
     queryFn: async () => {
-      const { data } = await apiClient.get<AppInfo>('/sep/app-info/');
+      const { data } = await apiClient.get<AppInfo>('/extensions/app-info/');
       return data;
     },
     staleTime: 5 * 60 * 1000,

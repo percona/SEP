@@ -18,8 +18,9 @@
 import hashlib
 import logging
 import re
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Iterable, Mapping
 from contextlib import asynccontextmanager
+from itertools import chain
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
@@ -28,18 +29,23 @@ from sqlalchemy import (
     Column,
     ColumnClause,
     ColumnElement,
+    ForeignKeyConstraint,
     func,
     inspect,
     JSON,
     literal,
+    MetaData,
+    Table,
     Text,
     text,
     TypeDecorator,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine.interfaces import ReflectedCheckConstraint
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     AsyncConnection,
@@ -52,6 +58,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import coercions, ColumnExpressionArgument, roles
 from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy.sql.dml import Insert as GenericInsert
+from sqlalchemy.sql.schema import BLANK_SCHEMA, RETAIN_SCHEMA, SchemaConst
 from sqlalchemy.sql.type_api import TypeEngine
 from sqlalchemy.sql.visitors import InternalTraversal
 from sqlmodel import AutoString, col
@@ -65,6 +72,10 @@ from app.core.utils.serialization import json_serializer
 logger = logging.getLogger(__name__)
 
 SQLAlchemyColumn = ColumnClause | Column | InstrumentedAttribute
+
+# SQLite carries no structured diagnostics, so the violated key is only recoverable
+# from the message text.
+SQLITE_UNIQUE_VIOLATION_RE = re.compile(r"UNIQUE constraint failed:\s*(?P<columns>.+)")
 
 
 def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmaker:
@@ -86,26 +97,99 @@ def get_async_session_maker_from_engine(engine: AsyncEngine) -> async_sessionmak
 
 
 def create_app_async_engine(database: DatabaseOptions) -> AsyncEngine:
-    """Build a service API async engine with pool and connect options.
+    """Build a service API async engine with pool, connect and schema options.
 
     ``pool_pre_ping`` is always forwarded. The pool sizing fields carry bounded
     defaults and are forwarded only for a dialect :class:`DatabaseOptions`
     sizes, so a SQLite engine of either backing gets none of them and a
     PostgreSQL one gets whatever :attr:`DatabaseOptions.pool_engine_kwargs`
     resolved. An unset or SQLite-inapplicable ``CONNECT_TIMEOUT`` likewise
-    omits ``connect_args`` entirely.
+    omits ``connect_args`` entirely. A non-empty
+    ``database.SCHEMA_TRANSLATE_MAP`` is applied via ``execution_options``
+    here, once, so every caller that shares a ``DatabaseOptions`` gets the same
+    translation without composing its own.
 
     :param database: The service database options carrying the URL and any
         configured pool sizing.
     :return: A configured asynchronous engine.
     """
-    return create_async_engine(
+    engine = create_async_engine(
         database.URL,
         echo=False,
         json_serializer=json_serializer,
         **database.connect_engine_kwargs,
         **database.pool_engine_kwargs,
     )
+    if database.SCHEMA_TRANSLATE_MAP:
+        engine = engine.execution_options(
+            schema_translate_map=database.SCHEMA_TRANSLATE_MAP
+        )
+    return engine
+
+
+def translate_metadata_schemas(
+    metadata: MetaData, translate_map: Mapping[str, str | None]
+) -> MetaData:
+    """Return ``metadata`` with every symbolic schema token resolved through the map.
+
+    Alembic's autogenerate compares ``Table`` objects against the reflected
+    database before any statement executes, so a connection's
+    ``schema_translate_map`` never reaches the comparison. Applying the same
+    map to a copy lets ``check`` and ``--autogenerate`` see the schema each
+    table actually lands in: the default schema for a token mapped to ``None``,
+    the mapped name otherwise. A schema absent from the map is kept as
+    declared, so an unconfigured token still fails the check loudly.
+    Foreign-key targets are resolved by the same rule.
+
+    Two declared tables can resolve to the same physical table on a bind — a
+    token mapped to the bind's default schema beside an untokened table of the
+    same name, for instance. The first one reached in dependency order is
+    copied; the rest are skipped rather than raising, since that is the table
+    the bind actually has. This cannot hide a real conflict from ``check``:
+    the physical table then carries only one of the two definitions, so the
+    comparison reports a mismatch against whichever declared table it does
+    not match, exactly where the diff would show it.
+
+    :param metadata: The metadata whose tables may declare symbolic schemas.
+    :param translate_map: The bind's ``schema_translate_map``.
+    :return: ``metadata`` itself when the map is empty, otherwise a copy.
+    """
+    if not translate_map:
+        return metadata
+
+    def resolve(schema: str | None) -> str | SchemaConst:
+        if schema not in translate_map:
+            return RETAIN_SCHEMA
+        mapped = translate_map[schema]
+        return BLANK_SCHEMA if mapped is None else mapped
+
+    def referred_schema(
+        _table: Table,
+        _to_schema: str | None,
+        _constraint: ForeignKeyConstraint,
+        referred: str | None,
+    ) -> str | SchemaConst:
+        return resolve(referred)
+
+    translated = MetaData()
+    for table in metadata.sorted_tables:
+        resolved = resolve(table.schema)
+        schema_arg = None if resolved is BLANK_SCHEMA else resolved
+        key_schema = table.schema if resolved is RETAIN_SCHEMA else schema_arg
+        key = f"{key_schema}.{table.name}" if key_schema is not None else table.name
+        if key in translated.tables:
+            continue
+        # SQLAlchemy annotates ``schema`` as ``str | Literal[RETAIN_SCHEMA]`` and
+        # ``referred_schema_fn`` as returning ``str | None``, but its own docstring
+        # says ``None`` selects the target metadata's schema and ``BLANK_SCHEMA``
+        # resets a referred schema: the annotations are narrower than the
+        # documented runtime contract.
+        table.to_metadata(
+            translated,
+            schema=schema_arg,  # ty: ignore[invalid-argument-type]
+            referred_schema_fn=referred_schema,  # ty: ignore[invalid-argument-type]
+        )
+    return translated
 
 
 def json_join_path_elems(*path_elems: str) -> str:
@@ -208,6 +292,74 @@ def idempotent_insert(engine_name: str, table: Any) -> GenericInsert:
     if engine_name == DatabaseDialect.SQLITE:
         return sqlite.insert(table).on_conflict_do_nothing()
     raise NotImplementedError(f"idempotent_insert: unsupported dialect {engine_name!r}")
+
+
+def _columns_of_named_unique_key(table: Table, name: str) -> list[str] | None:
+    """Resolve a unique index or constraint name to the column names it spans.
+
+    :param table: The table whose declared unique keys are searched.
+    :param name: The index or constraint name the database reported.
+    :return: The key's column names, or ``None`` if no declared unique key bears
+        that name.
+    """
+    declared_keys = chain(
+        (index for index in table.indexes if index.unique),
+        (
+            constraint
+            for constraint in table.constraints
+            if isinstance(constraint, UniqueConstraint)
+        ),
+    )
+    for key in declared_keys:
+        if key.name == name:
+            return [column.name for column in key.columns]
+    return None
+
+
+def _reported_constraint_name(error: IntegrityError) -> str | None:
+    """Return the constraint name the database driver attached to an error.
+
+    The two drivers expose it in different places, and asyncpg's is reachable only
+    through the wrapper SQLAlchemy raises in its place: psycopg carries a ``diag``
+    record, while asyncpg sets the attribute on the original exception it chains to.
+
+    :param error: The integrity error raised while flushing or committing.
+    :return: The reported constraint name, or ``None`` if neither shape carries one.
+    """
+    for candidate in (error.orig, getattr(error.orig, "__cause__", None)):
+        name = getattr(
+            getattr(candidate, "diag", None), "constraint_name", None
+        ) or getattr(candidate, "constraint_name", None)
+        if name:
+            return str(name)
+    return None
+
+
+def unique_violation_columns(table: Table, error: IntegrityError) -> list[str] | None:
+    """Name the columns of the unique key an integrity error violated.
+
+    The two supported dialects report a violation differently: PostgreSQL names the
+    offending index or constraint, which resolves against the table's declared unique
+    keys, while SQLite spells the columns into the message itself. Any other integrity
+    violation (a foreign key, a ``NOT NULL``, a primary key) resolves to no declared
+    unique key, so the caller can tell a duplicate apart from a row the database
+    rejected for another reason.
+
+    :param table: The table the failing statement targeted.
+    :param error: The integrity error raised while flushing or committing.
+    :return: The violated key's column names, or ``None`` when the error is not a
+        unique-key violation.
+    """
+    reported_name = _reported_constraint_name(error)
+    if reported_name is not None:
+        return _columns_of_named_unique_key(table, reported_name)
+    match = SQLITE_UNIQUE_VIOLATION_RE.search(str(error.orig))
+    if match is None:
+        return None
+    return [
+        qualified_column.strip().rpartition(".")[2]
+        for qualified_column in match["columns"].split(",")
+    ]
 
 
 class NullsLastOrdering(ColumnElement):

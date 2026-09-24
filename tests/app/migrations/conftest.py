@@ -27,7 +27,7 @@ from tests.app.conftest import POSTGRES_DSN_ENV
 def postgres_sync_url() -> URL:
     """Return a sync (``psycopg2``) URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     dsn = os.environ.get(POSTGRES_DSN_ENV)

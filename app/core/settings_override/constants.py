@@ -15,6 +15,16 @@
 
 """Define constants shared by settings-override modules."""
 
+#: Sentinel returned by
+#: :func:`app.core.settings_override.resolution.resolve_nested_value` when a
+#: segment along the chain is absent. Distinct from a present intermediate or
+#: leaf whose value is ``None`` (an optional intermediate collapsing to
+#: ``None``, or an unresolved secret leaf). The LIST response builder maps this
+#: to a JSON ``null``. Lives in this leaf module so every reader gets the same
+#: object from an import that cannot run mid-initialization: the identity check
+#: callers rely on would silently fail against a second ``object()``.
+NESTED_VALUE_MISSING = object()
+
 # Stable, app-chosen advisory-lock key shared by every settingoverride migration
 # so they serialize against each other on a shared PostgreSQL database. Any fixed
 # bigint unused elsewhere works; no other advisory lock exists in the repo.

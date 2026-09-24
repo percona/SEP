@@ -22,10 +22,10 @@ import { SuggestedTaskNameEffect } from './backupMongoCreateForm';
 
 /**
  * Stub service resolution with hydrated options only. Scalar rehydration is
- * covered by ``useResolvedServiceField`` tests in ``@sep/framework``.
+ * covered by ``useResolvedServiceField`` tests in ``@pmm-extensions/framework``.
  */
-vi.mock('@sep/framework', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@sep/framework')>();
+vi.mock('@pmm-extensions/framework', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@pmm-extensions/framework')>();
   return {
     ...actual,
     useResolvedServiceField(fieldName: string) {

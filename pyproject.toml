@@ -1,7 +1,7 @@
 [project]
-name = "sep"
+name = "pmm-extensions"
 version = "3.10.0.dev0"
-description = "Percona Services Enablement Platform"
+description = "PMM Extensions"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
     {name = "Max Bubenick", email = "max.bubenick@percona.com"},
@@ -160,8 +160,8 @@ exclude_dirs = [
     "build",
     "venv",
     "app/tests/",
-    "app/sep/apps/dipper/payloads/",
-    "app/sep/sync/syncers/system_facts/payload.py",  # host-run payload; reads packages via rpm/dpkg-query (literal argv)
+    "app/extensions/apps/dipper/payloads/",
+    "app/extensions/sync/syncers/system_facts/payload.py",  # host-run payload; reads packages via rpm/dpkg-query (literal argv)
 ]
 
 [tool.ty.environment]
@@ -208,7 +208,7 @@ invalid-parameter-default = "warn"   # mostly the FastAPI `Query(...)` default i
 # available in this repository.
 invalid-return-type = "error"        # nullable returns, generator fixtures annotated as the yielded type
 not-subscriptable = "error"          # mostly subscripting a value ty knows may be `None`
-invalid-type-form = "error"          # SEP's own dynamic `type[BaseUser]` / `type[BaseModel]` annotations
+invalid-type-form = "error"          # PMM Extensions' own dynamic `type[BaseUser]` / `type[BaseModel]` annotations
 unsupported-operator = "error"       # mostly an un-narrowed `X | None` operand; the rest widen an operand to `object`
 invalid-method-override = "error"    # first-party overrides of first-party bases
 not-iterable = "error"               # includes `async for` over a coroutine that was never awaited
@@ -253,11 +253,11 @@ include = [
     "tests/app/conftest.py",
     "tests/app/core/alerts/test_config.py",
     "tests/app/core/settings_override/test_lifecycle.py",
-    "tests/app/sep/api/routes/test_settings.py",
-    "tests/app/sep/api/routes/test_settings_export.py",
-    "tests/app/sep/apps/alerts/test_config.py",
-    "tests/app/sep/apps/report/test_config.py",
-    "tests/app/sep/routes/test_stream_logs.py",
+    "tests/app/extensions/api/routes/test_settings.py",
+    "tests/app/extensions/api/routes/test_settings_export.py",
+    "tests/app/extensions/apps/alerts/test_config.py",
+    "tests/app/extensions/apps/report/test_config.py",
+    "tests/app/extensions/routes/test_stream_logs.py",
     "tests/app/tasks/test_celery_settings_override.py",
 ]
 [tool.ty.overrides.rules]
@@ -267,11 +267,12 @@ unresolved-attribute = "ignore"
 # `Celery` installs `loop` and the other attributes read here at runtime, so the
 # stub declares none of them.
 include = [
-    "app/sep/apps/alerts/celery.py",
-    "app/sep/apps/atw/celery.py",
-    "app/sep/apps/report/celery.py",
-    "app/sep/settings_override.py",
-    "tests/app/sep/test_app_drain.py",
+    "app/extensions/apps/alerts/celery.py",
+    "app/extensions/apps/atw/celery.py",
+    "app/extensions/apps/om_inventory/celery.py",
+    "app/extensions/apps/report/celery.py",
+    "app/extensions/settings_override.py",
+    "tests/app/extensions/test_app_drain.py",
 ]
 [tool.ty.overrides.rules]
 unresolved-attribute = "ignore"
@@ -282,8 +283,9 @@ unresolved-attribute = "ignore"
 include = [
     "tests/app/core/settings_override/api/test_registry_helpers.py",
     "tests/app/core/settings_override/test_registry.py",
-    "tests/app/core/settings_override/test_registry_nested.py",
-    "tests/app/sep/test_settings_override_worker.py",
+    "tests/app/core/settings_override/test_resolution.py",
+    "tests/app/core/settings_override/test_secret_preservation.py",
+    "tests/app/extensions/test_settings_override_worker.py",
 ]
 [tool.ty.overrides.rules]
 invalid-assignment = "ignore"
@@ -296,9 +298,9 @@ include = [
     "tests/app/core/celery/test_config.py",
     "tests/app/core/settings_override/test_policy.py",
     "tests/app/core/test_config.py",
-    "tests/app/sep/sync/syncers/system_facts/test_syncer.py",
-    "tests/app/sep/sync/syncers/test_pmm.py",
-    "tests/app/sep/sync/test_models.py",
+    "tests/app/extensions/sync/syncers/system_facts/test_syncer.py",
+    "tests/app/extensions/sync/syncers/test_pmm.py",
+    "tests/app/extensions/sync/test_models.py",
     "tests/sidecar/test_embedded_settings.py",
     "tests/sidecar/test_settings_env.py",
 ]
@@ -308,15 +310,15 @@ missing-argument = "ignore"
 [[tool.ty.overrides]]
 # pydantic-settings accepts `_env_file` / `_secrets_dir` and their siblings at
 # runtime, but they are absent from the generated `__init__`.
-# `tests/app/sep/test_config.py` is not listed: it also passes a first-party
+# `tests/app/extensions/test_config.py` is not listed: it also passes a first-party
 # `PMM` kwarg, so its artifacts take per-site comments.
 include = [
     "app/core/config.py",
     "tests/app/core/auth/test_config.py",
     "tests/app/core/celery/test_config.py",
     "tests/app/core/test_config.py",
-    "tests/app/sep/apps/alerts/test_config.py",
-    "tests/app/sep/apps/report/test_config.py",
+    "tests/app/extensions/apps/alerts/test_config.py",
+    "tests/app/extensions/apps/report/test_config.py",
     "tests/sidecar/test_embedded_settings.py",
     "tests/sidecar/test_settings_env.py",
 ]
@@ -328,12 +330,13 @@ unknown-argument = "ignore"
 # ty cannot resolve against these call sites.
 include = [
     "app/core/db/crud.py",
-    "app/sep/apps/framework/responses.py",
-    "app/sep/snippets/models/snippet.py",
+    "app/extensions/apps/om_inventory/crud.py",
+    "app/extensions/apps/framework/responses.py",
+    "app/extensions/snippets/models/snippet.py",
     "tests/app/core/db/test_utils.py",
     "tests/app/inventory/test_crud.py",
-    "tests/app/sep/apps/framework/test_rules.py",
-    "tests/app/sep/apps/framework/test_script_source.py",
+    "tests/app/extensions/apps/framework/test_rules.py",
+    "tests/app/extensions/apps/framework/test_script_source.py",
     "tests/app/test_db_schema.py",
 ]
 [tool.ty.overrides.rules]
@@ -345,8 +348,10 @@ no-matching-overload = "ignore"
 include = [
     "app/core/db/models.py",
     "app/inventory/models.py",
-    "app/sep/apps/atw/models.py",
-    "app/sep/apps/mysql_backups/models.py",
+    "app/extensions/apps/atw/models.py",
+    "app/extensions/apps/mysql_backups/models.py",
+    "app/extensions/apps/om_bootstrap/models.py",
+    "app/extensions/apps/om_inventory/models.py",
 ]
 [tool.ty.overrides.rules]
 invalid-argument-type = "ignore"
@@ -354,9 +359,9 @@ invalid-argument-type = "ignore"
 [[tool.ty.overrides]]
 # Subscripted generics are callable at runtime; ty sees the `GenericAlias`.
 include = [
-    "app/sep/config.py",
+    "app/extensions/config.py",
     "tests/app/core/test_requests.py",
-    "tests/app/sep/apps/inventory/test_deps.py",
+    "tests/app/extensions/apps/inventory/test_deps.py",
 ]
 [tool.ty.overrides.rules]
 call-non-callable = "ignore"
@@ -366,23 +371,24 @@ call-non-callable = "ignore"
 # the request is handled.
 include = [
     "app/core/db/list_query.py",
-    "app/sep/apps/inventory/list_query.py",
+    "app/extensions/apps/inventory/list_query.py",
 ]
 [tool.ty.overrides.rules]
 invalid-parameter-default = "ignore"
 
 [[tool.ty.overrides]]
-# The imported modules do not exist at check time: the `app.sep.apps.golden_*`
+# The imported modules do not exist at check time: the `app.extensions.apps.golden_*`
 # targets are scaffolded by the test run, and payload.py runs on the monitored
 # host, which is also why [tool.bandit] carves it out above. Scoped to
 # `unresolved-import` rather than excluding the files, because they carry
 # first-party diagnostics under other rules.
 include = [
-    "app/sep/sync/syncers/system_facts/payload.py",
-    "tests/app/sep/apps/framework/golden/base/app.py",
-    "tests/app/sep/apps/framework/golden/script/app.py",
-    "tests/app/sep/apps/framework/golden/task/app.py",
-    "tests/app/sep/apps/framework/golden/task/spec.py",
+    "app/extensions/apps/om_inventory/payload/probe.py",
+    "app/extensions/sync/syncers/system_facts/payload.py",
+    "tests/app/extensions/apps/framework/golden/base/app.py",
+    "tests/app/extensions/apps/framework/golden/script/app.py",
+    "tests/app/extensions/apps/framework/golden/task/app.py",
+    "tests/app/extensions/apps/framework/golden/task/spec.py",
 ]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
@@ -391,8 +397,8 @@ unresolved-import = "ignore"
 # `pygments.lexers` re-exports its lexers lazily through `__getattr__`, so the
 # stub lists no `TextLexer` member.
 include = [
-    "app/sep/utils/jinja.py",
-    "tests/app/sep/utils/test_jinja.py",
+    "app/extensions/utils/jinja.py",
+    "tests/app/extensions/utils/test_jinja.py",
 ]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
@@ -411,7 +417,7 @@ extend-exclude = [
     "payload",
     "*_payload",
     "**/payloads/*",
-    "tests/app/sep/apps/framework/golden/**",
+    "tests/app/extensions/apps/framework/golden/**",
 ]
 cache-dir = "build/tmp/.ruff_cache"
 target-version = "py311"
@@ -510,8 +516,8 @@ runtime-evaluated-base-classes = [
 "celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
-"tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
-"tests/app/sep/apps/mysql_backups/description_coverage.py" = ["S"] # shared pytest assertion helper uses bare assert
+"tests/app/extensions/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/extensions/apps/mysql_backups/description_coverage.py" = ["S"] # shared pytest assertion helper uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
@@ -519,15 +525,15 @@ runtime-evaluated-base-classes = [
 "sidecar/verify_image_apps.py" = [
     "T201", # the verdict line is the gate's only non-silent success signal
 ]
-"app/sep/apps/framework/form_audit.py" = [
+"app/extensions/apps/framework/form_audit.py" = [
     "T201", # the audit's report is its output, so it goes to stdout, not the log
 ]
-"app/sep/apps/backup_mongo/pbm_creds_common.py" = [
+"app/extensions/apps/backup_mongo/pbm_creds_common.py" = [
     "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
     "PTH123", # payload preamble uses builtin open(), as the shipped payloads do
     "BLE001", # payload preamble mirrors a deliberate catch-all credentials-read guard
 ]
-"app/sep/sync/syncers/system_facts/payload.py" = [
+"app/extensions/sync/syncers/system_facts/payload.py" = [
     "S603", # host-run payload coordinates rpm/dpkg-query with literal arg lists
 ]
 
@@ -546,7 +552,7 @@ asyncio_default_fixture_loop_scope = "function"
 timeout = 120
 timeout_method = "thread"
 markers = [
-    "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
+    "postgres: require a real PostgreSQL service (EXTENSIONS_TEST_POSTGRES_DSN)",
 ]
 # A developer dotenv file must never reach the suite: CI runs with no .env, so
 # any setting it carries makes the local run a weaker experiment than CI. This
@@ -559,9 +565,9 @@ env = [
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
     'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
     'ALLOWED_HOSTS=["testserver", "test"]',
-    "SEP__MESSAGES__LEVEL=0",
+    "EXTENSIONS__MESSAGES__LEVEL=0",
     "ALLOW_CONCURRENT_SESSIONS=false",
-    "SEP_INTERNAL_TOKEN=test-internal-token"
+    "EXTENSIONS_INTERNAL_TOKEN=test-internal-token"
 ]
 
 [tool.coverage.run]
@@ -573,16 +579,16 @@ omit = [
     # Apps the scaffolder tests generate under the real source tree and delete
     # in teardown: measuring them leaves dead source paths in .coverage that
     # break `coverage json` (the PR coverage-comment step) with "No source for code".
-    "app/sep/apps/_scaffold_*/*",
+    "app/extensions/apps/_scaffold_*/*",
     # Payload scripts: uploaded as file:// URIs and executed on the target host,
     # never imported in-process. They enter the report only because the AST
     # harness execs extracted symbols under the payload's path, so their line
     # coverage measures harness mechanics rather than the suite's reach.
-    "app/sep/apps/*/payload",
-    "app/sep/apps/*/*_payload",
-    "app/sep/apps/*/*/*_payload",
-    "app/sep/apps/*/payloads/*",
-    "app/sep/apps/alters/pre_checks.py",
+    "app/extensions/apps/*/payload",
+    "app/extensions/apps/*/*_payload",
+    "app/extensions/apps/*/*/*_payload",
+    "app/extensions/apps/*/payloads/*",
+    "app/extensions/apps/alters/pre_checks.py",
 ]
 
 [tool.coverage.report]

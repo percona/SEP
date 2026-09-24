@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Encrypt and decrypt values SEP stores at rest, keyed by ``ENCRYPTION_KEY``.
+"""Encrypt and decrypt values PMM Extensions stores at rest, keyed by ``ENCRYPTION_KEY``.
 
 The ciphertext is Fernet: authenticated AES-128-CBC carrying its own version
 marker, timestamp and HMAC, rendered as URL-safe base64 text that any ``str``
@@ -23,9 +23,25 @@ can never be compared for equality.
 
 Use :func:`is_encrypted`, never a caught :class:`DecryptionError`, to decide
 whether a stored value still needs encrypting.
+
+:func:`mark_ciphertext` and :func:`marked_ciphertext` wrap that ciphertext in a
+versioned envelope, so a consumer reads the answer off the stored value's own
+format instead of guessing it from the bytes. The envelope is applied by the
+caller rather than by :func:`encrypt`: marking inside the primitive would change
+what every other at-rest consumer stores. A consumer that may see a marked value
+asks :func:`is_stored_ciphertext`, which consults both discriminators;
+:func:`is_encrypted` alone reports ``False`` for every marked value.
 """
 
-__all__ = ["DecryptionError", "decrypt", "encrypt", "is_encrypted"]
+__all__ = [
+    "DecryptionError",
+    "decrypt",
+    "encrypt",
+    "is_encrypted",
+    "is_stored_ciphertext",
+    "mark_ciphertext",
+    "marked_ciphertext",
+]
 
 import base64
 from functools import lru_cache
@@ -59,6 +75,16 @@ _URLSAFE_TO_STANDARD = str.maketrans("-_", "+/")
 
 Needed because only ``base64.b64decode`` accepts ``validate``; the URL-safe
 wrapper translates and then decodes without it.
+"""
+
+_CIPHERTEXT_V1_PREFIX = "extensions.enc.v1."
+"""The marker a stored ciphertext carries, naming its envelope version.
+
+Contains a character outside the base64 alphabet, so :func:`is_encrypted` rejects
+a marked value outright rather than answering from its length and padding, and the
+two discriminators can never both claim one stored value. The character is also
+RFC 3986 unreserved, so a marked token survives a URL userinfo segment without
+percent-encoding.
 """
 
 
@@ -149,3 +175,62 @@ def is_encrypted(value: str) -> bool:
         and raw[0] == _FERNET_VERSION
         and (len(raw) - _TOKEN_ENVELOPE_BYTES) % _CIPHER_BLOCK_BYTES == 0
     )
+
+
+def mark_ciphertext(token: str) -> str:
+    """Return ``token`` carrying the current envelope marker.
+
+    :param token: Ciphertext from :func:`encrypt`.
+    :return: The marked form, as it is stored.
+    """
+    return f"{_CIPHERTEXT_V1_PREFIX}{token}"
+
+
+def marked_ciphertext(value: str) -> str | None:
+    """Return the token behind a marked value, or ``None`` when there is none.
+
+    The marker is what *claims* a value is ciphertext; the structural check then
+    confirms the payload it claimed. Both are required, because the marker is a
+    literal prefix and nothing stops a legacy plaintext from beginning with it —
+    a bare prefix test would read ``extensions.enc.v1.operator-secret`` as ciphertext,
+    leave it in the clear through the migration and fail every later read of it.
+    Requiring the payload to be a well-formed token as well narrows that to a
+    value carrying the exact prefix *and* decoding as a Fernet token behind it.
+
+    This is not the structural check deciding. A value written under this
+    envelope always satisfies both halves, so the shape test can never
+    reclassify one; it can only reject a prefix the writer never produced.
+
+    A payload that fails the check is treated as plaintext rather than raising,
+    which is what the unmarked path already does with a corrupt token
+    (``decrypt(leaf) if is_encrypted(leaf) else leaf`` returns it untouched), so
+    the two envelopes fail identically on a corrupted value.
+
+    :param value: The stored value to classify.
+    :return: The bare token, or ``None``.
+    """
+    if not value.startswith(_CIPHERTEXT_V1_PREFIX):
+        return None
+    token = value.removeprefix(_CIPHERTEXT_V1_PREFIX)
+    return token if is_encrypted(token) else None
+
+
+def is_stored_ciphertext(value: str) -> bool:
+    """Return whether ``value`` holds ciphertext under either at-rest envelope.
+
+    The discriminator every consumer of a stored value wants, and the reason it
+    is here rather than spelled out per caller: *both* discriminators have to be
+    consulted, because a marked value is invisible to the structural one — the
+    marker's ``.`` is outside the base64 alphabet, so :func:`is_encrypted`
+    rejects the whole string. A consumer testing only the shape reads a store
+    holding nothing but marked values as holding no ciphertext at all.
+
+    The order of the two is immaterial here, because they are disjoint: no
+    stored value satisfies both. Consulting both is the entire content of that
+    rule, so a second envelope version changes this function rather than every
+    caller.
+
+    :param value: The stored value to classify.
+    :return: Whether it holds ciphertext under either envelope.
+    """
+    return marked_ciphertext(value) is not None or is_encrypted(value)

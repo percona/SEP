@@ -33,30 +33,33 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, insert
 
 from app import BASE_DIR
-from app.core.encryption import is_encrypted
+from app.core.encryption import is_encrypted, mark_ciphertext
 from app.core.settings_override.models import SettingOverride
 from sidecar import encryption_key as helper
 from tests.sidecar.conftest import SIDECAR_DIR
 
 HELPER_SCRIPT = SIDECAR_DIR / "encryption_key.py"
 
-SERVICE_PREFIXES = ("SEP", "INVENTORY", "TASKS")
+SERVICE_PREFIXES = ("EXTENSIONS", "INVENTORY", "TASKS")
 """The three services whose databases the freshness probe has to clear."""
 
 DATABASE_FILENAMES = {
-    "SEP": "sep.db",
+    "EXTENSIONS": "extensions.db",
     "INVENTORY": "inventory.db",
     "TASKS": "tasks.db",
 }
 """One distinct SQLite file per service, so a single-DSN probe fails these tests."""
+
+PRE_RENAME_CIPHERTEXT_MARKER = "sep.enc.v1."
+"""The envelope marker stored ciphertext carried before it was renamed."""
 
 KEY_FILE_MODE = 0o600
 
 STATE_DIR_MODE = 0o700
 """What the image bakes the state directory as, and what creating it must match.
 
-``Containerfile.sidecar`` installs ``/home/sep/state`` owner-only, so on the
-default path nothing here creates it. A ``SEP_STATE_DIR`` pointed elsewhere is
+``Containerfile.sidecar`` installs ``/home/extensions/state`` owner-only, so on the
+default path nothing here creates it. An ``EXTENSIONS_STATE_DIR`` pointed elsewhere is
 created by whichever helper runs first, which is now this one.
 """
 
@@ -103,7 +106,7 @@ A refused connection returns instantly, so a run that spends this long before
 giving up cannot have refused on the first error.
 """
 
-RESTORE_HINT = "sep-state"
+RESTORE_HINT = "pmm-extensions-state"
 """What a refusal has to name so an operator can act on it."""
 
 
@@ -129,6 +132,21 @@ def ciphertext(plaintext: str = "a-stored-credential") -> str:
     return Fernet(fernet_key().encode()).encrypt(plaintext.encode()).decode("ascii")
 
 
+def marked_ciphertext_value(plaintext: str = "a-stored-credential") -> str:
+    """Return a token carrying the envelope marker the write path now writes.
+
+    The shape the structural check cannot see: ``is_encrypted`` answers
+    ``False`` for every marked value, so a deployment whose overrides were all
+    written after the envelope shipped reads as holding no ciphertext unless
+    the probe tests the envelope too — and the caller mints a fresh key on that
+    answer, destroying decryptability of every marked row.
+
+    :param plaintext: The value to encrypt.
+    :return: The marked token, as it would sit in a stored override.
+    """
+    return mark_ciphertext(ciphertext(plaintext))
+
+
 def create_database(directory: Path, filename: str, *values: Any) -> None:
     """Create one service's ``settingoverride`` table and seed it.
 
@@ -144,7 +162,7 @@ def create_database(directory: Path, filename: str, *values: Any) -> None:
                 insert(SettingOverride.__table__),
                 [
                     {
-                        "setting_class": "SEP_SETTINGS",
+                        "setting_class": "EXTENSIONS_SETTINGS",
                         "key": f"KEY_{index}",
                         "value": value,
                         "is_active": True,
@@ -180,8 +198,8 @@ def unreachable_environment(
         f"{prefix}__DATABASE__ENGINE": "postgresql+asyncpg",
         f"{prefix}__DATABASE__HOST": "127.0.0.1",
         f"{prefix}__DATABASE__PORT": str(port),
-        f"{prefix}__DATABASE__USER": "sep",
-        f"{prefix}__DATABASE__NAME": "sep",
+        f"{prefix}__DATABASE__USER": "extensions",
+        f"{prefix}__DATABASE__NAME": "extensions",
     }
 
 
@@ -220,8 +238,8 @@ def run_helper(
     base = {
         "PATH": os.environ["PATH"],
         "PYTHONPATH": str(BASE_DIR),
-        "SEP_STATE_DIR": str(directory / "state"),
-        "SEP_ENCRYPTION_PROBE_TIMEOUT": SHORT_PROBE_TIMEOUT,
+        "EXTENSIONS_STATE_DIR": str(directory / "state"),
+        "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT": SHORT_PROBE_TIMEOUT,
         **database_environment(directory),
     }
     return subprocess.run(
@@ -286,7 +304,7 @@ def test_a_minted_key_is_persisted_owner_only(fresh_deployment: Path):
 def test_a_created_state_directory_is_owner_only(fresh_deployment: Path):
     """Create the directory as narrowly as the token helper beside this one does.
 
-    The fixture leaves it absent, which is the ``SEP_STATE_DIR`` case the image
+    The fixture leaves it absent, which is the ``EXTENSIONS_STATE_DIR`` case the image
     cannot pre-create. Whichever helper runs first owns the mode every later one
     inherits, and key resolution now runs before the Grafana mint.
     """
@@ -353,7 +371,83 @@ def test_a_persisted_key_resolves_without_reaching_any_database(
 
 def test_a_scalar_ciphertext_row_refuses_the_mint(tmp_path: Path):
     """Refuse where a plain string column already holds a token."""
-    create_database(tmp_path, DATABASE_FILENAMES["SEP"], ciphertext())
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], ciphertext())
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
+def test_a_marked_ciphertext_row_refuses_the_mint(tmp_path: Path):
+    """Refuse over a row written under the envelope, not just a bare token.
+
+    The end-to-end half of the probe change, and the case a deployment upgraded
+    into the envelope eventually becomes entirely: every override row marked,
+    none of them visible to the structural check. A probe that missed them would
+    report the deployment fresh and mint over live ciphertext, which comes up
+    green with the operator's overrides silently reverted to their YAML values.
+    """
+    create_database(
+        tmp_path, DATABASE_FILENAMES["EXTENSIONS"], marked_ciphertext_value()
+    )
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
+def test_a_marked_credential_url_password_refuses_the_mint(tmp_path: Path):
+    """Refuse where the only ciphertext is a marked password inside an endpoint.
+
+    Two layers have to line up: the URL is not itself a token, and its password
+    is invisible to the structural check once marked.
+    """
+    endpoint = {"endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"}
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], endpoint)
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(
+            f"{PRE_RENAME_CIPHERTEXT_MARKER}{ciphertext()}", id="pre-rename-scalar"
+        ),
+        pytest.param(
+            {
+                "endpoint": (
+                    f"https://user:{PRE_RENAME_CIPHERTEXT_MARKER}{ciphertext()}"
+                    "@host:8443/"
+                )
+            },
+            id="pre-rename-url-password",
+        ),
+    ],
+)
+def test_a_pre_rename_marked_row_refuses_the_mint(tmp_path: Path, value: Any):
+    """Refuse over ciphertext still carrying the marker from before the rename.
+
+    The probe runs before Alembic, so the revisions that move the marker have
+    not touched these rows yet. Neither current discriminator accepts the old
+    marker, so a probe that tested only them would read a deployment whose key
+    file was lost as fresh and mint over every stored credential.
+    """
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], value)
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
 
@@ -372,7 +466,7 @@ def test_a_ciphertext_leaf_nested_in_a_list_refuses_the_mint(tmp_path: Path):
     value finds nothing at all.
     """
     providers = [{"PROVIDER": "pagerduty", "ROUTING_KEY": ciphertext()}]
-    create_database(tmp_path, DATABASE_FILENAMES["SEP"], providers)
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], providers)
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
 
@@ -385,7 +479,7 @@ def test_a_ciphertext_leaf_nested_in_a_list_refuses_the_mint(tmp_path: Path):
 def test_a_ciphertext_leaf_nested_in_a_mapping_refuses_the_mint(tmp_path: Path):
     """Refuse on the ``DIAGNOSTICS_DELIVERY_INPUTS`` shape, nested a level deeper."""
     inputs = {"primary": {"endpoint": "https://example.test", "api_key": ciphertext()}}
-    create_database(tmp_path, DATABASE_FILENAMES["SEP"], inputs)
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], inputs)
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
 
@@ -417,7 +511,7 @@ def test_a_plaintext_only_deployment_still_mints(tmp_path: Path):
     """
     create_database(
         tmp_path,
-        DATABASE_FILENAMES["SEP"],
+        DATABASE_FILENAMES["EXTENSIONS"],
         "a-plain-value",
         [{"PROVIDER": "pagerduty", "SEVERITY": "critical"}],
         {"primary": {"endpoint": "https://example.test"}},
@@ -433,7 +527,7 @@ def test_a_plaintext_only_deployment_still_mints(tmp_path: Path):
 
 def test_an_absent_override_table_counts_as_fresh(tmp_path: Path):
     """Mint against a database whose schema has never been applied."""
-    engine = create_engine(f"sqlite:///{tmp_path / DATABASE_FILENAMES['SEP']}")
+    engine = create_engine(f"sqlite:///{tmp_path / DATABASE_FILENAMES['EXTENSIONS']}")
     engine.connect().close()
     engine.dispose()
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
@@ -465,7 +559,7 @@ def test_a_database_that_never_answers_refuses_within_the_timeout(
     start indefinitely.
     """
     result = run_helper(
-        fresh_deployment, **unreachable_environment("SEP", stalled_database_port)
+        fresh_deployment, **unreachable_environment("EXTENSIONS", stalled_database_port)
     )
 
     assert result.returncode != 0
@@ -489,8 +583,8 @@ def test_an_unreachable_database_is_retried_rather_than_refused_on_sight(
 
     result = run_helper(
         fresh_deployment,
-        SEP_ENCRYPTION_PROBE_TIMEOUT=str(RETRIED_PROBE_TIMEOUT),
-        **unreachable_environment("SEP"),
+        EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT=str(RETRIED_PROBE_TIMEOUT),
+        **unreachable_environment("EXTENSIONS"),
     )
     elapsed = time.monotonic() - started
 
@@ -508,19 +602,19 @@ def test_the_unreachable_refusal_does_not_send_the_operator_after_a_backup(
     remedy (restore the key from a backup of the state volume) is both
     inapplicable and expensive to act on.
     """
-    result = run_helper(fresh_deployment, **unreachable_environment("SEP"))
+    result = run_helper(fresh_deployment, **unreachable_environment("EXTENSIONS"))
 
     assert result.returncode != 0
-    assert "SEP_DB_HOST" in result.stderr
+    assert "EXTENSIONS_DB_HOST" in result.stderr
     assert "backup" not in result.stderr
 
 
 def test_an_unparseable_stored_value_refuses_the_mint(tmp_path: Path):
     """Fail closed on a value the probe cannot decode, which may hide a token."""
-    create_database(tmp_path, DATABASE_FILENAMES["SEP"], "a-plain-value")
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], "a-plain-value")
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
-    engine = create_engine(f"sqlite:///{tmp_path / DATABASE_FILENAMES['SEP']}")
+    engine = create_engine(f"sqlite:///{tmp_path / DATABASE_FILENAMES['EXTENSIONS']}")
     with engine.begin() as connection:
         # Rewritten after the fact rather than inserted: the JSON column would
         # encode an unparseable Python string into perfectly parseable JSON.
@@ -624,6 +718,32 @@ def test_a_peer_holding_the_state_lock_defers_then_refuses(fresh_deployment: Pat
             {"PMM": {"endpoint": f"https://user:{ciphertext()}@host:8443/"}},
             id="url-password-nested-in-mapping",
         ),
+        pytest.param(marked_ciphertext_value(), id="marked-scalar"),
+        pytest.param(
+            [{"ROUTING_KEY": marked_ciphertext_value()}], id="marked-nested-in-list"
+        ),
+        pytest.param(
+            {"a": {"b": marked_ciphertext_value()}}, id="marked-nested-in-mapping"
+        ),
+        pytest.param(
+            [["deep", marked_ciphertext_value()]], id="marked-nested-in-nested-list"
+        ),
+        pytest.param(
+            f"https://user:{marked_ciphertext_value()}@host:8443/",
+            id="marked-url-password",
+        ),
+        pytest.param(
+            [{"endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"}],
+            id="marked-url-password-nested-in-list",
+        ),
+        pytest.param(
+            {
+                "PMM": {
+                    "endpoint": f"https://user:{marked_ciphertext_value()}@host:8443/"
+                }
+            },
+            id="marked-url-password-nested-in-mapping",
+        ),
     ],
 )
 def test_ciphertext_is_found_at_every_json_position(value: Any):
@@ -633,6 +753,11 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
     ``is_encrypted`` on the whole string answers ``False`` — a deployment whose
     only encrypted data is an endpoint password would otherwise clear the mint
     path and come up green with those overrides silently reverted to YAML.
+
+    The ``marked-*`` cases are the same positions under the envelope the write
+    path writes today, where ``is_encrypted`` answers ``False`` for the leaf
+    itself rather than only for its container. A probe that tested shape alone
+    would read a deployment holding nothing but post-envelope rows as fresh.
     """
     assert helper.contains_ciphertext(value)
 
@@ -649,10 +774,21 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
         pytest.param("https://user:hunter2@host:8443/", id="url-plaintext-password"),
         pytest.param("https://host:8443/", id="url-without-userinfo"),
         pytest.param("https://user:pw@[bad:ipv6/", id="url-unparseable"),
+        pytest.param("extensions.enc.v1.operator-secret", id="marker-over-a-plaintext"),
+        pytest.param(
+            f"{PRE_RENAME_CIPHERTEXT_MARKER}operator-secret",
+            id="pre-rename-marker-over-a-plaintext",
+        ),
     ],
 )
 def test_a_value_with_no_token_is_not_read_as_ciphertext(value: Any):
-    """Leave a plaintext deployment mintable, which is the common case."""
+    """Leave a plaintext deployment mintable, which is the common case.
+
+    ``marker-over-a-plaintext`` is a legacy value that merely begins with the
+    marker. The envelope's payload check refuses it, so it is classified by
+    what it is rather than by the prefix it happens to carry — the probe must
+    not be fooled into refusing a mint by an operator-chosen token either.
+    """
     assert not helper.contains_ciphertext(value)
 
 
@@ -714,7 +850,7 @@ def test_the_helper_reaches_the_image():
 
 def test_the_refusal_names_the_state_directory_and_the_restore_path(tmp_path: Path):
     """Say what an operator has to do, which supervisord's status cannot show."""
-    create_database(tmp_path, DATABASE_FILENAMES["SEP"], ciphertext())
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], ciphertext())
     create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
     create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
 

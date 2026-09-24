@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { SettingClassGroup } from '@sep/api';
+import type { SettingClassGroup } from '@pmm-extensions/api';
 
 import {
   DEFAULT_SETTINGS_FILTERS,
@@ -28,7 +28,7 @@ import { makeSetting } from './fixtures';
 
 const groups: SettingClassGroup[] = [
   {
-    setting_class: 'SEPSettings',
+    setting_class: 'ExtensionsSettings',
     is_app_owned: false,
     settings: [
       makeSetting({ key: 'SYNC_REFRESH_TIME', reload: 'hot', has_override: true }),
@@ -148,7 +148,7 @@ describe('partitionSettingsGroups', () => {
       app_enabled: true,
     });
     const { core, appOwned } = partitionSettingsGroups([...groups, enabled]);
-    expect(core.map((g) => g.setting_class)).toEqual(['SEPSettings', 'TasksSettings']);
+    expect(core.map((g) => g.setting_class)).toEqual(['ExtensionsSettings', 'TasksSettings']);
     expect(appOwned.map((g) => g.setting_class)).toEqual(['AlertsSettings']);
   });
 

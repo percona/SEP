@@ -29,7 +29,7 @@ from app.core.requests.connectivity import (
     ConnectivityStatusEnum,
 )
 from app.core.requests.remote_api import BaseRemoteAPI
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.extensions.clients.pmm import PMMRemoteAPI
 
 
 @pytest.fixture

@@ -18,8 +18,8 @@
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import { Route, Routes, useLocation } from 'react-router';
-import { SchemaDrivenApp } from '@sep/framework';
-import { useEnabledApps, type EnabledApp } from '@sep/api';
+import { SchemaDrivenApp } from '@pmm-extensions/framework';
+import { useEnabledApps, type EnabledApp } from '@pmm-extensions/api';
 import { toRoutePattern } from '../appNavConfig';
 import { isCustomApp } from '../appRegistry';
 import { wrapAppRoute } from '../appRouteGuard';

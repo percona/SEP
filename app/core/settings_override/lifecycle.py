@@ -25,7 +25,10 @@ __all__ = [
     "SnapshotChange",
     "bounded_refresh",
     "bounded_seed",
+    "fire_boot_callbacks",
     "fire_change_callbacks",
+    "fire_on_boot",
+    "is_fire_on_boot",
     "previous_or_base",
     "publish_snapshot",
     "refresh_all",
@@ -110,13 +113,46 @@ def previous_or_base(
 
 
 #: A rebind callback fired when a watched ``(setting_class, key)`` override
-#: changes value between refresh cycles. The callback receives a
-#: :class:`SnapshotChange` carrying the override snapshots on either side of
-#: the republish (overrides-only; a key may be absent from either side). Any
-#: exception it raises is caught and logged by :func:`fire_change_callbacks`
-#: so one failing callback cannot break the cycle.
+#: changes value between refresh cycles, or -- for the :func:`fire_on_boot`
+#: subset -- when the boot seed publishes an override for that key. The
+#: callback receives a :class:`SnapshotChange` carrying the override snapshots
+#: on either side of the republish (overrides-only; a key may be absent from
+#: either side). Any exception it raises is caught and logged by
+#: :func:`_fire_callback` so one failing callback cannot break the cycle.
 RefreshCallback = Callable[[SnapshotChange], Awaitable[None]]
 CallbackRegistry = dict[tuple[str, str], RefreshCallback]
+
+#: Attribute :func:`fire_on_boot` sets on a callback; the boot seed filters on it.
+_FIRE_ON_BOOT = "_settings_override_fire_on_boot"
+
+
+def fire_on_boot(callback: RefreshCallback) -> RefreshCallback:
+    """Mark ``callback`` as one the boot-time seed must fire itself.
+
+    A rebind callback is normally fired only on a *change* between refresh
+    cycles, because the boot path reproduces its effect from the seeded
+    snapshot on its own: a fresh process key-misses its caches into
+    override-aware objects. Marked callbacks are the exception: their effect
+    lives in process-wide state the snapshot does not carry, so booting with
+    an override already in the database would leave that state stale until
+    the override next changed.
+
+    :param callback: A plain-function rebind callback. The marker is stored as
+        an attribute on the function object, so one marked callable is
+        boot-firing in every registry that references it.
+    :return: The same ``callback``, marked.
+    """
+    setattr(callback, _FIRE_ON_BOOT, True)
+    return callback
+
+
+def is_fire_on_boot(callback: RefreshCallback) -> bool:
+    """Return whether :func:`fire_on_boot` marked ``callback``.
+
+    :param callback: The rebind callback to inspect.
+    :return: ``True`` when the boot seed must fire ``callback`` itself.
+    """
+    return getattr(callback, _FIRE_ON_BOOT, False)
 
 
 async def publish_snapshot(
@@ -199,22 +235,64 @@ async def fire_change_callbacks(
         if previous.get(key) == current.get(key):
             continue
         callback = callbacks.get((setting_class, key))
-        if callback is None:
-            continue
-        try:
-            await callback(change)
-        except Exception:
-            logger.exception(
-                "Rebind callback for %s.%s failed; keeping previous binding",
-                setting_class,
-                key,
-            )
+        if callback is not None:
+            await _fire_callback(callback, setting_class, key, change)
+
+
+async def fire_boot_callbacks(
+    callbacks: CallbackRegistry,
+    setting_class: str,
+    current: Mapping[str, object],
+) -> None:
+    """Fire the marked callbacks for keys the seed just published an override for.
+
+    Membership in ``current`` is the gate: a key with no override row resolves
+    to the YAML/env value the boot-time configuration already applied, so
+    re-entering the callback would be busywork. ``previous`` is handed to the
+    callback empty, which is truthful at boot and lets :func:`previous_or_base`
+    fall back to the YAML/env value that was in effect.
+
+    :param callbacks: The registered rebind callbacks keyed by
+        ``(setting_class, key)``.
+    :param setting_class: The class whose snapshot was just seeded.
+    :param current: The override snapshot the seed just published.
+    """
+    change = SnapshotChange({}, current)
+    for key in current:
+        callback = callbacks.get((setting_class, key))
+        if callback is not None and is_fire_on_boot(callback):
+            await _fire_callback(callback, setting_class, key, change)
+
+
+async def _fire_callback(
+    callback: RefreshCallback, setting_class: str, key: str, change: SnapshotChange
+) -> None:
+    """Await one rebind callback, logging instead of propagating a failure.
+
+    One failing callback must neither abort the refresh cycle nor block the
+    remaining callbacks.
+
+    :param callback: The rebind callback to await.
+    :param setting_class: The class whose snapshot was just republished.
+    :param key: The overridden key the callback is registered under.
+    :param change: The snapshots on either side of the republish.
+    """
+    try:
+        await callback(change)
+    except Exception:
+        logger.exception(
+            "Rebind callback for %s.%s failed; the rebind may be incomplete",
+            setting_class,
+            key,
+        )
 
 
 async def refresh_all(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
     callbacks: CallbackRegistry | None = None,
+    *,
+    boot: bool = False,
 ) -> None:
     """Refresh override snapshots for all wired proxies in a single session.
 
@@ -236,18 +314,20 @@ async def refresh_all(
     republish is diffed against the new one and the registered callback for any
     changed ``(setting_class, key)`` is fired (see :func:`fire_change_callbacks`).
     A proxy whose republish failed is skipped without firing callbacks. The
-    initial inline seed in :func:`bounded_seed` passes no callbacks, so
-    startup seeding never triggers a rebind.
+    initial inline seed in :func:`bounded_seed` runs with ``boot=True``: no
+    *change* callbacks fire, only the :func:`fire_on_boot` subset, for keys the
+    seed published an override for. Firing happens right after each proxy
+    publishes, inside the same task, so a bounded seed that later gives up
+    cannot leave a published proxy with its boot callback unfired.
 
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``. Invoked exactly once per call
         to avoid recreating session makers on each iteration.
-    :type session_maker_factory: SessionMakerFactory
     :param proxies: The wired proxy registry keyed by class identifier.
-    :type proxies: ProxyRegistry
     :param callbacks: Optional rebind callbacks fired for changed keys. When
         ``None``, snapshots are republished without any change detection.
-    :type callbacks: CallbackRegistry | None
+    :param boot: Whether this is the inline boot seed. When ``True`` the
+        per-proxy diff is replaced by :func:`fire_boot_callbacks`.
     :raises Exception: Re-raises any failure from
         ``session_maker_factory()`` itself (e.g. the factory is misconfigured
         or its engine cannot be constructed). Connection-time failures
@@ -272,10 +352,13 @@ async def refresh_all(
                 # ``manager.list(...)`` on the shared session.
                 await session.rollback()
                 continue
-            if callbacks is not None and previous is not None:
-                await fire_change_callbacks(
-                    callbacks, setting_class, previous, entry.proxy.get_snapshot()
-                )
+            if callbacks is None or previous is None:
+                continue
+            current = entry.proxy.get_snapshot()
+            if boot:
+                await fire_boot_callbacks(callbacks, setting_class, current)
+            else:
+                await fire_change_callbacks(callbacks, setting_class, previous, current)
 
 
 async def bounded_refresh(
@@ -283,6 +366,8 @@ async def bounded_refresh(
     proxies: ProxyRegistry,
     budget: float,
     callbacks: CallbackRegistry | None = None,
+    *,
+    boot: bool = False,
 ) -> tuple[bool, asyncio.Task | None]:
     """Run :func:`refresh_all` bounded by ``budget`` seconds.
 
@@ -312,6 +397,8 @@ async def bounded_refresh(
     :param budget: Wall-clock budget in seconds for the refresh.
     :param callbacks: Optional rebind callbacks forwarded to
         :func:`refresh_all`.
+    :param boot: Whether this is the inline boot seed, forwarded to
+        :func:`refresh_all`.
     :return: ``(True, None)`` when the refresh completed; ``(False, task)``
         when the budget expired. ``task`` is the cancelled refresh task,
         which may still be unwinding.
@@ -321,7 +408,7 @@ async def bounded_refresh(
         propagate.
     """
     refresh_task = asyncio.create_task(
-        refresh_all(session_maker_factory, proxies, callbacks)
+        refresh_all(session_maker_factory, proxies, callbacks, boot=boot)
     )
     done, _ = await asyncio.wait({refresh_task}, timeout=budget)
     if done:
@@ -336,6 +423,8 @@ async def bounded_seed(
     session_maker_factory: SessionMakerFactory,
     proxies: ProxyRegistry,
     seed_timeout: float | None,
+    *,
+    callbacks: CallbackRegistry | None = None,
 ) -> tuple[bool, asyncio.Task | None]:
     """Run an initial override refresh, optionally bounded by ``seed_timeout``.
 
@@ -354,11 +443,18 @@ async def bounded_seed(
     :class:`~app.core.settings_override.worker.WorkerRefresher` (prefork
     children) so the budget, cancel, and ERROR log cannot drift.
 
+    The seed fires no *change* callbacks: there is no previous snapshot to
+    diff against, and a fresh process reproduces most rebinds from the seeded
+    snapshot on its own. Only the :func:`fire_on_boot` subset of ``callbacks``
+    fires, for keys the seed published an override for.
+
     :param session_maker_factory: A zero-argument callable returning a
         service-scoped ``async_sessionmaker``.
     :param proxies: The wired proxy registry keyed by class identifier.
     :param seed_timeout: Wall-clock budget in seconds for the inline seed, or
         ``None`` to leave the seed unbounded.
+    :param callbacks: Optional rebind callbacks; only those marked with
+        :func:`fire_on_boot` fire during the seed.
     :return: ``(True, None)`` when the seed completed; ``(False, task)`` when
         the budget expired. ``task`` is the cancelled seed task, which may
         still be unwinding.
@@ -368,10 +464,10 @@ async def bounded_seed(
         propagate.
     """
     if seed_timeout is None:
-        await refresh_all(session_maker_factory, proxies)
+        await refresh_all(session_maker_factory, proxies, callbacks, boot=True)
         return True, None
     seeded, pending = await bounded_refresh(
-        session_maker_factory, proxies, seed_timeout
+        session_maker_factory, proxies, seed_timeout, callbacks, boot=True
     )
     if not seeded:
         logger.error(
@@ -394,10 +490,12 @@ async def start_refresh_task(
     the first snapshot has been observed. Subsequent refreshes run inside an
     :func:`asyncio.create_task` that sleeps for ``interval`` between cycles.
 
-    ``callbacks`` are passed only to the periodic loop's :func:`refresh_all`,
-    never to the inline initial refresh — the startup snapshot seeds the
-    proxies without firing rebind callbacks (long-lived objects are constructed
-    against the effective snapshot directly during lifespan startup).
+    The inline initial refresh fires no *change* callbacks — the startup
+    snapshot seeds the proxies, and long-lived objects are constructed against
+    the effective snapshot directly during lifespan startup. Only the
+    :func:`fire_on_boot` subset of ``callbacks`` fires during the seed, for
+    keys it published an override for; every callback fires on change from the
+    periodic loop.
 
     The inline seed always goes through :func:`bounded_seed` unbounded
     (``seed_timeout=None``), matching the web lifespan contract. Bounded
@@ -411,7 +509,8 @@ async def start_refresh_task(
         positive duration; the :class:`Settings` field validator enforces
         this at construction time.
     :param callbacks: Optional rebind callbacks fired by the periodic loop when
-        a watched override changes. Not applied to the initial refresh.
+        a watched override changes. The initial refresh fires only those
+        marked with :func:`fire_on_boot`.
     :return: The background refresh task. Callers must cancel and await this
         task during shutdown to drain pending iterations cleanly.
     :raises Exception: Re-raises any failure from the inline initial
@@ -423,7 +522,9 @@ async def start_refresh_task(
         NOT propagate; only ``session_maker_factory()`` failures at startup can
         break the lifespan.
     """
-    await bounded_seed(session_maker_factory, proxies, None)
+    await bounded_seed(
+        session_maker_factory, proxies, seed_timeout=None, callbacks=callbacks
+    )
     interval_seconds = interval.total_seconds()
 
     async def _loop() -> None:
@@ -492,7 +593,8 @@ async def settings_override_refresher(
         default, reads ``Settings.SETTINGS_OVERRIDE.REFRESHER_ENABLED``.
     :param callbacks: Optional rebind callbacks forwarded to
         :func:`start_refresh_task`, fired by the periodic loop when a watched
-        override changes value.
+        override changes. The initial refresh fires only those marked with
+        :func:`fire_on_boot`.
     :return: None
     """
     interval, enabled = resolve_refresher_options(interval, enabled=enabled)

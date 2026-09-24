@@ -32,18 +32,18 @@ repos:
         files: ^changelog\.d/
         pass_filenames: false
       - id: sync-alembic-version-locations
-        name: Sync alembic.ini [sep] version_locations
-        description: "Regenerate [sep] version_locations from app migration dirs"
+        name: Sync alembic.ini [extensions] version_locations
+        description: "Regenerate [extensions] version_locations from app migration dirs"
         entry: python3 scripts/sync_alembic_version_locations.py
         language: system
-        files: ^app/sep/apps/.*/migrations/versions/
+        files: ^app/extensions/apps/.*/migrations/versions/
         pass_filenames: false
       - id: sync-labeler-apps
         name: Sync .github/labeler.yml app labels
         description: "Regenerate app:<name> labeler rules from app-slice dirs"
         entry: python3 scripts/sync_labeler_apps.py
         language: system
-        files: ^(app/sep/apps/|frontend/packages/apps/|tests/app/sep/apps/|templates/|frontend/packages/e2e/tests/|\.github/labeler\.yml$|scripts/sync_labeler_apps\.py$)
+        files: ^(app/extensions/apps/|frontend/packages/apps/|tests/app/extensions/apps/|templates/|frontend/packages/e2e/tests/|\.github/labeler\.yml$|scripts/sync_labeler_apps\.py$)
         pass_filenames: false
       - id: check-nomad-payload-size
         name: Check Nomad payload size
@@ -51,7 +51,7 @@ repos:
         entry: python3 scripts/check_nomad_payload_size.py
         language: python
         additional_dependencies: ["python-minifier==2.11.3"]
-        files: ^app/sep/apps/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
+        files: ^app/extensions/apps/(?!dipper/)(?:.*/)?(?:payload(?:/.*)?|[^/]*_payload)$
         pass_filenames: true
       - id: check-sidecar-purge
         name: Check side-car purge layer ordering
@@ -73,7 +73,7 @@ repos:
         description: "Ensure the generated xtrabackup payload variants match the canonical payload"
         entry: python3 scripts/gen_xtrabackup_payload_variants.py --check
         language: system
-        files: ^(app/sep/apps/mysql_backups/(xtrabackup[^/]*payload|payload_variants\.py)|scripts/gen_xtrabackup_payload_variants\.py)$
+        files: ^(app/extensions/apps/mysql_backups/(xtrabackup[^/]*payload|payload_variants\.py)|scripts/gen_xtrabackup_payload_variants\.py)$
         pass_filenames: false
       - id: oxfmt
         name: oxfmt (frontend formatter)

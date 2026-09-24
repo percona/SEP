@@ -23,8 +23,8 @@ import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { Link as RouterLink } from 'react-router';
-import { useSettingsList, type SettingClassGroup, type SettingResponse } from '@sep/api';
-import { ROUTES } from '@sep/shared';
+import { useSettingsList, type SettingClassGroup, type SettingResponse } from '@pmm-extensions/api';
+import { ROUTES } from '@pmm-extensions/shared';
 import {
   DELIVERY_INPUTS_KEY,
   DELIVERY_PLAN_KEY,
@@ -56,8 +56,8 @@ interface StoredDeliveryInputs {
   isPresent: boolean;
 }
 
-/** Locate one setting inside the `SEPSettings` group of a LIST response. */
-const findSepSetting = (
+/** Locate one setting inside the `ExtensionsSettings` group of a LIST response. */
+const findExtensionsSetting = (
   groups: SettingClassGroup[] | undefined,
   key: string,
 ): SettingResponse | undefined =>
@@ -87,18 +87,20 @@ const asInputs = (value: unknown): DeliveryInputs => {
 /**
  * The secret names this deployment must supply, read from the baked plan.
  *
- * The plan is the declaration SEP validates a write against, so it always wins.
- * The stored inputs are a fallback for a SEP build that does not list the plan
+ * The plan is the declaration PMM Extensions validates a write against, so it always wins.
+ * The stored inputs are a fallback for a PMM Extensions build that does not list the plan
  * at all: their names are only stale if that build also renamed one.
  */
 export const declaredSecretNames = (groups: SettingClassGroup[] | undefined): string[] => {
   const planNames = Object.keys(
-    asInputs(findSepSetting(groups, DELIVERY_PLAN_KEY)?.value).secrets ?? {},
+    asInputs(findExtensionsSetting(groups, DELIVERY_PLAN_KEY)?.value).secrets ?? {},
   );
   if (planNames.length > 0) {
     return planNames;
   }
-  return Object.keys(asInputs(findSepSetting(groups, DELIVERY_INPUTS_KEY)?.value).secrets ?? {});
+  return Object.keys(
+    asInputs(findExtensionsSetting(groups, DELIVERY_INPUTS_KEY)?.value).secrets ?? {},
+  );
 };
 
 /**
@@ -109,7 +111,7 @@ export const declaredSecretNames = (groups: SettingClassGroup[] | undefined): st
 export const storedDeliveryInputs = (
   groups: SettingClassGroup[] | undefined,
 ): StoredDeliveryInputs => {
-  const setting = findSepSetting(groups, DELIVERY_INPUTS_KEY);
+  const setting = findExtensionsSetting(groups, DELIVERY_INPUTS_KEY);
   const { endpoint, secrets } = asInputs(setting?.value);
   return {
     endpoint: endpoint ?? '',
@@ -120,12 +122,12 @@ export const storedDeliveryInputs = (
 };
 
 /**
- * What the stored inputs say about delivery, without asking SEP a second time.
+ * What the stored inputs say about delivery, without asking PMM Extensions a second time.
  *
  * An empty secret is a valid save that leaves delivery unavailable, so it reads
  * as "not configured" rather than as a failure. A declared name with no stored
  * counterpart means the image renamed one after the values were supplied — the
- * value SEP still holds no longer satisfies the plan.
+ * value PMM Extensions still holds no longer satisfies the plan.
  *
  * A plan that declares no secrets is judged on the override alone: there is no
  * credential left for the deployment to supply, so a stored override is as
@@ -150,7 +152,7 @@ export const deliveryStatus = (
 };
 
 /**
- * What SEP currently holds for diagnostics delivery, read once and derived.
+ * What PMM Extensions currently holds for diagnostics delivery, read once and derived.
  *
  * The settings LIST is admin-gated (it answers 403 to everyone else), so the
  * `error` this returns is a routine outcome for a regular user rather than an
@@ -191,7 +193,7 @@ const SetupPrompt = ({ isAdmin }: { isAdmin: boolean }) => (
         </Stack>
 
         {/*
-          The call to action slot. SEP has no guided ServiceNow form to send an
+          The call to action slot. PMM Extensions has no guided ServiceNow form to send an
           operator to, so a regular user gets the explanation alone and an admin
           gets the settings page plus the name of the key to fill in.
         */}
@@ -254,12 +256,12 @@ interface DeliverySetupGateProps {
  * build whose settings carry no `DIAGNOSTICS_DELIVERY_INPUTS` key at all is the
  * same case for a different reason: there is no key for anyone to fill in, so
  * the prompt would name a remedy nobody in this deployment can carry out.
- * `drifted` does gate: SEP holds values the current delivery plan no longer
+ * `drifted` does gate: PMM Extensions holds values the current delivery plan no longer
  * accepts, so delivery is as broken as if nothing were stored.
  *
- * Note for the SEP → PMM sync: the PMM-embedded build wraps its ATW route in
+ * Note for the PMM Extensions → PMM sync: the PMM-embedded build wraps its ATW route in
  * its own `ServiceNowSetupGate` instead of using this one, because its call to
- * action opens a guided ServiceNow settings form that SEP does not have. The
+ * action opens a guided ServiceNow settings form that PMM Extensions does not have. The
  * two gates are knowingly divergent; the shared product copy lives in
  * `DeliverySetupGate.messages.ts` on this side and must be diffed against
  * PMM's `ServiceNowSetupGate.messages.ts` on every sync.

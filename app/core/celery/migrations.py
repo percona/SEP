@@ -13,10 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Keep the library-owned Celery beat tables out of SEP's Alembic autogenerate.
+"""Keep the library-owned Celery beat tables out of PMM Extensions' Alembic autogenerate.
 
 The six ``sqlalchemy_celery_beat`` schedule tables belong to the library, not to
-any of SEP's three Alembic tracks. No revision creates them; the library builds
+any of PMM Extensions' three Alembic tracks. No revision creates them; the library builds
 them itself, driven by :mod:`app.core.celery.bootstrap`. They are declared on the
 library's own declarative base, so they are absent from the ``SQLModel.metadata``
 every track passes as ``target_metadata``. Where the beat store resolves to a
@@ -29,7 +29,7 @@ migration check under the default profile says nothing about whether this filter
 works; the per-track tests that build the coincident state are what cover it.
 
 The filter names those tables specifically rather than suppressing every
-unmatched reflected object, so a genuinely removed SEP table is still detected.
+unmatched reflected object, so a genuinely removed PMM Extensions table is still detected.
 """
 
 from sqlalchemy.sql.schema import SchemaItem
@@ -41,7 +41,7 @@ BEAT_TABLE_NAMES: frozenset[str] = frozenset(
 """Bare names of the tables ``sqlalchemy_celery_beat`` declares.
 
 Derived from the library's own metadata rather than written out, so a schedule
-type the library adds is covered without an edit here, and a future SEP table
+type the library adds is covered without an edit here, and a future PMM Extensions table
 whose name merely begins with ``celery_`` is not swallowed.
 
 ``metadata.tables`` is keyed by the *logical* schema-qualified name
@@ -71,7 +71,7 @@ def include_object(
     :param type_: The kind of object, such as ``"table"`` or ``"column"``.
     :param reflected: Whether the object came from database reflection rather
         than from the target metadata. Only a reflected table can be excluded,
-        so a SEP model declaring one of these names is left alone.
+        so a PMM Extensions model declaring one of these names is left alone.
     :param compare_to: The object being compared against. Unused.
     :return: ``False`` for a reflected beat table, ``True`` for everything else.
     """

@@ -16,7 +16,7 @@
  */
 
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
+import { emitUnauthorized, getToken, refreshAccessToken } from '@pmm-extensions/api';
 import { useEffect, useRef, useState } from 'react';
 
 export type LogType = 'stdout' | 'stderr';
@@ -75,10 +75,13 @@ class StreamFatalError extends Error {}
  *
  * @param taskHistoryId - Task history to stream logs for.
  * @param tail - When set, request only the last N lines per stream from the server.
+ * @param attempt - Changing it starts the stream over, even for the same
+ *   history and tail.
  */
 export function useTaskLogs(
   taskHistoryId: number | string | undefined,
   tail?: number,
+  attempt = 0,
 ): TaskLogsState {
   const [textByStep, setTextByStep] = useState<Record<string, StepText>>({});
   const [stepOrder, setStepOrder] = useState<string[]>([]);
@@ -95,7 +98,7 @@ export function useTaskLogs(
       return;
     }
 
-    // Reset state on id or tail change
+    // Reset state on id, tail or attempt change
     offsetsRef.current = {};
     setTextByStep({});
     setStepOrder([]);
@@ -213,7 +216,7 @@ export function useTaskLogs(
           return;
         }
 
-        if (ev.event === 'sep-error') {
+        if (ev.event === 'extensions-error') {
           let payload: StreamError;
           try {
             const parsed = JSON.parse(ev.data) as { code?: number; detail?: unknown };
@@ -287,7 +290,7 @@ export function useTaskLogs(
         if (disposed || terminatedCleanly) {
           return;
         }
-        // Server closed the connection without a finish/sep-error frame.
+        // Server closed the connection without a finish/extensions-error frame.
         setError({ detail: { message: 'Task log stream connection closed.' } });
         streamStatusRef.current = 'error';
         setStreamStatus('error');
@@ -302,7 +305,7 @@ export function useTaskLogs(
       disposed = true;
       ctrl.abort();
     };
-  }, [taskHistoryId, tail]);
+  }, [taskHistoryId, tail, attempt]);
 
   return { textByStep, stepOrder, streamStatus, finishStatus, error };
 }

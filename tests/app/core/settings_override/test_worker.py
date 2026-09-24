@@ -28,22 +28,25 @@ from sqlmodel.pool import StaticPool
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
+    fire_on_boot,
     ProxyEntry,
     ProxyRegistry,
     SnapshotChange,
 )
-from app.core.settings_override.manager import SettingsOverrideManager
-from app.core.settings_override.models import SettingClassEnum, SettingOverride
+from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION, WorkerRefresher
 from app.core.utils import json_serializer
-from app.sep.config import SEPSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     BOUNDED_SEED,
+    clear_connectivity_override,
+    CONNECTIVITY_CALLBACK_KEY,
     HangingSession,
     recording_bounded_seed,
-    SEP_SETTINGS_TOKEN,
+    recording_callback,
+    seed_connectivity_override,
     WORKER_REFRESH_ALL,
 )
 from tests.app.db_schema import apply_schema
@@ -77,9 +80,11 @@ async def _noop_callback(_: SnapshotChange) -> None:
 def _make_registry() -> ProxyRegistry:
     """Compose a two-entry proxy registry over freshly-built proxies."""
     return {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(
-            OverridableSettingsProxy(SEPSettings, setting_class=SEPSettings.__name__),
-            SEPSettings,
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            OverridableSettingsProxy(
+                ExtensionsSettings, setting_class=ExtensionsSettings.__name__
+            ),
+            ExtensionsSettings,
         ),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
             OverridableSettingsProxy(
@@ -91,7 +96,6 @@ def _make_registry() -> ProxyRegistry:
 
 
 CALLBACKS: CallbackRegistry = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
-_CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 
 
 class _CountingRegistry:
@@ -286,6 +290,82 @@ class TestWorkerRefresherStart:
 
         try:
             assert refresher._callbacks is expected
+        finally:
+            refresher.stop()
+
+    def test_start_seed_fires_a_marked_callback_for_a_seeded_override(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        session_maker: async_sessionmaker,
+    ) -> None:
+        """Fire a marked callback from the child's inline seed, then again on change.
+
+        A freshly-forked child that finds an override already in the database
+        must rebind at once; a later boundary refresh still fires on a real diff.
+        """
+        proxy = OverridableSettingsProxy(
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
+        )
+        registry = {
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings)
+        }
+        fired: list[SnapshotChange] = []
+        clock = _FakeClock()
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
+
+        loop.run_until_complete(
+            seed_connectivity_override(session_maker, value=override_value)
+        )
+        refresher = WorkerRefresher(
+            lambda: loop, lambda: session_maker, lambda: registry, now=clock
+        )
+
+        refresher.start(INTERVAL, enabled=True, callbacks=callbacks)
+
+        try:
+            assert len(fired) == 1
+            assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+
+            loop.run_until_complete(clear_connectivity_override(session_maker))
+            clock.advance_past(INTERVAL)
+            refresher.maybe_refresh()
+
+            assert [change.current for change in fired] == [
+                {"CONNECTIVITY_CHECK_DEFAULT": override_value},
+                {},
+            ]
+        finally:
+            refresher.stop()
+
+    def test_start_seed_leaves_an_unmarked_callback_silent(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        session_maker: async_sessionmaker,
+    ) -> None:
+        """Keep the child's inline seed silent for a boot-reproducing callback."""
+        proxy = OverridableSettingsProxy(
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
+        )
+        registry = {
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings)
+        }
+        fired: list[SnapshotChange] = []
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: recording_callback(fired)}
+
+        loop.run_until_complete(
+            seed_connectivity_override(session_maker, value=override_value)
+        )
+        refresher = WorkerRefresher(
+            lambda: loop, lambda: session_maker, lambda: registry
+        )
+
+        refresher.start(INTERVAL, enabled=True, callbacks=callbacks)
+
+        try:
+            assert fired == []
+            assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
         finally:
             refresher.stop()
 
@@ -574,10 +654,10 @@ class TestWorkerRefresherMaybeRefresh:
     ) -> None:
         """Fire rebind callbacks when a watched override changes at the boundary."""
         proxy = OverridableSettingsProxy(
-            SEPSettings, setting_class=SEPSettings.__name__
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
         )
         registry = {
-            SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings),
         }
         fired: list[bool] = []
         clock = _FakeClock()
@@ -588,21 +668,14 @@ class TestWorkerRefresherMaybeRefresh:
         refresher = WorkerRefresher(
             lambda: loop, lambda: session_maker, lambda: registry, now=clock
         )
-        refresher.start(INTERVAL, enabled=True, callbacks={_CALLBACK_KEY: _callback})
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        refresher.start(
+            INTERVAL, enabled=True, callbacks={CONNECTIVITY_CALLBACK_KEY: _callback}
+        )
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
 
-        async def _seed() -> None:
-            async with session_maker() as session:
-                await SettingsOverrideManager.create(
-                    session,
-                    SettingOverride(
-                        setting_class=SEP_SETTINGS_TOKEN,
-                        key="CONNECTIVITY_CHECK_DEFAULT",
-                        value=override_value,
-                    ),
-                )
-
-        loop.run_until_complete(_seed())
+        loop.run_until_complete(
+            seed_connectivity_override(session_maker, value=override_value)
+        )
         clock.advance_past(INTERVAL)
 
         refresher.maybe_refresh()
