@@ -467,7 +467,7 @@ class TestDownloadTaskHistoryFile:
         assert response.status_code == HTTP_200_OK
         assert "content-disposition" not in response.headers
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     @pytest.mark.usefixtures("test_client")
     def test_download_keeps_both_the_disposition_and_the_proxy_header(
         self, mock_tasks_client_dep, task_history_response, root_path
@@ -489,7 +489,7 @@ class TestDownloadTaskHistoryFile:
             'attachment; filename="backup.sql"'
         )
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     @pytest.mark.usefixtures("test_client")
     def test_download_without_a_path_still_carries_the_proxy_header(
         self, mock_tasks_client_dep, task_history_response, root_path

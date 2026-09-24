@@ -13,7 +13,7 @@
         "type": "string"
       },
       "AppInfo": {
-        "description": "Represent the response of ``GET /api/sep/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).",
+        "description": "Represent the response of ``GET /api/extensions/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).",
         "properties": {
           "footer_text": {
             "title": "Footer Text",
@@ -2077,7 +2077,7 @@
         "type": "object"
       },
       "alerts__IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a PMM Extensions PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -8614,7 +8614,7 @@
       },
       "framework__HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/extensions/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). When ``depends_on`` is set (typically\na ``ServiceField``), the renderer may auto-select an executor from the\nupstream service; when omitted every available executor is listed and no\ncascade runs.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: Optional name of the field whose value drives the\n    default executor selection. ``None`` (the default) omits the key from\n    the wire so plugins that do not opt in stay byte-identical.\n:param target_service: Optional service field for a non-blocking\n    co-location warning. Independent of ``depends_on`` (see\n    :class:`~app.sep.apps.framework.form_dsl.markers.HostRef`).\n    ``None`` (the default) omits the key from the wire.\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
           "allow_custom": {
             "anyOf": [
@@ -13298,6 +13298,412 @@
         "title": "NavIcon",
         "type": "string"
       },
+      "om_bootstrap__BootstrapRunStatus": {
+        "description": "Enumerate the states of one bootstrap run.\n\nMatches the decided partial-failure policy exactly: retry a failed host,\nand if retries are exhausted, roll back the whole run. There is no \"partial\nsuccess\" status\nhere the way ``ProbeRun.PARTIAL`` is a normal steady state for a sweep. A\nbootstrap either finishes with every host succeeded, or it did not finish.\n\n:cvar RUNNING: The run is in flight — pre-flight checks, installing,\n    configuring, or verifying on at least one host.\n:cvar SUCCEEDED: Every host reached\n    :attr:`~app.sep.apps.om_bootstrap.strategy.StepStatus.SUCCEEDED`.\n:cvar FAILED: A host failed and retries were exhausted; rollback has not\n    (yet, or ever) run.\n:cvar ROLLED_BACK: A failure's rollback completed.",
+        "enum": [
+          "running",
+          "succeeded",
+          "failed",
+          "rolled_back"
+        ],
+        "title": "BootstrapRunStatus",
+        "type": "string"
+      },
+      "om_bootstrap__DispatchStepRequest": {
+        "description": "Carry the optional body of any ``:dispatch`` route.\n\n:param params: Per-dispatch values the step being dispatched needs but\n    cannot compute itself — a keyFile's content, a generated\n    monitoring-user password. See\n    :class:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy`'s own\n    docstring for why these are never persisted by ``om_bootstrap``: PMM's\n    stepper holds their durable, encrypted copy and hands one to a single\n    dispatch, transiently, through this field.\n    Empty for a step that needs none.",
+        "properties": {
+          "params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "title": "DispatchStepRequest",
+        "type": "object"
+      },
+      "om_bootstrap__FinishRunRequest": {
+        "description": "Carry the body of :func:`finish_run`, the stepper recording its own decision.\n\n:param status: The run's new terminal status. Must be one of\n    :data:`_FINISHABLE_STATUSES`;\n    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.SUCCEEDED`\n    is never requested here (see :data:`_FINISHABLE_STATUSES`'s own\n    docstring).\n:param error: A human-readable reason, if any — stored on\n    :attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.error`.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "FinishRunRequest",
+        "type": "object"
+      },
+      "om_bootstrap__HostBootstrapState": {
+        "description": "Track one host's progress through its planned steps.\n\n:param host: The node name being bootstrapped.\n:param steps: This host's steps, in the order :meth:`InstallStrategy.plan_steps`\n    returned them — the full list is known before the first one starts.\n:param rollback_steps: This host's teardown steps, in the order\n    :meth:`InstallStrategy.plan_rollback_steps` returned them — planned\n    up front alongside ``steps`` so a fresh run already shows what rollback\n    would consist of, even before anything fails. Every entry stays\n    :attr:`StepStatus.PENDING` unless the stepper actually decides to roll\n    this host back.\n:param finalize_steps: This host's post-coordination steps, in the order\n    :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up\n    front alongside ``steps``, but not dispatched until every run-level step\n    has succeeded (PMM's stepper's call, mirroring how it gates run-level\n    steps on every host's ``steps`` first — see\n    :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this\n    ordering exists at all).",
+        "properties": {
+          "finalize_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Finalize Steps",
+            "type": "array"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "rollback_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Rollback Steps",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "host",
+          "steps"
+        ],
+        "title": "HostBootstrapState",
+        "type": "object"
+      },
+      "om_bootstrap__InstallMethod": {
+        "description": "Name the :class:`InstallStrategy` a run uses.\n\nOnly ``PACKAGES`` has an implementation\n(:class:`~app.sep.apps.om_bootstrap.strategies.packages.PackagesInstallStrategy`).\n``DOCKER``/``PODMAN`` are named here so :class:`BootstrapSpec` and the API have\na closed set to switch on before a second strategy exists; requesting either\ntoday is a 400.",
+        "enum": [
+          "packages",
+          "docker",
+          "podman"
+        ],
+        "title": "InstallMethod",
+        "type": "string"
+      },
+      "om_bootstrap__MemberConfig": {
+        "description": "Hold one host's replica-set election settings, for ``rs.initiate``.\n\nDefaults to MongoDB's own for a member (priority 1, votes on, not hidden,\nno delay), so a host a run never names here gets exactly those.\n\n:param priority: Relative election priority, 0-1000. A member with 0 can\n    never become primary.\n:param votes: Whether this member gets a vote in elections.\n:param hidden: Whether this member is hidden from client read preference\n    and ``db.hello()``'s own output.\n:param delay_secs: Seconds this member's data intentionally lags the\n    primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and\n    ``votes`` off whenever this is nonzero.\n:raises ValueError: If ``priority``/``delay_secs`` are out of range, or a\n    non-voting, hidden, or delayed member names a nonzero ``priority`` —\n    each combination ``rs.initiate`` itself rejects, checked here so a bad\n    request fails at create time (422) rather than several steps into a\n    run.",
+        "properties": {
+          "delay_secs": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Delay Secs",
+            "type": "integer"
+          },
+          "hidden": {
+            "default": false,
+            "title": "Hidden",
+            "type": "boolean"
+          },
+          "priority": {
+            "default": 1,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "votes": {
+            "default": true,
+            "title": "Votes",
+            "type": "boolean"
+          }
+        },
+        "title": "MemberConfig",
+        "type": "object"
+      },
+      "om_bootstrap__OperatingSystem": {
+        "description": "Target host OS. First implementation supports exactly these two.",
+        "enum": [
+          "ubuntu",
+          "rocky"
+        ],
+        "title": "OperatingSystem",
+        "type": "string"
+      },
+      "om_bootstrap__RunResponse": {
+        "description": "Describe one bootstrap run in full.\n\n:param id: The run's id.\n:param status: The run's lifecycle state.\n:param install_method: The run's install method.\n:param os: The run's target OS.\n:param mongodb_version: The run's MongoDB version.\n:param replica_set_name: The replica set every host in this run joins.\n:param data_path: Where mongod stores its data on every host in this run.\n:param log_path: Where mongod writes its log file on every host in this run.\n:param port: The port mongod listens on, on every host in this run.\n:param bind_ip: The interface(s) mongod listens on, on every host in this run.\n:param member_configs: Per-host election settings this run was created\n    with — see :class:`TriggerRunRequest`'s own docstring.\n:param started_at: When the run began.\n:param finished_at: When it reached a terminal status, if it has.\n:param hosts: Every host's current step-by-step progress — the full,\n    run-specific step list each host was planned with (forward steps and\n    rollback steps both), not just the steps that have started.\n:param run_steps: This run's run-level steps\n    (:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_run_steps`),\n    planned up front the same way ``hosts``' steps are.\n:param error: The run-level failure detail, when the run itself raised\n    outside any single host's steps.\n:param cancel_requested: Whether an operator has asked this run to stop —\n    see :func:`cancel_run`. PMM's stepper treats this the same as a step\n    exhausting its retries (force every host's rollback), never something\n    ``om_bootstrap`` itself acts on.",
+        "properties": {
+          "bind_ip": {
+            "title": "Bind Ip",
+            "type": "string"
+          },
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "data_path": {
+            "title": "Data Path",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "hosts": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__HostBootstrapState"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "install_method": {
+            "$ref": "#/components/schemas/om_bootstrap__InstallMethod"
+          },
+          "log_path": {
+            "title": "Log Path",
+            "type": "string"
+          },
+          "member_configs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/om_bootstrap__MemberConfig"
+            },
+            "title": "Member Configs",
+            "type": "object"
+          },
+          "mongodb_version": {
+            "title": "Mongodb Version",
+            "type": "string"
+          },
+          "os": {
+            "$ref": "#/components/schemas/om_bootstrap__OperatingSystem"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "replica_set_name": {
+            "title": "Replica Set Name",
+            "type": "string"
+          },
+          "run_steps": {
+            "items": {
+              "$ref": "#/components/schemas/om_bootstrap__StepRecord"
+            },
+            "title": "Run Steps",
+            "type": "array"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "install_method",
+          "os",
+          "mongodb_version",
+          "replica_set_name",
+          "data_path",
+          "log_path",
+          "port",
+          "bind_ip",
+          "member_configs",
+          "started_at",
+          "finished_at",
+          "hosts",
+          "run_steps",
+          "error",
+          "cancel_requested"
+        ],
+        "title": "RunResponse",
+        "type": "object"
+      },
+      "om_bootstrap__StepRecord": {
+        "description": "Record one step's progress, for a host or for a run.\n\nThe same shape serves both :attr:`HostBootstrapState.steps` (per-host) and\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRun.run_steps` (run-level,\ne.g. ``rs_initiate`` — see :meth:`InstallStrategy.plan_run_steps`): neither\ncontext needs a field the other doesn't, so one type covers both rather than\ntwo near-duplicates.\n\n:param name: One of the names :meth:`InstallStrategy.plan_steps` (or\n    :meth:`InstallStrategy.plan_run_steps`, or\n    :meth:`InstallStrategy.plan_rollback_steps`)\n    returned for this spec — not a fixed enum, since the step list itself is\n    per-strategy and per-spec (see the module docstring).\n:param status: This step's current status.\n:param started_at: When the execution layer began this step, if it has.\n:param finished_at: When this step reached a terminal status, if it has.\n:param detail: A human-readable outcome — an error message on\n    :attr:`StepStatus.FAILED`, or ``None`` while pending/running.\n:param task_history_id: The Tasks API history id backing this step's dispatch,\n    while it is running — the execution layer's own bookkeeping, not a\n    strategy concern. Still just data describing progress, so it lives here\n    rather than in a separate persisted-only sibling type: one shape for\n    planning, persistence, and API responses alike.\n:param attempt_count: How many times this step has been dispatched.\n    Incremented on every dispatch, including the first — PMM's stepper reads\n    this to enforce its decided retry policy (retry, then roll back) without\n    needing a counter of its own, which would be lost on a leader failover.\n    ``om_bootstrap`` only ever records the fact that a dispatch happened;\n    deciding whether *another* one should is the stepper's call, not this\n    field's.",
+        "properties": {
+          "attempt_count": {
+            "default": 0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/om_bootstrap__StepStatus",
+            "default": "pending"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StepRecord",
+        "type": "object"
+      },
+      "om_bootstrap__StepStatus": {
+        "description": "Name one step's progress, as the UI renders it.",
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "skipped"
+        ],
+        "title": "StepStatus",
+        "type": "string"
+      },
+      "om_bootstrap__TriggerRunRequest": {
+        "description": "Request one bootstrap run over a set of hosts, all sharing one spec.\n\n:param hosts: The hosts to provision — one-member or three-member replica\n    sets only, the decided phase-1 scope. Each is a node name: letters,\n    digits, ``.``, ``_`` and ``-``, starting with a letter or digit.\n:param install_method: Which strategy provisions every host in this run.\n:param os: Every host's OS. Mixed-OS replica sets are out of phase-1 scope.\n:param mongodb_version: The Percona Server for MongoDB version to install,\n    as ``major.minor`` or ``major.minor.patch`` (e.g. ``\"8.0\"``, ``\"8.0.4\"``).\n:param replica_set_name: The replica set every host joins: 1-64 letters,\n    digits, ``_`` or ``-``.\n:param data_path: Where mongod stores its data on every host. Defaults to\n    the same value the column behind it carries\n    (``migrations/versions/..._add_run_config_fields.py``), so a caller\n    that omits it gets the path the fixed-path contract used.\n:param log_path: Where mongod writes its log file on every host. Same\n    default story as ``data_path``.\n:param port: The port mongod listens on, on every host. Same default\n    story as ``data_path``.\n:param bind_ip: The interface(s) mongod listens on, on every host.\n    Defaults to ``127.0.0.1``, keeping mongod's pre-auth window local to\n    the host unless the caller passes a wider address.\n:param member_configs: Per-host election settings for ``rs.initiate``,\n    keyed by entries of ``hosts``. A host missing from this mapping —\n    including every host, when this is left empty — gets\n    :class:`~app.sep.apps.om_bootstrap.strategy.MemberConfig`'s own\n    defaults.",
+        "properties": {
+          "bind_ip": {
+            "default": "127.0.0.1",
+            "pattern": "^[^\\s\\x00-\\x1f]+$",
+            "title": "Bind Ip",
+            "type": "string"
+          },
+          "data_path": {
+            "default": "/var/lib/mongo",
+            "pattern": "^(?:/[^/\\s\\x00]+){2,}$",
+            "title": "Data Path",
+            "type": "string"
+          },
+          "hosts": {
+            "items": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,252}$",
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "install_method": {
+            "$ref": "#/components/schemas/om_bootstrap__InstallMethod"
+          },
+          "log_path": {
+            "default": "/var/log/mongodb/mongod.log",
+            "pattern": "^(?:/[^/\\s\\x00]+){2,}$",
+            "title": "Log Path",
+            "type": "string"
+          },
+          "member_configs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/om_bootstrap__MemberConfig"
+            },
+            "default": {},
+            "title": "Member Configs",
+            "type": "object"
+          },
+          "mongodb_version": {
+            "pattern": "^\\d+\\.\\d+(\\.\\d+)?$",
+            "title": "Mongodb Version",
+            "type": "string"
+          },
+          "os": {
+            "$ref": "#/components/schemas/om_bootstrap__OperatingSystem"
+          },
+          "port": {
+            "default": 27017,
+            "exclusiveMinimum": 0.0,
+            "maximum": 65535.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "replica_set_name": {
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "title": "Replica Set Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hosts",
+          "install_method",
+          "os",
+          "mongodb_version",
+          "replica_set_name"
+        ],
+        "title": "TriggerRunRequest",
+        "type": "object"
+      },
       "om_inventory__HostResponse": {
         "description": "Report one host, with the services OM knows are on it.\n\nA host is a row whether or not any MongoDB was found on it: that is what makes\n\"which hosts have no database\" a query rather than an absence, and it is the only\nway a machine that has never run one appears at all.\n\n``observed`` (from :class:`FreshnessResponse`) additionally carries\n``unregistered_mongods`` here, where the probe found a database PMM has no\nservice for.\n\n:param node_id: PMM's node id.\n:param name: The node's registered name.\n:param address: The node's registered address.\n:param executor_host: The Nomad client serving it. ``None`` means nothing can be\n    run there, which is a fact about the estate rather than a probe failure.\n:param services: The services on it. Empty is a meaningful answer, not a gap.",
         "properties": {
@@ -15816,8 +16222,8 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (proxies, streams, downloads). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
-    "title": "SEP Web Application API",
+    "description": "PMM Extensions\n\nBrowser-oriented routes (proxies, streams, downloads). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
+    "title": "PMM Extensions Web Application API",
     "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",
@@ -20428,9 +20834,569 @@
         ]
       }
     },
+    "/api/apps/om_bootstrap/runs": {
+      "get": {
+        "description": "Return runs, newest first, optionally narrowed to one status.\n\nThe intended caller is PMM's HA-leader-only stepper. It does not persist\nits own copy of which runs exist or where they are, so on every tick, and\nespecially right after a leader failover, it re-discovers every run still\nin flight from here (``status=running``) rather than from any state of its\nown.\n\n:param session: The database session.\n:param status: Restrict to runs in this status. Omit for any status.\n:param limit: How many to return.\n:return: The runs. Does **not** reconcile in-flight steps — unlike\n    :func:`get_bootstrap_run`, a caller polling a specific run for the\n    purpose of driving it forward should use that route instead.",
+        "operationId": "om_bootstrap_list_bootstrap_runs_api_apps_om_bootstrap_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/om_bootstrap__BootstrapRunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                  },
+                  "title": "Response Om Bootstrap List Bootstrap Runs Api Apps Om Bootstrap Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Bootstrap Runs",
+        "tags": [
+          "om_bootstrap"
+        ]
+      },
+      "post": {
+        "description": "Create a bootstrap run, planning every host's steps up front.\n\nDispatches nothing: creating a run only plans it, so the caller (PMM's\ndriver) sees the full step list for every host before anything is touched.\nActually starting a host's first step is a separate call to\n:func:`dispatch_run_step`.\n\n:param session: The database session.\n:param request: The requested run.\n:raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the\n    same host twice, has neither one nor three hosts, names an install\n    method with no registered strategy, ``member_configs`` names a host\n    outside ``hosts``, or ``member_configs`` leaves no host that both votes\n    and has a nonzero priority, since ``rs.initiate`` rejects a config with\n    no electable member.\n:return: The created run, every host's steps ``pending``.",
+        "operationId": "om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/om_bootstrap__TriggerRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trigger Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}": {
+      "get": {
+        "description": "Return one run, reconciling any of its running steps first.\n\nReconciling on every read (rather than relying solely on a periodic task)\nmeans PMM's driver always sees a step's real outcome on its very next poll,\nnot after waiting for a separate schedule to catch up. The run is read under\nits row lock, like every writing route (see the module docstring), since a\nreconcile may write it back.\n\n:param run: The path's run, read under its row lock.\n:param session: The database session.\n:param tasks_client: The Tasks API client, authenticated here with SEP's\n    internal token rather than the caller's.\n:raises HTTPNotFoundException: When there is no such run.\n:return: The run, with current step status.",
+        "operationId": "om_bootstrap_get_bootstrap_run_api_apps_om_bootstrap_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Bootstrap Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/finalize/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one host's named finalize step now.\n\nSame fire-and-forget shape as :func:`dispatch_run_step` — see its own\ndocstring; the only difference is which list on\n:class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState` this reads\nand writes. This route does not check that every run-level step has\nsucceeded first — deciding *when* it is safe to call this is PMM's\nstepper's job, not this route's (see the module docstring, and\n:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s\nown docstring for why that ordering matters at all).\n\n:param run: The path's run, read under its row lock.\n:param host: The host to dispatch the step on.\n:param step_name: The finalize step to dispatch — one of the names the run\n    was planned with.\n:param session: The database session.\n:param request: See :func:`dispatch_run_step`.\n:param tasks_client: See :func:`dispatch_run_step`.\n:param body: ``params`` this step needs — see :class:`DispatchStepRequest`.\n:raises HTTPNotFoundException: When there is no such run, host, or finalize step.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched finalize step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_finalize_step_api_apps_om_bootstrap_runs__run_id__hosts__host__finalize__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_bootstrap__DispatchStepRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Finalize Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/rollback/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one host's named rollback step now.\n\nSame fire-and-forget shape as :func:`dispatch_run_step`. Rollback steps take\nno ``params``: every\n:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_rollback_step`\na strategy defines only ever tears down what its own forward steps already\nwrote to the host, needing nothing new from the caller.\n\nWhether a host should be rolled back at all, and if so whether to dispatch\nits rollback steps in order or all at once, is PMM's stepper's call (its\npartial-failure policy), not this route's. This route only ever dispatches\nthe one step it is asked to.\n\n:param run: The path's run, read under its row lock.\n:param host: The host to roll back.\n:param step_name: The rollback step to dispatch — one of the names the run\n    was planned with.\n:param session: The database session.\n:param request: See :func:`dispatch_run_step`.\n:param tasks_client: See :func:`dispatch_run_step`.\n:raises HTTPNotFoundException: When there is no such run, host, or rollback step.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched rollback step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Rollback Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/steps/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one host's named step now.\n\nDoes **not** wait for the dispatch to finish — it returns as soon as the\nTasks API accepts it, the same fire-and-forget shape ``dispatch_step``\nitself commits to. The caller polls :func:`get_bootstrap_run` for progress.\n\nOnly a ``pending`` or ``failed`` step is dispatched. Re-dispatching a\n``failed`` one is how PMM's driver implements its retry policy — this route\ndoes not itself decide *whether* to retry, only executes the request.\n\n:param run: The path's run, read under its row lock.\n:param host: The host to dispatch the step on.\n:param step_name: The step to dispatch — one of the names the run was\n    planned with.\n:param session: The database session.\n:param request: The current request, whose host builds the artifact\n    download URL the executor fetches the step's script from.\n:param tasks_client: The Tasks API client, authenticated here with SEP's\n    internal token rather than the caller's.\n:param body: ``params`` this step needs — see :class:`DispatchStepRequest`.\n:raises HTTPNotFoundException: When there is no such run, host, or step.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_run_step_api_apps_om_bootstrap_runs__run_id__hosts__host__steps__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "host",
+            "required": true,
+            "schema": {
+              "title": "Host",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_bootstrap__DispatchStepRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Run Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}/run-steps/{step_name}:dispatch": {
+      "post": {
+        "description": "Dispatch one run-level step now, targeting the run's seed host.\n\nSame fire-and-forget shape as :func:`dispatch_run_step` — see its own\ndocstring. \"Seed host\" is ``run``'s first host, index 0, matching\n:meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s\nown convention for where a run-level step actually executes.\n\nThis route does not check that every per-host step succeeded first —\ndeciding *when* it is safe to call this is PMM's stepper's job, not this\nroute's (see the module docstring).\n\n:param run: The path's run, read under its row lock.\n:param step_name: The run-level step to dispatch — one of the names the\n    run was planned with.\n:param session: The database session.\n:param request: See :func:`dispatch_run_step`.\n:param tasks_client: See :func:`dispatch_run_step`.\n:param body: ``params`` this step needs — see :class:`DispatchStepRequest`.\n:raises HTTPNotFoundException: When there is no such run, run-level step, or\n    the run has no hosts to target.\n:raises HTTPConflictException: When the step is running, succeeded, or\n    skipped.\n:return: The run, with the dispatched run-level step now ``running``.",
+        "operationId": "om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "step_name",
+            "required": true,
+            "schema": {
+              "title": "Step Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/om_bootstrap__DispatchStepRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dispatch Run Run Step",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}:cancel": {
+      "post": {
+        "description": "Request that a running bootstrap run stop and roll back every host.\n\nRecords the request and best-effort interrupts whatever is currently\ndispatching (:func:`_stop_running_steps`) so it doesn't keep running for\nhowever long its own timeout is — it does not itself decide to roll\nanything back. That is PMM's stepper's call, exactly like every other\nrollback trigger (see the module docstring): it reads\n``cancel_requested`` on its next poll and treats it the same as a step\nexhausting its retries.\n\nIdempotent while the run is still running: calling this again after\ncancellation was already requested is a no-op, not an error — an\noperator clicking Abort twice should never see a failure.\n\nSaves ``cancel_requested`` *before* attempting to stop anything: a poll\nlanding between the two would otherwise still see ``cancel_requested=false``\nand the stepper could keep dispatching. Stopping is best-effort — the\nsaved flag is the signal that actually matters (see\n:func:`_stop_running_steps`) — so it runs after, and its own failures\n(including the Tasks API being unreachable) never undo the save above.\n\n:param run: The path's run, read under its row lock.\n:param session: The database session.\n:param tasks_client: The Tasks API client, authenticated here with SEP's\n    internal token rather than the caller's.\n:raises HTTPNotFoundException: When there is no such run.\n:raises HTTPConflictException: When the run is already terminal —\n    rolled back or otherwise, there is nothing left to cancel.\n:return: The run, with ``cancel_requested`` now set.",
+        "operationId": "om_bootstrap_cancel_run_api_apps_om_bootstrap_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/runs/{run_id}:finish": {
+      "post": {
+        "description": "Record the stepper's own decision that a run is done — failed or rolled back.\n\nThe one way ``run.status`` reaches\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.FAILED` or\n:attr:`~app.sep.apps.om_bootstrap.models.BootstrapRunStatus.ROLLED_BACK`:\nboth are real calls only PMM's stepper makes (retries exhausted; rollback\nfinished), never something ``om_bootstrap`` infers on its own — see\n``reconcile.py``'s module docstring for the one status it *does* infer\n(SUCCEEDED) and why that's different.\n\nAlso removes every step script the run still has on disk: no step of a\nfinished run is dispatched again, so nothing will download them.\n\n:param run: The path's run, read under its row lock.\n:param session: The database session.\n:param body: The decided terminal status, and why.\n:raises HTTPNotFoundException: When there is no such run.\n:raises HTTPBadRequestException: When ``body.status`` is not one of\n    :data:`_FINISHABLE_STATUSES`.\n:raises HTTPConflictException: When the run is already terminal.\n:return: The run, now terminal.",
+        "operationId": "om_bootstrap_finish_run_api_apps_om_bootstrap_runs__run_id__finish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/om_bootstrap__FinishRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/om_bootstrap__RunResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Run",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
+    "/api/apps/om_bootstrap/schema": {
+      "get": {
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
+        "operationId": "om_bootstrap_get_schema_api_apps_om_bootstrap_schema_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/framework__AppSchema"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Schema",
+        "tags": [
+          "om_bootstrap"
+        ]
+      }
+    },
     "/api/apps/om_inventory/config": {
       "get": {
-        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/sep/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n``CREDENTIALS_PATH`` is the one exception: its row is present, with ``value``\nforced to ``None`` regardless of the deployment's real setting. See\n:func:`_redact_config` for why the whole route is not gated instead.\n\n:param session: The database session.\n:return: One row per configuration field.",
+        "description": "Return this app's configuration: every field, its value and its origin.\n\nServed here rather than pointing the caller at ``/api/extensions/admin/settings``\nbecause that router is admin-gated and PMM's principal is not an admin: the\n``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built\nwith ``is_admin=False`` deliberately, since it is a deployment-level shared\nsecret with no person behind it. An app-owned endpoint keeps a schedule change\nscoped to this app instead of requiring SEP-wide administrative access.\n\nEvery field is listed, not only the overridden ones, and each row carries\nwhether an override is in effect - so \"why is it sweeping every 10 minutes\"\nis answerable without also reading the deployment's YAML.\n\n``CREDENTIALS_PATH`` is the one exception: its row is present, with ``value``\nforced to ``None`` regardless of the deployment's real setting. See\n:func:`_redact_config` for why the whole route is not gated instead.\n\n:param session: The database session.\n:return: One row per configuration field.",
         "operationId": "om_inventory_get_config_api_apps_om_inventory_config_get",
         "responses": {
           "200": {
@@ -22226,10 +23192,10 @@
         ]
       }
     },
-    "/api/sep/admin/connectivity-check/": {
+    "/api/extensions/admin/connectivity-check/": {
       "post": {
         "description": "Probe the requested external / inter-service endpoints and report status.\n\nProbe only the services named in ``body.targets``, running the selected\nprobes concurrently. Each is isolated: one endpoint's failure is classified\nindependently and never fails the whole response, which always returns\n``200`` with one entry per requested service, in request order. Tasks and\nNomad share a single ``/hosts/`` probe, so requesting either (or both) runs\nit once.\n\n:param body: The request naming which services to probe.\n:param pmm_api: The PMM client dependency, or ``None`` when unconfigured.\n:param inventory_api: The authenticated Inventory API client.\n:param tasks_api: The authenticated Tasks API client.\n:return: One normalized connectivity result per requested service.",
-        "operationId": "sep_check_connectivity_api_sep_admin_connectivity_check__post",
+        "operationId": "extensions_check_connectivity_api_extensions_admin_connectivity_check__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -22248,7 +23214,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ConnectivityResult"
                   },
-                  "title": "Response Sep Check Connectivity Api Sep Admin Connectivity Check  Post",
+                  "title": "Response Extensions Check Connectivity Api Extensions Admin Connectivity Check  Post",
                   "type": "array"
                 }
               }
@@ -22268,14 +23234,14 @@
         },
         "summary": "Check Connectivity",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/admin/delivery-connection/": {
+    "/api/extensions/admin/delivery-connection/": {
       "get": {
         "description": "Report the facts the delivery plan declares about its own connection.\n\nNo way the read can fail reaches the caller as an error: a deployment that\ndeclares no connection-details step, stored inputs that no longer fit the\nplan, a refused credential, an unreachable receiver and a read that outran\nits bound all answer 200 with the outcome that describes them, so a caller\nrenders a state rather than handling an error. The three configuration\noutcomes are decided before any request is issued; the read and the failure\noutcomes are decided only after one.\n\n:return: The resolved pairs in the plan's declaration order, or the outcome\n    explaining why there are none.",
-        "operationId": "sep_read_delivery_connection_api_sep_admin_delivery_connection__get",
+        "operationId": "extensions_read_delivery_connection_api_extensions_admin_delivery_connection__get",
         "responses": {
           "200": {
             "content": {
@@ -22290,14 +23256,14 @@
         },
         "summary": "Read Delivery Connection",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/admin/settings/": {
+    "/api/extensions/admin/settings/": {
       "get": {
         "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order; app-owned classes follow remote\ngroups with per-group app metadata. A failed remote fetch fails the\nwhole request with ``502`` -- the LIST never silently drops a remote\ngroup.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
-        "operationId": "sep_list_settings_api_sep_admin_settings__get",
+        "operationId": "extensions_list_settings_api_extensions_admin_settings__get",
         "responses": {
           "200": {
             "content": {
@@ -22312,14 +23278,14 @@
         },
         "summary": "List Settings",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/admin/settings/export": {
+    "/api/extensions/admin/settings/export": {
       "get": {
-        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the SEP-wired core settings classes and app-owned settings\nclasses locally and fans out to ``GET /admin/settings/`` on the Tasks API\nfor ``TasksSettings``. Values use the same dump path as the settings LIST\nendpoints. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then\n``TasksSettings``), independent of selector order.\n\n:param session: The active database session for SEP override queries.\n:type session: AsyncSession\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:type tasks_api: TaskAPI\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:type keys: list[str] | None\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:rtype: Response\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
-        "operationId": "sep_export_settings_api_sep_admin_settings_export_get",
+        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the SEP-wired core settings classes and app-owned settings\nclasses locally and fans out to ``GET /admin/settings/`` on the Tasks API\nfor ``TasksSettings``. Values use the same dump path as the settings LIST\nendpoints. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``EXTENSIONS_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then\n``TasksSettings``), independent of selector order.\n\n:param session: The active database session for SEP override queries.\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
+        "operationId": "extensions_export_settings_api_extensions_admin_settings_export_get",
         "parameters": [
           {
             "in": "query",
@@ -22381,14 +23347,14 @@
         },
         "summary": "Export Settings",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/admin/settings/{setting_class}": {
+    "/api/extensions/admin/settings/{setting_class}": {
       "patch": {
         "description": "Apply a batch of overrides for one settings class atomically.\n\nFor a remote class the batch is forwarded to the owning sub-app, which\nowns the validation and persistence; the upstream's per-field ``422``\n(and its ``detail``) is preserved so the UI can render inline messages.\n\nFor a local class: Phase A validates every key in ``body`` (existence on\nthe class, HOT classification, type/constraint coercion) and collects\nper-key errors. If any key fails, the whole batch is rejected with a\nstructured 422 and nothing is written. Phase B persists every valid entry\nin a single transaction, refreshes the proxy snapshot once, then fires\nthe rebind callbacks for any changed keys so a HOT target rebinds without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the override targets.\n:param body: The batch of ``{key: value, ...}`` overrides.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:param actor: The calling admin's username, recorded on every row the\n    batch writes and reported back on each response.\n:return: One :class:`SettingResponse` per applied key, in input order.\n:raises HTTPNotFoundException: If the class isn't exposed.\n:raises HTTPUnprocessableEntityException: If any key fails validation;\n    no rows are written.\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.\n:raises IntegrityError: When the replay of a batch that lost the\n    unique-index race conflicts again, which leaves nothing written.",
-        "operationId": "sep_patch_settings_api_sep_admin_settings__setting_class__patch",
+        "operationId": "extensions_patch_settings_api_extensions_admin_settings__setting_class__patch",
         "parameters": [
           {
             "in": "path",
@@ -22418,7 +23384,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SettingResponse"
                   },
-                  "title": "Response Sep Patch Settings Api Sep Admin Settings  Setting Class  Patch",
+                  "title": "Response Extensions Patch Settings Api Extensions Admin Settings  Setting Class  Patch",
                   "type": "array"
                 }
               }
@@ -22438,14 +23404,14 @@
         },
         "summary": "Patch Settings",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/admin/settings/{setting_class}/{key}": {
+    "/api/extensions/admin/settings/{setting_class}/{key}": {
       "delete": {
         "description": "Revert override row(s) for one field to the field's declared default.\n\nFor a remote class the DELETE is forwarded to the owning sub-app, which\nowns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and\n``detail`` are preserved through the proxy.\n\nFor a local class the DELETE is idempotent: deleting a (class, key) pair\nthat has no override row succeeds with 204. Attempting to delete a field\nthe code declares NOT_OVERRIDABLE responds 409, since it cannot have an\noverride row in the first place and the operator's intent is\nunsatisfiable. A field only ``SETTINGS_OVERRIDE.ALLOWED_KEYS`` withheld\nmay still carry a row written before the restriction applied, so that\nrow is deleted normally (found by canonicalizing the stored key, so a\nlegacy non-canonical casing is still seen) and only the no-row case\nanswers 409. When several rows canonicalize to the same key, all of\nthem are removed.\n\nAfter republishing the snapshot, fires the rebind callbacks for the\nreverted key so a HOT target rebinds to its restored value without\nwaiting for the next background refresh cycle.\n\n:param request: The incoming request; its ``app.state`` carries the\n    sub-app's rebind-callback registry.\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.\n:raises HTTPConflictException: If the field is NOT_OVERRIDABLE and has\n    no row to delete.\n:raises HTTPUnprocessableEntityException: If ``key`` names a\n    ``NESTED_ONLY`` parent (the whole parent cannot be overridden;\n    target an individual ``parent__leaf`` instead).\n:raises HTTPBadGatewayException: For a remote class, when the owning\n    sub-app returns a server error (status >= 500) or is unreachable.",
-        "operationId": "sep_delete_setting_api_sep_admin_settings__setting_class___key__delete",
+        "operationId": "extensions_delete_setting_api_extensions_admin_settings__setting_class___key__delete",
         "parameters": [
           {
             "in": "path",
@@ -22483,12 +23449,12 @@
         },
         "summary": "Delete Setting",
         "tags": [
-          "sep"
+          "extensions"
         ]
       },
       "get": {
         "description": "Return one field's metadata and current value.\n\n:param setting_class: The settings class the field belongs to.\n:param key: The field name on the settings class.\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: The structured response for the field.\n:raises HTTPNotFoundException: If the class isn't exposed or the key\n    doesn't exist on the class.",
-        "operationId": "sep_get_setting_api_sep_admin_settings__setting_class___key__get",
+        "operationId": "extensions_get_setting_api_extensions_admin_settings__setting_class___key__get",
         "parameters": [
           {
             "in": "path",
@@ -22533,14 +23499,14 @@
         },
         "summary": "Get Setting",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/app-info/": {
+    "/api/extensions/app-info/": {
       "get": {
-        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper so\nthe JSON endpoint and the legacy Jinja sidebar footer cannot drift. The\nhelper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is\ngated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.",
-        "operationId": "sep_get_app_info_api_sep_app_info__get",
+        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper.\nThe helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``EXTENSIONS__FOOTER_TEMPLATE`` override is reflected without a restart.\nAccess is gated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.",
+        "operationId": "extensions_get_app_info_api_extensions_app_info__get",
         "responses": {
           "200": {
             "content": {
@@ -22555,14 +23521,14 @@
         },
         "summary": "Get App Info",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/dashboard/": {
+    "/api/extensions/dashboard/": {
       "get": {
-        "description": "Return aggregate counts for all four dashboard stat cards.\n\nSources (each degrades to ``0`` on failure):\n\n* ``nodes`` — ``GET /summary/`` on the Inventory API.\n* ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).\n* ``snippets`` — :meth:`SnippetManager.count` on the SEP database.\n* ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.\n\nWhen one or more sources fail the names of the failed sources are joined\nwith commas and set on the ``X-Sep-Upstream-Error`` response header so the\ncaller can surface a partial-failure warning without treating all-zero\ncounts as healthy data.\n\n:param response: The outgoing response used to attach the error header.\n:type response: Response\n:param session: The active database session for snippet queries.\n:type session: AsyncSession\n:param tasks_api: Async client for the Tasks sub-app.\n:type tasks_api: RemoteAPI\n:param inventory_api: Async client for the Inventory sub-app.\n:type inventory_api: RemoteAPI\n:return: Aggregate counts for nodes, tasks, snippets, and targets.\n:rtype: DashboardStatsResponse",
-        "operationId": "sep_get_dashboard_stats_api_sep_dashboard__get",
+        "description": "Return aggregate counts for all four dashboard stat cards.\n\nSources (each degrades to ``0`` on failure):\n\n* ``nodes`` — ``GET /summary/`` on the Inventory API.\n* ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).\n* ``snippets`` — :meth:`SnippetManager.count` on the SEP database.\n* ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.\n\nWhen one or more sources fail the names of the failed sources are joined\nwith commas and set on the ``X-Upstream-Error`` response header so the\ncaller can surface a partial-failure warning without treating all-zero\ncounts as healthy data.\n\n:param response: The outgoing response used to attach the error header.\n:param session: The active database session for snippet queries.\n:param tasks_api: Async client for the Tasks sub-app.\n:param inventory_api: Async client for the Inventory sub-app.\n:return: Aggregate counts for nodes, tasks, snippets, and targets.",
+        "operationId": "extensions_get_dashboard_stats_api_extensions_dashboard__get",
         "responses": {
           "200": {
             "content": {
@@ -22577,14 +23543,14 @@
         },
         "summary": "Get Dashboard Stats",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/hosts/": {
+    "/api/extensions/hosts/": {
       "get": {
         "description": "Return executor hosts merged with inventory display names.\n\nCall ``tasks_api.get('/hosts/')`` for executor targets and the Inventory\nAPI for display-name and capability enrichment. The Tasks and Inventory\ncalls degrade differently: Inventory failures cause hosts without a match\nto keep the raw executor node name (the response still returns ``200``),\nbut a Tasks-API failure (HTTP or connection error) is re-raised as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through its React Query error slot.\n\nThe two Inventory enrichments degrade **independently**, and on the same\nterms. The capability is the newer of them, and an Inventory old enough to\nanswer 422 on its route — or failing it for any other reason — must not cost\nthe host selector the display names it has always had. Both blocks also\nadmit a malformed page, which fails envelope validation rather than raising\na transport error: every way an Inventory read can fail leaves this route\nanswering ``200`` with whatever it still resolved.\n\nThe display name and the elevation capability are joined on **different\nkeys** — address and executor name respectively — and may resolve to\ndifferent inventory nodes. They answer different questions: the display name\nasks what inventory calls this address, the capability asks which executor\nwas measured. Collapsing them into one index misattributes the measurement.\n\n:param tasks_api: The Tasks API client used to fetch executor hosts.\n:param inventory_api: The Inventory API client used to enrich the hosts\n    with their display names and measured capabilities.\n:return: Sorted list of hosts, each with executor id, friendly name,\n    network address, and elevation capability.\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
-        "operationId": "sep_list_hosts_api_sep_hosts__get",
+        "operationId": "extensions_list_hosts_api_extensions_hosts__get",
         "responses": {
           "200": {
             "content": {
@@ -22593,7 +23559,7 @@
                   "items": {
                     "$ref": "#/components/schemas/app__sep__api__routes__hosts__HostResponse"
                   },
-                  "title": "Response Sep List Hosts Api Sep Hosts  Get",
+                  "title": "Response Extensions List Hosts Api Extensions Hosts  Get",
                   "type": "array"
                 }
               }
@@ -22621,14 +23587,14 @@
         },
         "summary": "List Hosts",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/periodic-tasks/": {
+    "/api/extensions/periodic-tasks/": {
       "get": {
         "description": "Return the upstream periodic-task page through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream page.\n:param pagination: Validated offset/limit forwarded to the upstream list.\n:return: The upstream paginated envelope, or an empty envelope echoing the\n    requested window when the upstream payload is not a dict.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "tasks_list_periodic_tasks_api_sep_periodic_tasks__get",
+        "operationId": "tasks_list_periodic_tasks_api_extensions_periodic_tasks__get",
         "parameters": [
           {
             "in": "query",
@@ -22700,10 +23666,10 @@
         ]
       }
     },
-    "/api/sep/periodic-tasks/schedule/preview/": {
+    "/api/extensions/periodic-tasks/schedule/preview/": {
       "post": {
         "description": "Dispatch a schedule preview to the Tasks API.\n\nTwo path segments so the sibling ``POST /{task_name}/`` cannot match this\nroute: a single-segment ``/preview/`` would be ambiguous with it, resolvable\nonly by declaration order and only at the cost of reserving ``preview`` as a\ntask name nobody could schedule.\n\n:param tasks_api: The Tasks API client used to compute the preview.\n:param body: The ``SchedulePreviewWrite`` JSON body, forwarded verbatim.\n:return: The schedule preview as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post",
+        "operationId": "tasks_preview_schedule_api_extensions_periodic_tasks_schedule_preview__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -22722,7 +23688,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Tasks Preview Schedule Api Sep Periodic Tasks Schedule Preview  Post",
+                  "title": "Response Tasks Preview Schedule Api Extensions Periodic Tasks Schedule Preview  Post",
                   "type": "object"
                 }
               }
@@ -22764,10 +23730,10 @@
         ]
       }
     },
-    "/api/sep/periodic-tasks/{periodic_task_id}": {
+    "/api/extensions/periodic-tasks/{periodic_task_id}": {
       "delete": {
         "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
+        "operationId": "tasks_delete_periodic_task_api_extensions_periodic_tasks__periodic_task_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -22819,7 +23785,7 @@
       },
       "put": {
         "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If the body's ``task`` is present\n    and not a string, or if the resolved name is not a single plain URL path\n    segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task the schedule would run.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: If the stored schedule carries no task name,\n    and for an upstream server error (status >= 500) or a connection-level\n    ``OSError``.",
-        "operationId": "tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
+        "operationId": "tasks_update_periodic_task_api_extensions_periodic_tasks__periodic_task_id__put",
         "parameters": [
           {
             "in": "path",
@@ -22849,7 +23815,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
+                  "title": "Response Tasks Update Periodic Task Api Extensions Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
               }
@@ -22909,10 +23875,10 @@
         ]
       }
     },
-    "/api/sep/periodic-tasks/{task_name}/": {
+    "/api/extensions/periodic-tasks/{task_name}/": {
       "post": {
         "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPUnprocessableEntityException: If ``task_name`` is not a single\n    plain URL path segment.\n:raises HTTPBadRequestException: If no installed app offers scheduling for the\n    task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post",
+        "operationId": "tasks_create_periodic_task_api_extensions_periodic_tasks__task_name___post",
         "parameters": [
           {
             "in": "path",
@@ -22942,7 +23908,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Tasks Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
+                  "title": "Response Tasks Create Periodic Task Api Extensions Periodic Tasks  Task Name   Post",
                   "type": "object"
                 }
               }
@@ -23002,10 +23968,10 @@
         ]
       }
     },
-    "/api/sep/schemas/{schema_id}/tables": {
+    "/api/extensions/schemas/{schema_id}/tables": {
       "get": {
         "description": "Return tables for a schema via the SEP gateway.\n\nProxies Inventory ``GET /schemas/{schema_id}/tables/`` for React\n``TableSelector`` components. Returns an empty list only when Inventory\nresponds with 404 (missing schema); other HTTP errors propagate to the\nglobal handler (matches legacy AJAX empty-selector UX for not-found only).\n\n:param schema_id: The inventory schema ID whose tables are listed.\n:type schema_id: int\n:param inventory_api: The Inventory API client used to proxy the request.\n:type inventory_api: InventoryAPI\n:param search: Optional substring filter forwarded to inventory.\n:type search: str | None\n:return: Minimal id/name options for each table in the schema.\n:rtype: list[InventorySelectorOption]",
-        "operationId": "sep_list_schema_tables_api_sep_schemas__schema_id__tables_get",
+        "operationId": "extensions_list_schema_tables_api_extensions_schemas__schema_id__tables_get",
         "parameters": [
           {
             "in": "path",
@@ -23041,7 +24007,7 @@
                   "items": {
                     "$ref": "#/components/schemas/InventorySelectorOption"
                   },
-                  "title": "Response Sep List Schema Tables Api Sep Schemas  Schema Id  Tables Get",
+                  "title": "Response Extensions List Schema Tables Api Extensions Schemas  Schema Id  Tables Get",
                   "type": "array"
                 }
               }
@@ -23061,14 +24027,14 @@
         },
         "summary": "List Schema Tables",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/services/": {
+    "/api/extensions/services/": {
       "get": {
         "description": "Return a paginated list of inventory services via the SEP gateway.\n\n:param inventory_api: The Inventory API client used to proxy the request.\n:type inventory_api: InventoryAPI\n:param service_type: Optional service type filter forwarded to inventory.\n:type service_type: ServiceTypeEnum | None\n:param pagination: Validated pagination window for this request.\n:type pagination: Pagination\n:return: Paginated services payload.\n:rtype: PaginatedResponse[ServiceResponse]",
-        "operationId": "sep_list_services_api_sep_services__get",
+        "operationId": "extensions_list_services_api_extensions_services__get",
         "parameters": [
           {
             "in": "query",
@@ -23134,14 +24100,14 @@
         },
         "summary": "List Services",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/services/{service_id}/schemas": {
+    "/api/extensions/services/{service_id}/schemas": {
       "get": {
         "description": "Return schemas for a service via the SEP gateway.\n\nProxies Inventory ``GET /services/{service_id}/schemas/`` for React\n``SchemaSelector`` components. Returns an empty list only when Inventory\nresponds with 404 (missing service); other HTTP errors propagate to the\nglobal handler (matches legacy AJAX empty-selector UX for not-found only).\n\n:param service_id: The inventory service ID whose schemas are listed.\n:type service_id: int\n:param inventory_api: The Inventory API client used to proxy the request.\n:type inventory_api: InventoryAPI\n:param search: Optional substring filter forwarded to inventory.\n:type search: str | None\n:return: Minimal id/name options for each schema on the service.\n:rtype: list[InventorySelectorOption]",
-        "operationId": "sep_list_service_schemas_api_sep_services__service_id__schemas_get",
+        "operationId": "extensions_list_service_schemas_api_extensions_services__service_id__schemas_get",
         "parameters": [
           {
             "in": "path",
@@ -23177,7 +24143,7 @@
                   "items": {
                     "$ref": "#/components/schemas/InventorySelectorOption"
                   },
-                  "title": "Response Sep List Service Schemas Api Sep Services  Service Id  Schemas Get",
+                  "title": "Response Extensions List Service Schemas Api Extensions Services  Service Id  Schemas Get",
                   "type": "array"
                 }
               }
@@ -23197,14 +24163,14 @@
         },
         "summary": "List Service Schemas",
         "tags": [
-          "sep"
+          "extensions"
         ]
       }
     },
-    "/api/sep/task-history/": {
+    "/api/extensions/task-history/": {
       "get": {
         "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and\n  client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:param exclude_internal: When ``True``, forward the filter to the upstream\n    list-all path so internal maintenance tasks are excluded before pagination.\n    Not forwarded on the ``task_names`` merge path. Defaults to ``False``.\n:return: Paginated task history, either the upstream list or the merged set,\n    with every actor identifier resolved to the name a reader should see.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
-        "operationId": "tasks_list_merged_task_history_api_sep_task_history__get",
+        "operationId": "tasks_list_merged_task_history_api_extensions_task_history__get",
         "parameters": [
           {
             "in": "query",
@@ -23321,10 +24287,10 @@
         ]
       }
     },
-    "/api/sep/task-history/{task_history_id}/stop/": {
+    "/api/extensions/task-history/{task_history_id}/stop/": {
       "post": {
         "description": "Dispatch a stop request for a single task-history row to the Tasks API.\n\n:param task_history_id: The id of the task-history row to stop.\n:param tasks_api: The Tasks API client used to issue the stop request.\n:return: The stopped task-history row as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post",
+        "operationId": "tasks_stop_task_history_api_extensions_task_history__task_history_id__stop__post",
         "parameters": [
           {
             "in": "path",
@@ -23342,7 +24308,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Tasks Stop Task History Api Sep Task History  Task History Id  Stop  Post",
+                  "title": "Response Tasks Stop Task History Api Extensions Task History  Task History Id  Stop  Post",
                   "type": "object"
                 }
               }
@@ -23384,10 +24350,10 @@
         ]
       }
     },
-    "/api/sep/task-stats/{task_name}": {
+    "/api/extensions/task-stats/{task_name}": {
       "get": {
         "description": "Return aggregated execution statistics for ``task_name``.\n\nProxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the\nReact frontend reaches the data through SEP rather than calling the Tasks\nsub-app directly. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through React Query's error state.\n\n:param task_name: The task name (not the database id) whose stats are\n    being requested.\n:param tasks_api: The Tasks API client used to fetch the upstream stats.\n:return: The raw upstream stats payload.\n:raises HTTPUnprocessableEntityException: If ``task_name`` is not a single\n    plain URL path segment.\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
-        "operationId": "tasks_get_task_stats_api_sep_task_stats__task_name__get",
+        "operationId": "tasks_get_task_stats_api_extensions_task_stats__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -23405,7 +24371,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "title": "Response Tasks Get Task Stats Api Sep Task Stats  Task Name  Get",
+                  "title": "Response Tasks Get Task Stats Api Extensions Task Stats  Task Name  Get",
                   "type": "object"
                 }
               }

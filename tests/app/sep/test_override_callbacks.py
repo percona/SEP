@@ -495,7 +495,7 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
             is apply_logging_dictconfig
         )
         assert (
-            callbacks[(SettingClassEnum.SEP_SETTINGS, "APP_DRAIN")]
+            callbacks[(SettingClassEnum.EXTENSIONS_SETTINGS, "APP_DRAIN")]
             is sep_main._reseed_system_periodic_tasks
         )
     finally:

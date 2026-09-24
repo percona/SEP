@@ -21,7 +21,7 @@ declaration is a per-app export rather than an import the collector makes,
 mirroring ``APP_OWNED_SETTINGS_CLASSES``: the collector never names a concrete
 app package.
 
-Providers are gathered from the ``SEP.APPS`` activation list, not from runtime
+Providers are gathered from the ``EXTENSIONS.APPS`` activation list, not from runtime
 enablement, so disabling an app in the UI leaves its references in the retained
 set — which is the safe direction. Deleting an app's entry from the activation
 list while its rows survive is the unsafe one: the ids it holds stop being

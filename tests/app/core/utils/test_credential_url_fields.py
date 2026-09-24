@@ -15,17 +15,21 @@
 
 """Tests for credential-bearing URL field types and redaction helpers."""
 
+from typing import Annotated
+
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from app.core.settings_override.registry import (
     annotation_contains_secret,
+    annotation_is_credential_url,
     SECRET_STR_MASK,
 )
 from app.core.utils.fields import (
     AuthCredentialSecretStr,
     CREDENTIAL_URL_MASK,
     credential_url_password,
+    CREDENTIAL_URL_STR_JSON_SERIALIZER,
     CredentialHttpUrl,
     map_credential_url_password,
     PreservableSecretStr,
@@ -520,3 +524,39 @@ class TestAuthCredentialSecretStr:
         assert model.model_dump(mode="json")["api_key"] == SECRET_STR_MASK
         dumped = model.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
         assert dumped["api_key"] == "glsa_realtoken"
+
+
+class TestCredentialUrlStrJsonSerializer:
+    """Cover JSON redaction through :data:`CREDENTIAL_URL_STR_JSON_SERIALIZER`."""
+
+    @pytest.fixture
+    def adapter(self) -> TypeAdapter[str]:
+        """Return a type adapter for a plain string carrying the marker."""
+        return TypeAdapter(Annotated[str, CREDENTIAL_URL_STR_JSON_SERIALIZER])
+
+    def test_json_dump_redacts_password(self, adapter: TypeAdapter[str]) -> None:
+        """Mask the password on a JSON dump of a plain string URL."""
+        assert adapter.dump_python(_CREDENTIAL_URL, mode="json") == _REDACTED_URL
+
+    def test_python_dump_retains_password(self, adapter: TypeAdapter[str]) -> None:
+        """Keep the real credential in python-mode dumps."""
+        assert adapter.dump_python(_CREDENTIAL_URL, mode="python") == _CREDENTIAL_URL
+
+    def test_preserve_context_skips_redaction(self, adapter: TypeAdapter[str]) -> None:
+        """Skip redaction when the caller opts out through the context."""
+        dumped = adapter.dump_python(
+            _CREDENTIAL_URL, mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+        )
+        assert dumped == _CREDENTIAL_URL
+
+    def test_the_settings_registry_detects_it_as_a_credential_url(self) -> None:
+        """Let the settings registry recognise the marker as a credential URL."""
+        assert annotation_is_credential_url(
+            Annotated[str, CREDENTIAL_URL_STR_JSON_SERIALIZER]
+        )
+
+    def test_declares_a_string_return_type(self, adapter: TypeAdapter[str]) -> None:
+        """Keep ``type: string`` in the serialization schema, which a bare wrap drops."""
+        assert CREDENTIAL_URL_STR_JSON_SERIALIZER.return_type is str
+        schema = adapter.json_schema(mode="serialization")
+        assert schema["type"] == "string"

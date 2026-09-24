@@ -276,7 +276,8 @@ class TestGetBaseUrl:
         monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
 
         assert (
-            str(get_base_url(self._hosted_request("/sep"))) == "http://testserver/sep/"
+            str(get_base_url(self._hosted_request("/extensions")))
+            == "http://testserver/extensions/"
         )
 
 

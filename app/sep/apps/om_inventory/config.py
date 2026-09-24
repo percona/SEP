@@ -15,11 +15,11 @@
 
 """Define the OpenManager Inventory settings section.
 
-Read straight off YAML/env under ``SEP.OM_INVENTORY`` rather than mounted as a field
-on ``SEPSettings``, for the same reason the other app sections do it: importing this module
+Read straight off YAML/env under ``EXTENSIONS.OM_INVENTORY`` rather than mounted as a field
+on ``ExtensionsSettings``, for the same reason the other app sections do it: importing this module
 runs the package ``__init__``, which pulls in the app definition and transitively
 ``sep_settings``, so a field default typed with this class would cycle while
-``SEPSettings`` is still under construction.
+``ExtensionsSettings`` is still under construction.
 """
 
 __all__ = ["OmInventorySettings", "om_inventory_settings"]
@@ -56,7 +56,7 @@ class OmInventorySettings(BaseYamlSettings):
     monitored machine's filesystem. It is a deployment fact, and it belongs with the
     deployment.
 
-    :cvar SETTINGS_PREFIXES: Places this section under ``SEP.OM_INVENTORY``.
+    :cvar SETTINGS_PREFIXES: Places this section under ``EXTENSIONS.OM_INVENTORY``.
     :param ENABLED: Whether the sweep may run at all, scheduled *or* manually
         triggered, independent of ``SCHEDULE``. Mirrors PMM's OpenManager on/off
         switch: pmm-managed flips this (not ``SCHEDULE``) when an operator toggles
@@ -109,7 +109,7 @@ class OmInventorySettings(BaseYamlSettings):
         and reopens the single-flight race this check exists to close.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "OM_INVENTORY"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "OM_INVENTORY"]
 
     ENABLED: bool = hot_field(default=False)  # ty: ignore[invalid-assignment]
     SCHEDULE: IntervalSchedule | None = hot_field(  # ty: ignore[invalid-assignment]

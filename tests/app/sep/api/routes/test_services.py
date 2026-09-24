@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP services JSON API route at ``/api/sep/services/``."""
+"""Tests for the SEP services JSON API route at ``/api/extensions/services/``."""
 
 from datetime import datetime, UTC
 
@@ -56,7 +56,7 @@ def _service_payload(service_id: int = 1, name: str = "svc1", type_: str = "mysq
 
 
 class TestSepServicesEndpoint:
-    """Tests for ``GET /api/sep/services/``."""
+    """Cover ``GET /api/extensions/services/``."""
 
     def test_proxies_inventory_list(
         self,
@@ -70,7 +70,7 @@ class TestSepServicesEndpoint:
             "offset": 0,
             "limit": 50,
         }
-        response = test_client.get("/api/sep/services/")
+        response = test_client.get("/api/extensions/services/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["total"] == 1
@@ -93,7 +93,7 @@ class TestSepServicesEndpoint:
             "limit": 50,
         }
         response = test_client.get(
-            "/api/sep/services/?service_type=mysql&offset=10&limit=5"
+            "/api/extensions/services/?service_type=mysql&offset=10&limit=5"
         )
         assert response.status_code == status.HTTP_200_OK
         _, kwargs = mock_inventory_api_dep.get.call_args_list[0]
@@ -114,6 +114,6 @@ class TestSepServicesEndpoint:
         query: str,
     ) -> None:
         """Invalid pagination values must be rejected with 422."""
-        response = test_client.get(f"/api/sep/services/?{query}")
+        response = test_client.get(f"/api/extensions/services/?{query}")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_inventory_api_dep.get.assert_not_called()

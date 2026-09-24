@@ -294,7 +294,7 @@ class TestPluginBearerGate:
         mock_inventory_api_dep,
         mocker,
     ) -> None:
-        """Serve a GET on /api/sep/* without tripping the Bearer gate.
+        """Serve a GET on /api/extensions/* without tripping the Bearer gate.
 
         Regression guard for the hoist: the gate is method-scoped, so reads
         must still succeed (200) even without a Bearer header on the request
@@ -309,7 +309,7 @@ class TestPluginBearerGate:
             new_callable=AsyncMock,
             return_value=0,
         )
-        response = cookie_only_client.get("/api/sep/dashboard/")
+        response = cookie_only_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["nodes"] == 0
@@ -666,9 +666,9 @@ class TestApiRouterConfigDrivenLoopIntegration:
     """Integration tests against ``sep_app`` for runtime mount/no-mount behavior."""
 
     def test_sep_hosts_endpoint_unchanged(self) -> None:
-        """Assert ``/api/sep/hosts`` is still mounted on ``sep_app``."""
+        """Assert ``/api/extensions/hosts`` is still mounted on ``sep_app``."""
         paths = {r.path for r in sep_app.routes if hasattr(r, "path")}
-        assert any(p.startswith("/api/sep/hosts") for p in paths)
+        assert any(p.startswith("/api/extensions/hosts") for p in paths)
 
     def test_api_router_inherits_is_api_authenticated(
         self, unauthenticated_client: TestClient
@@ -810,13 +810,13 @@ class TestApiRoleGate:
     def test_service_principal_mutation_is_accepted(
         self, bearer_client: TestClient, mocker: MockerFixture
     ) -> None:
-        """Schedule an inventory sync as the ``SEP_INTERNAL_TOKEN`` principal.
+        """Schedule an inventory sync as the ``EXTENSIONS_INTERNAL_TOKEN`` principal.
 
         The scheduled sync authenticates with this token, so the concrete 202 is
         the assertion — "not 403" would also pass on a 401 or a 500.
         """
         secret = "supersecret"
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(secret))
         mocker.patch(
             "app.sep.apps.inventory.api_routes.run_inventory_sync",
             new=mocker.AsyncMock(),
@@ -835,7 +835,7 @@ class TestApiRoleGate:
     ) -> None:
         """Refuse the principal on a route carrying its own ``IsApiAdmin``."""
         secret = "supersecret"
-        mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(secret))
+        mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(secret))
 
         response = bearer_client.put(
             "/api/admin/apps/checksums/state",
@@ -854,7 +854,9 @@ class TestApiRoleGate:
         mutation must still carry ``BEARER_REQUIRED_DETAIL``; declaring the role
         gate first would answer a bare 401 with a different detail.
         """
-        response = cookie_only_client.post("/api/sep/task-history/1/stop/", json={})
+        response = cookie_only_client.post(
+            "/api/extensions/task-history/1/stop/", json={}
+        )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL

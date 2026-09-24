@@ -47,7 +47,7 @@ from app.core.settings_override.registry import (
 from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 
@@ -110,7 +110,7 @@ def test_hot_field_without_materializer_returns_none() -> None:
 
 def test_field_materializer_unknown_field_returns_none() -> None:
     """Assert an unknown field name reports no materializer instead of raising."""
-    assert field_materializer(SEPSettings, "DOES_NOT_EXIST") is None
+    assert field_materializer(ExtensionsSettings, "DOES_NOT_EXIST") is None
 
 
 def test_materialize_via_owning_model_runs_before_validator() -> None:
@@ -129,7 +129,9 @@ def test_materialize_via_owning_model_runs_before_validator() -> None:
 
 def test_materialize_template_builds_template_from_string() -> None:
     """Assert ``materialize_template`` converts a raw string into a ``Template``."""
-    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary"))
+    result = materialize_template(
+        _ctx(ExtensionsSettings, "FOOTER_TEMPLATE", "$summary")
+    )
     assert isinstance(result, Template)
     assert result.template == "$summary"
 
@@ -137,14 +139,14 @@ def test_materialize_template_builds_template_from_string() -> None:
 def test_materialize_template_passes_through_existing_template() -> None:
     """Assert ``materialize_template`` returns an already-``Template`` value unchanged."""
     tmpl = Template("$version")
-    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", tmpl))
+    result = materialize_template(_ctx(ExtensionsSettings, "FOOTER_TEMPLATE", tmpl))
     assert result is tmpl
 
 
 def test_materialize_template_rejects_non_string() -> None:
     """Reject a non-string, non-``Template`` override instead of passing it through."""
     with pytest.raises(ValueError, match="must be a string"):
-        materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+        materialize_template(_ctx(ExtensionsSettings, "FOOTER_TEMPLATE", 1))
 
 
 def _purpose_probe(seen: list[MaterializerPurpose]) -> type[BaseModel]:
@@ -172,7 +174,7 @@ class TestMaterializerPurpose:
 
     def test_a_context_defaults_to_validating_a_submitted_payload(self) -> None:
         """Default to the strict purpose, so an unaware caller keeps write semantics."""
-        context = _ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary")
+        context = _ctx(ExtensionsSettings, "FOOTER_TEMPLATE", "$summary")
 
         assert context.purpose is MaterializerPurpose.VALIDATE
 
@@ -251,30 +253,30 @@ def test_unwrap_secrets_for_storage_passes_through_non_secrets() -> None:
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:
     """Assert a field marked HOT via ``field_with_metadata`` is detected."""
-    assert is_hot_reloadable(SEPSettings, "CONNECTIVITY_CHECK_DEFAULT") is True
+    assert is_hot_reloadable(ExtensionsSettings, "CONNECTIVITY_CHECK_DEFAULT") is True
 
 
 def test_is_hot_reloadable_true_for_promoted_endpoint() -> None:
     """Assert ``INVENTORY_ENDPOINT`` is promoted to HOT for live endpoint rebind."""
-    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+    assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is True
 
 
 def test_is_hot_reloadable_false_for_structural_field() -> None:
     """Assert structural fields are never overridable."""
-    assert is_hot_reloadable(SEPSettings, "APPS") is False
+    assert is_hot_reloadable(ExtensionsSettings, "APPS") is False
 
 
 def test_is_hot_reloadable_false_for_missing_field() -> None:
     """Assert an unknown field returns False instead of raising."""
-    assert is_hot_reloadable(SEPSettings, "DOES_NOT_EXIST") is False
+    assert is_hot_reloadable(ExtensionsSettings, "DOES_NOT_EXIST") is False
 
 
 def test_hot_field_names_sep_settings() -> None:
-    """``SEPSettings`` ships the promoted HOT fields plus runtime toggles.
+    """Check that ``ExtensionsSettings`` ships the promoted HOT fields and toggles.
 
     Includes the endpoint and footer promotions and the ambient-SSO toggle.
     """
-    assert hot_field_names(SEPSettings) == frozenset(
+    assert hot_field_names(ExtensionsSettings) == frozenset(
         {
             "CONNECTIVITY_CHECK_DEFAULT",
             "AMBIENT_SESSION_SSO_ENABLED",
@@ -305,8 +307,8 @@ def test_hot_field_names_tasks_settings() -> None:
 
 
 def test_nested_overridable_field_names_sep_settings() -> None:
-    """Assert ``SEPSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
-    assert nested_overridable_field_names(SEPSettings) == frozenset(
+    """Assert ``ExtensionsSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
+    assert nested_overridable_field_names(ExtensionsSettings) == frozenset(
         {"SESSION_REFRESH", "APP_DRAIN"}
     )
 
@@ -374,13 +376,13 @@ def test_reload_classification_values() -> None:
 )
 def test_sep_settings_marked_advanced(field_name: str) -> None:
     """Assert the promoted SEP settings carry the advanced flag."""
-    assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
+    assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is True
 
 
 @pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE"])
 def test_sep_settings_not_marked_advanced(field_name: str) -> None:
     """Assert SEP settings left basic do not carry the advanced flag (no over-marking)."""
-    assert is_advanced_field(SEPSettings.model_fields[field_name]) is False
+    assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is False
 
 
 def test_security_headers_marked_advanced() -> None:
@@ -416,7 +418,9 @@ def test_tasks_settings_marked_advanced(field_name: str) -> None:
 
 def test_session_leaf_inherits_advanced() -> None:
     """Assert every ``SESSION_REFRESH`` leaf inherits the parent's advanced flag."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__COOKIE_NAME")
+    leaf = resolve_nested_field_metadata(
+        ExtensionsSettings, "SESSION_REFRESH__COOKIE_NAME"
+    )
     assert leaf is not None
     assert leaf.is_advanced is True
 
@@ -439,7 +443,7 @@ def test_security_headers_deep_leaf_inherits_advanced() -> None:
 
 def test_non_advanced_nested_leaf_stays_false() -> None:
     """Assert a leaf under a non-advanced parent reports ``is_advanced=False``."""
-    leaf = resolve_nested_field_metadata(SEPSettings, "DATABASE__NAME")
+    leaf = resolve_nested_field_metadata(ExtensionsSettings, "DATABASE__NAME")
     assert leaf is not None
     assert leaf.is_advanced is False
 
@@ -450,8 +454,10 @@ def test_advanced_does_not_change_reload_classification() -> None:
     ``advanced`` is display-only: a marked-advanced HOT endpoint stays HOT (and
     thus still patchable), proving the flag does not gate override eligibility.
     """
-    assert is_advanced_field(SEPSettings.model_fields["INVENTORY_ENDPOINT"]) is True
-    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+    assert (
+        is_advanced_field(ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"]) is True
+    )
+    assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is True
 
 
 def test_is_advanced_field_false_without_metadata() -> None:

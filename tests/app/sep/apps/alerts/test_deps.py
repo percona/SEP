@@ -104,7 +104,7 @@ class TestGetPagerdutyStatus:
         mock_api.list_contact_points.return_value = [
             ContactPoint(
                 uid="cp-1",
-                name="SEP PagerDuty",
+                name="PMM Extensions PagerDuty",
                 type="pagerduty",
                 settings={"integrationKey": "abcdefghij1234"},
             ),
@@ -234,12 +234,12 @@ class TestGetOrCreateAlertFolder:
     @pytest.mark.asyncio
     async def test_returns_existing_folder(self):
         """Assert the existing folder is returned when it matches."""
-        existing = Folder(uid="f-1", title="SEP Alerts", id=1)
+        existing = Folder(uid="f-1", title="PMM Extensions Alerts", id=1)
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_folders.return_value = [existing]
 
         with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
-            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
+            mock_config.ALERT_FOLDER_NAME = "PMM Extensions Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is existing
@@ -248,29 +248,29 @@ class TestGetOrCreateAlertFolder:
     @pytest.mark.asyncio
     async def test_creates_folder_when_missing(self):
         """Assert a new folder is created when none matches."""
-        created = Folder(uid="f-new", title="SEP Alerts", id=42)
+        created = Folder(uid="f-new", title="PMM Extensions Alerts", id=42)
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_folders.return_value = []
         mock_api.create_folder.return_value = created
 
         with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
-            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
+            mock_config.ALERT_FOLDER_NAME = "PMM Extensions Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is created
-        mock_api.create_folder.assert_awaited_once_with("SEP Alerts")
+        mock_api.create_folder.assert_awaited_once_with("PMM Extensions Alerts")
 
     @pytest.mark.asyncio
     async def test_ignores_non_matching_folders(self):
         """Assert folders with different titles are ignored."""
         other = Folder(uid="f-other", title="Other Folder", id=2)
-        created = Folder(uid="f-new", title="SEP Alerts", id=42)
+        created = Folder(uid="f-new", title="PMM Extensions Alerts", id=42)
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_folders.return_value = [other]
         mock_api.create_folder.return_value = created
 
         with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
-            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
+            mock_config.ALERT_FOLDER_NAME = "PMM Extensions Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is created
@@ -282,7 +282,7 @@ class TestGetOrCreateAlertFolder:
         mock_api.list_folders.side_effect = OSError("unreachable")
 
         with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
-            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
+            mock_config.ALERT_FOLDER_NAME = "PMM Extensions Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is None
@@ -296,7 +296,7 @@ class TestGetOrCreateAlertFolder:
         )
 
         with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
-            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
+            mock_config.ALERT_FOLDER_NAME = "PMM Extensions Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is None

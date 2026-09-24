@@ -361,7 +361,7 @@ class TestStalenessPreambleShell:
             }
         )
         assert result.returncode == STALE_EXIT_CODE
-        assert b"SEP_STALE_SKIP" in result.stdout
+        assert b"EXTENSIONS_STALE_SKIP" in result.stdout
 
     def test_exit_0_when_fresh(self) -> None:
         """Assert the preamble exits ``0`` for a fresh dispatch."""
@@ -411,11 +411,11 @@ class TestStalenessPreambleShell:
         )
 
     def test_stale_skip_line_format(self) -> None:
-        """Assert the SEP_STALE_SKIP line renders with concrete threshold value.
+        """Assert the EXTENSIONS_STALE_SKIP line renders with concrete threshold value.
 
         Uses a past ``NOMAD_META_scheduled_at`` (1970) against a 5-second
         threshold so elapsed > threshold, and checks the rendered line begins
-        with ``SEP_STALE_SKIP: elapsed=`` and contains ``threshold=5s``.
+        with ``EXTENSIONS_STALE_SKIP: elapsed=`` and contains ``threshold=5s``.
         """
         result = subprocess.run(
             ["/bin/sh", "-c", STALENESS_PREAMBLE_SHELL],
@@ -429,7 +429,7 @@ class TestStalenessPreambleShell:
         )
         assert result.returncode == STALE_EXIT_CODE
         line = result.stdout.decode().strip()
-        assert line.startswith("SEP_STALE_SKIP: elapsed=")
+        assert line.startswith("EXTENSIONS_STALE_SKIP: elapsed=")
         assert "threshold=5s" in line
 
 
@@ -912,7 +912,7 @@ class TestLaunchCheckShell:
         assert result.returncode == LAUNCH_CHECK_EXIT_CODE
         assert (
             result.stdout.decode().strip()
-            == f"SEP_UNLAUNCHABLE: command={expected_command} node=node-1"
+            == f"EXTENSIONS_UNLAUNCHABLE: command={expected_command} node=node-1"
         )
 
     def test_strip_announces_itself(self, tmp_path: Path) -> None:
@@ -920,7 +920,7 @@ class TestLaunchCheckShell:
         result, _ = self._run(tmp_path, node="root-no-sudo", meta="sudo bash")
 
         assert result.returncode == 0
-        assert result.stdout.decode().strip() == "SEP_SUDO_STRIPPED: node=node-1"
+        assert result.stdout.decode().strip() == "EXTENSIONS_SUDO_STRIPPED: node=node-1"
 
     @pytest.mark.parametrize(
         ("named_sudo", "expected_effective"),
@@ -1092,7 +1092,7 @@ class TestLaunchCheckShell:
         assert result.returncode == LAUNCH_CHECK_EXIT_CODE, result.stdout
         assert (
             result.stdout.decode().strip()
-            == f"SEP_UNLAUNCHABLE: command={target} node=node-1"
+            == f"EXTENSIONS_UNLAUNCHABLE: command={target} node=node-1"
         )
         assert not handoff.exists()
 

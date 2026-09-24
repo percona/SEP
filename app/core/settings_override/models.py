@@ -35,7 +35,7 @@ from app.core.settings_override.constants import SETTING_CLASS_MAX_LENGTH
 if TYPE_CHECKING:
     from sqlalchemy.engine.interfaces import Dialect
 
-#: Acronym-aware CamelCase split: ``SEPSettings`` -> ``SEP_Settings``,
+#: Acronym-aware CamelCase split: ``PMMSettings`` -> ``PMM_Settings``,
 #: ``HealthReportSettings`` -> ``Health_Report_Settings``.
 _CAMEL_SPLIT = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
@@ -44,10 +44,10 @@ def setting_class_token(settings_cls: type[BaseModel]) -> str:
     """Return the storage token written to ``settingoverride.setting_class``.
 
     The token is the SCREAMING_SNAKE form of the class ``__name__``, derived by
-    an acronym-aware CamelCase split so ``SEPSettings`` stores as
-    ``SEP_SETTINGS``, the spelling every existing override row already uses.
-    A class may pin a different token by declaring ``__setting_class_token__``,
-    the same escape hatch shape as SQLAlchemy's ``__tablename__``.
+    an acronym-aware CamelCase split so ``ExtensionsSettings`` stores as
+    ``EXTENSIONS_SETTINGS``. A class may pin a different token by declaring
+    ``__setting_class_token__``, the same escape hatch shape as SQLAlchemy's
+    ``__tablename__``.
 
     The bound is :class:`~pydantic.BaseModel` rather than ``BaseYamlSettings``
     because the re-encryption revisions pass frozen replica models that declare
@@ -82,7 +82,7 @@ class SettingClassEnum(StrEnum):
        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
     """
 
-    SEP_SETTINGS = "SEPSettings"
+    EXTENSIONS_SETTINGS = "ExtensionsSettings"
     TASKS_SETTINGS = "TasksSettings"
     SNIPPETS_SETTINGS = "SnippetsSettings"
     SETTINGS = "Settings"
@@ -180,10 +180,10 @@ class SettingOverride(BaseSQLModel, table=True):
         at bind time.
 
         A ``StrEnum`` is a ``str`` whose content is the member *value*
-        (``SEPSettings``). Without this coercion, constructing
-        ``SettingOverride(setting_class=SettingClassEnum.SEP_SETTINGS)``
+        (``ExtensionsSettings``). Without this coercion, constructing
+        ``SettingOverride(setting_class=SettingClassEnum.EXTENSIONS_SETTINGS)``
         would store that value and orphan every existing row, which stores
-        the member *name* (``SEP_SETTINGS``).
+        the member *name* (``EXTENSIONS_SETTINGS``).
 
         :param value: The raw ``setting_class`` being assigned.
         :return: The storage token when ``value`` is an enum member, otherwise

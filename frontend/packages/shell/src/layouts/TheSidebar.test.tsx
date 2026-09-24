@@ -32,7 +32,7 @@ vi.mock('@sep/api', async (importActual) => {
 import { DrawerContent } from './TheSidebar';
 import { NavigationProvider } from '../contexts/navigation';
 
-const FOOTER = 'Percona Services Enablement Platform v1.2.3';
+const FOOTER = 'PMM Extensions v1.2.3';
 
 function renderDrawer(collapsed: boolean) {
   return render(

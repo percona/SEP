@@ -39,6 +39,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.settings_override.registry import ReloadClassification
 from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils import slugify, utc_now
+from app.core.utils.fields import PRESERVE_CREDENTIALS_CONTEXT
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.crud import (
@@ -687,6 +688,37 @@ class TestNomadExecutorApiKey:
         assert "Authorization" not in mock_nomad_cls.call_args[1]["session"].headers
         assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
         assert "hunter2" in executor.base_url
+
+    def test_the_json_dump_masks_the_endpoint_password_without_a_key(self) -> None:
+        """Mask the password the base URL still carries when no key is set."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        assert "hunter2" in executor.base_url
+        assert "hunter2" not in executor.model_dump_json()
+        assert executor.model_dump(mode="json")["base_url"] == (
+            "http://admin:****@localhost:4646"
+        )
+
+    def test_the_preserve_context_dump_keeps_the_endpoint_password(self) -> None:
+        """Keep the real value for the config fingerprint, which compares it."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        dumped = executor.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["base_url"] == "http://admin:hunter2@localhost:4646"
+
+    def test_a_configured_key_leaves_no_userinfo_to_mask(self) -> None:
+        """Strip the userinfo entirely once a key supersedes it."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key="glsa_supersecret"
+        )
+        assert executor.model_dump(mode="json")["base_url"] == "http://localhost:4646"
+
+    def test_an_empty_key_still_masks_the_endpoint_password(self) -> None:
+        """Treat a blank key as unset for redaction as well as for the header."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key=""
+        )
+        assert executor.model_dump(mode="json")["base_url"] == (
+            "http://admin:****@localhost:4646"
+        )
 
     @pytest.mark.parametrize(
         "scheme", ["", " ", "Bearer x\r\nX-Injected: yes", "Bea rer", "Bearer\x00"]

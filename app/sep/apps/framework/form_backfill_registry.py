@@ -16,7 +16,7 @@
 """Collect the per-app declarations that drive the legacy ``data['_form']`` backfill.
 
 Each app package exports ``FORM_BACKFILL_ENTRIES`` naming the tasks it wants
-backfilled; the collector walks the ``SEP.APPS`` activation list and merges those
+backfilled; the collector walks the ``EXTENSIONS.APPS`` activation list and merges those
 declarations, so the backfill orchestrator names no app.
 
 The reconstructor callable an app must supply, and the shared context that
@@ -125,7 +125,7 @@ def collect_form_backfill_entries(
     :class:`FormBackfillEntry` values. Duplicate ``app_key`` values and keys
     absent from the registry fail fast.
 
-    :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
+    :param plugins: The ``EXTENSIONS.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
     :param owners: When set, keep only the entries declaring one of these task
         owners; otherwise every declared entry is returned.

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the /api/sep/admin/delivery-connection endpoint."""
+"""Define tests for the /api/extensions/admin/delivery-connection endpoint."""
 
 import asyncio
 from typing import Any
@@ -30,7 +30,7 @@ from app.sep.bundle_upload.plan import DeliveryPlan
 from app.sep.bundle_upload.resolver import DeliveryUnavailableCode
 from app.sep.config import DeliveryPlanInputs, sep_settings
 
-ENDPOINT = "/api/sep/admin/delivery-connection/"
+ENDPOINT = "/api/extensions/admin/delivery-connection/"
 
 _DELIVERY_ENDPOINT = "https://receiver.example.com/"
 _DETAILS_URL = f"{_DELIVERY_ENDPOINT}api_key?sysparm_limit=1"

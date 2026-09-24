@@ -151,7 +151,7 @@ class TestSeedTaskRegistration:
         A module rename now moves the seed prefix and the include entry together
         (both read ``App.celery_module_path``), so a stale hardcoded seed string
         would surface here rather than as a silent dead beat row. Tasks whose
-        module is in ``STATIC_CELERY_INCLUDE`` are not ``SEP.APPS`` apps and stay
+        module is in ``STATIC_CELERY_INCLUDE`` are not ``EXTENSIONS.APPS`` apps and stay
         literals, so they are excluded.
         """
         app_modules = set(app_celery_module_paths())

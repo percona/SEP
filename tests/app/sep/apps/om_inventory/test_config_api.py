@@ -16,7 +16,7 @@
 """Test the app's own ``/config``, and the two decisions that put it there.
 
 The app serves its configuration rather than pointing callers at
-``/api/sep/admin/settings`` because that router is admin-gated and **PMM's principal
+``/api/extensions/admin/settings`` because that router is admin-gated and **PMM's principal
 is not an admin**: ``--sep-token`` resolves to the synthetic ``sep-service`` user,
 built with ``is_admin=False`` on purpose since it is a deployment-level shared secret
 with nobody behind it. That is asserted here rather than described, because it is the
@@ -73,7 +73,7 @@ class TestWhyThisEndpointExists:
     """Assert the premise: the settings router is closed to PMM's principal."""
 
     def test_the_sep_token_principal_is_not_an_admin(self) -> None:
-        """Confirm ``--sep-token`` cannot reach ``/api/sep/admin/settings``.
+        """Confirm ``--sep-token`` cannot reach ``/api/extensions/admin/settings``.
 
         Not a statement about the current deployment's configuration — the service
         principal is constructed in code with no ``is_admin`` argument, so this holds
@@ -178,7 +178,7 @@ class TestGetConfig:
 
         This route carries no ``@require_minimum_role``, so its only gate is
         ``IsApiAuthenticated`` — any signed-in SEP user, not only admins. The same
-        settings class is also served at ``/api/sep/admin/settings``, gated
+        settings class is also served at ``/api/extensions/admin/settings``, gated
         ``IsApiAdmin``, so a value that is admin-only there must not be
         viewer-readable here. Setting the field directly on the wrapped instance
         (rather than relying on the default already being ``None``) proves this is

@@ -133,7 +133,7 @@ async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
     Seeds one :class:`app.sep.models.AppState` row per non-protected, top-level
-    plugin in ``SEP.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped
+    plugin in ``EXTENSIONS.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped
     to ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
     overwritten). Child apps (``parent_key`` set) are parent-bound and own no row
     of their own, so they are excluded here; a previously-seeded row for an app

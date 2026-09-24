@@ -255,7 +255,7 @@ def test_stream_execution_events_event_stream(
     assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content
 
 
-@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.parametrize("root_path", ["", "/extensions"])
 @pytest.mark.usefixtures("test_client", "mock_tasks_client")
 def test_logs_stream_tells_a_proxy_not_to_buffer(task_history_response, root_path):
     """Assert the log stream reaches the browser incrementally through a proxy."""
@@ -268,7 +268,7 @@ def test_logs_stream_tells_a_proxy_not_to_buffer(task_history_response, root_pat
     assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
 
-@pytest.mark.parametrize("root_path", ["", "/sep"])
+@pytest.mark.parametrize("root_path", ["", "/extensions"])
 @pytest.mark.usefixtures("test_client")
 def test_execution_events_stream_tells_a_proxy_not_to_buffer(
     mock_tasks_client, task_history_response, root_path
@@ -325,7 +325,7 @@ async def _tasks_endpoint_rebinder():
     sep_settings._set_snapshot({"TASKS_ENDPOINT": NEW_TASKS_ENDPOINT})
     async with sep_overrides_lifespan(sep_app):
         callbacks = sep_app.state.override_callbacks
-    return callbacks[(SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT")]
+    return callbacks[(SettingClassEnum.EXTENSIONS_SETTINGS, "TASKS_ENDPOINT")]
 
 
 @pytest.mark.usefixtures("real_client_route_overrides")

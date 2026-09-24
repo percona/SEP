@@ -15,7 +15,7 @@
 
 __all__ = ["BASE_DIR", "__summary__", "__version__"]
 __version__ = "v3.10.0.dev0"
-__summary__ = "Percona Services Enablement Platform"
+__summary__ = "PMM Extensions"
 
 from pathlib import Path
 
