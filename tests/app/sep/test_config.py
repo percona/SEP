@@ -46,10 +46,10 @@ from app.sep.config import (
     AppDrainSettings,
     CookieOptions,
     DeliveryPlanInputs,
+    ExtensionsSettings,
     materialize_delivery_plan_inputs,
     prefixed_cookie_path,
     sep_settings,
-    SEPSettings,
     SyncerExtraKwargs,
     SyncOptions,
 )
@@ -75,11 +75,11 @@ class TestCookieOptions:
 
 
 class TestSessionRefreshDefault:
-    """Define tests for the ``SEPSettings.SESSION_REFRESH`` default instance."""
+    """Define tests for the ``ExtensionsSettings.SESSION_REFRESH`` default instance."""
 
     def test_session_refresh_defaults(self):
         """Assert the default SESSION_REFRESH instance targets /api/oauth."""
-        settings = SEPSettings()
+        settings = ExtensionsSettings()
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
 
@@ -93,7 +93,7 @@ class TestAmbientSessionSSO:
 
     def test_is_hot_reloadable(self):
         """Verify the toggle is a hot field, so a DB override can enable it live."""
-        assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
+        assert is_hot_reloadable(ExtensionsSettings, "AMBIENT_SESSION_SSO_ENABLED")
 
 
 class TestRootPath:
@@ -101,11 +101,11 @@ class TestRootPath:
 
     def test_defaults_to_unprefixed(self):
         """Verify SEP serves from the origin root unless a deployment opts in."""
-        assert SEPSettings().ROOT_PATH == ""
+        assert ExtensionsSettings().ROOT_PATH == ""
 
     def test_is_not_hot_reloadable(self):
         """Verify a DB override cannot claim to move a prefix read at construction."""
-        assert not is_hot_reloadable(SEPSettings, "ROOT_PATH")
+        assert not is_hot_reloadable(ExtensionsSettings, "ROOT_PATH")
 
 
 class TestPrefixedCookiePath:
@@ -119,11 +119,11 @@ class TestPrefixedCookiePath:
 
     def test_anchors_a_path_under_the_prefix(self, mocker):
         """Anchor the path so the browser sends the cookie to prefixed endpoints."""
-        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
 
-        assert prefixed_cookie_path("/api/oauth") == "/sep/api/oauth"
+        assert prefixed_cookie_path("/api/oauth") == "/extensions/api/oauth"
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     def test_leaves_an_unset_path_unset(self, mocker, root_path):
         """Leave ``None`` alone: the browser derives a path that already carries the prefix."""
         mocker.patch.object(sep_settings, "ROOT_PATH", new=root_path)
@@ -149,7 +149,7 @@ class TestDiagnosticsDelivery:
     def test_defaults_to_not_configured(self):
         """Keep the block unset so a consumer can gate on ``None``."""
         assert (
-            SEPSettings(
+            ExtensionsSettings(
                 _env_file=None  # ty: ignore[unknown-argument]
             ).DIAGNOSTICS_DELIVERY
             is None
@@ -162,12 +162,14 @@ class TestDiagnosticsDelivery:
         secrets are stored masked, or as a per-leaf merge that never re-runs the
         cross-reference validator. Env and YAML are the only write paths.
         """
-        assert not is_hot_reloadable(SEPSettings, "DIAGNOSTICS_DELIVERY")
-        assert not is_nested_overridable_parent(SEPSettings, "DIAGNOSTICS_DELIVERY")
+        assert not is_hot_reloadable(ExtensionsSettings, "DIAGNOSTICS_DELIVERY")
+        assert not is_nested_overridable_parent(
+            ExtensionsSettings, "DIAGNOSTICS_DELIVERY"
+        )
 
     def test_valid_plan_parses_from_a_nested_mapping(self):
         """Build a ``DeliveryPlan`` from the nested env/YAML mapping shape."""
-        settings = SEPSettings(DIAGNOSTICS_DELIVERY=self._plan_payload())
+        settings = ExtensionsSettings(DIAGNOSTICS_DELIVERY=self._plan_payload())
 
         assert settings.DIAGNOSTICS_DELIVERY.upload.path == "attachment/upload"
         assert (
@@ -181,7 +183,7 @@ class TestDiagnosticsDelivery:
         payload["secrets"] = {}
 
         with pytest.raises(ValidationError, match="undefined secret 'api_key'"):
-            SEPSettings(DIAGNOSTICS_DELIVERY=payload)
+            ExtensionsSettings(DIAGNOSTICS_DELIVERY=payload)
 
 
 class TestDiagnosticsDeliveryInputs:
@@ -199,9 +201,9 @@ class TestDiagnosticsDeliveryInputs:
         :return: The context for the inputs field.
         """
         return MaterializerContext(
-            settings_cls=SEPSettings,
+            settings_cls=ExtensionsSettings,
             field_name="DIAGNOSTICS_DELIVERY_INPUTS",
-            field_info=SEPSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"],
+            field_info=ExtensionsSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"],
             raw=raw,
             purpose=purpose,
         )
@@ -224,7 +226,7 @@ class TestDiagnosticsDeliveryInputs:
     def test_defaults_to_not_configured(self):
         """Leave the inputs unset so a standalone deployment behaves unchanged."""
         assert (
-            SEPSettings(
+            ExtensionsSettings(
                 _env_file=None  # ty: ignore[unknown-argument]
             ).DIAGNOSTICS_DELIVERY_INPUTS
             is None
@@ -232,16 +234,20 @@ class TestDiagnosticsDeliveryInputs:
 
     def test_is_hot_reloadable_and_advanced(self):
         """Expose the whole object to the settings API, grouped as advanced."""
-        assert is_hot_reloadable(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS")
+        assert is_hot_reloadable(ExtensionsSettings, "DIAGNOSTICS_DELIVERY_INPUTS")
         assert (
-            is_advanced_field(SEPSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"])
+            is_advanced_field(
+                ExtensionsSettings.model_fields["DIAGNOSTICS_DELIVERY_INPUTS"]
+            )
             is True
         )
 
     @pytest.mark.parametrize("leaf", ["secrets", "endpoint"])
     def test_leaves_are_sealed(self, leaf: str):
         """Refuse every per-leaf write, so the materializer sees each payload whole."""
-        assert chain_is_locked(SEPSettings, f"DIAGNOSTICS_DELIVERY_INPUTS__{leaf}")
+        assert chain_is_locked(
+            ExtensionsSettings, f"DIAGNOSTICS_DELIVERY_INPUTS__{leaf}"
+        )
 
     def test_materializer_accepts_exactly_the_declared_secret_names(
         self, mocker: MockerFixture
@@ -343,7 +349,7 @@ class TestDiagnosticsDeliveryInputs:
         stops the mask from reaching the receiver as a literal credential.
         """
         with pytest.raises(ValidationError, match="sn_api_key"):
-            SEPSettings(
+            ExtensionsSettings(
                 DIAGNOSTICS_DELIVERY_INPUTS={"secrets": {"sn_api_key": SECRET_STR_MASK}}
             )
 
@@ -355,54 +361,54 @@ class TestFooterTemplate:
         """Assert FOOTER_TEMPLATE defaults to ``$summary $version``.
 
         Load without the dotenv file so a local ``.env.local`` override (a
-        worktree hook may set ``SEP__FOOTER_TEMPLATE`` to the branch name) does
+        worktree hook may set ``EXTENSIONS__FOOTER_TEMPLATE`` to the branch name) does
         not mask the built-in default.
         """
-        settings = SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+        settings = ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
         assert settings.FOOTER_TEMPLATE.template == "$summary $version"
 
     def test_footer_template_coerced_from_string(self):
         """Assert a plain string is coerced to a Template object."""
-        settings = SEPSettings(FOOTER_TEMPLATE="$version only")
+        settings = ExtensionsSettings(FOOTER_TEMPLATE="$version only")
         assert isinstance(settings.FOOTER_TEMPLATE, Template)
         assert settings.FOOTER_TEMPLATE.template == "$version only"
 
     def test_footer_template_accepts_template_object(self):
         """Assert a Template object is accepted as-is."""
         tmpl = Template("custom $summary")
-        settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
+        settings = ExtensionsSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
 
 
 class TestHealthReportFieldRemoved:
-    """``SEPSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
+    """Check that ``ExtensionsSettings`` no longer mounts the ``HEALTH_REPORT`` section."""
 
     def test_sep_settings_has_no_health_report_field(self):
-        """Assert ``SEPSettings`` no longer declares a ``HEALTH_REPORT`` field."""
-        assert "HEALTH_REPORT" not in SEPSettings.model_fields
+        """Assert ``ExtensionsSettings`` no longer declares a ``HEALTH_REPORT`` field."""
+        assert "HEALTH_REPORT" not in ExtensionsSettings.model_fields
 
 
 class TestDeprecatedPMMRemoved:
-    """The deprecated ``SEP.PMM`` section is gone; PMM lives only top-level."""
+    """Confirm the removed ``EXTENSIONS.PMM`` section stays gone; PMM is top-level only."""
 
     def test_sep_settings_has_no_pmm_field(self):
-        """``SEPSettings`` no longer declares a ``PMM`` field."""
-        assert "PMM" not in SEPSettings.model_fields
+        """Check that ``ExtensionsSettings`` no longer declares a ``PMM`` field."""
+        assert "PMM" not in ExtensionsSettings.model_fields
 
     def test_stray_sep_pmm_mapping_is_rejected(self):
-        """A leftover ``SEP.PMM`` mapping is rejected at construction.
+        """Reject a leftover ``EXTENSIONS.PMM`` mapping at construction.
 
         Connection config must now come from the top-level ``PMM`` section. The
-        stale ``SEP.PMM`` block (including the ``SEP__PMM__*`` env-var path) is
+        stale ``EXTENSIONS.PMM`` block (including the ``EXTENSIONS__PMM__*`` env-var path) is
         rejected with a ``ValidationError`` so upgraded deployments fail fast at
         startup instead of silently carrying dead config.
         """
-        with pytest.raises(ValidationError, match="SEP.PMM"):
-            SEPSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
+        with pytest.raises(ValidationError, match="EXTENSIONS.PMM"):
+            ExtensionsSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
 
     def test_clean_build_without_stray_pmm(self):
-        """A clean ``SEPSettings`` build (no ``PMM`` key) constructs without error."""
-        assert SEPSettings() is not None
+        """Construct a clean ``ExtensionsSettings`` (no ``PMM`` key) without error."""
+        assert ExtensionsSettings() is not None
 
 
 class TestPerSyncerPMMRemoved:
@@ -582,23 +588,25 @@ def _logged_legacy_apps_warning(mock_logger: object) -> bool:
 
 
 class TestAppsKeyBackCompat:
-    """Cover the ``SEP.PLUGINS`` -> ``SEP.APPS`` config-key back-compat shim."""
+    """Cover the ``EXTENSIONS.PLUGINS`` -> ``EXTENSIONS.APPS`` config-key back-compat shim."""
 
     def test_legacy_plugins_key_populates_apps(self):
         """Load a legacy ``PLUGINS`` key into ``APPS`` via the validation alias."""
-        settings = SEPSettings.model_validate(
+        settings = ExtensionsSettings.model_validate(
             {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
         )
         assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
 
     def test_modern_apps_key_populates_apps(self):
         """Load the app list from the modern ``APPS`` key."""
-        settings = SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+        settings = ExtensionsSettings.model_validate(
+            {"APPS": [{"MODULE_NAME": "backup_pg"}]}
+        )
         assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
 
     def test_apps_takes_precedence_over_legacy(self):
         """Prefer ``APPS`` over the legacy ``PLUGINS`` when both keys are set."""
-        settings = SEPSettings.model_validate(
+        settings = ExtensionsSettings.model_validate(
             {
                 "APPS": [{"MODULE_NAME": "backup_pg"}],
                 "PLUGINS": [{"MODULE_NAME": "backup_mongo"}],
@@ -609,30 +617,32 @@ class TestAppsKeyBackCompat:
     def test_deprecation_warning_for_legacy_key(self):
         """Assert a deprecation warning is logged when the legacy ``PLUGINS`` key is set."""
         with patch("app.sep.config.logger") as mock_logger:
-            SEPSettings.model_validate({"PLUGINS": [{"MODULE_NAME": "backup_pg"}]})
+            ExtensionsSettings.model_validate(
+                {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
+            )
         assert _logged_legacy_apps_warning(mock_logger)
 
     def test_no_warning_for_modern_key(self):
         """Assert no deprecation warning is logged for the modern ``APPS`` key."""
         with patch("app.sep.config.logger") as mock_logger:
-            SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+            ExtensionsSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
         assert not _logged_legacy_apps_warning(mock_logger)
 
     def test_legacy_plugins_env_var_populates_apps_and_warns(
         self, monkeypatch: pytest.MonkeyPatch
     ):
-        """Load a legacy ``SEP__PLUGINS`` env var into ``APPS`` and warn."""
-        monkeypatch.setenv("SEP__PLUGINS", '[{"MODULE_NAME": "backup_pg"}]')
+        """Load a legacy ``EXTENSIONS__PLUGINS`` env var into ``APPS`` and warn."""
+        monkeypatch.setenv("EXTENSIONS__PLUGINS", '[{"MODULE_NAME": "backup_pg"}]')
         with patch("app.sep.config.logger") as mock_logger:
-            settings = SEPSettings()
+            settings = ExtensionsSettings()
         assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert _logged_legacy_apps_warning(mock_logger)
 
     def test_modern_apps_env_var_does_not_warn(self, monkeypatch: pytest.MonkeyPatch):
-        """Load a modern ``SEP__APPS`` env var into ``APPS`` without warning."""
-        monkeypatch.setenv("SEP__APPS", '[{"MODULE_NAME": "backup_pg"}]')
+        """Load a modern ``EXTENSIONS__APPS`` env var into ``APPS`` without warning."""
+        monkeypatch.setenv("EXTENSIONS__APPS", '[{"MODULE_NAME": "backup_pg"}]')
         with patch("app.sep.config.logger") as mock_logger:
-            settings = SEPSettings()
+            settings = ExtensionsSettings()
         assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert not _logged_legacy_apps_warning(mock_logger)
 
@@ -646,7 +656,7 @@ class TestCredentialUrlMaskRejection:
     def test_mask_is_rejected_on_the_yaml_path(self, field: str) -> None:
         """Fail settings construction when a masked export is re-fed as configuration."""
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(
+            ExtensionsSettings(
                 **{field: self._MASKED_ENDPOINT},
                 _env_file=None,  # ty: ignore[unknown-argument]
             )
@@ -654,8 +664,8 @@ class TestCredentialUrlMaskRejection:
     @pytest.mark.parametrize(
         ("field", "env_name"),
         [
-            ("INVENTORY_ENDPOINT", "SEP__INVENTORY_ENDPOINT"),
-            ("TASKS_ENDPOINT", "SEP__TASKS_ENDPOINT"),
+            ("INVENTORY_ENDPOINT", "EXTENSIONS__INVENTORY_ENDPOINT"),
+            ("TASKS_ENDPOINT", "EXTENSIONS__TASKS_ENDPOINT"),
         ],
     )
     def test_mask_is_rejected_on_the_env_path(
@@ -664,11 +674,11 @@ class TestCredentialUrlMaskRejection:
         """Fail settings construction when a masked endpoint arrives via the environment."""
         monkeypatch.setenv(env_name, self._MASKED_ENDPOINT)
         with pytest.raises(ValidationError, match=field):
-            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+            ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
 
 class TestSyncerRetirementThresholdsOverConfig:
-    """Hold the retirement floors that ``SEP.SYNCERS[]`` forwards unvalidated.
+    """Hold the retirement floors that ``EXTENSIONS.SYNCERS[]`` forwards unvalidated.
 
     Load-time rejection of these values lives in
     :class:`TestSyncerExtrasValidatedAtLoad`; what this class owns is the floor a
@@ -706,22 +716,24 @@ _MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
 _PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
 
 
-def _build_via_model_validate(data: dict[str, Any]) -> SEPSettings:
-    """Return settings built through ``SEPSettings.model_validate``.
+def _build_via_model_validate(data: dict[str, Any]) -> ExtensionsSettings:
+    """Return settings built through ``ExtensionsSettings.model_validate``.
 
     :param data: The settings payload to validate.
     :return: The constructed settings object.
     """
-    return SEPSettings.model_validate(deepcopy(data))
+    return ExtensionsSettings.model_validate(deepcopy(data))
 
 
-def _build_via_constructor(data: dict[str, Any]) -> SEPSettings:
-    """Return settings built through the ordinary ``SEPSettings`` constructor.
+def _build_via_constructor(data: dict[str, Any]) -> ExtensionsSettings:
+    """Return settings built through the ordinary ``ExtensionsSettings`` constructor.
 
     :param data: The settings payload to pass as keyword arguments.
     :return: The constructed settings object.
     """
-    return SEPSettings(**deepcopy(data), _env_file=None)  # ty: ignore[unknown-argument]
+    return ExtensionsSettings(
+        **deepcopy(data), _env_file=None
+    )  # ty: ignore[unknown-argument]
 
 
 _BUILDERS = pytest.mark.parametrize(
@@ -734,7 +746,7 @@ _BUILDERS = pytest.mark.parametrize(
 class TestSyncerExtrasValidatedAtLoad:
     """Reject an unusable syncer threshold at settings load, not per request.
 
-    The ``SEP__SYNCER_EXTRA_KWARGS__<KEY>`` form hands its leaf to
+    The ``EXTENSIONS__SYNCER_EXTRA_KWARGS__<KEY>`` form hands its leaf to
     ``SyncerExtraKwargs`` as a raw string, and both that model and ``SyncOptions``
     allow untyped extras — so without a load-time check the string only meets a
     typed field once a syncer is constructed, which for the request-scoped
@@ -743,7 +755,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     @staticmethod
     def _syncers_env(*syncers: str) -> str:
-        """Return a JSON ``SEP__SYNCERS`` value naming each syncer.
+        """Return a JSON ``EXTENSIONS__SYNCERS`` value naming each syncer.
 
         :param syncers: Dotted syncer paths to configure.
         :return: The JSON list pydantic-settings parses for ``SYNCERS``.
@@ -754,11 +766,11 @@ class TestSyncerExtrasValidatedAtLoad:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a bare-integer-seconds ``STALE_RUN_AFTER`` from the env leaf form."""
-        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(_PMM_SYNCER))
-        monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER", "60")
+        monkeypatch.setenv("EXTENSIONS__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER", "60")
+        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(_PMM_SYNCER))
 
         with pytest.raises(ValidationError, match="STALE_RUN_AFTER") as excinfo:
-            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+            ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
         message = str(excinfo.value)
         assert "ISO-8601" in message
@@ -768,11 +780,13 @@ class TestSyncerExtrasValidatedAtLoad:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a grace counter that collapses to single-absence retirement."""
-        monkeypatch.setenv("SEP__SYNCERS", self._syncers_env(_PMM_SYNCER))
-        monkeypatch.setenv("SEP__SYNCER_EXTRA_KWARGS__MISSING_GRACE_GENERATIONS", "0")
+        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(_PMM_SYNCER))
+        monkeypatch.setenv(
+            "EXTENSIONS__SYNCER_EXTRA_KWARGS__MISSING_GRACE_GENERATIONS", "0"
+        )
 
         with pytest.raises(ValidationError, match="MISSING_GRACE_GENERATIONS"):
-            SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+            ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
     @pytest.mark.parametrize(
         ("field", "value"),
@@ -792,18 +806,18 @@ class TestSyncerExtrasValidatedAtLoad:
         and a syncer that deletes on first absence.
         """
         with pytest.raises(ValidationError, match=field):
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {"SYNCERS": [{"SYNCER": _PMM_SYNCER, field: value}]}
             )
 
     def test_env_hint_is_offered_but_not_asserted_for_an_extras_string(self) -> None:
         """Explain the env leaf's quoting without claiming it is what happened.
 
-        ``SEP.SYNCER_EXTRA_KWARGS`` is a YAML surface too, so a string arriving here
+        ``EXTENSIONS.SYNCER_EXTRA_KWARGS`` is a YAML surface too, so a string arriving here
         may have been quoted deliberately in the profile.
         """
         with pytest.raises(ValidationError) as excinfo:
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
@@ -811,13 +825,13 @@ class TestSyncerExtrasValidatedAtLoad:
             )
 
         message = str(excinfo.value)
-        assert "SEP__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER" in message
+        assert "EXTENSIONS__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER" in message
         assert "If this came from" in message
 
     def test_env_hint_is_withheld_for_a_numeric_value(self) -> None:
         """Blame the env form's quoting only when a string is what arrived."""
         with pytest.raises(ValidationError) as excinfo:
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": 0},
@@ -833,7 +847,7 @@ class TestSyncerExtrasValidatedAtLoad:
         the advice that fits the env leaf form would only mislead here.
         """
         with pytest.raises(ValidationError) as excinfo:
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": "abc"}]}
             )
 
@@ -844,7 +858,7 @@ class TestSyncerExtrasValidatedAtLoad:
         "value", ["60", "60.5", "-60", "abc", "", 0, -1, [60], {"seconds": 60}]
     )
     def test_unusable_stale_run_after_is_rejected_at_load(
-        self, build: Callable[[dict[str, Any]], SEPSettings], value: Any
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings], value: Any
     ) -> None:
         """Reject every shape ``stale_run_after`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
@@ -858,7 +872,7 @@ class TestSyncerExtrasValidatedAtLoad:
     @_BUILDERS
     @pytest.mark.parametrize("value", ["0", "1", 0, 1, "abc", 2.5, ""])
     def test_unusable_grace_generations_is_rejected_at_load(
-        self, build: Callable[[dict[str, Any]], SEPSettings], value: Any
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings], value: Any
     ) -> None:
         """Reject every shape ``missing_grace_generations`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
@@ -883,7 +897,7 @@ class TestSyncerExtrasValidatedAtLoad:
         self, value: Any, expected: timedelta, mocker: MockerFixture
     ) -> None:
         """Keep every form pydantic reads as a duration working end to end."""
-        settings = SEPSettings.model_validate(
+        settings = ExtensionsSettings.model_validate(
             {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": value}]}
         )
         mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
@@ -898,10 +912,10 @@ class TestSyncerExtrasValidatedAtLoad:
     def test_json_env_form_reaches_the_syncer(
         self, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
     ) -> None:
-        """Keep the JSON ``SEP__SYNCERS`` override working, numbers read as numbers."""
+        """Keep the JSON ``EXTENSIONS__SYNCERS`` override working, numbers read as numbers."""
         grace = 3
         monkeypatch.setenv(
-            "SEP__SYNCERS",
+            "EXTENSIONS__SYNCERS",
             json.dumps(
                 [
                     {
@@ -912,7 +926,7 @@ class TestSyncerExtrasValidatedAtLoad:
                 ]
             ),
         )
-        settings = SEPSettings(_env_file=None)  # ty: ignore[unknown-argument]
+        settings = ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
         mocker.patch.object(sep_settings, "SYNCERS", settings.SYNCERS)
 
         syncer = get_syncers(
@@ -927,7 +941,7 @@ class TestSyncerExtrasValidatedAtLoad:
     def test_error_names_the_offending_syncer(self) -> None:
         """Point the operator at the entry to fix when several are configured."""
         with pytest.raises(ValidationError, match=re.escape(_MYSQL_SYNCER)):
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [
                         {"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": 3600},
@@ -938,7 +952,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     def test_unconstrained_extras_are_forwarded_untouched(self) -> None:
         """Keep the check a floor on known thresholds, not an allowlist of keys."""
-        settings = SEPSettings.model_validate(
+        settings = ExtensionsSettings.model_validate(
             {
                 "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
                 "SYNCER_EXTRA_KWARGS": {
@@ -956,7 +970,7 @@ class TestSyncerExtrasValidatedAtLoad:
     def test_key_is_matched_whatever_case_it_arrives_in(self, key: str) -> None:
         """Refuse the value however the operator spelled the key."""
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {key: "60"},
@@ -972,7 +986,7 @@ class TestSyncerExtrasValidatedAtLoad:
         ignored.
         """
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
-            SEPSettings.model_validate(
+            ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": 0},
@@ -981,7 +995,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     @_BUILDERS
     def test_extra_kwargs_win_the_merge_and_are_still_checked(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Check the merged threshold, not the per-entry one the extras displace."""
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
@@ -994,7 +1008,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     @_BUILDERS
     def test_removed_pmm_key_on_the_extras_is_still_rejected(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Refuse a dead per-syncer ``pmm`` override carried by the extras."""
         with pytest.raises(ValidationError, match="(?i)pmm"):
@@ -1007,7 +1021,7 @@ class TestSyncerExtrasValidatedAtLoad:
 
     @_BUILDERS
     def test_unusable_extra_loads_when_no_syncer_is_configured(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Leave a deployment that runs no syncer alone.
 
@@ -1022,7 +1036,9 @@ class TestSyncerExtrasValidatedAtLoad:
 
     @_BUILDERS
     def test_null_threshold_falls_back_to_the_field_default(
-        self, build: Callable[[dict[str, Any]], SEPSettings], mocker: MockerFixture
+        self,
+        build: Callable[[dict[str, Any]], ExtensionsSettings],
+        mocker: MockerFixture,
     ) -> None:
         """Read an explicit ``null`` as "unset" rather than refusing to load."""
         settings = build(
@@ -1040,8 +1056,8 @@ class TestSyncerExtrasValidatedAtLoad:
     @pytest.mark.parametrize("field", ["SYNCERS", "SYNCER_EXTRA_KWARGS"])
     def test_syncer_settings_are_not_database_overridable(self, field: str) -> None:
         """Keep the load-time check unbypassable by a DB-backed override."""
-        assert not is_hot_reloadable(SEPSettings, field)
-        assert not is_nested_overridable_parent(SEPSettings, field)
+        assert not is_hot_reloadable(ExtensionsSettings, field)
+        assert not is_nested_overridable_parent(ExtensionsSettings, field)
 
 
 class TestSyncerExtrasMergeParity:
@@ -1053,7 +1069,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_list_extra_is_forwarded_once(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Forward a list-valued extra without duplicating its entries."""
         settings = build(
@@ -1067,7 +1083,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_list_extra_precedes_the_syncers_own_entries(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Keep the overlay ahead of the entry's own list, prepended only once."""
         settings = build(
@@ -1101,7 +1117,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_scalar_extra_reaches_every_syncer(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Merge a scalar extra into each configured syncer."""
         settings = build(
@@ -1118,7 +1134,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_nested_list_extra_is_merged_once(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Merge a list nested inside a mapping extra exactly once."""
         settings = build(
@@ -1132,7 +1148,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_empty_overlay_clears_the_syncers_list(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Read an empty list overlay as "drop the entry's own value"."""
         settings = build(
@@ -1146,7 +1162,7 @@ class TestSyncerExtrasMergeParity:
 
     @_BUILDERS
     def test_repeated_syncer_entry_collapses_to_one(
-        self, build: Callable[[dict[str, Any]], SEPSettings]
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
     ) -> None:
         """Keep one entry per syncer path, still carrying the extras once."""
         settings = build(

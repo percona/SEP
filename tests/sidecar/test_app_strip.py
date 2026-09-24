@@ -139,7 +139,9 @@ def _write_profile(path: Path, module_names: Iterable[str]) -> Path:
     :return: The written profile.
     """
     document = {
-        "default": {"SEP": {"APPS": [{"MODULE_NAME": name} for name in module_names]}}
+        "default": {
+            "EXTENSIONS": {"APPS": [{"MODULE_NAME": name} for name in module_names]}
+        }
     }
     path.write_text(yaml.safe_dump(document), encoding="utf-8")
     return path
@@ -175,7 +177,7 @@ def test_activated_apps_reads_the_profile_activation_list(embedded_profile_data:
     """Assert the derivation returns the baked profile's module names."""
     expected = {
         entry["MODULE_NAME"]
-        for entry in embedded_profile_data["default"]["SEP"]["APPS"]
+        for entry in embedded_profile_data["default"]["EXTENSIONS"]["APPS"]
     }
 
     assert activated_apps(EMBEDDED_PROFILE) == expected
@@ -285,7 +287,9 @@ def test_restrict_rejects_a_missing_infrastructure_package(tmp_path: Path):
 def test_restrict_rejects_a_profile_with_no_activation_list(tmp_path: Path):
     """Assert a profile carrying no activation list fails the build."""
     profile = tmp_path / "settings.yaml"
-    profile.write_text(yaml.safe_dump({"default": {"SEP": {}}}), encoding="utf-8")
+    profile.write_text(
+        yaml.safe_dump({"default": {"EXTENSIONS": {}}}), encoding="utf-8"
+    )
     apps_root = _build_apps_tree(tmp_path / "apps", INFRASTRUCTURE_PACKAGES)
 
     with pytest.raises(KeyError):
@@ -423,7 +427,7 @@ def test_checker_activated_apps_reads_the_profile_activation_list(
     """Assert the checker's own derivation returns the baked profile's names."""
     expected = {
         entry["MODULE_NAME"]
-        for entry in embedded_profile_data["default"]["SEP"]["APPS"]
+        for entry in embedded_profile_data["default"]["EXTENSIONS"]["APPS"]
     }
 
     assert verify_image_apps.activated_apps(EMBEDDED_PROFILE) == expected

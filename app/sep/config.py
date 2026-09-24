@@ -351,7 +351,7 @@ def _reject_removed_syncer_pmm(data: Any) -> Any:
     read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
     rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
     -- so upgraded deployments fail fast at startup instead of silently honoring dead
-    config. ``SEPSettings.add_syncer_extra_kwargs`` re-validates each merged
+    config. ``ExtensionsSettings.add_syncer_extra_kwargs`` re-validates each merged
     ``SyncOptions``, so a ``pmm`` carried via ``SYNCER_EXTRA_KWARGS`` is rejected there
     too.
 
@@ -365,7 +365,7 @@ def _reject_removed_syncer_pmm(data: Any) -> Any:
         raise ValueError(
             "Per-syncer 'pmm:' override is no longer honored (removed in SEP-1477); "
             "PMM synchronizers read the top-level 'PMM' section. Remove the stale "
-            "'pmm' key from SEP.SYNCERS / SEP.SYNCER_EXTRA_KWARGS."
+            "'pmm' key from EXTENSIONS.SYNCERS / EXTENSIONS.SYNCER_EXTRA_KWARGS."
         )
     return data
 
@@ -376,7 +376,7 @@ def _validate_constrained_syncer_extras(
     """Reject a configured syncer threshold its field would refuse at construction.
 
     :param merged: One syncer's settings, with ``SYNCER_EXTRA_KWARGS`` merged in.
-    :param extra_kwargs: The global extras merged in. ``SEP.SYNCER_EXTRA_KWARGS`` is
+    :param extra_kwargs: The global extras merged in. ``EXTENSIONS.SYNCER_EXTRA_KWARGS`` is
         a YAML surface as well as an env one, so a string reaching a syncer through it
         gets the env leaf's quoting offered as a possibility, never as the diagnosis.
     :raises ValueError: When a constrained field carries an unusable value.
@@ -389,10 +389,10 @@ def _validate_constrained_syncer_extras(
             constrained.adapter.validate_python(raw)
         except ValidationError as exc:
             quoting_note = (
-                f" If this came from a SEP__SYNCER_EXTRA_KWARGS__{key.upper()} env "
+                f" If this came from an EXTENSIONS__SYNCER_EXTRA_KWARGS__{key.upper()} env "
                 f"override, note that such a leaf always reaches settings as a "
-                f"string; spell the value under SEP.SYNCERS in the YAML profile, or "
-                f"as JSON in SEP__SYNCERS, to have it read as a number."
+                f"string; spell the value under EXTENSIONS.SYNCERS in the YAML profile, or "
+                f"as JSON in EXTENSIONS__SYNCERS, to have it read as a number."
                 if isinstance(raw, str) and key in extra_kwargs
                 else ""
             )
@@ -591,21 +591,21 @@ def materialize_delivery_plan_inputs(ctx: MaterializerContext) -> Any:
 
 
 def _warn_legacy_apps_key() -> None:
-    """Emit a deprecation warning for the legacy ``SEP.PLUGINS`` config key."""
+    """Emit a deprecation warning for the legacy ``EXTENSIONS.PLUGINS`` config key."""
     logger.warning(
-        "The SEP.PLUGINS / SEP__PLUGINS config key is deprecated and will be "
-        "removed in a future release; use SEP.APPS / SEP__APPS instead.",
+        "The EXTENSIONS.PLUGINS / EXTENSIONS__PLUGINS config key is deprecated and will be "
+        "removed in a future release; use EXTENSIONS.APPS / EXTENSIONS__APPS instead.",
     )
 
 
-class SEPSettings(BaseYamlAppSettings):
+class ExtensionsSettings(BaseYamlAppSettings):
     """Define settings for SEP.
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
-        file. Set to ["SEP"].
+        file. Set to ["EXTENSIONS"].
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
     :param ROOT_PATH: The URL prefix an intermediary proxy serves SEP under, such as
-        ``/sep``. Defaults to ``""``, the origin root. Read once when the application
+        ``/extensions``. Defaults to ``""``, the origin root. Read once when the application
         is constructed, so it is set through env or YAML only. A configured cookie
         ``Path`` is anchored under it, so ``SESSION_REFRESH.PATH`` is stated
         prefix-free and reaches the browser prefixed.
@@ -670,7 +670,7 @@ class SEPSettings(BaseYamlAppSettings):
         to be same-site so the browser sends the session cookie to SEP.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
     UVICORN_PORT: int = 8000
     ROOT_PATH: URIPathPrefix = ""
     SESSION_REFRESH: CookieOptions = (  # ty: ignore[invalid-assignment]
@@ -724,9 +724,9 @@ class SEPSettings(BaseYamlAppSettings):
         description=(
             "Enable ambient Grafana-session SSO: sign an unauthenticated caller "
             "in automatically from an existing PMM/Grafana session cookie, "
-            "skipping SEP's login form. Off by default; effective only under the "
-            "Grafana auth provider and only when SEP and Grafana are same-site so "
-            "the browser sends the session cookie to SEP."
+            "skipping the PMM Extensions login form. Off by default; effective "
+            "only under the Grafana auth provider and only when PMM Extensions and "
+            "Grafana are same-site so the browser sends the session cookie to it."
         ),
     )
     FOOTER_TEMPLATE: Template = hot_field(  # ty: ignore[invalid-assignment]
@@ -751,8 +751,8 @@ class SEPSettings(BaseYamlAppSettings):
         """
         if isinstance(data, dict) and data.get("PMM_FRONTEND") is not None:
             logger.warning(
-                "SEP__PMM_FRONTEND has been removed. "
-                "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
+                "EXTENSIONS__PMM_FRONTEND has been removed. "
+                "Use PMM__FRONTEND (top-level) or EXTENSIONS__PMM__FRONTEND instead.",
             )
         return data
 
@@ -777,7 +777,7 @@ class SEPSettings(BaseYamlAppSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.
+        """Emit a deprecation warning when the legacy ``EXTENSIONS__PLUGINS`` env key supplies the app list.
 
         The before-validator covers the YAML / init path but never sees an
         env-only legacy key: the environment source keys the value by the field
@@ -825,12 +825,12 @@ class SEPSettings(BaseYamlAppSettings):
     @model_validator(mode="before")
     @classmethod
     def reject_removed_sep_pmm(cls, data: Any) -> Any:
-        """Reject a removed ``SEP.PMM`` section.
+        """Reject a removed ``EXTENSIONS.PMM`` section.
 
-        ``SEP.PMM`` was removed; PMM connection/auth config now lives
+        ``EXTENSIONS.PMM`` was removed; PMM connection/auth config now lives
         only under the top-level ``PMM`` section, and the alerts fields it used to
-        carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
-        key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is
+        carry moved to the alerts-owned ``EXTENSIONS.ALERTS`` section. A leftover ``PMM``
+        key under ``EXTENSIONS`` (any case, including the ``EXTENSIONS__PMM__*`` env-var path) is
         rejected with a ``ValueError`` -- which pydantic wraps into a
         ``ValidationError`` -- so upgraded deployments fail fast at startup instead
         of silently carrying dead config.
@@ -843,9 +843,9 @@ class SEPSettings(BaseYamlAppSettings):
             isinstance(k, str) and k.lower() == "pmm" for k in data
         ):
             raise ValueError(
-                "The 'SEP.PMM' section was removed (SEP-1477); PMM connection config "
+                "The 'EXTENSIONS.PMM' section was removed (SEP-1477); PMM connection config "
                 "now lives only under the top-level 'PMM' section, and its alerts "
-                "fields moved to the 'SEP.ALERTS' section. Remove the stale 'SEP.PMM' "
+                "fields moved to the 'EXTENSIONS.ALERTS' section. Remove the stale 'EXTENSIONS.PMM' "
                 "block from settings.yaml."
             )
         return data
@@ -860,7 +860,7 @@ class SEPSettings(BaseYamlAppSettings):
         checked against the type its syncer field declares. Merging again on the same
         instance leaves ``SYNCERS`` as it was.
 
-        :return: The updated ``SEPSettings`` instance with modified ``SYNCERS``.
+        :return: The updated ``ExtensionsSettings`` instance with modified ``SYNCERS``.
         :raises ValueError: When a merged threshold carries an unusable value.
         """
         # ``model_validate`` runs an after-validator twice, and ``deep_dict_update``
@@ -883,8 +883,8 @@ class SEPSettings(BaseYamlAppSettings):
         return self
 
 
-sep_settings: SEPSettings = OverridableSettingsProxy(
-    SEPSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+sep_settings: ExtensionsSettings = OverridableSettingsProxy(
+    ExtensionsSettings, setting_class=SettingClassEnum.EXTENSIONS_SETTINGS
 )
 
 

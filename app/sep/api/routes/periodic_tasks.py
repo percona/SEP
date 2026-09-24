@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/periodic-tasks/`` JSON proxy routes.
+"""Define the ``/api/extensions/periodic-tasks/`` JSON proxy routes.
 
 Forward periodic-task CRUD to the Tasks sub-app through the SEP gateway so the
 React frontend (``ScheduledTasksPanel``) reaches periodic-task list / create /

@@ -98,9 +98,9 @@ class TestScheduleAnnotationDetachedInstance:
                 await bg_task
 
         mock_create.assert_awaited_once_with(
-            text="SEP backup_data - STARTED",
+            text="PMM Extensions: backup_data - STARTED",
             node_name="node-1",
-            tags=["sep", "backup_data", "started"],
+            tags=["pmm-extensions", "backup_data", "started"],
             service_names=["svc1"],
         )
 
@@ -241,9 +241,9 @@ class TestScheduleAnnotationPrecondition:
                 await bg_task
 
         mock_create.assert_awaited_once_with(
-            text="SEP backup_data - STARTED",
+            text="PMM Extensions: backup_data - STARTED",
             node_name="node-1",
-            tags=["sep", "backup_data", "started"],
+            tags=["pmm-extensions", "backup_data", "started"],
             service_names=["svc1"],
         )
 
@@ -337,9 +337,9 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
 
         assert loaded.status == TaskHistoryStatusEnum.SUCCESS
         mock_create.assert_awaited_once_with(
-            text=f"SEP {task.name} - COMPLETED",
+            text=f"PMM Extensions: {task.name} - COMPLETED",
             node_name="node-z",
-            tags=["sep", task.name, "completed"],
+            tags=["pmm-extensions", task.name, "completed"],
             service_names=["svc1"],
         )
 
@@ -392,9 +392,9 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
                 )
 
         mock_create.assert_awaited_once_with(
-            text=f"SEP {task.name} - COMPLETED",
+            text=f"PMM Extensions: {task.name} - COMPLETED",
             node_name="node-z",
-            tags=["sep", task.name, "completed"],
+            tags=["pmm-extensions", task.name, "completed"],
             service_names=[],
         )
 
@@ -550,8 +550,8 @@ class TestAwaitAnnotation:
             await await_annotation(loaded, "STARTED")
 
         mock_create.assert_awaited_once_with(
-            text="SEP backup_data - STARTED",
+            text="PMM Extensions: backup_data - STARTED",
             node_name="node-1",
-            tags=["sep", "backup_data", "started"],
+            tags=["pmm-extensions", "backup_data", "started"],
             service_names=["svc1"],
         )

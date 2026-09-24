@@ -79,7 +79,7 @@ describe('useResolvedServiceField', () => {
 
   it('rehydrates a scalar service id via useServices', async () => {
     mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         expect(config?.params).toMatchObject({ service_type: 'mongodb' });
         return Promise.resolve({
           data: {

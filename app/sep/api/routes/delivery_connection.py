@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the admin-only ``/api/sep/admin/delivery-connection`` endpoint.
+"""Define the admin-only ``/api/extensions/admin/delivery-connection`` endpoint.
 
 Expose a single ``GET`` that reports the receiver-specific facts describing the
 configured diagnostics-delivery connection, such as an account, a company or a

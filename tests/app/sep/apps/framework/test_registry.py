@@ -790,7 +790,7 @@ class TestCollectAppOwnedSettingsClasses:
         ``AlertsSettings.BACKUP_INTERVAL`` must not fail startup.
         """
         mocker.patch.object(
-            settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", {"SEPSettings.APP_DRAIN"}
+            settings.SETTINGS_OVERRIDE, "ALLOWED_KEYS", {"ExtensionsSettings.APP_DRAIN"}
         )
         entries = collect_app_owned_settings_classes([App(module_name="alerts")])
         assert entries[0].reseed_keys == frozenset({"BACKUP_INTERVAL"})

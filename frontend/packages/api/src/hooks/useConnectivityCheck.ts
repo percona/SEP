@@ -18,7 +18,7 @@
 /**
  * React Query hook for the admin on-demand connectivity check (SEP-1413).
  *
- * Posts ``POST /api/sep/admin/connectivity-check/`` through ``apiClient`` so the
+ * Posts ``POST /api/extensions/admin/connectivity-check/`` through ``apiClient`` so the
  * Bearer interceptor attaches the in-memory access token (the endpoint requires
  * ``IsApiAdmin`` + ``RequireBearerForUnsafeMethods``). Returns one
  * ``ConnectivityResult`` per requested target; per-service probe failures are
@@ -38,7 +38,7 @@ export type ConnectivityResult = components['schemas']['ConnectivityResult'];
 export type ConnectivityStatus = components['schemas']['ConnectivityStatusEnum'];
 
 // baseURL is already '/api'; trailing slash matches the FastAPI route (avoids a 307).
-export const CONNECTIVITY_CHECK_PATH = '/sep/admin/connectivity-check/';
+export const CONNECTIVITY_CHECK_PATH = '/extensions/admin/connectivity-check/';
 
 /**
  * Probe reachability of the named external / inter-service endpoints on demand.

@@ -384,13 +384,13 @@ class SnippetsSettings(BaseYamlSettings):
     """Define configuration options for support snippets.
 
     :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the
-        configuration file. Set to `["SEP", "SNIPPETS"]`.
+        configuration file. Set to `["EXTENSIONS", "SNIPPETS"]`.
     :param SNIPPETS_DIR: The directory containing support snippets. Defaults to
         `Path("snippets")`.
     :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL
         is dynamically built on execution. Defaults to `None`. Its path is preserved,
         with download URLs appended to it rather than replacing it, so it must
-        already include ``SEP.ROOT_PATH`` when a URL prefix is configured.
+        already include ``EXTENSIONS.ROOT_PATH`` when a URL prefix is configured.
     :param META: Metadata options for snippets. See `SnippetsMetaOptions`.
     :param SYNC_FILTER: A set of filters to apply when loading snippets from
         `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If
@@ -415,7 +415,7 @@ class SnippetsSettings(BaseYamlSettings):
         preview. Defaults to 500.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "SNIPPETS"]
     SNIPPETS_DIR: RelativeDirectoryPathField = Path("snippets")
     # ``URL`` is a non-Pydantic Starlette type: the generic JSON serializer
     # stores it as ``{"_url": ...}`` rather than a plain string, which then

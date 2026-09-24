@@ -62,5 +62,5 @@ export const ROUTES = {
 } as const;
 
 // ── App-wide constants ────────────────────────────────────────────────
-export const APP_NAME = 'Services Enablement Platform';
-export const APP_SHORT_NAME = 'SEP';
+export const APP_NAME = 'PMM Extensions';
+export const APP_SHORT_NAME = 'Extensions';

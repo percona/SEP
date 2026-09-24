@@ -289,13 +289,13 @@ def test_the_beat_schema_step_does_not_probe_the_sep_database(
     """Keep the readiness wait in the bootstrap, which knows the resolved store.
 
     ``CELERY__BEAT_DBURI`` may point beat at a store other than the SEP database,
-    so the ``until nc -z %(ENV_SEP_DB_HOST)s`` idiom its three siblings use would
-    watch the wrong host here.
+    so the ``until nc -z %(ENV_EXTENSIONS_DB_HOST)s`` idiom its sibling migrate
+    programs use would watch the wrong host here.
     """
     command = program_settings["migrate-beat"]["command"]
 
     assert "nc -z" not in command
-    assert "ENV_SEP_DB_" not in command
+    assert "ENV_EXTENSIONS_DB_" not in command
 
 
 @pytest.mark.parametrize("program", ALEMBIC_ONE_SHOTS)
@@ -305,7 +305,9 @@ def test_the_alembic_one_shots_keep_their_own_wait(
     """Keep the SEP-database wait where it is right — the asymmetry is deliberate."""
     command = program_settings[program]["command"]
 
-    assert "until nc -z %(ENV_SEP_DB_HOST)s %(ENV_SEP_DB_PORT)s" in command
+    assert (
+        "until nc -z %(ENV_EXTENSIONS_DB_HOST)s %(ENV_EXTENSIONS_DB_PORT)s" in command
+    )
 
 
 def test_the_beat_schema_step_is_excluded_from_the_running_assertion(

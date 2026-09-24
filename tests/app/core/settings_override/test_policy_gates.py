@@ -38,11 +38,11 @@ from app.core.settings_override.registry import (
 )
 from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -65,24 +65,24 @@ class TestTopLevelGate:
 
     def test_unlisted_key_stops_being_hot(self, restrict: Callable[..., None]) -> None:
         """Assert an unlisted HOT field reports non-HOT under an active restriction."""
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
-        assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is False
-        assert is_hot_reloadable(SEPSettings, "SYNC_REFRESH_TIME") is True
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
+        assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is False
+        assert is_hot_reloadable(ExtensionsSettings, "SYNC_REFRESH_TIME") is True
 
     def test_gate_can_be_bypassed(self, restrict: Callable[..., None]) -> None:
         """Assert the ungated view still reports the static classification."""
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
         assert (
             is_hot_reloadable(
-                SEPSettings, "INVENTORY_ENDPOINT", include_policy_gate=False
+                ExtensionsSettings, "INVENTORY_ENDPOINT", include_policy_gate=False
             )
             is True
         )
 
     def test_unrestricted_keeps_every_hot_field(self) -> None:
         """Assert the default leaves the HOT predicate byte-identical."""
-        assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
-        assert is_hot_reloadable(SEPSettings, "SYNC_REFRESH_TIME") is True
+        assert is_hot_reloadable(ExtensionsSettings, "INVENTORY_ENDPOINT") is True
+        assert is_hot_reloadable(ExtensionsSettings, "SYNC_REFRESH_TIME") is True
 
     def test_app_owned_class_defaults_to_locked(
         self, restrict: Callable[..., None]
@@ -130,11 +130,14 @@ class TestTopLevelGate:
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert LIST/DETAIL report a locked field as not overridable."""
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
-        assert _reload_of(SEPSettings, "INVENTORY_ENDPOINT") is (
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
+        assert _reload_of(ExtensionsSettings, "INVENTORY_ENDPOINT") is (
             ReloadClassification.NOT_OVERRIDABLE
         )
-        assert _reload_of(SEPSettings, "SYNC_REFRESH_TIME") is ReloadClassification.HOT
+        assert (
+            _reload_of(ExtensionsSettings, "SYNC_REFRESH_TIME")
+            is ReloadClassification.HOT
+        )
 
 
 class TestRestrictOnlyInvariant:
@@ -144,9 +147,9 @@ class TestRestrictOnlyInvariant:
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert a statically locked field stays locked even when listed."""
-        restrict("SEPSettings.DIAGNOSTICS_DELIVERY")
-        assert is_hot_reloadable(SEPSettings, "DIAGNOSTICS_DELIVERY") is False
-        assert _reload_of(SEPSettings, "DIAGNOSTICS_DELIVERY") is (
+        restrict("ExtensionsSettings.DIAGNOSTICS_DELIVERY")
+        assert is_hot_reloadable(ExtensionsSettings, "DIAGNOSTICS_DELIVERY") is False
+        assert _reload_of(ExtensionsSettings, "DIAGNOSTICS_DELIVERY") is (
             ReloadClassification.NOT_OVERRIDABLE
         )
 
@@ -154,13 +157,13 @@ class TestRestrictOnlyInvariant:
         self, restrict: Callable[..., None]
     ) -> None:
         """Assert a statically locked parent stays closed to nested writes when listed."""
-        restrict("SEPSettings.DIAGNOSTICS_DELIVERY")
-        assert is_nested_overridable_parent(SEPSettings, "DIAGNOSTICS_DELIVERY") is (
-            False
-        )
+        restrict("ExtensionsSettings.DIAGNOSTICS_DELIVERY")
+        assert is_nested_overridable_parent(
+            ExtensionsSettings, "DIAGNOSTICS_DELIVERY"
+        ) is (False)
         assert (
             is_nested_overridable_parent(
-                SEPSettings, "DIAGNOSTICS_DELIVERY", include_policy_gate=False
+                ExtensionsSettings, "DIAGNOSTICS_DELIVERY", include_policy_gate=False
             )
             is False
         )
@@ -272,15 +275,15 @@ class TestSnapshotFiltering:
     ) -> None:
         """Assert a pre-lockdown row for a now-locked field never reaches readers."""
         caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
         await insert_override_row(
             session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
             value=False,
             is_active=True,
         )
-        snapshot = await build_snapshot(session, SEPSettings)
+        snapshot = await build_snapshot(session, ExtensionsSettings)
         assert "CONNECTIVITY_CHECK_DEFAULT" not in snapshot
         assert any("non-HOT" in record.getMessage() for record in caplog.records)
 
@@ -289,15 +292,15 @@ class TestSnapshotFiltering:
         self, session: AsyncSession, restrict: Callable[..., None]
     ) -> None:
         """Assert an allowed field's row still lands in the snapshot."""
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
         await insert_override_row(
             session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=_SYNC_REFRESH_OVERRIDE,
             is_active=True,
         )
-        snapshot = await build_snapshot(session, SEPSettings)
+        snapshot = await build_snapshot(session, ExtensionsSettings)
         assert snapshot["SYNC_REFRESH_TIME"] == _SYNC_REFRESH_OVERRIDE
 
     @pytest.mark.asyncio

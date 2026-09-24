@@ -15,7 +15,7 @@
 
 """Declare the om_inventory app's own settings class.
 
-Owning the class here rather than mounting it on ``SEPSettings`` is what keeps
+Owning the class here rather than mounting it on ``ExtensionsSettings`` is what keeps
 ``OmInventorySettings`` out of a deployment that never activates the app: the
 registry collects only activated apps, so a SEP without OM has no such section
 to be confused by.

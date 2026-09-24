@@ -9,7 +9,7 @@
 # probe is what keeps a healthy container meaning the APIs answer.
 set -o errexit -o nounset -o pipefail
 
-conf=/home/sep/app/supervisord.conf
+conf=/home/extensions/app/supervisord.conf
 
 # Only the migration one-shots may sit in EXITED; every other program must be
 # RUNNING. A failed upgrade also lands in EXITED and is indistinguishable here,

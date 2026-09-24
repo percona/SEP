@@ -292,7 +292,8 @@ class ChecksumsForm(TaskFormModel):
             description=(
                 "Absolute path to a MySQL options file on the executor node. "
                 "pt-table-checksum reads MySQL options only from this file. "
-                "The path must already exist on the executor; SEP does not verify it."
+                "The path must already exist on the executor; PMM Extensions does "
+                "not verify it."
             ),
         ),
     ] = ""
