@@ -1,12 +1,12 @@
-# SEP User Guide
+# PMM Extensions User Guide
 
-A customer-facing introduction to the **Services Enablement Platform (SEP)** and a short
+A customer-facing introduction to the **PMM Extensions** and a short
 description of every app: what it is for and what it runs on your database hosts.
 
 ## Contents
 
-- [What is SEP?](#what-is-sep)
-- [How SEP works](#how-sep-works)
+- [What is PMM Extensions?](#what-is-pmm-extensions)
+- [How PMM Extensions works](#how-pmm-extensions-works)
 - [Apps](#apps)
   - [Inventory](#inventory)
   - [Snippet Manager](#snippet-manager)
@@ -25,27 +25,27 @@ description of every app: what it is for and what it runs on your database hosts
   - [Internal components](#internal-components)
 - [Common concepts](#common-concepts)
 
-## What is SEP?
+## What is PMM Extensions?
 
-SEP (Services Enablement Platform) is a modular web platform that lets Percona engineers and DBAs run standardized  database operations — backups, schema changes, consistency checks, diagnostics, and alerting — against different database technologies from a single interface. Instead of running ad-hoc commands by hand on each host, operators pick a service from an inventory and trigger a well-defined action, while SEP records who ran what, when, and with which result.
+PMM Extensions is a modular web platform that lets Percona engineers and DBAs run standardized  database operations — backups, schema changes, consistency checks, diagnostics, and alerting — against different database technologies from a single interface. Instead of running ad-hoc commands by hand on each host, operators pick a service from an inventory and trigger a well-defined action, while PMM Extensions records who ran what, when, and with which result.
 
-SEP is **app-based**: each capability (backups, schema changes, diagnostics, etc.) is a
+PMM Extensions is **app-based**: each capability (backups, schema changes, diagnostics, etc.) is a
 separate app that adds its own UI and API. Which apps are available is controlled by
 the `APPS` (and `TASKS.APPS`) sections of `settings.yaml`, so a deployment can enable
 only the apps it needs.
 
-## How SEP works
+## How PMM Extensions works
 
 At a high level:
 
 1. **Sign in.** Users authenticate through Casdoor (OAuth 2.0 / OIDC).
-2. **Browse inventory.** SEP keeps an inventory of nodes, services, schemas, and tables,
+2. **Browse inventory.** PMM Extensions keeps an inventory of nodes, services, schemas, and tables,
   typically synced from PMM. Operators select the service they want to act on.
-3. **Run an app action.** When an operator triggers an action, SEP dispatches a job to a
+3. **Run an app action.** When an operator triggers an action, PMM Extensions dispatches a job to a
   **Nomad** agent that runs on (or close to) the target database host using the `raw_exec`
-   driver. The command runs there, and the output and logs are captured back in SEP for
+   driver. The command runs there, and the output and logs are captured back in PMM Extensions for
    review and history.
-4. **Review results.** Task status, logs, and artifacts are stored and viewable in SEP.
+4. **Review results.** Task status, logs, and artifacts are stored and viewable in PMM Extensions.
 
 Some apps (alerting and reporting) do not run a command on a database host at all — they
 talk to the PMM HTTP API instead.
@@ -53,7 +53,7 @@ talk to the PMM HTTP API instead.
 For deeper technical detail on the deployment topology and per-task data flow, see the
 companion customer docs:
 
-- [SEP Task Execution — Data Flow](../sep-task-execution-dfd/README.md)
+- [PMM Extensions Task Execution — Data Flow](../pmm-extensions-task-execution-dfd/README.md)
 
 ## Apps
 
@@ -74,7 +74,7 @@ PostgreSQL, and MongoDB services are available as API calls under
 `/api/apps/inventory/`, and the recurring schedule is created and adjusted through the
 periodic-task API under `/api/tasks/periodic/`.
 
-**What it runs:** an `inventory-sync` background job (runs syncer code on the SEP worker, not
+**What it runs:** an `inventory-sync` background job (runs syncer code on the PMM Extensions worker, not
 on a database host) and a connectivity check dispatched as a Nomad `run-python` task that
 performs a simple `SELECT 1`-style probe using `pymysql` / `psycopg2` / `pymongo`.
 
@@ -111,7 +111,7 @@ same `exec-artifact` / `exec-python-artifact` tasks.
 **Purpose:** Apply online MySQL schema changes (`ALTER`s) to a table without blocking reads
 and writes.
 
-SEP builds the command from your `ALTER` statement, the target table, and replica-discovery
+PMM Extensions builds the command from your `ALTER` statement, the target table, and replica-discovery
 settings. Creating a change also stores a **dry-run** variant and a **pre-checks** step
 (disk space, foreign keys, triggers, etc.) so you can validate before executing for real.
 
@@ -153,7 +153,7 @@ hot backups (with optional prepare, compression, and verification).
 
 **Purpose:** Verify MySQL replication consistency between a primary and its replicas.
 
-SEP scopes the check to selected databases/tables and configures how replicas are
+PMM Extensions scopes the check to selected databases/tables and configures how replicas are
 discovered, then reports any data drift.
 
 **What it runs:** `**pt-table-checksum`** (Percona Toolkit). Use `--explain` mode to preview
@@ -179,7 +179,7 @@ MongoDB connection URI configured on the target node (see the app's
 ### PostgreSQL Backups
 
 > [!NOTE]
-> This app is present in SEP but is **not enabled by default**. To use it, add it to the
+> This app is present in PMM Extensions but is **not enabled by default**. To use it, add it to the
 > `APPS` section of `settings.yaml`.
 
 **Purpose:** Run pgBackRest backups for PostgreSQL inventory services.
@@ -253,6 +253,6 @@ the target host. For remote databases (such as RDS/DBaaS) you select which execu
 can reach the database.
 - **Credentials live on the host.** The commands read database credentials from files on the
 Nomad client — for example `~/.my.cnf` / `~/.mylogin.cnf` for MySQL tools and a MongoDB URI
-file for PBM — rather than from SEP itself.
+file for PBM — rather than from PMM Extensions itself.
 - **History and logs.** Every dispatched task records its status, logs, and any artifacts, so
-you can review past runs and download their output from SEP.
+you can review past runs and download their output from PMM Extensions.

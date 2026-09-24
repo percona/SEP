@@ -1,4 +1,4 @@
-%% SEP Task Execution — Level-1 Data Flow Diagram
+%% PMM Extensions Task Execution — Level-1 Data Flow Diagram
 %% Path A: Snippets (one-shot). Path B: Proxy apps e.g. checksums (create then execute).
 %% Auth: Grafana session exchange (PMM-embedded); mTLS on inter-service links only.
 
@@ -18,11 +18,11 @@ flowchart LR
 
     subgraph authZone ["Authentication (no client-cert user login)"]
         P_Exchange["P1: Session exchange"]
-        P_Validate["P2: SEP bearer validation"]
+        P_Validate["P2: PMM Extensions bearer validation"]
     end
 
-    P_UI["P3: SEP UI"]
-    P_SEPApi["P5a: SEP /api/sep/* gateway<br/>SPA never reaches Tasks API directly"]
+    P_UI["P3: PMM Extensions UI"]
+    P_SEPApi["P5a: PMM Extensions /api/sep/* gateway<br/>SPA never reaches Tasks API directly"]
     P_TasksAPI["P5b: Tasks API<br/>prepare history + dispatch<br/>internal-only, behind mTLS"]
     P_Celery["P6: Celery worker"]
     P_NomadExec["P7: Nomad executor"]
@@ -54,8 +54,8 @@ flowchart LR
     Engineer -->|"POST /api/oauth/session/exchange<br/>PMM session cookie rides same-origin request"| P_Exchange
     P_Exchange -->|"Validate PMM session<br/>against Grafana"| Grafana
     Grafana -->|"User identity and org role"| P_Exchange
-    P_Exchange -->|"Short-lived SEP bearer<br/>in response body,<br/>no cookie set, no refresh token"| Engineer
-    Engineer -->|"Authorization: Bearer<br/>short-lived SEP token"| P_UI
+    P_Exchange -->|"Short-lived PMM Extensions bearer<br/>in response body,<br/>no cookie set, no refresh token"| Engineer
+    Engineer -->|"Authorization: Bearer<br/>short-lived PMM Extensions token"| P_UI
     P_UI --> P_Validate
 
     P_Validate --> P_UI
@@ -91,7 +91,7 @@ flowchart LR
     P_TasksAPI -.->|"if PMM.ANNOTATIONS_ENABLED"| P_PMMAnnotate
     P_PMMAnnotate -.-> PMM
 
-    %% Log read-back (via SEP gateway, never directly to Tasks API)
+    %% Log read-back (via PMM Extensions gateway, never directly to Tasks API)
     P_UI -->|"GET /api/sep/task-history/.../logs SSE"| P_SEPApi
     P_SEPApi --> P_TasksAPI
     TasksDB --> P_TasksAPI
@@ -105,9 +105,9 @@ flowchart LR
 
     subgraph transportNote ["Transport security (not user identity)"]
         direction LR
-        T_HTTPS["Browser ↔ PMM Nginx: HTTPS<br/>PMM owns the ingress, fronts SEP on sub-path"]
-        T_Internal["PMM Nginx ↔ SEP FastAPI: HTTP loopback"]
-        T_mTLS["SEP ↔ Tasks / Inventory: mTLS"]
+        T_HTTPS["Browser ↔ PMM Nginx: HTTPS<br/>PMM owns the ingress, fronts PMM Extensions on sub-path"]
+        T_Internal["PMM Nginx ↔ PMM Extensions FastAPI: HTTP loopback"]
+        T_mTLS["PMM Extensions ↔ Tasks / Inventory: mTLS"]
         T_NomadTLS["Tasks ↔ Nomad: mTLS<br/>Nomad PKI customer-supplied for external Nomad"]
     end
 

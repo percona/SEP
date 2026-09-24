@@ -475,7 +475,7 @@ that full form over `--with typecheck`, which installs *fewer* groups than
 thinner environment changes what it reports.
 
 The exact pin means ty's own behaviour cannot drift under the gate; what can
-drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking
+drift is the tree beneath it. The PMM Extensions team owns the upgrade cadence a blocking
 gate creates, revisited each release cycle alongside the re-measure rule in
 *Changing this policy* below.
 
@@ -550,7 +550,7 @@ Predominantly first-party defects with a fix available here.
 |---|---:|---|
 | `invalid-return-type` | 168 | Nullable returns, and generator fixtures annotated as the yielded type rather than as a generator. |
 | `not-subscriptable` | 59 | 57 of 59 subscript a value ty knows may be `None`. |
-| `invalid-type-form` | 39 | SEP's own dynamic `type[BaseUser]` / `type[BaseModel]` values used as annotations. |
+| `invalid-type-form` | 39 | PMM Extensions' own dynamic `type[BaseUser]` / `type[BaseModel]` values used as annotations. |
 | `unsupported-operator` | 22 | 16 of 22 have an un-narrowed `X \| None` operand; the rest widen an operand to `object`. |
 | `invalid-method-override` | 19 | First-party overrides of first-party bases; these are Liskov violations. |
 | `not-iterable` | 12 | Includes `async for` over a coroutine that was never awaited. |

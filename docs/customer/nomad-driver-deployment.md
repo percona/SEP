@@ -1,9 +1,9 @@
-# SEP — Nomad Driver and Deployment Configuration
+# PMM Extensions — Nomad Driver and Deployment Configuration
 
-Customer-facing reference for security and cloud architects reviewing how **HashiCorp Nomad** is deployed and used by the **Services Enablement Platform (SEP)**. This document describes the **Percona GAS automation** deployment (`nomad.yaml` / `sep.yaml` in the GAS automation repository) and how SEP consumes Nomad at runtime.
+Customer-facing reference for security and cloud architects reviewing how **HashiCorp Nomad** is deployed and used by **PMM Extensions**. This document describes the **Percona GAS automation** deployment (`nomad.yaml` / `sep.yaml` in the GAS automation repository) and how PMM Extensions consumes Nomad at runtime.
 
-**Related:** [SEP Task Execution DFD](sep-task-execution-dfd/README.md) (application data flows and command controls).
-**Security sign-off:** [security-review-checklist.md](sep-task-execution-dfd/security-review-checklist.md) §8 before customer delivery.
+**Related:** [PMM Extensions Task Execution DFD](pmm-extensions-task-execution-dfd/README.md) (application data flows and command controls).
+**Security sign-off:** [security-review-checklist.md](pmm-extensions-task-execution-dfd/security-review-checklist.md) §8 before customer delivery.
 
 ---
 
@@ -20,15 +20,15 @@ Customer-facing reference for security and cloud architects reviewing how **Hash
 
 ---
 
-## 2. Which driver SEP uses
+## 2. Which driver PMM Extensions uses
 
-| Driver | Enabled on Nomad agents (Percona default) | Used by SEP job templates |
+| Driver | Enabled on Nomad agents (Percona default) | Used by PMM Extensions job templates |
 |--------|-------------------------------------------|---------------------------|
 | **`raw_exec`** | **Yes** — explicitly enabled in agent config | **Yes** — all parameterized batch jobs |
 | **`exec`** | **No** — not enabled in automation templates | **No** |
-| **`nomad-driver-podman`** | Optional (`nomad_plugin_container_enabled`, default **false**) | **No** for SEP task execution |
+| **`nomad-driver-podman`** | Optional (`nomad_plugin_container_enabled`, default **false**) | **No** for PMM Extensions task execution |
 
-SEP registers parameterized Nomad jobs (`run-command`, `run-python`, `exec-artifact`, etc.) whose tasks declare `"Driver": "raw_exec"`. The Tasks service only schedules work onto nodes that advertise a healthy `raw_exec` driver. From `app/tasks/execution/executors/nomad/models.py`:
+PMM Extensions registers parameterized Nomad jobs (`run-command`, `run-python`, `exec-artifact`, etc.) whose tasks declare `"Driver": "raw_exec"`. The Tasks service only schedules work onto nodes that advertise a healthy `raw_exec` driver. From `app/tasks/execution/executors/nomad/models.py`:
 
 ```python
 filter_expression = "Status == ready and raw_exec in Drivers and Drivers.raw_exec.Healthy == true"
@@ -38,7 +38,7 @@ return {
 }
 ```
 
-**Why `raw_exec` and not `exec`:** SEP runs predefined tooling (Percona Toolkit, approved snippets, Python payloads) on **database hosts** already managed by Percona automation. `raw_exec` runs the process as the **same unprivileged OS user as the Nomad client agent** (see §5), with job placement constrained to a named node (see §4). The `exec` driver adds an isolation boundary (chroot, cgroups) that is not required for the current SEP job design and is **not** turned on in the standard playbook.
+**Why `raw_exec` and not `exec`:** PMM Extensions runs predefined tooling (Percona Toolkit, approved snippets, Python payloads) on **database hosts** already managed by Percona automation. `raw_exec` runs the process as the **same unprivileged OS user as the Nomad client agent** (see §5), with job placement constrained to a named node (see §4). The `exec` driver adds an isolation boundary (chroot, cgroups) that is not required for the current PMM Extensions job design and is **not** turned on in the standard playbook.
 
 ---
 
@@ -49,10 +49,10 @@ return {
 | Item | Location / behavior |
 |------|---------------------|
 | Nomad playbook | `automation/nomad.yaml` — dynamic inventory groups, server/client install, TLS |
-| SEP stack playbook | `automation/sep.yaml` — imports `nomad.yaml` (tag `nomad`), then deploys SEP on `monitors` |
+| PMM Extensions stack playbook | `automation/sep.yaml` — imports `nomad.yaml` (tag `nomad`), then deploys PMM Extensions on `monitors` |
 | Nomad server role | `automation/roles/nomad` — binary, `config.hcl`, systemd unit, TLS, optional PMM scrape |
 | Nomad client role | `automation/roles/nomad_client` — includes the `nomad` role on client hosts |
-| SEP Nomad API settings | `automation/roles/sep/templates/prod-settings.yaml.j2` → `TASKS.NOMAD` |
+| PMM Extensions Nomad API settings | `automation/roles/sep/templates/prod-settings.yaml.j2` → `TASKS.NOMAD` |
 
 Deployment is driven by inventory variables (typically set in ServiceNow / `gascan` CI):
 
@@ -98,7 +98,7 @@ Other notable settings:
 
 - **Nomad version:** `1.10.5` (role default `nomad_version`).
 - **Bind/advertise:** `nomad_bind_addr` (defaults to `ansible_host`).
-- **Node name:** `nomad_node_name` → `pmm_payload_base.node_name` or `inventory_hostname` (this is the value SEP uses as execution **target**).
+- **Node name:** `nomad_node_name` → `pmm_payload_base.node_name` or `inventory_hostname` (this is the value PMM Extensions uses as execution **target**).
 - **Data/config paths:** under the automation OS user, e.g. `~/.config/nomad`, `~/.local/share/nomad/data`.
 
 Certificates are generated with `nomad tls ca create` and `nomad tls cert create` (`roles/nomad/tasks/certs.yaml`):
@@ -107,10 +107,10 @@ Certificates are generated with `nomad tls ca create` and `nomad tls cert create
 |-------------|---------|
 | `nomad-agent-ca.pem` | Cluster CA |
 | `global-server-nomad.pem` | Server/agent identity on Nomad server nodes |
-| `global-client-nomad.pem` | Client identity — used by **SEP Tasks** API to call Nomad |
+| `global-client-nomad.pem` | Client identity — used by **PMM Extensions Tasks** API to call Nomad |
 | `global-cli-nomad.pem` | Operator CLI / troubleshooting |
 
-### 3.3 SEP connection to Nomad
+### 3.3 PMM Extensions connection to Nomad
 
 Production Tasks settings (from automation template) use **HTTPS + mTLS** to the Nomad HTTP API on the monitor host:
 
@@ -124,7 +124,7 @@ NOMAD:
   SSL_KEYFILE: /data/certs/nomad/global-client-nomad-key.pem
 ```
 
-Nomad certificates are mounted into the SEP pod/stack (`roles/sep/templates/sep-local.yaml.j2`). Local development may use plain HTTP (`settings.yaml`).
+Nomad certificates are mounted into the PMM Extensions pod/stack (`roles/sep/templates/sep-local.yaml.j2`). Local development may use plain HTTP (`settings.yaml`).
 
 ---
 
@@ -132,16 +132,16 @@ Nomad certificates are mounted into the SEP pod/stack (`roles/sep/templates/sep-
 
 ### 4.1 Typical topology
 
-| Role | Inventory flag | Typical host | Executes SEP workloads? |
+| Role | Inventory flag | Typical host | Executes PMM Extensions workloads? |
 |------|----------------|--------------|------------------------|
 | **Nomad server** | `nomad_server_enabled: true` | **Monitor** / PMM server host | Server-only scheduling metadata; may also run client on same host |
 | **Nomad client** | `nomad_enabled: true` | **Database nodes** (and optionally monitor) | **Yes** — `raw_exec` allocations run here |
 
 Hosts in the `vips` group are **excluded** from dynamic Nomad grouping (`nomad.yaml` uses `hosts: '!vips'`).
 
-Exact host lists are **customer-specific** (Ansible inventory / ServiceNow). Percona enables Nomad per host via `nomad_enabled` / `nomad_server_enabled`; there is no hard-coded host list in SEP.
+Exact host lists are **customer-specific** (Ansible inventory / ServiceNow). Percona enables Nomad per host via `nomad_enabled` / `nomad_server_enabled`; there is no hard-coded host list in PMM Extensions.
 
-### 4.2 How SEP picks a node
+### 4.2 How PMM Extensions picks a node
 
 1. Engineers choose a **target** (Nomad node name) in the UI/API, from `GET /api/tasks/hosts/` (healthy clients with `raw_exec`).
 2. Dispatched jobs include meta `target` matching `${node.unique.name}`.
@@ -163,14 +163,14 @@ So a task runs **only** on the client whose registered name equals the selected 
 
 | Source | Destination | Port | Use |
 |--------|-------------|------|-----|
-| Nomad client/server | Nomad server/client | **4646/TCP** | HTTP API (SEP → Nomad) |
+| Nomad client/server | Nomad server/client | **4646/TCP** | HTTP API (PMM Extensions → Nomad) |
 | Nomad server | Nomad client | **4647/TCP** | RPC |
 
 See GAS `docs/usage/nomad.md` for production networking guidance.
 
 ### 4.4 Executor-host Python
 
-SEP's Python payloads (backups, restores, pre-checks, connectivity checks, inventory and host-facts collection, and diagnostics collectors) run under the executor host's own interpreter. The `run-python` and `exec-python-artifact` jobs build a virtual environment with `python3 -m venv` and install the payload's drivers into it with `pip`. So every Nomad client that runs SEP workloads needs:
+PMM Extensions' Python payloads (backups, restores, pre-checks, connectivity checks, inventory and host-facts collection, and diagnostics collectors) run under the executor host's own interpreter. The `run-python` and `exec-python-artifact` jobs build a virtual environment with `python3 -m venv` and install the payload's drivers into it with `pip`. So every Nomad client that runs PMM Extensions workloads needs:
 
 - **`python3` 3.9 or newer** on the Nomad agent's `PATH`;
 - **its `venv` module**, including the `pip` bootstrap `venv` relies on.
@@ -185,7 +185,7 @@ SEP's Python payloads (backups, restores, pre-checks, connectivity checks, inven
 
 On Python 3.9, `pip` installs the newest driver releases that still support it, which can be older than on a newer host.
 
-**Customer action:** On each Nomad client, run this as the agent's user. It builds a virtual environment the way SEP does and prints `pip`'s version line, which must end in `(python 3.9)` or newer; an error instead means the host lacks `venv` or its `pip` bootstrap:
+**Customer action:** On each Nomad client, run this as the agent's user. It builds a virtual environment the way PMM Extensions does and prints `pip`'s version line, which must end in `(python 3.9)` or newer; an error instead means the host lacks `venv` or its `pip` bootstrap:
 
 ```bash
 d=$(mktemp -d) && python3 -m venv --copies "$d/venv" && "$d/venv/bin/python" -m pip --version; rm -rf "$d"
@@ -210,7 +210,7 @@ Systemd unit excerpt (`GAS/automation/roles/nomad/templates/systemd/nomad.servic
 - `ExecStart` runs `nomad agent` with `-config` pointing at the automation user’s `config.hcl`.
 - **Default install** uses a **user** systemd unit (`systemctl --user`) without global `User=` lines; the process still runs as the logged-in automation user that started the unit.
 
-SEP job tasks set `"User": ""` in Nomad job JSON, which means tasks inherit the **client agent’s user** — the same unprivileged automation account, not root.
+PMM Extensions job tasks set `"User": ""` in Nomad job JSON, which means tasks inherit the **client agent’s user** — the same unprivileged automation account, not root.
 
 **Customer action:** Verify on each Nomad host that the running agent matches policy, e.g. `ps -o user= -C nomad` or `systemctl --user status nomad` (default) / `systemctl status nomad` (global systemd variant).
 
@@ -229,25 +229,25 @@ Access to the Nomad HTTP API is restricted by:
 1. **TLS** — API and RPC require TLS (`tls.http`, `tls.rpc`).
 2. **Mutual TLS** — `verify_https_client = true`; callers must present a certificate issued by the cluster CA.
 3. **Certificate distribution** — Only hosts/principals that receive key material can call the API:
-   - **SEP Tasks service:** `global-client-nomad.pem` / key (mounted in SEP container).
+   - **PMM Extensions Tasks service:** `global-client-nomad.pem` / key (mounted in PMM Extensions container).
    - **Operators:** `global-cli-nomad.pem` (automation-generated; stored under `~/.config/nomad/certs` on managed hosts).
    - **Agents:** server or client agent certs on each Nomad node.
 
 This is **certificate-based access control**, not per-Unix-user Nomad ACL identities. Operational “who may run Nomad CLI” is governed by **who can log in as the automation user** and read those files (and by platform SSH/access policies).
 
-Optional: `sep_nomad_readable_by_all: true` widens read access on `global-client-nomad-key.pem` for the SEP stack user inside a container (`roles/sep/tasks/stack.yaml`); default is `false`.
+Optional: `sep_nomad_readable_by_all: true` widens read access on `global-client-nomad-key.pem` for the PMM Extensions stack user inside a container (`roles/sep/tasks/stack.yaml`); default is `false`.
 
-### 6.3 SEP application-layer control
+### 6.3 PMM Extensions application-layer control
 
-Nomad access does **not** replace SEP’s own controls:
+Nomad access does **not** replace PMM Extensions’s own controls:
 
-- Engineers authenticate to SEP via **Casdoor OAuth/JWT** (see task execution DFD).
-- SEP only dispatches **predefined** job types and merged `meta` (no arbitrary shell from the UI).
-- Snippet approval and app-defined commands are enforced in SEP before Nomad dispatch.
+- Engineers authenticate to PMM Extensions via **Casdoor OAuth/JWT** (see task execution DFD).
+- PMM Extensions only dispatches **predefined** job types and merged `meta` (no arbitrary shell from the UI).
+- Snippet approval and app-defined commands are enforced in PMM Extensions before Nomad dispatch.
 
 ---
 
-## 7. SEP Nomad job templates (summary)
+## 7. PMM Extensions Nomad job templates (summary)
 
 Registered in the Tasks database (`app/tasks/db/seed.py`):
 
@@ -271,7 +271,7 @@ Common properties:
 | Criterion | Status |
 |-----------|--------|
 | References official HashiCorp documentation | §1 |
-| Includes Percona-specific deployment notes | §3–§7 (GAS automation + SEP) |
+| Includes Percona-specific deployment notes | §3–§7 (GAS automation + PMM Extensions) |
 | Reviewed by engineering lead for accuracy | **Pending** — complete sign-off below |
 
 ### Sign-off
@@ -279,7 +279,7 @@ Common properties:
 | Role | Name | Date | Notes |
 |------|------|------|-------|
 | Document author | | | |
-| Engineering lead | | | Accuracy of automation + SEP behavior |
+| Engineering lead | | | Accuracy of automation + PMM Extensions behavior |
 | Security / customer architect | | | Customer delivery |
 
 ---
@@ -289,9 +289,9 @@ Common properties:
 | Source | When to update this doc |
 |--------|-------------------------|
 | `GAS/automation/nomad.yaml`, `roles/nomad/**` | Agent version, TLS, driver plugins, systemd/user mode |
-| `GAS/automation/roles/sep/templates/prod-settings.yaml.j2` | SEP → Nomad endpoint or cert paths |
+| `GAS/automation/roles/sep/templates/prod-settings.yaml.j2` | PMM Extensions → Nomad endpoint or cert paths |
 | `SEP/app/tasks/db/seed.py` | Job templates or drivers |
 | `SEP/app/tasks/execution/executors/nomad/models.py` | Node selection / health filters |
 | `SEP/tests/app/host_payloads.py` (`MINIMUM_HOST_PYTHON`) and the `python-version` of the Python 3.9 step in `SEP/.github/workflows/python.yaml` and `coverage-main.yml` | The executor-host Python floor in §4.4, which `tests/app/test_host_payloads.py` checks the shipped payloads against: each file loads under that Python, uses no newer standard-library API, and evaluates no `X \| Y` type union at runtime |
 
-**Automation repository:** Percona **GAS** repository, `automation/` directory (sibling to SEP in Percona’s source layout). Paths in §3 are relative to that tree.
+**Automation repository:** Percona **GAS** repository, `automation/` directory (sibling to PMM Extensions in Percona’s source layout). Paths in §3 are relative to that tree.

@@ -1,4 +1,4 @@
-# SEP - Services Enablement Platform
+# PMM Extensions
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@
          * [Getting your PMM API Key](#getting-your-pmm-api-key)
       * [MySQLSyncer](#mysqlsyncer)
 * [Usage](#usage)
-  * [Starting Celery with SEP for development](#starting-celery-with-sep-for-development)
+  * [Starting Celery with PMM Extensions for development](#starting-celery-with-pmm-extensions-for-development)
 * [Contributing](#contributing)
 * [Deployment](#deployment)
 
@@ -68,7 +68,7 @@ and the Celery Beart with:
 celery -A app.tasks.celery beat -S sqlalchemy --loglevel=info
 ```
 
-For development purposes, you can also [start Celery with SEP](#starting-celery-with-sep-for-development).
+For development purposes, you can also [start Celery with PMM Extensions](#starting-celery-with-pmm-extensions-for-development).
 
 ## Setup
 
@@ -87,7 +87,7 @@ source venv/bin/activate
 > [!TIP]
 > Use `venv/bin/activate.fish` if you're on a Fish shell.
 
-3. Create SEP's databases with `make migrate`:
+3. Create PMM Extensions' databases with `make migrate`:
 ```shell
 make migrate
 ```
@@ -98,8 +98,8 @@ In Casdoor's web interface, navigate to Identity > Applications > app-built-in
 (should be in [this link](http://localhost:9999/applications/built-in/app-built-in))
 and scroll to **Redirect URLs**.
 
-The Redirect URL you should add depends on how SEP is running (see [Usage](#usage)).
-For example, if you're running SEP in your localhost with HTTP in port 8000, you shoul
+The Redirect URL you should add depends on how PMM Extensions is running (see [Usage](#usage)).
+For example, if you're running PMM Extensions in your localhost with HTTP in port 8000, you shoul
 add the URLs `http://localhost:8000/oauth/callback` and `http://127.0.0.1:8000/oauth/callback`.
 
 ![image](https://github.com/user-attachments/assets/8a562b77-00c7-4192-bba3-d22e3514766f)
@@ -109,7 +109,7 @@ See the [secrets section](#secrets) of the README for more details.
 
 ## Configuration
 
-SEP will read settings in the following order of priority:
+PMM Extensions will read settings in the following order of priority:
 1. Environment variables
 2. .env file
 3. Secret files
@@ -140,7 +140,7 @@ These are some, but not all, the possible settings you can have, per app:
 | AUTH__PROVIDER__CASDOOR__APPLICATION_NAME  | all | no  | app-built-in                                    | sep-app                                          |
 | AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS   | all | no  | `[<ENDPOINT>]`                                  | `[http://localhost:9999, http://127.0.0.1:9999]` |
 | CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
-| CELERY__BEAT_DBURI         | all       | no       | The resolved SEP database connection                | sqlite:///schedule.db                            |
+| CELERY__BEAT_DBURI         | all       | no       | The resolved PMM Extensions database connection                | sqlite:///schedule.db                            |
 | LOGGING                    | all       | no       | WARNING                                             | N/A                                              |
 | BACKEND_CORS_ORIGINS       | all       | no       | []                                                  | [http://localhost:8000, http://127.0.0.1:8000]   |
 | TASKS__NOMAD__ENDPOINT     | tasks     | yes      | N/A                                                 | http://127.0.0.1:4646                            |
@@ -202,7 +202,7 @@ project root folder.
 
 ### Session Management
 
-SEP provides configurable session management through the `SEP__SESSION` section:
+PMM Extensions provides configurable session management through the `SEP__SESSION` section:
 
 ```yaml
 SEP:
@@ -222,7 +222,7 @@ SEP:
 
 ### CSRF Protection
 
-SEP uses double-submit cookie CSRF protection. The same token can be reused for
+PMM Extensions uses double-submit cookie CSRF protection. The same token can be reused for
 multiple POST requests (e.g. from a React SPA), so you do not need to refetch
 a token after each request. Send the token in the `X-CSRF-TOKEN` header or in
 the form body as `csrf-token`. The token expires with the session (see
@@ -240,7 +240,7 @@ SEP:
 
 ### Security Headers
 
-SEP supports configurable security headers through the `SEP__SECURITY_HEADERS` section:
+PMM Extensions supports configurable security headers through the `SEP__SECURITY_HEADERS` section:
 
 ```yaml
 SEP:
@@ -276,7 +276,7 @@ Profile overlays merge onto `default:`: a non-empty list prepends to the inherit
 
 ### Sync Configuration
 
-SEP provides several sync-related configuration options:
+PMM Extensions provides several sync-related configuration options:
 
 - `SEP__SYNC_REFRESH_TIME`: Browser refresh interval during sync operations (in seconds)
 - `TASKS__SYNC_LOCK_TTL`: TaskHistory sync lock timeout (in seconds)
@@ -294,7 +294,7 @@ Additional Nomad configuration options are available:
 
 ### Plugins
 
-SEP works with modular plugins. Plugins are FastAPI routers that will be added to the application
+PMM Extensions works with modular plugins. Plugins are FastAPI routers that will be added to the application
 according to defined settings. Each plugin must have their own module in `app.sep.plugins`
 with a `router` inside. The following plugins are configured by default:
 
@@ -334,7 +334,7 @@ Each plugin configuration includes:
 
 ### Secrets
 
-SEP needs some keys and secrets to interact with Casdoor. They are:
+PMM Extensions needs some keys and secrets to interact with Casdoor. They are:
 - `AUTH__PROVIDER__CASDOOR__CLIENT_ID`
 - `AUTH__PROVIDER__CASDOOR__CLIENT_SECRET`
 
@@ -345,9 +345,9 @@ echo -e "AUTH__PROVIDER__CASDOOR__CLIENT_ID=YOUR_CASDOOR_CLIENT_ID\nAUTH__PROVID
 
 #### `ENCRYPTION_KEY`
 
-`ENCRYPTION_KEY` is the key SEP encrypts stored values with. Secret-typed
+`ENCRYPTION_KEY` is the key PMM Extensions encrypts stored values with. Secret-typed
 settings-override values are encrypted with it at rest, and **every
-environment needs its own, local development included**: SEP refuses to start
+environment needs its own, local development included**: PMM Extensions refuses to start
 without one, and so do the Celery workers, the Alembic migrations, and the
 OpenAPI dump. It has no default, is never derived from
 `SECRET_KEY`, and no value ships in the repository: the values it protects are
@@ -377,7 +377,7 @@ named `ENCRYPTION_KEY` under `SECRETS_DIR`.
 
 **Keep the value stable.** Ciphertext outlives the process that wrote it, so
 rotating or losing the key makes every already-encrypted row permanently
-unreadable. There is no recovery path and no rotation tooling. An override SEP
+unreadable. There is no recovery path and no rotation tooling. An override PMM Extensions
 cannot decrypt is logged and skipped, and the setting falls back to its
 YAML/env value — the deployment keeps starting, but the stored credential is
 gone.
@@ -400,7 +400,7 @@ SECRETS_DIR=/run/secrets uvicorn app.main:app
 ```
 
 An unprefixed global name such as `DATABASE__PASSWORD` resolves for every prefixed
-settings class that reads the same destination — one mounted file reaches SEP,
+settings class that reads the same destination — one mounted file reaches PMM Extensions,
 Inventory, and Tasks when all three share one database. A per-service spelling such
 as `SEP__DATABASE__PASSWORD` overrides the global one for that service only; when
 both are present in the same source, the more specific name wins regardless of
@@ -447,7 +447,7 @@ to your .env file.
 
 ### Database Configuration
 
-SEP supports multiple database engines for different components. Each component (SEP, Inventory, Tasks) can have its own database configuration:
+PMM Extensions supports multiple database engines for different components. Each component (PMM Extensions, Inventory, Tasks) can have its own database configuration:
 
 #### SQLite Configuration (Development)
 ```yaml
@@ -500,7 +500,7 @@ Supported database engines:
 
 ### Syncers
 
-SEP features Inventory syncing with external services and APIs. You can choose the syncers
+PMM Extensions features Inventory syncing with external services and APIs. You can choose the syncers
 you want to enable in the SEP.SYNCERS section of the configuration:
 
 ```yaml
@@ -594,7 +594,7 @@ against the same hosts.
 
 ### SSL Configuration
 
-SEP supports SSL/TLS configuration for secure communications. SSL settings can be configured at different levels:
+PMM Extensions supports SSL/TLS configuration for secure communications. SSL settings can be configured at different levels:
 
 #### Global SSL Settings
 ```yaml
@@ -659,29 +659,29 @@ cd SEP
 source venv/bin/activate
 ```
 
-3. Start SEP:
+3. Start PMM Extensions:
 ```shell
 LOGGING=debug python3 -m app.main
 ```
 
-SEP will be available in http://localhost:8000.
+PMM Extensions will be available in http://localhost:8000.
 
 ![image](https://github.com/user-attachments/assets/cec67a8e-341a-45d5-9144-e6c24f5128eb)
 
 ### API documentation
 
-SEP exposes interactive Swagger UI pages for each of its services:
+PMM Extensions exposes interactive Swagger UI pages for each of its services:
 
 | Path | Scope |
 |---|---|
-| `/api/docs` | Merged core + SEP-web-app schema |
+| `/api/docs` | Merged core + PMM Extensions-web-app schema |
 | `/api/inventory/docs` | Inventory service |
 | `/api/tasks/docs` | Tasks service |
 
 
-### Starting Celery with SEP for development
+### Starting Celery with PMM Extensions for development
 
-For development environments, you can start the Celery Worker and the Celery Beat with SEP by using the `--start-celery` flag:
+For development environments, you can start the Celery Worker and the Celery Beat with PMM Extensions by using the `--start-celery` flag:
 ```shell
 LOGGING=debug python3 -m app.main --start-celery
 ```
@@ -692,9 +692,9 @@ See our [CONTRIBUTING](https://github.com/percona/SEP/blob/main/CONTRIBUTING.md)
 
 ## Deployment
 
-SEP is moving to ship bundled with Percona Monitoring and Management (PMM), which will
-deploy and run it — no separate SEP deployment step. That integration has not been
+PMM Extensions is moving to ship bundled with Percona Monitoring and Management (PMM), which will
+deploy and run it — no separate PMM Extensions deployment step. That integration has not been
 released yet; once it ships, PMM's own documentation will cover enabling it.
 
-v0.13.1 was the final standalone SEP release. Its installer and standalone image remain
+v0.13.1 was the final standalone PMM Extensions release. Its installer and standalone image remain
 available from that release tag for existing deployments.
