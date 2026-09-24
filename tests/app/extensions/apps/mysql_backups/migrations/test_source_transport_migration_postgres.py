@@ -208,7 +208,9 @@ async def _insert_run(
 class TestSourceTransportMigration:
     """Define tests for the ``source_transport`` column and CHECK on PostgreSQL."""
 
-    def test_upgrade_adds_column_and_check(self, extensions_postgres_alembic_config) -> None:
+    def test_upgrade_adds_column_and_check(
+        self, extensions_postgres_alembic_config
+    ) -> None:
         """Assert upgrade stamps the column and CHECK on native PostgreSQL ALTER."""
         cfg, url, schema = extensions_postgres_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
