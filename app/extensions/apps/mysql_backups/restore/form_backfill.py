@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.inventory.models import ServiceTypeEnum
 from app.extensions.apps.framework.form_backfill_guards import require_run_python_meta
 from app.extensions.apps.framework.form_backfill_inventory import (
     resolve_service_from_meta,
@@ -41,11 +40,11 @@ from app.extensions.apps.mysql_backups.models import (
     CataloguedSourceTransport,
 )
 from app.extensions.apps.mysql_backups.restore.deps import (
-    _transport_cache_key,
     CatalogTransportContext,
     catalogued_transport_for_stamp,
     parse_restore_task_data,
     pending_catalog_transport_lookups,
+    transport_cache_key,
 )
 from app.extensions.apps.mysql_backups.restore.models import (
     OWNER,
@@ -54,6 +53,7 @@ from app.extensions.apps.mysql_backups.restore.models import (
 )
 from app.extensions.db import get_async_session_maker
 from app.extensions.db.engine import engine as extensions_engine
+from app.inventory.models import ServiceTypeEnum
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine, Sequence
@@ -237,7 +237,7 @@ def _sync_catalogued_transport_for_stamp(
     :param stored_form: The undeclared form stamp or reconstructed body.
     :return: The catalogued transport, or ``None`` on miss / failure.
     """
-    resolved = _transport_cache_key(task, stored_form)
+    resolved = transport_cache_key(task, stored_form)
     if resolved is None:
         return None
     cache_key, service_key = resolved

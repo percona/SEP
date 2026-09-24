@@ -270,7 +270,7 @@ def _catalog_service_key_for_stamp(
     return CatalogServiceKey(service_name=service_name or sid, service_id=parsed)
 
 
-def _transport_cache_key(
+def transport_cache_key(
     task: Task, stored_form: dict[str, Any]
 ) -> tuple[CatalogTransportLookupKey, CatalogServiceKey] | None:
     """Return the prefetch key and service scope for ``stored_form``, or ``None``.
@@ -305,7 +305,7 @@ def pending_catalog_transport_lookups(
 
     :param items: ``(task, form)`` pairs to consider (stamps or reconstructed
         bodies).
-    :return: Distinct :func:`_transport_cache_key` first elements, in first-seen
+    :return: Distinct :func:`transport_cache_key` first elements, in first-seen
         order.
     """
     pending: list[CatalogTransportLookupKey] = []
@@ -313,7 +313,7 @@ def pending_catalog_transport_lookups(
     for task, stored_form in items:
         if stored_form.get("source_transport") is not None:
             continue
-        resolved = _transport_cache_key(task, stored_form)
+        resolved = transport_cache_key(task, stored_form)
         if resolved is None:
             continue
         cache_key, _service_key = resolved
@@ -407,7 +407,7 @@ def catalogued_transport_for_stamp(
         or form-backfill ``ctx.extras``.
     :return: The catalogued transport, or ``None``.
     """
-    resolved = _transport_cache_key(task, stored_form)
+    resolved = transport_cache_key(task, stored_form)
     if resolved is None or context is None:
         return None
     cache_key, _service_key = resolved
