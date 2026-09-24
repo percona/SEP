@@ -1394,7 +1394,7 @@ class TestDerivedBeatStoreDefault:
             tmp_path,
             monkeypatch,
             CELERY_PROFILE_BLOCK
-            + "    BEAT_SCHEMA: sep\n"
+            + "    BEAT_SCHEMA: extensions\n"
             + EXTENSIONS_SQLITE_PROFILE_BLOCK,
         )
 
