@@ -51,8 +51,8 @@ def postgres_migration_stores(postgres_sync_url: URL) -> Iterator[dict[str, Engi
     stores: dict[str, Engine] = {}
     try:
         with admin.connect() as connection, ExitStack() as cleanup:
-            for app in ("tasks", "inventory", "sep", "beat"):
-                name = f"sep_migrate_{uuid4().hex}_{app}"
+            for app in ("tasks", "inventory", "extensions", "beat"):
+                name = f"extensions_migrate_{uuid4().hex}_{app}"
                 connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
                 cleanup.callback(
                     connection.exec_driver_sql,

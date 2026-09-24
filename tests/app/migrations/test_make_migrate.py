@@ -48,7 +48,7 @@ def migrate_env(postgres_migration_stores: dict[str, Engine]) -> dict[str, str]:
                 "DATABASE",
                 "TASKS__DATABASE",
                 "INVENTORY__DATABASE",
-                "SEP__DATABASE",
+                "EXTENSIONS__DATABASE",
                 "CELERY",
             )
         )
@@ -65,7 +65,7 @@ def migrate_env(postgres_migration_stores: dict[str, Engine]) -> dict[str, str]:
         ),
         CELERY__BEAT_SCHEMA="public",
     )
-    for app in ("tasks", "inventory", "sep"):
+    for app in ("tasks", "inventory", "extensions"):
         url = postgres_migration_stores[app].url
         env[f"{app.upper()}__DATABASE"] = json.dumps(
             {
@@ -125,7 +125,7 @@ def test_migrate_upgrades_all_apps_and_bootstraps_beat(
     result = _run_migrate(migrate_env)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    for app in ("tasks", "inventory", "sep"):
+    for app in ("tasks", "inventory", "extensions"):
         _assert_at_heads(app, postgres_migration_stores[app])
     assert (
         set(inspect(postgres_migration_stores["beat"]).get_table_names()) >= BEAT_TABLES
@@ -135,7 +135,7 @@ def test_migrate_upgrades_all_apps_and_bootstraps_beat(
 def test_migrate_reports_non_final_failure_without_bootstrapping_beat(
     postgres_migration_stores: dict[str, Engine], migrate_env: dict[str, str]
 ) -> None:
-    """Reject a tasks failure even when the final SEP upgrade succeeds."""
+    """Reject a tasks failure even when the final PMM Extensions upgrade succeeds."""
     version = Table(
         "alembic_version_tasks",
         MetaData(),
@@ -153,6 +153,6 @@ def test_migrate_reports_non_final_failure_without_bootstrapping_beat(
         f"Can't locate revision identified by '{bad_revision}'"
         in result.stdout + result.stderr
     )
-    for app in ("inventory", "sep"):
+    for app in ("inventory", "extensions"):
         _assert_at_heads(app, postgres_migration_stores[app])
     assert inspect(postgres_migration_stores["beat"]).get_table_names() == []
