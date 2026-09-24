@@ -61,7 +61,7 @@ def _build_handoff_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     ini_path = tmp_path / "alembic.ini"
     ini_path.write_text(
         "[alembic]\n"
-        "databases = sep\n"
+        "databases = extensions\n"
         "\n"
         "[extensions]\n"
         "script_location = %(here)s/app/extensions/migrations\n"

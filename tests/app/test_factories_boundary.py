@@ -69,7 +69,7 @@ def _imported_modules(source: str, package: str) -> Iterator[tuple[str, int]]:
     the alias and would otherwise resolve to the innocent ``app.extensions``. The extra
     trailing segment is harmless under a prefix rule: an imported symbol reads as
     one level deeper than its module. A relative form resolves against
-    ``package`` first, so ``from .sep.apps.atw.factories import X`` is classified
+    ``package`` first, so ``from .extensions.apps.atw.factories import X`` is classified
     exactly as its absolute spelling would be.
 
     Descends the whole tree, so an import nested in a class body, a function
@@ -195,7 +195,7 @@ class TestViolationReporting:
             ),
             pytest.param(
                 "conftest.py",
-                "from .sep.apps.atw.factories import AtwIncidentFactory",
+                "from .extensions.apps.atw.factories import AtwIncidentFactory",
                 [
                     "tests/app/conftest.py:1 -> "
                     "tests.app.extensions.apps.atw.factories.AtwIncidentFactory"
@@ -203,7 +203,7 @@ class TestViolationReporting:
                 id="relative-re-export-resolved",
             ),
             pytest.param(
-                "sep/apps/atw/factories.py",
+                "extensions/apps/atw/factories.py",
                 "from app.extensions.apps.atw.models import AtwIncident",
                 [],
                 id="below-root-out-of-scope",
@@ -272,12 +272,12 @@ class TestForbiddenImportDetection:
                 id="relocated-factory-re-export",
             ),
             pytest.param(
-                "from .sep.apps.atw.factories import AtwIncidentFactory",
+                "from .extensions.apps.atw.factories import AtwIncidentFactory",
                 {"tests.app.extensions.apps.atw.factories.AtwIncidentFactory"},
                 id="relative-re-export",
             ),
             pytest.param(
-                "from .sep.apps import atw",
+                "from .extensions.apps import atw",
                 {"tests.app.extensions.apps.atw"},
                 id="relative-package-level-from-import",
             ),

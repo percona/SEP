@@ -85,6 +85,15 @@ def _rewrite(text: str, *, prose: bool = True) -> tuple[str, Counter[str]]:
             "databases = tasks, inventory, sep",
             "databases = tasks, inventory, extensions",
         ),
+        ('"[alembic]\\ndatabases = sep\\n"', '"[alembic]\\ndatabases = extensions\\n"'),
+        (
+            "from .sep.apps.atw.factories import AtwIncidentFactory",
+            "from .extensions.apps.atw.factories import AtwIncidentFactory",
+        ),
+        (
+            "from ..sep.apps.alerts.config import alerts_settings",
+            "from ..extensions.apps.alerts.config import alerts_settings",
+        ),
         ('--tag "sep:builder"', '--tag "extensions:builder"'),
         ("FROM localhost/sep:builder", "FROM localhost/extensions:builder"),
         ('name = "sep"', 'name = "pmm-extensions"'),

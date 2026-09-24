@@ -1087,7 +1087,7 @@ def test_import_time_edges_ignore_a_modules_own_app_package(
             id="relative-same-level",
         ),
         pytest.param(
-            "from ..sep.apps.alerts.config import alerts_settings",
+            "from ..extensions.apps.alerts.config import alerts_settings",
             {"alerts"},
             id="relative-parent-level",
         ),

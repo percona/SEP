@@ -528,7 +528,18 @@ def _alembic(rename_map: RenameMap) -> list[Rule]:
         ),
         Rule("alembic", re.compile(rf"``{old_track}``"), f"``{new_track}``"),
         Rule("alembic", _TRACK_LIST, _in_track_list(old_track, new_track)),
+        Rule("alembic", _DATABASES_LINE, _in_track_list(old_track, new_track)),
     ]
+
+
+_DATABASES_LINE = re.compile(
+    r"(?:^|(?<=\\n))[ \t]*[\"']?databases[ \t]*=[^\n\\\"']*", re.MULTILINE
+)
+"""An ``alembic.ini`` track list, which may name the old track alone.
+
+Matched at a line start or after an escaped ``\\n``, so the ini text a test
+builds inside a string literal is covered as well as the file itself.
+"""
 
 
 _TRACK_LIST = re.compile(
@@ -607,6 +618,7 @@ def _pkg(rename_map: RenameMap) -> list[Rule]:
             re.compile(rf"(?<![\w])({root}(?:\\\\?)?\.){old}(?![\w])"),
             rf"\g<1>{new}",
         ),
+        Rule("pkg", re.compile(rf"(\bfrom \.+){old}(?=[.\s])"), rf"\g<1>{new}"),
         Rule("pkg", re.compile(rf"(?<![\w])({root}__){old}__"), rf"\g<1>{new}__"),
         Rule(
             "pkg",

@@ -55,7 +55,7 @@ class TestAbsoluteBase:
                 id="absolute-is-returned-unchanged",
             ),
             pytest.param(
-                "from .sep.apps import atw",
+                "from .extensions.apps import atw",
                 "tests.app.extensions.apps",
                 id="one-dot-anchors-at-the-package",
             ),

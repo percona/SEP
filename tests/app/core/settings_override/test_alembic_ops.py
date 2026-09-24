@@ -97,6 +97,9 @@ from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 _EXTENSIONS_TRACK_CLASSES = (Settings, AlertSettings, ExtensionsSettings)
 _TASKS_TRACK_CLASSES = (TasksSettings,)
 
+#: The internal-token key as the frozen secret-encryption replicas declare it.
+PRE_RENAME_INTERNAL_TOKEN_KEY = "SEP_INTERNAL_TOKEN"
+
 _DELIVERY_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
 
 _SECRET_ROWS: list[tuple[str, str, Any]] = [
@@ -1124,7 +1127,7 @@ _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
     (
         "extensions",
         SETTINGS_TOKEN,
-        "EXTENSIONS_INTERNAL_TOKEN",
+        PRE_RENAME_INTERNAL_TOKEN_KEY,
         "internal-token",
         _SECRET_LEAF,
     ),

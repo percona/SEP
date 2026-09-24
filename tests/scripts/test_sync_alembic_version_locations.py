@@ -28,7 +28,7 @@ sync_alembic_version_locations = load_script("sync_alembic_version_locations")
 
 _MINIMAL_INI = """\
 [alembic]
-databases = sep
+databases = extensions
 
 [extensions]
 # path to migration scripts.
@@ -132,7 +132,7 @@ def test_sync_rejects_missing_extensions_section(tmp_path):
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("[alembic]\ndatabases = sep\n")
+    ini_path.write_text("[alembic]\ndatabases = extensions\n")
 
     with pytest.raises(ValueError, match=r"no \[extensions\] section"):
         sync_alembic_version_locations.sync_alembic_ini(ini_path, apps_root)
@@ -144,7 +144,7 @@ def test_sync_rejects_missing_version_locations_assignment(tmp_path):
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
     ini_path.write_text(
-        "[alembic]\ndatabases = sep\n\n[extensions]\nscript_location = x\n"
+        "[alembic]\ndatabases = extensions\n\n[extensions]\nscript_location = x\n"
     )
 
     with pytest.raises(ValueError, match="no version_locations assignment"):
@@ -156,7 +156,7 @@ def test_main_reports_malformed_ini_cleanly(tmp_path, capsys):
     apps_root = tmp_path / "apps"
     apps_root.mkdir()
     ini_path = tmp_path / "alembic.ini"
-    ini_path.write_text("[alembic]\ndatabases = sep\n")
+    ini_path.write_text("[alembic]\ndatabases = extensions\n")
 
     assert (
         sync_alembic_version_locations.main(
@@ -182,7 +182,7 @@ def test_sync_preserves_comment_block_and_other_sections(tmp_path):
     assert "script_location = app/extensions/migrations" in text
     assert "[post_write_hooks]" in text
     assert "# keep this section marker" in text
-    assert "databases = sep" in text
+    assert "databases = extensions" in text
     assert "GENERATED — do not hand-edit" in text
 
 
@@ -302,7 +302,7 @@ class TestCurrentVersionLocations:
         """Raise rather than report an empty list for a malformed ini."""
         with pytest.raises(ValueError, match=r"no \[extensions\] section"):
             sync_alembic_version_locations._current_version_locations(
-                "[alembic]\ndatabases = sep\n"
+                "[alembic]\ndatabases = extensions\n"
             )
 
     def test_ignores_a_version_locations_line_outside_the_extensions_section(self):
