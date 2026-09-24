@@ -54,7 +54,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.utils.fields import AsyncDatabaseEngine
-from app.sep.config import sep_settings
+from app.extensions.config import extensions_settings
 from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.conftest import POSTGRES_DSN_ENV, postgres_worker_schema
 
@@ -73,7 +73,7 @@ pytestmark = pytest.mark.postgres
 def postgres_async_url():
     """Return an ``asyncpg`` URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     dsn = os.environ.get(POSTGRES_DSN_ENV)
@@ -83,20 +83,20 @@ def postgres_async_url():
 
 
 @pytest.fixture
-def sep_postgres_alembic_config(
+def extensions_postgres_alembic_config(
     postgres_async_url: URL, monkeypatch: pytest.MonkeyPatch
 ):
     """Point the sep track at a per-worker PostgreSQL schema and yield Alembic config.
 
     ``command.upgrade`` builds its own engine inside the track's ``env.py`` from
-    ``sep_settings.DATABASE``, so settings are redirected and
+    ``extensions_settings.DATABASE``, so settings are redirected and
     ``sqlalchemy.ext.asyncio.async_engine_from_config`` is patched before Alembic
     loads ``env.py`` (which cannot be imported outside a migration context) so the
     engine it builds sets ``search_path`` to :func:`postgres_worker_schema`.
     Teardown drops only that schema.
     """
     schema = postgres_worker_schema()
-    database = sep_settings.DATABASE
+    database = extensions_settings.DATABASE
     monkeypatch.setattr(database, "ENGINE", AsyncDatabaseEngine.POSTGRESQL)
     monkeypatch.setattr(database, "USER", postgres_async_url.username)
     monkeypatch.setattr(
@@ -117,7 +117,7 @@ def sep_postgres_alembic_config(
         return real_async_engine_from_config(*args, **kwargs)
 
     # Patch the sqlalchemy symbol ``env.py`` imports; do not import
-    # ``app.sep.migrations.env`` here — ``context.config`` only exists inside
+    # ``app.extensions.migrations.env`` here — ``context.config`` only exists inside
     # an Alembic run, and a top-level import breaks ``pytest -m 'not postgres'``
     # collection of this module.
     monkeypatch.setattr(
@@ -125,7 +125,7 @@ def sep_postgres_alembic_config(
         _engine_with_worker_search_path,
     )
 
-    cfg = Config(str(ALEMBIC_INI), ini_section="sep")
+    cfg = Config(str(ALEMBIC_INI), ini_section="extensions")
     _manage_schema(postgres_async_url, schema, create=True)
     try:
         yield cfg, postgres_async_url, schema
@@ -208,9 +208,9 @@ async def _insert_run(
 class TestSourceTransportMigration:
     """Define tests for the ``source_transport`` column and CHECK on PostgreSQL."""
 
-    def test_upgrade_adds_column_and_check(self, sep_postgres_alembic_config) -> None:
+    def test_upgrade_adds_column_and_check(self, extensions_postgres_alembic_config) -> None:
         """Assert upgrade stamps the column and CHECK on native PostgreSQL ALTER."""
-        cfg, url, schema = sep_postgres_alembic_config
+        cfg, url, schema = extensions_postgres_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         columns, checks = _await(url, schema, _run_state)
@@ -219,10 +219,10 @@ class TestSourceTransportMigration:
         assert _CHECK_NAME in checks
 
     def test_upgrade_check_accepts_member_names(
-        self, sep_postgres_alembic_config
+        self, extensions_postgres_alembic_config
     ) -> None:
         """Assert the CHECK allows ``S3`` / ``GCS`` / NULL on PostgreSQL."""
-        cfg, url, schema = sep_postgres_alembic_config
+        cfg, url, schema = extensions_postgres_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         async def _seed(conn: AsyncConnection) -> None:
@@ -233,10 +233,10 @@ class TestSourceTransportMigration:
         _await(url, schema, _seed)
 
     def test_upgrade_check_rejects_unknown_transport(
-        self, sep_postgres_alembic_config
+        self, extensions_postgres_alembic_config
     ) -> None:
         """Assert PostgreSQL rejects a value outside the CHECK."""
-        cfg, url, schema = sep_postgres_alembic_config
+        cfg, url, schema = extensions_postgres_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         with pytest.raises(IntegrityError):
@@ -247,10 +247,10 @@ class TestSourceTransportMigration:
             )
 
     def test_downgrade_drops_column_and_check(
-        self, sep_postgres_alembic_config
+        self, extensions_postgres_alembic_config
     ) -> None:
         """Assert downgrade removes the column and CHECK via plain ALTER."""
-        cfg, url, schema = sep_postgres_alembic_config
+        cfg, url, schema = extensions_postgres_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
         command.downgrade(cfg, _PRE_TRANSPORT_REVISION)
 

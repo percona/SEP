@@ -131,7 +131,7 @@ async def record_backup_run(
     a ``None`` or partial ``result`` leaves ``location``/``size_bytes``/
     ``upload_destination``/``source_transport`` empty rather than failing.
     ``location`` and ``upload_destination`` are ASCII-stripped on write via
-    :func:`~app.sep.apps.mysql_backups.models.canonical_backup_path` so catalog
+    :func:`~app.extensions.apps.mysql_backups.models.canonical_backup_path` so catalog
     lookups key the same string the restore form offers. ``source_transport`` is
     derived from a successful ``upload_destination`` (``s3`` / ``gcs`` only); a
     location-only run leaves it ``None``.

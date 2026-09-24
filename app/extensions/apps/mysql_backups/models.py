@@ -192,7 +192,7 @@ class CataloguedSourceTransport(EnumFieldMixin, StrEnum):
 
 
 #: Object-store upload schemes the catalog can classify authoritatively.
-#: Restore builds its :class:`~app.sep.apps.mysql_backups.restore.models.SourceTransport`
+#: Restore builds its :class:`~app.extensions.apps.mysql_backups.restore.models.SourceTransport`
 #: map from this table so the scheme strings stay in one place.
 OBJECT_STORE_UPLOAD_SCHEMES = {
     "s3://": CataloguedSourceTransport.S3,

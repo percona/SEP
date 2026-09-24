@@ -58,7 +58,7 @@ _NEWEST_RUN_FIRST = (
 def _sql_strip(column: Any) -> ColumnElement[str | None]:
     """Strip leading/trailing ASCII whitespace the way :func:`strip_backup_path` does.
 
-    ``ltrim`` / ``rtrim`` with :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS`
+    ``ltrim`` / ``rtrim`` with :data:`~app.extensions.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS`
     work on both PostgreSQL and SQLite; plain ``TRIM`` would leave tabs and
     newlines in place. Unicode separators (NBSP, …) are intentionally left
     alone — the same contract as the Python helper — so a catalog key and this
@@ -84,10 +84,10 @@ def _preferred_backup_source_expr() -> ColumnElement[str | None]:
 
     Prefer a non-blank ASCII-stripped ``upload_destination``, else a non-blank
     ASCII-stripped ``location``. Stripping uses
-    :data:`~app.sep.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS` (not SQL
+    :data:`~app.extensions.apps.mysql_backups.models.BACKUP_PATH_STRIP_CHARS` (not SQL
     ``TRIM``, not Unicode ``str.strip``) so the catalog lookup keys on the same
     string
-    :func:`~app.sep.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
+    :func:`~app.extensions.apps.mysql_backups.backup_source_choices.backup_run_to_choice`
     offers a restore form.
 
     :return: The preferred-source column expression.
@@ -309,7 +309,7 @@ class MysqlBackupRunManager(BaseSQLModelManager):
         Scoped by :meth:`_service_predicate` and ordered like
         :meth:`list_for_service`. The match key is the preferred source
         (``upload_destination`` when set, else ``location``), the same string
-        :func:`~app.sep.apps.mysql_backups.models.preferred_backup_source`
+        :func:`~app.extensions.apps.mysql_backups.models.preferred_backup_source`
         computes — never a raw field equality. Only the single newest match is
         considered; older matching rows are ignored.
 

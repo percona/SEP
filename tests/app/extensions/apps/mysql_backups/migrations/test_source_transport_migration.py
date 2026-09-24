@@ -93,10 +93,10 @@ class TestSourceTransportMigration:
     """Define tests for the ``source_transport`` column and CHECK revision."""
 
     def test_upgrade_adds_column_and_check(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert upgrade stamps ``source_transport`` and its CHECK constraint."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         columns, checks = _run_state(sync_url)
@@ -105,10 +105,10 @@ class TestSourceTransportMigration:
         assert _CHECK_NAME in checks
 
     def test_upgrade_check_accepts_member_names(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert the CHECK allows the enum member names the model persists."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         _insert_run(sync_url, source_transport="S3", history_id=1)
@@ -116,30 +116,30 @@ class TestSourceTransportMigration:
         _insert_run(sync_url, source_transport=None, history_id=3)
 
     def test_upgrade_check_rejects_unknown_transport(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert the CHECK rejects a value outside ``S3`` / ``GCS``."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         with pytest.raises(IntegrityError):
             _insert_run(sync_url, source_transport="SSH", history_id=1)
 
     def test_upgrade_check_rejects_wire_value(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert the CHECK stores member names, not wire values like ``s3``."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
 
         with pytest.raises(IntegrityError):
             _insert_run(sync_url, source_transport="s3", history_id=1)
 
     def test_downgrade_drops_column_and_check(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert downgrade removes both the column and its CHECK."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
         command.downgrade(cfg, _PRE_TRANSPORT_REVISION)
 
@@ -149,10 +149,10 @@ class TestSourceTransportMigration:
         assert _CHECK_NAME not in checks
 
     def test_upgrade_no_ops_when_the_table_is_absent(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert upgrade skips a schema with no ``mysql_backup_run`` at all."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _PRE_TRANSPORT_REVISION)
         _drop_run_table_by_hand(sync_url)
 
@@ -161,10 +161,10 @@ class TestSourceTransportMigration:
         assert _run_state(sync_url) == (set(), set())
 
     def test_downgrade_no_ops_when_the_table_is_absent(
-        self, sep_alembic_config: tuple[Config, str]
+        self, extensions_alembic_config: tuple[Config, str]
     ) -> None:
         """Assert downgrade skips when the table was already dropped."""
-        cfg, sync_url = sep_alembic_config
+        cfg, sync_url = extensions_alembic_config
         command.upgrade(cfg, _TRANSPORT_REVISION)
         _drop_run_table_by_hand(sync_url)
 

@@ -557,7 +557,7 @@ async def test_catalogued_transport_bridges_under_a_running_event_loop(
     finally:
         await seed_engine.dispose()
 
-    monkeypatch.setattr(restore_form_backfill, "sep_engine", SimpleNamespace(url=url))
+    monkeypatch.setattr(restore_form_backfill, "extensions_engine", SimpleNamespace(url=url))
     create_kwargs: list[dict] = []
     real_create = restore_form_backfill.create_async_engine
 

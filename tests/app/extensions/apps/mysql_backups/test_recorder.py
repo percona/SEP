@@ -25,7 +25,7 @@ import yaml
 
 from app.extensions.apps.mysql_backups import recorder as recorder_module
 from app.extensions.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import CataloguedSourceTransport
+from app.extensions.apps.mysql_backups.models import CataloguedSourceTransport
 from app.extensions.apps.mysql_backups.recorder import (
     record_backup_run,
     RUN_RESULT_RECORDER,

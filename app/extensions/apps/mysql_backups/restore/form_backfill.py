@@ -33,14 +33,14 @@ from app.extensions.apps.framework.form_backfill_inventory import (
     resolve_service_from_meta,
 )
 from app.extensions.apps.framework.form_backfill_registry import FormBackfillEntry
-from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.sep.apps.mysql_backups.crud import MysqlBackupRunManager
-from app.sep.apps.mysql_backups.models import (
+from app.extensions.apps.framework.spec import RESERVED_FORM_KEY
+from app.extensions.apps.mysql_backups.crud import MysqlBackupRunManager
+from app.extensions.apps.mysql_backups.models import (
     BackupType,
     CatalogServiceKey,
     CataloguedSourceTransport,
 )
-from app.sep.apps.mysql_backups.restore.deps import (
+from app.extensions.apps.mysql_backups.restore.deps import (
     _transport_cache_key,
     CatalogTransportContext,
     catalogued_transport_for_stamp,
@@ -52,8 +52,8 @@ from app.extensions.apps.mysql_backups.restore.models import (
     repair_source_declaration,
     RestoreCreate,
 )
-from app.sep.db import get_async_session_maker
-from app.sep.db.engine import engine as sep_engine
+from app.extensions.db import get_async_session_maker
+from app.extensions.db.engine import engine as extensions_engine
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine, Sequence
@@ -215,7 +215,7 @@ async def _fetch_catalogued_transport(
     :param backup_source: The restore stamp's ``backup_source``.
     :return: The recorded S3/GCS transport, or ``None``.
     """
-    lookup_engine = create_async_engine(sep_engine.url, poolclass=NullPool)
+    lookup_engine = create_async_engine(extensions_engine.url, poolclass=NullPool)
     try:
         async with get_async_session_maker_from_engine(lookup_engine)() as session:
             return await MysqlBackupRunManager.catalogued_source_transport(
