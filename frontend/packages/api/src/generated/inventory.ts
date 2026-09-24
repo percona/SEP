@@ -2387,11 +2387,11 @@ export interface components {
      *     :param error: The failure's message, never empty. Required on FAILURE,
      *         absent on SUCCESS.
      *     :param attempted_at: When the syncer began this attempt. Stamped as
-     *         ``last_synced_at`` on success, folded into ``newest_attempt_at`` on
-     *         either outcome, and compared against both so a late-arriving report
-     *         from an older attempt cannot overwrite a newer one. Refused when it sits further ahead of this
-     *         service's clock than the tolerated skew, since nothing later could then
-     *         supersede it.
+     *         ``last_synced_at`` on success and as ``newest_attempt_at`` when newer,
+     *         and used to order reports so a late-arriving one from an older attempt
+     *         cannot overwrite a newer one. Refused when it sits further ahead of
+     *         this service's clock than the tolerated skew, since nothing later could
+     *         then supersede it.
      */
     SyncHealthWrite: {
       /**
