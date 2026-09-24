@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { TaskExecuteAction } from '@sep/framework';
+import type { TaskExecuteAction } from '@pmm-extensions/framework';
 
 /** Must stay in sync with ``alters_schema.derived[0].name_suffix``. */
 const DRY_RUN_SUFFIX = '-dry-run';

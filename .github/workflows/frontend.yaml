@@ -29,11 +29,11 @@ jobs:
 
       - name: Codegen freshness (OpenAPI → TS)
         run: |
-          pnpm --filter @sep/api codegen
-          pnpm --filter @sep/api exec oxfmt --write src/generated
+          pnpm --filter @pmm-extensions/api codegen
+          pnpm --filter @pmm-extensions/api exec oxfmt --write src/generated
           git diff --exit-code -- packages/api/src/generated/
-          pnpm --filter @sep/shell codegen
-          pnpm --filter @sep/shell exec oxfmt --write src/generated
+          pnpm --filter @pmm-extensions/shell codegen
+          pnpm --filter @pmm-extensions/shell exec oxfmt --write src/generated
           git diff --exit-code -- packages/shell/src/generated/
 
       - name: Lint (oxlint)
@@ -101,10 +101,10 @@ jobs:
 
       - name: Install Playwright Chromium and system deps
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm --filter @sep/e2e exec playwright install chromium --with-deps
+        run: pnpm --filter @pmm-extensions/e2e exec playwright install chromium --with-deps
 
       - name: Run E2E tests
-        run: pnpm --filter @sep/e2e test:e2e
+        run: pnpm --filter @pmm-extensions/e2e test:e2e
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

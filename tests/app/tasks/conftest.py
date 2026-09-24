@@ -47,11 +47,13 @@ from tests.app.factories import build_task_history, TaskFactory
 
 #: Syncer names in ``BaseSyncer.get_name()`` form, as the inventory-sync settings and
 #: the schedules seeded from them spell a syncer. Shared so the tasks suite has one
-#: copy: the tasks service never imports the sep syncers, so these cannot be derived
+#: copy: the tasks service never imports the extensions syncers, so these cannot be derived
 #: from the classes here.
-PMM_SYNCER = "app.sep.sync.syncers.pmm.PMMSyncer"
-MYSQL_SYNCER = "app.sep.sync.syncers.mysql.syncer.MySQLSyncer"
-SYSTEM_FACTS_SYNCER = "app.sep.sync.syncers.system_facts.syncer.SystemFactsSyncer"
+PMM_SYNCER = "app.extensions.sync.syncers.pmm.PMMSyncer"
+MYSQL_SYNCER = "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"
+SYSTEM_FACTS_SYNCER = (
+    "app.extensions.sync.syncers.system_facts.syncer.SystemFactsSyncer"
+)
 
 #: The per-task hook-path fields the ``TaskWrite`` allow-list constrains.
 HOOK_PATH_FIELDS = ("alert_detail_builder", "run_result_recorder")
@@ -62,7 +64,7 @@ REJECTED_HOOK_PATHS = (
     "builtins:eval",
     "no_colon_here",
     ":build_owner_alert_details",
-    "app.sep.apps.archives.alerts:",
+    "app.extensions.apps.archives.alerts:",
     ":",
 )
 
@@ -105,7 +107,7 @@ def test_client(
 ) -> Iterator[TestClient]:
     """Create an authenticated test client for the app.
 
-    Mirrors the SEP ``test_client``'s ``require_minimum_role_for_unsafe_methods``
+    Mirrors the PMM Extensions ``test_client``'s ``require_minimum_role_for_unsafe_methods``
     override so the non-admin fixture user can exercise a mutating route.
     """
     tasks_app.dependency_overrides[require_minimum_role_for_unsafe_methods] = (

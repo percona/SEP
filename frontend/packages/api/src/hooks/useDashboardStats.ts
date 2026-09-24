@@ -26,16 +26,16 @@ interface DashboardStatsRaw {
 }
 
 export interface DashboardStats extends DashboardStatsRaw {
-  /** Source names that failed and returned 0. Mirrors ``X-Sep-Upstream-Error``. */
+  /** Source names that failed and returned 0. Mirrors ``X-Upstream-Error``. */
   degraded?: string[];
 }
 
 export function useDashboardStats() {
   return useQuery<DashboardStats>({
-    queryKey: ['sep', 'dashboard', 'stats'],
+    queryKey: ['extensions', 'dashboard', 'stats'],
     queryFn: async () => {
-      const response = await apiClient.get<DashboardStatsRaw>('/sep/dashboard/');
-      const errorHeader = response.headers['x-sep-upstream-error'] as string | undefined;
+      const response = await apiClient.get<DashboardStatsRaw>('/extensions/dashboard/');
+      const errorHeader = response.headers['x-upstream-error'] as string | undefined;
       return {
         ...response.data,
         degraded: errorHeader ? errorHeader.split(',') : undefined,

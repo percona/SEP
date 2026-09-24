@@ -18,7 +18,7 @@
 /**
  * Inventory app — no browser surface.
  *
- * PMM owns the embedded inventory UI and the SEP shell no longer links here.
+ * PMM owns the embedded inventory UI and the PMM Extensions shell no longer links here.
  * The retained endpoints under ``/api/apps/inventory/`` are operator API
  * surfaces: scheduled sync is the normal refresh path, and ad-hoc sync and
  * connectivity probes are direct API calls. The package survives as a husk so

@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Release SEP — prep a release, cut an RC, or promote to stable.
+"""Release PMM Extensions — prep a release, cut an RC, or promote to stable.
 
 Owns the preconditions, version-bump, tagging, GitHub release, and Jenkins
 trigger for ``make release-prep``, ``make release-rc`` and
@@ -846,7 +846,7 @@ def cmd_prep(version: str, *, sign_via_github_api: bool) -> int:
     print("==> Building wheel (smoke build)...")
     _run(["make", "build"])
     current_version = _read_pyproject_version()
-    wheel = Path("dist") / f"sep-{current_version}-py3-none-any.whl"
+    wheel = Path("dist") / f"pmm_extensions-{current_version}-py3-none-any.whl"
     if not wheel.exists():
         print(
             f"Error: Wheel not found at {wheel} after build. Aborting before "
@@ -962,7 +962,7 @@ def cmd_rc(version: str, rc: int, *, sign_via_github_api: bool) -> int:
 
     print("==> Building wheel...")
     _run(["make", "build"])
-    wheel = Path("dist") / f"sep-{rc_version}-py3-none-any.whl"
+    wheel = Path("dist") / f"pmm_extensions-{rc_version}-py3-none-any.whl"
     if not wheel.exists():
         print(
             f"Error: Wheel not found at {wheel} after build. Aborting before push.",
@@ -1262,7 +1262,7 @@ def cmd_stable(version: str, *, sign_via_github_api: bool) -> int:
 
     print("==> Building wheel...")
     _run(["make", "build"])
-    wheel = Path("dist") / f"sep-{version}-py3-none-any.whl"
+    wheel = Path("dist") / f"pmm_extensions-{version}-py3-none-any.whl"
     if not wheel.exists():
         print(
             f"Error: Wheel not found at {wheel} after build. Aborting before push.",
@@ -1344,7 +1344,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="release",
-        description="Prep, cut, or promote a SEP release.",
+        description="Prep, cut, or promote a PMM Extensions release.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

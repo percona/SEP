@@ -18,13 +18,13 @@
 /**
  * Local type aliases for the app schema shape.
  *
- * Re-exports from `@sep/api` so field components and tests have a single
+ * Re-exports from `@pmm-extensions/api` so field components and tests have a single
  * import surface. If the backend schema shape ever diverges from the api
  * package's contract, adapt here without touching every field file.
  */
 
 import type { ReactNode } from 'react';
-import type { AppField as AppFieldType } from '@sep/api';
+import type { AppField as AppFieldType } from '@pmm-extensions/api';
 
 /** Argument bag handed to a {@link RenderFieldOverride}. */
 export interface RenderFieldArgs {
@@ -89,4 +89,4 @@ export type {
   FieldGate,
   CardinalityRule,
   FailRule,
-} from '@sep/api';
+} from '@pmm-extensions/api';

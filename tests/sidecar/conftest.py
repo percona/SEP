@@ -104,8 +104,8 @@ SUITE_ENV_OVERRIDES = (
     "AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS",
     "ALLOWED_HOSTS",
     "ALLOW_CONCURRENT_SESSIONS",
-    "SEP__MESSAGES__LEVEL",
-    "SEP_INTERNAL_TOKEN",
+    "EXTENSIONS__MESSAGES__LEVEL",
+    "EXTENSIONS_INTERNAL_TOKEN",
 )
 """Names ``[tool.pytest.ini_options] env`` injects for the app suite.
 

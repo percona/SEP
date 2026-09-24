@@ -18,6 +18,7 @@ import shutil
 import sys
 from collections.abc import Iterable
 from configparser import ConfigParser
+from functools import cache
 from pathlib import Path
 
 import pytest
@@ -26,10 +27,10 @@ import yaml
 from app import BASE_DIR
 from sidecar import verify_image_apps
 from sidecar.restrict_apps import activated_apps, INFRASTRUCTURE_PACKAGES, restrict
-from tests.app.sep import test_import_boundary
+from tests.app.extensions import test_import_boundary
 from tests.sidecar.conftest import EMBEDDED_PROFILE
 
-APPS_ROOT = BASE_DIR / "app" / "sep" / "apps"
+APPS_ROOT = BASE_DIR / "app" / "extensions" / "apps"
 ALEMBIC_INI = BASE_DIR / "alembic.ini"
 
 RESTRICTED_DEPARTURE_KINDS = 2
@@ -46,13 +47,23 @@ ships cannot quietly turn the synthetic-tree assertions into tautologies.
 """
 
 
+@cache
 def _real_package_names() -> frozenset[str]:
     """Return the app package directory names present in the repository.
 
     The bytecode cache is excluded so a synthetic tree built from this set is
     the same whether or not the suite has already run against the real one.
 
-    :return: Every package directory under ``app/sep/apps``.
+    Read once per session rather than per call, because the tree is not stable
+    while the suite runs: the ``make startapp`` tests in
+    ``tests/app/extensions/apps/framework/test_scaffold.py`` render into the real
+    ``app/extensions/apps/`` and remove it again, so under ``xdist`` a scaffold package
+    can exist for one call here and not the next. A test that reads this twice
+    — once to build its synthetic tree, once to decide what that tree should
+    have reported — then compares two different trees and fails on a package
+    name neither it nor this module created.
+
+    :return: Every package directory under ``app/extensions/apps``.
     """
     return frozenset(
         child.name
@@ -85,11 +96,11 @@ def _versions_path(package_name: str) -> str:
     :param package_name: The app package to address.
     :return: The entry's trailing path segments.
     """
-    return f"app/sep/apps/{package_name}/migrations/versions"
+    return f"app/extensions/apps/{package_name}/migrations/versions"
 
 
-def _sep_version_locations() -> tuple[str, ...]:
-    """Return the ``[sep] version_locations`` entries as ``alembic.ini`` writes them.
+def _extensions_version_locations() -> tuple[str, ...]:
+    """Return the ``[extensions] version_locations`` entries as ``alembic.ini`` writes them.
 
     Interpolation stays off so the entries keep their ``%(here)s`` prefix, which
     resolves against ``alembic.ini`` rather than the process's directory. The
@@ -104,7 +115,7 @@ def _sep_version_locations() -> tuple[str, ...]:
     """
     parser = ConfigParser(interpolation=None)
     parser.read(ALEMBIC_INI, encoding="utf-8")
-    return tuple(parser["sep"]["version_locations"].split(":"))
+    return tuple(parser["extensions"]["version_locations"].split(":"))
 
 
 def _configures_app(entries: Iterable[str], package_name: str) -> bool:
@@ -128,7 +139,9 @@ def _write_profile(path: Path, module_names: Iterable[str]) -> Path:
     :return: The written profile.
     """
     document = {
-        "default": {"SEP": {"APPS": [{"MODULE_NAME": name} for name in module_names]}}
+        "default": {
+            "EXTENSIONS": {"APPS": [{"MODULE_NAME": name} for name in module_names]}
+        }
     }
     path.write_text(yaml.safe_dump(document), encoding="utf-8")
     return path
@@ -164,7 +177,7 @@ def test_activated_apps_reads_the_profile_activation_list(embedded_profile_data:
     """Assert the derivation returns the baked profile's module names."""
     expected = {
         entry["MODULE_NAME"]
-        for entry in embedded_profile_data["default"]["SEP"]["APPS"]
+        for entry in embedded_profile_data["default"]["EXTENSIONS"]["APPS"]
     }
 
     assert activated_apps(EMBEDDED_PROFILE) == expected
@@ -274,7 +287,9 @@ def test_restrict_rejects_a_missing_infrastructure_package(tmp_path: Path):
 def test_restrict_rejects_a_profile_with_no_activation_list(tmp_path: Path):
     """Assert a profile carrying no activation list fails the build."""
     profile = tmp_path / "settings.yaml"
-    profile.write_text(yaml.safe_dump({"default": {"SEP": {}}}), encoding="utf-8")
+    profile.write_text(
+        yaml.safe_dump({"default": {"EXTENSIONS": {}}}), encoding="utf-8"
+    )
     apps_root = _build_apps_tree(tmp_path / "apps", INFRASTRUCTURE_PACKAGES)
 
     with pytest.raises(KeyError):
@@ -309,7 +324,7 @@ def test_infrastructure_packages_match_the_import_boundary_guard():
 
 def test_stripped_apps_owning_migrations_stay_in_version_locations():
     """Assert a stripped app that owns migrations keeps its configured location."""
-    entries = _sep_version_locations()
+    entries = _extensions_version_locations()
     stripped_owners = sorted(
         name for name in _stripped_packages() if _owns_migrations(name)
     )
@@ -323,9 +338,9 @@ def test_stripped_apps_owning_migrations_stay_in_version_locations():
     for name in stripped_owners:
         assert _configures_app(entries, name), (
             f"The app-restricted image strips {name!r}, which owns migrations, "
-            f"but [sep] version_locations in alembic.ini configures no entry "
+            f"but [extensions] version_locations in alembic.ini configures no entry "
             f"ending in {_versions_path(name)!r}. skip_unresolvable_heads in "
-            f"app/sep/migrations/_orphan_heads.py tells a stripped app apart "
+            f"app/extensions/migrations/_orphan_heads.py tells a stripped app apart "
             f"from version skew by finding a configured location that contributes "
             f"no revisions (absent from disk or present and empty), so an image "
             f"missing this entry hard-fails its upgrade against a database a "
@@ -341,7 +356,7 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
     own: an entry that contributes no revisions on any image would report a
     stripped app to the orphan-head filter even on an unstripped tree.
     """
-    entries = _sep_version_locations()
+    entries = _extensions_version_locations()
     stripped_non_owners = sorted(
         name for name in _stripped_packages() if not _owns_migrations(name)
     )
@@ -349,11 +364,11 @@ def test_stripped_apps_owning_no_migrations_need_no_version_locations_entry():
     assert stripped_non_owners, "every app the strip removes owns migrations"
     listed = [name for name in stripped_non_owners if _configures_app(entries, name)]
     assert not listed, (
-        f"[sep] version_locations in alembic.ini configures entries for {listed!r}, "
+        f"[extensions] version_locations in alembic.ini configures entries for {listed!r}, "
         f"which the app-restricted image strips and which own no "
         f"migrations/versions directory. Those locations contribute no revisions "
         f"on any image, so skip_unresolvable_heads in "
-        f"app/sep/migrations/_orphan_heads.py would read them as a stripped app "
+        f"app/extensions/migrations/_orphan_heads.py would read them as a stripped app "
         f"and stop treating an unresolvable revision as version skew. Drop the "
         f"entries, or restore the migrations they point at."
     )
@@ -385,7 +400,7 @@ def image_tree(tmp_path: Path) -> Path:
     """
     app_home = tmp_path / "app_home"
     apps_root = _build_apps_tree(
-        app_home / "app" / "sep" / "apps", _real_package_names()
+        app_home / "app" / "extensions" / "apps", _real_package_names()
     )
     profile = _write_profile(app_home / "settings.yaml", ACTIVATED_IN_SYNTHETIC_TREE)
     restrict(profile, apps_root)
@@ -412,7 +427,7 @@ def test_checker_activated_apps_reads_the_profile_activation_list(
     """Assert the checker's own derivation returns the baked profile's names."""
     expected = {
         entry["MODULE_NAME"]
-        for entry in embedded_profile_data["default"]["SEP"]["APPS"]
+        for entry in embedded_profile_data["default"]["EXTENSIONS"]["APPS"]
     }
 
     assert verify_image_apps.activated_apps(EMBEDDED_PROFILE) == expected
@@ -511,7 +526,7 @@ def test_main_exits_when_an_unshipped_package_survived(
     image_tree: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """Assert a restricted image keeping an unactivated package fails the run."""
-    (image_tree / "app" / "sep" / "apps" / "unshipped").mkdir()
+    (image_tree / "app" / "extensions" / "apps" / "unshipped").mkdir()
 
     with pytest.raises(SystemExit) as excinfo:
         _run_main(image_tree, "restricted", monkeypatch)

@@ -20,7 +20,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { SnackbarProvider } from 'notistack';
-import { ApiError, type AppSchema } from '@sep/api';
+import { ApiError, type AppSchema } from '@pmm-extensions/api';
 import { AppCreatePage } from './AppCreatePage';
 import type { RenderFormSlot } from './types';
 
@@ -29,7 +29,7 @@ const mockNavigate = vi.fn();
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   useCreateAppTask: () => ({ mutate: mockCreateTaskMutate, isPending: false }),
   useCreateAppEntity: () => ({ mutate: vi.fn(), isPending: false }),
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),

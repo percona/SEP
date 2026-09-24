@@ -1,0 +1,349 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define dependencies for the Backups plugin."""
+
+import logging
+from datetime import datetime
+from typing import Annotated, Any
+
+import yaml
+from fastapi import Depends, Query
+
+from app.core.exceptions import HTTPNotFoundException
+from app.extensions.api.task_history_actors import task_actor_fields
+from app.extensions.api.task_history_merge import fetch_task_history_window
+from app.extensions.apps.framework import build_default_task_response
+from app.extensions.apps.framework.deps import make_task_dep
+from app.extensions.apps.mysql_backups.forms import (
+    BackupTaskResponse,
+    encryption_format_for_passes,
+    EncryptionFormat,
+    OWNER,
+)
+from app.extensions.apps.mysql_backups.models import (
+    BackupType,
+    CatalogServiceKey,
+    extract_backup_type_marker,
+    UNKNOWN_SERVICE_SENTINEL,
+)
+from app.extensions.apps.shared.backups.edit_form import parse_server_list_config
+from app.extensions.deps import InventoryAPI, TaskAPI
+from app.extensions.inventory import CreatedService
+from app.inventory.models import ServiceTypeEnum
+from app.tasks.models import Task, TaskHistoryStatusEnum
+
+logger = logging.getLogger(__name__)
+
+# Bound the discovery walk so a task with thousands of runs costs the same order
+# of work as one with three.
+MAX_TASK_RUN_SCAN = 500
+
+# Requested rather than inherited: this ordering decides *which* runs land inside
+# the scan cap, so relying on the Tasks API's default sort would make a change to
+# that default silently select the oldest runs instead of the newest.
+_NEWEST_HISTORY_FIRST = "-created_at"
+
+
+def _infer_encryption_format(all_servers: dict[str, Any]) -> EncryptionFormat:
+    """Return the encryption format a task stored before the selector was running.
+
+    Derived from the fields that used to be the only signal, so a task keeps the
+    encryption it already ran when its edit form reloads. A key file on any engine
+    infers AES-256; GPG follows ``ENCRYPT`` / ``POST_RUN_ENCRYPT``.
+
+    An absent ``ENCRYPT`` reads as disabled. The payload treats the same absence as
+    *enabled*, but that fail-safe guards a standalone run against hand-authored
+    config, which never reaches this function: every config PMM Extensions itself writes names
+    ``ENCRYPT`` explicitly, an invariant its own contract test pins.
+
+    :param all_servers: The stored ``ALL_SERVERS`` config block.
+    :return: The inferred format.
+    """
+    return encryption_format_for_passes(
+        aes256=bool(all_servers.get("XTRABACKUP_AES256_KEYFILE")),
+        gpg=bool(all_servers.get("ENCRYPT") or all_servers.get("POST_RUN_ENCRYPT")),
+    )
+
+
+# The create path writes the recipient block through ``BackupConfigServer``, whose
+# case-insensitive aliases uppercase the outer key, and through ``DirEncryptConfig``,
+# which renames the recipient to the space-separated spelling the directory
+# encryptor reads. The models' own attribute names are accepted as fallbacks so a
+# config written against them rather than against the serialized shape still
+# reloads.
+_DIR_ENCRYPT_CONFIG_KEYS = ("DIR_ENCRYPT_CONFIG", "dir_encrypt_config")
+_ENCRYPTION_RECIPIENT_KEYS = ("encryption recipient", "encryption_recipient")
+
+
+def _extract_encryption_recipient(server_config: dict[str, Any]) -> str | None:
+    """Return the GPG recipient a stored ``SERVER_LIST`` entry names, if any.
+
+    Losing the recipient is not a cosmetic gap: a GPG ``encryption_format``
+    requires one, so a reconstruction that drops it cannot validate and the task
+    keeps whatever it already had instead of being re-stamped.
+
+    :param server_config: The first ``SERVER_LIST`` entry.
+    :return: The recipient, or ``None`` when the entry names none.
+    """
+    for config_key in _DIR_ENCRYPT_CONFIG_KEYS:
+        block = server_config.get(config_key)
+        if not isinstance(block, dict):
+            continue
+        for recipient_key in _ENCRYPTION_RECIPIENT_KEYS:
+            recipient = block.get(recipient_key)
+            if recipient:
+                return recipient
+    return None
+
+
+def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
+    """Parse backup task data for editing.
+
+    Extracts configuration from an existing backup task to populate the edit form.
+
+    Delegates the shared ``SERVER_LIST`` parsing to
+    :func:`~app.extensions.apps.shared.backups.edit_form.parse_server_list_config`, layering on the
+    mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
+    binlog / upload-quiet keys. A task stored before ``ENCRYPTION_FORMAT`` existed
+    has its format inferred by :func:`_infer_encryption_format`.
+
+    :param task: The task data retrieved from the Tasks API.
+    :return: A dictionary containing parsed backup configuration.
+    """
+    task_config = yaml.safe_load(task["data"]["meta"]["config"])
+    server_config = task_config["SERVER_LIST"][0]
+    all_servers_config = task_config.get("ALL_SERVERS", {})
+
+    extra_fields = {
+        "port": server_config.get("PORT"),
+        "alias": server_config.get("ALIAS"),
+    }
+    recipient = _extract_encryption_recipient(server_config)
+    if recipient is not None:
+        extra_fields["encryption_recipient"] = recipient
+    if "ENCRYPTION_FORMAT" not in all_servers_config:
+        extra_fields["encryption_format"] = _infer_encryption_format(all_servers_config)
+    extra_fields["binlog_alternative_host"] = all_servers_config.get(
+        "BINLOG_ALTERNATIVE_HOST"
+    )
+    extra_fields["mydumper_verbose"] = all_servers_config.get("MYDUMPER_VERBOSE")
+    extra_fields["xtrabackup_quiet"] = all_servers_config.get("XTRABACKUP_QUIET")
+    extra_fields["upload_quiet"] = all_servers_config.get("UPLOAD_QUIET")
+
+    return parse_server_list_config(
+        task, server_config, all_servers_config, extra_fields
+    )
+
+
+async def resolve_mysql_service(
+    service_id: int, inventory_api: InventoryAPI
+) -> CreatedService:
+    """Resolve an inventory service by id for the backup-catalog query route.
+
+    Lets the Inventory API's ``404`` propagate unchanged: an unknown ``service_id``
+    is a real client error, not an empty catalog. The catalog query distinguishes
+    the two — this raises for a service that does not exist, while a service that
+    exists but has no recorded runs yields an empty list. A resolvable service of
+    the wrong type is treated the same as an unknown one: the catalog holds only
+    MySQL runs and falls back to matching on ``service_name`` for rows carrying no
+    id, so serving a non-MySQL service would let it leak the runs of a MySQL
+    service that happens to share its name.
+
+    Retired services resolve too: the catalog is a historical record, and a service
+    the inventory stopped seeing upstream is exactly the one whose past runs are
+    still wanted.
+
+    :param service_id: The inventory id of the service to resolve.
+    :param inventory_api: The Inventory API client used to resolve the service.
+    :return: The resolved service.
+    :raises HTTPNotFoundException: When the resolved service is not a MySQL service.
+    """
+    service_data = await inventory_api.get(
+        f"/services/{service_id}", params={"include_retired": "true"}
+    )
+    service = CreatedService.model_validate(service_data)
+    if service.type is not ServiceTypeEnum.MYSQL:
+        raise HTTPNotFoundException(detail="Service not found")
+    return service
+
+
+ResolvedMysqlService = Annotated[CreatedService, Depends(resolve_mysql_service)]
+
+
+async def resolve_optional_catalog_service_key(
+    inventory_api: InventoryAPI,
+    service_id: str | None = Query(
+        None,
+        description=(
+            "Cascade parent from the restore form. Inventory numeric ids are "
+            "resolved to a MySQL service, keying the catalog query on its id; "
+            "custom names query the catalog by name directly. Omitted, blank, "
+            "sentinel, or unknown values yield an empty list so free-text entry "
+            "is never blocked by a failed options fetch."
+        ),
+    ),
+) -> CatalogServiceKey | None:
+    """Resolve the cascade parent to the catalog query keys, or ``None``.
+
+    Numeric ids go through :func:`resolve_mysql_service` (MySQL-typed only) and
+    yield both keys, so a rename between recording and querying cannot detach the
+    rows; unknown ids degrade to ``None``. Non-numeric values yield the raw value
+    as the name and no id, so a free-typed restore destination can still list
+    catalog rows by that name — deliberately unguarded by Inventory type checks,
+    matching the restore form's ``ServiceRef(allow_custom=True)`` escape hatch.
+    Omitted, blank, and sentinel parents also yield ``None``.
+
+    The numeric test is ``str.isdecimal``, not ``str.isdigit``: the latter also
+    accepts digits ``int`` cannot parse (superscripts such as ``"²"``), which would
+    take the numeric branch and degrade to ``None`` rather than reaching the name
+    branch the free-text escape hatch exists to serve. A decimal string ``int``
+    still cannot parse — one longer than ``sys.get_int_max_str_digits()`` — has no
+    usable name reading either, so it degrades to ``None``. The parse is guarded on
+    its own so that a ``pydantic.ValidationError`` from resolving the service, being
+    a ``ValueError`` subclass, is not swallowed as an unparsable id.
+
+    :param inventory_api: The Inventory API client used to resolve numeric ids.
+    :param service_id: The cascade parent's submitted value, or ``None`` when
+        omitted.
+    :return: The keys to query the catalog with, or ``None`` when the parent is
+        unusable.
+    :raises HTTPException: When the Inventory lookup fails with a status other
+        than 404.
+    """
+    if service_id is None:
+        return None
+    trimmed = service_id.strip()
+    if not trimmed or trimmed == UNKNOWN_SERVICE_SENTINEL:
+        return None
+    if not trimmed.isdecimal():
+        return CatalogServiceKey(service_name=trimmed, service_id=None)
+    try:
+        parsed = int(trimmed)
+    except ValueError:
+        return None
+    try:
+        service = await resolve_mysql_service(parsed, inventory_api)
+    except HTTPNotFoundException:
+        return None
+    return CatalogServiceKey(service_name=service.name, service_id=service.id)
+
+
+OptionalCatalogServiceKey = Annotated[
+    CatalogServiceKey | None, Depends(resolve_optional_catalog_service_key)
+]
+
+
+get_mysql_backups_task = make_task_dep(OWNER)
+MysqlBackupsTask = Annotated[Task, Depends(get_mysql_backups_task)]
+
+
+async def resolve_catalogued_history_ids(
+    task: MysqlBackupsTask, tasks_api: TaskAPI
+) -> list[int]:
+    """Return the ids of a task's most recent successful runs, newest first.
+
+    Walks at most :data:`MAX_TASK_RUN_SCAN` history rows. Only a ``SUCCESS``
+    history can have produced a catalog row, so filtering on it narrows the walk
+    without hiding a catalogued run.
+
+    Reads the window strictly: an upstream body that is not a usable history
+    page raises rather than reporting an empty history, so a broken Tasks service
+    cannot masquerade as a task that has never produced a backup. Individual rows are
+    still skipped rather than fatal — a row without an integer ``id`` cannot be
+    joined to a catalog record, and one odd row should not fail the whole page.
+
+    :param task: The resolved backup task, already checked for existence and
+        ownership.
+    :param tasks_api: The Tasks API client used to read the task's history.
+    :return: Task-history ids, newest first, capped at the scan limit.
+    :raises HTTPBadGatewayException: If the Tasks API answers with a body that
+        cannot be read as a history page.
+    :raises HTTPException: The error the Tasks API itself answered with, mapped by
+        the remote client and propagated rather than read as an empty history.
+    """
+    window = await fetch_task_history_window(
+        tasks_api,
+        task.name,
+        window_size=MAX_TASK_RUN_SCAN,
+        status=TaskHistoryStatusEnum.SUCCESS,
+        sort=_NEWEST_HISTORY_FIRST,
+        strict=True,
+    )
+    return [
+        item["id"]
+        for item in window["items"]
+        if isinstance(item, dict) and isinstance(item.get("id"), int)
+    ]
+
+
+CataloguedHistoryIds = Annotated[list[int], Depends(resolve_catalogued_history_ids)]
+
+
+def _extract_backup_type_from_task(task: Task) -> BackupType | None:
+    """Read ``BACKUP_TYPE`` out of the task's YAML config as a typed value, if present.
+
+    Shares the defensive raw-marker parse with the run-result recorder via
+    :func:`~app.extensions.apps.mysql_backups.models.extract_backup_type_marker`,
+    layering only the coercion to the typed :class:`BackupType` on top.
+
+    :param task: The task whose ``data`` carries the YAML config.
+    :return: The typed backup type, or ``None`` when absent or unrecognised.
+    """
+    marker = extract_backup_type_marker(task.data)
+    try:
+        return BackupType(marker)
+    except ValueError:
+        return None
+
+
+def build_mysql_backups_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
+) -> BackupTaskResponse:
+    """Build a ``BackupTaskResponse`` for the JSON API.
+
+    :param task: The backups task retrieved from the Tasks API.
+    :type task: Task
+    :param status: The latest known execution status for the task.
+    :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
+    :param context: The username map bound by ``response_context_provider``, used
+        to resolve ``created_by`` / ``last_updated_by`` to system labels or
+        provider usernames; falls back to the raw id when neither resolves it.
+    :type context: dict[str, str] | None
+    :return: A validated backup task API response object.
+    """
+    mapping = context or {}
+    hostname = None
+    if task.data:
+        meta = task.data.get("meta") or {}
+        hostname = meta.get("target")
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        last_executed_at=last_executed_at,
+        extras={
+            "backup_type": _extract_backup_type_from_task(task),
+            "hostname": hostname,
+            "service_type": ServiceTypeEnum.MYSQL,
+            **task_actor_fields(task, mapping),
+        },
+    )

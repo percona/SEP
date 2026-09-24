@@ -24,6 +24,10 @@ concurrency:
 jobs:
   label-gate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     steps:
       - name: Checkout the label tooling
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -54,7 +58,6 @@ jobs:
             exit 1
           fi
           base_ref="$(jq -r '.base.ref' <<<"$pr")"
-          head_ref="$(jq -r '.head.ref' <<<"$pr")"
           labels="$(jq -r '.labels[].name' <<<"$pr")"
           if [ -z "$base_ref" ] || [ "$base_ref" = "null" ]; then
             echo "::error::Could not resolve the base branch of pull request #$PR_NUMBER."
@@ -81,27 +84,25 @@ jobs:
             fi
           done
 
-          if grep -Fxq -- 'qa passed' <<<"$labels" \
-              || grep -Fxq -- 'qa not required' <<<"$labels"; then
+          if grep -Fxq -- 'qa passed' <<<"$labels"; then
             echo "Merge approved by label."
             echo "approved=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The label is a cache of this predicate — a pure function of the
-          # changed files and the head branch name — written by a workflow the
-          # same pull-request activity starts in parallel, so it may not exist
-          # yet. scripts/sync_pr_labels.py carries why that handoff cannot be
-          # repaired by a re-run.
+          # 'qa not required' is not trusted on sight: the automatic copy caches
+          # a predicate over the changed files and the pull request's author and
+          # head repository, so a push can outdate it, and it may not exist yet.
+          # The script honours the label only when a person applied it;
+          # scripts/sync_pr_labels.py carries why a re-run cannot repair either.
           if ! approved="$(python3 scripts/sync_pr_labels.py \
               --owner "$OWNER" \
               --repo "$REPO_NAME" \
               --pr-number "$PR_NUMBER" \
-              --head-ref "$head_ref" \
               --print-eligibility)"; then
-            echo "::error::Could not compute automatic 'qa not required' eligibility."
+            echo "::error::Could not decide whether this pull request may skip QA."
             exit 1
           fi
-          echo "Automatic 'qa not required' eligibility: $approved"
+          echo "May skip QA (automatic predicate or hand-applied 'qa not required'): $approved"
           echo "approved=$approved" >> "$GITHUB_OUTPUT"
 
       - name: Block merge on disqualifying labels
@@ -115,7 +116,7 @@ jobs:
           steps.verdict.outputs.protected == 'true' &&
           steps.verdict.outputs.approved != 'true'
         run: |
-          echo "::error::PR requires 'qa passed' or 'qa not required' label to merge."
+          echo "::error::PR requires 'qa passed', or 'qa not required' applied by a person, to merge."
           exit 1
 
   # Detect changed file types to gate downstream jobs.
@@ -144,7 +145,7 @@ jobs:
               - '**/**.py'
               # Nomad payloads are extensionless, so they match no *.py glob and
               # would otherwise skip the pytest tier that guards their invariants.
-              - 'app/sep/apps/**/*payload'
+              - 'app/extensions/apps/**/*payload'
               - 'pyproject.toml'
               - 'alembic.ini'
               - 'poetry.lock'
@@ -407,7 +408,7 @@ jobs:
         with:
           context: .
           file: Containerfile.base
-          tags: sep:builder
+          tags: extensions:builder
           load: true
           cache-from: type=gha,scope=base
           cache-to: type=gha,mode=max,scope=base
@@ -418,40 +419,40 @@ jobs:
       - name: Build app image
         run: >-
           docker build
-          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          --build-context "localhost/extensions:builder=docker-image://extensions:builder"
           -f sidecar/Containerfile.sidecar
-          --build-arg SEP_RESTRICT_APPS=1
-          -t "sep:HEAD" .
+          --build-arg EXTENSIONS_RESTRICT_APPS=1
+          -t "extensions:HEAD" .
 
       - name: Smoke test - verify binaries and config files
         run: |
-          docker run --rm --entrypoint /bin/sh "sep:HEAD" -c '
+          docker run --rm --entrypoint /bin/sh "extensions:HEAD" -c '
             set -e
             command -v valkey-server
             command -v valkey-cli
             command -v supervisord
-            test -f /home/sep/app/supervisord.conf
-            test -f /home/sep/app/healthcheck.sh
-            test -x /home/sep/app/entrypoint.sh
-            test -x /home/sep/app/wait_for_schema.sh
-            test -x /home/sep/app/clear_sentinels.sh
-            test -f /home/sep/app/settings-env.sh
-            test -f /home/sep/app/settings.yaml
+            test -f /home/extensions/app/supervisord.conf
+            test -f /home/extensions/app/healthcheck.sh
+            test -x /home/extensions/app/entrypoint.sh
+            test -x /home/extensions/app/wait_for_schema.sh
+            test -x /home/extensions/app/clear_sentinels.sh
+            test -f /home/extensions/app/settings-env.sh
+            test -f /home/extensions/app/settings.yaml
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction
         run: |
-          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "sep:HEAD")
+          healthcheck_test=$(docker inspect --format='{{json .Config.Healthcheck.Test}}' "extensions:HEAD")
           if [ -z "$healthcheck_test" ] || [ "$healthcheck_test" = "null" ] || [ "$healthcheck_test" = "[\"NONE\"]" ]; then
             echo "::error::HEALTHCHECK instruction is missing or disabled (HEALTHCHECK NONE) in the side-car image"
             exit 1
           fi
-          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "sep:HEAD")
+          healthcheck=$(docker inspect --format='{{json .Config.Healthcheck}}' "extensions:HEAD")
           echo "HEALTHCHECK present: $healthcheck"
 
       - name: Smoke test - verify ENTRYPOINT is the side-car wrapper
         run: |
-          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "sep:HEAD")
+          entrypoint=$(docker inspect --format='{{json .Config.Entrypoint}}' "extensions:HEAD")
           case "$entrypoint" in
             *entrypoint.sh*) ;;
             *)
@@ -462,7 +463,7 @@ jobs:
           echo "ENTRYPOINT present: $entrypoint"
 
       - name: Smoke test - restricted image ships exactly the activated apps
-        run: sidecar/verify_image_apps.sh "sep:HEAD" restricted
+        run: sidecar/verify_image_apps.sh "extensions:HEAD" restricted
 
       - name: Verify the purge layer is the last package-manager operation
         run: python3 scripts/check_sidecar_purge.py --check-ordering
@@ -474,7 +475,7 @@ jobs:
             echo "::error::the purge checker named no packages, so this check cannot run"
             exit 1
           fi
-          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "sep:HEAD" -c '
+          docker run --rm --entrypoint /bin/sh -e PURGED="$pkgs" "extensions:HEAD" -c '
             command -v dpkg-query > /dev/null 2>&1 || {
               echo "::error::dpkg-query is absent, so package presence cannot be established"
               exit 1

@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, type AppSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@pmm-extensions/api';
 
 const SNIPPET_APP_SCHEMA_STALE_MS = 5 * 60 * 1000;
 

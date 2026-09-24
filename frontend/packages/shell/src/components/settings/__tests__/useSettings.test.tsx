@@ -24,17 +24,17 @@ import {
   useResetSetting,
   useSettingsList,
   type ApiError,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 import { server } from '../../../../tests/msw-server';
-import { makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
+import { makeWrapper, extensionsListResponse, tasksListResponse } from './fixtures';
 
-const SEP_URL = 'http://localhost/api/sep/admin/settings/';
+const EXTENSIONS_URL = 'http://localhost/api/extensions/admin/settings/';
 const TASKS_URL = 'http://localhost/api/tasks/admin/settings/';
 
-/** All groups now arrive in one SEP response (TasksSettings proxied server-side). */
+/** All groups now arrive in one PMM Extensions response (TasksSettings proxied server-side). */
 const combinedListResponse = {
-  groups: [...sepListResponse.groups, ...tasksListResponse.groups],
+  groups: [...extensionsListResponse.groups, ...tasksListResponse.groups],
 };
 
 /** Fail any test that calls the Tasks sub-app directly (API-First Rule 1). */
@@ -87,20 +87,20 @@ describe('settingErrorMessage', () => {
 });
 
 describe('useSettingsList', () => {
-  it('fetches every group from the single SEP endpoint, no direct Tasks call', async () => {
+  it('fetches every group from the single PMM Extensions endpoint, no direct Tasks call', async () => {
     const directCall = failOnTasksCall();
-    server.use(http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)));
+    server.use(http.get(EXTENSIONS_URL, () => HttpResponse.json(combinedListResponse)));
 
     const { result } = renderHook(() => useSettingsList(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const classes = result.current.data?.map((g) => g.setting_class);
-    expect(classes).toEqual(['SEPSettings', 'SnippetsSettings', 'TasksSettings']);
+    expect(classes).toEqual(['ExtensionsSettings', 'SnippetsSettings', 'TasksSettings']);
     expect(directCall).not.toHaveBeenCalled();
   });
 
   it('surfaces a gateway error (502) so the page can render a failed state', async () => {
-    server.use(http.get(SEP_URL, () => new HttpResponse(null, { status: 502 })));
+    server.use(http.get(EXTENSIONS_URL, () => new HttpResponse(null, { status: 502 })));
 
     const { result } = renderHook(() => useSettingsList(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
@@ -110,7 +110,7 @@ describe('useSettingsList', () => {
   it('does not fetch when disabled (non-admin viewer)', async () => {
     const fetched = vi.fn();
     server.use(
-      http.get(SEP_URL, () => {
+      http.get(EXTENSIONS_URL, () => {
         fetched();
         return HttpResponse.json(combinedListResponse);
       }),
@@ -127,18 +127,21 @@ describe('useSettingsList', () => {
 });
 
 describe('usePatchSetting', () => {
-  it('PATCHes a local class through the SEP endpoint', async () => {
+  it('PATCHes a local class through the PMM Extensions endpoint', async () => {
     const patched = vi.fn();
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/SEPSettings', async ({ request }) => {
-        patched(await request.json());
-        return HttpResponse.json([{ ...sepListResponse.groups[0].settings[0], value: 9 }]);
-      }),
+      http.patch(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings',
+        async ({ request }) => {
+          patched(await request.json());
+          return HttpResponse.json([{ ...extensionsListResponse.groups[0].settings[0], value: 9 }]);
+        },
+      ),
     );
 
     const { result } = renderHook(() => usePatchSetting(), { wrapper: makeWrapper() });
     await result.current.mutateAsync({
-      settingClass: 'SEPSettings',
+      settingClass: 'ExtensionsSettings',
       key: 'SYNC_REFRESH_TIME',
       value: 9,
     });
@@ -146,14 +149,17 @@ describe('usePatchSetting', () => {
     expect(patched).toHaveBeenCalledWith({ SYNC_REFRESH_TIME: 9 });
   });
 
-  it('PATCHes TasksSettings through the SEP endpoint, not /api/tasks', async () => {
+  it('PATCHes TasksSettings through the PMM Extensions endpoint, not /api/tasks', async () => {
     const directCall = failOnTasksCall();
     const patched = vi.fn();
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', async ({ request }) => {
-        patched(await request.json());
-        return HttpResponse.json([{ ...tasksListResponse.groups[0].settings[0], value: 7200 }]);
-      }),
+      http.patch(
+        'http://localhost/api/extensions/admin/settings/TasksSettings',
+        async ({ request }) => {
+          patched(await request.json());
+          return HttpResponse.json([{ ...tasksListResponse.groups[0].settings[0], value: 7200 }]);
+        },
+      ),
     );
 
     const { result } = renderHook(() => usePatchSetting(), { wrapper: makeWrapper() });
@@ -169,7 +175,7 @@ describe('usePatchSetting', () => {
 
   it('surfaces the proxied 422 body so settingErrorMessage can read it', async () => {
     server.use(
-      http.patch('http://localhost/api/sep/admin/settings/TasksSettings', () =>
+      http.patch('http://localhost/api/extensions/admin/settings/TasksSettings', () =>
         HttpResponse.json(
           {
             detail: [
@@ -201,12 +207,12 @@ describe('usePatchSetting', () => {
 });
 
 describe('useResetSetting', () => {
-  it('DELETEs TasksSettings through the SEP endpoint, not /api/tasks', async () => {
+  it('DELETEs TasksSettings through the PMM Extensions endpoint, not /api/tasks', async () => {
     const directCall = failOnTasksCall();
     const deleted = vi.fn();
     server.use(
       http.delete(
-        'http://localhost/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
+        'http://localhost/api/extensions/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS',
         () => {
           deleted();
           return new HttpResponse(null, { status: 204 });
@@ -224,18 +230,21 @@ describe('useResetSetting', () => {
     expect(directCall).not.toHaveBeenCalled();
   });
 
-  it('DELETEs a local class through its own SEP path', async () => {
+  it('DELETEs a local class through its own PMM Extensions path', async () => {
     const deleted = vi.fn();
     server.use(
-      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME', () => {
-        deleted();
-        return new HttpResponse(null, { status: 204 });
-      }),
+      http.delete(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME',
+        () => {
+          deleted();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
     );
 
     const { result } = renderHook(() => useResetSetting(), { wrapper: makeWrapper() });
     await result.current.mutateAsync({
-      settingClass: 'SEPSettings',
+      settingClass: 'ExtensionsSettings',
       key: 'SYNC_REFRESH_TIME',
     });
 

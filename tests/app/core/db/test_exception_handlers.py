@@ -30,9 +30,9 @@ from app.api.deps import get_current_user
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import create_app
 from app.core.db.exception_handlers import register_db_capacity_handlers
+from app.extensions.main import extensions_app
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.sep.main import sep_app
 from app.tasks.main import tasks_app
 
 try:
@@ -231,7 +231,7 @@ def test_registration_covers_every_class_when_asyncpg_is_installed():
 @pytest.mark.parametrize(
     "sub_app",
     [
-        pytest.param(sep_app, id="sep"),
+        pytest.param(extensions_app, id="extensions"),
         pytest.param(inventory_app, id="inventory"),
         pytest.param(tasks_app, id="tasks"),
     ],

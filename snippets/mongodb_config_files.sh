@@ -39,7 +39,7 @@ echo "Checking running mongod/mongos process for --config flag..."
 PROCESS_CONFIG=""
 MONGO_CMD=""
 MONGO_BIN=""
-MONGO_PID=$(pgrep -x 'mongo[ds]' 2> /dev/null | head -1)
+MONGO_PID=$(pgrep -x 'mongo[ds]' 2> /dev/null | head -1 || true)
 if [[ -n $MONGO_PID ]]; then
     MONGO_CMD=$(ps -p "$MONGO_PID" -o args= 2> /dev/null || true)
     MONGO_BIN=$(ps -p "$MONGO_PID" -o comm= 2> /dev/null || true)

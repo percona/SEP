@@ -16,7 +16,7 @@
  */
 
 /**
- * @sep/inventory — Inventory app entry point.
+ * @pmm-extensions/inventory — Inventory app entry point.
  *
  * Exports:
  * - InventoryApp: a husk that renders nothing; the app has no browser surface.
