@@ -31,10 +31,11 @@ class BootstrapRunFactory(SQLAlchemyFactory[BootstrapRun]):
     """Define factory for BootstrapRun instances.
 
     Pinned to a running, packages-on-Ubuntu run with no hosts or run-level steps,
-    so a test only spells out the fields it is actually about. ``hosts`` and
-    ``run_steps`` are pinned because polyfactory cannot generate their untyped
-    JSON documents, and ``finished_at``/``error`` because it would otherwise
-    fill the nullable columns at random.
+    so a test only spells out the fields it is actually about. ``hosts``,
+    ``run_steps`` and ``member_configs`` are pinned because polyfactory cannot
+    generate their untyped JSON documents, ``finished_at``/``error`` because it
+    would otherwise fill the nullable columns at random, and the mongod
+    settings to the column defaults so a run's rendered config is valid.
     """
 
     status = BootstrapRunStatus.RUNNING
@@ -47,3 +48,9 @@ class BootstrapRunFactory(SQLAlchemyFactory[BootstrapRun]):
     error = None
     hosts = Use(list)
     run_steps = Use(list)
+    data_path = "/var/lib/mongo"
+    log_path = "/var/log/mongodb/mongod.log"
+    port = 27017
+    bind_ip = "127.0.0.1"
+    member_configs = Use(dict)
+    cancel_requested = False

@@ -42,7 +42,7 @@ from enum import StrEnum
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.utils.fields import UTCDatetime
 
@@ -51,6 +51,7 @@ __all__ = [
     "HostBootstrapState",
     "InstallMethod",
     "InstallStrategy",
+    "MemberConfig",
     "OperatingSystem",
     "StepAction",
     "StepRecord",
@@ -90,6 +91,56 @@ class OperatingSystem(StrEnum):
     ROCKY = "rocky"
 
 
+class MemberConfig(BaseModel):
+    """Hold one host's replica-set election settings, for ``rs.initiate``.
+
+    Defaults to MongoDB's own for a member (priority 1, votes on, not hidden,
+    no delay), so a host a run never names here gets exactly those.
+
+    :param priority: Relative election priority, 0-1000. A member with 0 can
+        never become primary.
+    :param votes: Whether this member gets a vote in elections.
+    :param hidden: Whether this member is hidden from client read preference
+        and ``db.hello()``'s own output.
+    :param delay_secs: Seconds this member's data intentionally lags the
+        primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
+        ``votes`` off whenever this is nonzero.
+    :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
+        non-voting, hidden, or delayed member names a nonzero ``priority`` —
+        each combination ``rs.initiate`` itself rejects, checked here so a bad
+        request fails at create time (422) rather than several steps into a
+        run.
+    """
+
+    priority: int = Field(default=1, ge=0, le=1000)
+    votes: bool = True
+    hidden: bool = False
+    delay_secs: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _priority_matches_role(self) -> "MemberConfig":
+        """Reject a priority MongoDB would refuse for this member's role.
+
+        ``rs.initiate`` rejects a non-voting, hidden, or delayed member unless
+        its ``priority`` is exactly 0; each such combination would otherwise
+        plan a run that fails at ``rs_initiate``, several steps after every host
+        was already provisioned.
+
+        :raises ValueError: If a non-voting, hidden, or delayed member names a
+            nonzero ``priority``.
+        :return: This config, unchanged.
+        """
+        if self.priority == 0:
+            return self
+        if not self.votes:
+            raise ValueError("a non-voting member (votes=False) must have priority 0")
+        if self.hidden:
+            raise ValueError("a hidden member (hidden=True) must have priority 0")
+        if self.delay_secs:
+            raise ValueError("a delayed member (delay_secs>0) must have priority 0")
+        return self
+
+
 class BootstrapSpec(BaseModel):
     """Hold what one host's bootstrap needs to know to plan and build its steps.
 
@@ -109,6 +160,17 @@ class BootstrapSpec(BaseModel):
     :param run_id: The bootstrap run dispatching this host's steps. Required to
         build ``install_package`` and every rollback step, which scope the host's
         ownership marker to this run. ``None`` while only planning a run's steps.
+    :param data_path: Where mongod stores its data, e.g. ``/var/lib/mongo``.
+    :param log_path: Where mongod writes its log file.
+    :param port: The port mongod listens on. ``rs.initiate``'s member list and
+        every ``mongosh`` dispatch need this alongside ``mongod.conf`` itself,
+        since none of them assume the package's own unconfigured default.
+    :param bind_ip: The interface(s) mongod listens on, e.g. ``0.0.0.0``.
+    :param member_configs: Per-host election settings for ``rs.initiate``,
+        keyed by the same host names ``hosts`` (the run's target list) uses.
+        A host missing from this mapping — including every host, for a run
+        that never sets it at all — gets :class:`MemberConfig`'s own
+        defaults.
     """
 
     install_method: InstallMethod
@@ -116,6 +178,11 @@ class BootstrapSpec(BaseModel):
     mongodb_version: str
     replica_set_name: str
     run_id: UUID | None = None
+    data_path: str
+    log_path: str
+    port: int
+    bind_ip: str
+    member_configs: dict[str, MemberConfig] = {}
 
 
 class StepAction(BaseModel):
@@ -191,11 +258,19 @@ class HostBootstrapState(BaseModel):
         would consist of, even before anything fails. Every entry stays
         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
         this host back.
+    :param finalize_steps: This host's post-coordination steps, in the order
+        :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up
+        front alongside ``steps``, but not dispatched until every run-level step
+        has succeeded (PMM's stepper's call, mirroring how it gates run-level
+        steps on every host's ``steps`` first — see
+        :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
+        ordering exists at all).
     """
 
     host: str
     steps: list[StepRecord]
     rollback_steps: list[StepRecord] = []
+    finalize_steps: list[StepRecord] = []
 
     @property
     def status(self) -> StepStatus:
@@ -238,7 +313,7 @@ class InstallStrategy(Protocol):
     questions the same way. This is the "abstracted pre-check/install/configure/
     test" requirement.
 
-    Three parallel step lists, not one:
+    Four parallel step lists, not one:
 
     - **Per-host** (:meth:`plan_steps`/:meth:`build_step`): everything a single
       host's own install needs, run independently per host.
@@ -250,6 +325,20 @@ class InstallStrategy(Protocol):
       designated host from ``hosts`` (index 0 by convention — see
       :meth:`build_run_step`'s ``hosts`` parameter) once every per-host step has
       succeeded.
+    - **Finalize** (:meth:`plan_finalize_steps`/:meth:`build_finalize_step`):
+      per-host work that has to happen *after* run-level coordination has
+      already succeeded, not before — enabling MongoDB authorization is the
+      motivating case: creating the first user reliably requires authorization
+      to still be *off* everywhere at the time, because MongoDB's localhost
+      exception is unreliable once a replica set already has more than one
+      member (confirmed against a real multi-member run, not a theoretical
+      concern — once any privileged op on it fails once, the exception closes
+      permanently for that mongod's whole lifetime, not just for one
+      connection). So ``configure_mongod`` never enables authorization, and each
+      host only turns it on for itself once ``create_pmm_monitoring_user`` has
+      actually succeeded. The stepper dispatches these once every run-level step
+      has succeeded — the same per-host shape as :meth:`plan_steps`, just
+      running after run-level steps instead of before them.
     - **Rollback** (:meth:`plan_rollback_steps`/:meth:`build_rollback_step`):
       one host's teardown, planned up front alongside its forward steps so a
       fresh run already shows what rolling back would do (the decided
@@ -324,6 +413,37 @@ class InstallStrategy(Protocol):
             still has the full list to do so.
         :param spec: The run's bootstrap spec.
         :param params: See :meth:`build_step`.
+        :return: What the execution layer needs to run this step.
+        """
+        ...
+
+    def plan_finalize_steps(self, spec: BootstrapSpec) -> list[str]:
+        """Return this strategy's ordered per-host finalize step names for ``spec``.
+
+        See the class docstring's "finalize" bullet. Called once, alongside
+        :meth:`plan_steps`, before any host is touched — planned up front the
+        same way rollback steps are, even though the stepper will not dispatch
+        any of them until every run-level step has succeeded.
+
+        :param spec: The host's bootstrap spec.
+        :return: Step names, in the order finalize should apply them.
+        """
+        ...
+
+    def build_finalize_step(
+        self,
+        step_name: str,
+        host: str,
+        spec: BootstrapSpec,
+        params: dict[str, str] | None = None,
+    ) -> StepAction:
+        """Build the action for one finalize step ``plan_finalize_steps`` named.
+
+        :param step_name: One of the names this strategy's own
+            :meth:`plan_finalize_steps` returned for ``spec``.
+        :param host: The node name being finalized.
+        :param spec: The host's bootstrap spec.
+        :param params: See :meth:`build_step`. ``None`` for a step that needs none.
         :return: What the execution layer needs to run this step.
         """
 

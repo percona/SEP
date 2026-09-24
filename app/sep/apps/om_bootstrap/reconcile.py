@@ -175,6 +175,13 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.build_run_step`'s
     own docstring for why that host is always the target.
 
+    Skips the SUCCEEDED inference once ``run.cancel_requested`` is set: without
+    this, a cancel that lands just as the last step finishes — or whose
+    best-effort stop failed — would flip to SUCCEEDED on the very next poll,
+    permanently recording a run the operator aborted as one that finished
+    normally, with no route back to ROLLED_BACK (``finish_run`` refuses to
+    override a terminal run).
+
     :param tasks_api: The Tasks API client.
     :param run: The run to reconcile.
     :return: Whether anything changed — callers use this to skip a write when
@@ -192,7 +199,11 @@ async def reconcile_run(tasks_api: RemoteAPI, run: BootstrapRun) -> bool:
     if run_steps_changed:
         run.run_steps = dump_run_steps(run_steps)
 
-    if run.status == BootstrapRunStatus.RUNNING and _fully_succeeded(states, run_steps):
+    if (
+        run.status == BootstrapRunStatus.RUNNING
+        and not run.cancel_requested
+        and _fully_succeeded(states, run_steps)
+    ):
         run.status = BootstrapRunStatus.SUCCEEDED
         run.finished_at = utc_now()
         changed = True
@@ -214,7 +225,7 @@ async def _reconcile_step_list_per_host(
         *(
             _reconcile_step_list(tasks_api, run, state.host, step_list)
             for state in states
-            for step_list in (state.steps, state.rollback_steps)
+            for step_list in (state.steps, state.rollback_steps, state.finalize_steps)
         )
     )
     return any(results)
@@ -260,7 +271,7 @@ async def _reconcile_step_list(
 def _fully_succeeded(
     states: list[HostBootstrapState], run_steps: list[StepRecord]
 ) -> bool:
-    """Report whether every host and every run-level step actually succeeded.
+    """Report whether every host, every run-level step, and every finalize step succeeded.
 
     Rollback steps are deliberately excluded from this check, not reconciled
     into it: every host's ``rollback_steps`` are planned up front alongside its
@@ -271,10 +282,24 @@ def _fully_succeeded(
     entire life of a run that never needed rollback — counting them here
     would mean a normal, fully-succeeded run could never satisfy this check.
 
+    ``finalize_steps`` are checked explicitly, not folded into
+    :attr:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState.status`: that
+    property derives purely from ``steps`` (see its own docstring), by design —
+    a host isn't considered done finalizing until its finalize steps have too,
+    but a host that hasn't started finalizing yet (every finalize step still
+    ``pending``, correctly, until every run-level step succeeds) must not read as
+    unfinished in the same way a genuinely stuck forward step would.
+
     :param states: Every host's current state.
     :param run_steps: The run's current run-level steps.
     :return: Whether the run, as a whole, has nothing left to do but succeed.
     """
     if not all(state.status == StepStatus.SUCCEEDED for state in states):
         return False
-    return all(step.status in _DONE_STATUSES for step in run_steps)
+    if not all(step.status in _DONE_STATUSES for step in run_steps):
+        return False
+    return all(
+        step.status in _DONE_STATUSES
+        for state in states
+        for step in state.finalize_steps
+    )

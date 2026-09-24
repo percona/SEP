@@ -16,6 +16,8 @@
 """Assert PackagesInstallStrategy plans the same steps and builds OS-correct actions."""
 
 import base64
+import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -28,8 +30,9 @@ from app.sep.apps.om_bootstrap.dispatch import build_step_script
 from app.sep.apps.om_bootstrap.strategies import packages
 from app.sep.apps.om_bootstrap.strategies.packages import (
     _mongosh_eval,
-    DATA_PATH,
-    LOG_PATH,
+    _mongosh_eval_command,
+    CONFIG_PATH,
+    KEY_FILE_PATH,
     OWNERSHIP_MARKER_PATH,
     PackagesInstallStrategy,
     PID_FILE_PATH,
@@ -38,8 +41,19 @@ from app.sep.apps.om_bootstrap.strategy import (
     BootstrapSpec,
     InstallMethod,
     InstallStrategy,
+    MemberConfig,
     OperatingSystem,
+    StepAction,
 )
+
+
+def _rs_initiate_config(action: StepAction) -> dict:
+    """Extract the ``rs.initiate({...})`` config object from a built shell command."""
+    raw = action.command[-1]
+    match = re.search(r"rs\.initiate\((\{.*\})\)", raw)
+    assert match is not None, raw
+    return json.loads(match.group(1))
+
 
 SUPPORTED_OSES = [OperatingSystem.UBUNTU, OperatingSystem.ROCKY]
 
@@ -54,6 +68,10 @@ def _spec(os_: OperatingSystem, run_id: UUID | None = RUN_ID) -> BootstrapSpec:
         mongodb_version="8.0",
         replica_set_name="rs-test",
         run_id=run_id,
+        data_path="/var/lib/mongo",
+        log_path="/var/log/mongodb/mongod.log",
+        port=27017,
+        bind_ip="0.0.0.0",
     )
 
 
@@ -62,6 +80,9 @@ def _spec(os_: OperatingSystem, run_id: UUID | None = RUN_ID) -> BootstrapSpec:
 STEP_NAMES = PackagesInstallStrategy().plan_steps(_spec(OperatingSystem.UBUNTU))
 RUN_STEP_NAMES = PackagesInstallStrategy().plan_run_steps(_spec(OperatingSystem.UBUNTU))
 ROLLBACK_STEP_NAMES = PackagesInstallStrategy().plan_rollback_steps(
+    _spec(OperatingSystem.UBUNTU)
+)
+FINALIZE_STEP_NAMES = PackagesInstallStrategy().plan_finalize_steps(
     _spec(OperatingSystem.UBUNTU)
 )
 
@@ -182,6 +203,10 @@ class TestBuildStep:
             os=OperatingSystem.ROCKY,
             mongodb_version="7.0.14",
             replica_set_name="rs-test",
+            data_path="/var/lib/mongo",
+            log_path="/var/log/mongodb/mongod.log",
+            port=27017,
+            bind_ip="0.0.0.0",
         )
         action = PackagesInstallStrategy().build_step(
             "configure_repository", "node00", spec
@@ -261,7 +286,84 @@ class TestBuildStep:
         )
 
         command = " ".join(action.command)
-        assert f"install -d -m 750 -o mongod -g mongod {DATA_PATH}" in command
+        assert "install -d -m 750 -o mongod -g mongod /var/lib/mongo" in command
+
+    def test_configure_mongod_creates_the_log_directory(self) -> None:
+        """Create the log directory, or mongod's control process exits on first start.
+
+        ``Can't initialize rotatable log file :: caused by :: Failed to open
+        <path>`` — confirmed against a real run where the package's own
+        default log directory (/var/log/mongo) existed but the wizard's
+        default log path (/var/log/mongodb/mongod.log) named a different one
+        that nothing had created.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "install -d -m 750 -o mongod -g mongod /var/log/mongodb" in command
+
+    def _install_d_guard(self, spec: BootstrapSpec) -> str:
+        """Return just the two ``[ -d ... ] || install -d ...`` clauses, unquoted.
+
+        Stops before the ``cat > ... <<'MONGOD_CONF'`` heredoc: that part needs
+        no real host to exercise, and a shell function override for
+        ``install`` (see the callers below) must not accidentally shadow
+        anything the heredoc's own content might contain.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", spec
+        )
+        return action.command[-1].split(" && cat > ", 1)[0]
+
+    def test_skips_install_d_when_the_directory_already_exists(
+        self, tmp_path: Path
+    ) -> None:
+        """Skip ``install -d`` on a directory that already exists.
+
+        Reapplying ``-m``/``-o``/``-g`` unconditionally would repoint an
+        existing directory's mode and ownership on every run — for a
+        ``log_path`` like ``/var/log/mongod.log``, that directory is
+        ``/var/log`` itself, a shared directory this must never touch once
+        it's already there.
+        """
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "data_path": str(tmp_path / "data"),
+                "log_path": str(tmp_path / "data" / "mongod.log"),
+            }
+        )
+        (tmp_path / "data").mkdir()
+        guard = self._install_d_guard(spec)
+        marker = tmp_path / "install-was-called"
+        script = f"install() {{ : > {shlex.quote(str(marker))}; }}\n{guard}"
+
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert not marker.exists()
+
+    def test_runs_install_d_when_the_directory_is_missing(self, tmp_path: Path) -> None:
+        """Create a genuinely missing directory, the other half of the guard."""
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "data_path": str(tmp_path / "does-not-exist"),
+                "log_path": str(tmp_path / "log-missing" / "mongod.log"),
+            }
+        )
+        guard = self._install_d_guard(spec)
+        marker = tmp_path / "install-was-called"
+        script = f"install() {{ : > {shlex.quote(str(marker))}; }}\n{guard}"
+
+        result = subprocess.run(
+            ["sh", "-c", script], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert marker.exists()
 
     def test_configure_mongod_forks(self) -> None:
         """Make mongod fork, since mongod.service is Type=forking.
@@ -288,7 +390,25 @@ class TestBuildStep:
         )
 
         command = " ".join(action.command)
-        assert f"path: {LOG_PATH}" in command
+        assert "path: /var/log/mongodb/mongod.log" in command
+
+    def test_configure_mongod_leaves_authorization_off(self) -> None:
+        """Leave authorization off until the first user already exists.
+
+        MongoDB's localhost exception is unreliable once a replica set already
+        has more than one member — confirmed against a real run where every
+        createUser attempt failed identically once the first one did.
+        enable_auth (a finalize step) turns authorization on afterward, once
+        create_pmm_monitoring_user has actually succeeded.
+        """
+        action = PackagesInstallStrategy().build_step(
+            "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "replSetName" in command
+        assert "authorization" not in command
+        assert "keyFile" not in command
 
     def test_distribute_keyfile_requires_params(self) -> None:
         """Reject a missing keyFile as a programming error, not a blank file."""
@@ -336,7 +456,7 @@ class TestBuildStep:
             "verify", "node00", _spec(OperatingSystem.UBUNTU)
         )
 
-        assert action == _mongosh_eval("db.adminCommand('ping').ok")
+        assert action == _mongosh_eval("db.adminCommand('ping').ok", 27017)
 
 
 class TestPlanRunSteps:
@@ -373,6 +493,60 @@ class TestBuildRunStep:
         assert "node02:27017" in command
         assert "rs-test" in command
 
+    def test_rs_initiate_defaults_a_host_with_no_member_config(self) -> None:
+        """Give a host missing from spec.member_configs MongoDB's own defaults."""
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00"], _spec(OperatingSystem.UBUNTU)
+        )
+
+        config = _rs_initiate_config(action)
+        member = config["members"][0]
+        assert member["priority"] == 1
+        assert member["votes"] == 1
+        assert member["hidden"] is False
+        assert "secondaryDelaySecs" not in member
+
+    def test_rs_initiate_applies_a_host_s_member_config(self) -> None:
+        """Apply a named host's own priority/votes/hidden/delay from member_configs."""
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={
+                "member_configs": {
+                    "node01": MemberConfig(
+                        priority=0, votes=False, hidden=True, delay_secs=300
+                    )
+                }
+            }
+        )
+
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00", "node01"], spec
+        )
+
+        config = _rs_initiate_config(action)
+        seed, delayed = config["members"]
+        assert seed["priority"] == 1
+        assert seed["votes"] == 1
+        assert "secondaryDelaySecs" not in seed
+        assert delayed["priority"] == 0
+        assert delayed["votes"] == 0
+        assert delayed["hidden"] is True
+        assert delayed["secondaryDelaySecs"] == 300  # noqa: PLR2004
+
+    def test_rs_initiate_tolerates_already_being_initiated(self) -> None:
+        """Keep a retried dispatch after a first, invisible success from failing the run.
+
+        A bare ``rs.initiate`` fails a retry with ``AlreadyInitiated``, which
+        (retries exhausted) triggers rollback — tearing down a replica set
+        that had, in fact, already initiated successfully.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "rs_initiate", ["node00"], _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "try {" in command
+        assert "AlreadyInitialized" in command
+
     def test_create_pmm_monitoring_user_requires_params(self) -> None:
         """Reject a missing username/password as a programming error."""
         with pytest.raises(ValueError, match="username"):
@@ -405,7 +579,7 @@ class TestBuildRunStep:
         script = build_step_script(action)
 
         assert "--eval" not in script
-        assert 'mongosh --quiet --file "$js"' in script
+        assert 'mongosh --quiet --port 27017 --file "$js"' in script
         assert "umask 077" in script
         assert "sh -c" not in script
         heredoc = script.split("<<'OM_BOOTSTRAP_JS'\n")[1].split("\nOM_BOOTSTRAP_JS\n")[
@@ -429,6 +603,127 @@ class TestBuildRunStep:
 
         command = " ".join(action.command)
         assert "MONGOSH_DISABLE_ATLAS_LOCAL_DEV_CLUSTER_CHECK=1" in command
+
+    def test_create_pmm_monitoring_user_tolerates_already_existing(self) -> None:
+        """Keep a retried dispatch after a first, invisible success from failing the run.
+
+        A bare ``createUser`` fails a retry with ``UserAlreadyExists``
+        (51003), which (retries exhausted) rolls the whole run back over a
+        user that was actually created successfully.
+        """
+        action = PackagesInstallStrategy().build_run_step(
+            "create_pmm_monitoring_user",
+            ["node00"],
+            _spec(OperatingSystem.UBUNTU),
+            params={"username": "pmm_monitor", "password": "generated-secret"},
+        )
+
+        command = " ".join(action.command)
+        assert "getUser(" in command
+        assert "if (!db" in command
+
+
+class TestPlanFinalizeSteps:
+    """Assert the finalize step list is fixed and OS-independent."""
+
+    def test_returns_the_fixed_finalize_step_names(self) -> None:
+        """enable_auth, the only finalize step phase 1 needs."""
+        spec = _spec(OperatingSystem.UBUNTU)
+        assert (
+            PackagesInstallStrategy().plan_finalize_steps(spec) == FINALIZE_STEP_NAMES
+        )
+
+
+class TestBuildFinalizeStep:
+    """Assert build_finalize_step rejects unknown names and enables auth correctly."""
+
+    def test_unknown_finalize_step_name_raises(self) -> None:
+        """Reject a per-host forward step name as a finalize step."""
+        with pytest.raises(
+            ValueError, match="not a PackagesInstallStrategy finalize step"
+        ):
+            PackagesInstallStrategy().build_finalize_step(
+                "configure_mongod", "node00", _spec(OperatingSystem.UBUNTU)
+            )
+
+    def test_enable_auth_turns_authorization_on(self) -> None:
+        """Add the one block configure_mongod deliberately left out."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "authorization: enabled" in command
+        assert f"keyFile: {KEY_FILE_PATH}" in command
+
+    def test_enable_auth_restarts_mongod(self) -> None:
+        """Restart mongod, since security.authorization only takes effect at startup."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        assert "systemctl restart mongod" in " ".join(action.command)
+
+    def test_enable_auth_keeps_the_replica_set_name(self) -> None:
+        """Keep every setting configure_mongod wrote when rewriting the config."""
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert "replSetName: rs-test" in command
+        assert "fork: true" in command
+        assert "path: /var/log/mongodb/mongod.log" in command
+
+    def test_enable_auth_probes_readiness_after_restarting(self) -> None:
+        """Follow the restart with an unauthenticated readiness probe.
+
+        ``ping`` is one of the commands MongoDB answers without credentials
+        even with ``security.authorization: enabled`` — the same one
+        ``verify`` uses after the first, auth-less start.
+        """
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+
+        command = " ".join(action.command)
+        assert _mongosh_eval_command("db.adminCommand('ping').ok", 27017) in command
+
+    def test_enable_auth_does_not_restart_when_the_config_write_fails(
+        self, tmp_path: Path
+    ) -> None:
+        """Skip the restart when the config write fails, leaving no auth-less mongod.
+
+        Joining the heredoc, the restart, and the probe with a bare newline
+        instead of ``&&`` would let ``systemctl restart`` run regardless of
+        whether ``cat`` actually wrote the new config — confirmed here by
+        forcing the write itself to fail (read-only target file) and asserting
+        neither ``restart`` nor ``mongosh`` shell function is ever invoked.
+        """
+        action = PackagesInstallStrategy().build_finalize_step(
+            "enable_auth", "node00", _spec(OperatingSystem.UBUNTU)
+        )
+        script = action.command[-1]
+
+        fake_config_path = tmp_path / "mongod.conf"
+        marker = tmp_path / "restart-was-called"
+        # Make the write fail (read-only target) instead of actually
+        # restarting anything, and stand in for `systemctl`/`mongosh` so a
+        # bug that *does* reach them fails loudly rather than by chance.
+        fake_config_path.touch()
+        fake_config_path.chmod(0o444)
+        rigged = script.replace(CONFIG_PATH, str(fake_config_path))
+        wrapped = (
+            f"systemctl() {{ : > {shlex.quote(str(marker))}; }}\n"
+            f"mongosh() {{ : > {shlex.quote(str(marker))}; }}\n{rigged}"
+        )
+
+        result = subprocess.run(
+            ["sh", "-c", wrapped], capture_output=True, text=True, check=False
+        )
+
+        assert result.returncode != 0
+        assert not marker.exists()
 
 
 class TestPlanRollbackSteps:
@@ -478,7 +773,7 @@ class TestBuildRollbackStep:
         )
 
         lines = _body(action.command).strip().splitlines()
-        assert lines[-2] == f"rm -rf {DATA_PATH}"
+        assert lines[-2] == "rm -rf /var/lib/mongo"
         assert lines[-1] == f"rm -f {OWNERSHIP_MARKER_PATH}"
 
     def test_unknown_rollback_step_name_raises(self) -> None:
@@ -541,7 +836,7 @@ def _fake_bin(tmp_path: Path, *, with_mongod: bool) -> Path:
     """
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for tool in ("df", "tail", "ls"):
+    for tool in ("df", "tail", "ls", "dirname"):
         real = shutil.which(tool)
         assert real is not None
         (bin_dir / tool).symlink_to(real)
@@ -560,20 +855,20 @@ class TestPreCheckCommand:
     def paths(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> tuple[Path, Path]:
-        """Point the config and data paths at scratch paths, with a 1-byte minimum."""
+        """Point the config path at a scratch path, with a 1-byte minimum."""
         config = tmp_path / "mongod.conf"
         data = tmp_path / "data"
         monkeypatch.setattr(packages, "CONFIG_PATH", str(config))
-        monkeypatch.setattr(packages, "DATA_PATH", str(data))
         monkeypatch.setattr(packages, "MIN_DATA_DISK_BYTES", 1)
         return config, data
 
     def _run(
         self, tmp_path: Path, *, with_mongod: bool = False
     ) -> subprocess.CompletedProcess[str]:
-        action = PackagesInstallStrategy().build_step(
-            "pre_check", "node00", _spec(OperatingSystem.UBUNTU)
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={"data_path": str(tmp_path / "data")}
         )
+        action = PackagesInstallStrategy().build_step("pre_check", "node00", spec)
         bin_dir = _fake_bin(tmp_path, with_mongod=with_mongod)
         return subprocess.run(
             [_SH, "-c", _body(action.command)],
@@ -670,6 +965,40 @@ class TestPreCheckCommand:
         assert result.returncode != 0
         assert "could not measure free space" in result.stderr
 
+    def test_measures_the_nearest_existing_ancestor_of_a_missing_data_path(
+        self, tmp_path: Path, paths: tuple[Path, Path]
+    ) -> None:
+        """Measure the mount a missing data path will live on, not ``/``.
+
+        ``/mnt/mongo/data`` can be absent while ``/mnt/mongo`` is a distinct,
+        already-mounted volume; falling straight back to ``/`` would report the
+        wrong filesystem's free space.
+        """
+        mount_point = tmp_path / "mnt-mongo"
+        mount_point.mkdir()
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={"data_path": str(mount_point / "data")}
+        )
+        action = PackagesInstallStrategy().build_step("pre_check", "node00", spec)
+        bin_dir = _fake_bin(tmp_path, with_mongod=False)
+        log = tmp_path / "df.log"
+        (bin_dir / "df").unlink()
+        (bin_dir / "df").write_text(
+            f'#!/bin/sh\necho "$3" >> {shlex.quote(str(log))}\necho 999999999999\n'
+        )
+        (bin_dir / "df").chmod(0o755)
+
+        result = subprocess.run(
+            [_SH, "-c", _body(action.command)],
+            capture_output=True,
+            text=True,
+            env={"PATH": str(bin_dir)},
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert log.read_text().splitlines() == [str(mount_point)]
+
 
 class TestRollbackCommands:
     """Run rollback steps' generated shell for real against scratch paths."""
@@ -678,12 +1007,11 @@ class TestRollbackCommands:
     def paths(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> tuple[Path, Path, Path]:
-        """Point every path at scratch copies holding a config file and data."""
+        """Point the fixed paths at scratch copies holding a config file and data."""
         config = tmp_path / "mongod.conf"
         data = tmp_path / "data"
         marker = tmp_path / "mongod.om-bootstrap"
         monkeypatch.setattr(packages, "CONFIG_PATH", str(config))
-        monkeypatch.setattr(packages, "DATA_PATH", str(data))
         monkeypatch.setattr(packages, "OWNERSHIP_MARKER_PATH", str(marker))
         config.write_text("net: {}\n")
         data.mkdir()
@@ -691,8 +1019,11 @@ class TestRollbackCommands:
         return config, data, marker
 
     def _run(self, tmp_path: Path, step_name: str) -> None:
+        spec = _spec(OperatingSystem.UBUNTU).model_copy(
+            update={"data_path": str(tmp_path / "data")}
+        )
         action = PackagesInstallStrategy().build_rollback_step(
-            step_name, "node00", _spec(OperatingSystem.UBUNTU)
+            step_name, "node00", spec
         )
         bin_dir = tmp_path / "bin"
         if not bin_dir.exists():

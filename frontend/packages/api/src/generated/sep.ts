@@ -2022,8 +2022,11 @@ export interface paths {
      *     :param session: The database session.
      *     :param request: The requested run.
      *     :raises HTTPBadRequestException: When ``request.hosts`` is empty, lists the
-     *         same host twice, has neither one nor three hosts, or names an install
-     *         method with no registered strategy.
+     *         same host twice, has neither one nor three hosts, names an install
+     *         method with no registered strategy, ``member_configs`` names a host
+     *         outside ``hosts``, or ``member_configs`` leaves no host that both votes
+     *         and has a nonzero priority, since ``rs.initiate`` rejects a config with
+     *         no electable member.
      *     :return: The created run, every host's steps ``pending``.
      */
     post: operations['om_bootstrap_trigger_run_api_apps_om_bootstrap_runs_post'];
@@ -2060,6 +2063,48 @@ export interface paths {
     get: operations['om_bootstrap_get_bootstrap_run_api_apps_om_bootstrap_runs__run_id__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}/hosts/{host}/finalize/{step_name}:dispatch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dispatch Finalize Step
+     * @description Dispatch one host's named finalize step now.
+     *
+     *     Same fire-and-forget shape as :func:`dispatch_run_step` — see its own
+     *     docstring; the only difference is which list on
+     *     :class:`~app.sep.apps.om_bootstrap.strategy.HostBootstrapState` this reads
+     *     and writes. This route does not check that every run-level step has
+     *     succeeded first — deciding *when* it is safe to call this is PMM's
+     *     stepper's job, not this route's (see the module docstring, and
+     *     :meth:`~app.sep.apps.om_bootstrap.strategy.InstallStrategy.plan_finalize_steps`'s
+     *     own docstring for why that ordering matters at all).
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param host: The host to dispatch the step on.
+     *     :param step_name: The finalize step to dispatch — one of the names the run
+     *         was planned with.
+     *     :param session: The database session.
+     *     :param request: See :func:`dispatch_run_step`.
+     *     :param tasks_client: See :func:`dispatch_run_step`.
+     *     :param body: ``params`` this step needs — see :class:`DispatchStepRequest`.
+     *     :raises HTTPNotFoundException: When there is no such run, host, or finalize step.
+     *     :raises HTTPConflictException: When the step is running, succeeded, or
+     *         skipped.
+     *     :return: The run, with the dispatched finalize step now ``running``.
+     */
+    post: operations['om_bootstrap_dispatch_finalize_step_api_apps_om_bootstrap_runs__run_id__hosts__host__finalize__step_name__dispatch_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2188,6 +2233,54 @@ export interface paths {
      *     :return: The run, with the dispatched run-level step now ``running``.
      */
     post: operations['om_bootstrap_dispatch_run_run_step_api_apps_om_bootstrap_runs__run_id__run_steps__step_name__dispatch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/om_bootstrap/runs/{run_id}:cancel': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Cancel Run
+     * @description Request that a running bootstrap run stop and roll back every host.
+     *
+     *     Records the request and best-effort interrupts whatever is currently
+     *     dispatching (:func:`_stop_running_steps`) so it doesn't keep running for
+     *     however long its own timeout is — it does not itself decide to roll
+     *     anything back. That is PMM's stepper's call, exactly like every other
+     *     rollback trigger (see the module docstring): it reads
+     *     ``cancel_requested`` on its next poll and treats it the same as a step
+     *     exhausting its retries.
+     *
+     *     Idempotent while the run is still running: calling this again after
+     *     cancellation was already requested is a no-op, not an error — an
+     *     operator clicking Abort twice should never see a failure.
+     *
+     *     Saves ``cancel_requested`` *before* attempting to stop anything: a poll
+     *     landing between the two would otherwise still see ``cancel_requested=false``
+     *     and the stepper could keep dispatching. Stopping is best-effort — the
+     *     saved flag is the signal that actually matters (see
+     *     :func:`_stop_running_steps`) — so it runs after, and its own failures
+     *     (including the Tasks API being unreachable) never undo the save above.
+     *
+     *     :param run: The path's run, read under its row lock.
+     *     :param session: The database session.
+     *     :param tasks_client: The Tasks API client, authenticated here with SEP's
+     *         internal token rather than the caller's.
+     *     :raises HTTPNotFoundException: When there is no such run.
+     *     :raises HTTPConflictException: When the run is already terminal —
+     *         rolled back or otherwise, there is nothing left to cancel.
+     *     :return: The run, with ``cancel_requested`` now set.
+     */
+    post: operations['om_bootstrap_cancel_run_api_apps_om_bootstrap_runs__run_id__cancel_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -10580,8 +10673,20 @@ export interface components {
      *         would consist of, even before anything fails. Every entry stays
      *         :attr:`StepStatus.PENDING` unless the stepper actually decides to roll
      *         this host back.
+     *     :param finalize_steps: This host's post-coordination steps, in the order
+     *         :meth:`InstallStrategy.plan_finalize_steps` returned them — planned up
+     *         front alongside ``steps``, but not dispatched until every run-level step
+     *         has succeeded (PMM's stepper's call, mirroring how it gates run-level
+     *         steps on every host's ``steps`` first — see
+     *         :meth:`InstallStrategy.plan_finalize_steps`'s own docstring for why this
+     *         ordering exists at all).
      */
     om_bootstrap__HostBootstrapState: {
+      /**
+       * Finalize Steps
+       * @default []
+       */
+      finalize_steps: components['schemas']['om_bootstrap__StepRecord'][];
       /** Host */
       host: string;
       /**
@@ -10605,6 +10710,49 @@ export interface components {
      */
     om_bootstrap__InstallMethod: 'packages' | 'docker' | 'podman';
     /**
+     * MemberConfig
+     * @description Hold one host's replica-set election settings, for ``rs.initiate``.
+     *
+     *     Defaults to MongoDB's own for a member (priority 1, votes on, not hidden,
+     *     no delay), so a host a run never names here gets exactly those.
+     *
+     *     :param priority: Relative election priority, 0-1000. A member with 0 can
+     *         never become primary.
+     *     :param votes: Whether this member gets a vote in elections.
+     *     :param hidden: Whether this member is hidden from client read preference
+     *         and ``db.hello()``'s own output.
+     *     :param delay_secs: Seconds this member's data intentionally lags the
+     *         primary (``secondaryDelaySecs``). MongoDB requires ``priority`` 0 and
+     *         ``votes`` off whenever this is nonzero.
+     *     :raises ValueError: If ``priority``/``delay_secs`` are out of range, or a
+     *         non-voting, hidden, or delayed member names a nonzero ``priority`` —
+     *         each combination ``rs.initiate`` itself rejects, checked here so a bad
+     *         request fails at create time (422) rather than several steps into a
+     *         run.
+     */
+    om_bootstrap__MemberConfig: {
+      /**
+       * Delay Secs
+       * @default 0
+       */
+      delay_secs: number;
+      /**
+       * Hidden
+       * @default false
+       */
+      hidden: boolean;
+      /**
+       * Priority
+       * @default 1
+       */
+      priority: number;
+      /**
+       * Votes
+       * @default true
+       */
+      votes: boolean;
+    };
+    /**
      * OperatingSystem
      * @description Target host OS. First implementation supports exactly these two.
      * @enum {string}
@@ -10620,6 +10768,12 @@ export interface components {
      *     :param os: The run's target OS.
      *     :param mongodb_version: The run's MongoDB version.
      *     :param replica_set_name: The replica set every host in this run joins.
+     *     :param data_path: Where mongod stores its data on every host in this run.
+     *     :param log_path: Where mongod writes its log file on every host in this run.
+     *     :param port: The port mongod listens on, on every host in this run.
+     *     :param bind_ip: The interface(s) mongod listens on, on every host in this run.
+     *     :param member_configs: Per-host election settings this run was created
+     *         with — see :class:`TriggerRunRequest`'s own docstring.
      *     :param started_at: When the run began.
      *     :param finished_at: When it reached a terminal status, if it has.
      *     :param hosts: Every host's current step-by-step progress — the full,
@@ -10630,8 +10784,18 @@ export interface components {
      *         planned up front the same way ``hosts``' steps are.
      *     :param error: The run-level failure detail, when the run itself raised
      *         outside any single host's steps.
+     *     :param cancel_requested: Whether an operator has asked this run to stop —
+     *         see :func:`cancel_run`. PMM's stepper treats this the same as a step
+     *         exhausting its retries (force every host's rollback), never something
+     *         ``om_bootstrap`` itself acts on.
      */
     om_bootstrap__RunResponse: {
+      /** Bind Ip */
+      bind_ip: string;
+      /** Cancel Requested */
+      cancel_requested: boolean;
+      /** Data Path */
+      data_path: string;
       /** Error */
       error: string | null;
       /** Finished At */
@@ -10644,9 +10808,17 @@ export interface components {
        */
       id: string;
       install_method: components['schemas']['om_bootstrap__InstallMethod'];
+      /** Log Path */
+      log_path: string;
+      /** Member Configs */
+      member_configs: {
+        [key: string]: components['schemas']['om_bootstrap__MemberConfig'];
+      };
       /** Mongodb Version */
       mongodb_version: string;
       os: components['schemas']['om_bootstrap__OperatingSystem'];
+      /** Port */
+      port: number;
       /** Replica Set Name */
       replica_set_name: string;
       /** Run Steps */
@@ -10729,14 +10901,57 @@ export interface components {
      *         as ``major.minor`` or ``major.minor.patch`` (e.g. ``"8.0"``, ``"8.0.4"``).
      *     :param replica_set_name: The replica set every host joins: 1-64 letters,
      *         digits, ``_`` or ``-``.
+     *     :param data_path: Where mongod stores its data on every host. Defaults to
+     *         the same value the column behind it carries
+     *         (``migrations/versions/..._add_run_config_fields.py``), so a caller
+     *         that omits it gets the path the fixed-path contract used.
+     *     :param log_path: Where mongod writes its log file on every host. Same
+     *         default story as ``data_path``.
+     *     :param port: The port mongod listens on, on every host. Same default
+     *         story as ``data_path``.
+     *     :param bind_ip: The interface(s) mongod listens on, on every host.
+     *         Defaults to ``127.0.0.1``, keeping mongod's pre-auth window local to
+     *         the host unless the caller passes a wider address.
+     *     :param member_configs: Per-host election settings for ``rs.initiate``,
+     *         keyed by entries of ``hosts``. A host missing from this mapping —
+     *         including every host, when this is left empty — gets
+     *         :class:`~app.sep.apps.om_bootstrap.strategy.MemberConfig`'s own
+     *         defaults.
      */
     om_bootstrap__TriggerRunRequest: {
+      /**
+       * Bind Ip
+       * @default 127.0.0.1
+       */
+      bind_ip: string;
+      /**
+       * Data Path
+       * @default /var/lib/mongo
+       */
+      data_path: string;
       /** Hosts */
       hosts: string[];
       install_method: components['schemas']['om_bootstrap__InstallMethod'];
+      /**
+       * Log Path
+       * @default /var/log/mongodb/mongod.log
+       */
+      log_path: string;
+      /**
+       * Member Configs
+       * @default {}
+       */
+      member_configs: {
+        [key: string]: components['schemas']['om_bootstrap__MemberConfig'];
+      };
       /** Mongodb Version */
       mongodb_version: string;
       os: components['schemas']['om_bootstrap__OperatingSystem'];
+      /**
+       * Port
+       * @default 27017
+       */
+      port: number;
       /** Replica Set Name */
       replica_set_name: string;
     };
@@ -15305,6 +15520,43 @@ export interface operations {
       };
     };
   };
+  om_bootstrap_dispatch_finalize_step_api_apps_om_bootstrap_runs__run_id__hosts__host__finalize__step_name__dispatch_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        host: string;
+        step_name: string;
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['om_bootstrap__DispatchStepRequest'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   om_bootstrap_dispatch_rollback_step_api_apps_om_bootstrap_runs__run_id__hosts__host__rollback__step_name__dispatch_post: {
     parameters: {
       query?: never;
@@ -15390,6 +15642,37 @@ export interface operations {
         'application/json': components['schemas']['om_bootstrap__DispatchStepRequest'] | null;
       };
     };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['om_bootstrap__RunResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  om_bootstrap_cancel_run_api_apps_om_bootstrap_runs__run_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       202: {
