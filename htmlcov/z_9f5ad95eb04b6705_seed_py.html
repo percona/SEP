@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_6f83b30fdb6a6182_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -165,7 +165,7 @@
     <p class="run run2"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">    <span class="str">&quot;now=$(date +%s); &quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">    <span class="str">&quot;elapsed=$((now - NOMAD_META_scheduled_at)); &quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t">    <span class="str">&#x27;if [ &quot;$elapsed&quot; -gt &quot;$NOMAD_META_staleness_threshold_seconds&quot; ]; then &#x27;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">    <span class="str">&#x27;echo &quot;SEP_STALE_SKIP: elapsed=$elapsed&quot;&quot;s &#x27;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t">    <span class="str">&#x27;echo &quot;EXTENSIONS_STALE_SKIP: elapsed=$elapsed&quot;&quot;s &#x27;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t">    <span class="str">&#x27;threshold=$NOMAD_META_staleness_threshold_seconds&quot;&quot;s&quot;; &#x27;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t">    <span class="str">&quot;exit 75; &quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t">    <span class="str">&quot;fi; &quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -307,7 +307,7 @@
     <p class="pln"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">    <span class="key">def</span> <span class="nam">abort</span><span class="op">(</span><span class="nam">command</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">str</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t">        <span class="key">return</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">            <span class="fst">f&#x27;</span><span class="fst">echo &quot;SEP_UNLAUNCHABLE: command=</span><span class="op">{</span><span class="nam">command</span><span class="op">}</span><span class="fst"> node=$NOMAD_META_target&quot;; </span><span class="fst">&#x27;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t226" href="#t226">226</a></span><span class="t">            <span class="fst">f&#x27;</span><span class="fst">echo &quot;EXTENSIONS_UNLAUNCHABLE: command=</span><span class="op">{</span><span class="nam">command</span><span class="op">}</span><span class="fst"> node=$NOMAD_META_target&quot;; </span><span class="fst">&#x27;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t227" href="#t227">227</a></span><span class="t">            <span class="fst">f&quot;</span><span class="fst">exit </span><span class="op">{</span><span class="nam">LAUNCH_CHECK_EXIT_CODE</span><span class="op">}</span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t228" href="#t228">228</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t229" href="#t229">229</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -381,7 +381,7 @@
     <p class="run run2"><span class="n"><a id="t297" href="#t297">297</a></span><span class="t">            <span class="op">+</span> <span class="nam">resolve_or_abort</span><span class="op">(</span><span class="nam">launches</span><span class="op">,</span> <span class="nam">launches</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t298" href="#t298">298</a></span><span class="t">        <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t299" href="#t299">299</a></span><span class="t">    <span class="nam">announce</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">        <span class="str">&#x27;[ -z &quot;$stripped&quot; ] || echo &quot;SEP_SUDO_STRIPPED: node=$NOMAD_META_target&quot;; &#x27;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t300" href="#t300">300</a></span><span class="t">        <span class="str">&#x27;[ -z &quot;$stripped&quot; ] || echo &quot;EXTENSIONS_SUDO_STRIPPED: node=$NOMAD_META_target&quot;; &#x27;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t301" href="#t301">301</a></span><span class="t">        <span class="key">if</span> <span class="nam">allow_strip</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">        <span class="key">else</span> <span class="str">&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -1283,7 +1283,7 @@
             <a class="nav" href="z_6f83b30fdb6a6182_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>

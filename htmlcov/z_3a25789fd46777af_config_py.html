@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_3a25789fd46777af_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -100,9 +100,9 @@
     <p class="pln"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t"><span class="str">&quot;&quot;&quot;Define the ATW plugin settings section.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t"><span class="str">The section is read straight off YAML/env rather than mounted as a field on</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">``SEPSettings``: importing this module runs the ATW package ``__init__``, which</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t"><span class="str">``ExtensionsSettings``: importing this module runs the ATW package ``__init__``, which</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t"><span class="str">pulls in the app definition and, transitively, ``sep_settings`` -- so a field</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">default typed with :class:`AtwSettings` would cycle while ``SEPSettings`` is</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">default typed with :class:`AtwSettings` would cycle while ``ExtensionsSettings`` is</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="str">still being constructed. Consumers import :data:`atw_settings` at call time (the app&#x27;s</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="str">``periodic_task_schedules`` factory and Celery tasks), matching how alerts</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">reads its section.</span>&nbsp;</span><span class="r"></span></p>
@@ -126,8 +126,8 @@
     <p class="pln"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Configure the ATW plugin&#x27;s diagnostics-send staging and housekeeping.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t"><span class="str">    :cvar SETTINGS_PREFIXES: The prefixes for ATW-plugin settings in the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t"><span class="str">        configuration file. Set to ``[&quot;SEP&quot;, &quot;ATW&quot;]`` so the section lives under</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="str">        ``SEP.ATW``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t"><span class="str">        configuration file. Set to ``[&quot;EXTENSIONS&quot;, &quot;ATW&quot;]`` so the section lives under</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="str">        ``EXTENSIONS.ATW``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t"><span class="str">    :cvar model_config: The base YAML configuration plus ``env_parse_none_str``,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t"><span class="str">        without which the ``null`` opt-out both intervals document is unreachable</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="str">        from an environment variable. They are optional models, so</span>&nbsp;</span><span class="r"></span></p>
@@ -159,7 +159,7 @@
     <p class="run"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t">    <span class="nam">model_config</span> <span class="op">=</span> <span class="nam">SettingsConfigDict</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t76" href="#t76">76</a></span><span class="t">        <span class="op">**</span><span class="op">{</span><span class="op">**</span><span class="nam">BaseYamlSettings</span><span class="op">.</span><span class="nam">model_config</span><span class="op">,</span> <span class="str">&quot;env_parse_none_str&quot;</span><span class="op">:</span> <span class="str">&quot;null&quot;</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t">    <span class="nam">SETTINGS_PREFIXES</span><span class="op">:</span> <span class="nam">ClassVar</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="str">&quot;SEP&quot;</span><span class="op">,</span> <span class="str">&quot;ATW&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t">    <span class="nam">SETTINGS_PREFIXES</span><span class="op">:</span> <span class="nam">ClassVar</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="str">&quot;EXTENSIONS&quot;</span><span class="op">,</span> <span class="str">&quot;ATW&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">    <span class="nam">bundle_dir</span><span class="op">:</span> <span class="nam">StrRelativePath</span> <span class="op">=</span> <span class="str">&quot;data/atw-bundles&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t">    <span class="nam">bundle_ttl</span><span class="op">:</span> <span class="nam">PositiveInt</span> <span class="op">=</span> <span class="num">3600</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t">    <span class="nam">cleanup_interval</span><span class="op">:</span> <span class="nam">IntervalSchedule</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="nam">IntervalSchedule</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -182,7 +182,7 @@
             <a class="nav" href="z_3a25789fd46777af_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>

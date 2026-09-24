@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_8f7e1016f2d37417_exceptions_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -161,7 +161,7 @@
     <p class="run run2"><span class="n"><a id="t77" href="#t77">77</a></span><span class="t"><span class="str">wrapper translates and then decodes without it.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t78" href="#t78">78</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t79" href="#t79">79</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t"><span class="nam">_CIPHERTEXT_V1_PREFIX</span> <span class="op">=</span> <span class="str">&quot;sep.enc.v1.&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t80" href="#t80">80</a></span><span class="t"><span class="nam">_CIPHERTEXT_V1_PREFIX</span> <span class="op">=</span> <span class="str">&quot;extensions.enc.v1.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t81" href="#t81">81</a></span><span class="t"><span class="str">&quot;&quot;&quot;The marker a stored ciphertext carries, naming its envelope version.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t82" href="#t82">82</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t"><span class="str">Contains a character outside the base64 alphabet, so :func:`is_encrypted` rejects</span>&nbsp;</span><span class="r"></span></p>
@@ -276,7 +276,7 @@
     <p class="pln"><span class="n"><a id="t192" href="#t192">192</a></span><span class="t"><span class="str">    The marker is what *claims* a value is ciphertext; the structural check then</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t193" href="#t193">193</a></span><span class="t"><span class="str">    confirms the payload it claimed. Both are required, because the marker is a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t194" href="#t194">194</a></span><span class="t"><span class="str">    literal prefix and nothing stops a legacy plaintext from beginning with it &#8212;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t195" href="#t195">195</a></span><span class="t"><span class="str">    a bare prefix test would read ``sep.enc.v1.operator-secret`` as ciphertext,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t195" href="#t195">195</a></span><span class="t"><span class="str">    a bare prefix test would read ``extensions.enc.v1.operator-secret`` as ciphertext,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t196" href="#t196">196</a></span><span class="t"><span class="str">    leave it in the clear through the migration and fail every later read of it.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t197" href="#t197">197</a></span><span class="t"><span class="str">    Requiring the payload to be a well-formed token as well narrows that to a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t198" href="#t198">198</a></span><span class="t"><span class="str">    value carrying the exact prefix *and* decoding as a Fernet token behind it.</span>&nbsp;</span><span class="r"></span></p>
@@ -327,7 +327,7 @@
             <a class="nav" href="z_8f7e1016f2d37417_exceptions_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>

@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_63588554199a8f83_loader_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -127,7 +127,7 @@
     <p class="pln"><span class="n"><a id="t43" href="#t43">43</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t44" href="#t44">44</a></span><span class="t"><span class="nam">logger</span> <span class="op">=</span> <span class="nam">logging</span><span class="op">.</span><span class="nam">getLogger</span><span class="op">(</span><span class="nam">__name__</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t45" href="#t45">45</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="nam">PAGERDUTY_CONTACT_POINT_NAME</span> <span class="op">=</span> <span class="str">&quot;SEP PagerDuty&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t46" href="#t46">46</a></span><span class="t"><span class="nam">PAGERDUTY_CONTACT_POINT_NAME</span> <span class="op">=</span> <span class="str">&quot;PMM Extensions PagerDuty&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t47" href="#t47">47</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t48" href="#t48">48</a></span><span class="t"><span class="nam">BACKUPS_LIMIT_MAX</span> <span class="op">=</span> <span class="num">100</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t49" href="#t49">49</a></span><span class="t"><span class="nam">_alerts_backups_pagination_dep</span> <span class="op">=</span> <span class="nam">make_pagination_dep</span><span class="op">(</span><span class="nam">max_limit</span><span class="op">=</span><span class="nam">BACKUPS_LIMIT_MAX</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -139,7 +139,7 @@
     <p class="run"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t"><span class="key">def</span> <span class="nam">find_pagerduty_contact_point</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t">    <span class="nam">contact_points</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">ContactPoint</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">ContactPoint</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Find the SEP PagerDuty contact point in a list of contact points.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Find the PMM Extensions PagerDuty contact point in a list of contact points.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t"><span class="str">    :param contact_points: The list of contact points to search.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t"><span class="str">    :return: The matching contact point, or ``None`` if not found.</span>&nbsp;</span><span class="r"></span></p>
@@ -303,7 +303,7 @@
     <p class="run"><span class="n"><a id="t219" href="#t219">219</a></span><span class="t">    <span class="nam">policy</span><span class="op">.</span><span class="nam">routes</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t220" href="#t220">220</a></span><span class="t">        <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t221" href="#t221">221</a></span><span class="t">            <span class="str">&quot;receiver&quot;</span><span class="op">:</span> <span class="nam">contact_point_name</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">            <span class="str">&quot;object_matchers&quot;</span><span class="op">:</span> <span class="op">[</span><span class="op">[</span><span class="str">&quot;service&quot;</span><span class="op">,</span> <span class="str">&quot;=&quot;</span><span class="op">,</span> <span class="str">&quot;sep&quot;</span><span class="op">]</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t222" href="#t222">222</a></span><span class="t">            <span class="str">&quot;object_matchers&quot;</span><span class="op">:</span> <span class="op">[</span><span class="op">[</span><span class="str">&quot;service&quot;</span><span class="op">,</span> <span class="str">&quot;=&quot;</span><span class="op">,</span> <span class="str">&quot;pmm-extensions&quot;</span><span class="op">]</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t223" href="#t223">223</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t224" href="#t224">224</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t225" href="#t225">225</a></span><span class="t">    <span class="key">await</span> <span class="nam">pmm_api</span><span class="op">.</span><span class="nam">update_notification_policy</span><span class="op">(</span><span class="nam">policy</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -316,7 +316,7 @@
             <a class="nav" href="z_63588554199a8f83_loader_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>

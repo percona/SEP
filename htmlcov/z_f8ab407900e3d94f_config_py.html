@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_f8ab407900e3d94f_constants_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -468,13 +468,13 @@
     <p class="pln"><span class="n"><a id="t384" href="#t384">384</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Define configuration options for support snippets.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t385" href="#t385">385</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t386" href="#t386">386</a></span><span class="t"><span class="str">    :cvar SETTINGS_PREFIXES: The prefixes for snippets related settings in the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t387" href="#t387">387</a></span><span class="t"><span class="str">        configuration file. Set to `[&quot;SEP&quot;, &quot;SNIPPETS&quot;]`.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t387" href="#t387">387</a></span><span class="t"><span class="str">        configuration file. Set to `[&quot;EXTENSIONS&quot;, &quot;SNIPPETS&quot;]`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t388" href="#t388">388</a></span><span class="t"><span class="str">    :param SNIPPETS_DIR: The directory containing support snippets. Defaults to</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t389" href="#t389">389</a></span><span class="t"><span class="str">        `Path(&quot;snippets&quot;)`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t390" href="#t390">390</a></span><span class="t"><span class="str">    :param SNIPPETS_BASE_URL: The base URL for accessing snippets. If `None`, the URL</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t391" href="#t391">391</a></span><span class="t"><span class="str">        is dynamically built on execution. Defaults to `None`. Its path is preserved,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t392" href="#t392">392</a></span><span class="t"><span class="str">        with download URLs appended to it rather than replacing it, so it must</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t393" href="#t393">393</a></span><span class="t"><span class="str">        already include ``SEP.ROOT_PATH`` when a URL prefix is configured.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t393" href="#t393">393</a></span><span class="t"><span class="str">        already include ``EXTENSIONS.ROOT_PATH`` when a URL prefix is configured.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t394" href="#t394">394</a></span><span class="t"><span class="str">    :param META: Metadata options for snippets. See `SnippetsMetaOptions`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t395" href="#t395">395</a></span><span class="t"><span class="str">    :param SYNC_FILTER: A set of filters to apply when loading snippets from</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t396" href="#t396">396</a></span><span class="t"><span class="str">        `SNIPPETS_DIR`. Each filter can specify a file extension or MIME type. If</span>&nbsp;</span><span class="r"></span></p>
@@ -499,7 +499,7 @@
     <p class="pln"><span class="n"><a id="t415" href="#t415">415</a></span><span class="t"><span class="str">        preview. Defaults to 500.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t416" href="#t416">416</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t417" href="#t417">417</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t418" href="#t418">418</a></span><span class="t">    <span class="nam">SETTINGS_PREFIXES</span><span class="op">:</span> <span class="nam">ClassVar</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="str">&quot;SEP&quot;</span><span class="op">,</span> <span class="str">&quot;SNIPPETS&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t418" href="#t418">418</a></span><span class="t">    <span class="nam">SETTINGS_PREFIXES</span><span class="op">:</span> <span class="nam">ClassVar</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="str">&quot;EXTENSIONS&quot;</span><span class="op">,</span> <span class="str">&quot;SNIPPETS&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t419" href="#t419">419</a></span><span class="t">    <span class="nam">SNIPPETS_DIR</span><span class="op">:</span> <span class="nam">RelativeDirectoryPathField</span> <span class="op">=</span> <span class="nam">Path</span><span class="op">(</span><span class="str">&quot;snippets&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t420" href="#t420">420</a></span><span class="t">    <span class="com"># ``URL`` is a non-Pydantic Starlette type: the generic JSON serializer</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t421" href="#t421">421</a></span><span class="t">    <span class="com"># stores it as ``{&quot;_url&quot;: ...}`` rather than a plain string, which then</span>&nbsp;</span><span class="r"></span></p>
@@ -596,7 +596,7 @@
             <a class="nav" href="z_f8ab407900e3d94f_constants_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>

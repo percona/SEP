@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_45b1b7d80af93dcb_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -116,7 +116,7 @@
     <p class="run"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">models</span> <span class="key">import</span> <span class="nam">BaseLowercaseModel</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">utils</span><span class="op">.</span><span class="nam">fields</span> <span class="key">import</span> <span class="nam">StrCredentialAnyUrl</span><span class="op">,</span> <span class="nam">StrDatabaseUrl</span><span class="op">,</span> <span class="nam">StrRelativePath</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="com">#: Modules seeding the Celery ``include`` base. Not ``SEP.APPS`` apps, so they are</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t"><span class="com">#: Modules seeding the Celery ``include`` base. Not ``EXTENSIONS.APPS`` apps, so they are</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t"><span class="com">#: not registry-derived; ``build_celery_include`` prepends them. Every entry must</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="com">#: register regardless of which apps an image ships -- the tasks service, the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t"><span class="com">#: library-owned snippet ingestion, the drain reconciler whose beat row is</span>&nbsp;</span><span class="r"></span></p>
@@ -167,7 +167,7 @@
     <p class="pln"><span class="n"><a id="t83" href="#t83">83</a></span><span class="t"><span class="str">    :param beat_dburi: The database URI for storing scheduled tasks. Defaults to</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t"><span class="str">        ``&quot;sqlite:///schedule.db&quot;`` for a bare ``CeleryOptions``; under ``Settings``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t"><span class="str">        a lower-priority source supplies the resolved SEP database connection, so</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t"><span class="str">        the beat store follows ``SEP__DATABASE__*`` unless something configures it.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t"><span class="str">        the beat store follows ``EXTENSIONS__DATABASE__*`` unless something configures it.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t"><span class="str">    :param worker_state_db: Filesystem path where the Celery worker persists state</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t"><span class="str">        such as revoked task ids. Defaults to ``.celery_worker_state``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t"><span class="str">    :param beat_schema: The schema to store the beat tables in the database.</span>&nbsp;</span><span class="r"></span></p>
@@ -257,7 +257,7 @@
             <a class="nav" href="z_45b1b7d80af93dcb_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 07:29 +0000
+            created at 2026-09-24 12:25 +0000
         </p>
     </div>
 </footer>
