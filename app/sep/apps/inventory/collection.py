@@ -213,7 +213,7 @@ async def clear_absence_ledger(
 
     Cleared for every syncer rather than the configured ones, which is the same
     licence read the other way: a ledger row outlives the configuration that
-    wrote it, so scoping the delete to ``SEP.SYNCERS`` would leave the rows of a
+    wrote it, so scoping the delete to ``EXTENSIONS.SYNCERS`` would leave the rows of a
     syncer since removed or renamed behind permanently, with the entity they
     name gone and nothing left that could ever reach them.
 
@@ -305,7 +305,7 @@ async def run_inventory_collection(api_key: str) -> None:
 async def run_scheduled_inventory_collection() -> None:
     """Run inventory collection using the configured internal token.
 
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured.
+    :raises ValueError: If ``EXTENSIONS_INTERNAL_TOKEN`` is not configured.
     :raises HTTPException: Whatever the Inventory API's non-2xx answers raise.
     :raises ValidationError: If the Inventory API answers a collect call with
         something other than the documented object.
@@ -316,7 +316,7 @@ async def run_scheduled_inventory_collection() -> None:
     """
     if (api_key := get_internal_token()) is None:
         raise ValueError(
-            "SEP_INTERNAL_TOKEN must be configured for scheduled inventory "
+            "EXTENSIONS_INTERNAL_TOKEN must be configured for scheduled inventory "
             "collection. Set it in .env to a long random secret "
             "(e.g. `openssl rand -hex 32`)."
         )

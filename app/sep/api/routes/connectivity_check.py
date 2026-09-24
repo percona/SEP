@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the admin-only ``/api/sep/admin/connectivity-check`` endpoint.
+"""Define the admin-only ``/api/extensions/admin/connectivity-check`` endpoint.
 
 Expose a single generic ``POST`` that probes the caller-specified external /
 inter-service endpoints (PMM, Inventory, Tasks, Nomad, and the diagnostics

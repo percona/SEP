@@ -24,14 +24,14 @@ Red flags:
 
 ## App config never lives in a core module
 
-App operational settings belong to the app, not to a core module. `app/sep/config.py` / `SEPSettings` and `app/core/**` are core surfaces mounted by the whole application, so a field, type, default, or import carrying app-specific knowledge there makes **core depend on an app package** — the wrong-direction dependency. Read the section straight off YAML/env in an app-owned `app/sep/apps/<app>/config.py`, imported by consumers at call time.
+App operational settings belong to the app, not to a core module. `app/sep/config.py` / `ExtensionsSettings` and `app/core/**` are core surfaces mounted by the whole application, so a field, type, default, or import carrying app-specific knowledge there makes **core depend on an app package** — the wrong-direction dependency. Read the section straight off YAML/env in an app-owned `app/sep/apps/<app>/config.py`, imported by consumers at call time.
 
 **The check is "does this make a core module know about / import an app?" — not "does it cycle?"** A lighter app package or a string-annotated field would place app config in core *without* cycling and compile clean. Reject on the layering ground alone.
 
-- **Flag:** `SEPSettings.ATW: AtwSettings = AtwSettings()` where `AtwSettings` is defined in `app/sep/apps/atw/` — whether or not it cycles.
-- **Not a violation:** a genuinely cross-app / core setting (`settings.PMM`, a shared timeout) as a `SEPSettings` field; and an app importing *from* `app.sep.config` — app→core is the allowed direction.
+- **Flag:** `ExtensionsSettings.ATW: AtwSettings = AtwSettings()` where `AtwSettings` is defined in `app/sep/apps/atw/` — whether or not it cycles.
+- **Not a violation:** a genuinely cross-app / core setting (`settings.PMM`, a shared timeout) as an `ExtensionsSettings` field; and an app importing *from* `app.sep.config` — app→core is the allowed direction.
 
-Separately, **any `SEPSettings` field typed with a class from an app *package* does cycle**: importing `app.sep.apps.<app>.config` first executes `app/sep/apps/<app>/__init__.py`, which imports the app object for registry discovery → `api_routes` → … → `app/sep/deps.py` → `sep_settings`, only partially initialized at settings-construction time. Every app package has this `__init__.py` shape, so no import discipline inside the leaf `config.py` avoids it. Reason about an import edge into a settings-construction-time module from **what importing the target actually executes**, not from the leaf module's own import list — and a precedent claim must share the structural property, not just the `app/sep/apps/…` path prefix (`app/sep/apps/nav_icons.py` is a leaf module whose `__init__.py` has zero imports).
+Separately, **any `ExtensionsSettings` field typed with a class from an app *package* does cycle**: importing `app.sep.apps.<app>.config` first executes `app/sep/apps/<app>/__init__.py`, which imports the app object for registry discovery → `api_routes` → … → `app/sep/deps.py` → `sep_settings`, only partially initialized at settings-construction time. Every app package has this `__init__.py` shape, so no import discipline inside the leaf `config.py` avoids it. Reason about an import edge into a settings-construction-time module from **what importing the target actually executes**, not from the leaf module's own import list — and a precedent claim must share the structural property, not just the `app/sep/apps/…` path prefix (`app/sep/apps/nav_icons.py` is a leaf module whose `__init__.py` has zero imports).
 
 ## Database models
 
@@ -117,7 +117,7 @@ When a design names a physical resource that crosses a service boundary — a fi
 
 ## App layout
 
-`app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag apps that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
+`app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `EXTENSIONS.APPS`. Flag apps that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
 
 The standard module roles under each app package are:
 

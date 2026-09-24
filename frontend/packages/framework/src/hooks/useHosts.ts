@@ -41,7 +41,7 @@ export interface UseHostsOptions {
 /**
  * Fetch executor hosts merged with inventory display names.
  *
- * Calls the SEP-side proxy `GET /api/sep/hosts/`, which performs the
+ * Calls the SEP-side proxy `GET /api/extensions/hosts/`, which performs the
  * Tasks/Inventory merge server-side. Loading and error states are
  * first-class React Query states. When the Tasks API is unreachable the
  * route responds with `502` + `{"detail": "<upstream detail>"}`; the axios
@@ -56,7 +56,7 @@ export function useHosts(options: UseHostsOptions = {}): UseQueryResult<HostOpti
     enabled,
     staleTime: 60_000,
     queryFn: async () => {
-      const response = await apiClient.get<HostOption[]>('/sep/hosts/');
+      const response = await apiClient.get<HostOption[]>('/extensions/hosts/');
       return response.data;
     },
     retry: sepRetry,

@@ -87,7 +87,7 @@ describe('TableSelector', () => {
         <Harness initialSchema={{ id: 42, name: 'app_prod' }} />
       </Wrapper>,
     );
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/schemas/42/tables'));
   });
 
   it('resets value when parent schema changes', async () => {
@@ -325,7 +325,7 @@ describe('TableSelector', () => {
           <Probe />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/schemas/42/tables'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/schemas/42/tables'));
       expect(screen.getByLabelText('Tables')).not.toBeDisabled();
     });
 

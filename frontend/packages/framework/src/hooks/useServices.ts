@@ -66,7 +66,7 @@ async function fetchServicesPage(
   if (serviceType) {
     params.service_type = serviceType;
   }
-  const { data } = await apiClient.get<PaginatedServices>('/sep/services/', { params });
+  const { data } = await apiClient.get<PaginatedServices>('/extensions/services/', { params });
   return data;
 }
 
@@ -98,7 +98,7 @@ async function fetchServicesForType(
 }
 
 /**
- * Fetch services through the SEP gateway (`/api/sep/services/`), optionally
+ * Fetch services through the SEP gateway (`/api/extensions/services/`), optionally
  * filtered to one or more service types. Multiple types fan out to parallel
  * paginated requests because the upstream `/services/` endpoint accepts a
  * single `service_type` only. The frontend must not call `/api/inventory/`

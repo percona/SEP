@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # bootstrap composes the same helper, keeping the two include lists in lockstep.
 settings.CELERY.include = build_celery_include()
 
-celery = Celery("sep", **settings.CELERY.model_dump())
+celery = Celery("extensions", **settings.CELERY.model_dump())
 
 celery.loop = asyncio.new_event_loop()
 asyncio.set_event_loop(celery.loop)  # ty: ignore[unresolved-attribute]

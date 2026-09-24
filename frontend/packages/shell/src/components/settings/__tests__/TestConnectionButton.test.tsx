@@ -25,7 +25,7 @@ import { server } from '../../../../tests/msw-server';
 import { makeWrapper } from './fixtures';
 import TestConnectionButton from '../TestConnectionButton';
 
-const CONN_URL = 'http://localhost/api/sep/admin/connectivity-check/';
+const CONN_URL = 'http://localhost/api/extensions/admin/connectivity-check/';
 
 function renderButton() {
   return render(<TestConnectionButton />, { wrapper: makeWrapper() });

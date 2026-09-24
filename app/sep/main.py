@@ -254,7 +254,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     callbacks.update(
         {
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "INVENTORY_ENDPOINT",
             ): _make_remote_api_rebinder(
                 app,
@@ -266,7 +266,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 ssl_certfile=inventory_settings.SSL_CERTFILE,
             ),
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "TASKS_ENDPOINT",
             ): _make_remote_api_rebinder(
                 app,
@@ -284,13 +284,13 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "SYNC_INTERVAL",
             ): _reseed_system_periodic_tasks,
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "APP_DRAIN",
             ): _reseed_system_periodic_tasks,
         }
     )
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
-    # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
+    # ``/api/extensions/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.
     sep_app.state.override_callbacks = callbacks
     async with settings_override_refresher(
@@ -363,11 +363,11 @@ sep_app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
     root_path=sep_settings.ROOT_PATH,
-    title="SEP Web Application API",
+    title="PMM Extensions Web Application API",
     version=__version__,
     description=(
         f"{__summary__}\n\n"
-        "Browser-oriented SEP routes (proxies, streams, downloads). "
+        "Browser-oriented routes (proxies, streams, downloads). "
         "JSON REST APIs for inventory and tasks live on the mounted sub-apps."
     ),
 )

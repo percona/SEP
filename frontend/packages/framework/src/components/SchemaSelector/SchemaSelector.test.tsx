@@ -98,7 +98,7 @@ describe('SchemaSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/7/schemas'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/services/7/schemas'));
   });
 
   it('resets value when parent service changes', async () => {
@@ -270,7 +270,9 @@ describe('SchemaSelector', () => {
         </Wrapper>,
       );
       expect(screen.getByLabelText('Schema')).not.toBeDisabled();
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/services/42/schemas'));
+      await waitFor(() =>
+        expect(mocked.get).toHaveBeenCalledWith('/extensions/services/42/schemas'),
+      );
     });
 
     it('resolves a stringified child schema id to its option name on edit', async () => {

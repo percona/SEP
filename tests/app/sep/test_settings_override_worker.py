@@ -51,7 +51,7 @@ from app.core.settings_override.registry import hot_field
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION
 from app.core.utils import json_serializer
 from app.sep import settings_override as sep_worker
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.deps import resolve_pmm_api
 from app.sep.settings_override import (
     build_sep_override_proxies,
@@ -71,7 +71,7 @@ from tests.app.db_schema import apply_schema
 
 SEP_CORE_CLASSES = frozenset(
     {
-        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.EXTENSIONS_SETTINGS,
         SettingClassEnum.SNIPPETS_SETTINGS,
         SettingClassEnum.SETTINGS,
         SettingClassEnum.ALERT_SETTINGS,
@@ -627,7 +627,7 @@ class TestRepublishSepSettingsSnapshot:
         """Reflect an override written after the snapshot in hand was built."""
         await _upsert_override(
             override_session_maker,
-            settings_cls=SEPSettings,
+            settings_cls=ExtensionsSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )
@@ -656,7 +656,7 @@ class TestRepublishSepSettingsSnapshot:
         fire = mocker.spy(lifecycle, "fire_change_callbacks")
         await _upsert_override(
             override_session_maker,
-            settings_cls=SEPSettings,
+            settings_cls=ExtensionsSettings,
             key=SEP_OVERRIDE_KEY,
             value=SEP_OVERRIDE_VALUE,
         )

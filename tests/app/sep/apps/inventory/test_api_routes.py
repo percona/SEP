@@ -292,7 +292,7 @@ class TestInventorySyncTrigger:
     ):
         """The API sync background task is scheduled with the internal token."""
         mocker.patch.object(
-            settings, "SEP_INTERNAL_TOKEN", SecretStr("api-internal-token")
+            settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr("api-internal-token")
         )
         response = test_client.post("/api/apps/inventory/sync/")
         assert response.status_code == status.HTTP_202_ACCEPTED
@@ -615,7 +615,7 @@ class TestInventoryServiceCheckConnectivity:
     ):
         """Refuse a non-admin: the probe opens a connection with stored credentials.
 
-        Its already-admin sibling is ``POST /api/sep/admin/connectivity-check/``,
+        Its already-admin sibling is ``POST /api/extensions/admin/connectivity-check/``,
         and the declaration is on the route rather than left to the router-level
         gate so the posture is readable where the route is defined.
         """

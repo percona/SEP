@@ -141,7 +141,7 @@ tasks_app = create_app(
     backend_cors_origins=tasks_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=tasks_settings.ALLOWED_HOSTS,
     security_headers=tasks_settings.SECURITY_HEADERS,
-    title="SEP Tasks API",
+    title="PMM Extensions Tasks API",
     version=__version__,
     description=f"{__summary__} — task execution, history, periodic jobs, connectivity.",
 )

@@ -44,7 +44,7 @@ describe('useConnectivityCheck — request contract', () => {
   it('POSTs the targets body to the connectivity-check path (trailing slash) and returns the list', async () => {
     const seen = vi.fn();
     server.use(
-      http.post(`${BASE}/api/sep/admin/connectivity-check/`, async ({ request }) => {
+      http.post(`${BASE}/api/extensions/admin/connectivity-check/`, async ({ request }) => {
         seen({
           auth: request.headers.get('Authorization'),
           body: await request.json(),
@@ -68,7 +68,7 @@ describe('useConnectivityCheck — request contract', () => {
 
   it('surfaces a non-2xx response as an ApiError (request-level failure)', async () => {
     server.use(
-      http.post(`${BASE}/api/sep/admin/connectivity-check/`, () =>
+      http.post(`${BASE}/api/extensions/admin/connectivity-check/`, () =>
         HttpResponse.json({ detail: 'Boom' }, { status: 500 }),
       ),
     );
@@ -77,7 +77,9 @@ describe('useConnectivityCheck — request contract', () => {
   });
 
   it('surfaces a transport-level failure as an ApiError (no HTTP response)', async () => {
-    server.use(http.post(`${BASE}/api/sep/admin/connectivity-check/`, () => HttpResponse.error()));
+    server.use(
+      http.post(`${BASE}/api/extensions/admin/connectivity-check/`, () => HttpResponse.error()),
+    );
 
     await expect(runCheck({ targets: ['pmm'] })).rejects.toBeInstanceOf(ApiError);
   });

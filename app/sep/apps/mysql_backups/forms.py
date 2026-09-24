@@ -535,8 +535,8 @@ class BackupCreate(TaskFormModel):
             label="Database Host",
             section="Task",
             description=(
-                "Database service to back up; SEP resolves its host and port from "
-                "inventory"
+                "Database service to back up; PMM Extensions resolves its host and "
+                "port from inventory"
             ),
         ),
     ]
@@ -620,7 +620,8 @@ class BackupCreate(TaskFormModel):
             section="Mydumper",
             description=(
                 "Extra arguments for the mydumper command. They are placed ahead of "
-                "the arguments SEP sets, so one that clashes is overridden."
+                "the arguments PMM Extensions sets, so one that clashes is "
+                "overridden."
             ),
         ),
     ] = None
@@ -817,8 +818,8 @@ class BackupCreate(TaskFormModel):
             label="Local SSH destination",
             section="XtraBackup",
             description=(
-                "Unused: SEP always runs XtraBackup on the database host itself, so "
-                "the backup is never streamed to another host."
+                "Unused: PMM Extensions always runs XtraBackup on the database host "
+                "itself, so the backup is never streamed to another host."
             ),
         ),
     ] = None
@@ -899,7 +900,8 @@ class BackupCreate(TaskFormModel):
             section="Binlog",
             description=(
                 "Extra arguments for the binlog streaming command. They are placed "
-                "ahead of the arguments SEP sets, so one that clashes is overridden."
+                "ahead of the arguments PMM Extensions sets, so one that clashes is "
+                "overridden."
             ),
         ),
     ] = None
@@ -1037,7 +1039,8 @@ class BackupCreate(TaskFormModel):
             label="MySQL defaults file",
             section="General",
             description=(
-                "MySQL defaults file used for the connections SEP makes to the server, "
+                "MySQL defaults file used for the connections PMM Extensions makes "
+                "to the server, "
                 "and for the mydumper or binlog command. The XtraBackup binary reads "
                 "'XtraBackup defaults file' instead."
             ),

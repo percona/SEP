@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/schemas/`` JSON endpoint exposing inventory tables.
+"""Define the ``/api/extensions/schemas/`` JSON endpoint exposing inventory tables.
 
 Proxy the Inventory ``/schemas/{schema_id}/tables/`` listing so the React
 frontend can populate schema-driven table selectors without bypassing the SEP

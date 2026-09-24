@@ -13,13 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/dashboard/`` JSON endpoint for dashboard statistics.
+"""Define the ``/api/extensions/dashboard/`` JSON endpoint for dashboard statistics.
 
 Returns aggregate counts for the four dashboard stat cards in a single round
 trip so the React frontend avoids four parallel upstream calls. All four
 sources are fetched concurrently via :func:`asyncio.gather`; each degrades
 independently — a failure yields ``0`` for that counter and its name is
-appended to the ``X-Sep-Upstream-Error`` response header so the frontend can
+appended to the ``X-Upstream-Error`` response header so the frontend can
 distinguish real zeroes from degraded counts.
 """
 
@@ -73,20 +73,15 @@ async def get_dashboard_stats(
     * ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.
 
     When one or more sources fail the names of the failed sources are joined
-    with commas and set on the ``X-Sep-Upstream-Error`` response header so the
+    with commas and set on the ``X-Upstream-Error`` response header so the
     caller can surface a partial-failure warning without treating all-zero
     counts as healthy data.
 
     :param response: The outgoing response used to attach the error header.
-    :type response: Response
     :param session: The active database session for snippet queries.
-    :type session: AsyncSession
     :param tasks_api: Async client for the Tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param inventory_api: Async client for the Inventory sub-app.
-    :type inventory_api: RemoteAPI
     :return: Aggregate counts for nodes, tasks, snippets, and targets.
-    :rtype: DashboardStatsResponse
     """
 
     async def _nodes() -> int:

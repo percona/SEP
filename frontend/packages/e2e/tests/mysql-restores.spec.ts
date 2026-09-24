@@ -182,7 +182,7 @@ async function mockRestoreSchemaApis(page: Page, options: RestoreMockOptions = {
       });
     }
 
-    if (pathname.endsWith('/sep/hosts/')) {
+    if (pathname.endsWith('/extensions/hosts/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -190,7 +190,7 @@ async function mockRestoreSchemaApis(page: Page, options: RestoreMockOptions = {
       });
     }
 
-    if (pathname.endsWith('/sep/services/')) {
+    if (pathname.endsWith('/extensions/services/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
