@@ -106,7 +106,7 @@ export default function LoginPage() {
                 PERCONA
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Services Enablement Platform
+                PMM Extensions
               </Typography>
             </Box>
 

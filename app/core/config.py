@@ -573,14 +573,14 @@ class _SEPDatabaseSettings(BaseYamlSettings):
     ``Settings`` cannot read ``sep_settings`` while it is being constructed:
     ``BaseYamlAppSettings.BACKEND_CORS_ORIGINS`` defaults off ``settings``, so
     forcing the SEP proxy re-enters the global proxy that is still resolving. This
-    reads the same ``SEP__DATABASE__*`` sources without either proxy.
+    reads the same ``EXTENSIONS__DATABASE__*`` sources without either proxy.
 
     :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML
-        sources under. Set to ["SEP"].
+        sources under. Set to ["EXTENSIONS"].
     :param DATABASE: The SEP service's database connection options.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
 
 
@@ -633,7 +633,7 @@ class BeatStoreDefaultSource(PydanticBaseSettingsSource):
 
         :return: The ``CELERY.BEAT_DBURI`` default derived from SEP's database, or an
             empty payload when a configured source already supplies the store.
-        :raises ValidationError: When the resolved ``SEP__DATABASE__*`` values do
+        :raises ValidationError: When the resolved ``EXTENSIONS__DATABASE__*`` values do
             not validate, so an unusable SEP database fails ``Settings``
             construction instead of yielding a malformed store URI. Only a
             deployment that leaves the beat store to be derived is held to this.
@@ -654,13 +654,13 @@ class Settings(BaseYamlSettings):
 
     :param CELERY: Celery configuration options. ``BEAT_DBURI`` defaults to the
         resolved SEP database connection, so the beat store follows
-        ``SEP__DATABASE__*`` unless a source configures it explicitly.
+        ``EXTENSIONS__DATABASE__*`` unless a source configures it explicitly.
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
+    :param EXTENSIONS_INTERNAL_TOKEN: A long random secret used for SEP-internal
         service-to-service authentication (e.g. scheduled inventory sync). When
         unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so
         every process sharing ``SECRET_KEY`` resolves the identical token.
@@ -679,7 +679,7 @@ class Settings(BaseYamlSettings):
     :param SSL_CAFILE: The SSL CA file to use for remote API requests.
     :param BASE_URL: The application's base URL. Its path is preserved, with composed
         URLs appended to it rather than replacing it, so it must already include
-        ``SEP.ROOT_PATH`` when a URL prefix is configured.
+        ``EXTENSIONS.ROOT_PATH`` when a URL prefix is configured.
     :param BACKEND_CORS_ORIGINS: A global list of allowed CORS origins, to be used as
         the default BACKEND_CORS_ORIGINS setting across all apps.
     :param ALLOWED_HOSTS: A global list of trusted domain names or wildcards, to be used
@@ -695,7 +695,7 @@ class Settings(BaseYamlSettings):
     CELERY: CeleryOptions
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
-    SEP_INTERNAL_TOKEN: SecretStr | None = None
+    EXTENSIONS_INTERNAL_TOKEN: SecretStr | None = None
     ENCRYPTION_KEY: SecretStr
     LOGGING: LogLevel = hot_field(LogLevel.WARNING)  # ty: ignore[invalid-assignment]
     LOGGING_CONFIG: dict[str, Any] = {}
@@ -748,35 +748,35 @@ class Settings(BaseYamlSettings):
 
     @model_validator(mode="after")
     def derive_internal_token(self) -> Self:
-        """Derive ``SEP_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.
+        """Derive ``EXTENSIONS_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.
 
         Every process sharing ``SECRET_KEY`` derives the identical token via
         HMAC-SHA256, so SEP-internal service-to-service authentication works
         across the web apps and the lifespan-less Celery worker without
         persisting or distributing a separate secret. An explicitly configured
-        ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
+        ``EXTENSIONS_INTERNAL_TOKEN`` takes precedence so it can be rotated
         independently.
 
-        :return: Validated settings with ``SEP_INTERNAL_TOKEN`` guaranteed set.
-        :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
+        :return: Validated settings with ``EXTENSIONS_INTERNAL_TOKEN`` guaranteed set.
+        :raises ValueError: If ``EXTENSIONS_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
             is empty, so no token can be derived.
         """
         if (
-            self.SEP_INTERNAL_TOKEN is not None
-            and self.SEP_INTERNAL_TOKEN.get_secret_value()
+            self.EXTENSIONS_INTERNAL_TOKEN is not None
+            and self.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
         ):
             return self
         secret_key = self.SECRET_KEY.get_secret_value()
         if not secret_key:
             raise ValueError(
-                "SECRET_KEY must be set to a non-empty value so SEP_INTERNAL_TOKEN "
+                "SECRET_KEY must be set to a non-empty value so EXTENSIONS_INTERNAL_TOKEN "
                 "can be derived for service-to-service authentication "
                 "(e.g. `openssl rand -hex 32`)."
             )
         derived = hmac.new(
             secret_key.encode(), _INTERNAL_TOKEN_LABEL, hashlib.sha256
         ).hexdigest()
-        self.SEP_INTERNAL_TOKEN = SecretStr(derived)
+        self.EXTENSIONS_INTERNAL_TOKEN = SecretStr(derived)
         return self
 
     @model_validator(mode="before")

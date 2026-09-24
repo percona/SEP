@@ -15,7 +15,7 @@
 
 """Define tests for the unsafe-method role gate on the Inventory sub-app."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi import status
@@ -25,6 +25,8 @@ from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api import deps as api_deps
+from app.core.auth.providers.grafana.models import GrafanaUser
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.settings_override.models import SettingClassEnum
 from app.inventory.deps import get_session
@@ -36,6 +38,7 @@ from app.inventory.models import (
     SyncOutcomeEnum,
     Table,
 )
+from tests.app.conftest import GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     NodeWriteFactory,
@@ -185,7 +188,7 @@ def test_an_unconfigured_internal_token_admits_nobody(
     With nothing to compare a credential against, no caller can resolve to the
     principal, so the restricted routes close rather than fall open.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", token_setting)
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", token_setting)
 
     response = admin_bearer_client.post(
         "/nodes/", json={}, headers={"Authorization": f"Bearer {SERVICE_TOKEN}"}
@@ -205,7 +208,7 @@ def test_the_service_principal_is_still_refused_by_a_route_admin_check(
     bearer_client: TestClient, mocker: MockerFixture
 ) -> None:
     """Refuse the principal on a route carrying its own ``IsAdminDep``."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.patch(
         f"/admin/settings/{SettingClassEnum.INVENTORY_SETTINGS.value}",
@@ -225,7 +228,7 @@ def test_the_service_principal_can_still_update_a_node(
     also pass on a 401 or a 500, which is exactly the silent breakage this gate
     risks for the scheduled writer.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.put(
         f"/nodes/{node.id}",
@@ -246,7 +249,7 @@ def test_the_service_principal_can_still_retire_a_service(
     bearer_client: TestClient, service: Service, mocker: MockerFixture
 ) -> None:
     """Retire a service as the principal, which the scheduled sync depends on."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.delete(
         f"/services/{service.id}",
@@ -265,7 +268,7 @@ def test_the_service_principal_can_revive_a_service(
     path on its own; a principal admitted for retirement is not thereby admitted
     for the call that undoes it.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.post(
         f"/services/{retired_service.id}/revive",
@@ -279,7 +282,7 @@ def test_the_service_principal_can_create_a_node(
     bearer_client: TestClient, mocker: MockerFixture
 ) -> None:
     """Create a node as the principal, the PMM syncer's own entry point."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     payload = NodeWriteFactory.build()
 
     response = bearer_client.post(
@@ -296,7 +299,7 @@ def test_the_service_principal_can_still_retire_a_node(
     bearer_client: TestClient, node: Node, mocker: MockerFixture
 ) -> None:
     """Retire a node as the principal, which the scheduled sync depends on."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.delete(
         f"/nodes/{node.id}",
@@ -310,7 +313,7 @@ def test_the_service_principal_can_revive_a_node(
     bearer_client: TestClient, retired_node: Node, mocker: MockerFixture
 ) -> None:
     """Revive a node as the principal, the other half of what sync writes."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.post(
         f"/nodes/{retired_node.id}/revive",
@@ -342,7 +345,7 @@ def test_the_service_principal_can_record_sync_health(
     gate that refused it would leave the columns permanently unwritten while
     every sync still reported success.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     entity = request.getfixturevalue(fixture_name)
 
     response = bearer_client.post(
@@ -358,7 +361,7 @@ def test_the_service_principal_can_create_a_service_for_a_node(
     bearer_client: TestClient, node: Node, mocker: MockerFixture
 ) -> None:
     """Create a service as the principal, the second of the syncer's creates."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     payload = ServiceWriteFactory.build()
 
     response = bearer_client.post(
@@ -375,7 +378,7 @@ def test_the_service_principal_can_update_a_service(
     bearer_client: TestClient, service: Service, node: Node, mocker: MockerFixture
 ) -> None:
     """Update a service as the principal, which the scheduled sync depends on."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     payload = ServiceWriteFactory.build(node_id=node.id, name="renamed-by-sync")
 
     response = bearer_client.put(
@@ -448,6 +451,67 @@ def test_an_admin_still_retires_a_table(
     response = admin_bearer_client.delete(f"/tables/{table.id}", headers=BEARER_HEADERS)
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
+
+
+class TestServiceAccountBearer:
+    """Verify a Grafana service-account token is ranked by the gate on a real route."""
+
+    TOKEN = GRAFANA_CALLER_SERVICE_ACCOUNT_TOKEN
+
+    @pytest.fixture
+    def service_account_client(
+        self,
+        bearer_client: TestClient,
+        grafana_mock: GrafanaAuthProvider,
+        mocker: MockerFixture,
+    ) -> Callable[[str], TestClient]:
+        """Return a factory pinning the service account's Grafana org role."""
+        mocker.patch.object(api_deps, "User", GrafanaUser)
+        verify = mocker.patch(
+            "app.core.auth.providers.grafana.sdk.GrafanaSDK.verify_service_account_token",
+            new=mocker.AsyncMock(),
+        )
+
+        def with_role(role: str) -> TestClient:
+            """Answer every verification with an account holding ``role``."""
+            verify.return_value = {
+                "id": 7,
+                "login": "sa-1-ci-runner",
+                "isDisabled": False,
+                "role": role,
+            }
+            return bearer_client
+
+        return with_role
+
+    def test_a_viewer_is_refused_an_admin_write(
+        self,
+        service_account_client: Callable[[str], TestClient],
+        table: Table,
+    ) -> None:
+        """Verify the gate refuses a Viewer account and the table survives."""
+        client = service_account_client("Viewer")
+        headers = {"Authorization": f"Bearer {self.TOKEN}"}
+
+        response = client.delete(f"/tables/{table.id}", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert (
+            client.get(f"/tables/{table.id}", headers=headers).json()["retired_at"]
+            is None
+        )
+
+    def test_an_admin_retires_a_table(
+        self, service_account_client: Callable[[str], TestClient], table: Table
+    ) -> None:
+        """Verify an Admin account clears the gate and the handler runs."""
+        client = service_account_client("Admin")
+
+        response = client.delete(
+            f"/tables/{table.id}", headers={"Authorization": f"Bearer {self.TOKEN}"}
+        )
+
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
 def test_a_restricted_route_still_advertises_its_bearer_security() -> None:
@@ -589,7 +653,7 @@ def test_the_service_principal_may_also_decide_an_identity_link(
     mocker: MockerFixture,
 ) -> None:
     """Admit the principal too, so an automated caller is not locked out later."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     predecessor, successor = split_nodes
 
     response = bearer_client.post(

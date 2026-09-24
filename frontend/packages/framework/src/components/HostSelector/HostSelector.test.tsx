@@ -66,7 +66,7 @@ describe('HostSelector', () => {
     mocked.get.mockReset();
   });
 
-  it('fetches hosts via /api/sep/hosts/ and renders display names', async () => {
+  it('fetches hosts via /api/extensions/hosts/ and renders display names', async () => {
     mocked.get.mockResolvedValueOnce(
       makeResponse([
         { id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' },
@@ -81,7 +81,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
     expect(mocked.get).toHaveBeenCalledTimes(1);
 
     const user = userEvent.setup();
@@ -172,7 +172,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
     const user = userEvent.setup();
     // `required: true` adds a trailing "*" to the rendered MUI label, so match by prefix.
@@ -186,7 +186,7 @@ describe('HostSelector', () => {
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'nomad-1' }));
   });
 
-  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+  it('refetches /api/extensions/hosts/ when the dropdown is opened', async () => {
     const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
     mocked.get.mockResolvedValue(makeResponse(hosts));
 
@@ -224,7 +224,7 @@ describe('HostSelector', () => {
 
   it('auto-selects an executor host from the upstream service (node name)', async () => {
     mocked.get.mockImplementation((url: string) => {
-      if (url === '/sep/hosts/') {
+      if (url === '/extensions/hosts/') {
         return Promise.resolve(
           makeResponse([
             { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
@@ -232,7 +232,7 @@ describe('HostSelector', () => {
           ]),
         );
       }
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -284,7 +284,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
     const user = userEvent.setup();
     await user.click(screen.getByLabelText(/^Database Service\b/));
@@ -303,7 +303,7 @@ describe('HostSelector', () => {
 
   it('keeps a manual host override after hosts refetch on open', async () => {
     mocked.get.mockImplementation((url: string) => {
-      if (url === '/sep/hosts/') {
+      if (url === '/extensions/hosts/') {
         // New array identity each call so cascade effect re-runs on refetch.
         return Promise.resolve(
           makeResponse([
@@ -312,7 +312,7 @@ describe('HostSelector', () => {
           ]),
         );
       }
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -364,7 +364,7 @@ describe('HostSelector', () => {
       </Wrapper>,
     );
 
-    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+    await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
     const user = userEvent.setup();
     await user.click(screen.getByLabelText(/^Database Service\b/));
@@ -381,13 +381,15 @@ describe('HostSelector', () => {
       expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display A');
     });
 
-    const hostsCallsBeforeOpen = mocked.get.mock.calls.filter((c) => c[0] === '/sep/hosts/').length;
+    const hostsCallsBeforeOpen = mocked.get.mock.calls.filter(
+      (c) => c[0] === '/extensions/hosts/',
+    ).length;
     const hostCombobox = () => screen.getByRole('combobox', { name: /^Execution Host\b/ });
 
     // onOpen → refetch(); cascade must not overwrite the manual pick.
     await user.click(hostCombobox());
     await waitFor(() => {
-      const hostsCalls = mocked.get.mock.calls.filter((c) => c[0] === '/sep/hosts/').length;
+      const hostsCalls = mocked.get.mock.calls.filter((c) => c[0] === '/extensions/hosts/').length;
       expect(hostsCalls).toBeGreaterThan(hostsCallsBeforeOpen);
     });
 
@@ -405,7 +407,7 @@ describe('HostSelector', () => {
 
   it('rehydrates a scalar service_id with the parent service_types filter', async () => {
     mocked.get.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/sep/hosts/') {
+      if (url === '/extensions/hosts/') {
         return Promise.resolve(
           makeResponse([
             { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
@@ -413,7 +415,7 @@ describe('HostSelector', () => {
           ]),
         );
       }
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         expect(config?.params).toMatchObject({ service_type: 'mongodb' });
         return Promise.resolve({
           data: {
@@ -474,7 +476,7 @@ describe('HostSelector', () => {
       expect(screen.getByLabelText(/^Execution Host\b/)).toHaveValue('Display B');
     });
 
-    const servicesCalls = mocked.get.mock.calls.filter((c) => c[0] === '/sep/services/');
+    const servicesCalls = mocked.get.mock.calls.filter((c) => c[0] === '/extensions/services/');
     expect(servicesCalls.length).toBeGreaterThan(0);
     for (const call of servicesCalls) {
       expect(call[1]).toEqual(
@@ -594,7 +596,7 @@ describe('HostSelector', () => {
         </Wrapper>,
       );
 
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       const user = userEvent.setup();
       await user.type(screen.getByLabelText(/^Host\b/), 'custom-executor');
@@ -606,7 +608,7 @@ describe('HostSelector', () => {
 
     it('cascade auto-select commits a scalar host id when allowCustom is set', async () => {
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return Promise.resolve(
             makeResponse([
               { id: 'node-a', name: 'Display A', address: '10.0.0.1' },
@@ -614,7 +616,7 @@ describe('HostSelector', () => {
             ]),
           );
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return Promise.resolve({
             data: {
               items: [
@@ -667,7 +669,7 @@ describe('HostSelector', () => {
         </Wrapper>,
       );
 
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       const user = userEvent.setup();
       await user.click(screen.getByLabelText(/^Database Service\b/));
@@ -684,7 +686,7 @@ describe('HostSelector', () => {
       );
     });
 
-    it('refetches /api/sep/hosts/ when the free-solo dropdown is opened', async () => {
+    it('refetches /api/extensions/hosts/ when the free-solo dropdown is opened', async () => {
       const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
       mocked.get.mockResolvedValue(makeResponse(hosts));
 
@@ -774,16 +776,18 @@ describe('HostSelector', () => {
 
     async function waitForServicesFetch() {
       await waitFor(() => {
-        expect(mocked.get.mock.calls.some((call) => call[0] === '/sep/services/')).toBe(true);
+        expect(mocked.get.mock.calls.some((call) => call[0] === '/extensions/services/')).toBe(
+          true,
+        );
       });
     }
 
     function mockHostsAndServices(services: (typeof SERVICE_ON_NODE_B)[] = [SERVICE_ON_NODE_B]) {
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return Promise.resolve(makeResponse(HOSTS));
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return Promise.resolve({
             data: {
               items: services,
@@ -852,7 +856,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await selectServiceAndHost(user, 'Display A');
 
@@ -864,10 +868,10 @@ describe('HostSelector', () => {
     it('resolves the target service by its own types when depends_on names a different field', async () => {
       mocked.get.mockImplementation(
         (url: string, config?: { params?: Record<string, unknown> }) => {
-          if (url === '/sep/hosts/') {
+          if (url === '/extensions/hosts/') {
             return Promise.resolve(makeResponse(HOSTS));
           }
-          if (url === '/sep/services/') {
+          if (url === '/extensions/services/') {
             const type = config?.params?.service_type;
             const items =
               type === 'mongodb'
@@ -939,7 +943,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await selectServiceAndHost(user, 'Display B');
 
@@ -961,7 +965,7 @@ describe('HostSelector', () => {
           />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await selectServiceAndHost(user, 'Display A');
 
@@ -980,7 +984,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await user.click(screen.getByLabelText(/^Execution Host\b/));
       await user.click(await screen.findByRole('option', { name: 'Display A' }));
@@ -991,10 +995,10 @@ describe('HostSelector', () => {
     it('is silent while the target service is still resolving', async () => {
       let resolveServices!: (value: unknown) => void;
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return Promise.resolve(makeResponse(HOSTS));
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return new Promise((resolve) => {
             resolveServices = resolve;
           });
@@ -1029,10 +1033,10 @@ describe('HostSelector', () => {
 
     it('is silent when the target service failed to resolve', async () => {
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return Promise.resolve(makeResponse(HOSTS));
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return Promise.reject(new ApiError({ kind: 'http', status: 502, message: 'svc boom' }));
         }
         return Promise.reject(new Error(`unexpected url ${url}`));
@@ -1067,7 +1071,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections()} onSubmit={vi.fn()} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await selectServiceAndHost(user, 'Display A');
 
@@ -1083,7 +1087,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections({ allow_custom: true })} onSubmit={vi.fn()} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await user.click(screen.getByLabelText(/^Database Service\b/));
       await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
@@ -1104,7 +1108,7 @@ describe('HostSelector', () => {
           />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await user.type(screen.getByLabelText(/^Database Service\b/), 'external-svc');
       await user.click(screen.getByLabelText(/^Execution Host\b/));
@@ -1116,12 +1120,12 @@ describe('HostSelector', () => {
     it('is silent while the hosts query is loading', async () => {
       let resolveHosts!: (value: unknown) => void;
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return new Promise((resolve) => {
             resolveHosts = resolve;
           });
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return Promise.resolve({
             data: {
               items: [SERVICE_ON_NODE_B],
@@ -1154,10 +1158,10 @@ describe('HostSelector', () => {
 
     it('is silent when the hosts query errored', async () => {
       mocked.get.mockImplementation((url: string) => {
-        if (url === '/sep/hosts/') {
+        if (url === '/extensions/hosts/') {
           return Promise.reject(new ApiError({ kind: 'http', status: 502, message: 'host boom' }));
         }
-        if (url === '/sep/services/') {
+        if (url === '/extensions/services/') {
           return Promise.resolve({
             data: {
               items: [SERVICE_ON_NODE_B],
@@ -1238,7 +1242,7 @@ describe('HostSelector', () => {
           <SchemaFormRenderer sections={taskSections()} onSubmit={onSubmit} />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await selectServiceAndHost(user, 'Display A');
       await expectMismatchWarning();
@@ -1276,7 +1280,7 @@ describe('HostSelector', () => {
         </Wrapper>,
       );
 
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
       expectNoMismatchWarning();
     });
 
@@ -1293,7 +1297,7 @@ describe('HostSelector', () => {
           />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await user.click(screen.getByLabelText(/^Database Service\b/));
       await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));
@@ -1322,7 +1326,7 @@ describe('HostSelector', () => {
           />
         </Wrapper>,
       );
-      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/sep/hosts/'));
+      await waitFor(() => expect(mocked.get).toHaveBeenCalledWith('/extensions/hosts/'));
 
       await user.click(screen.getByLabelText(/^Database Service\b/));
       await user.click(await screen.findByRole('option', { name: 'mysql-svc (mysql)' }));

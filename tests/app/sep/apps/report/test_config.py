@@ -30,7 +30,7 @@ from app.sep.apps.report.config import (
 )
 
 HEALTH_REPORT_YAML_BLOCK = """\
-  SEP:
+  EXTENSIONS:
     HEALTH_REPORT:
       UPLOAD: true
       ENDPOINT: https://snow.example.com/v1/upload/
@@ -55,8 +55,8 @@ class TestHealthReportSettings:
     """Test the report plugin-owned ``HealthReportSettings`` section."""
 
     def test_settings_prefixes(self) -> None:
-        """Assert the section is scoped under ``SEP.HEALTH_REPORT``."""
-        assert HealthReportSettings.SETTINGS_PREFIXES == ["SEP", "HEALTH_REPORT"]
+        """Assert the section is scoped under ``EXTENSIONS.HEALTH_REPORT``."""
+        assert HealthReportSettings.SETTINGS_PREFIXES == ["EXTENSIONS", "HEALTH_REPORT"]
 
     def test_defaults(self) -> None:
         """Assert default values for the health report settings section."""
@@ -73,7 +73,7 @@ class TestHealthReportSettings:
         )
 
     def test_yaml_health_report_block_resolves(self, tmp_path, monkeypatch) -> None:
-        """Resolve ``SEP.HEALTH_REPORT`` from a deployed ``settings.yaml`` block."""
+        """Resolve ``EXTENSIONS.HEALTH_REPORT`` from a deployed ``settings.yaml`` block."""
         _use_profile(tmp_path, monkeypatch, HEALTH_REPORT_YAML_BLOCK)
 
         config = HealthReportSettings(_env_file=None)
@@ -89,16 +89,16 @@ class TestHealthReportSettings:
         )
 
     def test_env_var_overrides_health_report_field(self, monkeypatch) -> None:
-        """Resolve ``SEP__HEALTH_REPORT__*`` environment variables."""
-        monkeypatch.setenv("SEP__HEALTH_REPORT__CLIENT_ID", "env-client")
+        """Resolve ``EXTENSIONS__HEALTH_REPORT__*`` environment variables."""
+        monkeypatch.setenv("EXTENSIONS__HEALTH_REPORT__CLIENT_ID", "env-client")
 
         config = HealthReportSettings(_env_file=None)
 
         assert config.client_id == "env-client"
 
     def test_secret_file_resolves_api_key(self, tmp_path) -> None:
-        """Resolve ``SEP__HEALTH_REPORT__API_KEY`` from a mounted secret file."""
-        (tmp_path / "SEP__HEALTH_REPORT__API_KEY").write_text(
+        """Resolve ``EXTENSIONS__HEALTH_REPORT__API_KEY`` from a mounted secret file."""
+        (tmp_path / "EXTENSIONS__HEALTH_REPORT__API_KEY").write_text(
             "secret-from-file\n", encoding="utf-8"
         )
 

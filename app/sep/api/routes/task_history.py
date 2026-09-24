@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/task-history/`` JSON endpoints proxying task history.
+"""Define the ``/api/extensions/task-history/`` JSON endpoints proxying task history.
 
 Expose task-history reads through the SEP gateway so the React frontend never
 calls the Tasks sub-app directly. ``GET /`` either lists all history

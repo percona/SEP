@@ -318,7 +318,7 @@ class IndexTemplateGroup(BaseModel):
 class IndexPagerDutyStatus(BaseModel):
     """Describe the PagerDuty contact-point status on the index page.
 
-    :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
+    :param configured: ``True`` when a PMM Extensions PagerDuty contact point exists in PMM.
     :param uid: The contact point UID when configured, otherwise ``None``.
     """
 

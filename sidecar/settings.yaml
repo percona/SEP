@@ -35,10 +35,10 @@ default:
     ALLOWED_KEYS:
       - Settings.LOGGING
       - Settings.PMM__annotations_enabled
-      - SEPSettings.SYNC_REFRESH_TIME
-      - SEPSettings.CONNECTIVITY_CHECK_DEFAULT
-      - SEPSettings.FOOTER_TEMPLATE
-      - SEPSettings.DIAGNOSTICS_DELIVERY_INPUTS
+      - ExtensionsSettings.SYNC_REFRESH_TIME
+      - ExtensionsSettings.CONNECTIVITY_CHECK_DEFAULT
+      - ExtensionsSettings.FOOTER_TEMPLATE
+      - ExtensionsSettings.DIAGNOSTICS_DELIVERY_INPUTS
       - AlertSettings.PROVIDERS
       - AlertSettings.SOURCE_PREFIX
       - AlertSettings.SOURCE_SUFFIX
@@ -60,6 +60,10 @@ default:
       - OmInventorySettings.MAX_CONCURRENT_PROBES
       - OmInventorySettings.RUN_RETENTION
       - OmInventorySettings.STALE_RUN_AFTER
+      # PMM's OpenManager switch reaches ENABLED through the app's own
+      # PATCH /config, which this allowlist gates like any other caller: left
+      # out, the sweep can never be turned on.
+      - OmInventorySettings.ENABLED
 
   AUTH:
     PROVIDER:
@@ -85,7 +89,7 @@ default:
     BROKER_URL: redis://127.0.0.1:6379/0
     RESULT_BACKEND: redis://127.0.0.1:6379/1
     # No BEAT_DBURI: the beat store defaults to the resolved SEP database, so a
-    # mounted DATABASE__PASSWORD or SEP__DATABASE__PASSWORD reaches it without an
+    # mounted DATABASE__PASSWORD or EXTENSIONS__DATABASE__PASSWORD reaches it without an
     # env-visible URI.
     RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
@@ -101,19 +105,21 @@ default:
       # options do size (one each in sep and tasks, one per worker child that runs
       # inventory collection) therefore stay at SQLAlchemy's 5 + 10.
 
-  # One database for all three services: PMM_ENABLE_SEP provisions exactly the
-  # `sep` role and `sep` database, so this is defined once and aliased below.
+  # One database for all three services: PMM_ENABLE_EXTENSIONS provisions exactly
+  # the `pmm_extensions` role and database, so this is defined once and aliased
+  # below.
   # The aliases are required: the YAML source narrows to `default.<PREFIX>`, so a
   # root-level block is an anchor definition, not a global each service inherits.
   # The alias is one object, so a second profile block must not override a single
   # service's DATABASE keys: the profile merge is in-place and would move all three.
   # test_profile_carries_a_single_default_block keeps this file to one block.
 
-  # Connection budget. PMM gives the `sep` role no connection limit; the cap is
-  # PostgreSQL's server-wide max_connections of 2000, which every PMM new enough
-  # to provision the `sep` role sets, shared with pmm-managed (50) and Grafana
-  # (100). SEP holds itself to 10% of it. Worst case with every pool full, where
-  # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
+  # Connection budget. PMM gives the `pmm_extensions` role no connection limit;
+  # the cap is PostgreSQL's server-wide max_connections of 2000, which every PMM
+  # new enough to provision the `pmm_extensions` role sets, shared with
+  # pmm-managed (50) and Grafana (100). The side-car holds itself to 10% of it.
+  # Worst case with every pool full, where an engine's ceiling is POOL_SIZE +
+  # MAX_OVERFLOW:
   #   sep          2 x 5 + celery-DB 15                    25
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25
@@ -131,9 +137,9 @@ default:
   DATABASE: &shared_database
     ENGINE: postgresql
     HOST: pmm-server
-    NAME: sep
+    NAME: pmm_extensions
     PORT: 5432
-    USER: sep
+    USER: pmm_extensions
     POOL_SIZE: 3
     MAX_OVERFLOW: 2
     POOL_TIMEOUT: 10.0
@@ -143,12 +149,12 @@ default:
     SCHEMA_TRANSLATE_MAP:
       om_schema: om
 
-  SEP:
+  EXTENSIONS:
     AMBIENT_SESSION_SSO_ENABLED: true
-    # PMM ships a hardcoded `location /sep/` block, so this is fixed topology
+    # PMM ships a hardcoded `location /extensions/` block, so this is fixed topology
     # rather than a per-deployment input. The loopback healthcheck stays
     # unprefixed: routing tolerates a request that arrives without the prefix.
-    ROOT_PATH: /sep
+    ROOT_PATH: /extensions
     DATABASE: *shared_database
     # Where diagnostics bundles go once an operator supplies the credentials.
     # The secret names are declared but empty: the plan's cross-reference
@@ -264,6 +270,13 @@ default:
       # so a PMM that ships this app also needs a build carrying
       # managed/services/om.
       - MODULE_NAME: om_inventory
+      # OM's bootstrap half: drives MongoDB replica-set bootstrap runs
+      # dispatched from the PMM Hosts page. Ships in the same
+      # image as om_inventory since both are OM apps; without this entry the
+      # app-restricted sidecar build (EXTENSIONS_RESTRICT_APPS=1) strips the
+      # om_bootstrap package and pmm-managed's bootstrap dispatch 404s -
+      # confirmed against a built image with this entry missing.
+      - MODULE_NAME: om_bootstrap
     SYNCERS:
       - SYNCER: PMMSyncer
         STALE_RUN_AFTER: 3600  # Seconds an idle in-progress run may sit before it is reclaimed; must exceed the longest expected sync

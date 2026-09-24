@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP periodic-task JSON proxy at ``/api/sep/periodic-tasks/``."""
+"""Tests for the SEP periodic-task JSON proxy at ``/api/extensions/periodic-tasks/``."""
 
 from collections.abc import Callable
 from typing import Any
@@ -37,21 +37,29 @@ from tests.app.sep.path_unsafe_task_names import (
 )
 
 PREVIEW_CASE = pytest.param(
-    "post", "/api/sep/periodic-tasks/schedule/preview/", "post", {}, id="preview"
+    "post", "/api/extensions/periodic-tasks/schedule/preview/", "post", {}, id="preview"
 )
 
 ROUTE_CASES = [
-    pytest.param("get", "/api/sep/periodic-tasks/", "get", None, id="list"),
-    pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
-    pytest.param("put", "/api/sep/periodic-tasks/42", "put", {}, id="update"),
-    pytest.param("delete", "/api/sep/periodic-tasks/42", "delete", None, id="delete"),
+    pytest.param("get", "/api/extensions/periodic-tasks/", "get", None, id="list"),
+    pytest.param(
+        "post", "/api/extensions/periodic-tasks/my-task/", "post", {}, id="create"
+    ),
+    pytest.param("put", "/api/extensions/periodic-tasks/42", "put", {}, id="update"),
+    pytest.param(
+        "delete", "/api/extensions/periodic-tasks/42", "delete", None, id="delete"
+    ),
     PREVIEW_CASE,
 ]
 
 MUTATION_CASES = [
-    pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
-    pytest.param("put", "/api/sep/periodic-tasks/42", "put", {}, id="update"),
-    pytest.param("delete", "/api/sep/periodic-tasks/42", "delete", None, id="delete"),
+    pytest.param(
+        "post", "/api/extensions/periodic-tasks/my-task/", "post", {}, id="create"
+    ),
+    pytest.param("put", "/api/extensions/periodic-tasks/42", "put", {}, id="update"),
+    pytest.param(
+        "delete", "/api/extensions/periodic-tasks/42", "delete", None, id="delete"
+    ),
     PREVIEW_CASE,
 ]
 
@@ -94,7 +102,7 @@ class TestSepPeriodicTasksEndpoint:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
         mock_task_api_dep.get.return_value = payload
-        response = test_client.get("/api/sep/periodic-tasks/")
+        response = test_client.get("/api/extensions/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
         mock_task_api_dep.get.assert_awaited_once_with(
@@ -117,7 +125,7 @@ class TestSepPeriodicTasksEndpoint:
         }
         mock_task_api_dep.get.return_value = payload
         response = test_client.get(
-            "/api/sep/periodic-tasks/",
+            "/api/extensions/periodic-tasks/",
             params={"offset": PROXY_PAGE_OFFSET, "limit": PROXY_PAGE_LIMIT},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -141,7 +149,7 @@ class TestSepPeriodicTasksEndpoint:
             "limit": DEFAULT_PAGINATION_LIMIT,
         }
         mock_task_api_dep.get.return_value = payload
-        response = test_client.get("/api/sep/periodic-tasks/")
+        response = test_client.get("/api/extensions/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
 
@@ -151,7 +159,7 @@ class TestSepPeriodicTasksEndpoint:
         """Return an empty envelope when upstream has no rows."""
         payload = _empty_envelope()
         mock_task_api_dep.get.return_value = payload
-        response = test_client.get("/api/sep/periodic-tasks/")
+        response = test_client.get("/api/extensions/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
 
@@ -160,7 +168,7 @@ class TestSepPeriodicTasksEndpoint:
     ) -> None:
         """Coerce a non-dict upstream payload to an empty envelope."""
         mock_task_api_dep.get.return_value = None
-        response = test_client.get("/api/sep/periodic-tasks/")
+        response = test_client.get("/api/extensions/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == _empty_envelope()
 
@@ -172,7 +180,9 @@ class TestSepPeriodicTasksEndpoint:
         body = {"period": 5, "kwargs": "{}"}
         upstream = {"id": 9, "name": "run_x", **body}
         mock_task_api_dep.post.return_value = upstream
-        response = test_client.post("/api/sep/periodic-tasks/my-task/", json=body)
+        response = test_client.post(
+            "/api/extensions/periodic-tasks/my-task/", json=body
+        )
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json() == upstream
         mock_task_api_dep.post.assert_awaited_once_with("/my-task/periodic/", json=body)
@@ -185,7 +195,7 @@ class TestSepPeriodicTasksEndpoint:
         body = {"period": 10, "kwargs": "{}"}
         upstream = {"id": 42, **body}
         mock_task_api_dep.put.return_value = upstream
-        response = test_client.put("/api/sep/periodic-tasks/42", json=body)
+        response = test_client.put("/api/extensions/periodic-tasks/42", json=body)
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upstream
         mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
@@ -202,7 +212,7 @@ class TestSepPeriodicTasksEndpoint:
         }
         mock_task_api_dep.post.return_value = upstream
         response = test_client.post(
-            "/api/sep/periodic-tasks/schedule/preview/", json=body
+            "/api/extensions/periodic-tasks/schedule/preview/", json=body
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upstream
@@ -223,7 +233,9 @@ class TestSepPeriodicTasksEndpoint:
         upstream = {"id": 9, "name": "run_preview"}
         mock_task_api_dep.get.return_value = _task_payload("preview", BACKUPS_OWNER)
         mock_task_api_dep.post.return_value = upstream
-        response = test_client.post("/api/sep/periodic-tasks/preview/", json=body)
+        response = test_client.post(
+            "/api/extensions/periodic-tasks/preview/", json=body
+        )
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json() == upstream
         mock_task_api_dep.post.assert_awaited_once_with("/preview/periodic/", json=body)
@@ -233,7 +245,7 @@ class TestSepPeriodicTasksEndpoint:
     ) -> None:
         """Return ``204`` with an empty body on deletion."""
         mock_task_api_dep.delete.return_value = None
-        response = test_client.delete("/api/sep/periodic-tasks/42")
+        response = test_client.delete("/api/extensions/periodic-tasks/42")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
         mock_task_api_dep.delete.assert_awaited_once_with("/periodic/42")
@@ -312,14 +324,14 @@ class TestSepPeriodicTasksErrorSplit:
 
 
 class TestSepPeriodicTasksAuth:
-    """Tests for ``/api/sep/periodic-tasks/`` authentication enforcement."""
+    """Cover ``/api/extensions/periodic-tasks/`` authentication enforcement."""
 
     def test_unauthenticated_returns_json_401(
         self, unauthenticated_client: TestClient
     ) -> None:
         """Reject anonymous requests with a JSON 401 response."""
         response = unauthenticated_client.get(
-            "/api/sep/periodic-tasks/", follow_redirects=False
+            "/api/extensions/periodic-tasks/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -352,14 +364,18 @@ class TestSepPeriodicTasksAuth:
     ) -> None:
         """Allow a cookie-only GET: the Bearer gate covers mutations only."""
         mock_task_api_dep.get.return_value = _empty_envelope()
-        response = api_admin_client_no_bearer.get("/api/sep/periodic-tasks/")
+        response = api_admin_client_no_bearer.get("/api/extensions/periodic-tasks/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == _empty_envelope()
 
 
 GUARD_READ_CASES = [
-    pytest.param("post", "/api/sep/periodic-tasks/my-task/", "post", {}, id="create"),
-    pytest.param("put", "/api/sep/periodic-tasks/42", "put", {"task": ""}, id="update"),
+    pytest.param(
+        "post", "/api/extensions/periodic-tasks/my-task/", "post", {}, id="create"
+    ),
+    pytest.param(
+        "put", "/api/extensions/periodic-tasks/42", "put", {"task": ""}, id="update"
+    ),
 ]
 
 NON_STRING_TASKS = [None, 5, 0, False, [], {}, ["r1"]]
@@ -407,7 +423,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Refuse creating a schedule for a MySQL restore with ``400``."""
         mock_task_api_dep.get.return_value = _task_payload("r1", RESTORES_OWNER)
 
-        response = test_client.post("/api/sep/periodic-tasks/r1/", json={})
+        response = test_client.post("/api/extensions/periodic-tasks/r1/", json={})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_task_api_dep.post.assert_not_awaited()
@@ -419,7 +435,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Refuse creating a schedule for a MongoDB restore with ``400``."""
         mock_task_api_dep.get.return_value = _task_payload("m1", RESTORE_MONGO_OWNER)
 
-        response = test_client.post("/api/sep/periodic-tasks/m1/", json={})
+        response = test_client.post("/api/extensions/periodic-tasks/m1/", json={})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_task_api_dep.post.assert_not_awaited()
@@ -432,7 +448,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         mock_task_api_dep.get.return_value = _task_payload("b1", BACKUPS_OWNER)
         mock_task_api_dep.post.return_value = {"id": 9, **body}
 
-        response = test_client.post("/api/sep/periodic-tasks/b1/", json=body)
+        response = test_client.post("/api/extensions/periodic-tasks/b1/", json=body)
 
         assert response.status_code == status.HTTP_201_CREATED
         mock_task_api_dep.post.assert_awaited_once_with("/b1/periodic/", json=body)
@@ -445,7 +461,7 @@ class TestSepPeriodicTasksSchedulingGuard:
             "x1", "NOT_A_REGISTERED_OWNER"
         )
 
-        response = test_client.post("/api/sep/periodic-tasks/x1/", json={})
+        response = test_client.post("/api/extensions/periodic-tasks/x1/", json={})
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_task_api_dep.post.assert_not_awaited()
@@ -456,7 +472,9 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Fail closed for an unclaimed task defaulting to ``ANY_OWNER``."""
         mock_task_api_dep.get.return_value = _task_payload("inventory-sync", ANY_OWNER)
 
-        response = test_client.post("/api/sep/periodic-tasks/inventory-sync/", json={})
+        response = test_client.post(
+            "/api/extensions/periodic-tasks/inventory-sync/", json={}
+        )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         mock_task_api_dep.post.assert_not_awaited()
@@ -474,7 +492,9 @@ class TestSepPeriodicTasksSchedulingGuard:
         """
         segment = quote(task, safe="")
 
-        response = test_client.post(f"/api/sep/periodic-tasks/{segment}/", json={})
+        response = test_client.post(
+            f"/api/extensions/periodic-tasks/{segment}/", json={}
+        )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_awaited()
@@ -486,7 +506,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Pass the upstream ``404`` for an unknown task through unchanged."""
         mock_task_api_dep.get.side_effect = HTTPNotFoundException()
 
-        response = test_client.post("/api/sep/periodic-tasks/nope/", json={})
+        response = test_client.post("/api/extensions/periodic-tasks/nope/", json={})
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_task_api_dep.post.assert_not_awaited()
@@ -498,7 +518,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         mock_task_api_dep.get.return_value = _task_payload("r1", RESTORES_OWNER)
 
         response = test_client.put(
-            "/api/sep/periodic-tasks/42", json={"task": "r1", "enabled": False}
+            "/api/extensions/periodic-tasks/42", json={"task": "r1", "enabled": False}
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -516,7 +536,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         )
 
         response = test_client.put(
-            "/api/sep/periodic-tasks/42", json={"task": "r1", "enabled": True}
+            "/api/extensions/periodic-tasks/42", json={"task": "r1", "enabled": True}
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -535,7 +555,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         )
 
         response = test_client.put(
-            "/api/sep/periodic-tasks/42", json={"task": "", "enabled": True}
+            "/api/extensions/periodic-tasks/42", json={"task": "", "enabled": True}
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -549,7 +569,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         mock_task_api_dep.get.return_value = _task_payload("b1", BACKUPS_OWNER)
         mock_task_api_dep.put.return_value = {"id": 42, **body}
 
-        response = test_client.put("/api/sep/periodic-tasks/42", json=body)
+        response = test_client.put("/api/extensions/periodic-tasks/42", json=body)
 
         assert response.status_code == status.HTTP_200_OK
         mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
@@ -567,7 +587,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         )
         mock_task_api_dep.put.return_value = {"id": 42, **body}
 
-        response = test_client.put("/api/sep/periodic-tasks/42", json=body)
+        response = test_client.put("/api/extensions/periodic-tasks/42", json=body)
 
         assert response.status_code == status.HTTP_200_OK
         mock_task_api_dep.put.assert_awaited_once_with("/periodic/42", json=body)
@@ -583,7 +603,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         fallback as though the key were absent.
         """
         response = test_client.put(
-            "/api/sep/periodic-tasks/42", json={"task": task, "period": 10}
+            "/api/extensions/periodic-tasks/42", json={"task": task, "period": 10}
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -602,7 +622,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         token there. Such a name is refused, never escaped.
         """
         response = test_client.put(
-            "/api/sep/periodic-tasks/42", json={"task": task, "period": 10}
+            "/api/extensions/periodic-tasks/42", json={"task": task, "period": 10}
         )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -619,7 +639,9 @@ class TestSepPeriodicTasksSchedulingGuard:
         """
         mock_task_api_dep.get.return_value = _schedule_payload("/evil.example.com:80/x")
 
-        response = test_client.put("/api/sep/periodic-tasks/42", json={"task": ""})
+        response = test_client.put(
+            "/api/extensions/periodic-tasks/42", json={"task": ""}
+        )
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_awaited_once_with("/periodic/42")
@@ -631,7 +653,9 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Fail with ``502`` when the stored schedule names no task."""
         mock_task_api_dep.get.return_value = {"id": 42}
 
-        response = test_client.put("/api/sep/periodic-tasks/42", json={"task": ""})
+        response = test_client.put(
+            "/api/extensions/periodic-tasks/42", json={"task": ""}
+        )
 
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         mock_task_api_dep.put.assert_not_awaited()
@@ -642,7 +666,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Leave deletion unguarded so a stored restore schedule stays removable."""
         mock_task_api_dep.delete.return_value = None
 
-        response = test_client.delete("/api/sep/periodic-tasks/42")
+        response = test_client.delete("/api/extensions/periodic-tasks/42")
 
         assert response.status_code == status.HTTP_204_NO_CONTENT
         mock_task_api_dep.delete.assert_awaited_once_with("/periodic/42")
@@ -654,7 +678,7 @@ class TestSepPeriodicTasksSchedulingGuard:
         """Leave listing unguarded: the guard adds no upstream task read."""
         mock_task_api_dep.get.return_value = _empty_envelope()
 
-        response = test_client.get("/api/sep/periodic-tasks/")
+        response = test_client.get("/api/extensions/periodic-tasks/")
 
         assert response.status_code == status.HTTP_200_OK
         mock_task_api_dep.get.assert_awaited_once_with(

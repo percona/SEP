@@ -50,17 +50,18 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import json_serializer
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
 from app.tasks.main import _reconcile_nomad, tasks_app
 from tests.app.core.settings_override.conftest import (
     clear_connectivity_override,
+    CONNECTIVITY_CALLBACK_KEY,
+    EXTENSIONS_SETTINGS_TOKEN,
     hanging_session_maker_factory,
     recording_callback,
     seed_connectivity_override,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -90,10 +91,10 @@ async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
 def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
     """Construct an SEP proxy and a registry mapping for refresh tests."""
     proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SEPSettings.__name__
+        ExtensionsSettings, setting_class=ExtensionsSettings.__name__
     )
     registry = {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings),
     }
     return proxy, registry
 
@@ -137,12 +138,12 @@ async def test_refresh_all_swaps_snapshot(
 ) -> None:
     """``refresh_all`` populates the proxy snapshot from the override table."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -205,12 +206,12 @@ async def test_refresh_all_skips_unregistered_class_row(
     is neither applied nor deleted.
     """
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -232,7 +233,7 @@ async def test_refresh_all_skips_unregistered_class_row(
             session, setting_class="UNREGISTERED_SETTINGS"
         )
         wired = await SettingsOverrideManager.list(
-            session, setting_class=SEP_SETTINGS_TOKEN
+            session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
     assert len(leftover) == 1
     assert leftover[0].key == "WHATEVER"
@@ -246,7 +247,7 @@ async def test_refresh_all_retains_previous_snapshot_on_error(
 ) -> None:
     """Errors during ``build_snapshot`` keep the previous snapshot intact."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     proxy._set_snapshot({"CONNECTIVITY_CHECK_DEFAULT": override_value})
 
     async def _boom(*_args: object, **_kwargs: object) -> None:
@@ -274,13 +275,13 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     its row from the DB.
     """
     sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
-        SEPSettings, setting_class=SEPSettings.__name__
+        ExtensionsSettings, setting_class=ExtensionsSettings.__name__
     )
     tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
         TasksSettings, setting_class=TasksSettings.__name__
     )
     registry = {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_proxy, SEPSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(sep_proxy, ExtensionsSettings),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_proxy, TasksSettings),
     }
     tasks_override = 7200
@@ -334,12 +335,12 @@ async def test_start_refresh_task_runs_initial_load(
 ) -> None:
     """``start_refresh_task`` awaits an initial refresh before returning the task."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -436,12 +437,12 @@ async def test_bounded_seed_completes_and_returns_true(
 ) -> None:
     """Seed overrides through the shared helper and report success."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     async with session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -517,7 +518,6 @@ async def test_bounded_refresh_logs_exception_raised_while_unwinding(
     )
 
 
-_CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 _NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
 _NOMAD_LEAF_TIMEOUT = 30
 
@@ -632,14 +632,16 @@ async def test_refresh_all_fires_callback_for_changed_key(
 ) -> None:
     """A callback fires for a key whose value changed between snapshots."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     await seed_connectivity_override(session_maker, value=override_value)
     fired = []
 
     async def _callback(_: object) -> None:
         fired.append(True)
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _callback}
+    )
     assert fired == [True]
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
@@ -655,8 +657,8 @@ async def test_fire_change_callbacks_delivers_snapshot_change_on_delete() -> Non
         received.append(change)
 
     await fire_change_callbacks(
-        {_CALLBACK_KEY: _callback},
-        SettingClassEnum.SEP_SETTINGS,
+        {CONNECTIVITY_CALLBACK_KEY: _callback},
+        SettingClassEnum.EXTENSIONS_SETTINGS,
         previous,
         current,
     )
@@ -690,10 +692,10 @@ async def test_fire_change_callbacks_hands_every_callback_the_whole_change() -> 
 
     await fire_change_callbacks(
         {
-            _CALLBACK_KEY: _recorder("connectivity"),
-            (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"): _recorder("drain"),
+            CONNECTIVITY_CALLBACK_KEY: _recorder("connectivity"),
+            (SettingClassEnum.EXTENSIONS_SETTINGS, "APP_DRAIN"): _recorder("drain"),
         },
-        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.EXTENSIONS_SETTINGS,
         previous,
         current,
     )
@@ -710,7 +712,7 @@ async def test_refresh_all_skips_callback_for_unchanged_key(
 ) -> None:
     """A callback does not fire when its key's value is unchanged."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     await seed_connectivity_override(session_maker, value=override_value)
     await refresh_all(lambda: session_maker, registry)
     fired = []
@@ -718,7 +720,9 @@ async def test_refresh_all_skips_callback_for_unchanged_key(
     async def _callback(_: object) -> None:
         fired.append(True)
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _callback})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _callback}
+    )
     assert fired == []
 
 
@@ -728,13 +732,15 @@ async def test_refresh_all_isolates_callback_exception(
 ) -> None:
     """A raising callback is caught; the snapshot is still published."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     await seed_connectivity_override(session_maker, value=override_value)
 
     async def _boom(_: object) -> None:
         raise RuntimeError("callback boom")
 
-    await refresh_all(lambda: session_maker, registry, {_CALLBACK_KEY: _boom})
+    await refresh_all(
+        lambda: session_maker, registry, {CONNECTIVITY_CALLBACK_KEY: _boom}
+    )
     assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
 
 
@@ -744,7 +750,7 @@ async def test_start_refresh_task_initial_does_not_fire_unmarked_callbacks(
 ) -> None:
     """The initial inline refresh publishes the snapshot but fires no unmarked callback."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     await seed_connectivity_override(session_maker, value=override_value)
     fired = []
 
@@ -755,7 +761,7 @@ async def test_start_refresh_task_initial_does_not_fire_unmarked_callbacks(
         lambda: session_maker,
         registry,
         interval=timedelta(seconds=3600),
-        callbacks={_CALLBACK_KEY: _callback},
+        callbacks={CONNECTIVITY_CALLBACK_KEY: _callback},
     )
     try:
         assert proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
@@ -781,11 +787,11 @@ async def test_start_refresh_task_fires_callback_on_loop_change(
         lambda: session_maker,
         registry,
         interval=timedelta(milliseconds=50),
-        callbacks={_CALLBACK_KEY: _callback},
+        callbacks={CONNECTIVITY_CALLBACK_KEY: _callback},
     )
     try:
         assert not fired.is_set()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         await asyncio.wait_for(fired.wait(), timeout=5)
     finally:
@@ -800,7 +806,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
 ) -> None:
     """Adding an override row between cycles becomes visible after the next refresh."""
     proxy, registry = _make_proxies()
-    override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+    override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
     task = await start_refresh_task(
         lambda: session_maker, registry, interval=timedelta(milliseconds=50)
     )
@@ -809,7 +815,7 @@ async def test_refresh_picks_up_changes_on_next_cycle(
             await SettingsOverrideManager.create(
                 session,
                 SettingOverride(
-                    setting_class=SEP_SETTINGS_TOKEN,
+                    setting_class=EXTENSIONS_SETTINGS_TOKEN,
                     key="CONNECTIVITY_CHECK_DEFAULT",
                     value=override_value,
                 ),
@@ -880,7 +886,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Fire a marked callback exactly once when the seed publishes its override."""
         proxy, registry = _make_proxies()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         fired: list[SnapshotChange] = []
 
@@ -888,7 +894,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert len(fired) == 1
@@ -900,7 +908,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Keep the seed silent for a callback whose effect boot reproduces."""
         proxy, registry = _make_proxies()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         fired: list[SnapshotChange] = []
 
@@ -908,7 +916,7 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: recording_callback(fired)},
+            callbacks={CONNECTIVITY_CALLBACK_KEY: recording_callback(fired)},
         )
 
         assert fired == []
@@ -926,7 +934,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert fired == []
@@ -958,7 +968,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Skip the marked callback when the proxy's publish failed and its snapshot stayed put."""
         proxy, registry = _make_proxies()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         fired: list[SnapshotChange] = []
 
@@ -977,7 +987,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         assert seeded is True
@@ -990,7 +1002,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Log a boot callback failure at ERROR and still publish the snapshot."""
         proxy, registry = _make_proxies()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
 
         @fire_on_boot
@@ -1002,7 +1014,7 @@ class TestFireBootCallbacks:
                 lambda: session_maker,
                 registry,
                 seed_timeout=None,
-                callbacks={_CALLBACK_KEY: _boom},
+                callbacks={CONNECTIVITY_CALLBACK_KEY: _boom},
             )
 
         assert seeded is True
@@ -1019,7 +1031,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Hand the callback an empty previous so the base falls back to YAML/env."""
         proxy, registry = _make_proxies()
-        base_value = SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        base_value = ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=not base_value)
         fired: list[SnapshotChange] = []
 
@@ -1027,7 +1039,9 @@ class TestFireBootCallbacks:
             lambda: session_maker,
             registry,
             seed_timeout=None,
-            callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+            callbacks={
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+            },
         )
 
         (change,) = fired
@@ -1056,7 +1070,7 @@ class TestFireBootCallbacks:
             ),
             TasksSettings,
         )
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         fired: list[SnapshotChange] = []
 
         async def _publish_sep_then_hang(
@@ -1078,7 +1092,9 @@ class TestFireBootCallbacks:
                 lambda: session_maker,
                 registry,
                 seed_timeout=0.05,
-                callbacks={_CALLBACK_KEY: fire_on_boot(recording_callback(fired))},
+                callbacks={
+                    CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))
+                },
             ),
             timeout=1.0,
         )
@@ -1099,10 +1115,10 @@ class TestFireBootCallbacks:
     ) -> None:
         """Fire a marked callback at boot, skip an unchanged cycle, fire on a change."""
         _proxy, registry = _make_proxies()
-        base_value = SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        base_value = ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=not base_value)
         fired: list[SnapshotChange] = []
-        callbacks = {_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
+        callbacks = {CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
 
         await bounded_seed(
             lambda: session_maker, registry, seed_timeout=None, callbacks=callbacks
@@ -1124,7 +1140,7 @@ class TestFireBootCallbacks:
     ) -> None:
         """Fire the marked subset from the web lifespan's inline seed, nothing else."""
         proxy, registry = _make_proxies()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         await seed_connectivity_override(session_maker, value=override_value)
         marked: list[SnapshotChange] = []
         unmarked: list[SnapshotChange] = []
@@ -1134,8 +1150,8 @@ class TestFireBootCallbacks:
             registry,
             interval=timedelta(seconds=3600),
             callbacks={
-                _CALLBACK_KEY: fire_on_boot(recording_callback(marked)),
-                (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"): (
+                CONNECTIVITY_CALLBACK_KEY: fire_on_boot(recording_callback(marked)),
+                (SettingClassEnum.EXTENSIONS_SETTINGS, "INVENTORY_ENDPOINT"): (
                     recording_callback(unmarked)
                 ),
             },

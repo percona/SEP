@@ -47,7 +47,7 @@ from app.core.settings_override.lifecycle import (
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.worker import WorkerRefresher
 from app.sep.apps.framework.registry import collect_app_owned_settings_classes
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.db import get_async_session_maker
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
@@ -83,7 +83,9 @@ def build_sep_override_proxies() -> ProxyRegistry:
     }
     proxies.update(
         {
-            SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+                sep_settings, ExtensionsSettings
+            ),
             SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
                 snippets_settings, SnippetsSettings
             ),
@@ -103,11 +105,11 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
     snapshot for an unbounded time, while an awaited republish inside a task
     body is driven by the same ``run_until_complete`` that drives the task.
 
-    Only ``SEP_SETTINGS`` is republished, and no rebind callback fires:
+    Only ``EXTENSIONS_SETTINGS`` is republished, and no rebind callback fires:
     ``publish_snapshot`` has no callback channel. That is harmless for a worker
     caller, whose ``WORKER_OVERRIDE_CALLBACKS`` watches ``SETTINGS`` alone. It
     would not be for a web-process caller: ``sep_overrides_lifespan`` registers
-    ``SEP_SETTINGS`` rebinders for ``INVENTORY_ENDPOINT``, ``TASKS_ENDPOINT``
+    ``EXTENSIONS_SETTINGS`` rebinders for ``INVENTORY_ENDPOINT``, ``TASKS_ENDPOINT``
     and ``APP_DRAIN``, and republishing here leaves the periodic refresher an
     empty diff, so those rebinds would silently never fire.
 
@@ -118,7 +120,7 @@ async def republish_sep_settings_snapshot(session: AsyncSession) -> None:
         per-proxy handler here as there is in ``refresh_all``; the caller owns
         the failure.
     """
-    await publish_snapshot(sep_settings, session, SEPSettings)
+    await publish_snapshot(sep_settings, session, ExtensionsSettings)
 
 
 async def invalidate_pmm_clients(change: SnapshotChange) -> None:

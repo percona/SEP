@@ -61,18 +61,27 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     ``tasks_lifespan`` enters :func:`app.core.config.default_lifespan`, so the
     shared ``settings.CASDOOR`` / client registry is entered exactly once.
 
+    ``sep_startup()``, which seeds the periodic-task database from each app's
+    *current* settings, runs inside the ``async with``, after
+    ``sep_overrides_lifespan`` has published its initial override snapshot: an
+    app-owned hot field reads its class
+    default until that publish happens, so seeding before it can seed a sweep
+    as off when a prior run had already turned it on. Same ordering as
+    :func:`app.sep.main.sep_lifespan`, which the standalone-app entry point
+    uses for the same reason.
+
     :param app: The FastAPI application instance.
-    :yield: None
+    :return: ``None``, once the lifespans have been entered.
     """
     detect_removed_auth_user_model()
     detect_removed_settings_override_keys()
     validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
-    await sep_startup()
     async with (
         sep_overrides_lifespan(app),
         tasks_lifespan(app),
         inventory_overrides_lifespan(app),
     ):
+        await sep_startup()
         yield
 
 
@@ -82,14 +91,14 @@ app = create_app(
     backend_cors_origins=sep_settings.BACKEND_CORS_ORIGINS,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
-    title="SEP HTTP API",
+    title="PMM Extensions HTTP API",
     version=__version__,
     description=(
         f"{__summary__}\n\n"
         "This spec is the **core** API only (OAuth, users). Mounted services publish "
         "separate OpenAPI JSON on the same host: "
         "``/api/inventory/openapi.json``, ``/api/tasks/openapi.json``, and "
-        "``/api/sep/openapi.json`` (the SEP web app: ``sep_app`` — shared routes, "
+        "``/api/extensions/openapi.json`` (the PMM Extensions web app: shared routes, "
         "plugins, etc.; not merged into this document)."
     ),
     docs_url=None,
@@ -99,9 +108,9 @@ app.add_middleware(LogContextMiddleware)
 
 
 @app.get(
-    "/api/sep/openapi.json",
-    tags=["sep"],
-    summary="SEP web application OpenAPI schema",
+    "/api/extensions/openapi.json",
+    tags=["extensions"],
+    summary="PMM Extensions web application OpenAPI schema",
     response_model=None,
     include_in_schema=False,
 )
@@ -133,8 +142,8 @@ def _get_merged_openapi() -> dict[str, Any]:
 
 @app.get(
     "/api/openapi.json",
-    tags=["sep"],
-    summary="Unified public OpenAPI schema (core + SEP web app)",
+    tags=["extensions"],
+    summary="Unified public OpenAPI schema (core + PMM Extensions web app)",
     response_model=None,
     include_in_schema=False,
 )
@@ -144,19 +153,18 @@ def merged_openapi_json() -> JSONResponse:
     Unions the core API spec (``app.openapi()``) with the SEP web app spec
     (``sep_app.openapi()``) via
     :func:`app.core.utils.openapi.merge_openapi_documents`. The two upstream specs
-    at ``/openapi.json`` and ``/api/sep/openapi.json`` are unchanged — they remain
+    at ``/openapi.json`` and ``/api/extensions/openapi.json`` are unchanged — they remain
     the source of truth for the React frontend's ``openapi-typescript`` codegen.
 
     :return: The merged OpenAPI 3.x JSON document.
-    :rtype: JSONResponse
     """
     return JSONResponse(_get_merged_openapi())
 
 
 @app.get(
     "/api/docs",
-    tags=["sep"],
-    summary="Swagger UI for the unified SEP public API",
+    tags=["extensions"],
+    summary="Swagger UI for the unified PMM Extensions public API",
     response_model=None,
     include_in_schema=False,
 )
@@ -164,7 +172,7 @@ def merged_swagger_ui() -> HTMLResponse:
     """Return Swagger UI HTML pointing at the unified ``/api/openapi.json``."""
     return get_swagger_ui_html(
         openapi_url="/api/openapi.json",
-        title="SEP Public API - Swagger UI",
+        title="PMM Extensions Public API - Swagger UI",
     )
 
 

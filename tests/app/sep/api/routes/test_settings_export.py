@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP settings YAML export route at ``/api/sep/admin/settings/export``."""
+"""Tests for the SEP settings YAML export route at ``/api/extensions/admin/settings/export``."""
 
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -38,7 +38,7 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
 from app.core.utils.date_time import utc_now
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import DeliveryPlanInputs, sep_settings, SEPSettings
+from app.sep.config import DeliveryPlanInputs, ExtensionsSettings, sep_settings
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -47,13 +47,13 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from tests.app.core.settings_override.conftest import (
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
-    SEP_SETTINGS_TOKEN,
 )
 from tests.app.db_schema import apply_schema
 
-EXPORT_URL = "/api/sep/admin/settings/export"
-SETTINGS_LIST_URL = "/api/sep/admin/settings/"
+EXPORT_URL = "/api/extensions/admin/settings/export"
+SETTINGS_LIST_URL = "/api/extensions/admin/settings/"
 REDACTED_SECRET = "**********"
 SAMPLE_STALENESS_THRESHOLD_SECONDS = 3600
 DEFAULT_ALERT_BACKUP_RETENTION = 10
@@ -224,7 +224,7 @@ class TestSepConfigExportAuth:
 
 @pytest.mark.asyncio
 class TestSepConfigExportYaml:
-    """Tests for ``GET /api/sep/admin/settings/export`` happy-path YAML rendering."""
+    """Cover ``GET /api/extensions/admin/settings/export`` happy-path YAML rendering."""
 
     async def test_returns_yaml_attachment(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
@@ -234,7 +234,10 @@ class TestSepConfigExportYaml:
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"].startswith("application/x-yaml")
         assert response.headers["content-disposition"].startswith("attachment;")
-        assert 'filename="sep-config-' in response.headers["content-disposition"]
+        assert (
+            'filename="pmm-extensions-config-'
+            in response.headers["content-disposition"]
+        )
         assert response.headers["content-disposition"].endswith('.yaml"')
 
         payload = yaml.safe_load(response.text)
@@ -259,7 +262,7 @@ class TestSepConfigExportYaml:
         before = api_admin_client.get(EXPORT_URL).text
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=5,
             updated_at=utc_now(),
@@ -283,7 +286,7 @@ class TestSepConfigExportYaml:
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
         for setting_class in (
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             "AlertsSettings",
             "HealthReportSettings",
@@ -302,7 +305,7 @@ class TestSepConfigExportYaml:
         # ``BACKUP_INTERVAL__*`` flattening and inherited ``FASTAPI_ENV``).
         assert set(block) == list_keys["AlertsSettings"]
         assert block["BACKUP_RETENTION"] == DEFAULT_ALERT_BACKUP_RETENTION
-        assert block["ALERT_FOLDER_NAME"] == "SEP Alerts"
+        assert block["ALERT_FOLDER_NAME"] == "PMM Extensions Alerts"
 
     async def test_health_report_settings_block_exported(
         self, api_admin_client: TestClient
@@ -357,7 +360,9 @@ class TestSepConfigExportYaml:
         )
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
-        block = export[SettingClassEnum.SEP_SETTINGS.value]["DIAGNOSTICS_DELIVERY"]
+        block = export[SettingClassEnum.EXTENSIONS_SETTINGS.value][
+            "DIAGNOSTICS_DELIVERY"
+        ]
 
         assert block["secrets"]["api_key"] == REDACTED_SECRET
         assert block["upload"]["path"] == "attachment/upload"
@@ -379,7 +384,7 @@ class TestSepConfigExportYaml:
         )
         yaml_text = api_admin_client.get(EXPORT_URL).text
         export = yaml.safe_load(yaml_text)
-        block = export[SettingClassEnum.SEP_SETTINGS.value][
+        block = export[SettingClassEnum.EXTENSIONS_SETTINGS.value][
             "DIAGNOSTICS_DELIVERY_INPUTS"
         ]
 
@@ -387,7 +392,7 @@ class TestSepConfigExportYaml:
         assert "inputs-secret" not in yaml_text
 
         with pytest.raises(ValidationError, match="sn_api_key"):
-            SEPSettings(DIAGNOSTICS_DELIVERY_INPUTS=block)
+            ExtensionsSettings(DIAGNOSTICS_DELIVERY_INPUTS=block)
 
     async def test_inventory_endpoint_redacted_in_yaml(
         self, api_admin_client: TestClient
@@ -400,7 +405,9 @@ class TestSepConfigExportYaml:
             sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
             yaml_text = api_admin_client.get(EXPORT_URL).text
             export = yaml.safe_load(yaml_text)
-            value = export[SettingClassEnum.SEP_SETTINGS.value]["INVENTORY_ENDPOINT"]
+            value = export[SettingClassEnum.EXTENSIONS_SETTINGS.value][
+                "INVENTORY_ENDPOINT"
+            ]
             assert "inv-secret" not in yaml_text
             assert "****" in value
             assert "inv-user" in value
@@ -419,7 +426,7 @@ class TestSepConfigExportYaml:
             export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
             list_response = api_admin_client.get(SETTINGS_LIST_URL).json()
             for group in list_response["groups"]:
-                if group["setting_class"] != SettingClassEnum.SEP_SETTINGS.value:
+                if group["setting_class"] != SettingClassEnum.EXTENSIONS_SETTINGS.value:
                     continue
                 for entry in group["settings"]:
                     if entry["key"] == "INVENTORY_ENDPOINT":
@@ -429,9 +436,9 @@ class TestSepConfigExportYaml:
                     raise AssertionError("INVENTORY_ENDPOINT missing from LIST")
                 break
             else:
-                raise AssertionError("SEP_SETTINGS group missing from LIST")
+                raise AssertionError("EXTENSIONS_SETTINGS group missing from LIST")
             assert (
-                export[SettingClassEnum.SEP_SETTINGS.value]["INVENTORY_ENDPOINT"]
+                export[SettingClassEnum.EXTENSIONS_SETTINGS.value]["INVENTORY_ENDPOINT"]
                 == list_value
             )
             assert "inv-secret" not in list_value
@@ -441,9 +448,9 @@ class TestSepConfigExportYaml:
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
     ) -> None:
-        """Emit ``SEPSettings.APPS`` as a structured value, not a repr blob."""
+        """Emit ``ExtensionsSettings.APPS`` as a structured value, not a repr blob."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
-        plugins = export[SettingClassEnum.SEP_SETTINGS.value]["APPS"]
+        plugins = export[SettingClassEnum.EXTENSIONS_SETTINGS.value]["APPS"]
         assert isinstance(plugins, list)
         if plugins:
             assert isinstance(plugins[0], dict)
@@ -619,7 +626,7 @@ class TestSepConfigExportTasksFanOut:
         assert "missing 'settings'" in response.json()["detail"]
 
 
-SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
+SEP_CLASS = SettingClassEnum.EXTENSIONS_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 ALERTS_CLASS = "AlertsSettings"
 HEALTH_REPORT_CLASS = "HealthReportSettings"
@@ -644,9 +651,9 @@ MIN_MULTI_KEYS = 2
 
 
 def _one_sep_key(client: TestClient) -> str:
-    """Return one real key on ``SEPSettings`` as seen by the LIST projection."""
+    """Return one real key on ``ExtensionsSettings`` as seen by the LIST projection."""
     keys = _list_keys_by_class(client)[SEP_CLASS]
-    assert keys, "expected SEPSettings to expose at least one LIST key"
+    assert keys, "expected ExtensionsSettings to expose at least one LIST key"
     return sorted(keys)[0]
 
 
@@ -667,7 +674,7 @@ class TestSepConfigExportFilter:
     async def test_single_key_selector_returns_only_that_key(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Return only that class block with only that key for ``SEPSettings.<key>``."""
+        """Return only that class block with only that key for ``ExtensionsSettings.<key>``."""
         key = _one_sep_key(api_admin_client)
         # _one_sep_key hit the LIST endpoint, which fans out to Tasks; reset so the
         # assert_not_called below measures only the export request.
@@ -709,7 +716,7 @@ class TestSepConfigExportFilter:
     async def test_mixed_class_and_key_selectors(
         self, api_admin_client: TestClient
     ) -> None:
-        """Return exactly two blocks for ``SEPSettings.<key>`` plus whole ``AlertsSettings``."""
+        """Return exactly two blocks for ``ExtensionsSettings.<key>`` plus whole ``AlertsSettings``."""
         key = _one_sep_key(api_admin_client)
         list_keys = _list_keys_by_class(api_admin_client)
         response = api_admin_client.get(
@@ -787,7 +794,7 @@ class TestSepConfigExportFilter:
     async def test_whole_class_dominates_overlapping_key(
         self, api_admin_client: TestClient
     ) -> None:
-        """Keep all keys for ``SEPSettings`` + ``SEPSettings.<key>`` (whole class wins)."""
+        """Keep all keys for ``ExtensionsSettings`` + ``ExtensionsSettings.<key>`` (whole class wins)."""
         key = _one_sep_key(api_admin_client)
         list_keys = _list_keys_by_class(api_admin_client)
         response = api_admin_client.get(
@@ -961,7 +968,7 @@ class TestSepConfigExportFilter:
         """Accumulate multiple ``Class.KEY`` selectors for one class into a single block."""
         sep_keys = sorted(_list_keys_by_class(api_admin_client)[SEP_CLASS])
         assert len(sep_keys) >= MIN_MULTI_KEYS, (
-            "expected SEPSettings to expose at least two LIST keys"
+            "expected ExtensionsSettings to expose at least two LIST keys"
         )
         first, second = sep_keys[0], sep_keys[1]
         response = api_admin_client.get(

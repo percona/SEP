@@ -57,9 +57,9 @@ class TestStateDirectory:
         self, helper: ModuleType, monkeypatch: pytest.MonkeyPatch
     ):
         """Use the original default when no directory is configured."""
-        monkeypatch.delenv("SEP_STATE_DIR", raising=False)
+        monkeypatch.delenv("EXTENSIONS_STATE_DIR", raising=False)
 
-        assert Path("/home/sep/state") == helper.DEFAULT_STATE_DIR
+        assert Path("/home/extensions/state") == helper.DEFAULT_STATE_DIR
         assert helper.state_dir() == helper.DEFAULT_STATE_DIR
 
     @pytest.mark.parametrize("configured", ["", " ", "\t\n"])
@@ -67,7 +67,7 @@ class TestStateDirectory:
         self, helper: ModuleType, monkeypatch: pytest.MonkeyPatch, configured: str
     ):
         """Treat empty and whitespace-only directories as unconfigured."""
-        monkeypatch.setenv("SEP_STATE_DIR", configured)
+        monkeypatch.setenv("EXTENSIONS_STATE_DIR", configured)
 
         assert helper.state_dir() == helper.DEFAULT_STATE_DIR
 
@@ -78,7 +78,7 @@ class TestStateDirectory:
         self, helper: ModuleType, monkeypatch: pytest.MonkeyPatch, configured: str
     ):
         """Preserve whitespace in a nonblank configured path."""
-        monkeypatch.setenv("SEP_STATE_DIR", configured)
+        monkeypatch.setenv("EXTENSIONS_STATE_DIR", configured)
 
         assert helper.state_dir() == Path(configured)
 
@@ -92,12 +92,12 @@ class TestStateDirectory:
     [
         (
             encryption_key.probe_timeout,
-            "SEP_ENCRYPTION_PROBE_TIMEOUT",
+            "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT",
             "[encryption-key]",
         ),
         (
             grafana_service_account.mint_timeout,
-            "SEP_GRAFANA_MINT_TIMEOUT",
+            "EXTENSIONS_GRAFANA_MINT_TIMEOUT",
             "[grafana-mint]",
         ),
     ],

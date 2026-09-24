@@ -231,7 +231,7 @@
         "type": "object"
       },
       "alerts__IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a PMM Extensions PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",

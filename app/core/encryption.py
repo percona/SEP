@@ -77,7 +77,7 @@ Needed because only ``base64.b64decode`` accepts ``validate``; the URL-safe
 wrapper translates and then decodes without it.
 """
 
-_CIPHERTEXT_V1_PREFIX = "sep.enc.v1."
+_CIPHERTEXT_V1_PREFIX = "extensions.enc.v1."
 """The marker a stored ciphertext carries, naming its envelope version.
 
 Contains a character outside the base64 alphabet, so :func:`is_encrypted` rejects
@@ -192,7 +192,7 @@ def marked_ciphertext(value: str) -> str | None:
     The marker is what *claims* a value is ciphertext; the structural check then
     confirms the payload it claimed. Both are required, because the marker is a
     literal prefix and nothing stops a legacy plaintext from beginning with it —
-    a bare prefix test would read ``sep.enc.v1.operator-secret`` as ciphertext,
+    a bare prefix test would read ``extensions.enc.v1.operator-secret`` as ciphertext,
     leave it in the clear through the migration and fail every later read of it.
     Requiring the payload to be a well-formed token as well narrows that to a
     value carrying the exact prefix *and* decoding as a Fernet token behind it.

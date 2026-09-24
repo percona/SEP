@@ -45,7 +45,7 @@ from app.sep.apps.inventory.config import InventoryAppSettings
 from app.sep.apps.om_inventory.config import OmInventorySettings
 from app.sep.apps.report.config import health_report_settings, HealthReportSettings
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT
-from app.sep.config import App, sep_settings, SEPSettings
+from app.sep.config import App, ExtensionsSettings, sep_settings
 from app.sep.deps import get_session, PROTECTED_APP_KEYS
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.main import (
@@ -190,7 +190,7 @@ class TestExternalBaseStartupWarning:
         self, mocker, caplog, offending, unset
     ):
         """Warn once per offending base, naming the setting an operator must fix."""
-        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
         mocker.patch(offending, new=URL("https://host"))
         mocker.patch(unset, new=None)
 
@@ -202,9 +202,9 @@ class TestExternalBaseStartupWarning:
 
     def test_stays_silent_when_the_bases_carry_the_prefix(self, mocker, caplog):
         """Skip the warning when both bases already resolve under the prefix."""
-        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
-        mocker.patch(_BASE_URL_TARGET, new=URL("https://host/sep"))
-        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host/sep"))
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
+        mocker.patch(_BASE_URL_TARGET, new=URL("https://host/extensions"))
+        mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=URL("https://host/extensions"))
 
         with caplog.at_level(logging.WARNING):
             warn_if_external_base_lacks_prefix()
@@ -213,7 +213,7 @@ class TestExternalBaseStartupWarning:
 
     def test_stays_silent_when_no_external_base_is_configured(self, mocker, caplog):
         """Skip the warning when a prefix is set but neither external base is."""
-        mocker.patch.object(sep_settings, "ROOT_PATH", new="/sep")
+        mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
         mocker.patch(_BASE_URL_TARGET, new=None)
         mocker.patch(_SNIPPETS_BASE_URL_TARGET, new=None)
 
@@ -237,7 +237,7 @@ class TestExternalBaseStartupWarning:
 class TestPrefixedRouting:
     """Cover routing when an ASGI server mounts ``sep_app`` under a URL prefix."""
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     def test_health_answers_under_the_configured_prefix(self, root_path):
         """Resolve the liveness probe at the prefixed path PMM's nginx forwards."""
         client = TestClient(sep_app, root_path=root_path)
@@ -246,17 +246,19 @@ class TestPrefixedRouting:
 
     def test_health_still_answers_unprefixed_under_a_prefix(self):
         """Keep the container healthcheck working: it probes loopback unprefixed."""
-        client = TestClient(sep_app, root_path="/sep")
+        client = TestClient(sep_app, root_path="/extensions")
 
         assert client.get("/health").status_code == status.HTTP_200_OK
 
     def test_a_prefix_like_path_is_not_mis_stripped(self):
-        """Reject ``/september`` rather than mangling it into a ``/sep`` match."""
-        client = TestClient(sep_app, root_path="/sep", raise_server_exceptions=False)
+        """Reject ``/extensionsx`` rather than mangling it into a ``/extensions`` match."""
+        client = TestClient(
+            sep_app, root_path="/extensions", raise_server_exceptions=False
+        )
 
-        assert client.get("/september").status_code == status.HTTP_404_NOT_FOUND
+        assert client.get("/extensionsx").status_code == status.HTTP_404_NOT_FOUND
 
-    @pytest.mark.parametrize("root_path", ["", "/sep"])
+    @pytest.mark.parametrize("root_path", ["", "/extensions"])
     @pytest.mark.usefixtures("guarded_client")
     @pytest.mark.asyncio
     async def test_a_json_api_route_resolves_under_the_prefix(self, root_path):
@@ -270,10 +272,10 @@ class TestPrefixedRouting:
     @pytest.mark.asyncio
     async def test_async_client_resolves_under_the_prefix(self):
         """Cover the ``ASGITransport`` path the async fixtures reach the app through."""
-        transport = ASGITransport(app=sep_app, root_path="/sep")
+        transport = ASGITransport(app=sep_app, root_path="/extensions")
         client = AsyncClient(transport=transport, base_url="http://test")
 
-        response = await client.get("/sep/health")
+        response = await client.get("/extensions/health")
         await client.aclose()
 
         assert response.status_code == status.HTTP_200_OK
@@ -365,7 +367,7 @@ async def test_proxy_map_composes_app_owned_and_sep_entries(mocker):
     proxies = await _refresher_proxy_map(mocker)
 
     assert set(proxies) == {
-        SettingClassEnum.SEP_SETTINGS,
+        SettingClassEnum.EXTENSIONS_SETTINGS,
         SettingClassEnum.SNIPPETS_SETTINGS,
         SettingClassEnum.SETTINGS,
         SettingClassEnum.ALERT_SETTINGS,
@@ -391,7 +393,9 @@ async def test_lifespan_refreshes_exactly_the_shared_builder_map(mocker):
     keeps the two processes from drifting.
     """
     sentinel = {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            sep_settings, ExtensionsSettings
+        ),
     }
     mocker.patch.object(
         main_module, "build_sep_override_proxies", return_value=sentinel
@@ -446,6 +450,35 @@ async def test_callback_registry_drops_alerts_under_reduced_activation(mocker):
         callbacks[(InventoryAppSettings.__name__, "COLLECTION_INTERVAL")]
         is main_module._reseed_system_periodic_tasks
     )
+
+
+@pytest.mark.asyncio
+async def test_reseed_reapplies_gating_like_init_sep_db_does(mocker):
+    """Assert the hot re-seed re-applies gating, not only the beat rows.
+
+    ``_reseed_system_periodic_tasks``'s own docstring says gating is re-applied
+    "the same pair :func:`init_sep_db` runs at startup, for the same reason":
+    a schedule an app cleared (``SCHEDULE=None``, or ``OmInventorySettings``
+    turning ``ENABLED`` off) takes the create path on the way back, which seeds
+    a fresh row at the model's default ``enabled`` rather than the app's actual
+    lifecycle state. Without the second call, a disabled app's sweep would
+    silently resume the moment its owner re-registers a schedule.
+    """
+    init_periodic_tasks_db_mock = mocker.patch.object(
+        main_module, "init_periodic_tasks_db", new_callable=AsyncMock
+    )
+    sync_gating_mock = mocker.patch.object(
+        main_module, "sync_app_periodic_task_gating", new_callable=AsyncMock
+    )
+    system_tasks = mocker.sentinel.system_tasks
+    mocker.patch.object(
+        main_module, "get_system_periodic_tasks", return_value=system_tasks
+    )
+
+    await main_module._reseed_system_periodic_tasks(mocker.Mock())
+
+    init_periodic_tasks_db_mock.assert_awaited_once_with(system_tasks, "sep__")
+    sync_gating_mock.assert_awaited_once_with(system_tasks)
 
 
 @contextmanager

@@ -54,6 +54,7 @@ from app.sep.apps.framework.registry import (
 from app.sep.config import sep_settings, warn_if_base_url_lacks_root_path
 from app.sep.db import get_async_session_maker
 from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
+from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.routes.artifacts import router as artifacts_router
 from app.sep.settings_override import (
     apply_logging_dictconfig,
@@ -174,10 +175,12 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Wired for ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``),
     ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``),
     ``InventoryAppSettings.COLLECTION_INTERVAL`` (``sep__inventory_collection``)
-    and ``OmInventorySettings.SCHEDULE`` (``sep__run_om_probe``) — each of
-    which the rebuild seeds or drops as the interval is set or cleared, since
-    the app's schedule thunk contributes nothing while it is unset. Rebuilds
-    the system periodic-task set via
+    and ``OmInventorySettings.ENABLED``/``SCHEDULE`` (``sep__run_om_probe``), each
+    of which the rebuild seeds or drops as the interval is set or cleared (or, for
+    ``OmInventorySettings``, as PMM's OpenManager switch turns the sweep on or off
+    without touching the configured cadence), since the app's schedule thunk
+    contributes nothing while disabled or unset. Rebuilds the system periodic-task
+    set via
     :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
     interval from the refreshed proxy snapshot -- and re-invokes
     :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
@@ -189,9 +192,10 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     Celery beat reloads the schedule on its next scheduler tick without a restart.
 
     Gating is then re-applied, because preserving it is only true of the **update**
-    path. A schedule an app may set to ``None`` — which is how an app-owned sweep is
-    turned off, and how ``OmInventorySettings.SCHEDULE`` turns off the estate probe
-    — contributes no task at all while it is null, and the orphan cleanup in
+    path. A schedule an app may set to ``None``, which is how an app-owned sweep is
+    turned off and one of two ways ``OmInventorySettings`` turns off the estate
+    probe (the other being ``ENABLED``), contributes no task at all while it is null,
+    and the orphan cleanup in
     ``init_periodic_tasks_db`` deletes its row. Setting it again takes the *create*
     path, which builds a fresh row at the model's default ``enabled``, so a disabled
     app would start running on the next beat tick. This is the same pair
@@ -200,7 +204,9 @@ async def _reseed_system_periodic_tasks(_: SnapshotChange) -> None:
     :param _: The override snapshots on either side of the republish (unused; the
         interval is re-read from the proxy by the task-set builder).
     """
-    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+    system_tasks = get_system_periodic_tasks()
+    await init_periodic_tasks_db(system_tasks, "sep__")
+    await sync_app_periodic_task_gating(system_tasks)
 
 
 @asynccontextmanager
@@ -248,7 +254,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     callbacks.update(
         {
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "INVENTORY_ENDPOINT",
             ): _make_remote_api_rebinder(
                 app,
@@ -260,7 +266,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 ssl_certfile=inventory_settings.SSL_CERTFILE,
             ),
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "TASKS_ENDPOINT",
             ): _make_remote_api_rebinder(
                 app,
@@ -278,13 +284,13 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "SYNC_INTERVAL",
             ): _reseed_system_periodic_tasks,
             (
-                SettingClassEnum.SEP_SETTINGS,
+                SettingClassEnum.EXTENSIONS_SETTINGS,
                 "APP_DRAIN",
             ): _reseed_system_periodic_tasks,
         }
     )
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
-    # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
+    # ``/api/extensions/...`` resolve ``request.app`` to the mounted ``sep_app``, where
     # the settings-API handlers read it.
     sep_app.state.override_callbacks = callbacks
     async with settings_override_refresher(
@@ -309,18 +315,27 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     never dereference not-yet-built ``app.state``. Any callback marked for
     boot must therefore not touch ``app.state``.
 
+    ``sep_startup()``, which seeds the periodic-task database from each app's
+    *current* settings, runs inside the ``async with`` for the same reason:
+    an app-owned hot field (e.g. ``OmInventorySettings.ENABLED``) reads its
+    class default until the override snapshot's first publish, so seeding
+    before that point can seed a sweep as off when a prior run had already
+    turned it on, and nothing re-seeds it afterward: the callback that would
+    is the one this same initial publish deliberately skips. Running it after
+    entry, once that publish has happened, is what makes ``sep_startup()``
+    see the real persisted settings on every restart, not just after the next
+    ``PATCH``.
+
     The clients are closed via ``app.state`` (not via the originals captured
     at startup) on shutdown, so a client a rebind callback swapped in mid-run is
     the one that gets closed -- the swapped-out original was already closed by
     the rebinder.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
-    :yield: None
-    :rtype: AsyncGenerator[None, None]
+    :return: ``None``, once the lifespans have been entered.
     """
-    await sep_startup()
     async with sep_overrides_lifespan(app):
+        await sep_startup()
         app.state.inventory_api = await RemoteAPI(
             endpoint=sep_settings.INVENTORY_ENDPOINT,
             ssl_cafile=settings.SSL_CAFILE,
@@ -348,11 +363,11 @@ sep_app = create_app(
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
     root_path=sep_settings.ROOT_PATH,
-    title="SEP Web Application API",
+    title="PMM Extensions Web Application API",
     version=__version__,
     description=(
         f"{__summary__}\n\n"
-        "Browser-oriented SEP routes (proxies, streams, downloads). "
+        "Browser-oriented routes (proxies, streams, downloads). "
         "JSON REST APIs for inventory and tasks live on the mounted sub-apps."
     ),
 )

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP hosts JSON API route at ``/api/sep/hosts/``."""
+"""Tests for the SEP hosts JSON API route at ``/api/extensions/hosts/``."""
 
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
@@ -67,7 +67,7 @@ def _observation(node_id: int, *, can_elevate: bool | None) -> dict[str, Any]:
 
 
 class TestSepHostsEndpoint:
-    """Tests for ``GET /api/sep/hosts/`` happy-path and edge cases."""
+    """Cover ``GET /api/extensions/hosts/`` happy-path and edge cases."""
 
     def test_returns_hosts_with_inventory_display_names_sorted(
         self,
@@ -86,7 +86,7 @@ class TestSepHostsEndpoint:
                 {"id": 2, "address": "10.0.0.2", "name": "db-mysql-prod-02"},
             ]
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -117,7 +117,7 @@ class TestSepHostsEndpoint:
         mock_inventory_api_dep.get.side_effect = _inventory_answers(
             [{"id": 1, "address": "10.0.0.1", "name": "db-mysql-prod-01"}]
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert {host["id"] for host in payload} == {"nomad-1", "nomad-2"}
@@ -140,7 +140,7 @@ class TestSepHostsEndpoint:
             ],
             [_observation(2, can_elevate=False)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -174,7 +174,7 @@ class TestSepHostsEndpoint:
                 {"id": 2, "address": "10.0.0.1", "name": "db-shadow"},
             ]
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -197,7 +197,7 @@ class TestSepHostsEndpoint:
             [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
             [_observation(7, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is True
 
@@ -218,7 +218,7 @@ class TestSepHostsEndpoint:
             [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
             [_observation(7, can_elevate=False)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is False
 
@@ -239,7 +239,7 @@ class TestSepHostsEndpoint:
             [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}],
             [{"node_id": 7, "observed_at": "2026-09-15T00:00:00Z"}],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -261,7 +261,7 @@ class TestSepHostsEndpoint:
         mock_inventory_api_dep.get.side_effect = _inventory_answers(
             [{"id": 7, "address": "10.0.0.1", "name": "db-primary"}]
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is None
 
@@ -277,7 +277,7 @@ class TestSepHostsEndpoint:
             [{"id": 7, "address": "10.0.0.9", "name": "elsewhere"}],
             [_observation(7, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -305,7 +305,7 @@ class TestSepHostsEndpoint:
             ],
             [_observation(index, can_elevate=True) for index in range(MANY_HOSTS)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert len(response.json()) == MANY_HOSTS
         assert mock_inventory_api_dep.get.await_count == INVENTORY_CALLS_PER_REQUEST
@@ -328,7 +328,7 @@ class TestSepHostsEndpoint:
             [{"id": 5, "address": "10.0.0.2", "name": "a"}],
             [_observation(5, can_elevate=False)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         capabilities = {host["id"]: host["can_elevate"] for host in response.json()}
         assert capabilities["a"] is False
@@ -346,7 +346,7 @@ class TestSepHostsEndpoint:
             [{"id": 5, "address": "10.0.0.1", "name": "db-1"}],
             [_observation(5, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is True
 
@@ -370,7 +370,7 @@ class TestSepHostsEndpoint:
             ],
             [_observation(5, can_elevate=False), _observation(6, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is False
 
@@ -394,7 +394,7 @@ class TestSepHostsEndpoint:
             ],
             [_observation(2, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is True
 
@@ -418,7 +418,7 @@ class TestSepHostsEndpoint:
             ],
             [_observation(1, can_elevate=None), _observation(2, can_elevate=True)],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["can_elevate"] is None
 
@@ -446,7 +446,7 @@ class TestSepHostsEndpoint:
             raise HTTPBadGatewayException("system-observations unavailable")
 
         mock_inventory_api_dep.get.side_effect = _answers
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -481,7 +481,7 @@ class TestSepHostsEndpoint:
             return {"items": "not-a-list", "total": "lots"}
 
         mock_inventory_api_dep.get.side_effect = _answers
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -521,7 +521,7 @@ class TestSepHostsEndpoint:
                 }
             ],
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert payload
@@ -548,7 +548,7 @@ class TestSepHostsEndpoint:
             return {"items": []}
 
         mock_inventory_api_dep.get.side_effect = _answers
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -574,7 +574,7 @@ class TestSepHostsEndpoint:
         mock_inventory_api_dep.get.side_effect = HTTPBadGatewayException(
             "inventory unreachable"
         )
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {
@@ -594,7 +594,7 @@ class TestSepHostsEndpoint:
         """Return an empty list when the executor reports no hosts."""
         mock_task_api_dep.get.return_value = {}
         mock_inventory_api_dep.get.side_effect = _inventory_answers([])
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
@@ -613,7 +613,7 @@ class TestSepHostsEndpoint:
         """
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
         mock_inventory_api_dep.get.side_effect = _inventory_answers([])
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "tasks unreachable"}
 
@@ -626,13 +626,13 @@ class TestSepHostsEndpoint:
         """Return ``502`` + ``{"detail": ...}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
         mock_inventory_api_dep.get.side_effect = _inventory_answers([])
-        response = test_client.get("/api/sep/hosts/")
+        response = test_client.get("/api/extensions/hosts/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "connection refused"}
 
 
 class TestSepHostsAuth:
-    """Tests for ``/api/sep/hosts/`` authentication enforcement."""
+    """Cover ``/api/extensions/hosts/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -648,7 +648,9 @@ class TestSepHostsAuth:
         self, unauthenticated_client: TestClient
     ) -> None:
         """Reject anonymous requests with a JSON 401 response (not an HTML redirect)."""
-        response = unauthenticated_client.get("/api/sep/hosts/", follow_redirects=False)
+        response = unauthenticated_client.get(
+            "/api/extensions/hosts/", follow_redirects=False
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
@@ -656,13 +658,13 @@ class TestSepHostsAuth:
     def test_unauthenticated_unknown_sep_path_returns_json_404(
         self, unauthenticated_client: TestClient
     ) -> None:
-        """Return JSON 404 for unknown ``/api/sep/*`` paths even when unauthenticated.
+        """Return JSON 404 for unknown ``/api/extensions/*`` paths even when unauthenticated.
 
         The 404 handler is unconditional now, so an unmatched path returns JSON
         regardless of whether the caller is authenticated.
         """
         response = unauthenticated_client.get(
-            "/api/sep/does-not-exist/", follow_redirects=False
+            "/api/extensions/does-not-exist/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
@@ -671,8 +673,10 @@ class TestSepHostsAuth:
     def test_authenticated_unknown_sep_path_returns_json_404(
         self, test_client: TestClient
     ) -> None:
-        """Return JSON 404 for unknown ``/api/sep/*`` paths under an authenticated client."""
-        response = test_client.get("/api/sep/does-not-exist/", follow_redirects=False)
+        """Return JSON 404 for unknown ``/api/extensions/*`` paths under an authenticated client."""
+        response = test_client.get(
+            "/api/extensions/does-not-exist/", follow_redirects=False
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()

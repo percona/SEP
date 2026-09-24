@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP settings REST API at ``/api/sep/admin/settings``."""
+"""Tests for the SEP settings REST API at ``/api/extensions/admin/settings``."""
 
 from collections.abc import AsyncIterator, Iterator
 from datetime import datetime, timedelta
@@ -46,14 +46,14 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification, SECRET_STR_MASK
 from app.core.utils import json_serializer
 from app.core.utils.date_time import make_datetime_utc, utc_now
-from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
+from app.sep.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
 from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
 )
 from app.sep.bundle_upload.plan import DeliveryPlan
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.deps import (
     get_current_user,
     get_session,
@@ -70,10 +70,10 @@ from app.sep.snippets.config import (
 )
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
     PMM_API_KEY,
     ROUTING_KEY,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
 )
@@ -276,7 +276,7 @@ def reduced_activation_client_fixture(
         return override_session
 
     router = build_settings_router(
-        classes=SEP_ADMIN_SETTINGS_CLASSES,
+        classes=EXTENSIONS_ADMIN_SETTINGS_CLASSES,
         session_dep=Annotated[AsyncSession, Depends(get_reduced_session)],
         admin_dep=Depends(lambda: None),
         actor_dep=Annotated[str, Depends(lambda: "test-admin")],
@@ -349,7 +349,7 @@ class TestReducedActivationSettings:
 
 @pytest.mark.asyncio
 class TestSepSettingsList:
-    """Tests for ``GET /api/sep/admin/settings/``."""
+    """Cover ``GET /api/extensions/admin/settings/``."""
 
     async def test_returns_local_proxied_and_app_owned_groups(
         self, api_admin_client: TestClient
@@ -366,12 +366,12 @@ class TestSepSettingsList:
         (``om_inventory`` does, for PMM). Both read and write the same override
         rows through the same manager, so they cannot disagree.
         """
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         groups = {group["setting_class"] for group in payload["groups"]}
         assert groups == {
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             "AlertsSettings",
             "HealthReportSettings",
@@ -386,11 +386,11 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """List the inputs object itself, not the leaves no PATCH can target."""
-        payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         keys = {
             entry["key"]
             for group in payload["groups"]
-            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if group["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
             for entry in group["settings"]
         }
 
@@ -401,10 +401,10 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """Leave core and proxied groups free of app-ownership metadata."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         core_and_remote = {
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
@@ -420,7 +420,7 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """Tag ``AlertsSettings`` as owned by the alerts app when enabled."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
@@ -442,7 +442,7 @@ class TestSepSettingsList:
         )
         await override_session.commit()
 
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         alerts_group = _find_group(
             response.json(),
@@ -467,7 +467,7 @@ class TestSepSettingsList:
         )
         await override_session.commit()
 
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         alert_group = _find_group(
             response.json(),
@@ -480,19 +480,19 @@ class TestSepSettingsList:
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
     ) -> None:
-        """Assert a SEPSettings group exposes HOT and NOT_OVERRIDABLE entries.
+        """Assert an ExtensionsSettings group exposes HOT and NOT_OVERRIDABLE entries.
 
         The NESTED_ONLY parent ``SESSION_REFRESH`` is expanded into its per-leaf
         entries, each classified ``HOT``, so the LIST projection no longer carries
         a ``NESTED_ONLY`` parent summary.
         """
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         sep_entry = next(
             group
             for group in payload["groups"]
-            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if group["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         )
         reloads = {entry["reload"] for entry in sep_entry["settings"]}
         assert reloads == {
@@ -504,9 +504,11 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """Assert a field with no override row reports ``has_override=False``."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         sep_setting = _find_setting(
-            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+            response.json(),
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
         )
         assert sep_setting["has_override"] is False
 
@@ -519,11 +521,11 @@ class TestSepSettingsList:
         the resolved value, so it reports what a settings profile that omits the
         key resolves to.
         """
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         sep_setting = _find_setting(
             response.json(),
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "CONNECTIVITY_CHECK_DEFAULT",
         )
         assert sep_setting["default_value"] is False
@@ -532,11 +534,11 @@ class TestSepSettingsList:
         self, api_admin_client: TestClient
     ) -> None:
         """Assert ``SESSION_REFRESH`` is replaced by one entry per leaf, no summary entry."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         sep_settings_group = next(
             group
             for group in response.json()["groups"]
-            if group["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if group["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         )
         keys = {entry["key"] for entry in sep_settings_group["settings"]}
         assert "SESSION_REFRESH" not in keys
@@ -563,7 +565,7 @@ class TestSepSettingsList:
         (HOT) with no submodel, so the enumerator yields nothing; the entry must
         survive as a single non-complex row.
         """
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         entry = _find_setting(
             response.json(),
             SettingClassEnum.SNIPPETS_SETTINGS.value,
@@ -576,19 +578,19 @@ class TestSepSettingsList:
 
 @pytest.mark.asyncio
 class TestSepSettingsGet:
-    """Tests for ``GET /api/sep/admin/settings/{setting_class}/{key}``."""
+    """Cover ``GET /api/extensions/admin/settings/{setting_class}/{key}``."""
 
     async def test_existing_field_returns_metadata(
         self, api_admin_client: TestClient
     ) -> None:
         """Return a single setting's metadata and current value."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["key"] == "SYNC_REFRESH_TIME"
-        assert body["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        assert body["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         assert body["reload"] == ReloadClassification.HOT.value
         assert body["has_override"] is False
 
@@ -597,7 +599,7 @@ class TestSepSettingsGet:
     ) -> None:
         """Assert a top-level DETAIL response carries a single-element ``key_path``."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["key_path"] == ["SYNC_REFRESH_TIME"]
@@ -607,7 +609,7 @@ class TestSepSettingsGet:
     ) -> None:
         """Assert a nested-leaf DETAIL response carries its canonical ``key_path`` chain."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -619,30 +621,30 @@ class TestSepSettingsGet:
     ) -> None:
         """Reject an unknown settings class with 404; the path param is an unconstrained str."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_storage_token_as_path_param_returns_404(
         self, api_admin_client: TestClient
     ) -> None:
-        """Reject the storage token ``SEP_SETTINGS``; the path speaks the class ``__name__``."""
+        """Reject the storage token ``EXTENSIONS_SETTINGS``; the path speaks the class ``__name__``."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/EXTENSIONS_SETTINGS/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
         """Return 404 for an unknown key on a wired class."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
+            "/api/extensions/admin/settings/ExtensionsSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 @pytest.mark.asyncio
 class TestSepSettingsPatch:
-    """Tests for ``PATCH /api/sep/admin/settings/{setting_class}``."""
+    """Cover ``PATCH /api/extensions/admin/settings/{setting_class}``."""
 
     async def test_single_key_creates_override_row(
         self,
@@ -652,7 +654,7 @@ class TestSepSettingsPatch:
         """Persist one key, creating exactly one row that reflects in next read."""
         new_value = 10
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": new_value},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -664,7 +666,7 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
         )
         assert len(rows) == 1
         assert rows[0].key == "SYNC_REFRESH_TIME"
@@ -675,7 +677,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Reject PATCH against the storage token; the path speaks the class ``__name__``."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEP_SETTINGS",
+            "/api/extensions/admin/settings/EXTENSIONS_SETTINGS",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -695,20 +697,20 @@ class TestSepSettingsPatch:
         """
         raw_template = "$summary custom $version"
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"FOOTER_TEMPLATE": raw_template},
         )
         assert response.status_code == status.HTTP_200_OK
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="FOOTER_TEMPLATE",
         )
         assert len(rows) == 1
         assert rows[0].value == raw_template
 
-        snapshot = await build_snapshot(override_session, SEPSettings)
+        snapshot = await build_snapshot(override_session, ExtensionsSettings)
         assert isinstance(snapshot["FOOTER_TEMPLATE"], Template)
         assert snapshot["FOOTER_TEMPLATE"].template == raw_template
 
@@ -723,7 +725,7 @@ class TestSepSettingsPatch:
         and the API must surface it as 422, not 500.
         """
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"FOOTER_TEMPLATE": 123},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -737,16 +739,16 @@ class TestSepSettingsPatch:
         first_value = 10
         second_value = 20
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": first_value},
         )
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": second_value},
         )
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
         )
         assert len(rows) == 1
@@ -757,7 +759,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Persist three valid keys as three rows, all visible on the next GET."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 "SYNC_REFRESH_TIME": 12,
                 "ARTIFACT_DOWNLOAD_TTL": 1200,
@@ -768,16 +770,20 @@ class TestSepSettingsPatch:
         expected_keys = 3
         assert len(response.json()) == expected_keys
 
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         sync = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+            list_payload,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
         )
         ttl = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "ARTIFACT_DOWNLOAD_TTL"
+            list_payload,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "ARTIFACT_DOWNLOAD_TTL",
         )
         check = _find_setting(
             list_payload,
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "CONNECTIVITY_CHECK_DEFAULT",
         )
         expected_ttl = 1200
@@ -793,12 +799,12 @@ class TestSepSettingsPatch:
     ) -> None:
         """Reject the whole batch on a single invalid key — zero rows are written."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": "not-a-number"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -808,7 +814,7 @@ class TestSepSettingsPatch:
         """Return the new value from the proxy after PATCH without the background refresher."""
         original = sep_settings.SYNC_REFRESH_TIME
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": original + 5},
         )
         try:
@@ -819,7 +825,7 @@ class TestSepSettingsPatch:
     async def test_unknown_key_returns_422(self, api_admin_client: TestClient) -> None:
         """Reject an unknown key with ``type='unknown_key'`` in the per-key error."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"NONEXISTENT": 1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -831,7 +837,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Reject a NOT_OVERRIDABLE field PATCH with 422 and ``type='not_overridable'``."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"PROXY_HEADERS": True},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -846,7 +852,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Surface the Pydantic constraint error on a ``PositiveInt`` violation."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"ARTIFACT_DOWNLOAD_TTL": -1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -872,7 +878,7 @@ class TestSepSettingsPatch:
         cross-reference validator, so no row may be written for this block.
         """
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={key: value},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -883,7 +889,7 @@ class TestSepSettingsPatch:
         )
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -896,9 +902,11 @@ class TestSepSettingsPatch:
             "DIAGNOSTICS_DELIVERY",
             DeliveryPlan(**_DELIVERY_PLAN_PAYLOAD),
         )
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         entry = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, "DIAGNOSTICS_DELIVERY"
+            list_payload,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "DIAGNOSTICS_DELIVERY",
         )
 
         assert entry["value"]["secrets"]["api_key"] == "**********"
@@ -912,21 +920,23 @@ class TestSepSettingsPatch:
     ) -> None:
         """Accept the atomic write an operator uses to turn delivery on."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
         assert response.status_code == status.HTTP_200_OK
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         assert len(rows) == 1
 
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         entry = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, _DELIVERY_INPUTS_KEY
+            list_payload,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            _DELIVERY_INPUTS_KEY,
         )
         assert entry["reload"] == ReloadClassification.HOT.value
         assert entry["value"]["secrets"]["sn_api_key"] == SECRET_STR_MASK
@@ -941,7 +951,7 @@ class TestSepSettingsPatch:
         """Store the receiver an operator names alongside the credentials."""
         endpoint = "https://elsewhere.example.com/"
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "endpoint": endpoint,
@@ -953,14 +963,16 @@ class TestSepSettingsPatch:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         assert rows[0].value["endpoint"] == endpoint
 
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         entry = _find_setting(
-            list_payload, SettingClassEnum.SEP_SETTINGS.value, _DELIVERY_INPUTS_KEY
+            list_payload,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            _DELIVERY_INPUTS_KEY,
         )
         assert entry["value"]["endpoint"] == endpoint
 
@@ -981,7 +993,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Refuse a payload whose secret names are not exactly the declared ones."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": secrets}},
         )
 
@@ -992,7 +1004,7 @@ class TestSepSettingsPatch:
             for entry in detail
         )
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -1011,7 +1023,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Refuse a per-leaf write, which would bypass the materializer entirely."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={key: value},
         )
 
@@ -1030,12 +1042,12 @@ class TestSepSettingsPatch:
     ) -> None:
         """Keep the stored credential when an operator re-submits the masked read."""
         stored = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
         assert stored.status_code == status.HTTP_200_OK
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK)
@@ -1046,7 +1058,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         assert _decrypted_secrets(rows[0].value["secrets"]) == _DELIVERY_INPUTS_SECRETS
@@ -1057,7 +1069,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Refuse the mask when restoration had nothing to put back."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "secrets": dict.fromkeys(_DELIVERY_INPUTS_SECRETS, SECRET_STR_MASK)
@@ -1083,7 +1095,7 @@ class TestSepSettingsPatch:
         """
         endpoint = "https://sn-user:sn-secret@snow.example.com/"
         stored = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "endpoint": endpoint,
@@ -1094,7 +1106,7 @@ class TestSepSettingsPatch:
         assert stored.status_code == status.HTTP_200_OK
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "endpoint": "https://sn-user:****@snow.example.com/",
@@ -1106,7 +1118,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         stored_endpoint = rows[0].value["endpoint"]
@@ -1128,13 +1140,13 @@ class TestSepSettingsPatch:
         line in whichever process rebuilt the snapshot.
         """
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         assert len(rows) == 1
@@ -1142,7 +1154,7 @@ class TestSepSettingsPatch:
             sep_settings, "DIAGNOSTICS_DELIVERY", DeliveryPlan(**_renamed_skeleton())
         )
 
-        snapshot = await build_snapshot(override_session, SEPSettings)
+        snapshot = await build_snapshot(override_session, ExtensionsSettings)
 
         assert set(snapshot[_DELIVERY_INPUTS_KEY].secrets) == set(
             _DELIVERY_INPUTS_SECRETS
@@ -1162,7 +1174,7 @@ class TestSepSettingsPatch:
         )
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
 
@@ -1183,7 +1195,7 @@ class TestSepSettingsPatch:
         cannot be restored under the name it introduced.
         """
         stored = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={_DELIVERY_INPUTS_KEY: {"secrets": _DELIVERY_INPUTS_SECRETS}},
         )
         assert stored.status_code == status.HTTP_200_OK
@@ -1192,7 +1204,7 @@ class TestSepSettingsPatch:
         )
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "secrets": {
@@ -1206,7 +1218,7 @@ class TestSepSettingsPatch:
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         assert _decrypted_secrets(rows[0].value["secrets"]) == {
@@ -1221,12 +1233,12 @@ class TestSepSettingsPatch:
     ) -> None:
         """Assert ``APP_DRAIN`` is NESTED_ONLY, so a leaf PATCH persists a row."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"APP_DRAIN__stale_task_ttl": 7200},
         )
         assert response.status_code == status.HTTP_200_OK
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert [r.key for r in rows] == ["APP_DRAIN__stale_task_ttl"]
 
@@ -1237,12 +1249,12 @@ class TestSepSettingsPatch:
     ) -> None:
         """Reject a whole-object PATCH of the NESTED_ONLY ``APP_DRAIN`` parent."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"APP_DRAIN": {"stale_task_ttl": 7200}},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -1251,7 +1263,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Surface the ``stale_task_ttl`` positive-duration validator as 422."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"APP_DRAIN__stale_task_ttl": 0},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -1263,7 +1275,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Assert ``SNIPPETS_BASE_URL`` is HOT and accepts a PATCH."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SnippetsSettings",
+            "/api/extensions/admin/settings/SnippetsSettings",
             json={"SNIPPETS_BASE_URL": "https://snippets.example.com/"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -1279,7 +1291,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Assert ``SYNC_FILTER`` is HOT; a valid PATCH persists and reflects."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SnippetsSettings",
+            "/api/extensions/admin/settings/SnippetsSettings",
             json={"SYNC_FILTER": [".sh"]},
         )
         try:
@@ -1301,7 +1313,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Reject a malformed ``SYNC_FILTER`` set member with 422 and no row."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SnippetsSettings",
+            "/api/extensions/admin/settings/SnippetsSettings",
             json={"SYNC_FILTER": [12345]},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -1317,7 +1329,7 @@ class TestSepSettingsPatch:
     ) -> None:
         """Aggregate three error types in one batch into three matching ``detail`` entries."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 "SYNC_REFRESH_TIME": 10,
                 "BOGUS_KEY": 1,
@@ -1332,14 +1344,14 @@ class TestSepSettingsPatch:
         assert any("greater_than" in t for t in types)
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
     async def test_empty_body_returns_422(self, api_admin_client: TestClient) -> None:
         """Reject an empty PATCH body via the ``min_length=1`` root model constraint."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings", json={}
+            "/api/extensions/admin/settings/ExtensionsSettings", json={}
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
@@ -1370,7 +1382,7 @@ class TestSepSettingsPatch:
             settings_routes, "_stage_and_commit_overrides", side_effect=flaky
         ) as spy:
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/SEPSettings",
+                "/api/extensions/admin/settings/ExtensionsSettings",
                 json={"SYNC_REFRESH_TIME": new_value},
             )
         assert response.status_code == status.HTTP_200_OK
@@ -1379,7 +1391,7 @@ class TestSepSettingsPatch:
         assert spy.call_count == expected_call_count
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
@@ -1394,7 +1406,7 @@ class TestSepSettingsPatch:
 
 @pytest.mark.asyncio
 class TestSepSettingsDelete:
-    """Tests for ``DELETE /api/sep/admin/settings/{setting_class}/{key}``."""
+    """Cover ``DELETE /api/extensions/admin/settings/{setting_class}/{key}``."""
 
     async def test_delete_existing_override(
         self,
@@ -1403,21 +1415,21 @@ class TestSepSettingsDelete:
     ) -> None:
         """Delete an override row, returning 204 and clearing ``has_override``."""
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 11},
         )
         assert patched.status_code == status.HTTP_200_OK
         assert await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
 
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert rows == []
 
@@ -1426,7 +1438,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Return 204 when deleting a HOT field with no override row."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -1435,7 +1447,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Return 409 when deleting a NOT_OVERRIDABLE field — the row can't exist."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/PROXY_HEADERS"
+            "/api/extensions/admin/settings/ExtensionsSettings/PROXY_HEADERS"
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -1444,7 +1456,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Return 404 when deleting an unknown key."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/DOES_NOT_EXIST"
+            "/api/extensions/admin/settings/ExtensionsSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -1453,7 +1465,7 @@ class TestSepSettingsDelete:
     ) -> None:
         """Reject DELETE against the storage token; the path speaks the class ``__name__``."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEP_SETTINGS/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/EXTENSIONS_SETTINGS/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -1465,7 +1477,7 @@ class TestSepSettingsAppOwnedAlerts:
     async def test_get_alerts_setting(self, api_admin_client: TestClient) -> None:
         """Return one field from ``GET /settings/AlertsSettings/{key}``."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+            "/api/extensions/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -1475,20 +1487,20 @@ class TestSepSettingsAppOwnedAlerts:
     async def test_storage_token_as_path_param_returns_404(
         self, api_admin_client: TestClient
     ) -> None:
-        """Reject the storage token ``ALERTS_SETTINGS`` the same way as ``SEP_SETTINGS``."""
+        """Reject the storage token ``ALERTS_SETTINGS`` the same way as ``EXTENSIONS_SETTINGS``."""
         get_response = api_admin_client.get(
-            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+            "/api/extensions/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
         )
         assert get_response.status_code == status.HTTP_404_NOT_FOUND
 
         patch_response = api_admin_client.patch(
-            "/api/sep/admin/settings/ALERTS_SETTINGS",
+            "/api/extensions/admin/settings/ALERTS_SETTINGS",
             json={"ALERT_FOLDER_NAME": "Should Not Persist"},
         )
         assert patch_response.status_code == status.HTTP_404_NOT_FOUND
 
         delete_response = api_admin_client.delete(
-            "/api/sep/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
+            "/api/extensions/admin/settings/ALERTS_SETTINGS/ALERT_FOLDER_NAME"
         )
         assert delete_response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -1500,7 +1512,7 @@ class TestSepSettingsAppOwnedAlerts:
         """Persist and clear an ``AlertsSettings`` override through value-form paths."""
         try:
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/AlertsSettings",
+                "/api/extensions/admin/settings/AlertsSettings",
                 json={"ALERT_FOLDER_NAME": "Patched Alerts"},
             )
             assert response.status_code == status.HTTP_200_OK
@@ -1513,7 +1525,7 @@ class TestSepSettingsAppOwnedAlerts:
             assert rows[0].value == "Patched Alerts"
 
             deleted = api_admin_client.delete(
-                "/api/sep/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
+                "/api/extensions/admin/settings/AlertsSettings/ALERT_FOLDER_NAME"
             )
             assert deleted.status_code == status.HTTP_204_NO_CONTENT
             rows = await SettingsOverrideManager.list(
@@ -1526,7 +1538,7 @@ class TestSepSettingsAppOwnedAlerts:
 
 @pytest.mark.asyncio
 class TestSepSettingsNestedOverrides:
-    """Cover ``__``-delimited nested overrides on ``SEPSettings.SESSION_REFRESH``."""
+    """Cover ``__``-delimited nested overrides on ``ExtensionsSettings.SESSION_REFRESH``."""
 
     @pytest.fixture(autouse=True)
     def _reset_proxy_snapshot(self) -> Iterator[None]:
@@ -1539,7 +1551,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Persist a nested PATCH, echo the nested key, and mark the parent."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -1549,12 +1561,12 @@ class TestSepSettingsNestedOverrides:
         assert body[0]["has_override"] is True
         # The parent reads back as having an override.
         parent = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH"
         )
         assert parent.json()["has_override"] is True
         # The nested leaf reads back its current value.
         leaf = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__SAMESITE"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH__SAMESITE"
         )
         assert leaf.json()["value"] == "strict"
 
@@ -1563,7 +1575,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Echo the leaf's canonical ``key_path`` chain on a nested PATCH."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -1577,7 +1589,7 @@ class TestSepSettingsNestedOverrides:
         """Coerce a JSON int on ``SESSION_REFRESH__MAX_AGE`` to a timedelta."""
         override_seconds = 7200
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__MAX_AGE": override_seconds},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -1588,7 +1600,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Reject an unknown nested leaf with ``unknown_nested_field``."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__BOGUS": 1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -1600,7 +1612,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Reject a nested key under a non-overridable parent as not_overridable."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"DATABASE__NAME": "other.db"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -1612,7 +1624,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Reject replacing the whole NESTED_ONLY parent object."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH": {"MAX_AGE": 3600}},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -1628,7 +1640,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Return 422 (not 404) on DELETE of the whole NESTED_ONLY parent."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH"
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -1639,11 +1651,11 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Allow GET on the whole parent and return the merged value."""
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH"
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["value"]["SAMESITE"] == "strict"
@@ -1655,12 +1667,12 @@ class TestSepSettingsNestedOverrides:
         override_seconds = 7200
         original = sep_settings.SESSION_REFRESH.MAX_AGE
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__MAX_AGE": override_seconds},
         )
         assert sep_settings.SESSION_REFRESH.MAX_AGE.total_seconds() == override_seconds
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert original == sep_settings.SESSION_REFRESH.MAX_AGE
@@ -1670,7 +1682,7 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Return 204 when deleting a never-set nested override."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SESSION_REFRESH__MAX_AGE"
+            "/api/extensions/admin/settings/ExtensionsSettings/SESSION_REFRESH__MAX_AGE"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
@@ -1679,18 +1691,18 @@ class TestSepSettingsNestedOverrides:
     ) -> None:
         """Assert each leaf carries its own ``has_override``; a sibling stays ``False``."""
         api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SESSION_REFRESH__SAMESITE": "strict"},
         )
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         overridden = _find_setting(
             list_payload,
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "SESSION_REFRESH__SAMESITE",
         )
         sibling = _find_setting(
             list_payload,
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "SESSION_REFRESH__MAX_AGE",
         )
         assert overridden["has_override"] is True
@@ -1706,7 +1718,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Respond with a JSON 401 to an unauthenticated GET."""
         response = api_unauthenticated_client.get(
-            "/api/sep/admin/settings/", follow_redirects=False
+            "/api/extensions/admin/settings/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -1715,7 +1727,7 @@ class TestSepSettingsAuth:
         self, api_non_admin_client: TestClient
     ) -> None:
         """Reject a non-admin user with 403 on every endpoint."""
-        response = api_non_admin_client.get("/api/sep/admin/settings/")
+        response = api_non_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_non_admin_patch_returns_403(
@@ -1723,7 +1735,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Reject a non-admin user's attempt to mutate settings."""
         response = api_non_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -1733,7 +1745,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Reject a cookie-authenticated admin PATCH without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -1743,7 +1755,7 @@ class TestSepSettingsAuth:
     ) -> None:
         """Reject a cookie-authenticated admin DELETE without a Bearer header (CSRF defense)."""
         response = api_admin_cookie_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -1751,7 +1763,7 @@ class TestSepSettingsAuth:
         self, api_admin_cookie_client: TestClient
     ) -> None:
         """Allow GET via cookie auth — only mutations require Bearer."""
-        response = api_admin_cookie_client.get("/api/sep/admin/settings/")
+        response = api_admin_cookie_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
 
 
@@ -1763,7 +1775,7 @@ class TestSepSettingsSecondaryClasses:
         """Assert a Snippets HOT field is patchable via the SEP router."""
         original = snippets_settings.ENABLE_MANUAL_SYNC
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SnippetsSettings",
+            "/api/extensions/admin/settings/SnippetsSettings",
             json={"ENABLE_MANUAL_SYNC": not original},
         )
         try:
@@ -1780,7 +1792,7 @@ class TestSepSettingsAlertSettings:
     async def test_get_alert_setting(self, api_admin_client: TestClient) -> None:
         """Return one alert field from ``GET /settings/AlertSettings/{key}``."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/AlertSettings/SOURCE_PREFIX"
+            "/api/extensions/admin/settings/AlertSettings/SOURCE_PREFIX"
         )
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -1790,7 +1802,7 @@ class TestSepSettingsAlertSettings:
     async def test_patch_alert_setting(self, api_admin_client: TestClient) -> None:
         """Patch an AlertSettings HOT field via the SEP router."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/AlertSettings",
+            "/api/extensions/admin/settings/AlertSettings",
             json={"SOURCE_PREFIX": "test-prefix-"},
         )
         try:
@@ -1807,7 +1819,7 @@ class TestSepSettingsAlertSettings:
         try:
             assert (
                 api_admin_client.patch(
-                    "/api/sep/admin/settings/AlertSettings",
+                    "/api/extensions/admin/settings/AlertSettings",
                     json={
                         "PROVIDERS": [
                             {"PROVIDER": "pagerduty", "routing_key": secret},
@@ -1817,7 +1829,7 @@ class TestSepSettingsAlertSettings:
                 == status.HTTP_200_OK
             )
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/AlertSettings",
+                "/api/extensions/admin/settings/AlertSettings",
                 json={
                     "PROVIDERS": [
                         {
@@ -1835,7 +1847,9 @@ class TestSepSettingsAlertSettings:
             providers_row = next(row for row in rows if row.key == "PROVIDERS")
             assert stored_plaintext(providers_row.value[0]["routing_key"]) == secret
         finally:
-            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            api_admin_client.delete(
+                "/api/extensions/admin/settings/AlertSettings/PROVIDERS"
+            )
             alert_settings._set_snapshot({})
 
     async def test_providers_masked_patch_preserves_two_routing_keys(
@@ -1849,7 +1863,7 @@ class TestSepSettingsAlertSettings:
         try:
             assert (
                 api_admin_client.patch(
-                    "/api/sep/admin/settings/AlertSettings",
+                    "/api/extensions/admin/settings/AlertSettings",
                     json={
                         "PROVIDERS": [
                             {
@@ -1870,7 +1884,7 @@ class TestSepSettingsAlertSettings:
             # Resubmit in reverse endpoint order so positional pairing against
             # an unstable set iteration would swap the routing keys.
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/AlertSettings",
+                "/api/extensions/admin/settings/AlertSettings",
                 json={
                     "PROVIDERS": [
                         {
@@ -1898,7 +1912,9 @@ class TestSepSettingsAlertSettings:
             assert by_endpoint[endpoint_a] == secret_a
             assert by_endpoint[endpoint_b] == secret_b
         finally:
-            api_admin_client.delete("/api/sep/admin/settings/AlertSettings/PROVIDERS")
+            api_admin_client.delete(
+                "/api/extensions/admin/settings/AlertSettings/PROVIDERS"
+            )
             alert_settings._set_snapshot({})
 
 
@@ -1919,11 +1935,11 @@ class TestSepSettingsCredentialUrlRedaction:
     ) -> None:
         """Assert ``GET /settings/`` masks ``INVENTORY_ENDPOINT`` password components."""
         sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         entry = _find_setting(
             response.json(),
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "INVENTORY_ENDPOINT",
         )
         assert "inv-secret" not in entry["value"]
@@ -1936,7 +1952,7 @@ class TestSepSettingsCredentialUrlRedaction:
         """Assert ``GET /settings/{class}/{key}`` masks ``INVENTORY_ENDPOINT`` passwords."""
         sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+            "/api/extensions/admin/settings/ExtensionsSettings/INVENTORY_ENDPOINT"
         )
         assert response.status_code == status.HTTP_200_OK
         value = response.json()["value"]
@@ -1963,7 +1979,7 @@ class TestSepSettingsCredentialUrlWriteback:
         try:
             sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/SEPSettings",
+                "/api/extensions/admin/settings/ExtensionsSettings",
                 json={"INVENTORY_ENDPOINT": redacted_url},
             )
             assert response.status_code == status.HTTP_200_OK
@@ -1984,7 +2000,7 @@ class TestSepSettingsCredentialUrlWriteback:
         try:
             sep_settings._set_snapshot({})
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/SEPSettings",
+                "/api/extensions/admin/settings/ExtensionsSettings",
                 json={"INVENTORY_ENDPOINT": redacted_url},
             )
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -2017,7 +2033,7 @@ class TestSettingsNestedCredentialUrlWriteback:
         try:
             settings._set_snapshot({"PMM": PMMSettings(endpoint=full_url)})
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/Settings",
+                "/api/extensions/admin/settings/Settings",
                 json={"PMM__ENDPOINT": redacted_url},
             )
             assert response.status_code == status.HTTP_200_OK
@@ -2038,7 +2054,7 @@ class TestSettingsNestedCredentialUrlWriteback:
         try:
             settings._set_snapshot({})
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/Settings",
+                "/api/extensions/admin/settings/Settings",
                 json={"PMM__ENDPOINT": redacted_url},
             )
             assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -2059,11 +2075,11 @@ class TestSepSettingsInlineRebind:
 
     @pytest.fixture(name="endpoint_callback_spy")
     def endpoint_callback_spy_fixture(self) -> Iterator[AsyncMock]:
-        """Register a spy as the ``(SEP_SETTINGS, INVENTORY_ENDPOINT)`` callback on state."""
+        """Register a spy as the ``(EXTENSIONS_SETTINGS, INVENTORY_ENDPOINT)`` callback on state."""
         spy = AsyncMock()
         original = getattr(sep_app.state, "override_callbacks", None)
         sep_app.state.override_callbacks = {
-            (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"): spy,
+            (SettingClassEnum.EXTENSIONS_SETTINGS, "INVENTORY_ENDPOINT"): spy,
         }
         sep_settings._set_snapshot({})
         yield spy
@@ -2075,7 +2091,7 @@ class TestSepSettingsInlineRebind:
     ) -> None:
         """Fire the ``INVENTORY_ENDPOINT`` rebind callback inline on PATCH."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"INVENTORY_ENDPOINT": "https://new-inventory.example.org"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2086,7 +2102,7 @@ class TestSepSettingsInlineRebind:
     ) -> None:
         """Leave the endpoint rebinder untouched when PATCHing an unrelated SEP key."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 17},
         )
         try:
@@ -2113,14 +2129,15 @@ class TestSepOverridesLifespanWiring:
             async with sep_overrides_lifespan(FastAPI()):
                 keys = set(sep_app.state.override_callbacks)
             assert keys == {
-                (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
-                (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
+                (SettingClassEnum.EXTENSIONS_SETTINGS, "INVENTORY_ENDPOINT"),
+                (SettingClassEnum.EXTENSIONS_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
                 (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 ("AlertsSettings", "BACKUP_INTERVAL"),
                 ("InventoryAppSettings", "COLLECTION_INTERVAL"),
-                (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
+                (SettingClassEnum.EXTENSIONS_SETTINGS, "APP_DRAIN"),
+                ("OmInventorySettings", "ENABLED"),
                 ("OmInventorySettings", "SCHEDULE"),
             }
         finally:
@@ -2133,7 +2150,7 @@ class TestGlobalSettingsClass:
 
     async def test_settings_group_listed(self, api_admin_client: TestClient) -> None:
         """Assert the ``Settings`` group appears in the LIST projection."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         groups = {g["setting_class"] for g in response.json()["groups"]}
         assert SettingClassEnum.SETTINGS.value in groups
@@ -2143,7 +2160,7 @@ class TestGlobalSettingsClass:
     ) -> None:
         """Accept a per-child PATCH on a PMM leaf (HOT parent)."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM__verify_ssl": False},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2163,7 +2180,7 @@ class TestGlobalSettingsClass:
         secret = "pmm-api-key-persisted"
         try:
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/Settings",
+                "/api/extensions/admin/settings/Settings",
                 json={"PMM__api_key": secret},
             )
             assert response.status_code == status.HTTP_200_OK
@@ -2175,7 +2192,9 @@ class TestGlobalSettingsClass:
             assert rows[0].key == "PMM__api_key"
             assert stored_plaintext(rows[0].value) == secret
         finally:
-            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+            api_admin_client.delete(
+                "/api/extensions/admin/settings/Settings/PMM__api_key"
+            )
 
     async def test_pmm_api_key_masked_patch_preserves_stored_secret(
         self, api_admin_client: TestClient, override_session: AsyncSession
@@ -2185,13 +2204,13 @@ class TestGlobalSettingsClass:
         try:
             assert (
                 api_admin_client.patch(
-                    "/api/sep/admin/settings/Settings",
+                    "/api/extensions/admin/settings/Settings",
                     json={"PMM__api_key": secret},
                 ).status_code
                 == status.HTTP_200_OK
             )
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/Settings",
+                "/api/extensions/admin/settings/Settings",
                 json={"PMM__api_key": SECRET_STR_MASK},
             )
             assert response.status_code == status.HTTP_200_OK
@@ -2202,14 +2221,16 @@ class TestGlobalSettingsClass:
             assert len(rows) == 1
             assert stored_plaintext(rows[0].value) == secret
         finally:
-            api_admin_client.delete("/api/sep/admin/settings/Settings/PMM__api_key")
+            api_admin_client.delete(
+                "/api/extensions/admin/settings/Settings/PMM__api_key"
+            )
 
     async def test_logging_hot_patch_persists(
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
         """Assert ``LOGGING`` is HOT and accepts a PATCH."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"LOGGING": "DEBUG"},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2222,7 +2243,7 @@ class TestGlobalSettingsClass:
         self, api_admin_client: TestClient
     ) -> None:
         """Expose six LogLevel options (aliases excluded) with int values."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         logging_row = _find_setting(
             response.json(), SettingClassEnum.SETTINGS.value, "LOGGING"
@@ -2237,7 +2258,7 @@ class TestGlobalSettingsClass:
         ]
         non_enum = _find_setting(
             response.json(),
-            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
             "SYNC_REFRESH_TIME",
         )
         assert non_enum["options"] is None
@@ -2248,11 +2269,13 @@ class TestGlobalSettingsClass:
         """Accept an integer PATCH value for LOGGING (the shape the UI sends)."""
         debug_level = 10
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"LOGGING": debug_level},
         )
         assert response.status_code == status.HTTP_200_OK
-        get_resp = api_admin_client.get("/api/sep/admin/settings/Settings/LOGGING")
+        get_resp = api_admin_client.get(
+            "/api/extensions/admin/settings/Settings/LOGGING"
+        )
         assert get_resp.status_code == status.HTTP_200_OK
         body = get_resp.json()
         assert body["value"] == debug_level
@@ -2263,7 +2286,7 @@ class TestGlobalSettingsClass:
     ) -> None:
         """Reject an invalid ``LOGGING`` level with 422 and write no row."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"LOGGING": "NOTALEVEL"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -2278,7 +2301,7 @@ class TestGlobalSettingsClass:
     ) -> None:
         """Assert restart-only fields stay NOT_OVERRIDABLE and reject a PATCH with 422."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={field: "whatever"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
@@ -2289,7 +2312,7 @@ class TestGlobalSettingsClass:
         self, api_admin_client: TestClient
     ) -> None:
         """Assert the ``SECRET_KEY`` value is never serialised in the LIST payload."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         entry = _find_setting(
             response.json(), SettingClassEnum.SETTINGS.value, "SECRET_KEY"
         )
@@ -2298,7 +2321,7 @@ class TestGlobalSettingsClass:
 
     async def test_pmm_api_key_not_leaked(self, api_admin_client: TestClient) -> None:
         """Assert the nested PMM ``api_key`` secret is not serialised in the LIST."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         entry = _find_setting(
             response.json(), SettingClassEnum.SETTINGS.value, "PMM__api_key"
         )
@@ -2339,14 +2362,14 @@ class TestSepSettingsSecretsEncryptedAtRest:
         hand-written string payload cannot reproduce.
         """
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
         )
         assert response.status_code == status.HTTP_200_OK
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="INVENTORY_ENDPOINT",
         )
         assert len(rows) == 1, "the PATCH must have persisted exactly one row"
@@ -2364,7 +2387,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
     ) -> None:
         """Encrypt the nested ``PMM__ENDPOINT`` leaf, which reaches the walker as text."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM__ENDPOINT": self._CREDENTIAL_URL},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2386,7 +2409,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
     ) -> None:
         """Encrypt the URL password and the ``api_key`` sibling in one stored row."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM": {"endpoint": self._CREDENTIAL_URL, "api_key": PMM_API_KEY}},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2411,13 +2434,13 @@ class TestSepSettingsSecretsEncryptedAtRest:
         ciphertext between the two PATCHes.
         """
         first = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
         )
         assert first.status_code == status.HTTP_200_OK
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 "INVENTORY_ENDPOINT": (
                     "https://inv-user:****@inventory.internal:8080/api"
@@ -2428,7 +2451,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="INVENTORY_ENDPOINT",
         )
         assert len(rows) == 1, "the resubmit must leave exactly one row"
@@ -2446,13 +2469,13 @@ class TestSepSettingsSecretsEncryptedAtRest:
         DETAIL response publishes for every field, nor serve the ciphertext.
         """
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"INVENTORY_ENDPOINT": self._CREDENTIAL_URL},
         )
         assert patched.status_code == status.HTTP_200_OK
 
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+            "/api/extensions/admin/settings/ExtensionsSettings/INVENTORY_ENDPOINT"
         )
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -2468,7 +2491,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         """Encrypt ``$.api_key`` of a whole-object PMM PATCH, leaving siblings plain."""
         endpoint = "https://pmm.example.com"
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM": {"endpoint": endpoint, "api_key": PMM_API_KEY}},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2491,7 +2514,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         the one assertion here that does.
         """
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={
                 "PMM": {"endpoint": "https://pmm.example.com", "api_key": PMM_API_KEY}
             },
@@ -2509,13 +2532,13 @@ class TestSepSettingsSecretsEncryptedAtRest:
         """Keep the redaction contract: neither plaintext nor ciphertext is served."""
         assert (
             api_admin_client.patch(
-                "/api/sep/admin/settings/Settings",
+                "/api/extensions/admin/settings/Settings",
                 json={"PMM": {"api_key": PMM_API_KEY}},
             ).status_code
             == status.HTTP_200_OK
         )
 
-        list_payload = api_admin_client.get("/api/sep/admin/settings/").json()
+        list_payload = api_admin_client.get("/api/extensions/admin/settings/").json()
         entry = _find_setting(
             list_payload, SettingClassEnum.SETTINGS.value, "PMM__api_key"
         )
@@ -2530,7 +2553,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
     ) -> None:
         """Encrypt the row value outright when the nested leaf *is* the secret."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM__api_key": PMM_API_KEY},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2552,7 +2575,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         """
         endpoint = "https://events.pagerduty.com/v2/"
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/AlertSettings",
+            "/api/extensions/admin/settings/AlertSettings",
             json={
                 "PROVIDERS": [
                     {
@@ -2583,7 +2606,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         """Encrypt every value of the ``dict[str, SecretStr]`` leaf, never its names."""
         endpoint = "https://elsewhere.example.com/"
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={
                 _DELIVERY_INPUTS_KEY: {
                     "endpoint": endpoint,
@@ -2595,7 +2618,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
 
         rows = await SettingsOverrideManager.list(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=_DELIVERY_INPUTS_KEY,
         )
         stored = rows[0].value["secrets"]
@@ -2610,7 +2633,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
     ) -> None:
         """Store a field whose annotation reaches no secret exactly as before."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
+            "/api/extensions/admin/settings/Settings",
             json={"PMM": {"verify_ssl": False}},
         )
         assert response.status_code == status.HTTP_200_OK
@@ -2628,7 +2651,7 @@ class TestSepSettingsSecretsEncryptedAtRest:
         for _ in range(2):
             assert (
                 api_admin_client.patch(
-                    "/api/sep/admin/settings/Settings",
+                    "/api/extensions/admin/settings/Settings",
                     json={"PMM__api_key": PMM_API_KEY},
                 ).status_code
                 == status.HTTP_200_OK
@@ -2650,7 +2673,7 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Record the calling admin and a write time on a freshly created override."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
@@ -2664,7 +2687,7 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Serialise ``updated_at`` with an explicit UTC offset."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
@@ -2687,7 +2710,7 @@ class TestSepSettingsProvenance:
         stale = utc_now() - timedelta(days=1)
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=10,
             updated_at=stale,
@@ -2695,7 +2718,7 @@ class TestSepSettingsProvenance:
         )
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
@@ -2775,12 +2798,12 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Serve the same stamp from DETAIL that the PATCH response carried."""
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -2794,14 +2817,16 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Serve the same stamp from LIST that the PATCH response carried."""
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
 
         entry = _find_setting(
-            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+            response.json(),
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
         )
         assert entry["updated_by"] == admin_user.username
         assert entry["updated_at"] == patched.json()[0]["updated_at"]
@@ -2811,7 +2836,7 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Stamp every key of one atomic batch with a single timestamp."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10, "ARTIFACT_DOWNLOAD_TTL": 900},
         )
 
@@ -2824,7 +2849,7 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Report both fields as ``null`` for a key carrying no override row."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
 
         body = response.json()
@@ -2840,10 +2865,12 @@ class TestSepSettingsProvenance:
         The fields are present rather than absent, so a consumer reads the same
         shape from LIST as from DETAIL.
         """
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
 
         entry = _find_setting(
-            response.json(), SettingClassEnum.SEP_SETTINGS.value, "SYNC_REFRESH_TIME"
+            response.json(),
+            SettingClassEnum.EXTENSIONS_SETTINGS.value,
+            "SYNC_REFRESH_TIME",
         )
         assert entry["has_override"] is False
         assert entry["updated_at"] is None
@@ -2855,14 +2882,14 @@ class TestSepSettingsProvenance:
         """Report ``created_at`` for a row written before explicit stamping."""
         row = await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=10,
         )
         assert row.updated_at is None
 
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
 
         body = response.json()
@@ -2882,7 +2909,7 @@ class TestSepSettingsProvenance:
         """
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="SYNC_REFRESH_TIME",
             value=10,
             is_active=False,
@@ -2891,7 +2918,7 @@ class TestSepSettingsProvenance:
         )
 
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
 
         body = response.json()
@@ -2904,12 +2931,14 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Promote a nested leaf's provenance to every canonical prefix of its chain."""
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"APP_DRAIN__stale_task_ttl": 7200},
         )
         assert patched.status_code == status.HTTP_200_OK
 
-        response = api_admin_client.get("/api/sep/admin/settings/SEPSettings/APP_DRAIN")
+        response = api_admin_client.get(
+            "/api/extensions/admin/settings/ExtensionsSettings/APP_DRAIN"
+        )
 
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -2922,19 +2951,19 @@ class TestSepSettingsProvenance:
     ) -> None:
         """Clear both fields once the override row is hard-deleted."""
         patched = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
         assert patched.status_code == status.HTTP_200_OK
         assert patched.json()[0]["has_override"] is True
 
         deleted = api_admin_client.delete(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
         assert deleted.status_code == status.HTTP_204_NO_CONTENT
 
         response = api_admin_client.get(
-            "/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME"
+            "/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME"
         )
 
         body = response.json()

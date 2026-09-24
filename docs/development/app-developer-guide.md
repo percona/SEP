@@ -1,6 +1,6 @@
-# SEP App Developer Guide
+# PMM Extensions App Developer Guide
 
-SEP apps are the tools in the SEP sidebar — Checksums, MySQL Backups, Snippets,
+PMM Extensions apps are the tools in the PMM Extensions sidebar — Checksums, MySQL Backups, Snippets,
 and the rest. Each one presents a form, turns a submitted form into a task that
 runs against your inventory, and shows the results. This guide takes you from
 zero to a working app of your own, assuming no prior knowledge of the app
@@ -16,7 +16,7 @@ Before you start you need a running development setup — see
 > flavor to use — is the decision [§2 Snippet or framework app?](#2-snippet-or-framework-app)
 > teaches.
 
-The code examples are lifted from real, CI-exercised code in the SEP tree; each
+The code examples are lifted from real, CI-exercised code in the PMM Extensions tree; each
 carries an HTML comment naming its source file and symbol (e.g.
 `<!-- src: app/sep/apps/checksums/models.py :: ChecksumsForm -->`) so you can
 diff it against the source as the framework evolves. Long docstrings are
@@ -31,9 +31,9 @@ A few terms this guide uses throughout:
 
 | Term | Meaning |
 |---|---|
-| **App** | One tool in the SEP sidebar: a form, the tasks it creates, and their list/detail pages. One package under `app/sep/apps/`. |
+| **App** | One tool in the PMM Extensions sidebar: a form, the tasks it creates, and their list/detail pages. One package under `app/sep/apps/`. |
 | **Task** | One run of an app's job — created from the form, executed against a host or service, with stored status and output. |
-| **Inventory** | SEP's registry of services, schemas, tables, and hosts. Form fields can offer dropdowns resolved from it. |
+| **Inventory** | PMM Extensions' registry of services, schemas, tables, and hosts. Form fields can offer dropdowns resolved from it. |
 | **Form model** | The Python class declaring the app's form fields (the `create_model` knob) — both the validation of what users submit and the source of the rendered form. |
 | **Form schema** | The JSON description of the form that the UI renders, served at `GET /schema`. Not a database schema. |
 | **Knob** | A constructor argument on the app object (`create_model=...`, `capabilities=...`). You set knobs; the framework does the rest. |
@@ -91,7 +91,7 @@ A few terms this guide uses throughout:
 
 ### You describe the app; the framework builds it
 
-Open the Checksums app in SEP: it has a create form, a list of runs, and a
+Open the Checksums app in PMM Extensions: it has a create form, a list of runs, and a
 detail page per run. None of that is hand-written. The framework *derives* the
 entire HTTP surface — schema, list, detail, create, update, execute, delete —
 from a single `TaskExecutionApp` object whose constructor arguments ("knobs")
@@ -159,14 +159,14 @@ filtering.
 ### How the registry discovers and activates apps
 
 Apps are **not** wired by hand into a router file. Activation is data, in
-`settings.yaml`: one `MODULE_NAME` entry per app under `SEP.APPS`. `ENABLED`
+`settings.yaml`: one `MODULE_NAME` entry per app under `EXTENSIONS.APPS`. `ENABLED`
 defaults to `true` and is normally omitted; an app opts out of shipping enabled
 by setting it to `false`, as `topology` does:
 
 <!-- src: settings.yaml -->
 ```yaml
 default:
-  SEP:
+  EXTENSIONS:
     APPS:
       - MODULE_NAME: checksums
       ...
@@ -174,7 +174,7 @@ default:
         ENABLED: false
 ```
 
-At startup, `build_app_registry` walks the `SEP.APPS` list in order, imports each
+At startup, `build_app_registry` walks the `EXTENSIONS.APPS` list in order, imports each
 module, and uses its exported `app` object (a `BaseApp` / `TaskExecutionApp`):
 
 <!-- src: app/sep/apps/framework/registry.py :: get_app_registry -->
@@ -233,7 +233,7 @@ hook), copy only that **named construct** — never a whole module.
 
 ## 2. Snippet or framework app?
 
-Before you scaffold, decide **what kind** of thing you are writing. SEP has two
+Before you scaffold, decide **what kind** of thing you are writing. PMM Extensions has two
 ways to ship a runnable tool, and the scaffolder's three flavors map onto them.
 
 ### The routing rule
@@ -360,7 +360,7 @@ For **`base`**: `api_routes.py`, `app.py`, `__init__.py`, `schema.py`, plus
 ### What the scaffolder writes automatically
 
 The scaffolder registers the app in `settings.yaml` — and **only** `settings.yaml`.
-It inserts a `SEP.APPS` entry, **disabled** unless you pass `ENABLE`:
+It inserts a `EXTENSIONS.APPS` entry, **disabled** unless you pass `ENABLE`:
 
 ```text
 Scaffolded 'task' app 'myapp':
@@ -451,7 +451,7 @@ a misconfiguration. The suite is capability-gated: every case whose knob your
 app does not switch on (an undeclared list filter, a disabled capability, a
 form with no `HostRef`) skips with a reason rather than failing.
 
-Then run SEP locally — see
+Then run PMM Extensions locally — see
 [Setting Up Your Development Environment](../../CONTRIBUTING.md#setting-up-your-development-environment)
 for the commands — and open the app from the sidebar. Remember it is registered
 **disabled**, so enable it on the Apps page (`/admin/apps`) first. The form you
@@ -988,7 +988,7 @@ returns a task response resolves its own actor fields — see
 > **This rung means writing FastAPI directly.** Everything above it is
 > declarative — knobs and markers. From here down you are writing route
 > handlers, with FastAPI's dependency injection (the `dependencies=[...]`
-> list, the `user: ApiAdminUser` / `session: SessionDep` parameter aliases SEP
+> list, the `user: ApiAdminUser` / `session: SessionDep` parameter aliases PMM Extensions
 > defines in `app/sep/deps.py`) and `async` request handling. If that is
 > unfamiliar, FastAPI's own
 > [dependency-injection tutorial](https://fastapi.tiangolo.com/tutorial/dependencies/)

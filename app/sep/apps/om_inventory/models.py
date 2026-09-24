@@ -105,7 +105,7 @@ class ProbeRunStatus(StrEnum):  # rst-literal-ok: "None answered" is the English
     :cvar PARTIAL: Some answered, some did not.
     :cvar FAILED: None answered, or the sweep raised.
     :cvar SKIPPED: Refused before doing any work, because another sweep already held
-        the hosts it would have covered. Recorded rather than skipped silently: a
+        the hosts it would have covered or because ``ENABLED`` was off. Recorded rather than skipped silently: a
         scheduled sweep that quietly does nothing leaves a ten-minute gap in the
         history that reads exactly like the schedule having fired and found nothing.
     """

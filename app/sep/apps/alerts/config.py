@@ -31,8 +31,8 @@ class AlertsSettings(BaseYamlSettings):
     """Define configuration options for the alerts plugin.
 
     :cvar SETTINGS_PREFIXES: The prefixes for alerts-plugin settings in the
-        configuration file. Set to ``["SEP", "ALERTS"]`` so the section lives
-        under ``SEP.ALERTS`` and never collides with the core ``AlertSettings``
+        configuration file. Set to ``["EXTENSIONS", "ALERTS"]`` so the section lives
+        under ``EXTENSIONS.ALERTS`` and never collides with the core ``AlertSettings``
         section (prefix ``ALERTING``).
     :param BACKUP_INTERVAL: Interval between alert configuration backups.
     :param BACKUP_RETENTION: Maximum number of alert backups to retain.
@@ -40,12 +40,14 @@ class AlertsSettings(BaseYamlSettings):
         SEP-managed alert rules.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "ALERTS"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "ALERTS"]
     BACKUP_INTERVAL: IntervalSchedule = hot_field(  # ty: ignore[invalid-assignment]
         IntervalSchedule(every=24, period=Period.HOURS)
     )
     BACKUP_RETENTION: PositiveInt = hot_field(10)  # ty: ignore[invalid-assignment]
-    ALERT_FOLDER_NAME: str = hot_field("SEP Alerts")  # ty: ignore[invalid-assignment]
+    ALERT_FOLDER_NAME: str = hot_field(
+        "PMM Extensions Alerts"
+    )  # ty: ignore[invalid-assignment]
 
 
 alerts_settings: AlertsSettings = OverridableSettingsProxy(

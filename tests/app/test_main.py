@@ -18,7 +18,7 @@
 import logging.config
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from http.client import HTTPConnection
 from typing import Any
 from unittest.mock import MagicMock
@@ -40,14 +40,61 @@ def test_client():
     return TestClient(app)
 
 
+@pytest.mark.asyncio
+async def test_sep_startup_runs_after_the_override_snapshot_publishes(
+    mocker: MockerFixture,
+) -> None:
+    """Run ``sep_startup()`` only after the override snapshot has published.
+
+    ``sep_overrides_lifespan`` publishes the initial override snapshot on
+    entry; a hot app-owned field (e.g. ``OmInventorySettings.ENABLED``) reads
+    its class default until that publish happens, so seeding the periodic-task
+    database before entry can seed a sweep as off when a prior run had already
+    turned it on. ``app.sep.main.sep_lifespan`` gets this right for the
+    standalone entry point; this locks the combined ``app.main:app`` entry
+    point to the same order.
+    """
+    order: list[str] = []
+
+    @asynccontextmanager
+    async def _fake_sep_overrides_lifespan(_app):
+        order.append("sep_overrides_enter")
+        yield
+        order.append("sep_overrides_exit")
+
+    @asynccontextmanager
+    async def _fake_passthrough_lifespan(_app):
+        yield
+
+    async def _fake_sep_startup():
+        order.append("sep_startup")
+
+    mocker.patch.object(main_module, "detect_removed_auth_user_model")
+    mocker.patch.object(main_module, "detect_removed_settings_override_keys")
+    mocker.patch.object(main_module, "validate_importable_settings")
+    mocker.patch.object(
+        main_module, "sep_overrides_lifespan", _fake_sep_overrides_lifespan
+    )
+    mocker.patch.object(main_module, "tasks_lifespan", _fake_passthrough_lifespan)
+    mocker.patch.object(
+        main_module, "inventory_overrides_lifespan", _fake_passthrough_lifespan
+    )
+    mocker.patch.object(main_module, "sep_startup", _fake_sep_startup)
+
+    async with main_module.main_lifespan(app):
+        pass
+
+    assert order == ["sep_overrides_enter", "sep_startup", "sep_overrides_exit"]
+
+
 def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):
-    """``GET /api/sep/openapi.json`` returns the SEP sub-app's OpenAPI document.
+    """``GET /api/extensions/openapi.json`` returns the SEP sub-app's OpenAPI document.
 
     The endpoint is a schema-helper route — it is intentionally hidden from the core
     ``/openapi.json`` via ``include_in_schema=False`` but remains callable so the
     frontend codegen can pull each mounted app's spec independently.
     """
-    response = test_client.get("/api/sep/openapi.json")
+    response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
@@ -70,7 +117,8 @@ def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
     """The schema-helper route must not appear in the core ``/openapi.json``."""
     core_spec = test_client.get("/openapi.json").json()
 
-    assert "/api/sep/openapi.json" not in core_spec.get("paths", {})
+    assert core_spec["paths"]
+    assert "/api/extensions/openapi.json" not in core_spec["paths"]
 
 
 def test_api_openapi_json_merges_core_and_sep(test_client):
@@ -83,7 +131,7 @@ def test_api_openapi_json_merges_core_and_sep(test_client):
     paths = body["paths"]
 
     core_spec = test_client.get("/openapi.json").json()
-    sep_spec = test_client.get("/api/sep/openapi.json").json()
+    sep_spec = test_client.get("/api/extensions/openapi.json").json()
     core_paths = set(core_spec.get("paths", {}))
     sep_paths = set(sep_spec.get("paths", {}))
     merged_paths = set(paths)
@@ -118,15 +166,16 @@ def test_existing_core_openapi_json_unchanged(test_client):
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
     assert {"openapi", "info", "paths"} <= spec.keys()
-    paths = spec.get("paths", {})
+    paths = spec["paths"]
+    assert paths
     assert "/api/openapi.json" not in paths
     assert "/api/docs" not in paths
-    assert "/api/sep/openapi.json" not in paths
+    assert "/api/extensions/openapi.json" not in paths
 
 
 def test_existing_sep_openapi_json_unchanged(test_client):
-    """``GET /api/sep/openapi.json`` still returns the sep_app spec."""
-    response = test_client.get("/api/sep/openapi.json")
+    """Serve the sep_app spec at ``GET /api/extensions/openapi.json``."""
+    response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
@@ -337,7 +386,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
         """Point the real gate at the probe server on a shortened deadline.
 
         The gate is left unpatched because it is the thing under test; shortening
-        it through ``SEPSettings`` instead of a wrapper means these tests also
+        it through ``ExtensionsSettings`` instead of a wrapper means these tests also
         cover the wiring ``start_celery_beat`` reads its budget from.
         """
         mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")

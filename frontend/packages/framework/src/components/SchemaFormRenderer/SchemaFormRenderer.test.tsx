@@ -740,7 +740,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
   it('clears downstream schema value when the upstream service changes', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url === '/sep/services/') {
+      if (url === '/extensions/services/') {
         return Promise.resolve({
           data: {
             items: [
@@ -753,10 +753,10 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
           },
         });
       }
-      if (url === '/sep/services/1/schemas') {
+      if (url === '/extensions/services/1/schemas') {
         return Promise.resolve({ data: [{ id: 11, name: 'app_production' }] });
       }
-      if (url === '/sep/services/2/schemas') {
+      if (url === '/extensions/services/2/schemas') {
         return Promise.resolve({ data: [{ id: 21, name: 'app_staging' }] });
       }
       return Promise.resolve({ data: [] });
@@ -785,7 +785,7 @@ describe('SchemaFormRenderer — cascade behaviour', () => {
 
     // Wait for services to load.
     await waitFor(() =>
-      expect(mockedApi.get).toHaveBeenCalledWith('/sep/services/', expect.anything()),
+      expect(mockedApi.get).toHaveBeenCalledWith('/extensions/services/', expect.anything()),
     );
 
     // Pick first service.

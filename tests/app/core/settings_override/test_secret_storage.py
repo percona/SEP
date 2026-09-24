@@ -57,7 +57,7 @@ from app.core.settings_override.secret_storage import (
     unmark_secret_leaves,
 )
 from app.core.utils.fields import CredentialHttpUrl
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.encryption_fixtures import (
     FERNET_SHAPED_PLAINTEXT,
@@ -219,7 +219,7 @@ class TestEncryptSecretLeaves:
     def test_encrypts_secret_valued_dict(self) -> None:
         """Encrypt every value of a ``dict[str, SecretStr]`` leaf, never its keys."""
         stored = encrypt_secret_leaves(
-            SEPSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()
+            ExtensionsSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()
         )
 
         assert sorted(stored["secrets"]) == ["api_key", "token"]
@@ -353,7 +353,7 @@ class TestDecryptSecretLeaves:
             (Settings, PMM_KEY, pmm_payload()),
             (Settings, PMM_NESTED_KEY, "pmm-secret"),
             (AlertSettings, PROVIDERS_KEY, pagerduty_payload()),
-            (SEPSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()),
+            (ExtensionsSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()),
         ],
         ids=["pmm-object", "pmm-nested-leaf", "providers-array", "delivery-inputs"],
     )
@@ -571,8 +571,8 @@ class TestEncryptCredentialUrlLeaves:
     @pytest.mark.parametrize(
         ("settings_cls", "key"),
         [
-            (SEPSettings, INVENTORY_ENDPOINT_KEY),
-            (SEPSettings, TASKS_ENDPOINT_KEY),
+            (ExtensionsSettings, INVENTORY_ENDPOINT_KEY),
+            (ExtensionsSettings, TASKS_ENDPOINT_KEY),
             (Settings, PMM_ENDPOINT_KEY),
             (TasksSettings, NOMAD_ENDPOINT_KEY),
         ],
@@ -602,7 +602,7 @@ class TestEncryptCredentialUrlLeaves:
         )
         url = f"https://u:{FERNET_SHAPED_PLAINTEXT}@host:8443/api"
 
-        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+        stored = encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
 
         assert url_password(stored) != FERNET_SHAPED_PLAINTEXT
         assert stored_plaintext(url_password(stored)) == FERNET_SHAPED_PLAINTEXT
@@ -634,7 +634,7 @@ class TestEncryptCredentialUrlLeaves:
     def test_encrypts_the_endpoint_inside_a_materializer_payload(self) -> None:
         """Reach the credential URL stored beside a secret-valued mapping."""
         stored = encrypt_secret_leaves(
-            SEPSettings,
+            ExtensionsSettings,
             DELIVERY_INPUTS_KEY,
             delivery_inputs_payload_with_credential_endpoint(),
         )
@@ -659,12 +659,18 @@ class TestEncryptCredentialUrlLeaves:
         An empty password is absence, not a credential, and the unparseable
         shape is the one ``urlparse`` raises on — neither may reach ``encrypt``.
         """
-        assert encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url) == url
+        assert (
+            encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
+            == url
+        )
 
     @pytest.mark.parametrize("leaf", [None, 42, {"not": "a url"}, ["x"]])
     def test_leaves_a_non_url_leaf_alone(self, leaf: object) -> None:
         """Pass a leaf that is neither text nor a URL object through untouched."""
-        assert encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, leaf) == leaf
+        assert (
+            encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, leaf)
+            == leaf
+        )
 
     def test_naming_the_key_it_skipped_and_never_the_value(
         self,
@@ -680,10 +686,10 @@ class TestEncryptCredentialUrlLeaves:
         url = "https://user:pw@[bad:ipv6/"
 
         with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
-            encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
 
         assert "could not be parsed" in caplog.text
-        assert f"SEPSettings.{INVENTORY_ENDPOINT_KEY}" in caplog.text
+        assert f"ExtensionsSettings.{INVENTORY_ENDPOINT_KEY}" in caplog.text
         assert url not in caplog.text
 
     def test_a_credential_free_endpoint_is_skipped_silently(
@@ -699,7 +705,8 @@ class TestEncryptCredentialUrlLeaves:
 
         with caplog.at_level(logging.DEBUG, logger=SECRET_STORAGE_LOGGER):
             assert (
-                encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url) == url
+                encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
+                == url
             )
 
         assert [
@@ -715,20 +722,26 @@ class TestEncryptCredentialUrlLeaves:
         """
         url = "https://u:p%40ss%3Aword@host:8443/api"
 
-        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+        stored = encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
 
         assert stored_plaintext(url_password(stored)) == "p%40ss%3Aword"
-        assert decrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored) == url
+        assert (
+            decrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, stored)
+            == url
+        )
 
     def test_preserves_an_ipv6_host_and_port(self) -> None:
         """Keep the bracketed literal and port through the parse/reassemble."""
         url = "https://u:pw@[2001:db8::1]:8443/api"
 
-        stored = encrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+        stored = encrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url)
 
         assert stored.startswith("https://u:")
         assert stored.endswith("@[2001:db8::1]:8443/api")
-        assert decrypt_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored) == url
+        assert (
+            decrypt_secret_leaves(ExtensionsSettings, INVENTORY_ENDPOINT_KEY, stored)
+            == url
+        )
 
     def test_ciphertext_never_passes_through_url_validation(self) -> None:
         """Pin that the stored token survives, which pydantic's ``HttpUrl`` would corrupt.
@@ -738,7 +751,7 @@ class TestEncryptCredentialUrlLeaves:
         decrypt before validating on read — are what this asserts is intact.
         """
         stored = encrypt_secret_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
         assert "%3D" not in url_password(stored)
@@ -747,7 +760,7 @@ class TestEncryptCredentialUrlLeaves:
     def test_unresolvable_key_returns_the_url_unchanged(self) -> None:
         """Return the value untouched for a key resolving to no field."""
         assert (
-            encrypt_secret_leaves(SEPSettings, "NO_SUCH_FIELD", CREDENTIAL_URL)
+            encrypt_secret_leaves(ExtensionsSettings, "NO_SUCH_FIELD", CREDENTIAL_URL)
             == CREDENTIAL_URL
         )
 
@@ -781,8 +794,8 @@ class TestCredentialUrlWritePathValueType:
     @pytest.mark.parametrize(
         ("settings_cls", "key"),
         [
-            (SEPSettings, INVENTORY_ENDPOINT_KEY),
-            (SEPSettings, TASKS_ENDPOINT_KEY),
+            (ExtensionsSettings, INVENTORY_ENDPOINT_KEY),
+            (ExtensionsSettings, TASKS_ENDPOINT_KEY),
             (TasksSettings, NOMAD_ENDPOINT_KEY),
         ],
     )
@@ -820,7 +833,7 @@ class TestCredentialUrlWritePathValueType:
         object, so returning text where the caller passed one is invisible
         downstream.
         """
-        coerced = self._coerced(SEPSettings, INVENTORY_ENDPOINT_KEY)
+        coerced = self._coerced(ExtensionsSettings, INVENTORY_ENDPOINT_KEY)
 
         assert str(coerced) == CREDENTIAL_URL
 
@@ -831,7 +844,7 @@ class TestReencryptCredentialUrlLeaves:
     def test_encrypts_a_plaintext_password(self) -> None:
         """Rewrite a password the pre-release write path stored in the clear."""
         stored = reencrypt_credential_url_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
         assert stored_plaintext(url_password(stored)) == CREDENTIAL_PASSWORD
@@ -844,12 +857,14 @@ class TestReencryptCredentialUrlLeaves:
         instead of the password re-encrypts every run and destroys the plaintext.
         """
         once = reencrypt_credential_url_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
         assert not is_stored_ciphertext(once)
         assert (
-            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, once)
+            reencrypt_credential_url_leaves(
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, once
+            )
             == once
         )
 
@@ -858,7 +873,9 @@ class TestReencryptCredentialUrlLeaves:
         url = f"https://u:{foreign_token()}@host:8443/api"
 
         assert (
-            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            reencrypt_credential_url_leaves(
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url
+            )
             == url
         )
 
@@ -867,7 +884,9 @@ class TestReencryptCredentialUrlLeaves:
         url = f"https://u:{FERNET_SHAPED_PLAINTEXT}@host:8443/api"
 
         assert (
-            reencrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            reencrypt_credential_url_leaves(
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url
+            )
             == url
         )
 
@@ -891,11 +910,13 @@ class TestDecryptCredentialUrlLeaves:
     def test_restores_the_original_url(self) -> None:
         """Return the submitted URL byte-identical after an encrypt/decrypt round trip."""
         stored = reencrypt_credential_url_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
         assert (
-            decrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored)
+            decrypt_credential_url_leaves(
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, stored
+            )
             == CREDENTIAL_URL
         )
 
@@ -903,7 +924,7 @@ class TestDecryptCredentialUrlLeaves:
         """Leave a row written before the revision ran resolvable."""
         assert (
             decrypt_credential_url_leaves(
-                SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
             )
             == CREDENTIAL_URL
         )
@@ -913,7 +934,9 @@ class TestDecryptCredentialUrlLeaves:
         url = f"https://u:{foreign_token()}@host:8443/api"
 
         with pytest.raises(DecryptionError):
-            decrypt_credential_url_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, url)
+            decrypt_credential_url_leaves(
+                ExtensionsSettings, INVENTORY_ENDPOINT_KEY, url
+            )
 
     def test_leaves_a_secret_sibling_ciphertext_byte_identical(self) -> None:
         """Leave the earlier revision's ``SecretStr`` ciphertext exactly as it stands.
@@ -992,7 +1015,7 @@ class TestTheWritePathMarksWhatItStores:
     def test_marks_every_leaf_of_a_secret_valued_mapping(self) -> None:
         """Mark each value of a materializer-backed ``dict[str, SecretStr]``."""
         stored = encrypt_secret_leaves(
-            SEPSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()
+            ExtensionsSettings, DELIVERY_INPUTS_KEY, delivery_inputs_payload()
         )
 
         assert stored["secrets"]
@@ -1008,7 +1031,7 @@ class TestTheWritePathMarksWhatItStores:
         be re-encoded on the way in and unrecoverable on the way out.
         """
         stored = encrypt_secret_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
         parsed = urlparse(stored)
@@ -1147,10 +1170,12 @@ class TestUnmarkSecretLeaves:
     def test_preserves_every_other_url_component(self) -> None:
         """Rewrite only the password, so the endpoint survives the rollback intact."""
         stored = encrypt_secret_leaves(
-            SEPSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, CREDENTIAL_URL
         )
 
-        unmarked = unmark_secret_leaves(SEPSettings, INVENTORY_ENDPOINT_KEY, stored)
+        unmarked = unmark_secret_leaves(
+            ExtensionsSettings, INVENTORY_ENDPOINT_KEY, stored
+        )
 
         assert url_without_password(unmarked) == url_without_password(CREDENTIAL_URL)
         assert decrypt(url_password(unmarked)) == CREDENTIAL_PASSWORD

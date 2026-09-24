@@ -61,7 +61,7 @@ from app.sep.bundle_upload.resolver import DRIFTED_INPUTS_REASON
 from app.sep.bundle_upload.seam import BundleSource, UploadResult
 from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
-from tests.app.core.settings_override.conftest import SEP_SETTINGS_TOKEN
+from tests.app.core.settings_override.conftest import EXTENSIONS_SETTINGS_TOKEN
 from tests.app.db_schema import apply_schema
 
 _UPLOAD_DETAIL: dict[str, Any] = {"result": {"sys_id": "att-9", "size_bytes": 42}}
@@ -386,7 +386,7 @@ async def _seed_delivery_inputs(
     await SettingsOverrideManager.create(
         session,
         SettingOverride(
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="DIAGNOSTICS_DELIVERY_INPUTS",
             value=value,
         ),
@@ -650,7 +650,7 @@ class TestRunSendExecutionLogs:
             files={},
             logs=[
                 _log_record(
-                    "SEP_UNLAUNCHABLE: command=sudo node=node-1\n",
+                    "EXTENSIONS_UNLAUNCHABLE: command=sudo node=node-1\n",
                     step=_LAUNCH_CHECK_STEP,
                 )
             ],
@@ -667,7 +667,7 @@ class TestRunSendExecutionLogs:
         with zipfile.ZipFile(io.BytesIO(uploader.bundle_bytes)) as zf:
             logged = zf.read(f"11-cpu.sh/logs/{_LAUNCH_CHECK_STEP}.stdout.log")
 
-        assert logged == b"SEP_UNLAUNCHABLE: command=sudo node=node-1\n"
+        assert logged == b"EXTENSIONS_UNLAUNCHABLE: command=sudo node=node-1\n"
 
     async def test_a_step_that_logged_nothing_leaves_no_member(
         self, send_session: AsyncSession, uploader: _FakeUploader, mocker: MockerFixture

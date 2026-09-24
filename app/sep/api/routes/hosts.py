@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/hosts/`` JSON endpoint exposing executor targets.
+"""Define the ``/api/extensions/hosts/`` JSON endpoint exposing executor targets.
 
 Mirror the executor-host data already used to render Jinja templates so the
 React frontend can populate its host selector through SEP rather than calling

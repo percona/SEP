@@ -23,7 +23,7 @@
  * reset round-trips reflect on the next list refetch.
  *
  * SEP-1330: every settings group — including TasksSettings — is reached through
- * the single SEP gateway `/api/sep/admin/settings`. SEP proxies the Tasks group
+ * the single SEP gateway `/api/extensions/admin/settings`. SEP proxies the Tasks group
  * server-side, so the frontend must never call `/api/tasks/admin/settings/*`
  * (API-First Rule 1). `installRule1Guard` fails the test if it ever does.
  */
@@ -44,7 +44,7 @@ function mockUser(isAdmin: boolean) {
 
 function makeSetting(over: Record<string, unknown>) {
   return {
-    setting_class: 'SEPSettings',
+    setting_class: 'ExtensionsSettings',
     key: 'KEY',
     value: 'value',
     default_value: 'value',
@@ -124,9 +124,9 @@ async function installRule1Guard(page: Page): Promise<void> {
 
 /**
  * Install auth + settings route mocks. The settings store is mutable so a PATCH
- * or DELETE is visible on the subsequent GET. SEP serves SEPSettings locally and
- * the proxied TasksSettings group in one `/api/sep/admin/settings` response, and
- * mutations for both classes go to `/api/sep`.
+ * or DELETE is visible on the subsequent GET. SEP serves ExtensionsSettings locally and
+ * the proxied TasksSettings group in one `/api/extensions/admin/settings` response, and
+ * mutations for both classes go to `/api/extensions`.
  */
 async function mockApis(
   page: Page,
@@ -143,7 +143,7 @@ async function mockApis(
   const settingsList = () => ({
     groups: [
       {
-        setting_class: 'SEPSettings',
+        setting_class: 'ExtensionsSettings',
         settings: [
           makeSetting({
             key: 'SYNC_REFRESH_TIME',
@@ -235,10 +235,10 @@ async function mockApis(
       return json(mockUser(isAdmin));
     }
 
-    if (pathname === '/api/sep/admin/settings/') {
+    if (pathname === '/api/extensions/admin/settings/') {
       return json(settingsList());
     }
-    if (method === 'PATCH' && pathname === '/api/sep/admin/settings/SEPSettings') {
+    if (method === 'PATCH' && pathname === '/api/extensions/admin/settings/ExtensionsSettings') {
       const body = route.request().postDataJSON() as Record<string, number>;
       if ('SYNC_REFRESH_TIME' in body) {
         store.syncValue = body.SYNC_REFRESH_TIME;
@@ -269,14 +269,14 @@ async function mockApis(
     }
     if (
       method === 'DELETE' &&
-      pathname === '/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS'
+      pathname === '/api/extensions/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS'
     ) {
       store.stalenessOverride = false;
       return route.fulfill({ status: 204, body: '' });
     }
     if (
       method === 'DELETE' &&
-      pathname === '/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE'
+      pathname === '/api/extensions/admin/settings/ExtensionsSettings/SESSION__MAX_AGE'
     ) {
       store.sessionOverride = false;
       return route.fulfill({ status: 204, body: '' });
@@ -284,7 +284,7 @@ async function mockApis(
 
     // On-demand connectivity check (SEP-1413): one classified result per target.
     // The served payload is chosen per test via the `connectivity` scenario.
-    if (method === 'POST' && pathname === '/api/sep/admin/connectivity-check/') {
+    if (method === 'POST' && pathname === '/api/extensions/admin/connectivity-check/') {
       if (connectivity === 'error') {
         return json({ detail: 'Connectivity check failed' }, 500);
       }
@@ -329,7 +329,7 @@ test.describe('Settings page smoke', () => {
     await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByTestId('settings-group-SEPSettings')).toBeVisible();
+    await expect(page.getByTestId('settings-group-ExtensionsSettings')).toBeVisible();
     await expect(page.getByTestId('settings-group-TasksSettings')).toBeVisible();
 
     // Edit + save: bump SYNC_REFRESH_TIME and confirm the rendered value updates.
@@ -355,7 +355,9 @@ test.describe('Settings page smoke', () => {
     await mockApis(page, { isAdmin: true });
     await page.goto('/settings');
 
-    await expect(page.getByTestId('settings-group-SEPSettings')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('settings-group-ExtensionsSettings')).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Enabled app's group renders under App settings, tagged with its app name.
     const region = page.getByTestId('app-settings-region');
@@ -367,7 +369,7 @@ test.describe('Settings page smoke', () => {
     );
 
     // Core groups stay out of the App settings region.
-    await expect(region.getByTestId('settings-group-SEPSettings')).toHaveCount(0);
+    await expect(region.getByTestId('settings-group-ExtensionsSettings')).toHaveCount(0);
 
     // Disabled app's group is hidden everywhere.
     await expect(page.getByTestId('settings-group-InventorySettings')).toHaveCount(0);
@@ -465,7 +467,7 @@ test.describe('Settings page smoke', () => {
     let capturedTargets: string[] | undefined;
     // Registered after mockApis so it takes precedence for this path and can
     // capture the outgoing body before fulfilling.
-    await page.route('**/api/sep/admin/connectivity-check/', async (route) => {
+    await page.route('**/api/extensions/admin/connectivity-check/', async (route) => {
       const body = route.request().postDataJSON() as { targets?: string[] };
       capturedTargets = body.targets;
       return route.fulfill({
@@ -505,7 +507,9 @@ test.describe('Settings page smoke', () => {
     await mockApis(page, { isAdmin: true });
     await page.goto('/settings');
 
-    await expect(page.getByTestId('settings-group-SEPSettings')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('settings-group-ExtensionsSettings')).toBeVisible({
+      timeout: 10_000,
+    });
 
     // The nested SESSION submodel renders as a collapsed expandable parent.
     const sessionGroup = page.getByTestId('nested-setting-group-SESSION');

@@ -121,7 +121,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.endsWith('/sep/dashboard/')) {
+    if (pathname.endsWith('/extensions/dashboard/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -129,7 +129,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/sep/task-history/')) {
+    if (pathname.includes('/extensions/task-history/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

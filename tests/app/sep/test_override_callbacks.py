@@ -403,6 +403,7 @@ async def test_reseed_callback_reseeds_beat_with_live_interval(
     beat's next tick.
     """
     reseed = mocker.patch("app.sep.main.init_periodic_tasks_db", new_callable=AsyncMock)
+    mocker.patch("app.sep.main.sync_app_periodic_task_gating", new_callable=AsyncMock)
     snippets_settings._set_snapshot(  # ty: ignore[unresolved-attribute]
         {"SYNC_INTERVAL": IntervalSchedule(every=15, period=Period.MINUTES)}
     )
@@ -494,7 +495,7 @@ async def test_logging_and_app_drain_callbacks_registered() -> None:
             is apply_logging_dictconfig
         )
         assert (
-            callbacks[(SettingClassEnum.SEP_SETTINGS, "APP_DRAIN")]
+            callbacks[(SettingClassEnum.EXTENSIONS_SETTINGS, "APP_DRAIN")]
             is sep_main._reseed_system_periodic_tasks
         )
     finally:

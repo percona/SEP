@@ -18,6 +18,7 @@
 from types import SimpleNamespace
 
 import pytest
+from aiohttp import encode_basic_auth
 from fastapi import FastAPI
 from pydantic import ValidationError
 
@@ -279,3 +280,37 @@ async def test_reconcile_rebinds_when_only_the_api_key_rotates() -> None:
         assert holder.current is not old
         assert holder.current.api_key is not None
         assert holder.current.api_key.get_secret_value() == "glsa_rotated"
+
+
+@pytest.mark.asyncio
+async def test_the_config_fingerprint_keeps_the_endpoint_password() -> None:
+    """Fingerprint the real credential, which the JSON dump otherwise masks."""
+    _override_nomad(_NOMAD_WITH_CREDS)
+    async with NomadLifecycle(FastAPI()) as holder:
+        fingerprint = holder._current_config
+        assert fingerprint is not None
+        assert "nomad-secret" in fingerprint["base_url"]
+        assert holder.current._endpoint_credential_header is not None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_rebinds_when_only_the_endpoint_password_rotates() -> None:
+    """Swap the executor when the password rotates and nothing else moves.
+
+    A fingerprint taken after redaction would render both passwords as the
+    same mask, so the rotation would read as no change and the executor would
+    keep authenticating with the retired credential.
+    """
+    _override_nomad(_NOMAD_WITH_CREDS)
+    async with NomadLifecycle(FastAPI()) as holder:
+        old = holder.current
+        _override_nomad(
+            {"endpoint": "http://nomad-user:rotated-secret@nomad.internal:4646"}
+        )
+        await holder.reconcile()
+
+        assert holder.current is not old
+        assert "rotated-secret" in holder.current.base_url
+        assert holder.current._endpoint_credential_header == encode_basic_auth(
+            "nomad-user", "rotated-secret"
+        )

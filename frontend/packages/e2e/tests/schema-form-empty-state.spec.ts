@@ -116,10 +116,10 @@ async function mockRoutes(page: Page) {
     if (pathname === '/api/apps/mysql_backups/' && req.method() === 'GET') {
       return route.fulfill({ json: { items: [], total: 0, offset: 0, limit: 50 } });
     }
-    if (pathname.endsWith('/sep/hosts/')) {
+    if (pathname.endsWith('/extensions/hosts/')) {
       return route.fulfill({ json: [{ id: 'host1', name: 'host1', address: '127.0.0.1' }] });
     }
-    if (pathname.endsWith('/sep/services/')) {
+    if (pathname.endsWith('/extensions/services/')) {
       return route.fulfill({
         json: { items: [], total: 0, offset: 0, limit: 200 },
       });

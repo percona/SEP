@@ -15,7 +15,7 @@
 
 """Declare the om_inventory app's own settings class.
 
-Owning the class here rather than mounting it on ``SEPSettings`` is what keeps
+Owning the class here rather than mounting it on ``ExtensionsSettings`` is what keeps
 ``OmInventorySettings`` out of a deployment that never activates the app: the
 registry collects only activated apps, so a SEP without OM has no such section
 to be confused by.
@@ -33,6 +33,6 @@ APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
         settings_cls=OmInventorySettings,
         proxy=om_inventory_settings,  # ty: ignore[invalid-argument-type]
         app_key="om_inventory",
-        reseed_keys=frozenset({"SCHEDULE"}),
+        reseed_keys=frozenset({"ENABLED", "SCHEDULE"}),
     ),
 ]

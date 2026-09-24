@@ -26,7 +26,7 @@ export type CrontabSchedule = TasksComponents['schemas']['CrontabSchedule'];
 export type PeriodicTaskExecuteRequest = TasksComponents['schemas']['PeriodicTaskExecuteRequest'];
 
 const PERIODIC_LIST_KEY = ['periodic'] as const;
-const PERIODIC_LIST_PATH = '/sep/periodic-tasks/';
+const PERIODIC_LIST_PATH = '/extensions/periodic-tasks/';
 const POLL_INTERVAL_MS = 30_000;
 
 interface AppTask extends Record<string, unknown> {
@@ -101,7 +101,7 @@ export function useCreateScheduledTask() {
   return useMutation<PeriodicTaskResponse, Error, CreateVars>({
     mutationFn: async ({ taskName, body }) => {
       const { data } = await apiClient.post<PeriodicTaskResponse>(
-        `/sep/periodic-tasks/${encodeURIComponent(taskName)}/`,
+        `/extensions/periodic-tasks/${encodeURIComponent(taskName)}/`,
         body,
       );
       return data;
@@ -121,7 +121,10 @@ export function useUpdateScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<PeriodicTaskResponse, Error, UpdateVars>({
     mutationFn: async ({ id, body }) => {
-      const { data } = await apiClient.put<PeriodicTaskResponse>(`/sep/periodic-tasks/${id}`, body);
+      const { data } = await apiClient.put<PeriodicTaskResponse>(
+        `/extensions/periodic-tasks/${id}`,
+        body,
+      );
       return data;
     },
     onSuccess: () => {
@@ -134,7 +137,7 @@ export function useDeleteScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, number>({
     mutationFn: async (id) => {
-      await apiClient.delete(`/sep/periodic-tasks/${id}`);
+      await apiClient.delete(`/extensions/periodic-tasks/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PERIODIC_LIST_KEY });

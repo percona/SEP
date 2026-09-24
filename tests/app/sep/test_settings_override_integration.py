@@ -40,11 +40,11 @@ from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
 from app.core.utils.fields import LogLevel
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from tests.app.core.settings_override.conftest import (
-    SEP_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
 )
@@ -79,7 +79,9 @@ async def _override_session_maker() -> AsyncGenerator[async_sessionmaker, None]:
 def _sep_proxies() -> dict:
     """Return the SEP-side proxy registry mirroring the lifespan wiring."""
     return {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(sep_settings, SEPSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            sep_settings, ExtensionsSettings
+        ),
         SettingClassEnum.SNIPPETS_SETTINGS: ProxyEntry(
             snippets_settings, SnippetsSettings
         ),
@@ -103,7 +105,7 @@ async def test_active_override_flips_value_after_refresh(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -123,13 +125,13 @@ async def test_restricted_deployment_filters_withheld_rows(
     monkeypatch.setattr(
         core_settings.SETTINGS_OVERRIDE,
         "ALLOWED_KEYS",
-        {"SEPSettings.CONNECTIVITY_CHECK_DEFAULT"},
+        {"ExtensionsSettings.CONNECTIVITY_CHECK_DEFAULT"},
     )
     async with override_session_maker() as session:
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="INVENTORY_ENDPOINT",
                 value="https://stale.example.com",
             ),
@@ -137,7 +139,7 @@ async def test_restricted_deployment_filters_withheld_rows(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=connectivity_override,
             ),
@@ -158,7 +160,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -170,7 +172,7 @@ async def test_inactive_override_falls_back_to_yaml_default(
         await SettingsOverrideManager.update_where(
             session,
             {"is_active": False},
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="CONNECTIVITY_CHECK_DEFAULT",
         )
     await refresh_all(lambda: override_session_maker, _sep_proxies())
@@ -192,7 +194,7 @@ async def test_artifact_download_ttl_override_seen_at_validation_time(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="ARTIFACT_DOWNLOAD_TTL",
                 value=override_ttl_seconds,
             ),
@@ -227,8 +229,8 @@ async def test_per_class_isolation_prevents_key_leak(
 ) -> None:
     """A row for one class never bleeds into another class's snapshot.
 
-    Insert a ``(SEP_SETTINGS, ENABLE_MANUAL_SYNC)`` row -- the key only exists
-    on ``SnippetsSettings``. The cache must drop it as "unknown field" rather
+    Insert a ``(EXTENSIONS_SETTINGS, ENABLE_MANUAL_SYNC)`` row, a key that only
+    exists on ``SnippetsSettings``. The cache must drop it as "unknown field" rather
     than apply it to the wrong class.
     """
     yaml_default = snippets_settings.ENABLE_MANUAL_SYNC
@@ -236,7 +238,7 @@ async def test_per_class_isolation_prevents_key_leak(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="ENABLE_MANUAL_SYNC",
                 value=not yaml_default,
             ),
@@ -256,7 +258,7 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
     ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
     ``lifespan``. Therefore ``sep_lifespan`` is *never* invoked when
     ``python -m app.main`` runs uvicorn against ``app.main:app``. The
-    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS`` override
+    ``EXTENSIONS_SETTINGS``/``SNIPPETS_SETTINGS`` override
     refresher must therefore be wired into ``main_lifespan`` (analogous to
     how ``tasks_lifespan`` is wired). This test exercises that path: insert
     an override row, enter ``main_lifespan``, and assert the proxy sees the
@@ -267,7 +269,7 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=override_value,
             ),
@@ -534,7 +536,7 @@ async def test_reseed_callback_failure_does_not_break_refresh_cycle(
         await SettingsOverrideManager.create(
             session,
             SettingOverride(
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="CONNECTIVITY_CHECK_DEFAULT",
                 value=sep_override,
             ),
@@ -774,7 +776,7 @@ class TestBootAppliesLoggingOverride:
         The boot-time ``dictConfig`` call reads ``LOGGING_CONFIG`` (not HOT), so
         the level it baked in is the YAML/env one. The lifespan's seed must fire
         the logging rebind itself, and the level it applies must be the one
-        ``GET /api/sep/admin/settings/Settings`` reports.
+        ``GET /api/extensions/admin/settings/Settings`` reports.
         """
         assert core_settings.LOGGING != LogLevel.DEBUG
         async with override_session_maker() as session:

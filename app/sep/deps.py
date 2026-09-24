@@ -251,16 +251,17 @@ async def resolve_ambient_exchange_token(
 
 
 async def get_username_mapping() -> dict[str, str]:
-    """Create a mapping from user ID to username using the active auth provider.
+    """Create a mapping from actor ID to username using the active auth provider.
 
-    Fetch all users from the active provider and map each user's ID to their
-    username. Caching should be implemented in the provider's SDK to avoid
-    repeated API calls.
+    Fetch every actor from the active provider (its users plus any identity
+    that can run tasks without being listed as a user, such as a Grafana service
+    account) and map each actor's ID to their username. Caching should be
+    implemented in the provider's SDK to avoid repeated API calls.
 
-    :return: A dictionary mapping user IDs to usernames.
+    :return: A dictionary mapping actor IDs to usernames.
     """
     try:
-        users = await User.get_users()
+        users = await User.get_actors()
         return {str(user.id): user.username for user in users}
     except (
         AttributeError,
@@ -394,7 +395,7 @@ def render_footer_text() -> str:
     """Render the sidebar footer text from the live ``FOOTER_TEMPLATE`` setting.
 
     Read :attr:`sep_settings.FOOTER_TEMPLATE` per call (it is a hot,
-    materializer-backed setting) so a live ``SEP__FOOTER_TEMPLATE`` override is
+    materializer-backed setting) so a live ``EXTENSIONS__FOOTER_TEMPLATE`` override is
     reflected without restarting the application.
 
     :return: The rendered footer text (application summary and version by default).

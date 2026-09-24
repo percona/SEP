@@ -307,13 +307,13 @@ class TestBuildArtifactDownloadUrl:
         monkeypatch.setattr("app.core.config.settings.BASE_URL", None)
 
         url = build_artifact_download_url(
-            _make_request(host="host.internal", root_path="/sep"),
+            _make_request(host="host.internal", root_path="/extensions"),
             artifact_type=ARTIFACT_TYPE_SNIPPET,
             filename="x.sh",
             md5_digest=_MD5,
         )
 
-        assert url.startswith("https://host.internal/sep/artifacts/download/")
+        assert url.startswith("https://host.internal/extensions/artifacts/download/")
 
     def test_request_less_preserves_a_prefixed_configured_base(
         self, monkeypatch: pytest.MonkeyPatch
@@ -321,9 +321,9 @@ class TestBuildArtifactDownloadUrl:
         """Join onto the configured base's path rather than replacing it."""
         monkeypatch.setattr(snippets_settings, "SNIPPETS_BASE_URL", None)
         monkeypatch.setattr(
-            "app.core.config.settings.BASE_URL", URL("https://pmm:8443/sep")
+            "app.core.config.settings.BASE_URL", URL("https://pmm:8443/extensions")
         )
-        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/extensions")
 
         url = build_artifact_download_url(
             None,
@@ -332,16 +332,18 @@ class TestBuildArtifactDownloadUrl:
             md5_digest=_MD5,
         )
 
-        assert url.startswith("https://pmm:8443/sep/artifacts/download/")
+        assert url.startswith("https://pmm:8443/extensions/artifacts/download/")
 
     def test_configured_base_trailing_slash_does_not_double(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Absorb a trailing slash on the configured base instead of doubling it."""
         monkeypatch.setattr(
-            snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example/sep/")
+            snippets_settings,
+            "SNIPPETS_BASE_URL",
+            URL("https://sep.example/extensions/"),
         )
-        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/extensions")
 
         url = build_artifact_download_url(
             None,
@@ -350,7 +352,7 @@ class TestBuildArtifactDownloadUrl:
             md5_digest=_MD5,
         )
 
-        assert url.startswith("https://sep.example/sep/artifacts/download/")
+        assert url.startswith("https://sep.example/extensions/artifacts/download/")
 
     def test_warns_when_a_hot_override_drops_the_prefix(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -359,7 +361,7 @@ class TestBuildArtifactDownloadUrl:
         monkeypatch.setattr(
             snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
         )
-        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/sep")
+        monkeypatch.setattr(sep_settings, "ROOT_PATH", "/extensions")
 
         with caplog.at_level(logging.WARNING):
             url = build_artifact_download_url(

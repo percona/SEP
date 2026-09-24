@@ -1,4 +1,4 @@
-# Contributing to SEP
+# Contributing to PMM Extensions
 
 - [Branching Strategy](#branching-strategy)
 - [Pull Requests](#pull-requests)
@@ -13,18 +13,18 @@
 ## Branching Strategy
 
 All development work should be done on feature branches derived from the main branch.
-Branch names should follow the format `SEP-XXX`, taken from the [SEP Jira Board](https://percona.atlassian.net/jira/software/projects/SEP/boards/192).
+Branch names should follow the format `PMM-NNNNN`, taken from the Jira ticket key, with an optional `-suffix` (for example `PMM-12345-docs`). Existing `SEP-NNNN` keys stay valid.
 
 Example:
 ```shell
 git checkout main
 git pull
-git checkout -b SEP-123
+git checkout -b PMM-12345
 ```
 
 ## Pull Requests
 
-When your feature or fix is ready, open a Pull Request (PR) from your feature branch (SEP-XXX) to the main branch. Ensure the PR description includes a representative summary of your changes.
+When your feature or fix is ready, open a Pull Request (PR) from your feature branch (`PMM-NNNNN`) to the main branch. Ensure the PR description includes a representative summary of your changes.
 
 All PRs must be reviewed and approved by at least one of our [CODEOWNERS](https://github.com/percona/SEP/blob/main/.github/CODEOWNERS).
 
@@ -35,7 +35,7 @@ If your PR contains a **user-facing** change (a new feature, a bug fix, a behavi
 To create a fragment, use the Makefile helper:
 
 ```shell
-make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="Brief description"
+make changelog-add TICKET=PMM-NNNNN SECTION=<section> MSG="Brief description"
 ```
 
 `<section>` is one of `added`, `changed`, `breaking`, `config`, `fixed`, or `security`. If your change belongs in multiple sections (e.g. it is both a Change and a Breaking Change), run the command once per section.
@@ -172,7 +172,7 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
 
 ## App development
 
-SEP apps (checksums, backups, snippets, and the rest under `app/sep/apps/`) are
+PMM Extensions apps (checksums, backups, snippets, and the rest under `app/sep/apps/`) are
 built on the declarative app framework: you describe an app with a single
 `TaskExecutionApp` object and the framework derives its whole HTTP surface. If
 you are adding an app, start with the
@@ -186,7 +186,7 @@ apps.
 ### Writing Tests
 
 New code usually means new tests. Make sure new features and bug fixes include corresponding tests.
-[SEP v0.1.0-alpha](https://github.com/percona/SEP/releases/tag/v0.1.0-alpha) has a test coverage of over 50%, and our goal is to continually increase this percentage.
+[PMM Extensions v0.1.0-alpha](https://github.com/percona/SEP/releases/tag/v0.1.0-alpha) has a test coverage of over 50%, and our goal is to continually increase this percentage.
 
 Tests are located in the [tests/](https://github.com/percona/SEP/tree/main/app/tests) directory and mirror the structure of the [app/](https://github.com/percona/SEP/tree/main/app/) directory. For example:
 - For [app/models.py](https://github.com/percona/SEP/blob/main/app/models.py), the tests are in [tests/test_models.py](https://github.com/percona/SEP/blob/main/app/tests/test_models.py).
