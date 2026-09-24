@@ -62,11 +62,10 @@ from app.extensions.apps.framework.conformance import (
     check_schema_derivation_succeeds,
     check_view_fields_reference_real_fields,
 )
-from app.sep.config import App, SEPSettings
 from app.extensions.apps.framework.registry import build_app_registry
 from app.extensions.apps.framework.schema import ITEM_DISPLAY_NAME_KEYS
 from app.extensions.apps.nav_icons import NavIcon
-from app.extensions.config import App
+from app.extensions.config import App, ExtensionsSettings
 from app.extensions.deps import get_current_user, IsApiAuthenticated
 from app.extensions.snippets.config import snippets_settings
 from app.inventory.models import ServiceTypeEnum
@@ -1286,7 +1285,7 @@ def test_concurrent_makefile_tests_leave_settings_valid(
     """Keep repository settings unchanged while real make tests run and clean up."""
     settings_file = scaffold._REPO_ROOT / "settings.yaml"
     original = settings_file.read_bytes()
-    original_apps = SEPSettings().APPS
+    original_apps = ExtensionsSettings().APPS
     registered = Barrier(3, timeout=30)
     inspected = Event()
     run = subprocess.run
@@ -1321,14 +1320,14 @@ def test_concurrent_makefile_tests_leave_settings_valid(
                     future.result()
                 raise
             assert settings_file.read_bytes() == original
-            assert original_apps == SEPSettings().APPS
+            assert original_apps == ExtensionsSettings().APPS
         finally:
             inspected.set()
         for future in futures:
             future.result()
 
     assert settings_file.read_bytes() == original
-    assert original_apps == SEPSettings().APPS
+    assert original_apps == ExtensionsSettings().APPS
 
 
 def test_makefile_forwards_item_display_names(tmp_path: Path) -> None:

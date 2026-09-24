@@ -482,14 +482,14 @@ class TestAppsModuleExistenceAtLoad:
     ) -> None:
         """Reject a missing app package even when its registration is disabled."""
         monkeypatch.setenv(
-            "SEP__APPS",
+            "EXTENSIONS__APPS",
             '[{"MODULE_NAME": "_scaffold_missing_package", "ENABLED": false}]',
         )
         with pytest.raises(
             ValidationError,
-            match=r"No module named app\.sep\.apps\._scaffold_missing_package",
+            match=r"No module named app\.extensions\.apps\._scaffold_missing_package",
         ):
-            SEPSettings()
+            ExtensionsSettings()
 
 
 class TestPluginNameOptional:

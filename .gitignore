@@ -417,5 +417,5 @@ graphify-out/
 
 # Scaffolded packages left behind when a make-startapp test is killed before
 # its cleanup runs; the names carry a uuid so nothing ever collides with them
-app/sep/apps/_scaffold_ci_*/
-tests/app/sep/apps/_scaffold_ci_*/
+app/extensions/apps/_scaffold_ci_*/
+tests/app/extensions/apps/_scaffold_ci_*/
