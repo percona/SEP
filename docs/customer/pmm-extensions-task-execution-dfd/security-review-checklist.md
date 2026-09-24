@@ -24,7 +24,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
 | 1.1 | Diagram states engineers authenticate via **Grafana session exchange** (PMM session → short-lived PMM Extensions bearer), not client-certificate user login | ☐ | ☐ | |
-| 1.2 | mTLS is shown only on **service-to-service** links (PMM Extensions↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
+| 1.2 | mTLS is shown only on **service-to-service** links (Extensions↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
 | 1.3 | Token lifecycle: exchange returns a short-lived PMM Extensions bearer in the response body; no PMM Extensions cookie is set; no refresh token is issued. When the bearer expires the SPA repeats the exchange. | ☐ | ☐ | |
 | 1.4 | `SEP_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
 
@@ -70,7 +70,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 |---|----------|:----:|:----:|-------|
 | 5.1 | Browser ↔ PMM Nginx: HTTPS (PMM's Nginx terminates TLS and fronts PMM Extensions on a sub-path) | ☐ | ☐ | |
 | 5.1a | Session exchange endpoint (`/api/oauth/session/exchange`) is same-origin behind PMM's Nginx — no separate IdP port | ☐ | ☐ | |
-| 5.2 | PMM Extensions ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
+| 5.2 | Extensions ↔ Tasks/Inventory: mTLS with client certs | ☐ | ☐ | |
 | 5.3 | Tasks ↔ Nomad API: TLS/mTLS per deployment config | ☐ | ☐ | |
 
 ---

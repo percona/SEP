@@ -400,7 +400,7 @@ SECRETS_DIR=/run/secrets uvicorn app.main:app
 ```
 
 An unprefixed global name such as `DATABASE__PASSWORD` resolves for every prefixed
-settings class that reads the same destination — one mounted file reaches PMM Extensions,
+settings class that reads the same destination — one mounted file reaches Extensions,
 Inventory, and Tasks when all three share one database. A per-service spelling such
 as `SEP__DATABASE__PASSWORD` overrides the global one for that service only; when
 both are present in the same source, the more specific name wins regardless of
@@ -447,7 +447,7 @@ to your .env file.
 
 ### Database Configuration
 
-PMM Extensions supports multiple database engines for different components. Each component (PMM Extensions, Inventory, Tasks) can have its own database configuration:
+PMM Extensions supports multiple database engines for different components. Each component (Extensions, Inventory, Tasks) can have its own database configuration:
 
 #### SQLite Configuration (Development)
 ```yaml
