@@ -31,11 +31,11 @@ import {
   type AuthState,
   type SPAOAuthTokenResponse,
   type User,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import { useSilentRefresh } from '../hooks/useSilentRefresh';
 
 // ── Context ─────────────────────────────────────────────────────────────
-// The context and its ``useAuth`` reader live in ``@sep/api`` so the framework
+// The context and its ``useAuth`` reader live in ``@pmm-extensions/api`` so the framework
 // and app packages can read the session without depending on the shell; this
 // module keeps ownership of the session and token state that fills it.
 
@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (!token) {
-          // No SEP session — try ambient Grafana SSO (PMM auto-login) once
+          // No PMM Extensions session — try ambient Grafana SSO (PMM auto-login) once
           // before giving up. The backend is authoritative: it returns 401
           // when ambient SSO is disabled or the provider isn't Grafana, so
           // this is a no-op there. Any failure resolves to a null fallback.
@@ -206,6 +206,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 // ── Re-exports ──────────────────────────────────────────────────────────
 // Shell-local imports keep pointing at this module; the implementation is
-// ``@sep/api``'s, so the framework and app packages read the same context.
+// ``@pmm-extensions/api``'s, so the framework and app packages read the same context.
 export { useAuth };
 export type { AuthSession, AuthState, User };

@@ -26,7 +26,7 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 | 1.1 | Diagram states engineers authenticate via **Grafana session exchange** (PMM session → short-lived PMM Extensions bearer), not client-certificate user login | ☐ | ☐ | |
 | 1.2 | mTLS is shown only on **service-to-service** links (Extensions↔Tasks, Tasks↔Nomad), not as user identity | ☐ | ☐ | |
 | 1.3 | Token lifecycle: exchange returns a short-lived PMM Extensions bearer in the response body; no PMM Extensions cookie is set; no refresh token is issued. When the bearer expires the SPA repeats the exchange. | ☐ | ☐ | |
-| 1.4 | `SEP_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
+| 1.4 | `EXTENSIONS_INTERNAL_TOKEN` service principal is documented if relevant to customer deployment | ☐ | ☐ | |
 
 ---
 

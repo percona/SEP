@@ -184,7 +184,7 @@ class TasksSettings(BaseYamlAppSettings):
         dotted path, so a blank value is rejected rather than read as the
         sync-all default. A well-formed name that no configured syncer matches
         is still not rejected at seed time — the tasks service does not import
-        the sep syncers — so every firing of the schedule fails instead. Read at
+        the extensions syncers — so every firing of the schedule fails instead. Read at
         startup. Defaults to ``None``.
     :param INVENTORY_SYNC_SCHEDULES: Per-syncer schedules seeded beside the
         scalar default, for a syncer whose useful cadence differs from it. Each
@@ -263,7 +263,7 @@ class TasksSettings(BaseYamlAppSettings):
     HOOK_MODULE_ALLOWLIST: tuple[
         HookModuleRoot, ...
     ] = (  # ty: ignore[invalid-assignment]
-        not_overridable_field(("app.sep.apps",))
+        not_overridable_field(("app.extensions.apps",))
     )
 
     @model_validator(mode="after")

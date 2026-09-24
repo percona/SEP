@@ -107,7 +107,7 @@ _STALENESS_META_OPTIONAL = ["scheduled_at", "staleness_threshold_seconds"]
 #: effective interpreter to, and the artifact specs' ``run-script`` steps launch
 #: from. Mirrors the existing ``${NOMAD_ALLOC_DIR}/venv`` handoff between
 #: ``prepare-env`` and ``run-script``.
-EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/sep_interpreter"
+EFFECTIVE_INTERPRETER_PATH = "${NOMAD_ALLOC_DIR}/pmm_extensions_interpreter"
 
 #: ``sudo`` options that consume the following token as their value. Walking
 #: past them is what keeps ``sudo -u postgres <cmd>`` resolving ``<cmd>`` rather
@@ -358,8 +358,8 @@ def _check_launchable_task(
 
 
 #: POSIX sh body of the log-capture hold: keep the allocation non-terminal after
-#: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,
-#: until either SEP signals the step or the deadline elapses.
+#: the payload exits so Nomad cannot garbage-collect logs PMM Extensions has not read yet,
+#: until either PMM Extensions signals the step or the deadline elapses.
 #:
 #: ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only
 #: between foreground commands -- ``trap ...; sleep N`` would ignore the signal
@@ -789,7 +789,7 @@ SYSTEM_TASKS = [
     Task(
         name=INVENTORY_SYNC_TASK_NAME,
         data={
-            "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
+            "callable": "app.extensions.apps.inventory.sync.run_scheduled_inventory_sync",
             "target": "local",
         },
         backend=TaskBackendEnum.CELERY,
@@ -800,7 +800,7 @@ SYSTEM_TASKS = [
         name=INVENTORY_COLLECTION_TASK_NAME,
         data={
             "callable": (
-                "app.sep.apps.inventory.collection.run_scheduled_inventory_collection"
+                "app.extensions.apps.inventory.collection.run_scheduled_inventory_collection"
             ),
             "target": "local",
         },
@@ -886,7 +886,7 @@ def _inventory_sync_schedule(
 
     ``inventory-sync`` is a ``Task`` row rather than a Celery function, so the
     entry uses the same indirection an operator-created schedule uses: it points
-    at ``execute_task_by_name`` and names the SEP task in ``kwargs``. Only that
+    at ``execute_task_by_name`` and names the PMM Extensions task in ``kwargs``. Only that
     shape appears in the sync UI's schedule list and produces the ``TaskHistory``
     rows the sync-health rollup reads.
 

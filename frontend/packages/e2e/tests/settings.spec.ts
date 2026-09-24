@@ -23,7 +23,7 @@
  * reset round-trips reflect on the next list refetch.
  *
  * SEP-1330: every settings group — including TasksSettings — is reached through
- * the single SEP gateway `/api/extensions/admin/settings`. SEP proxies the Tasks group
+ * the single PMM Extensions gateway `/api/extensions/admin/settings`. PMM Extensions proxies the Tasks group
  * server-side, so the frontend must never call `/api/tasks/admin/settings/*`
  * (API-First Rule 1). `installRule1Guard` fails the test if it ever does.
  */
@@ -112,7 +112,7 @@ const VERSION_RESULTS = [
 
 /**
  * Fail the running test if the browser ever calls the Tasks sub-app's settings
- * API directly. SEP-1330 routes the Tasks group through the SEP gateway, so any
+ * API directly. SEP-1330 routes the Tasks group through the PMM Extensions gateway, so any
  * such call is an API-First Rule 1 regression.
  */
 async function installRule1Guard(page: Page): Promise<void> {
@@ -124,7 +124,7 @@ async function installRule1Guard(page: Page): Promise<void> {
 
 /**
  * Install auth + settings route mocks. The settings store is mutable so a PATCH
- * or DELETE is visible on the subsequent GET. SEP serves ExtensionsSettings locally and
+ * or DELETE is visible on the subsequent GET. PMM Extensions serves ExtensionsSettings locally and
  * the proxied TasksSettings group in one `/api/extensions/admin/settings` response, and
  * mutations for both classes go to `/api/extensions`.
  */

@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { refreshAccessToken } from '@sep/api';
+import { refreshAccessToken } from '@pmm-extensions/api';
 
 interface Options {
   /** Current access token. Used as the effect key so a new timer is

@@ -1,5 +1,5 @@
 {
-  "name": "@sep/atw",
+  "name": "@pmm-extensions/atw",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,9 @@
   },
   "dependencies": {
     "@mui/material": "^7.3.7",
-    "@sep/api": "workspace:*",
-    "@sep/framework": "workspace:*",
-    "@sep/shared": "workspace:*",
+    "@pmm-extensions/api": "workspace:*",
+    "@pmm-extensions/framework": "workspace:*",
+    "@pmm-extensions/shared": "workspace:*",
     "@tanstack/react-query": "^5.100.7"
   },
   "devDependencies": {

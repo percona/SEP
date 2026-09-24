@@ -16,7 +16,7 @@
  */
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 
 export interface SchemaOption {
   id: number;
@@ -29,7 +29,7 @@ export interface UseSchemasOptions {
 }
 
 /**
- * Fetch schemas for a service via the SEP inventory gateway
+ * Fetch schemas for a service via the PMM Extensions inventory gateway
  * (`GET /extensions/services/{id}/schemas` → `[{id, name}]`).
  *
  * Disabled when `serviceId` is nullish.

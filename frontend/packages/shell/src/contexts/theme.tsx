@@ -20,8 +20,8 @@ import { ThemeContextProvider, ColorModeContext } from '@percona/percona-ui';
 import { sepThemeOptions } from '../theme';
 
 /**
- * SEP theme provider — wraps percona-ui's ThemeContextProvider
- * with SEP-specific theme options derived from PMM theme + brand colors.
+ * PMM Extensions theme provider — wraps percona-ui's ThemeContextProvider
+ * with PMM Extensions specific theme options derived from PMM theme + brand colors.
  *
  * Uses percona-ui's ColorModeContext for light/dark toggling,
  * with automatic localStorage persistence.

@@ -35,7 +35,7 @@ function filenameFromContentDisposition(header: string | undefined): string | nu
   return match?.[1] ?? null;
 }
 
-/** Trigger a browser download for an in-memory blob (mirrors ``@sep/framework``). */
+/** Trigger a browser download for an in-memory blob (mirrors ``@pmm-extensions/framework``). */
 function triggerBlobDownload(data: Blob, filename: string): void {
   const url = URL.createObjectURL(data);
   const anchor = document.createElement('a');

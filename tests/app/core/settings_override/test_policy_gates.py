@@ -37,8 +37,8 @@ from app.core.settings_override.registry import (
     ReloadClassification,
 )
 from app.core.settings_override.resolution import resolve_nested_field_metadata
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.config import ExtensionsSettings
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     EXTENSIONS_SETTINGS_TOKEN,

@@ -28,7 +28,7 @@ import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import TextField from '@mui/material/TextField';
-import type { ChoiceOption } from '@sep/api';
+import type { ChoiceOption } from '@pmm-extensions/api';
 import { useRemoteChoices } from '../../hooks/useRemoteChoices';
 import { renderChoiceLabel } from '../SchemaFormRenderer/fields/choiceLabel';
 import {

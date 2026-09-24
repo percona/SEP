@@ -64,7 +64,7 @@ async def celery_task(session) -> Task:
                 backend=TaskBackendEnum.CELERY,
                 protected=True,
                 data={
-                    "callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync",
+                    "callable": "app.extensions.apps.inventory.sync.run_scheduled_inventory_sync",
                     "target": "local",
                 },
             )
@@ -132,7 +132,9 @@ class TestCeleryExecutorValidateJob:
     @pytest.mark.asyncio
     async def test_valid_callable_path(self, executor) -> None:
         """Assert a valid callable path within the allowed namespace passes."""
-        job = {"callable": "app.sep.apps.inventory.sync.run_scheduled_inventory_sync"}
+        job = {
+            "callable": "app.extensions.apps.inventory.sync.run_scheduled_inventory_sync"
+        }
         result = await executor.validate_job(job)
         assert result == job
 
@@ -287,7 +289,7 @@ class TestCeleryExecutorDispatchTask:
 
         assert result.failure_reason == (
             "Task callable "
-            "'app.sep.apps.inventory.sync.run_scheduled_inventory_sync' "
+            "'app.extensions.apps.inventory.sync.run_scheduled_inventory_sync' "
             "raised RuntimeError."
         )
         assert "boom with secrets" not in result.failure_reason

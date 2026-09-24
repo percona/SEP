@@ -1,5 +1,5 @@
 {
-  "name": "@sep/tasks",
+  "name": "@pmm-extensions/tasks",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
   "dependencies": {
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
-    "@sep/api": "workspace:*",
-    "@sep/framework": "workspace:*",
+    "@pmm-extensions/api": "workspace:*",
+    "@pmm-extensions/framework": "workspace:*",
     "@tanstack/react-query": "^5.100.7"
   },
   "devDependencies": {

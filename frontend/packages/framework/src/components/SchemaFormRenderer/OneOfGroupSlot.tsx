@@ -21,7 +21,7 @@ import Box from '@mui/material/Box';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
-import type { OneOfGroup } from '@sep/api';
+import type { OneOfGroup } from '@pmm-extensions/api';
 import { ConditionalFieldSlot } from './ConditionalFieldSlot';
 import type { RenderFieldOverride } from './types';
 

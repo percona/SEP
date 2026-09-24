@@ -22,7 +22,7 @@ import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
-import type { SettingResponse } from '@sep/api';
+import type { SettingResponse } from '@pmm-extensions/api';
 
 import {
   type EditValue,

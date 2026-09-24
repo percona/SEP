@@ -51,12 +51,12 @@ from app.core.settings_override.resolution import (
     resolve_nested_field,
     resolve_nested_field_metadata,
 )
+from app.extensions.apps.alerts.config import AlertsSettings
+from app.extensions.apps.om_inventory.config import OmInventorySettings
+from app.extensions.apps.report.config import HealthReportSettings
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.apps.alerts.config import AlertsSettings
-from app.sep.apps.om_inventory.config import OmInventorySettings
-from app.sep.apps.report.config import HealthReportSettings
-from app.sep.config import ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.sidecar.conftest import ALLOWLIST_KEY, EMBEDDED_PROFILE, read_allowlist

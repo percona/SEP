@@ -37,7 +37,7 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION, WorkerRefresher
 from app.core.utils import json_serializer
-from app.sep.config import ExtensionsSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     BOUNDED_SEED,

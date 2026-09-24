@@ -58,14 +58,14 @@ def _make_app(
     """Create the requested surfaces for one synthetic app slice.
 
     :param repo: Synthetic repository root.
-    :param name: App-slice name (its ``app/sep/apps`` directory).
+    :param name: App-slice name (its ``app/extensions/apps`` directory).
     :param backend: Create the backend app directory.
     :param frontend: Create the ``frontend/packages/apps`` directory.
-    :param tests: Create the ``tests/app/sep/apps`` directory.
+    :param tests: Create the ``tests/app/extensions/apps`` directory.
     :param e2e: Optional e2e spec stem to materialize as ``<value>.spec.ts``.
     """
     if backend:
-        app_dir = repo / "app" / "sep" / "apps" / name
+        app_dir = repo / "app" / "extensions" / "apps" / name
         app_dir.mkdir(parents=True, exist_ok=True)
         (app_dir / "__init__.py").touch(exist_ok=True)
     if frontend:
@@ -73,7 +73,7 @@ def _make_app(
             parents=True, exist_ok=True
         )
     if tests:
-        (repo / "tests" / "app" / "sep" / "apps" / name).mkdir(
+        (repo / "tests" / "app" / "extensions" / "apps" / name).mkdir(
             parents=True, exist_ok=True
         )
     if e2e is not None:
@@ -92,7 +92,7 @@ def _valid_repo(tmp_path: Path) -> Path:
     :return: The synthetic repository root.
     """
     repo = tmp_path / "repo"
-    (repo / "app" / "sep" / "apps").mkdir(parents=True)
+    (repo / "app" / "extensions" / "apps").mkdir(parents=True)
     _make_app(repo, "archives", e2e="archives")
     _make_app(repo, "alert_troubleshooting", e2e="alert-troubleshooting")
     _make_app(repo, "mysql_backups", e2e="mysql-backups")
@@ -113,12 +113,12 @@ def _write_labeler(repo: Path, body: str) -> Path:
 
 
 def _apps_root(repo: Path) -> Path:
-    """Return the ``app/sep/apps`` directory for a synthetic repo.
+    """Return the ``app/extensions/apps`` directory for a synthetic repo.
 
     :param repo: Synthetic repository root.
     :return: The apps root directory.
     """
-    return repo / "app" / "sep" / "apps"
+    return repo / "app" / "extensions" / "apps"
 
 
 def test_generates_block_for_each_app(tmp_path):
@@ -131,9 +131,9 @@ def test_generates_block_for_each_app(tmp_path):
     text = labeler.read_text(encoding="utf-8")
 
     assert "app:zebra:" in text
-    assert "- 'app/sep/apps/zebra/**'" in text
+    assert "- 'app/extensions/apps/zebra/**'" in text
     assert "- 'frontend/packages/apps/zebra/**'" in text
-    assert "- 'tests/app/sep/apps/zebra/**'" in text
+    assert "- 'tests/app/extensions/apps/zebra/**'" in text
     assert "- 'frontend/packages/e2e/tests/zebra*.spec.ts'" in text
 
 
@@ -147,7 +147,7 @@ def test_only_existing_surfaces_are_emitted(tmp_path):
     text = labeler.read_text(encoding="utf-8")
 
     assert "app:backendonly:" in text
-    assert "- 'app/sep/apps/backendonly/**'" in text
+    assert "- 'app/extensions/apps/backendonly/**'" in text
     assert "frontend/packages/apps/backendonly" not in text
     assert "e2e/tests/backendonly" not in text
 
@@ -169,7 +169,7 @@ def test_framework_and_shared_are_excluded(tmp_path):
     repo = _valid_repo(tmp_path)
     _make_app(repo, "framework")
     _make_app(repo, "shared")
-    (repo / "app" / "sep" / "apps" / "__pycache__").mkdir()
+    (repo / "app" / "extensions" / "apps" / "__pycache__").mkdir()
     labeler = _write_labeler(repo, _EXISTING_RULES)
 
     sync_labeler_apps.sync_labeler(labeler, _apps_root(repo), repo)
@@ -183,7 +183,7 @@ def test_framework_and_shared_are_excluded(tmp_path):
 def test_leftover_pycache_only_directory_is_not_an_app(tmp_path):
     """Exclude leftover ``__pycache__``-only directories from app discovery."""
     repo = _valid_repo(tmp_path)
-    leftover = repo / "app" / "sep" / "apps" / "ghost_app"
+    leftover = repo / "app" / "extensions" / "apps" / "ghost_app"
     leftover.mkdir(parents=True)
     (leftover / "__pycache__").mkdir()
 
@@ -276,7 +276,7 @@ def test_stale_e2e_alias_raises(tmp_path):
 def test_alias_for_unknown_app_raises(tmp_path):
     """Fail when an alias key is not a discovered app."""
     repo = tmp_path / "repo"
-    (repo / "app" / "sep" / "apps").mkdir(parents=True)
+    (repo / "app" / "extensions" / "apps").mkdir(parents=True)
     _make_app(repo, "alert_troubleshooting", e2e="alert-troubleshooting")
     labeler = _write_labeler(repo, _EXISTING_RULES)
 

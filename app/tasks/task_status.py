@@ -19,7 +19,7 @@ Split out of :mod:`app.tasks.models` so a table in another service can denormali
 the status and type its column with the enum. Such a table cannot import
 ``app.tasks.models`` itself: plugin ``models.py`` modules are loaded by the Alembic
 plugin-discovery loader, and pulling in another service's models would register its
-tables in ``SQLModel.metadata`` and leak them into the ``sep`` autogenerate. A fixed
+tables in ``SQLModel.metadata`` and leak them into the ``extensions`` autogenerate. A fixed
 value set is not a reason to widen the column to a bare ``str``, so the enum moves to
 where both sides can reach it rather than the column losing its constraint.
 

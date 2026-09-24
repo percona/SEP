@@ -28,8 +28,8 @@ from app.core.auth.exceptions import HTTPUnauthorizedException
 from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.auth.utils import get_user_model
+from app.extensions.config import extensions_settings
 from app.main import app
-from app.sep.config import sep_settings
 from tests.app.conftest import make_roleless_grafana_assertion
 
 User = get_user_model()
@@ -161,7 +161,7 @@ def test_spa_login_scopes_the_refresh_cookie_under_the_prefix(
     The cookie ``Path`` is derived from the configured prefix rather than from
     the request, so the request itself needs no prefix to exercise it.
     """
-    mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
+    mocker.patch.object(extensions_settings, "ROOT_PATH", new="/extensions")
     mocker.patch.object(
         User,
         "get_oauth_token",
@@ -373,7 +373,7 @@ def test_refresh_upstream_failure_propagates(test_client, mocker):
 def test_refresh_cookie_alias_matches_settings():
     """Assert the /refresh Cookie alias tracks SESSION_REFRESH.COOKIE_NAME."""
     cookie_marker = RefreshTokenCookie.__metadata__[0]
-    assert cookie_marker.alias == sep_settings.SESSION_REFRESH.COOKIE_NAME
+    assert cookie_marker.alias == extensions_settings.SESSION_REFRESH.COOKIE_NAME
 
 
 def test_refresh_body_ignored(test_client):
@@ -457,7 +457,7 @@ def test_logout_clears_the_cookie_at_the_prefixed_path(
     access_token = "bearer-access-token"
     logged_in_user = _build_user(faker, valid_username)
     logged_in_user.access_token = access_token
-    mocker.patch.object(sep_settings, "ROOT_PATH", new="/extensions")
+    mocker.patch.object(extensions_settings, "ROOT_PATH", new="/extensions")
     mocker.patch.object(
         User,
         "from_jwt",
@@ -526,15 +526,15 @@ def test_logout_no_bearer(test_client):
 
 def test_session_refresh_defaults_match_plan():
     """Assert SESSION_REFRESH defaults produce the expected cookie attributes."""
-    assert sep_settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
-    assert sep_settings.SESSION_REFRESH.PATH == "/api/oauth"
+    assert extensions_settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
+    assert extensions_settings.SESSION_REFRESH.PATH == "/api/oauth"
 
 
 def test_spa_session_login_success(
     test_client, grafana_mock, grafana_user_record, mocker
 ):
     """Assert POST /session mints a session from an ambient Grafana cookie."""
-    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    mocker.patch.object(extensions_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
     test_client.cookies.set("grafana_session", "ambient")
 
     response = test_client.post("/api/oauth/session")
@@ -554,7 +554,7 @@ def test_spa_session_login_success(
 
 def test_spa_session_login_no_cookie_returns_401(test_client, grafana_mock, mocker):
     """Assert POST /session returns 401 (silent fallback) with no ambient cookie."""
-    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    mocker.patch.object(extensions_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
 
     response = test_client.post("/api/oauth/session")
 
@@ -629,7 +629,7 @@ EXCHANGE_PATH = "/api/oauth/session/exchange"
 @pytest.fixture
 def _ambient_exchange(grafana_mock, mocker):
     """Enable ambient SSO and point the Bearer path at the real Grafana user model."""
-    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    mocker.patch.object(extensions_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
     mocker.patch("app.api.deps.User", GrafanaUser)
 
 
@@ -772,7 +772,7 @@ def test_spa_session_login_contract_survives_the_extraction(
     ambient-session read; this pins the sibling route's response shape and its
     refresh cookie against drift.
     """
-    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    mocker.patch.object(extensions_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
     test_client.cookies.set("grafana_session", "ambient")
 
     response = test_client.post("/api/oauth/session")
@@ -807,7 +807,7 @@ def test_oauth_routes_stay_outside_the_unsafe_method_admin_gate(
     """Assert the identity tree keeps its own authentication semantics.
 
     These routes are included beside ``api_router`` rather than through it, so
-    the admin gate never reaches them — a caller with no prior SEP identity has
+    the admin gate never reaches them — a caller with no prior PMM Extensions identity has
     to be able to mint one, and ``logout`` stays bearer-authenticated by its own
     ``CurrentUser``. Only the absence of a 403 is asserted; each route's own
     status is pinned by the tests above.

@@ -21,8 +21,8 @@ from typing import Any
 
 import pytest
 
+from app.extensions.config import extensions_settings
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 from sidecar import wait_for_api as helper
 from tests.sidecar.conftest import CONTAINERFILE
@@ -198,11 +198,15 @@ def test_every_supervised_api_is_gated():
     """Assert the gate covers the three services supervisord starts.
 
     The two a periodic task dials are ``INVENTORY_ENDPOINT`` and ``TASKS_ENDPOINT``;
-    ``sep`` is included because its lifespan is what seeds the beat schedule.
+    ``extensions`` is included because its lifespan is what seeds the beat schedule.
     """
-    assert [name for name, _ in helper.GATED_SERVICES] == ["sep", "inventory", "tasks"]
+    assert [name for name, _ in helper.GATED_SERVICES] == [
+        "extensions",
+        "inventory",
+        "tasks",
+    ]
     assert [service for _, service in helper.GATED_SERVICES] == [
-        sep_settings,
+        extensions_settings,
         inventory_settings,
         tasks_settings,
     ]
@@ -211,7 +215,10 @@ def test_every_supervised_api_is_gated():
 def test_each_service_is_probed_at_its_own_address(gate):
     """Assert each program is probed at the address it binds, not a sibling's port."""
     services = (
-        ("sep", StubService(UVICORN_PORT=9000, ALLOWED_HOSTS=["sep.example"])),
+        (
+            "extensions",
+            StubService(UVICORN_PORT=9000, ALLOWED_HOSTS=["extensions.example"]),
+        ),
         ("inventory", StubService(UVICORN_PORT=9001)),
         ("tasks", StubService(UVICORN_PORT=9002)),
     )
@@ -220,7 +227,7 @@ def test_each_service_is_probed_at_its_own_address(gate):
 
     assert ready
     assert [probe.port for probe in probes] == [9000, 9001, 9002]
-    assert probes[0].allowed_hosts == ["sep.example"]
+    assert probes[0].allowed_hosts == ["extensions.example"]
 
 
 def test_the_services_share_one_budget(gate):
@@ -231,26 +238,29 @@ def test_the_services_share_one_budget(gate):
     """
     services = tuple(
         (name, StubService(UVICORN_PORT=port))
-        for name, port in (("sep", 9000), ("inventory", 9001), ("tasks", 9002))
+        for name, port in (("extensions", 9000), ("inventory", 9001), ("tasks", 9002))
     )
 
     _, probes = gate(services, elapsed=10.0)
 
-    assert probes[0].timeout == sep_settings.API_READINESS_TIMEOUT
+    assert probes[0].timeout == extensions_settings.API_READINESS_TIMEOUT
     assert [probe.timeout for probe in probes] == [
-        sep_settings.API_READINESS_TIMEOUT - offset for offset in (0.0, 10.0, 20.0)
+        extensions_settings.API_READINESS_TIMEOUT - offset
+        for offset in (0.0, 10.0, 20.0)
     ]
 
 
 def test_an_exhausted_budget_skips_the_rest(gate, gate_logs):
     """Report every listener beat did not wait for instead of stopping at the first."""
     services = (
-        ("sep", StubService(UVICORN_PORT=9000)),
+        ("extensions", StubService(UVICORN_PORT=9000)),
         ("inventory", StubService(UVICORN_PORT=9001)),
         ("tasks", StubService(UVICORN_PORT=9002)),
     )
 
-    ready, probes = gate(services, elapsed=sep_settings.API_READINESS_TIMEOUT + 1.0)
+    ready, probes = gate(
+        services, elapsed=extensions_settings.API_READINESS_TIMEOUT + 1.0
+    )
 
     assert not ready
     assert [probe.port for probe in probes] == [9000]
@@ -265,7 +275,10 @@ def test_a_tls_service_is_skipped_not_probed(gate, gate_logs):
     probing one would spend the whole wait to learn nothing.
     """
     services = (
-        ("sep", StubService(UVICORN_PORT=9000, SSL_CERTFILE="/certs/sep.pem")),
+        (
+            "extensions",
+            StubService(UVICORN_PORT=9000, SSL_CERTFILE="/certs/extensions.pem"),
+        ),
         ("inventory", StubService(UVICORN_PORT=9001)),
     )
 
@@ -279,7 +292,7 @@ def test_a_tls_service_is_skipped_not_probed(gate, gate_logs):
 def test_a_failed_probe_is_reported_without_stopping_the_rest(gate):
     """Keep probing after a service times out, so the log accounts for all three."""
     services = (
-        ("sep", StubService(UVICORN_PORT=9000)),
+        ("extensions", StubService(UVICORN_PORT=9000)),
         ("inventory", StubService(UVICORN_PORT=9001)),
         ("tasks", StubService(UVICORN_PORT=9002)),
     )

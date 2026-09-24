@@ -16,7 +16,7 @@
  */
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
-import { useEnabledApps } from '@sep/api';
+import { useEnabledApps } from '@pmm-extensions/api';
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { SvgIconProps } from '@mui/material';
 import { buildNavigationItems } from '../appNavConfig';

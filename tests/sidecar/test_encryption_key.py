@@ -44,7 +44,7 @@ SERVICE_PREFIXES = ("EXTENSIONS", "INVENTORY", "TASKS")
 """The three services whose databases the freshness probe has to clear."""
 
 DATABASE_FILENAMES = {
-    "EXTENSIONS": "sep.db",
+    "EXTENSIONS": "extensions.db",
     "INVENTORY": "inventory.db",
     "TASKS": "tasks.db",
 }
@@ -198,8 +198,8 @@ def unreachable_environment(
         f"{prefix}__DATABASE__ENGINE": "postgresql+asyncpg",
         f"{prefix}__DATABASE__HOST": "127.0.0.1",
         f"{prefix}__DATABASE__PORT": str(port),
-        f"{prefix}__DATABASE__USER": "sep",
-        f"{prefix}__DATABASE__NAME": "sep",
+        f"{prefix}__DATABASE__USER": "extensions",
+        f"{prefix}__DATABASE__NAME": "extensions",
     }
 
 

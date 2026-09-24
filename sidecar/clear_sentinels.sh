@@ -14,7 +14,7 @@
 # step is its bare name, the one wait_for_schema.sh takes, not its program name.
 set -o errexit -o nounset -o pipefail
 
-readonly SCHEMA_STEPS=(sep inventory tasks beat)
+readonly SCHEMA_STEPS=(extensions inventory tasks beat)
 
 is_schema_step() {
     local known

@@ -137,7 +137,7 @@ These are some, but not all, the possible settings you can have, per app:
 | AUTH__PROVIDER__CASDOOR__FRONT_ENDPOINT    | all | no  | The same as `AUTH__PROVIDER__CASDOOR__ENDPOINT` | `//:9999`                                        |
 | AUTH__PROVIDER__CASDOOR__CERTIFICATE_PATH  | all | no  | null                                            | null                                             |
 | AUTH__PROVIDER__CASDOOR__ORGANIZATION_NAME | all | no  | built-in                                        | N/A                                              |
-| AUTH__PROVIDER__CASDOOR__APPLICATION_NAME  | all | no  | app-built-in                                    | sep-app                                          |
+| AUTH__PROVIDER__CASDOOR__APPLICATION_NAME  | all | no  | app-built-in                                    | extensions-app                                          |
 | AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS   | all | no  | `[<ENDPOINT>]`                                  | `[http://localhost:9999, http://127.0.0.1:9999]` |
 | CELERY__BROKER_URL         | all       | no       | N/A                                                 | filesystem://                                    |
 | CELERY__BEAT_DBURI         | all       | no       | The resolved PMM Extensions database connection                | sqlite:///schedule.db                            |
@@ -160,21 +160,21 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                              |
 | TASKS__DATABASE__HOST      | tasks     | no       | ""                                                  | ""                                               |
 | TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                              |
-| EXTENSIONS__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
-| EXTENSIONS__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
-| EXTENSIONS__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | /oauth/callback                                  |
-| EXTENSIONS__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
-| EXTENSIONS__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
-| EXTENSIONS__PROXY_HEADERS         | sep       | no       | False                                               | False                                            |
-| EXTENSIONS__SYNC_REFRESH_TIME     | sep       | no       | 5                                                   | 5                                                |
-| EXTENSIONS__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
-| EXTENSIONS__SESSION__SECURE       | sep       | no       | False                                               | False                                            |
-| EXTENSIONS__SESSION__HTTP_ONLY    | sep       | no       | True                                                | True                                             |
-| EXTENSIONS__SESSION__SAME_SITE    | sep       | no       | lax                                                 | lax                                              |
-| EXTENSIONS__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
-| EXTENSIONS__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
-| EXTENSIONS__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
-| EXTENSIONS__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
+| EXTENSIONS__INVENTORY_ENDPOINT    | extensions | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
+| EXTENSIONS__TASKS_ENDPOINT        | extensions | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
+| EXTENSIONS__OAUTH__REDIRECT_URI   | extensions | yes      | N/A                                                 | /oauth/callback                                  |
+| EXTENSIONS__OAUTH__POST_LOGIN_URI | extensions | no       | /                                                   | N/A                                              |
+| EXTENSIONS__OAUTH__AUTH_LINK      | extensions | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
+| EXTENSIONS__PROXY_HEADERS         | extensions | no       | False                                               | False                                            |
+| EXTENSIONS__SYNC_REFRESH_TIME     | extensions | no       | 5                                                   | 5                                                |
+| EXTENSIONS__SESSION__COOKIE_NAME  | extensions | no       | authToken                                           | casdoorToken                                     |
+| EXTENSIONS__SESSION__SECURE       | extensions | no       | False                                               | False                                            |
+| EXTENSIONS__SESSION__HTTP_ONLY    | extensions | no       | True                                                | True                                             |
+| EXTENSIONS__SESSION__SAME_SITE    | extensions | no       | lax                                                 | lax                                              |
+| EXTENSIONS__SESSION__MAX_AGE      | extensions | no       | 3600                                                | 3600                                             |
+| EXTENSIONS__TEMPLATES_DIR         | extensions | no       | templates                                           | templates                                        |
+| EXTENSIONS__STATIC_DIR            | extensions | no       | static                                              | N/A                                              |
+| EXTENSIONS__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | extensions | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
 `TASKS__NOMAD__API_KEY` is sent on every Nomad request as
@@ -295,7 +295,7 @@ Additional Nomad configuration options are available:
 ### Plugins
 
 PMM Extensions works with modular plugins. Plugins are FastAPI routers that will be added to the application
-according to defined settings. Each plugin must have their own module in `app.sep.plugins`
+according to defined settings. Each plugin must have their own module in `app.extensions.plugins`
 with a `router` inside. The following plugins are configured by default:
 
 ```yaml
@@ -328,7 +328,7 @@ PLUGINS:
 
 Each plugin configuration includes:
 - `NAME`: Display name for the plugin
-- `MODULE_NAME`: Python module name in `app.sep.plugins`
+- `MODULE_NAME`: Python module name in `app.extensions.plugins`
 - `URI_PATH`: URL path where the plugin will be accessible
 - `CSS_CLASS`: CSS class for styling the plugin in the UI
 
@@ -458,7 +458,7 @@ EXTENSIONS:
     PASSWORD: null
     HOST: ""  # Database host (empty string for SQLite to avoid URL construction issues)
     PORT: null
-    NAME: sep.db
+    NAME: extensions.db
 
 INVENTORY:
   DATABASE:
@@ -488,7 +488,7 @@ EXTENSIONS:
     PASSWORD: your_secure_password
     HOST: localhost
     PORT: 5432
-    NAME: sep_database
+    NAME: extensions_database
 ```
 
 Supported database engines:
@@ -574,7 +574,7 @@ Topology data is collected **live, on demand** - there is no persisted snapshot
 in the database - by dispatching
 sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
 Tasks API. Each shard runs the
-[`topology.py`](app/sep/apps/topology/payloads/topology.py) payload, which
+[`topology.py`](app/extensions/apps/topology/payloads/topology.py) payload, which
 fans out per-host queries with a `ThreadPoolExecutor` and emits NDJSON events
 to stdout. The API polls the dispatched tasks (`GET /result`), merges their
 stdout into the graph, and the client polls that endpoint until every shard is
@@ -582,7 +582,7 @@ finished. Results are cached client-side with TanStack Query, so re-opening the
 app is free until the user clicks **Refresh**.
 
 Topology runtime limits live in
-[`api_routes.py`](app/sep/apps/topology/api_routes.py) as module constants:
+[`api_routes.py`](app/extensions/apps/topology/api_routes.py) as module constants:
 maximum shards is 8. Changing that value currently requires a code deploy; move
 it into `inventory_settings` first if it needs per-deployment tuning.
 
@@ -604,8 +604,8 @@ SSL_CAFILE: /path/to/ca-certificate.pem  # Global CA certificate file
 #### Component-specific SSL Settings
 ```yaml
 EXTENSIONS:
-  SSL_KEYFILE: /path/to/sep-key.pem
-  SSL_CERTFILE: /path/to/sep-cert.pem
+  SSL_KEYFILE: /path/to/extensions-key.pem
+  SSL_CERTFILE: /path/to/extensions-cert.pem
 
 INVENTORY:
   SSL_KEYFILE: /path/to/inventory-key.pem
