@@ -961,7 +961,7 @@ class TestWaitForTaskOutputPathGuard:
         base method, so nothing except the current call sites keeps it static.
         """
         task_syncer = _build_task_test_syncer(
-            session, mock_remote_api, tasks_execution_wait_interval=0
+            session, mock_remote_api, tasks_execution_wait_interval=1
         )
 
         with pytest.raises(HTTPUnprocessableEntityException):
