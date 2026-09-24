@@ -24,7 +24,7 @@ import { server } from '../../../../tests/msw-server';
 import SettingRow from '../SettingRow';
 import { makeSetting, makeWrapper } from './fixtures';
 
-const PATCH_SEP = 'http://localhost/api/sep/admin/settings/SEPSettings';
+const PATCH_SEP = 'http://localhost/api/extensions/admin/settings/ExtensionsSettings';
 
 function renderRow(setting = makeSetting()) {
   return render(<SettingRow setting={setting} />, { wrapper: makeWrapper() });
@@ -92,10 +92,13 @@ describe('SettingRow', () => {
   it('shows Reset only when an override is present and DELETEs it', async () => {
     const deleted = vi.fn();
     server.use(
-      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/SYNC_REFRESH_TIME', () => {
-        deleted();
-        return new HttpResponse(null, { status: 204 });
-      }),
+      http.delete(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings/SYNC_REFRESH_TIME',
+        () => {
+          deleted();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
     );
     renderRow(makeSetting({ key: 'SYNC_REFRESH_TIME', type: 'int', value: 5, has_override: true }));
 
@@ -106,10 +109,13 @@ describe('SettingRow', () => {
   it('shows Reset for not_overridable rows when an override is present', async () => {
     const deleted = vi.fn();
     server.use(
-      http.delete('http://localhost/api/sep/admin/settings/SEPSettings/STATIC_DIR', () => {
-        deleted();
-        return new HttpResponse(null, { status: 204 });
-      }),
+      http.delete(
+        'http://localhost/api/extensions/admin/settings/ExtensionsSettings/STATIC_DIR',
+        () => {
+          deleted();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
     );
     renderRow(
       makeSetting({

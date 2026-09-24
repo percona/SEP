@@ -37,12 +37,12 @@ const setting = (key: string, value: unknown, hasOverride = false) =>
     key,
     value,
     has_override: hasOverride,
-    setting_class: 'SEPSettings',
+    setting_class: 'ExtensionsSettings',
     type: 'object',
   }) as unknown as SettingClassGroup['settings'][number];
 
 /**
- * A LIST response whose `SEPSettings` group declares `declared` as the required
+ * A LIST response whose `ExtensionsSettings` group declares `declared` as the required
  * secret names and stores `storedSecrets` against them. Omitting `storedSecrets`
  * models a deployment that never supplied an override at all.
  */
@@ -52,7 +52,7 @@ const sepGroups = (
 ): SettingClassGroup[] =>
   [
     {
-      setting_class: 'SEPSettings',
+      setting_class: 'ExtensionsSettings',
       is_app_owned: false,
       settings: [
         setting('DIAGNOSTICS_DELIVERY', {
@@ -145,7 +145,7 @@ describe('DeliverySetupGate', () => {
     mockList({
       data: [
         {
-          setting_class: 'SEPSettings',
+          setting_class: 'ExtensionsSettings',
           is_app_owned: false,
           settings: [setting('DIAGNOSTICS_DELIVERY', { secrets: {} })],
         },

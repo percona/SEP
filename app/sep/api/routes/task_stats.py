@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/task-stats/{task_name}`` JSON endpoint proxying task statistics.
+"""Define the ``/api/extensions/task-stats/{task_name}`` JSON endpoint proxying task statistics.
 
 Expose the Tasks-service ``GET /stats/{task}`` aggregation through the SEP
 gateway so the React frontend (``useTaskStats``) does not bypass the SEP

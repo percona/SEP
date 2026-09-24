@@ -49,11 +49,11 @@ from app.core.settings_override.resolution import (
     resolve_nested_field_metadata,
     resolve_nested_value,
 )
-from app.sep.config import CookieOptions, SEPSettings
+from app.sep.config import CookieOptions, ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
-    SEP_SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 
@@ -134,7 +134,7 @@ def test_resolve_field_in_model_alias_only_match(segment: str) -> None:
 
 def test_resolve_nested_field_single_level() -> None:
     """A single-level key resolves to a one-segment chain and its leaf field."""
-    resolved = resolve_nested_field(SEPSettings, "SESSION_REFRESH__MAX_AGE")
+    resolved = resolve_nested_field(ExtensionsSettings, "SESSION_REFRESH__MAX_AGE")
     assert resolved is not None
     chain, _ = resolved
     assert chain == ("SESSION_REFRESH", "MAX_AGE")
@@ -152,33 +152,36 @@ def test_resolve_nested_field_multi_level() -> None:
 
 def test_resolve_nested_field_unknown_top_level() -> None:
     """An unknown top-level segment resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "BOGUS__X") is None
+    assert resolve_nested_field(ExtensionsSettings, "BOGUS__X") is None
 
 
 def test_resolve_nested_field_unknown_nested_leaf() -> None:
     """An unknown nested leaf resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "SESSION_REFRESH__BOGUS") is None
+    assert resolve_nested_field(ExtensionsSettings, "SESSION_REFRESH__BOGUS") is None
 
 
 def test_resolve_nested_field_non_pydantic_intermediate() -> None:
     """A path whose intermediate is a collection (not a model) resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "APPS__0__NAME") is None
+    assert resolve_nested_field(ExtensionsSettings, "APPS__0__NAME") is None
 
 
 def test_resolve_nested_field_primitive_past_leaf() -> None:
     """A path that descends past a primitive leaf resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "SESSION_REFRESH__MAX_AGE__SUB") is None
+    assert (
+        resolve_nested_field(ExtensionsSettings, "SESSION_REFRESH__MAX_AGE__SUB")
+        is None
+    )
 
 
 def test_resolve_nested_field_empty_key() -> None:
     """An empty key resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "") is None
+    assert resolve_nested_field(ExtensionsSettings, "") is None
 
 
 def test_coerce_nested_field_value_success() -> None:
     """A leaf value is coerced to the leaf's declared type (int → timedelta)."""
     chain, value = coerce_nested_field_value(
-        SEPSettings, "SESSION_REFRESH__MAX_AGE", 3600
+        ExtensionsSettings, "SESSION_REFRESH__MAX_AGE", 3600
     )
     assert chain == ("SESSION_REFRESH", "MAX_AGE")
     assert value == timedelta(seconds=3600)
@@ -197,7 +200,7 @@ def test_coerce_nested_field_value_preserves_constraint() -> None:
 def test_coerce_nested_field_value_unresolvable_raises_keyerror() -> None:
     """An unresolvable path raises ``KeyError``."""
     with pytest.raises(KeyError):
-        coerce_nested_field_value(SEPSettings, "SESSION_REFRESH__BOGUS", 1)
+        coerce_nested_field_value(ExtensionsSettings, "SESSION_REFRESH__BOGUS", 1)
 
 
 def test_coerce_nested_field_value_rejects_not_overridable_leaf() -> None:
@@ -259,7 +262,7 @@ def test_is_nested_overridable_parent_false_for_missing_field() -> None:
 
 def test_iter_nested_leaf_keys_session_yields_all_leaves() -> None:
     """``SESSION_REFRESH`` enumerates its five leaves with canonical uppercase chains."""
-    leaves = dict(iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH"))
+    leaves = dict(iter_nested_leaf_keys(ExtensionsSettings, "SESSION_REFRESH"))
     assert set(leaves) == {
         "SESSION_REFRESH__COOKIE_NAME",
         "SESSION_REFRESH__MAX_AGE",
@@ -269,7 +272,7 @@ def test_iter_nested_leaf_keys_session_yields_all_leaves() -> None:
     }
     for key, chain in leaves.items():
         assert "__".join(chain) == key
-        assert canonical_override_key(SEPSettings, key) == key
+        assert canonical_override_key(ExtensionsSettings, key) == key
 
 
 def test_iter_nested_leaf_keys_security_headers_descends_two_levels() -> None:
@@ -330,7 +333,10 @@ def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
 
 def test_resolve_nested_field_metadata_unknown_leaf_returns_none() -> None:
     """Return no metadata for an unresolvable nested key."""
-    assert resolve_nested_field_metadata(SEPSettings, "SESSION_REFRESH__BOGUS") is None
+    assert (
+        resolve_nested_field_metadata(ExtensionsSettings, "SESSION_REFRESH__BOGUS")
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -389,7 +395,7 @@ class _OptionalIntermediateParent(BaseModel):
 def test_resolve_nested_value_unknown_leaf_raises_keyerror() -> None:
     """Reject a key that cannot resolve to a nested field."""
     proxy = OverridableSettingsProxy(
-        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
+        _OptionalIntermediateParent, setting_class=ExtensionsSettings.__name__
     )
 
     with pytest.raises(KeyError, match="NESTED__BOGUS"):
@@ -410,7 +416,7 @@ def test_resolve_nested_value_continues_through_mapping(
 ) -> None:
     """Traverse a mapping intermediate and read its child using canonical names."""
     proxy = OverridableSettingsProxy(
-        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
+        _OptionalIntermediateParent, setting_class=ExtensionsSettings.__name__
     )
     expected_value = 42
     proxy._set_snapshot({"NESTED": {inner_key: {leaf_key: expected_value}}})
@@ -428,7 +434,7 @@ def test_resolve_nested_value_continues_through_mapping(
 def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None:
     """Return :data:`NESTED_VALUE_MISSING` for a dict snapshot missing a segment."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
+        _SecretLeafParent, setting_class=ExtensionsSettings.__name__
     )
     proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
     _, value = resolve_nested_value(
@@ -440,7 +446,7 @@ def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None
 def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
     """Collapse the leaf to ``None`` for a present-``None`` optional intermediate."""
     proxy = OverridableSettingsProxy(
-        _OptionalIntermediateParent, setting_class=SEPSettings.__name__
+        _OptionalIntermediateParent, setting_class=ExtensionsSettings.__name__
     )
     _, value = resolve_nested_value(
         settings_cls=_OptionalIntermediateParent,
@@ -454,7 +460,7 @@ def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
 def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
     """Distinguish a present-``None`` secret leaf from a missing segment."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
+        _SecretLeafParent, setting_class=ExtensionsSettings.__name__
     )
     proxy._set_snapshot(
         {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
@@ -540,18 +546,20 @@ def test_rendered_leaf_keys_yields_leaves_for_a_mixed_parent() -> None:
 
 def test_rendered_leaf_keys_empty_for_a_locked_parent() -> None:
     """Assert a field that takes no nested override at all renders as one row."""
-    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY") == []
+    assert rendered_leaf_keys(ExtensionsSettings, "DIAGNOSTICS_DELIVERY") == []
 
 
 def test_rendered_leaf_keys_empty_for_a_scalar_hot_field() -> None:
     """Assert a scalar HOT field renders as one row, enumerating no leaves."""
-    assert rendered_leaf_keys(SEPSettings, "FOOTER_TEMPLATE") == []
+    assert rendered_leaf_keys(ExtensionsSettings, "FOOTER_TEMPLATE") == []
 
 
 def test_rendered_leaf_keys_empty_when_every_leaf_is_sealed() -> None:
     """Assert an all-sealed parent renders whole, not as leaves no PATCH can target."""
-    assert list(iter_nested_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"))
-    assert rendered_leaf_keys(SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS") == []
+    assert list(
+        iter_nested_leaf_keys(ExtensionsSettings, "DIAGNOSTICS_DELIVERY_INPUTS")
+    )
+    assert rendered_leaf_keys(ExtensionsSettings, "DIAGNOSTICS_DELIVERY_INPUTS") == []
 
 
 def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
@@ -564,8 +572,8 @@ def test_rendered_leaf_keys_keeps_allowlist_withheld_leaves(
     the key is addressable at all rather than whether the policy permits it.
     """
     restrict("Settings.LOGGING")
-    assert dict(rendered_leaf_keys(SEPSettings, "SESSION_REFRESH")) == dict(
-        iter_nested_leaf_keys(SEPSettings, "SESSION_REFRESH")
+    assert dict(rendered_leaf_keys(ExtensionsSettings, "SESSION_REFRESH")) == dict(
+        iter_nested_leaf_keys(ExtensionsSettings, "SESSION_REFRESH")
     )
 
 
@@ -683,7 +691,7 @@ async def test_override_rows_for_key_excludes_other_setting_class(
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key=_LEGACY_NESTED,
         value=99,
         is_active=True,
@@ -763,22 +771,22 @@ async def test_override_rows_for_key_matches_top_level_case_insensitively(
     """
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key=_TOP_LEVEL,
         value="https://canonical.example.com",
         is_active=True,
     )
     await insert_override_row(
         session,
-        setting_class=SEP_SETTINGS_TOKEN,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key=_TOP_LEVEL.lower(),
         value="https://legacy.example.com",
         is_active=True,
     )
     rows = await override_rows_for_key(
         session,
-        settings_cls=SEPSettings,
-        setting_class=SEP_SETTINGS_TOKEN,
+        settings_cls=ExtensionsSettings,
+        setting_class=EXTENSIONS_SETTINGS_TOKEN,
         key=_TOP_LEVEL,
     )
     assert {row.key for row in rows} == {_TOP_LEVEL, _TOP_LEVEL.lower()}

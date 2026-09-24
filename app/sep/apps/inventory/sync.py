@@ -50,7 +50,7 @@ async def run_scheduled_inventory_sync(
 ) -> str | None:
     """Execute scheduled inventory sync using configured internal token and syncers.
 
-    Read the internal token from ``settings.SEP_INTERNAL_TOKEN`` and construct
+    Read the internal token from ``settings.EXTENSIONS_INTERNAL_TOKEN`` and construct
     syncers from application settings. When ``syncer`` is set, only that syncer
     runs; when ``None`` or empty, every configured syncer runs.
 
@@ -84,7 +84,7 @@ async def run_scheduled_inventory_sync(
         and so goes ahead only while ``syncer`` has no run of its own. Defaults
         to ``False``.
     :return: The note saying why the run was skipped, otherwise ``None``.
-    :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is not configured, or if a run
+    :raises ValueError: If ``EXTENSIONS_INTERNAL_TOKEN`` is not configured, or if a run
         that is not skipped names a ``syncer`` that matches no configured syncer
         able to sync inventory.
     :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read
@@ -94,7 +94,7 @@ async def run_scheduled_inventory_sync(
     """
     if (api_key := get_internal_token()) is None:
         raise ValueError(
-            "SEP_INTERNAL_TOKEN must be configured for scheduled inventory "
+            "EXTENSIONS_INTERNAL_TOKEN must be configured for scheduled inventory "
             "sync. Set it in .env to a long random secret "
             "(e.g. `openssl rand -hex 32`)."
         )

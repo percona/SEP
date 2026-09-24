@@ -19,13 +19,13 @@ Apply authentication at the router level and expose two prefix groups:
 
 * ``/api/apps/{plugin_name}/`` — per-plugin JSON endpoints (added in
   individual plugin tickets).
-* ``/api/sep/...`` — cross-cutting JSON endpoints that proxy to the Tasks and
+* ``/api/extensions/...`` — cross-cutting JSON endpoints that proxy to the Tasks and
   Inventory sub-applications (so the frontend never bypasses the SEP layer).
 
-``/api/apps/*`` and ``/api/sep/*`` reach ``sep_app`` because the top-level
+``/api/apps/*`` and ``/api/extensions/*`` reach ``sep_app`` because the top-level
 ``app/main.py`` mounts ``/api/inventory`` and ``/api/tasks`` before ``/`` —
 nothing more specific claims either prefix. A future
-``app.mount("/api/apps", ...)`` or ``app.mount("/api/sep", ...)`` in
+``app.mount("/api/apps", ...)`` or ``app.mount("/api/extensions", ...)`` in
 ``app/main.py`` would silently shadow this router.
 """
 
@@ -101,32 +101,44 @@ api_router = APIRouter(
     ],
 )
 api_router.include_router(apps_router)
-api_router.include_router(app_info_router, prefix="/sep/app-info", tags=["sep"])
-api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])
-api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
-api_router.include_router(services_router, prefix="/sep/services", tags=["sep"])
-api_router.include_router(schemas_router, prefix="/sep/schemas", tags=["sep"])
-api_router.include_router(settings_router, prefix="/sep/admin/settings", tags=["sep"])
-api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["tasks"])
 api_router.include_router(
-    task_history_router, prefix="/sep/task-history", tags=["tasks"]
+    app_info_router, prefix="/extensions/app-info", tags=["extensions"]
+)
+api_router.include_router(
+    dashboard_router, prefix="/extensions/dashboard", tags=["extensions"]
+)
+api_router.include_router(hosts_router, prefix="/extensions/hosts", tags=["extensions"])
+api_router.include_router(
+    services_router, prefix="/extensions/services", tags=["extensions"]
+)
+api_router.include_router(
+    schemas_router, prefix="/extensions/schemas", tags=["extensions"]
+)
+api_router.include_router(
+    settings_router, prefix="/extensions/admin/settings", tags=["extensions"]
+)
+api_router.include_router(
+    task_stats_router, prefix="/extensions/task-stats", tags=["tasks"]
+)
+api_router.include_router(
+    task_history_router, prefix="/extensions/task-history", tags=["tasks"]
 )
 api_router.include_router(
     periodic_tasks_router,
-    prefix="/sep/periodic-tasks",
+    prefix="/extensions/periodic-tasks",
     tags=["tasks"],
     dependencies=[RequireBearerForUnsafeMethods],
 )
 api_router.include_router(
     connectivity_check_router,
-    prefix="/sep/admin/connectivity-check",
-    tags=["sep"],
+    prefix="/extensions/admin/connectivity-check",
+    tags=["extensions"],
     dependencies=[IsApiAdmin, RequireBearerForUnsafeMethods],
 )
 api_router.include_router(
     delivery_connection_router,
-    prefix="/sep/admin/delivery-connection",
-    tags=["sep"],
+    prefix="/extensions/admin/delivery-connection",
+    tags=["extensions"],
     dependencies=[IsApiAdmin],
 )
 api_router.include_router(

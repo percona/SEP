@@ -408,7 +408,7 @@ async def test_the_clear_reaches_a_syncer_no_longer_configured(
     """Clear the ledger row of a syncer the deployment has since dropped.
 
     A row outlives the configuration that wrote it, so a delete scoped to
-    ``SEP.SYNCERS`` would strand it permanently: the entity it names is gone and
+    ``EXTENSIONS.SYNCERS`` would strand it permanently: the entity it names is gone and
     no configured syncer carries its key any more.
     """
     await SyncEntityAbsenceManager.create(
@@ -460,9 +460,9 @@ async def test_an_undocumented_collect_response_aborts_the_run(
 @pytest.mark.asyncio
 async def test_a_missing_internal_token_is_refused(mocker: MockerFixture) -> None:
     """Refuse to run without the credential the Inventory API requires."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", None)
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", None)
 
-    with pytest.raises(ValueError, match=re.escape("SEP_INTERNAL_TOKEN")):
+    with pytest.raises(ValueError, match=re.escape("EXTENSIONS_INTERNAL_TOKEN")):
         await run_scheduled_inventory_collection()
 
 
@@ -470,7 +470,7 @@ async def test_a_missing_internal_token_is_refused(mocker: MockerFixture) -> Non
 @pytest.mark.usefixtures("no_providers", "task_databases", "sep_database")
 async def test_the_configured_token_reaches_the_api(mocker: MockerFixture) -> None:
     """Authenticate the scheduled run with the configured internal token."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(API_KEY))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(API_KEY))
     client = _install_client(mocker, RecordingInventoryClient([_batch([1])]))
 
     await run_scheduled_inventory_collection()

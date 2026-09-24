@@ -88,13 +88,13 @@ async def test_sep_startup_runs_after_the_override_snapshot_publishes(
 
 
 def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):
-    """``GET /api/sep/openapi.json`` returns the SEP sub-app's OpenAPI document.
+    """``GET /api/extensions/openapi.json`` returns the SEP sub-app's OpenAPI document.
 
     The endpoint is a schema-helper route — it is intentionally hidden from the core
     ``/openapi.json`` via ``include_in_schema=False`` but remains callable so the
     frontend codegen can pull each mounted app's spec independently.
     """
-    response = test_client.get("/api/sep/openapi.json")
+    response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
@@ -117,7 +117,8 @@ def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
     """The schema-helper route must not appear in the core ``/openapi.json``."""
     core_spec = test_client.get("/openapi.json").json()
 
-    assert "/api/sep/openapi.json" not in core_spec.get("paths", {})
+    assert core_spec["paths"]
+    assert "/api/extensions/openapi.json" not in core_spec["paths"]
 
 
 def test_api_openapi_json_merges_core_and_sep(test_client):
@@ -130,7 +131,7 @@ def test_api_openapi_json_merges_core_and_sep(test_client):
     paths = body["paths"]
 
     core_spec = test_client.get("/openapi.json").json()
-    sep_spec = test_client.get("/api/sep/openapi.json").json()
+    sep_spec = test_client.get("/api/extensions/openapi.json").json()
     core_paths = set(core_spec.get("paths", {}))
     sep_paths = set(sep_spec.get("paths", {}))
     merged_paths = set(paths)
@@ -165,15 +166,16 @@ def test_existing_core_openapi_json_unchanged(test_client):
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
     assert {"openapi", "info", "paths"} <= spec.keys()
-    paths = spec.get("paths", {})
+    paths = spec["paths"]
+    assert paths
     assert "/api/openapi.json" not in paths
     assert "/api/docs" not in paths
-    assert "/api/sep/openapi.json" not in paths
+    assert "/api/extensions/openapi.json" not in paths
 
 
 def test_existing_sep_openapi_json_unchanged(test_client):
-    """``GET /api/sep/openapi.json`` still returns the sep_app spec."""
-    response = test_client.get("/api/sep/openapi.json")
+    """Serve the sep_app spec at ``GET /api/extensions/openapi.json``."""
+    response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
@@ -384,7 +386,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
         """Point the real gate at the probe server on a shortened deadline.
 
         The gate is left unpatched because it is the thing under test; shortening
-        it through ``SEPSettings`` instead of a wrapper means these tests also
+        it through ``ExtensionsSettings`` instead of a wrapper means these tests also
         cover the wiring ``start_celery_beat`` reads its budget from.
         """
         mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")

@@ -277,7 +277,7 @@ def test_a_failing_helper_does_not_take_the_container_down(container: FakeContai
 
 def test_an_explicit_token_still_outranks_the_mint(container: FakeContainer):
     """Keep the operator's own value, which the pre-flight resolves beneath."""
-    container.start(SEP_GRAFANA_TOKEN="glsa_explicit")
+    container.start(EXTENSIONS_GRAFANA_TOKEN="glsa_explicit")
 
     for name in CANONICAL_NAMES:
         assert container.supervised_environment[name] == "glsa_explicit"

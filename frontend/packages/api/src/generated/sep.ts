@@ -2360,7 +2360,7 @@ export interface paths {
      * Get Config
      * @description Return this app's configuration: every field, its value and its origin.
      *
-     *     Served here rather than pointing the caller at ``/api/sep/admin/settings``
+     *     Served here rather than pointing the caller at ``/api/extensions/admin/settings``
      *     because that router is admin-gated and PMM's principal is not an admin: the
      *     ``--sep-token`` bearer resolves to the synthetic ``sep-service`` user, built
      *     with ``is_admin=False`` deliberately, since it is a deployment-level shared
@@ -3363,7 +3363,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/connectivity-check/': {
+  '/api/extensions/admin/connectivity-check/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3389,14 +3389,14 @@ export interface paths {
      *     :param tasks_api: The authenticated Tasks API client.
      *     :return: One normalized connectivity result per requested service.
      */
-    post: operations['sep_check_connectivity_api_sep_admin_connectivity_check__post'];
+    post: operations['extensions_check_connectivity_api_extensions_admin_connectivity_check__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/delivery-connection/': {
+  '/api/extensions/admin/delivery-connection/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3418,7 +3418,7 @@ export interface paths {
      *     :return: The resolved pairs in the plan's declaration order, or the outcome
      *         explaining why there are none.
      */
-    get: operations['sep_read_delivery_connection_api_sep_admin_delivery_connection__get'];
+    get: operations['extensions_read_delivery_connection_api_extensions_admin_delivery_connection__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3427,7 +3427,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/settings/': {
+  '/api/extensions/admin/settings/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3450,7 +3450,7 @@ export interface paths {
      *         the router wires none).
      *     :return: Grouped responses, one group per configured settings class.
      */
-    get: operations['sep_list_settings_api_sep_admin_settings__get'];
+    get: operations['extensions_list_settings_api_extensions_admin_settings__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3459,7 +3459,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/settings/export': {
+  '/api/extensions/admin/settings/export': {
     parameters: {
       query?: never;
       header?: never;
@@ -3483,18 +3483,14 @@ export interface paths {
      *     upstream call; the Tasks fan-out is skipped entirely unless a selector
      *     targets ``TasksSettings``, and Tasks keys are validated against the fetched
      *     block. Output blocks always follow the canonical declaration order
-     *     (``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
+     *     (``EXTENSIONS_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
      *     ``TasksSettings``), independent of selector order.
      *
      *     :param session: The active database session for SEP override queries.
-     *     :type session: AsyncSession
      *     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
-     *     :type tasks_api: TaskAPI
      *     :param keys: Optional, repeatable selectors restricting the export to a
      *         subset of classes/keys. ``None`` (omitted) means the full export.
-     *     :type keys: list[str] | None
      *     :return: YAML bytes with ``Content-Disposition`` set for download.
-     *     :rtype: Response
      *     :raises HTTPBadRequestException: If a selector is blank, malformed, names an
      *         unwired class, or names a key that does not exist on its class.
      *     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
@@ -3502,7 +3498,7 @@ export interface paths {
      *         ``OSError`` (e.g. a connection failure), an unexpected payload shape,
      *         or a missing ``TasksSettings`` group.
      */
-    get: operations['sep_export_settings_api_sep_admin_settings_export_get'];
+    get: operations['extensions_export_settings_api_extensions_admin_settings_export_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3511,7 +3507,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/settings/{setting_class}': {
+  '/api/extensions/admin/settings/{setting_class}': {
     parameters: {
       query?: never;
       header?: never;
@@ -3558,10 +3554,10 @@ export interface paths {
      *     :raises IntegrityError: When the replay of a batch that lost the
      *         unique-index race conflicts again, which leaves nothing written.
      */
-    patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
+    patch: operations['extensions_patch_settings_api_extensions_admin_settings__setting_class__patch'];
     trace?: never;
   };
-  '/api/sep/admin/settings/{setting_class}/{key}': {
+  '/api/extensions/admin/settings/{setting_class}/{key}': {
     parameters: {
       query?: never;
       header?: never;
@@ -3581,7 +3577,7 @@ export interface paths {
      *     :raises HTTPNotFoundException: If the class isn't exposed or the key
      *         doesn't exist on the class.
      */
-    get: operations['sep_get_setting_api_sep_admin_settings__setting_class___key__get'];
+    get: operations['extensions_get_setting_api_extensions_admin_settings__setting_class___key__get'];
     put?: never;
     post?: never;
     /**
@@ -3624,13 +3620,13 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For a remote class, when the owning
      *         sub-app returns a server error (status >= 500) or is unreachable.
      */
-    delete: operations['sep_delete_setting_api_sep_admin_settings__setting_class___key__delete'];
+    delete: operations['extensions_delete_setting_api_extensions_admin_settings__setting_class___key__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/app-info/': {
+  '/api/extensions/app-info/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3641,15 +3637,14 @@ export interface paths {
      * Get App Info
      * @description Return shell metadata for the React frontend.
      *
-     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
-     *     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
-     *     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
-     *     ``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
-     *     gated by the router-level ``IsApiAuthenticated`` dependency.
+     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper.
+     *     The helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
+     *     ``EXTENSIONS__FOOTER_TEMPLATE`` override is reflected without a restart.
+     *     Access is gated by the router-level ``IsApiAuthenticated`` dependency.
      *
      *     :return: The rendered footer text.
      */
-    get: operations['sep_get_app_info_api_sep_app_info__get'];
+    get: operations['extensions_get_app_info_api_extensions_app_info__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3658,7 +3653,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/dashboard/': {
+  '/api/extensions/dashboard/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3677,22 +3672,17 @@ export interface paths {
      *     * ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.
      *
      *     When one or more sources fail the names of the failed sources are joined
-     *     with commas and set on the ``X-Sep-Upstream-Error`` response header so the
+     *     with commas and set on the ``X-Upstream-Error`` response header so the
      *     caller can surface a partial-failure warning without treating all-zero
      *     counts as healthy data.
      *
      *     :param response: The outgoing response used to attach the error header.
-     *     :type response: Response
      *     :param session: The active database session for snippet queries.
-     *     :type session: AsyncSession
      *     :param tasks_api: Async client for the Tasks sub-app.
-     *     :type tasks_api: RemoteAPI
      *     :param inventory_api: Async client for the Inventory sub-app.
-     *     :type inventory_api: RemoteAPI
      *     :return: Aggregate counts for nodes, tasks, snippets, and targets.
-     *     :rtype: DashboardStatsResponse
      */
-    get: operations['sep_get_dashboard_stats_api_sep_dashboard__get'];
+    get: operations['extensions_get_dashboard_stats_api_extensions_dashboard__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3701,7 +3691,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/hosts/': {
+  '/api/extensions/hosts/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3744,7 +3734,7 @@ export interface paths {
      *         ``HTTPException`` (e.g. an upstream non-2xx response) or an
      *         ``OSError`` (e.g. a connection failure).
      */
-    get: operations['sep_list_hosts_api_sep_hosts__get'];
+    get: operations['extensions_list_hosts_api_extensions_hosts__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3753,7 +3743,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/periodic-tasks/': {
+  '/api/extensions/periodic-tasks/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3773,7 +3763,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    get: operations['tasks_list_periodic_tasks_api_sep_periodic_tasks__get'];
+    get: operations['tasks_list_periodic_tasks_api_extensions_periodic_tasks__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3782,7 +3772,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/periodic-tasks/schedule/preview/': {
+  '/api/extensions/periodic-tasks/schedule/preview/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3808,14 +3798,14 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    post: operations['tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post'];
+    post: operations['tasks_preview_schedule_api_extensions_periodic_tasks_schedule_preview__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/periodic-tasks/{periodic_task_id}': {
+  '/api/extensions/periodic-tasks/{periodic_task_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -3842,7 +3832,7 @@ export interface paths {
      *         and for an upstream server error (status >= 500) or a connection-level
      *         ``OSError``.
      */
-    put: operations['tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
+    put: operations['tasks_update_periodic_task_api_extensions_periodic_tasks__periodic_task_id__put'];
     post?: never;
     /**
      * Delete Periodic Task
@@ -3855,13 +3845,13 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    delete: operations['tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete'];
+    delete: operations['tasks_delete_periodic_task_api_extensions_periodic_tasks__periodic_task_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/periodic-tasks/{task_name}/': {
+  '/api/extensions/periodic-tasks/{task_name}/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3887,14 +3877,14 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    post: operations['tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post'];
+    post: operations['tasks_create_periodic_task_api_extensions_periodic_tasks__task_name___post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/schemas/{schema_id}/tables': {
+  '/api/extensions/schemas/{schema_id}/tables': {
     parameters: {
       query?: never;
       header?: never;
@@ -3919,7 +3909,7 @@ export interface paths {
      *     :return: Minimal id/name options for each table in the schema.
      *     :rtype: list[InventorySelectorOption]
      */
-    get: operations['sep_list_schema_tables_api_sep_schemas__schema_id__tables_get'];
+    get: operations['extensions_list_schema_tables_api_extensions_schemas__schema_id__tables_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3928,7 +3918,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/services/': {
+  '/api/extensions/services/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3948,7 +3938,7 @@ export interface paths {
      *     :return: Paginated services payload.
      *     :rtype: PaginatedResponse[ServiceResponse]
      */
-    get: operations['sep_list_services_api_sep_services__get'];
+    get: operations['extensions_list_services_api_extensions_services__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3957,7 +3947,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/services/{service_id}/schemas': {
+  '/api/extensions/services/{service_id}/schemas': {
     parameters: {
       query?: never;
       header?: never;
@@ -3982,7 +3972,7 @@ export interface paths {
      *     :return: Minimal id/name options for each schema on the service.
      *     :rtype: list[InventorySelectorOption]
      */
-    get: operations['sep_list_service_schemas_api_sep_services__service_id__schemas_get'];
+    get: operations['extensions_list_service_schemas_api_extensions_services__service_id__schemas_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3991,7 +3981,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/task-history/': {
+  '/api/extensions/task-history/': {
     parameters: {
       query?: never;
       header?: never;
@@ -4027,7 +4017,7 @@ export interface paths {
      *         or a connection-level ``OSError``, on either the list-all passthrough or
      *         the merged-history fan-out.
      */
-    get: operations['tasks_list_merged_task_history_api_sep_task_history__get'];
+    get: operations['tasks_list_merged_task_history_api_extensions_task_history__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -4036,7 +4026,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/task-history/{task_history_id}/stop/': {
+  '/api/extensions/task-history/{task_history_id}/stop/': {
     parameters: {
       query?: never;
       header?: never;
@@ -4057,14 +4047,14 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    post: operations['tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post'];
+    post: operations['tasks_stop_task_history_api_extensions_task_history__task_history_id__stop__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/sep/task-stats/{task_name}': {
+  '/api/extensions/task-stats/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -4092,7 +4082,7 @@ export interface paths {
      *         ``HTTPException`` (e.g. an upstream non-2xx response) or an
      *         ``OSError`` (e.g. a connection failure).
      */
-    get: operations['tasks_get_task_stats_api_sep_task_stats__task_name__get'];
+    get: operations['tasks_get_task_stats_api_extensions_task_stats__task_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -4235,7 +4225,7 @@ export interface components {
     AlertServiceType: 'generic' | 'mysql' | 'mongodb' | 'postgresql';
     /**
      * AppInfo
-     * @description Represent the response of ``GET /api/sep/app-info``.
+     * @description Represent the response of ``GET /api/extensions/app-info``.
      *
      *     :param footer_text: The rendered sidebar footer text (application summary
      *         and version by default).
@@ -5607,7 +5597,7 @@ export interface components {
      * IndexPagerDutyStatus
      * @description Describe the PagerDuty contact-point status on the index page.
      *
-     *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
+     *     :param configured: ``True`` when a PMM Extensions PagerDuty contact point exists in PMM.
      *     :param uid: The contact point UID when configured, otherwise ``None``.
      */
     alerts__IndexPagerDutyStatus: {
@@ -8738,7 +8728,7 @@ export interface components {
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
      *
-     *     The React renderer loads options from ``GET /api/sep/hosts/`` (an SEP
+     *     The React renderer loads options from ``GET /api/extensions/hosts/`` (an SEP
      *     proxy endpoint that internally calls Tasks ``/hosts/`` and merges
      *     Inventory display names server-side). When ``depends_on`` is set (typically
      *     a ``ServiceField``), the renderer may auto-select an executor from the
@@ -16901,7 +16891,7 @@ export interface operations {
       };
     };
   };
-  sep_check_connectivity_api_sep_admin_connectivity_check__post: {
+  extensions_check_connectivity_api_extensions_admin_connectivity_check__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -16934,7 +16924,7 @@ export interface operations {
       };
     };
   };
-  sep_read_delivery_connection_api_sep_admin_delivery_connection__get: {
+  extensions_read_delivery_connection_api_extensions_admin_delivery_connection__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -16954,7 +16944,7 @@ export interface operations {
       };
     };
   };
-  sep_list_settings_api_sep_admin_settings__get: {
+  extensions_list_settings_api_extensions_admin_settings__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -16974,7 +16964,7 @@ export interface operations {
       };
     };
   };
-  sep_export_settings_api_sep_admin_settings_export_get: {
+  extensions_export_settings_api_extensions_admin_settings_export_get: {
     parameters: {
       query?: {
         keys?: string[] | null;
@@ -17016,7 +17006,7 @@ export interface operations {
       };
     };
   };
-  sep_patch_settings_api_sep_admin_settings__setting_class__patch: {
+  extensions_patch_settings_api_extensions_admin_settings__setting_class__patch: {
     parameters: {
       query?: never;
       header?: never;
@@ -17051,7 +17041,7 @@ export interface operations {
       };
     };
   };
-  sep_get_setting_api_sep_admin_settings__setting_class___key__get: {
+  extensions_get_setting_api_extensions_admin_settings__setting_class___key__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -17083,7 +17073,7 @@ export interface operations {
       };
     };
   };
-  sep_delete_setting_api_sep_admin_settings__setting_class___key__delete: {
+  extensions_delete_setting_api_extensions_admin_settings__setting_class___key__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -17113,7 +17103,7 @@ export interface operations {
       };
     };
   };
-  sep_get_app_info_api_sep_app_info__get: {
+  extensions_get_app_info_api_extensions_app_info__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -17133,7 +17123,7 @@ export interface operations {
       };
     };
   };
-  sep_get_dashboard_stats_api_sep_dashboard__get: {
+  extensions_get_dashboard_stats_api_extensions_dashboard__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -17153,7 +17143,7 @@ export interface operations {
       };
     };
   };
-  sep_list_hosts_api_sep_hosts__get: {
+  extensions_list_hosts_api_extensions_hosts__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -17184,7 +17174,7 @@ export interface operations {
       };
     };
   };
-  tasks_list_periodic_tasks_api_sep_periodic_tasks__get: {
+  tasks_list_periodic_tasks_api_extensions_periodic_tasks__get: {
     parameters: {
       query?: {
         offset?: number;
@@ -17227,7 +17217,7 @@ export interface operations {
       };
     };
   };
-  tasks_preview_schedule_api_sep_periodic_tasks_schedule_preview__post: {
+  tasks_preview_schedule_api_extensions_periodic_tasks_schedule_preview__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -17275,7 +17265,7 @@ export interface operations {
       };
     };
   };
-  tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put: {
+  tasks_update_periodic_task_api_extensions_periodic_tasks__periodic_task_id__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -17336,7 +17326,7 @@ export interface operations {
       };
     };
   };
-  tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete: {
+  tasks_delete_periodic_task_api_extensions_periodic_tasks__periodic_task_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -17376,7 +17366,7 @@ export interface operations {
       };
     };
   };
-  tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post: {
+  tasks_create_periodic_task_api_extensions_periodic_tasks__task_name___post: {
     parameters: {
       query?: never;
       header?: never;
@@ -17437,7 +17427,7 @@ export interface operations {
       };
     };
   };
-  sep_list_schema_tables_api_sep_schemas__schema_id__tables_get: {
+  extensions_list_schema_tables_api_extensions_schemas__schema_id__tables_get: {
     parameters: {
       query?: {
         search?: string | null;
@@ -17470,7 +17460,7 @@ export interface operations {
       };
     };
   };
-  sep_list_services_api_sep_services__get: {
+  extensions_list_services_api_extensions_services__get: {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -17503,7 +17493,7 @@ export interface operations {
       };
     };
   };
-  sep_list_service_schemas_api_sep_services__service_id__schemas_get: {
+  extensions_list_service_schemas_api_extensions_services__service_id__schemas_get: {
     parameters: {
       query?: {
         search?: string | null;
@@ -17536,7 +17526,7 @@ export interface operations {
       };
     };
   };
-  tasks_list_merged_task_history_api_sep_task_history__get: {
+  tasks_list_merged_task_history_api_extensions_task_history__get: {
     parameters: {
       query?: {
         task_names?: string[] | null;
@@ -17582,7 +17572,7 @@ export interface operations {
       };
     };
   };
-  tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post: {
+  tasks_stop_task_history_api_extensions_task_history__task_history_id__stop__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -17626,7 +17616,7 @@ export interface operations {
       };
     };
   };
-  tasks_get_task_stats_api_sep_task_stats__task_name__get: {
+  tasks_get_task_stats_api_extensions_task_stats__task_name__get: {
     parameters: {
       query?: never;
       header?: never;

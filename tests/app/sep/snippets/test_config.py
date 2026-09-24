@@ -208,11 +208,11 @@ class TestShippedSyncFilterConfig:
 
     def test_sync_filter_declares_shell_scripts_only(self):
         """Assert the shipped config restricts sync to ``.sh`` via the live field."""
-        snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
+        snippets = self._shipped_settings()["default"]["EXTENSIONS"]["SNIPPETS"]
         assert snippets["SYNC_FILTER"] == [".sh"]
 
     def test_shipped_sync_filter_parses_to_extension_filter(self):
         """Verify the shipped value validates into an extension ``SnippetFilter``."""
-        snippets = self._shipped_settings()["default"]["SEP"]["SNIPPETS"]
+        snippets = self._shipped_settings()["default"]["EXTENSIONS"]["SNIPPETS"]
         parsed = SnippetsSettings(SYNC_FILTER=snippets["SYNC_FILTER"])
         assert {SnippetFilter(".sh", SnippetFilterType.EXTENSION)} == parsed.SYNC_FILTER

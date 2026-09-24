@@ -74,7 +74,7 @@ const NUMERIC_LOG_TAIL_OPTIONS = LOG_TAIL_LINE_OPTIONS.map((option) => Number(op
 const SMALLEST_LOG_TAIL_OPTION =
   NUMERIC_LOG_TAIL_OPTIONS.length > 0 ? Math.min(...NUMERIC_LOG_TAIL_OPTIONS) : 0;
 
-const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
+const LOG_TAIL_STORAGE_KEY = 'extensions.taskLogViewer.tail';
 
 const DEFAULT_LOG_TAIL_CHOICE = '1000' satisfies LogTailLineChoice;
 

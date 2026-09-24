@@ -1923,8 +1923,8 @@
     }
   },
   "info": {
-    "description": "Percona Services Enablement Platform — task execution, history, periodic jobs, connectivity.",
-    "title": "SEP Tasks API",
+    "description": "PMM Extensions — task execution, history, periodic jobs, connectivity.",
+    "title": "PMM Extensions Tasks API",
     "version": "v3.10.0.dev0"
   },
   "openapi": "3.1.0",

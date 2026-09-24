@@ -99,7 +99,7 @@ def _startapp_env(settings_copy: Path) -> dict[str, str]:
     The subprocess tests below run the scaffolder in a child process, so they
     cannot redirect it with ``tmp_settings``'s monkeypatch. Left pointing at the
     worktree's own ``settings.yaml``, the child registers its app there, and any
-    test constructing ``SEPSettings()`` while the entry is live fails on the app
+    test constructing ``ExtensionsSettings()`` while the entry is live fails on the app
     module the entry names but the run has not written yet.
 
     :param settings_copy: The throwaway ``settings.yaml`` to register into.
@@ -370,7 +370,7 @@ def test_settings_insertion_is_idempotent() -> None:
 def test_insertion_fails_without_default_plugins_block() -> None:
     """Fail loudly rather than corrupt a settings file lacking the default block."""
     with pytest.raises(ValueError, match="default"):
-        scaffold.insert_app_entry("development:\n  SEP:\n    APPS:\n", "demo")
+        scaffold.insert_app_entry("development:\n  EXTENSIONS:\n    APPS:\n", "demo")
 
 
 def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
@@ -570,7 +570,7 @@ def test_ruff_fix_runs_check_then_format(
 
 
 def test_registers_app_disabled(tmp_settings: Path) -> None:
-    """Write the registration entry disabled under the default ``SEP.APPS``."""
+    """Write the registration entry disabled under the default ``EXTENSIONS.APPS``."""
     name = "_scaffold_smoke_disabled"
     with _scaffolded(name, scaffold.Flavor.TASK):
         assert (
@@ -617,7 +617,7 @@ def test_main_reports_missing_plugins_block_without_traceback(
 ) -> None:
     """Exit non-zero with a clean error, not a traceback, when registration fails."""
     name = "_scaffold_smoke_noblock"
-    tmp_settings.write_text("development:\n  SEP:\n    APPS:\n")
+    tmp_settings.write_text("development:\n  EXTENSIONS:\n    APPS:\n")
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 1
         assert "error:" in capsys.readouterr().err

@@ -421,7 +421,7 @@ jobs:
           docker build
           --build-context "localhost/sep:builder=docker-image://sep:builder"
           -f sidecar/Containerfile.sidecar
-          --build-arg SEP_RESTRICT_APPS=1
+          --build-arg EXTENSIONS_RESTRICT_APPS=1
           -t "sep:HEAD" .
 
       - name: Smoke test - verify binaries and config files
@@ -431,13 +431,13 @@ jobs:
             command -v valkey-server
             command -v valkey-cli
             command -v supervisord
-            test -f /home/sep/app/supervisord.conf
-            test -f /home/sep/app/healthcheck.sh
-            test -x /home/sep/app/entrypoint.sh
-            test -x /home/sep/app/wait_for_schema.sh
-            test -x /home/sep/app/clear_sentinels.sh
-            test -f /home/sep/app/settings-env.sh
-            test -f /home/sep/app/settings.yaml
+            test -f /home/extensions/app/supervisord.conf
+            test -f /home/extensions/app/healthcheck.sh
+            test -x /home/extensions/app/entrypoint.sh
+            test -x /home/extensions/app/wait_for_schema.sh
+            test -x /home/extensions/app/clear_sentinels.sh
+            test -f /home/extensions/app/settings-env.sh
+            test -f /home/extensions/app/settings.yaml
           '
 
       - name: Smoke test - verify HEALTHCHECK instruction

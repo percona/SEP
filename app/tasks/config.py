@@ -111,7 +111,7 @@ class InventorySyncSchedule(BaseLowercaseModel):
     """Pair one syncer with the interval its own seeded schedule runs on.
 
     :param syncer: The fully qualified syncer this schedule targets, in
-        ``BaseSyncer.get_name()`` form. Unlike ``SEP.SYNCERS[].SYNCER`` it is not
+        ``BaseSyncer.get_name()`` form. Unlike ``EXTENSIONS.SYNCERS[].SYNCER`` it is not
         auto-prefixed, so the two spellings are not interchangeable. Bounded
         because a well-formed path is not necessarily a schedulable one: a longer
         one overflows the seeded row name it derives.

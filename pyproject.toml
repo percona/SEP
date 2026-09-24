@@ -1,7 +1,7 @@
 [project]
 name = "sep"
 version = "3.10.0.dev0"
-description = "Percona Services Enablement Platform"
+description = "PMM Extensions"
 authors = [
     {name = "Ceri Williams", email = "ceri.williams@percona.com"},
     {name = "Max Bubenick", email = "max.bubenick@percona.com"},
@@ -565,9 +565,9 @@ env = [
     "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
     'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
     'ALLOWED_HOSTS=["testserver", "test"]',
-    "SEP__MESSAGES__LEVEL=0",
+    "EXTENSIONS__MESSAGES__LEVEL=0",
     "ALLOW_CONCURRENT_SESSIONS=false",
-    "SEP_INTERNAL_TOKEN=test-internal-token"
+    "EXTENSIONS_INTERNAL_TOKEN=test-internal-token"
 ]
 
 [tool.coverage.run]

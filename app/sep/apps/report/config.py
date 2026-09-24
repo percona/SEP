@@ -16,10 +16,10 @@
 """Define the report plugin settings section.
 
 The section is read straight off YAML/env rather than mounted as a field on
-``SEPSettings``: importing this module runs the report package ``__init__``, which
+``ExtensionsSettings``: importing this module runs the report package ``__init__``, which
 pulls in the app definition and, transitively, ``sep_settings`` — so a field
 default typed with :class:`HealthReportSettings` would cycle while
-``SEPSettings`` is still being constructed. Consumers import
+``ExtensionsSettings`` is still being constructed. Consumers import
 :data:`health_report_settings` at call time (periodic task schedules, Celery
 tasks, API routes), matching how alerts reads its section.
 """
@@ -70,8 +70,8 @@ class HealthReportSettings(BaseYamlSettings, BaseTransformFieldsModel):
     """Define configuration options for the Health & Security Report plugin.
 
     :cvar SETTINGS_PREFIXES: The prefixes for health-report settings in the
-        configuration file. Set to ``["SEP", "HEALTH_REPORT"]`` so the section
-        lives under ``SEP.HEALTH_REPORT``.
+        configuration file. Set to ``["EXTENSIONS", "HEALTH_REPORT"]`` so the section
+        lives under ``EXTENSIONS.HEALTH_REPORT``.
     :param schedules: List of report generation schedules, each with its own
         cadence and parameters.  Empty by default (no periodic generation).
     :param upload: Master toggle for ServiceNow upload.  When ``False``
@@ -89,7 +89,7 @@ class HealthReportSettings(BaseYamlSettings, BaseTransformFieldsModel):
         deletes staged PDFs older than ``artifact_ttl``.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "HEALTH_REPORT"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS", "HEALTH_REPORT"]
     TRANSFORM_CALLABLE: ClassVar[Callable[[Any], Any]] = lower_if_string
     TRANSFORM_DEEP: ClassVar[bool] = True
     schedules: list[ReportScheduleEntry] = []

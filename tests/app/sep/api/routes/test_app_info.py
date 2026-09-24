@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP app-info JSON API route at ``/api/sep/app-info/``."""
+"""Tests for the SEP app-info JSON API route at ``/api/extensions/app-info/``."""
 
 from collections.abc import Iterator
 from string import Template
@@ -46,11 +46,11 @@ class TestRenderFooterText:
 
 
 class TestAppInfoEndpoint:
-    """Tests for ``GET /api/sep/app-info/`` rendering and live overrides."""
+    """Cover ``GET /api/extensions/app-info/`` rendering and live overrides."""
 
     def test_returns_default_footer_text(self, test_client: TestClient) -> None:
         """Return the footer text rendered from the default ``FOOTER_TEMPLATE``."""
-        response = test_client.get("/api/sep/app-info/")
+        response = test_client.get("/api/extensions/app-info/")
         assert response.status_code == status.HTTP_200_OK
         expected = sep_settings.FOOTER_TEMPLATE.safe_substitute(
             version=__version__, summary=__summary__
@@ -66,13 +66,13 @@ class TestAppInfoEndpoint:
             "FOOTER_TEMPLATE",
             Template("Custom footer $version"),
         )
-        response = test_client.get("/api/sep/app-info/")
+        response = test_client.get("/api/extensions/app-info/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"footer_text": f"Custom footer {__version__}"}
 
 
 class TestAppInfoAuth:
-    """Tests for ``/api/sep/app-info/`` authentication enforcement."""
+    """Cover ``/api/extensions/app-info/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -89,7 +89,7 @@ class TestAppInfoAuth:
     ) -> None:
         """Reject anonymous requests with a JSON 401 response."""
         response = unauthenticated_client.get(
-            "/api/sep/app-info/", follow_redirects=False
+            "/api/extensions/app-info/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
