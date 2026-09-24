@@ -691,15 +691,17 @@ class TestSettingsInternalTokenKeys:
     """Pin the ``Settings`` keys the admin settings API advertises."""
 
     def test_resolved_token_replaces_the_settable_input(self) -> None:
-        """Assert the computed ``SEP_INTERNAL_TOKEN`` is listed, never its excluded input."""
+        """Assert the computed ``EXTENSIONS_INTERNAL_TOKEN`` is listed, never its excluded input."""
         keys = {meta.key for meta in iter_class_fields(Settings)}
-        assert "SEP_INTERNAL_TOKEN" in keys
-        assert "SEP_INTERNAL_TOKEN_INPUT" not in keys
+        assert "EXTENSIONS_INTERNAL_TOKEN" in keys
+        assert "EXTENSIONS_INTERNAL_TOKEN_INPUT" not in keys
 
     def test_internal_token_stays_secret_and_not_overridable(self) -> None:
         """Keep the token masked and closed to overrides through the computed field."""
         meta = next(
-            m for m in iter_class_fields(Settings) if m.key == "SEP_INTERNAL_TOKEN"
+            m
+            for m in iter_class_fields(Settings)
+            if m.key == "EXTENSIONS_INTERNAL_TOKEN"
         )
         assert meta.is_secret is True
         assert meta.reload is ReloadClassification.NOT_OVERRIDABLE
@@ -712,7 +714,9 @@ class TestSettingsInternalTokenKeys:
         own description instead of inheriting the summary line.
         """
         meta = next(
-            m for m in iter_class_fields(Settings) if m.key == "SEP_INTERNAL_TOKEN"
+            m
+            for m in iter_class_fields(Settings)
+            if m.key == "EXTENSIONS_INTERNAL_TOKEN"
         )
         assert meta.description == (
             "The internal service-to-service token. Derived from SECRET_KEY "

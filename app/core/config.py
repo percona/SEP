@@ -660,14 +660,14 @@ class Settings(BaseYamlSettings):
         a new one is created.
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :param SEP_INTERNAL_TOKEN_INPUT: The explicitly configured value of
-        ``SEP_INTERNAL_TOKEN``, read from every source under that canonical
+    :param EXTENSIONS_INTERNAL_TOKEN_INPUT: The explicitly configured value of
+        ``EXTENSIONS_INTERNAL_TOKEN``, read from every source under that canonical
         name. Optional: when it is unset or empty, ``derive_internal_token``
         derives the token from ``SECRET_KEY`` instead.
-    :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
+    :param EXTENSIONS_INTERNAL_TOKEN: A long random secret used for PMM Extensions internal
         service-to-service authentication (e.g. scheduled inventory sync). Never
         unset on a constructed instance: ``derive_internal_token`` populates it
-        from ``SEP_INTERNAL_TOKEN_INPUT``, or — when no explicit value is
+        from ``EXTENSIONS_INTERNAL_TOKEN_INPUT``, or — when no explicit value is
         supplied — derives it from ``SECRET_KEY`` so every process sharing
         ``SECRET_KEY`` resolves the identical token. Generate an explicit value
         with ``openssl rand -hex 32`` to rotate it independently of
@@ -701,8 +701,8 @@ class Settings(BaseYamlSettings):
     CELERY: CeleryOptions
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
-    SEP_INTERNAL_TOKEN_INPUT: SecretStr | None = Field(
-        default=None, validation_alias="SEP_INTERNAL_TOKEN", exclude=True
+    EXTENSIONS_INTERNAL_TOKEN_INPUT: SecretStr | None = Field(
+        default=None, validation_alias="EXTENSIONS_INTERNAL_TOKEN", exclude=True
     )
     ENCRYPTION_KEY: SecretStr
     LOGGING: LogLevel = hot_field(LogLevel.WARNING)  # ty: ignore[invalid-assignment]
@@ -715,7 +715,7 @@ class Settings(BaseYamlSettings):
     PMM: PMMSettings = hot_field(PMMSettings())  # ty: ignore[invalid-assignment]
     SETTINGS_OVERRIDE: SettingsOverrideOptions = SettingsOverrideOptions()
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
-    _SEP_INTERNAL_TOKEN: SecretStr = SecretStr("")
+    _EXTENSIONS_INTERNAL_TOKEN: SecretStr = SecretStr("")
 
     @computed_field(
         description=(
@@ -724,7 +724,7 @@ class Settings(BaseYamlSettings):
         )
     )
     @property
-    def SEP_INTERNAL_TOKEN(self) -> SecretStr:
+    def EXTENSIONS_INTERNAL_TOKEN(self) -> SecretStr:
         """Return the internal service-to-service token, always populated.
 
         ``derive_internal_token`` fills it at the end of every construction, so
@@ -732,18 +732,18 @@ class Settings(BaseYamlSettings):
 
         :return: The configured or derived internal token.
         """
-        return self._SEP_INTERNAL_TOKEN
+        return self._EXTENSIONS_INTERNAL_TOKEN
 
-    @SEP_INTERNAL_TOKEN.setter
-    def SEP_INTERNAL_TOKEN(self, value: SecretStr) -> None:
+    @EXTENSIONS_INTERNAL_TOKEN.setter
+    def EXTENSIONS_INTERNAL_TOKEN(self, value: SecretStr) -> None:
         """Replace the resolved token, leaving the configured input untouched.
 
         :param value: The token to resolve to from here on.
         """
-        self._SEP_INTERNAL_TOKEN = value
+        self._EXTENSIONS_INTERNAL_TOKEN = value
 
-    @SEP_INTERNAL_TOKEN.deleter
-    def SEP_INTERNAL_TOKEN(self) -> None:
+    @EXTENSIONS_INTERNAL_TOKEN.deleter
+    def EXTENSIONS_INTERNAL_TOKEN(self) -> None:
         """Resolve the token back to its configured or derived value.
 
         An override set through the setter is discarded by re-running the one
@@ -793,26 +793,26 @@ class Settings(BaseYamlSettings):
 
     @model_validator(mode="after")
     def derive_internal_token(self) -> Self:
-        """Populate ``SEP_INTERNAL_TOKEN``, deriving it from ``SECRET_KEY``.
+        """Populate ``EXTENSIONS_INTERNAL_TOKEN``, deriving it from ``SECRET_KEY``.
 
         Every process sharing ``SECRET_KEY`` derives the identical token via
         HMAC-SHA256, so PMM Extensions internal service-to-service authentication works
         across the web apps and the lifespan-less Celery worker without
         persisting or distributing a separate secret. An explicitly configured
-        ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
+        ``EXTENSIONS_INTERNAL_TOKEN`` takes precedence so it can be rotated
         independently; an unset or empty one is derived. This is the only place
         the token is derived, and it runs on every constructed instance, which
-        is what lets ``SEP_INTERNAL_TOKEN`` be typed as always set.
+        is what lets ``EXTENSIONS_INTERNAL_TOKEN`` be typed as always set.
 
         :return: Validated settings with ``EXTENSIONS_INTERNAL_TOKEN`` guaranteed set.
         :raises ValueError: If ``EXTENSIONS_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
             is empty, so no token can be derived.
         """
         if (
-            self.SEP_INTERNAL_TOKEN_INPUT is not None
-            and self.SEP_INTERNAL_TOKEN_INPUT.get_secret_value()
+            self.EXTENSIONS_INTERNAL_TOKEN_INPUT is not None
+            and self.EXTENSIONS_INTERNAL_TOKEN_INPUT.get_secret_value()
         ):
-            self._SEP_INTERNAL_TOKEN = self.SEP_INTERNAL_TOKEN_INPUT
+            self._EXTENSIONS_INTERNAL_TOKEN = self.EXTENSIONS_INTERNAL_TOKEN_INPUT
             return self
         secret_key = self.SECRET_KEY.get_secret_value()
         if not secret_key:
@@ -824,7 +824,7 @@ class Settings(BaseYamlSettings):
         derived = hmac.new(
             secret_key.encode(), _INTERNAL_TOKEN_LABEL, hashlib.sha256
         ).hexdigest()
-        self._SEP_INTERNAL_TOKEN = SecretStr(derived)
+        self._EXTENSIONS_INTERNAL_TOKEN = SecretStr(derived)
         return self
 
     @model_validator(mode="before")

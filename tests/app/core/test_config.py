@@ -481,8 +481,9 @@ class TestDeriveInternalToken:
             SECRET_KEY=SecretStr("derivation-secret"),
             EXTENSIONS_INTERNAL_TOKEN=None,
         )
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == self._expected_token(
-            "derivation-secret"
+        assert (
+            instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
+            == self._expected_token("derivation-secret")
         )
 
     def test_empty_token_is_derived(self):
@@ -512,16 +513,19 @@ class TestDeriveInternalToken:
     def test_empty_secret_key_without_token_raises(self):
         """An empty secret key with no explicit token fails fast at construction."""
         with pytest.raises(ValidationError, match="SECRET_KEY must be set"):
-            Settings(SECRET_KEY=SecretStr(""), SEP_INTERNAL_TOKEN=None)
+            Settings(SECRET_KEY=SecretStr(""), EXTENSIONS_INTERNAL_TOKEN=None)
 
     def test_token_resolves_from_environment(self, monkeypatch):
         """Resolve an explicit token from the canonical environment variable.
 
         :param monkeypatch: The environment patcher.
         """
-        monkeypatch.setenv("SEP_INTERNAL_TOKEN", "environment-token")
+        monkeypatch.setenv("EXTENSIONS_INTERNAL_TOKEN", "environment-token")
 
-        assert Settings().SEP_INTERNAL_TOKEN.get_secret_value() == "environment-token"
+        assert (
+            Settings().EXTENSIONS_INTERNAL_TOKEN.get_secret_value()
+            == "environment-token"
+        )
 
     def test_token_resolves_from_dotenv(self, tmp_path, monkeypatch):
         """Resolve an explicit token from a dotenv entry.
@@ -529,13 +533,15 @@ class TestDeriveInternalToken:
         :param tmp_path: The directory holding the dotenv file.
         :param monkeypatch: The environment patcher.
         """
-        monkeypatch.delenv("SEP_INTERNAL_TOKEN", raising=False)
+        monkeypatch.delenv("EXTENSIONS_INTERNAL_TOKEN", raising=False)
         env_file = tmp_path / ".env"
-        env_file.write_text("SEP_INTERNAL_TOKEN=dotenv-token\n", encoding="utf-8")
+        env_file.write_text(
+            "EXTENSIONS_INTERNAL_TOKEN=dotenv-token\n", encoding="utf-8"
+        )
 
         instance = Settings(_env_file=env_file)
 
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == "dotenv-token"
+        assert instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value() == "dotenv-token"
 
     def test_token_resolves_from_secret_file(self, tmp_path, monkeypatch):
         """Resolve an explicit token from a file mounted under ``SECRETS_DIR``.
@@ -543,12 +549,14 @@ class TestDeriveInternalToken:
         :param tmp_path: The directory mounted as ``SECRETS_DIR``.
         :param monkeypatch: The environment patcher.
         """
-        monkeypatch.delenv("SEP_INTERNAL_TOKEN", raising=False)
-        (tmp_path / "SEP_INTERNAL_TOKEN").write_text("file-token\n", encoding="utf-8")
+        monkeypatch.delenv("EXTENSIONS_INTERNAL_TOKEN", raising=False)
+        (tmp_path / "EXTENSIONS_INTERNAL_TOKEN").write_text(
+            "file-token\n", encoding="utf-8"
+        )
 
         instance = Settings(_secrets_dir=tmp_path)
 
-        assert instance.SEP_INTERNAL_TOKEN.get_secret_value() == "file-token"
+        assert instance.EXTENSIONS_INTERNAL_TOKEN.get_secret_value() == "file-token"
 
     def test_token_resolves_from_yaml_profile(self, tmp_path, monkeypatch):
         """Resolve an explicit token from the YAML profile block.
@@ -556,18 +564,18 @@ class TestDeriveInternalToken:
         :param tmp_path: The directory holding the profile.
         :param monkeypatch: The working-directory and environment patcher.
         """
-        monkeypatch.delenv("SEP_INTERNAL_TOKEN", raising=False)
+        monkeypatch.delenv("EXTENSIONS_INTERNAL_TOKEN", raising=False)
         _use_profile(
             tmp_path,
             monkeypatch,
-            CELERY_PROFILE_BLOCK + "  SEP_INTERNAL_TOKEN: yaml-token\n",
+            CELERY_PROFILE_BLOCK + "  EXTENSIONS_INTERNAL_TOKEN: yaml-token\n",
         )
 
-        assert Settings().SEP_INTERNAL_TOKEN.get_secret_value() == "yaml-token"
+        assert Settings().EXTENSIONS_INTERNAL_TOKEN.get_secret_value() == "yaml-token"
 
     def test_token_is_masked(self):
         """Mask the token everywhere a settings dump could carry it."""
-        instance = Settings(SEP_INTERNAL_TOKEN=SecretStr("masked-token"))
+        instance = Settings(EXTENSIONS_INTERNAL_TOKEN=SecretStr("masked-token"))
         dumps = [
             repr(instance),
             str(instance.model_dump()),
@@ -575,7 +583,7 @@ class TestDeriveInternalToken:
         ]
 
         assert (
-            instance.model_dump()["SEP_INTERNAL_TOKEN"].get_secret_value()
+            instance.model_dump()["EXTENSIONS_INTERNAL_TOKEN"].get_secret_value()
             == "masked-token"
         )
         assert not [dump for dump in dumps if "masked-token" in dump]

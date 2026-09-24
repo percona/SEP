@@ -2945,15 +2945,15 @@ class TestSettingsComputedKeys:
     async def test_list_advertises_the_resolved_token(
         self, api_admin_client: TestClient
     ) -> None:
-        """Serve the computed ``SEP_INTERNAL_TOKEN``, never its excluded input."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        """Serve the computed ``EXTENSIONS_INTERNAL_TOKEN``, never its excluded input."""
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         keys = _class_keys(response.json(), SettingClassEnum.SETTINGS.value)
-        assert "SEP_INTERNAL_TOKEN" in keys
-        assert "SEP_INTERNAL_TOKEN_INPUT" not in keys
+        assert "EXTENSIONS_INTERNAL_TOKEN" in keys
+        assert "EXTENSIONS_INTERNAL_TOKEN_INPUT" not in keys
 
     async def test_list_advertises_base_dir(self, api_admin_client: TestClient) -> None:
         """Serve ``BASE_DIR`` too: every computed key is part of the public surface."""
-        response = api_admin_client.get("/api/sep/admin/settings/")
+        response = api_admin_client.get("/api/extensions/admin/settings/")
         assert "BASE_DIR" in _class_keys(
             response.json(), SettingClassEnum.SETTINGS.value
         )
@@ -2963,7 +2963,7 @@ class TestSettingsComputedKeys:
     ) -> None:
         """Return the computed token masked and classified NOT_OVERRIDABLE."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/Settings/SEP_INTERNAL_TOKEN"
+            "/api/extensions/admin/settings/Settings/EXTENSIONS_INTERNAL_TOKEN"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -2975,7 +2975,9 @@ class TestSettingsComputedKeys:
         self, api_admin_client: TestClient
     ) -> None:
         """Serialise a computed non-secret value rather than raising on lookup."""
-        response = api_admin_client.get("/api/sep/admin/settings/Settings/BASE_DIR")
+        response = api_admin_client.get(
+            "/api/extensions/admin/settings/Settings/BASE_DIR"
+        )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["value"] == str(settings.BASE_DIR)
 
@@ -2984,7 +2986,7 @@ class TestSettingsComputedKeys:
     ) -> None:
         """Reject the excluded input key; it is not part of the public surface."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/Settings/SEP_INTERNAL_TOKEN_INPUT"
+            "/api/extensions/admin/settings/Settings/EXTENSIONS_INTERNAL_TOKEN_INPUT"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -2993,8 +2995,8 @@ class TestSettingsComputedKeys:
     ) -> None:
         """Refuse a PATCH of a computed key as not-overridable, not as unknown."""
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/Settings",
-            json={"SEP_INTERNAL_TOKEN": "rotated"},
+            "/api/extensions/admin/settings/Settings",
+            json={"EXTENSIONS_INTERNAL_TOKEN": "rotated"},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         detail = response.json()["detail"]
@@ -3008,6 +3010,6 @@ class TestSettingsComputedKeys:
     ) -> None:
         """Refuse a DELETE of a computed key; no override row can ever exist."""
         response = api_admin_client.delete(
-            "/api/sep/admin/settings/Settings/SEP_INTERNAL_TOKEN"
+            "/api/extensions/admin/settings/Settings/EXTENSIONS_INTERNAL_TOKEN"
         )
         assert response.status_code == status.HTTP_409_CONFLICT

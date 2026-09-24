@@ -91,7 +91,7 @@ async def run_scheduled_inventory_sync(
     :return: The note saying why the run was skipped, otherwise ``None``.
     :raises ValueError: If a run that is not skipped names a ``syncer`` that
         matches no configured syncer able to sync inventory.
-    :raises sqlalchemy.exc.SQLAlchemyError: When the SEP database cannot be read
+    :raises sqlalchemy.exc.SQLAlchemyError: When the PMM Extensions database cannot be read
         to decide the ordering.
     :raises app.extensions.sync.exceptions.SyncInstanceAlreadyInProgressError: If a run
         that is not a started first run overlaps another run of its syncer.

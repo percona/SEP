@@ -44,10 +44,10 @@ def is_bearer_authenticated(request: Request) -> bool:
 def get_internal_token() -> str:
     """Return the configured or derived internal service token.
 
-    ``Settings.derive_internal_token`` populates ``SEP_INTERNAL_TOKEN`` on every
+    ``Settings.derive_internal_token`` populates ``EXTENSIONS_INTERNAL_TOKEN`` on every
     constructed instance, from an explicit value or derived from ``SECRET_KEY``,
     so the token is always present here.
 
     :return: The internal token's secret value.
     """
-    return settings.SEP_INTERNAL_TOKEN.get_secret_value()
+    return settings.EXTENSIONS_INTERNAL_TOKEN.get_secret_value()

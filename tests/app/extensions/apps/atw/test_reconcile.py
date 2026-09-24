@@ -50,7 +50,9 @@ def tasks_api(mocker: MockerFixture, session: AsyncSession) -> AsyncMock:
         "app.extensions.apps.atw.reconcile.get_tasks_api",
         new=AsyncMock(return_value=client),
     )
-    mocker.patch("app.sep.apps.atw.reconcile.get_internal_token", return_value="token")
+    mocker.patch(
+        "app.extensions.apps.atw.reconcile.get_internal_token", return_value="token"
+    )
     maker = MagicMock()
     maker.return_value.__aenter__ = AsyncMock(return_value=session)
     maker.return_value.__aexit__ = AsyncMock(return_value=False)
