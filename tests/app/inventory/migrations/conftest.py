@@ -55,7 +55,7 @@ def inventory_alembic_config(
 def postgres_async_url() -> URL:
     """Return an ``asyncpg`` URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     return make_url(postgres_dsn_or_skip()).set(drivername="postgresql+asyncpg")

@@ -558,7 +558,7 @@ def postgres_dsn_or_skip() -> str:
     """Return the real-PostgreSQL test DSN, skipping the test when it is unset.
 
     Local runs without PostgreSQL skip; the dedicated ``test_postgres`` CI job
-    supplies ``$SEP_TEST_POSTGRES_DSN``.
+    supplies ``$EXTENSIONS_TEST_POSTGRES_DSN``.
 
     :return: The DSN from the environment.
     """
