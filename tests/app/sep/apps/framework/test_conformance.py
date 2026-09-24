@@ -1032,6 +1032,19 @@ def test_item_display_names_pass_when_singular_is_declared_and_plural_derived():
     assert check_item_display_names_declared(payload) == []
 
 
+def test_item_display_names_skip_when_display_name_is_not_a_string():
+    """Skip scopes whose display_name is non-str rather than raising on pluralise."""
+    payload = {
+        "name": "mysql_backups",
+        "display_name": 42,
+        "item_display_name": 42,
+        "item_display_name_plural": "42s",
+        "forms": [{"fields": [{"name": "service_id"}]}],
+    }
+
+    assert check_item_display_names_declared(payload) == []
+
+
 def test_item_display_names_checked_per_entity_against_its_own_title():
     """Assert an entity's record names are judged against the entity's display name."""
     payload = {

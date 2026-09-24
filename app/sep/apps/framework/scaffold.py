@@ -150,7 +150,7 @@ class ScaffoldConfig:
         sections, so for it the app-level noun is unenforced rather than deferred.
     :param item_display_name_plural: The name for several such records. Defaults
         by pluralising a declared singular (same Django-style rules as
-        :func:`~app.sep.apps.framework.schema._pluralize_item_display_name`);
+        :func:`~app.sep.apps.framework.schema.pluralize_item_display_name`);
         when the singular is also unset, defaults to ``display_name`` so the
         conformance detector still trips an unedited task scaffold.
     :param description: The plugin description; ``None`` for the ``base`` flavor,
@@ -948,9 +948,9 @@ def _default_item_display_name_plural(
     """
     if not singular_declared:
         return display_name
-    from app.sep.apps.framework.schema import _pluralize_item_display_name
+    from app.sep.apps.framework.schema import pluralize_item_display_name
 
-    return _pluralize_item_display_name(item_display_name)
+    return pluralize_item_display_name(item_display_name)
 
 
 def _resolve_non_interactive(

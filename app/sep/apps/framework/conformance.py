@@ -42,9 +42,9 @@ from app.sep.apps.framework.form_dsl import (
 )
 from app.sep.apps.framework.responses import root_segment, serialized_field_names
 from app.sep.apps.framework.schema import (
-    _pluralize_item_display_name,
     Capabilities,
     ITEM_DISPLAY_NAME_KEYS,
+    pluralize_item_display_name,
 )
 
 if TYPE_CHECKING:
@@ -168,7 +168,9 @@ def check_item_display_names_declared(
         if not any(section.get("fields") for section in scope.get("forms") or ()):
             continue
         display_name = scope.get("display_name")
-        if display_name is None:
+        # Partial / unvalidated payloads may leave display_name non-str; skip
+        # rather than raising out of the pluraliser during conformance.
+        if not isinstance(display_name, str):
             continue
         singular = scope.get("item_display_name")
         plural = scope.get("item_display_name_plural")
@@ -185,7 +187,7 @@ def check_item_display_names_declared(
             singular == display_name
             and isinstance(plural, str)
             and plural != display_name
-            and plural == _pluralize_item_display_name(display_name)
+            and plural == pluralize_item_display_name(display_name)
         ):
             violations.append(
                 f"schema {scope_label!r} leaves 'item_display_name_plural' as a "

@@ -60,6 +60,7 @@ __all__ = [
     "YamlField",
     "declared_field_names_from_forms",
     "iter_section_fields",
+    "pluralize_item_display_name",
 ]
 
 from collections import Counter
@@ -1555,13 +1556,15 @@ ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
 _VOWELS = frozenset("aeiou")
 
 
-def _pluralize_item_display_name(singular: str) -> str:
+def pluralize_item_display_name(singular: str) -> str:
     """Return a Django-style English plural for a mid-sentence record noun.
 
     Pluralises only the last whitespace-separated token so multi-word nouns
     like ``schema change`` become ``schema changes``. Irregular plurals and
     forms outside this heuristic stay author-declared via
-    ``item_display_name_plural``.
+    ``item_display_name_plural``. Shared by schema defaulting, the scaffold
+    plural prompt default, and the conformance detector that recognises a
+    title-pluralised regression.
 
     :param singular: The resolved singular record noun (explicit or
         ``display_name`` fallback).
@@ -1602,7 +1605,9 @@ def _fill_item_display_names(data: Any) -> Any:
         rather than this function raising ``AttributeError`` out of the
         validator; input whose ``display_name`` is absent or not a string is
         returned untouched for the same reason, leaving the two record names to
-        be reported ``missing`` alongside it.
+        be reported ``missing`` alongside it. A non-string
+        ``item_display_name`` is likewise left untouched so the pluraliser is
+        never called on a non-str and Pydantic surfaces the field type error.
     :return: A mapping with either record name filled, or the input unchanged
         when both were supplied or nothing could be filled.
     """
@@ -1612,13 +1617,17 @@ def _fill_item_display_names(data: Any) -> Any:
     if not isinstance(display_name, str):
         return data
     declared_singular = data.get("item_display_name")
+    # Only a real string counts as declared; a non-str would crash the
+    # pluraliser and turn a normal ValidationError into an unexpected raise.
+    if declared_singular is not None and not isinstance(declared_singular, str):
+        return data
     singular = display_name if declared_singular is None else declared_singular
     filled: dict[str, str] = {}
     if declared_singular is None:
         filled["item_display_name"] = singular
     if data.get("item_display_name_plural") is None:
         filled["item_display_name_plural"] = (
-            _pluralize_item_display_name(singular)
+            pluralize_item_display_name(singular)
             if declared_singular is not None
             else display_name
         )

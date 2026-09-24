@@ -2925,6 +2925,26 @@ class TestAppSchemaRecordDisplayNames:
 
         assert {error["type"] for error in exc_info.value.errors()} == {"model_type"}
 
+    def test_non_str_singular_is_reported_not_raised(self) -> None:
+        """Leave a non-str singular for Pydantic; do not crash the before validator.
+
+        The fill helper reads the raw payload. Without a type gate it would call
+        ``pluralize_item_display_name`` on an int and raise ``AttributeError``.
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            AppSchema.model_validate(
+                {
+                    "name": "minimal",
+                    "display_name": "MySQL Backups",
+                    "item_display_name": 7,
+                    "list_view": _minimal_list_view(),
+                }
+            )
+
+        assert any(
+            error["loc"] == ("item_display_name",) for error in exc_info.value.errors()
+        )
+
     def test_a_read_only_mapping_defaults_like_a_dict(self) -> None:
         """Default from any ``Mapping``, not only ``dict`` — the guard is not type-narrow."""
         payload = MappingProxyType(
@@ -3039,7 +3059,7 @@ class TestPluralizeItemDisplayName:
     )
     def test_pluraliser_branches(self, singular: str, expected: str) -> None:
         """Apply consonant-y, vowel-y, sibilant, default, and multi-word rules."""
-        assert schema_module._pluralize_item_display_name(singular) == expected
+        assert schema_module.pluralize_item_display_name(singular) == expected
 
 
 class TestAppSchemaTaskStatuses:
