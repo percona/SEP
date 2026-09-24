@@ -60,7 +60,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import BaseYamlSettings
 from app.core.db.config import DatabaseOptions
-from app.core.encryption import is_stored_ciphertext
+from app.core.encryption import is_encrypted, is_stored_ciphertext
 from app.core.settings_override.models import SettingOverride
 from app.core.utils.fields import credential_url_password
 from sidecar.runtime import (
@@ -112,6 +112,14 @@ released when a peer dies, but not when one is merely stopped.
 KEY_BYTES = 32
 """What Fernet's URL-safe base64 key decodes to: a 16-byte signing half and a
 16-byte encryption half."""
+
+PRE_RENAME_CIPHERTEXT_MARKER = "sep.enc.v1."
+"""The envelope marker stored ciphertext carried before it was renamed.
+
+This probe runs before Alembic, so it can meet a database whose markers the
+renaming revisions have not moved yet. Missing such a value would read the
+database as fresh and mint a key over ciphertext the lost key wrote.
+"""
 
 
 class EncryptionKeyError(Exception):
@@ -409,14 +417,27 @@ def _has_encrypted_url_password(value: str) -> bool:
     defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
 
     :param value: One string leaf of a stored override value.
-    :return: Whether its userinfo password holds ciphertext under either at-rest
+    :return: Whether its userinfo password holds ciphertext under any at-rest
         envelope.
     """
     try:
         password = credential_url_password(value)
     except ValueError:
         return False
-    return password is not None and is_stored_ciphertext(password)
+    return password is not None and _is_ciphertext_leaf(password)
+
+
+def _is_ciphertext_leaf(value: str) -> bool:
+    """Return whether ``value`` is stored ciphertext under any envelope it can carry.
+
+    :param value: A whole string leaf or a URL password segment.
+    :return: Whether it is marked, pre-rename marked, or bare ciphertext.
+    """
+    if is_stored_ciphertext(value):
+        return True
+    return value.startswith(PRE_RENAME_CIPHERTEXT_MARKER) and is_encrypted(
+        value.removeprefix(PRE_RENAME_CIPHERTEXT_MARKER)
+    )
 
 
 def contains_ciphertext(value: Any) -> bool:
@@ -454,7 +475,7 @@ def contains_ciphertext(value: Any) -> bool:
     :return: Whether ciphertext appears anywhere within it, marked or bare.
     """
     if isinstance(value, str):
-        return is_stored_ciphertext(value) or _has_encrypted_url_password(value)
+        return _is_ciphertext_leaf(value) or _has_encrypted_url_password(value)
     if isinstance(value, dict):
         return any(contains_ciphertext(leaf) for leaf in value.values())
     if isinstance(value, list):

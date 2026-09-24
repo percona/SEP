@@ -50,6 +50,9 @@ DATABASE_FILENAMES = {
 }
 """One distinct SQLite file per service, so a single-DSN probe fails these tests."""
 
+PRE_RENAME_CIPHERTEXT_MARKER = "sep.enc.v1."
+"""The envelope marker stored ciphertext carried before it was renamed."""
+
 KEY_FILE_MODE = 0o600
 
 STATE_DIR_MODE = 0o700
@@ -419,6 +422,42 @@ def test_a_marked_credential_url_password_refuses_the_mint(tmp_path: Path):
     assert RESTORE_HINT in result.stderr
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(
+            f"{PRE_RENAME_CIPHERTEXT_MARKER}{ciphertext()}", id="pre-rename-scalar"
+        ),
+        pytest.param(
+            {
+                "endpoint": (
+                    f"https://user:{PRE_RENAME_CIPHERTEXT_MARKER}{ciphertext()}"
+                    "@host:8443/"
+                )
+            },
+            id="pre-rename-url-password",
+        ),
+    ],
+)
+def test_a_pre_rename_marked_row_refuses_the_mint(tmp_path: Path, value: Any):
+    """Refuse over ciphertext still carrying the marker from before the rename.
+
+    The probe runs before Alembic, so the revisions that move the marker have
+    not touched these rows yet. Neither current discriminator accepts the old
+    marker, so a probe that tested only them would read a deployment whose key
+    file was lost as fresh and mint over every stored credential.
+    """
+    create_database(tmp_path, DATABASE_FILENAMES["EXTENSIONS"], value)
+    create_database(tmp_path, DATABASE_FILENAMES["INVENTORY"])
+    create_database(tmp_path, DATABASE_FILENAMES["TASKS"])
+
+    result = run_helper(tmp_path)
+
+    assert result.returncode != 0
+    assert not result.stdout.strip()
+    assert RESTORE_HINT in result.stderr
+
+
 def test_a_ciphertext_leaf_nested_in_a_list_refuses_the_mint(tmp_path: Path):
     """Refuse on the ``PROVIDERS`` shape, which a top-level check cannot see.
 
@@ -732,6 +771,10 @@ def test_ciphertext_is_found_at_every_json_position(value: Any):
         pytest.param("https://host:8443/", id="url-without-userinfo"),
         pytest.param("https://user:pw@[bad:ipv6/", id="url-unparseable"),
         pytest.param("extensions.enc.v1.operator-secret", id="marker-over-a-plaintext"),
+        pytest.param(
+            f"{PRE_RENAME_CIPHERTEXT_MARKER}operator-secret",
+            id="pre-rename-marker-over-a-plaintext",
+        ),
     ],
 )
 def test_a_value_with_no_token_is_not_read_as_ciphertext(value: Any):
