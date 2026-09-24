@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenApp } from '@sep/framework';
+import { SchemaDrivenApp } from '@pmm-extensions/framework';
 import { getAppRouteMeta } from '../appNavConfig';
 
 interface SchemaDrivenAppRouteProps {

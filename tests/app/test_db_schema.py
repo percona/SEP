@@ -35,7 +35,7 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel import SQLModel
 
-from app.sep.models import AppLifecycleEnum, AppState
+from app.extensions.models import AppLifecycleEnum, AppState
 from tests.app.db_schema import apply_schema, capture_ddl
 
 pytest_plugins = ["pytester"]
@@ -52,7 +52,7 @@ _CHILD_SUITE = """
 import pytest
 from sqlalchemy import func, select
 
-from app.sep.models import AppState
+from app.extensions.models import AppState
 
 
 @pytest.mark.asyncio

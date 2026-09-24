@@ -22,8 +22,8 @@ from app.core.utils.cli_args import (
     is_value_arg_template,
     render_value_arg,
 )
-from app.sep.apps.framework import spec
-from app.sep.snippets.models import meta, snippet
+from app.extensions.apps.framework import spec
+from app.extensions.snippets.models import meta, snippet
 
 
 @pytest.mark.parametrize(
@@ -79,7 +79,7 @@ def test_render_value_arg_preserves_unknown_placeholder():
 def test_kernel_consumers_import_without_cycle():
     """Verify both delegating surfaces import with the kernel without a cycle.
 
-    The kernel lives in ``app.core``, which cannot import ``app.sep``, so wiring
+    The kernel lives in ``app.core``, which cannot import ``app.extensions``, so wiring
     it between the framework run-command path and the snippet exec path cannot
     form a cycle. This module importing both consumers alongside the kernel
     guards that, and the identity assertions pin the delegation wiring.

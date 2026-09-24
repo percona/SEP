@@ -34,7 +34,7 @@ import type { ReactNode } from 'react';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import type { FormSection } from './types';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn().mockResolvedValue({ data: [] }), post: vi.fn() },
   useAlertConfig: () => ({ data: undefined, isLoading: false }),
 }));

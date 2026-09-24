@@ -1,5 +1,5 @@
 ---
-applyTo: "app/core/**/*.py,app/api/deps.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/framework/**/*.py"
+applyTo: "app/core/**/*.py,app/api/deps.py,app/extensions/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/extensions/apps/framework/**/*.py"
 ---
 
 # Cross-Cutting Changes — Shared Helpers & Side Effects
@@ -8,7 +8,7 @@ Diffs to these paths fan out across all three sub-applications and the shared au
 
 ## Shared-helper changes — audit every caller
 
-When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/sep/apps/framework/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
+When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/extensions/apps/framework/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
 
 Specifically:
 
@@ -44,7 +44,7 @@ Changing what a shared predicate or dispatch surface **selects** — by widening
 - *Widening* looks purely additive (nothing removed, no signature narrowed), which is exactly why it goes unchecked — but a value that used to fall through to a default now matches a specific handler.
 - *Narrowing or gating* looks like a local tightening: one new condition on one predicate. But it silently **removes** inputs from every consumer's selected set, and the consumers that break are the ones asking a *different question* than the new condition answers. A predicate consulted for a structural question ("does this parent have leaves to render?") doesn't stop being consulted when it acquires an authorization question ("may you write this?") — it just starts answering the wrong one.
 
-Before changing one in either direction, enumerate what **dispatches on** it: `except` sites (`git grep -nE "except (<Class1>|<Class2>)"`), `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/sep/main.py` registers a dedicated handler for it, but one grep for `exception_handler` finds it.
+Before changing one in either direction, enumerate what **dispatches on** it: `except` sites (`git grep -nE "except (<Class1>|<Class2>)"`), `isinstance` checks, `exception_handler` registrations, and DI / routing tables (`dependency_overrides`, `task_routes`, `@register`). **Registry registrations are the easiest to miss**, because the coupling is by *type* and leaves no trace where the type is defined — a class in `app/core/exceptions.py` carries no hint that `app/extensions/main.py` registers a dedicated handler for it, but one grep for `exception_handler` finds it.
 
 The same audit applies to an enum, a response model, a DI alias, or a settings class — anywhere a consumer's behaviour is selected by matching against the surface you're changing. Two exemptions: a refactor whose truth table is unchanged (nothing re-selects, so no consumer moves), and module-local helpers that don't cross a module boundary — *shared* is the trigger, not call-site count.
 

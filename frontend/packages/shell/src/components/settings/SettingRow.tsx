@@ -30,7 +30,7 @@ import {
   usePatchSetting,
   useResetSetting,
   type SettingResponse,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 import { useNotification } from '../../contexts/notification';
 import SettingEditField from './SettingEditField';

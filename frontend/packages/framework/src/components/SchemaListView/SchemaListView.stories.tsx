@@ -19,7 +19,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import Chip from '@mui/material/Chip';
 import LinearProgress from '@mui/material/LinearProgress';
 import Box from '@mui/material/Box';
-import type { ListView } from '@sep/api';
+import type { ListView } from '@pmm-extensions/api';
 import { SchemaListView, type RenderListColumnOverride } from './SchemaListView';
 
 const listView: ListView = {

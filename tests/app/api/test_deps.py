@@ -37,7 +37,7 @@ from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import ContextFilter
-from app.sep.apps.alerts.api_routes import (
+from app.extensions.apps.alerts.api_routes import (
     alerts_api_pagerduty_delete,
     alerts_api_pagerduty_save,
     alerts_api_restore,
@@ -114,7 +114,7 @@ async def test_authenticate_bearer_token_internal_token_match(casdoor_mock, mock
     secret = "supersecret"
     mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(secret))
     user = await authenticate_bearer_token(secret)
-    assert user.username == "sep-service"
+    assert user.username == "extensions-service"
     assert user.is_admin is False
     assert user.access_token == secret
     assert user.id == SERVICE_PRINCIPAL_ID
@@ -342,7 +342,7 @@ class TestAuthenticateBearerTokenTypes:
 
         user = await authenticate_bearer_token(secret)
 
-        assert user.username == "sep-service"
+        assert user.username == "extensions-service"
         assert user.is_admin is False
         assert user.id == SERVICE_PRINCIPAL_ID
         from_bearer.assert_not_called()
@@ -351,7 +351,7 @@ class TestAuthenticateBearerTokenTypes:
     async def test_an_editor_clears_a_route_classified_at_editor(
         self, grafana_mock, grafana_user_orgs
     ):
-        """Verify a PMM Editor reaches a route SEP opened to that rank.
+        """Verify a PMM Editor reaches a route PMM Extensions opened to that rank.
 
         The realistic PMM path end to end: the role survives the mint and the
         unmint, so the rank the gate compares is the one Grafana reported rather

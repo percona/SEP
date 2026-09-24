@@ -210,7 +210,7 @@ class TestPeriodicTaskWrite:
         """Assert celery task name and kwargs are populated from input."""
         data = {
             "name": "test-write",
-            "task": "my-sep-task",
+            "task": "my-extensions-task",
             "start_time": None,
             "enabled": True,
             "description": "",
@@ -220,7 +220,7 @@ class TestPeriodicTaskWrite:
         task = PeriodicTaskWrite.model_validate(data)
         assert task.task == "app.tasks.celery.execute_task_by_name"
         parsed_kwargs = json.loads(task.kwargs)
-        assert parsed_kwargs["task_name"] == "my-sep-task"
+        assert parsed_kwargs["task_name"] == "my-extensions-task"
         assert parsed_kwargs["execution_data"] == {"meta": {}}
 
     def test_encode_kwargs_dict_to_json(self):

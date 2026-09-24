@@ -16,8 +16,8 @@
  */
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { apiClient, type ChoiceOption } from '@sep/api';
-import { sepRetry } from './sepRetry';
+import { apiClient, type ChoiceOption } from '@pmm-extensions/api';
+import { extensionsRetry } from './extensionsRetry';
 
 export interface UseRemoteChoicesOptions {
   /** Fully-resolved path the options are fetched from, relative to `apiClient`'s `/api` base. */
@@ -62,7 +62,7 @@ function buildEffectiveUrl(
  * wire-declared endpoint.
  *
  * Mirrors the reference selector hooks (React Query + `apiClient` +
- * `staleTime` + `sepRetry`), but reads the URL from `endpointUrl` rather than a
+ * `staleTime` + `extensionsRetry`), but reads the URL from `endpointUrl` rather than a
  * hardcoded template. A cascading field (one with `dependsOnName`) skips the
  * fetch until its parent has a value; a non-cascading field always fetches. The
  * query key carries the full effective URL, so two fields that share an endpoint
@@ -82,6 +82,6 @@ export function useRemoteChoices(
       const response = await apiClient.get<ChoiceOption[]>(effectiveUrl);
       return response.data;
     },
-    retry: sepRetry,
+    retry: extensionsRetry,
   });
 }

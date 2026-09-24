@@ -25,8 +25,8 @@ const { mockApiGet, mockApiPost } = vi.hoisted(() => ({
   mockApiPost: vi.fn(),
 }));
 
-vi.mock('@sep/api', async () => {
-  const actual = await vi.importActual<typeof import('@sep/api')>('@sep/api');
+vi.mock('@pmm-extensions/api', async () => {
+  const actual = await vi.importActual<typeof import('@pmm-extensions/api')>('@pmm-extensions/api');
   return {
     ...actual,
     apiClient: { get: mockApiGet, post: mockApiPost },

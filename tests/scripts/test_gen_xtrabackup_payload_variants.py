@@ -134,7 +134,7 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     :param monkeypatch: The fixture redirecting the generator's module paths.
     :return: The directory holding the sandboxed canonical payload and variants.
     """
-    payload_dir = tmp_path / "app/sep/apps/mysql_backups"
+    payload_dir = tmp_path / "app/extensions/apps/mysql_backups"
     payload_dir.mkdir(parents=True)
     for name in _EXPECTED_NAMES.values():
         shutil.copy(gen_variants.CANONICAL_SOURCE.parent / name, payload_dir / name)

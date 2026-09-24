@@ -73,7 +73,7 @@ interface RestoreSchema {
 
 const RESTORE_SCHEMA = JSON.parse(
   readFileSync(
-    join(REPO_ROOT, 'tests/app/sep/snapshots/schema/mysql_backups__restore.json'),
+    join(REPO_ROOT, 'tests/app/extensions/snapshots/schema/mysql_backups__restore.json'),
     'utf8',
   ),
 ) as RestoreSchema;

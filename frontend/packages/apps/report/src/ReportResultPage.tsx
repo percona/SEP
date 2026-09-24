@@ -29,7 +29,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import {
   isReportJobActive,
   reportJobError,

@@ -39,8 +39,8 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
+from app.extensions.config import extensions_settings, ExtensionsSettings
 from app.inventory.config import inventory_settings, InventorySettings
-from app.sep.config import ExtensionsSettings, sep_settings
 from app.tasks.config import tasks_settings, TasksSettings
 from tests.app.core.settings_override.conftest import (
     EXTENSIONS_SETTINGS_TOKEN,
@@ -53,7 +53,7 @@ from tests.app.db_schema import apply_schema
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 LOGGING_KEY = "Settings.LOGGING"
 SETTINGS_URL = f"/settings/{SettingClassEnum.SETTINGS.value}"
-SEP_URL = f"/settings/{SettingClassEnum.EXTENSIONS_SETTINGS.value}"
+EXTENSIONS_URL = f"/settings/{SettingClassEnum.EXTENSIONS_SETTINGS.value}"
 TASKS_URL = f"/settings/{SettingClassEnum.TASKS_SETTINGS.value}"
 INVENTORY_URL = f"/settings/{SettingClassEnum.INVENTORY_SETTINGS.value}"
 
@@ -91,7 +91,7 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
 
     classes = [
         (SettingClassEnum.SETTINGS, Settings, settings),
-        (SettingClassEnum.EXTENSIONS_SETTINGS, ExtensionsSettings, sep_settings),
+        (SettingClassEnum.EXTENSIONS_SETTINGS, ExtensionsSettings, extensions_settings),
         (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
         (SettingClassEnum.INVENTORY_SETTINGS, InventorySettings, inventory_settings),
     ]
@@ -180,7 +180,7 @@ class TestPatchGate:
         """Assert a locked top-level field refuses an override with 422."""
         restrict(LOGGING_KEY)
         response = client.patch(
-            SEP_URL, json={"INVENTORY_ENDPOINT": "https://evil.example.com"}
+            EXTENSIONS_URL, json={"INVENTORY_ENDPOINT": "https://evil.example.com"}
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert _error_types(response.json()) == {"not_overridable"}
@@ -294,7 +294,7 @@ class TestPatchUnrestricted:
     def test_top_level_key_is_applied(self, client: TestClient) -> None:
         """Assert an unrestricted deployment still accepts the locked-down key."""
         response = client.patch(
-            SEP_URL, json={"INVENTORY_ENDPOINT": "https://inventory.example.com"}
+            EXTENSIONS_URL, json={"INVENTORY_ENDPOINT": "https://inventory.example.com"}
         )
         assert response.status_code == status.HTTP_200_OK
 
@@ -376,7 +376,7 @@ class TestDeleteGate:
             is_active=True,
         )
         restrict(LOGGING_KEY)
-        response = client.delete(f"{SEP_URL}/INVENTORY_ENDPOINT")
+        response = client.delete(f"{EXTENSIONS_URL}/INVENTORY_ENDPOINT")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert (
             await SettingsOverrideManager.count(
@@ -392,7 +392,7 @@ class TestDeleteGate:
     ) -> None:
         """Assert deleting a locked key with nothing to delete reports a conflict."""
         restrict(LOGGING_KEY)
-        response = client.delete(f"{SEP_URL}/INVENTORY_ENDPOINT")
+        response = client.delete(f"{EXTENSIONS_URL}/INVENTORY_ENDPOINT")
         assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_statically_locked_key_with_row_still_conflicts(
@@ -402,7 +402,7 @@ class TestDeleteGate:
     ) -> None:
         """Assert an explicitly not-overridable field keeps its 409 answer."""
         restrict("ExtensionsSettings.DIAGNOSTICS_DELIVERY")
-        response = client.delete(f"{SEP_URL}/DIAGNOSTICS_DELIVERY")
+        response = client.delete(f"{EXTENSIONS_URL}/DIAGNOSTICS_DELIVERY")
         assert response.status_code == status.HTTP_409_CONFLICT
 
     @pytest.mark.asyncio
@@ -436,7 +436,7 @@ class TestDeleteGate:
         self, client: TestClient
     ) -> None:
         """Assert the default keeps DELETE idempotent for an overridable key."""
-        response = client.delete(f"{SEP_URL}/INVENTORY_ENDPOINT")
+        response = client.delete(f"{EXTENSIONS_URL}/INVENTORY_ENDPOINT")
         assert response.status_code == status.HTTP_204_NO_CONTENT
 
     @pytest.mark.asyncio
@@ -596,7 +596,7 @@ class TestLegacyCasedOverrideRows:
             value="https://stale.example.com",
             is_active=True,
         )
-        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        response = client.delete(f"{EXTENSIONS_URL}/{self._CANONICAL_TOP}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert (
             await SettingsOverrideManager.count(
@@ -622,7 +622,7 @@ class TestLegacyCasedOverrideRows:
             is_active=True,
         )
         restrict(LOGGING_KEY)
-        response = client.delete(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        response = client.delete(f"{EXTENSIONS_URL}/{self._CANONICAL_TOP}")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert (
             await SettingsOverrideManager.count(
@@ -708,7 +708,7 @@ class TestLegacyCasedOverrideRows:
             is_active=True,
         )
         new_value = "https://inventory.example.com/"
-        response = client.patch(SEP_URL, json={self._CANONICAL_TOP: new_value})
+        response = client.patch(EXTENSIONS_URL, json={self._CANONICAL_TOP: new_value})
         assert response.status_code == status.HTTP_200_OK
         applied = response.json()[0]
         assert applied["key"] == self._CANONICAL_TOP
@@ -721,7 +721,7 @@ class TestLegacyCasedOverrideRows:
         assert rows[0].key == self._CANONICAL_TOP
         assert rows[0].value == new_value
         assert rows[0].is_active is True
-        detail = client.get(f"{SEP_URL}/{self._CANONICAL_TOP}")
+        detail = client.get(f"{EXTENSIONS_URL}/{self._CANONICAL_TOP}")
         assert detail.status_code == status.HTTP_200_OK
         assert detail.json()["has_override"] is True
         assert detail.json()["value"] == new_value

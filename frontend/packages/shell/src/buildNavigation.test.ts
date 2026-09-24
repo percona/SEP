@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import CodeIcon from '@mui/icons-material/Code';
 import ExtensionIcon from '@mui/icons-material/Extension';
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 import { buildNavigationItems } from './appNavConfig';
 
 function mockApp(overrides: Partial<EnabledApp> & Pick<EnabledApp, 'app_key'>): EnabledApp {

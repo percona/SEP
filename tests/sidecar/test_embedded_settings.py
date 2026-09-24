@@ -28,26 +28,26 @@ from app.core.auth.config import AuthSettings
 from app.core.config import Settings
 from app.core.requests import RemoteAPI
 from app.core.utils import import_var
-from app.inventory.config import InventorySettings
-from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
-from app.sep.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
-from app.sep.apps.framework.registry import (
+from app.extensions.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
+from app.extensions.apps.framework.registry import (
     build_app_registry,
     collect_app_owned_settings_classes,
 )
-from app.sep.bundle_upload.plan import (
+from app.extensions.bundle_upload.plan import (
     ConnectionDetail,
     DeliveryPlanExecutor,
     SecretValue,
 )
-from app.sep.config import ExtensionsSettings, SyncOptions
-from app.sep.routes.artifacts import collect_base_dirs
-from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
-from app.sep.sync.syncers.pmm import PMMSyncer
-from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.extensions.config import ExtensionsSettings, SyncOptions
+from app.extensions.routes.artifacts import collect_base_dirs
+from app.extensions.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.extensions.sync.syncers.pmm import PMMSyncer
+from app.extensions.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.inventory.config import InventorySettings
+from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
-from tests.app.sep.conftest import REDUCED_ACTIVATION
+from tests.app.extensions.conftest import REDUCED_ACTIVATION
 from tests.sidecar.conftest import (
     EMBEDDED_PROFILE,
     read_allowlist,
@@ -64,7 +64,7 @@ this file enforces.
 """
 
 PMM_URL_PREFIX = "/extensions"
-"""The mount prefix PMM hardcodes in the ``location`` block it ships for SEP.
+"""The mount prefix PMM hardcodes in the ``location`` block it ships for PMM Extensions.
 
 Fixed topology rather than a per-deployment input, so the profile and the
 healthcheck are both held against this one literal.
@@ -248,7 +248,7 @@ def resolved_profile() -> dict[str, dict[str, Any]]:
     """
     return {
         "global": Settings().model_dump(exclude=UNCOMPARABLE_FIELDS),
-        "sep": ExtensionsSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
+        "extensions": ExtensionsSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
         "inventory": InventorySettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
         "tasks": TasksSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
     }
@@ -374,7 +374,7 @@ def test_profile_database_block_is_defined_once(embedded_profile_data: dict):
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_all_services_resolve_the_same_database_connection():
-    """Assert SEP, Inventory, and Tasks read identical connection values from the profile."""
+    """Assert Extensions, Inventory, and Tasks read identical connection values from the profile."""
     databases = [
         settings_cls().DATABASE
         for settings_cls in (ExtensionsSettings, InventorySettings, TasksSettings)
@@ -447,7 +447,7 @@ def test_no_url_carries_a_password():
 
 
 def test_the_profile_configures_no_beat_store():
-    """Leave ``BEAT_DBURI`` unset, so the beat store follows the SEP database.
+    """Leave ``BEAT_DBURI`` unset, so the beat store follows the PMM Extensions database.
 
     A profile value is a configured value and would outrank the derived default,
     handing celery-beat a password-less URI. The assertion reads the uncommented
@@ -561,7 +561,7 @@ def test_profile_schedules_the_system_facts_syncer_daily():
 def test_the_short_syncer_name_resolves_to_the_collector():
     """Assert the profile's short syncer name resolves to the collector class.
 
-    ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
+    ``SyncOptions`` resolves a bare syncer name against ``app.extensions.sync.syncers``
     and ``get_syncers`` imports it from there, so this is what makes the entry
     reachable through a settings override as well as through the baked profile.
     """
@@ -579,7 +579,9 @@ def test_activation_list_resolves_the_snippet_artifact_type(mocker):
     ATW emits is rejected as an invalid artifact type.
     """
     registry = build_app_registry(ExtensionsSettings().APPS)
-    mocker.patch("app.sep.routes.artifacts.get_app_registry", return_value=registry)
+    mocker.patch(
+        "app.extensions.routes.artifacts.get_app_registry", return_value=registry
+    )
 
     assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
 
@@ -588,7 +590,7 @@ def test_activation_list_resolves_the_snippet_artifact_type(mocker):
 def test_reduced_activation_mirrors_the_baked_profile():
     """Pin the shared activation constant to the profile it claims to mirror.
 
-    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the SEP
+    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the PMM Extensions
     subtree, so a divergence makes those tests assert against a deployment that
     does not exist — which is how an activation-gated artifact-download failure
     stayed invisible to the whole suite while carrying a ``snippets`` entry the
@@ -615,7 +617,7 @@ def test_uvicorn_ports_match_the_healthcheck_probe():
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_profile_serves_under_the_prefix_pmm_proxies():
-    """Assert the profile mounts SEP where PMM's nginx drop-in forwards to it."""
+    """Assert the profile mounts PMM Extensions where PMM's nginx drop-in forwards to it."""
     assert ExtensionsSettings().ROOT_PATH == PMM_URL_PREFIX
 
 
@@ -676,7 +678,7 @@ def test_profile_resolves_identically_outside_production_docker(
 def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: dict):
     """Assert every allowlist class token is reachable across all three services.
 
-    The reachable set is the union of the SEP, Inventory and Tasks wired classes
+    The reachable set is the union of the Extensions, Inventory and Tasks wired classes
     plus the app-owned classes activated by the profile's own activation list.
 
     :param embedded_profile_data: The parsed baked profile.

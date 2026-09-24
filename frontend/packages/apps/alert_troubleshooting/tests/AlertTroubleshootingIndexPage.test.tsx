@@ -22,11 +22,11 @@ import { MemoryRouter } from 'react-router';
 import type { ReactNode } from 'react';
 import { AlertTroubleshootingIndexPage } from '../src/AlertTroubleshootingIndexPage';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn() },
 }));
 
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function renderWithProviders(ui: ReactNode) {

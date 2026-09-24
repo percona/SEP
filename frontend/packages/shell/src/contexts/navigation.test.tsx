@@ -17,11 +17,11 @@
 
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 
 const useEnabledApps = vi.hoisted(() => vi.fn());
-vi.mock('@sep/api', async (importActual) => {
-  const actual = await importActual<typeof import('@sep/api')>();
+vi.mock('@pmm-extensions/api', async (importActual) => {
+  const actual = await importActual<typeof import('@pmm-extensions/api')>();
   return { ...actual, useEnabledApps };
 });
 

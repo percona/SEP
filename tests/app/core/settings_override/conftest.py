@@ -37,9 +37,9 @@ from app.core.settings_override.models import (
     SettingOverride,
 )
 from app.core.utils import json_serializer
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.config import ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.db_schema import apply_schema

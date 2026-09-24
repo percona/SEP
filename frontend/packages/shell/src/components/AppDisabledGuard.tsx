@@ -18,7 +18,7 @@
 import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
-import { useEnabledApps } from '@sep/api';
+import { useEnabledApps } from '@pmm-extensions/api';
 import AppDisabledPage from '../pages/AppDisabledPage';
 
 interface AppDisabledGuardProps {

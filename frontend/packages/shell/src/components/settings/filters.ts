@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { SettingClassGroup } from '@sep/api';
+import type { SettingClassGroup } from '@pmm-extensions/api';
 
 export interface SettingsFilters {
   /** Case-insensitive substring matched against the setting key. */
@@ -78,7 +78,7 @@ export function filterSettingsGroups(
 }
 
 export interface PartitionedSettingsGroups {
-  /** Core SEP settings groups, rendered in the main region. */
+  /** Core PMM Extensions settings groups, rendered in the main region. */
   core: SettingClassGroup[];
   /** App-owned groups whose owning app is enabled, rendered under "App settings". */
   appOwned: SettingClassGroup[];

@@ -24,7 +24,7 @@ import { server } from '../../../../tests/msw-server';
 import SettingRow from '../SettingRow';
 import { makeSetting, makeWrapper } from './fixtures';
 
-const PATCH_SEP = 'http://localhost/api/extensions/admin/settings/ExtensionsSettings';
+const PATCH_EXTENSIONS = 'http://localhost/api/extensions/admin/settings/ExtensionsSettings';
 
 function renderRow(setting = makeSetting()) {
   return render(<SettingRow setting={setting} />, { wrapper: makeWrapper() });
@@ -34,7 +34,7 @@ describe('SettingRow', () => {
   it('saves an edited hot value via PATCH', async () => {
     const body = vi.fn();
     server.use(
-      http.patch(PATCH_SEP, async ({ request }) => {
+      http.patch(PATCH_EXTENSIONS, async ({ request }) => {
         body(await request.json());
         return HttpResponse.json([]);
       }),
@@ -50,7 +50,7 @@ describe('SettingRow', () => {
   });
 
   it('clears the typed secret from the input after a successful save', async () => {
-    server.use(http.patch(PATCH_SEP, () => HttpResponse.json([])));
+    server.use(http.patch(PATCH_EXTENSIONS, () => HttpResponse.json([])));
     renderRow(
       makeSetting({ key: 'API_SECRET', type: 'SecretStr', is_secret: true, value: '**********' }),
     );
@@ -64,7 +64,7 @@ describe('SettingRow', () => {
 
   it('surfaces a 422 message inline next to the field', async () => {
     server.use(
-      http.patch(PATCH_SEP, () =>
+      http.patch(PATCH_EXTENSIONS, () =>
         HttpResponse.json(
           {
             detail: [{ loc: ['body', 'SYNC_REFRESH_TIME'], msg: 'Input should be greater than 0' }],
