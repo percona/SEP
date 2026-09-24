@@ -160,21 +160,21 @@ These are some, but not all, the possible settings you can have, per app:
 | TASKS__DATABASE__PASSWORD  | tasks     | no       | N/A                                                 | N/A                                              |
 | TASKS__DATABASE__HOST      | tasks     | no       | ""                                                  | ""                                               |
 | TASKS__DATABASE__PORT      | tasks     | no       | N/A                                                 | N/A                                              |
-| SEP__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
-| SEP__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
-| SEP__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | /oauth/callback                                  |
-| SEP__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
-| SEP__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
-| SEP__PROXY_HEADERS         | sep       | no       | False                                               | False                                            |
-| SEP__SYNC_REFRESH_TIME     | sep       | no       | 5                                                   | 5                                                |
-| SEP__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
-| SEP__SESSION__SECURE       | sep       | no       | False                                               | False                                            |
-| SEP__SESSION__HTTP_ONLY    | sep       | no       | True                                                | True                                             |
-| SEP__SESSION__SAME_SITE    | sep       | no       | lax                                                 | lax                                              |
-| SEP__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
-| SEP__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
-| SEP__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
-| SEP__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
+| EXTENSIONS__INVENTORY_ENDPOINT    | sep       | yes      | N/A                                                 | http://localhost:8000/api/inventory              |
+| EXTENSIONS__TASKS_ENDPOINT        | sep       | yes      | N/A                                                 | http://localhost:8000/api/tasks                  |
+| EXTENSIONS__OAUTH__REDIRECT_URI   | sep       | yes      | N/A                                                 | /oauth/callback                                  |
+| EXTENSIONS__OAUTH__POST_LOGIN_URI | sep       | no       | /                                                   | N/A                                              |
+| EXTENSIONS__OAUTH__AUTH_LINK      | sep       | no       | CasdoorOptions.SYNC_SDK.get_auth_link(REDIRECT_URI) | N/A                                              |
+| EXTENSIONS__PROXY_HEADERS         | sep       | no       | False                                               | False                                            |
+| EXTENSIONS__SYNC_REFRESH_TIME     | sep       | no       | 5                                                   | 5                                                |
+| EXTENSIONS__SESSION__COOKIE_NAME  | sep       | no       | authToken                                           | casdoorToken                                     |
+| EXTENSIONS__SESSION__SECURE       | sep       | no       | False                                               | False                                            |
+| EXTENSIONS__SESSION__HTTP_ONLY    | sep       | no       | True                                                | True                                             |
+| EXTENSIONS__SESSION__SAME_SITE    | sep       | no       | lax                                                 | lax                                              |
+| EXTENSIONS__SESSION__MAX_AGE      | sep       | no       | 3600                                                | 3600                                             |
+| EXTENSIONS__TEMPLATES_DIR         | sep       | no       | templates                                           | templates                                        |
+| EXTENSIONS__STATIC_DIR            | sep       | no       | static                                              | N/A                                              |
+| EXTENSIONS__SECURITY_HEADERS__CONTENT_SECURITY_POLICY_EXCLUDE_PATHS | sep | no | [] | [/api/docs, /api/inventory/docs, /api/tasks/docs] |
 | ALERTING__SOURCE_SUFFIX    | all       | no       | ""                                                  | ":dev"                                           |
 
 `TASKS__NOMAD__API_KEY` is sent on every Nomad request as
@@ -202,10 +202,10 @@ project root folder.
 
 ### Session Management
 
-PMM Extensions provides configurable session management through the `SEP__SESSION` section:
+PMM Extensions provides configurable session management through the `EXTENSIONS__SESSION` section:
 
 ```yaml
-SEP:
+EXTENSIONS:
   SESSION:
     COOKIE_NAME: casdoorToken
     SECURE: False
@@ -229,10 +229,10 @@ the form body as `csrf-token`. The token expires with the session (see
 [Session Management](#session-management)).
 
 CSRF token lifetime is tied to the session `MAX_AGE`. Use the same
-`SEP__SESSION` section to control how long the token stays valid:
+`EXTENSIONS__SESSION` section to control how long the token stays valid:
 
 ```yaml
-SEP:
+EXTENSIONS:
   SESSION:
     COOKIE_NAME: casdoorToken
     MAX_AGE: 604800   # 7 days (seconds); CSRF token expires after the same period
@@ -240,10 +240,10 @@ SEP:
 
 ### Security Headers
 
-PMM Extensions supports configurable security headers through the `SEP__SECURITY_HEADERS` section:
+PMM Extensions supports configurable security headers through the `EXTENSIONS__SECURITY_HEADERS` section:
 
 ```yaml
-SEP:
+EXTENSIONS:
   SECURITY_HEADERS:
     CONTENT_SECURITY_POLICY_EXCLUDE_PATHS:
       - /api/docs
@@ -278,7 +278,7 @@ Profile overlays merge onto `default:`: a non-empty list prepends to the inherit
 
 PMM Extensions provides several sync-related configuration options:
 
-- `SEP__SYNC_REFRESH_TIME`: Browser refresh interval during sync operations (in seconds)
+- `EXTENSIONS__SYNC_REFRESH_TIME`: Browser refresh interval during sync operations (in seconds)
 - `TASKS__SYNC_LOCK_TTL`: TaskHistory sync lock timeout (in seconds)
 
 ### Nomad Advanced Configuration
@@ -389,7 +389,7 @@ The test suite needs no action — it mints its own key per run.
 Any setting can instead be supplied as a file inside the directory `SECRETS_DIR` names,
 which keeps the value out of the process environment. Name the file after the canonical
 `__`-nested variable the setting already uses — `SECRET_KEY`,
-`DATABASE__PASSWORD`, `SEP__DATABASE__PASSWORD`,
+`DATABASE__PASSWORD`, `EXTENSIONS__DATABASE__PASSWORD`,
 `AUTH__PROVIDER__GRAFANA__SERVICE_ACCOUNT_TOKEN` — and put the value in its contents.
 `/run/secrets` is the conventional mount point:
 
@@ -402,7 +402,7 @@ SECRETS_DIR=/run/secrets uvicorn app.main:app
 An unprefixed global name such as `DATABASE__PASSWORD` resolves for every prefixed
 settings class that reads the same destination — one mounted file reaches Extensions,
 Inventory, and Tasks when all three share one database. A per-service spelling such
-as `SEP__DATABASE__PASSWORD` overrides the global one for that service only; when
+as `EXTENSIONS__DATABASE__PASSWORD` overrides the global one for that service only; when
 both are present in the same source, the more specific name wins regardless of
 ordering. Across sources the usual priority still applies, so an environment
 variable outranks a file whichever spelling each uses. A name spelled
@@ -451,7 +451,7 @@ PMM Extensions supports multiple database engines for different components. Each
 
 #### SQLite Configuration (Development)
 ```yaml
-SEP:
+EXTENSIONS:
   DATABASE:
     ENGINE: sqlite  # Database engine: sqlite, postgresql
     USER: null
@@ -481,7 +481,7 @@ TASKS:
 
 #### PostgreSQL Configuration
 ```yaml
-SEP:
+EXTENSIONS:
   DATABASE:
     ENGINE: postgresql
     USER: sep_user
@@ -501,10 +501,10 @@ Supported database engines:
 ### Syncers
 
 PMM Extensions features Inventory syncing with external services and APIs. You can choose the syncers
-you want to enable in the SEP.SYNCERS section of the configuration:
+you want to enable in the EXTENSIONS.SYNCERS section of the configuration:
 
 ```yaml
-SEP:
+EXTENSIONS:
   # ...
   SYNCERS:
     - SYNCER: PMMSyncer
@@ -523,7 +523,7 @@ PMM__API_KEY=<Your PMM API key>
 ```
 
 Other syncers may take extra keyword arguments, defined globally through the
-`SEP.SYNCER_EXTRA_KWARGS` config (`SEP__SYNCER_EXTRA_KWARGS` for env settings).
+`EXTENSIONS.SYNCER_EXTRA_KWARGS` config (`EXTENSIONS__SYNCER_EXTRA_KWARGS` for env settings).
 
 #### PMMSyncer
 
@@ -532,7 +532,7 @@ and optionally `VERIFY_SSL`, `SSL_CAFILE`, `SSL_KEYFILE`, and `SSL_CERTFILE`.
 
 #### MySQLSyncer
 
-Sync MySQL/MariaDB inventory (schemas and tables). Optional configuration under each `MySQLSyncer` entry in `SEP.SYNCERS`:
+Sync MySQL/MariaDB inventory (schemas and tables). Optional configuration under each `MySQLSyncer` entry in `EXTENSIONS.SYNCERS`:
 
 - **`IGNORE_SCHEMAS`**: List of schema names to skip during sync (defaults typically include `sys`, `performance_schema`, `mysql`, `information_schema`).
 - **`DEFAULT_EXECUTOR_HOST`**: Nomad node name to use when the MySQL service host does not match any Nomad node. Set this when syncing **RDS**, **DBaaS**, or other remote MySQL instances: the sync payload runs on a Nomad client, so you must choose which client can reach the database. The value must match a **node name** (key) returned by **`/api/tasks/hosts/`**—not the node IP or address—otherwise task execution will fail. If unset, the first available Nomad host is used when there is no match.
@@ -542,7 +542,7 @@ Credentials are read on the Nomad client from **`~/.my.cnf`** and **`~/.mylogin.
 Example for RDS/DBaaS:
 
 ```yaml
-SEP:
+EXTENSIONS:
   SYNCERS:
     - SYNCER: MySQLSyncer
       IGNORE_SCHEMAS:
@@ -557,10 +557,10 @@ SEP:
 
 Topology is a standalone, experimental **Topology** app that is shipped disabled
 by default. Enable it like any other plugin by activating its module in
-`SEP.APPS`:
+`EXTENSIONS.APPS`:
 
 ```yaml
-SEP:
+EXTENSIONS:
   APPS:
     - MODULE_NAME: topology
       ENABLED: true
@@ -603,7 +603,7 @@ SSL_CAFILE: /path/to/ca-certificate.pem  # Global CA certificate file
 
 #### Component-specific SSL Settings
 ```yaml
-SEP:
+EXTENSIONS:
   SSL_KEYFILE: /path/to/sep-key.pem
   SSL_CERTFILE: /path/to/sep-cert.pem
 
