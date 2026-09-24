@@ -50,8 +50,7 @@ OWNER_FILTER_MATCH_TOTAL = 3
 OWNER_FILTER_PAGE_LIMIT = 2
 OWNER_NAME = "BACKUPS"
 
-#: ``PeriodicTask.name``'s column width in ``sqlalchemy_celery_beat``.
-PERIODIC_TASK_NAME_COLUMN_LIMIT = 255
+PERIODIC_TASK_NAME_COLUMN_LIMIT = PeriodicTask.__table__.c.name.type.length
 
 #: A day count well inside ``timedelta``'s range, so the cadence builds, whose
 #: upcoming runs still land past ``datetime.max``. Guarding only the cadence
