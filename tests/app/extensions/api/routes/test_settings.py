@@ -2766,13 +2766,15 @@ class TestExtensionsSettingsProvenance:
         values = (10, 20)
         for value in values:
             response = api_admin_client.patch(
-                "/api/sep/admin/settings/SEPSettings",
+                "/api/extensions/admin/settings/ExtensionsSettings",
                 json={"SYNC_REFRESH_TIME": value},
             )
             assert response.status_code == status.HTTP_200_OK
 
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN, key="SYNC_REFRESH_TIME"
+            override_session,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
+            key="SYNC_REFRESH_TIME",
         )
         assert len(rows) == 1
         assert rows[0].value == values[-1]
@@ -2797,21 +2799,21 @@ class TestExtensionsSettingsProvenance:
         for key in stored_keys:
             await insert_override_row(
                 override_session,
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key=key,
                 value=5,
                 updated_by="someone-else",
             )
 
         response = api_admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings",
+            "/api/extensions/admin/settings/ExtensionsSettings",
             json={"SYNC_REFRESH_TIME": 10},
         )
 
         assert response.status_code == status.HTTP_200_OK
         override_session.expunge_all()
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert [(row.key, row.value, row.updated_by) for row in rows] == [
             ("SYNC_REFRESH_TIME", 10, admin_user.username)
