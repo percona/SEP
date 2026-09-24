@@ -32,7 +32,7 @@ export interface DashboardStats extends DashboardStatsRaw {
 
 export function useDashboardStats() {
   return useQuery<DashboardStats>({
-    queryKey: ['sep', 'dashboard', 'stats'],
+    queryKey: ['extensions', 'dashboard', 'stats'],
     queryFn: async () => {
       const response = await apiClient.get<DashboardStatsRaw>('/extensions/dashboard/');
       const errorHeader = response.headers['x-upstream-error'] as string | undefined;

@@ -22,7 +22,7 @@ channels are re-read here anyway so a run outside the entrypoint answers the
 same thing the container would.
 
 Unlike the Grafana token beside it, this key is not re-mintable. Every
-``settingoverride`` row SEP has encrypted is readable only under the key that
+``settingoverride`` row PMM Extensions has encrypted is readable only under the key that
 wrote it, and :mod:`~app.core.settings_override.cache` warns and skips a row it
 cannot decrypt rather than failing the load, so minting a replacement over
 surviving ciphertext brings the container up green with the affected overrides
@@ -133,7 +133,7 @@ class _ServiceDatabase(BaseYamlSettings):
     :meth:`~app.core.config.BaseYamlSettings.settings_customise_sources` ranks
     the prefixed spelling of a name above the unprefixed one from
     ``SETTINGS_PREFIXES``, which is a class-level declaration. Mirrors
-    ``app.core.config._SEPDatabaseSettings``, which reads the SEP database the
+    ``app.core.config._ExtensionsDatabaseSettings``, which reads the PMM Extensions database the
     same way for the same reason: to stay clear of a proxy it cannot resolve.
 
     :param DATABASE: The service's database connection options. Left without a
@@ -144,15 +144,15 @@ class _ServiceDatabase(BaseYamlSettings):
     DATABASE: DatabaseOptions
 
 
-class _SEPDatabase(_ServiceDatabase):
-    """Resolve the ``sep`` service's database options.
+class _ExtensionsDatabase(_ServiceDatabase):
+    """Resolve the ``extensions`` service's database options.
 
     :cvar SETTINGS_PREFIXES: The prefix this probe reads its sources under.
     :param DATABASE: The service's database connection options.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
-    DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
+    DATABASE: DatabaseOptions = DatabaseOptions(NAME="extensions.db")
 
 
 class _InventoryDatabase(_ServiceDatabase):
@@ -178,7 +178,7 @@ class _TasksDatabase(_ServiceDatabase):
 
 
 SERVICE_DATABASES: dict[str, type[_ServiceDatabase]] = {
-    "sep": _SEPDatabase,
+    "extensions": _ExtensionsDatabase,
     "inventory": _InventoryDatabase,
     "tasks": _TasksDatabase,
 }
@@ -414,7 +414,7 @@ def _has_encrypted_url_password(value: str) -> bool:
 
     A URL that cannot be parsed answers ``False`` rather than propagating: the
     caller has already tested the whole string, and a value malformed enough to
-    defeat ``urlparse`` is not a stored endpoint whose password SEP encrypted.
+    defeat ``urlparse`` is not a stored endpoint whose password PMM Extensions encrypted.
 
     :param value: One string leaf of a stored override value.
     :return: Whether its userinfo password holds ciphertext under any at-rest

@@ -41,54 +41,60 @@ def test_client():
 
 
 @pytest.mark.asyncio
-async def test_sep_startup_runs_after_the_override_snapshot_publishes(
+async def test_extensions_startup_runs_after_the_override_snapshot_publishes(
     mocker: MockerFixture,
 ) -> None:
-    """Run ``sep_startup()`` only after the override snapshot has published.
+    """Run ``extensions_startup()`` only after the override snapshot has published.
 
-    ``sep_overrides_lifespan`` publishes the initial override snapshot on
+    ``extensions_overrides_lifespan`` publishes the initial override snapshot on
     entry; a hot app-owned field (e.g. ``OmInventorySettings.ENABLED``) reads
     its class default until that publish happens, so seeding the periodic-task
     database before entry can seed a sweep as off when a prior run had already
-    turned it on. ``app.sep.main.sep_lifespan`` gets this right for the
+    turned it on. ``app.extensions.main.extensions_lifespan`` gets this right for the
     standalone entry point; this locks the combined ``app.main:app`` entry
     point to the same order.
     """
     order: list[str] = []
 
     @asynccontextmanager
-    async def _fake_sep_overrides_lifespan(_app):
-        order.append("sep_overrides_enter")
+    async def _fake_extensions_overrides_lifespan(_app):
+        order.append("extensions_overrides_enter")
         yield
-        order.append("sep_overrides_exit")
+        order.append("extensions_overrides_exit")
 
     @asynccontextmanager
     async def _fake_passthrough_lifespan(_app):
         yield
 
-    async def _fake_sep_startup():
-        order.append("sep_startup")
+    async def _fake_extensions_startup():
+        order.append("extensions_startup")
 
     mocker.patch.object(main_module, "detect_removed_auth_user_model")
     mocker.patch.object(main_module, "detect_removed_settings_override_keys")
     mocker.patch.object(main_module, "validate_importable_settings")
     mocker.patch.object(
-        main_module, "sep_overrides_lifespan", _fake_sep_overrides_lifespan
+        main_module,
+        "extensions_overrides_lifespan",
+        _fake_extensions_overrides_lifespan,
     )
     mocker.patch.object(main_module, "tasks_lifespan", _fake_passthrough_lifespan)
     mocker.patch.object(
         main_module, "inventory_overrides_lifespan", _fake_passthrough_lifespan
     )
-    mocker.patch.object(main_module, "sep_startup", _fake_sep_startup)
+    mocker.patch.object(main_module, "extensions_startup", _fake_extensions_startup)
 
     async with main_module.main_lifespan(app):
         pass
 
-    assert order == ["sep_overrides_enter", "sep_startup", "sep_overrides_exit"]
+    assert order == [
+        "extensions_overrides_enter",
+        "extensions_startup",
+        "extensions_overrides_exit",
+    ]
 
 
-def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):
-    """``GET /api/extensions/openapi.json`` returns the SEP sub-app's OpenAPI document.
+def test_extensions_openapi_json_endpoint_returns_valid_schema(test_client):
+    """``GET /api/extensions/openapi.json`` returns the PMM Extensions sub-app's OpenAPI document.
 
     The endpoint is a schema-helper route — it is intentionally hidden from the core
     ``/openapi.json`` via ``include_in_schema=False`` but remains callable so the
@@ -102,18 +108,20 @@ def test_sep_openapi_json_endpoint_returns_valid_schema(test_client):
     assert body["info"].get("title")
 
 
-def test_sep_mounted_at_the_root_is_unaffected_by_the_prefix_parameter(test_client):
-    """Serve the mounted SEP app from ``/`` while no URL prefix is configured.
+def test_extensions_mounted_at_the_root_is_unaffected_by_the_prefix_parameter(
+    test_client,
+):
+    """Serve the mounted PMM Extensions app from ``/`` while no URL prefix is configured.
 
     ``FastAPI.__call__`` overwrites the scope ``root_path`` a ``Mount`` sets, so
     only an unset prefix keeps the composite app's URLs anchored where it mounts
-    SEP. The side-car runs ``app.sep.main`` directly and is the only deployment
+    PMM Extensions. The side-car runs ``app.extensions.main`` directly and is the only deployment
     that configures one.
     """
     assert test_client.get("/health").status_code == status.HTTP_200_OK
 
 
-def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
+def test_extensions_openapi_helper_is_hidden_from_core_spec(test_client):
     """The schema-helper route must not appear in the core ``/openapi.json``."""
     core_spec = test_client.get("/openapi.json").json()
 
@@ -121,7 +129,7 @@ def test_sep_openapi_helper_is_hidden_from_core_spec(test_client):
     assert "/api/extensions/openapi.json" not in core_spec["paths"]
 
 
-def test_api_openapi_json_merges_core_and_sep(test_client):
+def test_api_openapi_json_merges_core_and_extensions(test_client):
     """``GET /api/openapi.json`` returns a merged spec containing core + sep paths."""
     response = test_client.get("/api/openapi.json")
 
@@ -131,15 +139,15 @@ def test_api_openapi_json_merges_core_and_sep(test_client):
     paths = body["paths"]
 
     core_spec = test_client.get("/openapi.json").json()
-    sep_spec = test_client.get("/api/extensions/openapi.json").json()
+    extensions_spec = test_client.get("/api/extensions/openapi.json").json()
     core_paths = set(core_spec.get("paths", {}))
-    sep_paths = set(sep_spec.get("paths", {}))
+    extensions_paths = set(extensions_spec.get("paths", {}))
     merged_paths = set(paths)
 
     assert core_paths, "core spec should expose at least one path"
-    assert sep_paths, "sep spec should expose at least one path"
+    assert extensions_paths, "sep spec should expose at least one path"
     assert core_paths & merged_paths, "merged spec missing core paths"
-    assert sep_paths & merged_paths, "merged spec missing sep_app paths"
+    assert extensions_paths & merged_paths, "merged spec missing extensions_app paths"
 
 
 def test_api_docs_serves_swagger_ui(test_client):
@@ -173,14 +181,14 @@ def test_existing_core_openapi_json_unchanged(test_client):
     assert "/api/extensions/openapi.json" not in paths
 
 
-def test_existing_sep_openapi_json_unchanged(test_client):
-    """Serve the sep_app spec at ``GET /api/extensions/openapi.json``."""
+def test_existing_extensions_openapi_json_unchanged(test_client):
+    """Serve the extensions_app spec at ``GET /api/extensions/openapi.json``."""
     response = test_client.get("/api/extensions/openapi.json")
 
     assert response.status_code == status.HTTP_200_OK
     spec = response.json()
     assert {"openapi", "info", "paths"} <= spec.keys()
-    assert spec.get("paths"), "sep_app spec should expose paths"
+    assert spec.get("paths"), "extensions_app spec should expose paths"
 
 
 def test_api_openapi_json_is_cached(test_client, monkeypatch):
@@ -209,7 +217,7 @@ class TestCeleryBeatReadinessGate:
 
     Beat's schedule lives in the database, so a restart dispatches anything
     already overdue about a second in, before ``uvicorn.run`` has opened its
-    listening socket. A periodic task that calls SEP's own API in that window
+    listening socket. A periodic task that calls PMM Extensions' own API in that window
     fails on connect through no fault of its own.
     """
 
@@ -260,25 +268,27 @@ class TestCeleryBeatReadinessGate:
         """
         wait = mocker.patch.object(main_module, "wait_for_api_ready", return_value=True)
         mocker.patch.object(main_module.celery_app, "Beat")
-        mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "0.0.0.0")
-        mocker.patch.object(main_module.sep_settings, "UVICORN_PORT", 8123)
+        mocker.patch.object(main_module.extensions_settings, "UVICORN_HOST", "0.0.0.0")
+        mocker.patch.object(main_module.extensions_settings, "UVICORN_PORT", 8123)
         mocker.patch.object(
-            main_module.sep_settings, "ALLOWED_HOSTS", ["sep.example.com"]
+            main_module.extensions_settings, "ALLOWED_HOSTS", ["extensions.example.com"]
         )
         configured_timeout = 90.0
         configured_interval = 0.25
         mocker.patch.object(
-            main_module.sep_settings, "API_READINESS_TIMEOUT", configured_timeout
+            main_module.extensions_settings, "API_READINESS_TIMEOUT", configured_timeout
         )
         mocker.patch.object(
-            main_module.sep_settings, "API_READINESS_POLL_INTERVAL", configured_interval
+            main_module.extensions_settings,
+            "API_READINESS_POLL_INTERVAL",
+            configured_interval,
         )
 
         main_module.start_celery_beat()
 
         args, kwargs = wait.call_args
         assert args == ("0.0.0.0", 8123)
-        assert kwargs["allowed_hosts"] == ["sep.example.com"]
+        assert kwargs["allowed_hosts"] == ["extensions.example.com"]
         assert kwargs["timeout"] == configured_timeout
         assert kwargs["interval"] == configured_interval
 
@@ -389,16 +399,18 @@ class TestCeleryBeatReadinessGateOverARealSocket:
         it through ``ExtensionsSettings`` instead of a wrapper means these tests also
         cover the wiring ``start_celery_beat`` reads its budget from.
         """
-        mocker.patch.object(main_module.sep_settings, "UVICORN_HOST", "127.0.0.1")
         mocker.patch.object(
-            main_module.sep_settings, "UVICORN_PORT", health_probe_server.port
-        )
-        mocker.patch.object(main_module.sep_settings, "ALLOWED_HOSTS", ["*"])
-        mocker.patch.object(
-            main_module.sep_settings, "API_READINESS_TIMEOUT", self.GATE_TIMEOUT
+            main_module.extensions_settings, "UVICORN_HOST", "127.0.0.1"
         )
         mocker.patch.object(
-            main_module.sep_settings,
+            main_module.extensions_settings, "UVICORN_PORT", health_probe_server.port
+        )
+        mocker.patch.object(main_module.extensions_settings, "ALLOWED_HOSTS", ["*"])
+        mocker.patch.object(
+            main_module.extensions_settings, "API_READINESS_TIMEOUT", self.GATE_TIMEOUT
+        )
+        mocker.patch.object(
+            main_module.extensions_settings,
             "API_READINESS_POLL_INTERVAL",
             self.GATE_INTERVAL,
         )
@@ -447,7 +459,7 @@ class TestCeleryBeatReadinessGateOverARealSocket:
         """Walk the whole reported sequence, asserting the symptom is gone.
 
         The worker starts while the port still refuses, no dispatch happens until
-        a real server answers, and then the first dispatched task's call to SEP's
+        a real server answers, and then the first dispatched task's call to PMM Extensions'
         own API succeeds. The same call is made up front so the failure being
         closed is demonstrated rather than assumed: an overdue task dispatched in
         the old window got ``ConnectionRefusedError``, not a response.

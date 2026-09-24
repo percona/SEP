@@ -1,0 +1,330 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the MySQL Backups plugin's self-contained catalog model and API response.
+
+This module is intentionally **self-contained** — it imports only from
+``app.core``, ``pydantic``, ``sqlalchemy``, ``sqlmodel``, and ``yaml`` (for the
+shared config parser), never from ``app.inventory`` / ``app.tasks`` / the app
+framework's form DSL, and **never from a sibling in its own package**. The sep
+Alembic discovery loads this file *by path* to register the table in the
+migration metadata, so a package-qualified sibling import executes
+``mysql_backups/__init__.py``, which imports the whole app and re-enters this
+module mid-initialisation — an ``ImportError`` that only ``make
+checkmigrations`` reproduces, however import-free the sibling itself is.
+Pulling in the heavier modules would additionally bleed their tables into the
+sep autogenerate comparison.
+
+That constraint is also what decides where a piece two siblings both need goes
+— the ``backup_source`` resolution below, and the vocabulary enums the backup
+and restore forms share: this module is the one both the catalog response and
+:mod:`app.extensions.apps.mysql_backups.restore.models` can depend on, so anything
+either would otherwise import from the other lands here instead.
+
+The split mirrors ``app.extensions.apps.atw``, in the direction that matters: there,
+``atw.models`` is the self-contained module and the one inventory-dependent
+piece (the category taxonomy) lives apart, in ``atw.categories``. Here, this
+module plays the role of ``atw.models``, and the plugin's heavy form/DSL
+surface (:class:`~app.extensions.apps.mysql_backups.forms.BackupCreate` and friends)
+plays the role of ``atw.categories`` — the piece split *out* because it, not
+the table, needed the heavier imports.
+"""
+
+from dataclasses import dataclass
+from enum import nonmember, StrEnum
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, computed_field, ConfigDict, field_validator
+from sqlalchemy import BigInteger, Column
+from sqlalchemy import Enum as EnumField
+from sqlmodel import Field as SQLField
+
+from app.core.db.models import BaseSQLModel, DateTimeWithTimezone
+from app.core.utils.fields import EnumFieldMixin, UTCDatetime
+
+UNKNOWN_SERVICE_SENTINEL = "-1"
+
+BACKUP_SOURCE_SHELLBACKTICK = "`"
+BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
+
+#: The forbidden set spelled out for the operator who just hit it. Derived from
+#: the set rather than written beside it, and sorted so the wording is stable:
+#: the form's own help text no longer lists these, so this message is where a
+#: rejected path gets told what to remove.
+BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY = " ".join(sorted(BACKUP_SOURCE_SHELL_FORBIDDEN))
+
+
+def ensure_backup_source_shell_safe(value: str) -> str:
+    """Reject shell metacharacters in a backup-source path (defense in depth).
+
+    Shared by every model carrying ``backup_source`` so the create form and the
+    YAML-serialization config model enforce the same rule from one place.
+
+    :param value: The submitted backup-source path.
+    :return: The validated value, unchanged.
+    :raises ValueError: When ``value`` contains a newline or a shell metacharacter.
+    """
+    if not value:
+        return value
+    if "\n" in value or "\r" in value:
+        raise ValueError("backup_source must not contain newline characters")
+    if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
+        raise ValueError(
+            "backup_source contains disallowed shell metacharacters; remove any "
+            f"of {BACKUP_SOURCE_SHELL_FORBIDDEN_DISPLAY} from the backup source"
+        )
+    return value
+
+
+def preferred_backup_source(
+    upload_destination: str | None, location: str | None
+) -> str | None:
+    """Return the preferred backup-source candidate, stripped, or ``None``.
+
+    Prefer ``upload_destination`` when set and non-blank, otherwise ``location``.
+
+    :param upload_destination: The run's recorded upload destination.
+    :param location: The run's recorded on-disk location.
+    :return: The preferred candidate with surrounding whitespace removed, or
+        ``None`` when neither field holds a non-blank value.
+    """
+    for candidate in (upload_destination, location):
+        if candidate and (stripped := candidate.strip()):
+            return stripped
+    return None
+
+
+def restore_valid_backup_source(
+    upload_destination: str | None, location: str | None
+) -> str | None:
+    """Return a restore-form-valid ``backup_source``, or ``None``.
+
+    Judge shell-safety on the single candidate :func:`preferred_backup_source`
+    produced, never on the raw fields independently: a rejected candidate yields
+    ``None`` rather than falling back to the other field, so a caller is never
+    handed a source pointing at a different artifact than the one the run's own
+    preference names.
+
+    :param upload_destination: The run's recorded upload destination.
+    :param location: The run's recorded on-disk location.
+    :return: The restore-valid source, or ``None`` when absent, blank, or
+        rejected by :func:`ensure_backup_source_shell_safe`.
+    """
+    value = preferred_backup_source(upload_destination, location)
+    if value is None:
+        return None
+    try:
+        ensure_backup_source_shell_safe(value)
+    except ValueError:
+        return None
+    return value
+
+
+class BackupType(EnumFieldMixin, StrEnum):
+    """Represent the backup tools a run can be taken with.
+
+    :cvar LABELS: Display text for each stored value, keyed as the value is
+        stored on the wire. A value with no entry is rendered as-is by the
+        caller. Wrapped in :func:`enum.nonmember` because ``enum`` would
+        otherwise treat a class-body dict as a member candidate.
+    """
+
+    MYDUMPER = "M"
+    XTRABACKUP = "X"
+    BINLOG = "B"
+
+    LABELS = nonmember(
+        {
+            "M": "Mydumper",
+            "X": "XtraBackup",
+            "B": "Binlog",
+        }
+    )
+
+
+class XtraBackupTool(EnumFieldMixin, StrEnum):
+    """Represent the XtraBackup-family binaries a backup or restore can run."""
+
+    INNOBACKUPEX = "innobackupex"
+    XTRABACKUP = "xtrabackup"
+    MARIADB_BACKUP = "mariadb-backup"
+
+
+class MysqlBackupRun(BaseSQLModel, table=True):
+    """Persist one completed MySQL backup run's produced output.
+
+    Written by the run-result recorder on a successful mydumper or xtrabackup
+    run — one row per run, keyed by :attr:`task_history_id`. The record is
+    tool-agnostic: the xtrabackup incremental layout is captured as a different
+    :attr:`location` string, not a different shape. Binlog runs and non-success
+    terminals leave no row.
+
+    :param task_history_id: The id of the ``TaskHistory`` this run belongs to;
+        unique, so one run maps to exactly one record.
+    :param service_name: The inventory service name the backup was taken from
+        (the task's ``_service_name`` meta), kept as the fallback query key for
+        rows carrying no :attr:`service_id` and as the only usable key for a
+        free-typed restore destination that has no inventory row at all. A row
+        reached this way can still be confused with another service's: two MySQL
+        services may share a name, since ``Service.name`` carries no uniqueness
+        constraint.
+    :param service_id: The inventory id of the service the backup was taken from
+        (the task's ``_service_id`` meta), preferred as the per-service query key
+        because it survives a rename, which the name does not. Not a foreign key
+        — the catalog is extensions-owned and inventory lives in a separate database, so
+        nothing enforces that the id still resolves. Empty on rows recorded
+        before the id was stamped, which is what keeps the name fallback needed.
+    :param hostname: The backup target host (the task's ``target`` meta).
+    :param backup_type: The backup tool the run used, mydumper or xtrabackup.
+    :param location: The resolved on-disk directory the run produced, stored
+        exactly as the payload reported it.
+    :param upload_destination: The upload destination when one was configured,
+        else ``None``.
+    :param size_bytes: The backup size in bytes, when the run reported it.
+    :param started_at: When the run started.
+    :param finished_at: When the run finished.
+    """
+
+    __tablename__ = "mysql_backup_run"
+
+    task_history_id: int = SQLField(unique=True, index=True)
+    service_name: str | None = SQLField(default=None, index=True)
+    service_id: int | None = SQLField(default=None, index=True)
+    hostname: str | None = None
+    backup_type: BackupType = SQLField(
+        sa_column=Column(
+            EnumField(BackupType, native_enum=False, create_constraint=True),
+            nullable=False,
+        ),
+    )
+    location: str | None = None
+    upload_destination: str | None = None
+    size_bytes: int | None = SQLField(default=None, sa_type=BigInteger)
+    started_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+    finished_at: UTCDatetime | None = SQLField(
+        default=None, sa_type=DateTimeWithTimezone
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CatalogServiceKey:
+    """Carry the keys one service's catalog rows are selected by.
+
+    The two travel together everywhere the catalog is queried per service — the
+    manager builds one predicate from both, and the id is meaningless to a caller
+    without the name to fall back on. Lives here rather than in ``deps.py`` so the
+    manager can name it without importing the request layer.
+
+    :param service_name: The service name to match catalog rows by.
+    :param service_id: The inventory id to prefer as the key, or ``None`` when the
+        caller resolved no inventory service — a free-typed destination — and the
+        name is all there is.
+    """
+
+    service_name: str
+    service_id: int | None
+
+
+class BackupRunResponse(BaseModel):
+    """Expose one catalog record over the service-scoped and task-scoped queries.
+
+    :param id: The record's primary key.
+    :param service_name: The inventory service the backup was taken from.
+    :param service_id: The inventory id of that service, or ``None`` on a record
+        written before the id was stamped.
+    :param hostname: The backup target host.
+    :param backup_type: The backup tool, ``"M"`` (mydumper) or ``"X"`` (xtrabackup).
+        Narrower than :class:`BackupType`: binlog runs are never catalogued, so
+        ``"B"`` never appears here.
+    :param location: The resolved on-disk directory the run produced.
+    :param upload_destination: The upload destination when one was configured.
+    :param size_bytes: The backup size in bytes, when the run reported it.
+    :param started_at: When the run started.
+    :param finished_at: When the run finished.
+    :param backup_source: The run's restore-form-valid source, derived from
+        ``upload_destination`` and ``location``; read-only, and absent from the
+        table this response is built from.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    service_name: str | None
+    service_id: int | None
+    hostname: str | None
+    backup_type: Literal["M", "X"]
+    location: str | None
+    upload_destination: str | None
+    size_bytes: int | None
+    started_at: UTCDatetime | None
+    finished_at: UTCDatetime | None
+
+    @field_validator("backup_type", mode="before")
+    @classmethod
+    def _coerce_backup_type(cls, value: object) -> object:
+        """Reduce a ``BackupType`` enum column value to its plain string value.
+
+        The ORM's non-native enum column round-trips as a :class:`BackupType`
+        member, not the plain ``str`` this ``Literal`` field expects — pydantic's
+        literal validator matches on exact type, not ``StrEnum`` equality.
+
+        :param value: The raw ``backup_type`` value from the ORM row.
+        :return: ``value.value`` for a :class:`BackupType` member, else ``value``.
+        """
+        return value.value if isinstance(value, BackupType) else value
+
+    @computed_field
+    @property
+    def backup_source(self) -> str | None:
+        """Return the run's restore-form-valid source, or ``None``.
+
+        Resolved server-side so no caller re-derives it from the raw fields.
+        ``None`` means the run recorded no usable source, or recorded one the
+        restore form rejects — either way it cannot seed a restore.
+        """
+        return restore_valid_backup_source(self.upload_destination, self.location)
+
+
+def extract_backup_type_marker(task_data: dict[str, Any] | None) -> str | None:
+    """Return the ``BACKUP_TYPE`` marker from a task's YAML config, or ``None``.
+
+    Reads the value defensively: a missing ``meta``, unparseable YAML, or an
+    absent key all resolve to ``None`` rather than raising. Returns the raw
+    single-letter marker (``"M"``/``"X"``/``"B"``); callers that need the typed
+    :class:`BackupType` coerce it themselves (see ``deps.py``'s
+    ``_extract_backup_type_from_task``).
+
+    :param task_data: The task's ``data`` dict (``meta`` carries the YAML config).
+    :return: The raw backup-type marker, or ``None``.
+    """
+    match task_data:
+        case {"meta": {"config": str(raw_config)}} if raw_config:
+            pass
+        case _:
+            return None
+
+    try:
+        config = yaml.safe_load(raw_config)
+    except yaml.YAMLError:
+        return None
+
+    match config:
+        case {"SERVER_LIST": [{"BACKUP_TYPE": str(backup_type)}, *_]}:
+            return backup_type
+        case _:
+            return None

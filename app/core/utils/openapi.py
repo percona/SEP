@@ -86,12 +86,12 @@ def rewrite_schema_refs(node: Any, rename_map: dict[str, str]) -> None:
             rewrite_schema_refs(item, rename_map)
 
 
-_APP_MODEL_PREFIX = "app__sep__apps__"
+_APP_MODEL_PREFIX = "app__extensions__apps__"
 _MODELS_SEP = "__models__"
 
 
 def _split_app_model(key: str) -> tuple[str, str]:
-    """Split an ``app__sep__apps__<app>[__<sub>]__models__<Class>`` schema key.
+    """Split an ``app__extensions__apps__<app>[__<sub>]__models__<Class>`` schema key.
 
     :param key: A module-path-qualified app-model schema name.
     :return: The top-level app token and the class-name portion.
@@ -148,7 +148,7 @@ def _wrapper_target_from_inner(inner: str) -> str | None:
     colliding ``PaginatedResponse[...]`` variants get distinct, positional-
     suffix-free names. Handles both the ``<app>__<Class>`` form emitted by the
     :class:`_AppNamespacedJsonSchema` generator and the raw
-    ``app__sep__apps__…__models__<Class>`` module-path form (a generator
+    ``app__extensions__apps__…__models__<Class>`` module-path form (a generator
     fallback). A bare, non-app inner (e.g. a core model) yields ``None``.
 
     :param inner: The wrapped model's schema name (the wrapper's inner ref).
@@ -170,7 +170,7 @@ def _namespaced_target(key: str, schemas: dict[str, Any]) -> str | None:
     models themselves are namespaced upstream by :class:`_AppNamespacedJsonSchema`;
     this pass primarily renames generic wrappers (whose names Pydantic still
     emits with positional ``___N`` suffixes) and defensively covers any raw
-    ``app__sep__apps__…`` key the generator left behind.
+    ``app__extensions__apps__…`` key the generator left behind.
 
     :param key: A ``components.schemas`` key from the generated spec.
     :param schemas: The full schema map, used to resolve generic-wrapper inners.
@@ -210,7 +210,7 @@ def namespace_app_schema_names(doc: dict[str, Any]) -> dict[str, Any]:
     Pydantic v2 falls back to module-path-qualified ``$defs`` names when two app
     models share a class name (for example ``BackupTaskResponse`` in both the
     backup_mongo and backup_pg apps), producing
-    ``app__sep__apps__backup_pg__models__BackupTaskResponse``. Those names leak
+    ``app__extensions__apps__backup_pg__models__BackupTaskResponse``. Those names leak
     the internal module path and — because Pydantic qualifies every member of a
     collision group — are keyed off the module of each model, not off which app
     "won" a short name. This pass rewrites them to explicit ``<app>__<Class>``
@@ -260,15 +260,15 @@ def namespace_app_schema_names(doc: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-_APP_CORE_REF_PREFIX = "app.sep.apps."
+_APP_CORE_REF_PREFIX = "app.extensions.apps."
 
 
 def _strip_core_ref_ids(core_ref: str) -> str:
     """Return a Pydantic ``core_ref`` with the ``:id`` object suffixes removed.
 
     Mirrors the component-splitting Pydantic itself uses so generic arguments
-    (bracketed) are handled: ``app.sep.apps.backup_pg.models.Foo:140[Bar:99]``
-    becomes ``app.sep.apps.backup_pg.models.Foo[Bar]``.
+    (bracketed) are handled: ``app.extensions.apps.backup_pg.models.Foo:140[Bar:99]``
+    becomes ``app.extensions.apps.backup_pg.models.Foo[Bar]``.
 
     :param core_ref: A Pydantic core-schema reference string.
     :return: The reference with per-component object ids stripped.
@@ -280,7 +280,7 @@ def _strip_core_ref_ids(core_ref: str) -> str:
 def _app_namespaced_defs_name(core_ref_no_id: str) -> str | None:
     """Return the ``<app>__<Class>`` defs name for an app-owned model, or ``None``.
 
-    Derives the app token from the top package under ``app.sep.apps.`` and the
+    Derives the app token from the top package under ``app.extensions.apps.`` and the
     class from the trailing qualname segment, so the name depends only on the
     model's own module path — stable regardless of which other apps are
     installed. Generic instantiations (bracketed) return ``None``: they are
@@ -302,7 +302,7 @@ def _app_namespaced_defs_name(core_ref_no_id: str) -> str | None:
 
 
 class _AppNamespacedJsonSchema(GenerateJsonSchema):
-    """Emit ``<app>__<Class>`` ``$defs`` names for every ``app.sep.apps`` model.
+    """Emit ``<app>__<Class>`` ``$defs`` names for every ``app.extensions.apps`` model.
 
     Subclasses FastAPI's ``GenerateJsonSchema`` (not Pydantic's) so FastAPI's own
     overrides — notably ``bytes_schema`` emitting ``contentMediaType`` — are
@@ -606,7 +606,7 @@ def merge_openapi_documents(
     primary: dict[str, Any],
     secondary: dict[str, Any],
     *,
-    secondary_suffix: str = "_sep",
+    secondary_suffix: str = "_extensions",
 ) -> dict[str, Any]:
     """Merge two OpenAPI documents into one, primary winning on conflicts.
 
@@ -638,7 +638,7 @@ def merge_openapi_documents(
     :param secondary: The secondary OpenAPI document to fold into the primary.
     :type secondary: dict[str, Any]
     :param secondary_suffix: Suffix appended to a secondary schema name on
-        collision with a different body. Defaults to ``"_sep"``.
+        collision with a different body. Defaults to ``"_extensions"``.
     :type secondary_suffix: str
     :return: A new merged OpenAPI document.
     :rtype: dict[str, Any]

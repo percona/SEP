@@ -18,7 +18,7 @@
 import { lazy, Suspense, type CSSProperties } from 'react';
 
 const DetailSyntaxHighlighter = lazy(() =>
-  import('@sep/framework').then((mod) => ({ default: mod.DetailSyntaxHighlighter })),
+  import('@pmm-extensions/framework').then((mod) => ({ default: mod.DetailSyntaxHighlighter })),
 );
 
 export const sectionStyle: CSSProperties = {

@@ -189,7 +189,7 @@ def test_the_log_stream_reconciliation_is_refused_for_a_non_admin(
 
     It is a genuine write — it persists ``status``, ``started_at`` and
     ``finished_at`` — so it stays gated rather than joining the exemption
-    allowlist. The SEP log stream that triggers it is open to any authenticated
+    allowlist. The PMM Extensions log stream that triggers it is open to any authenticated
     user, which is why that caller sends the internal token instead.
     """
     response = bearer_client.post(
@@ -207,7 +207,7 @@ def test_the_log_stream_reconciliation_is_accepted_for_the_service_principal(
 ) -> None:
     """Accept the same reconciliation when it carries the internal token.
 
-    This is the identity the SEP log stream sends, so a non-admin's stream still
+    This is the identity the PMM Extensions log stream sends, so a non-admin's stream still
     reaches its finish frame.
     """
     mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))

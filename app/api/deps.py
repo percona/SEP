@@ -36,7 +36,7 @@ from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import set_log_context
 from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
-from app.sep.config import sep_settings
+from app.extensions.config import extensions_settings
 
 logger = logging.getLogger(__name__)
 #: The provider-selected concrete user class, resolved from configuration at
@@ -50,14 +50,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
 AuthToken = Annotated[str, Depends(oauth2_scheme)]
 
 RefreshTokenCookie = Annotated[
-    str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
+    str | None, Cookie(alias=extensions_settings.SESSION_REFRESH.COOKIE_NAME)
 ]
 
 SERVICE_PRINCIPAL_ID = UUID("00000000-0000-4000-8000-000000000000")
 SERVICE_PRINCIPAL = User.build_service_principal(
     user_id=SERVICE_PRINCIPAL_ID,
-    username="sep-service",
-    first_name="SEP",
+    username="extensions-service",
+    first_name="PMM Extensions",
     last_name="Service",
     role=UserRole.VIEWER,
 )
@@ -84,7 +84,7 @@ async def authenticate_bearer_token(token: str) -> BaseUser:
     When ``settings.EXTENSIONS_INTERNAL_TOKEN`` is configured and the incoming Bearer
     token matches it (constant-time comparison), return a synthetic non-admin
     "service principal" user instead of contacting the OAuth provider. This
-    allows SEP-internal service-to-service calls (e.g. scheduled inventory
+    allows PMM Extensions internal service-to-service calls (e.g. scheduled inventory
     sync) to authenticate with a stable deployment-level secret rather than a
     short-lived personal access token.
 
@@ -235,7 +235,7 @@ def minimum_role_for(route: object | None) -> UserRole:
     """Return the minimum role a matched route requires.
 
     The single home of the unregistered-route default, read by the gate and by
-    the test that classifies SEP's unsafe surface, so the two cannot disagree
+    the test that classifies PMM Extensions' unsafe surface, so the two cannot disagree
     about what an unregistered route resolves to. A request no route matched
     carries no ``route`` in its scope and resolves the same way.
 

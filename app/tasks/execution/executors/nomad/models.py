@@ -113,7 +113,7 @@ _CAPTURE_HOLD_RELEASE_SIGNAL = "SIGTERM"
 # held until its own deadline.
 _CAPTURE_HOLD_RELEASE_MAX_ATTEMPTS = 5
 _CAPTURE_HOLD_RELEASE_INTERVAL_SECONDS = 0.5
-#: The Nomad task driver every SEP payload runs under. Named once because the
+#: The Nomad task driver every PMM Extensions payload runs under. Named once because the
 #: dispatch filter and the reporting in ``get_host_states`` must agree on it: if they
 #: drift, a host is reported healthy and jobs still refuse to place on it.
 RAW_EXEC_DRIVER = "raw_exec"
@@ -676,9 +676,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         never trips it.
     :param log_capture_hold_seconds: How long the ``log-capture-hold`` step
         keeps a finished allocation alive so Nomad cannot garbage-collect logs
-        SEP has not read yet. Injected as dispatch meta and enforced on the
+        PMM Extensions has not read yet. Injected as dispatch meta and enforced on the
         execution host, so it bounds allocation residency even when the tasks
-        service never returns; SEP releases the hold early on the normal path.
+        service never returns; PMM Extensions releases the hold early on the normal path.
         Must outlast at least two sync cadences, or a sub-cadence step's output
         is collected before any sync samples it. Defaults to 90 seconds.
     :cvar INHERITED_MARKERS: Overlay marking the inherited ``BaseRemoteAPI`` TLS
@@ -2837,7 +2837,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
             1 MiB.
         :param anonymize: Whether to redact the task's configured entities from the
             streamed content. Defaults to ``True``, as every read served to a user
-            must be redacted; internal reads of content SEP itself produced may opt
+            must be redacted; internal reads of content PMM Extensions itself produced may opt
             out to get the bytes back verbatim.
         :return: An async generator yielding chunks of the file as bytes.
         """

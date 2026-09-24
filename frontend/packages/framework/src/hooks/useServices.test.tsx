@@ -15,19 +15,19 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
 
-import { ApiError, apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@pmm-extensions/api';
 import { useServices } from './useServices';
 
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function wrapper() {
   // `retry: false` here is a no-op for this hook: useServices sets
-  // `retry: sepRetry` at the query level, which overrides the client default
+  // `retry: extensionsRetry` at the query level, which overrides the client default
   // in React Query v5. We keep it for documentation. `retryDelay: 0` removes
   // the exponential backoff so tests that exercise the retry path finish in
   // milliseconds.
@@ -193,7 +193,7 @@ describe('useServices', () => {
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     // Each attempt fetches exactly MAX_PAGES (50) pages before throwing the
-    // pagination-exceeded Error. sepRetry retries plain Errors up to 2 times,
+    // pagination-exceeded Error. extensionsRetry retries plain Errors up to 2 times,
     // so the total call count is a multiple of 50. We assert the per-attempt
     // ceiling (the guard's actual contract) rather than the retry-aware total.
     expect(mocked.get.mock.calls.length).toBeGreaterThanOrEqual(50);
@@ -201,10 +201,10 @@ describe('useServices', () => {
     expect((result.current.error as Error).message).toMatch(/pagination exceeded/i);
   });
 
-  it('does not retry a deterministic 502 (sepRetry short-circuit)', async () => {
-    // Without `retry: sepRetry` React Query's default policy would fire 4
+  it('does not retry a deterministic 502 (extensionsRetry short-circuit)', async () => {
+    // Without `retry: extensionsRetry` React Query's default policy would fire 4
     // attempts before surfacing the error on the required Database Host
-    // selector. The SEP gateway returns 502 only when the upstream Tasks
+    // selector. The PMM Extensions gateway returns 502 only when the upstream Tasks
     // API is unreachable — retrying just queues failed user-visible loads.
     mocked.get.mockRejectedValue(
       new ApiError({ kind: 'http', status: 502, message: '502 Bad Gateway' }),

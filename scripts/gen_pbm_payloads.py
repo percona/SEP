@@ -19,7 +19,7 @@
 Payloads are shipped by ``file://`` and can't import shared code, so this
 rewrites the block between each payload's ``# --- BEGIN/END GENERATED ... ---``
 markers with the canonical region from
-``app/sep/apps/backup_mongo/pbm_creds_common.py``. Each region is independent: a
+``app/extensions/apps/backup_mongo/pbm_creds_common.py``. Each region is independent: a
 payload opts into one by carrying that region's BEGIN marker as a full line, and a
 file with no markers is left untouched. Regions carried by only a subset of
 payloads (config-apply, restore ``--yes``, textfile-collector) sync to exactly
@@ -34,9 +34,9 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SEARCH_ROOT = REPO_ROOT / "app" / "sep" / "apps" / "backup_mongo"
+DEFAULT_SEARCH_ROOT = REPO_ROOT / "app" / "extensions" / "apps" / "backup_mongo"
 CANONICAL_SOURCE = (
-    REPO_ROOT / "app" / "sep" / "apps" / "backup_mongo" / "pbm_creds_common.py"
+    REPO_ROOT / "app" / "extensions" / "apps" / "backup_mongo" / "pbm_creds_common.py"
 )
 
 
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         ``--check`` finds drift or a region has no opted-in payload.
     """
     sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.backup_mongo.pbm_creds_common import (
+    from app.extensions.apps.backup_mongo.pbm_creds_common import (
         CONFIG_APPLY_BEGIN,
         CONFIG_APPLY_END,
         config_apply_source,

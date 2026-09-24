@@ -282,9 +282,9 @@ GROUPS: tuple[Group, ...] = (
         r"^Cannot resolve imported module `",
         "the module does not exist at check time: golden apps are scaffolded by "
         "the test run, and the payloads run on the host they are dispatched to",
-        paths="tests/app/sep/apps/framework/golden/ "
-        "app/sep/apps/om_inventory/payload/probe.py "
-        "app/sep/sync/syncers/system_facts/payload.py",
+        paths="tests/app/extensions/apps/framework/golden/ "
+        "app/extensions/apps/om_inventory/payload/probe.py "
+        "app/extensions/sync/syncers/system_facts/payload.py",
     ),
     _group(
         "subscripted-generics-called",
@@ -314,7 +314,7 @@ GROUPS: tuple[Group, ...] = (
         'node so `F("field") == value` builds a rule the way SQLAlchemy builds '
         "one for a column; `object.__eq__` is declared `-> bool` in typeshed and "
         "cannot move, and the two are confined to the rules DSL module",
-        "app/sep/apps/framework/rules.py",
+        "app/extensions/apps/framework/rules.py",
     ),
     _group(
         "runtime-computed-model-in-type-position",
@@ -337,7 +337,7 @@ GROUPS: tuple[Group, ...] = (
         "reads identically for an ordinary call mistakenly written in a type "
         "position -- so the group is confined to the module holding the only "
         "such site",
-        "app/sep/apps/mysql_backups/forms.py",
+        "app/extensions/apps/mysql_backups/forms.py",
     ),
 )
 

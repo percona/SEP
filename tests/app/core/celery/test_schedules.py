@@ -41,7 +41,7 @@ class _DuckModel:
     """Stand in for a beat ``PeriodicTask`` row for a real ``ModelEntry``.
 
     ``ModelEntry`` reads its model duck-typed, so the contract test can build one
-    from a SEP schedule without a database, a Session, or a stored row.
+    from a PMM Extensions schedule without a database, a Session, or a stored row.
     """
 
     def __init__(self, schedule, start_time, last_run_at):

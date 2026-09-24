@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 
 def resolve_schedule_task_name(periodic_task: PeriodicTask) -> str | None:
-    """Return the SEP task name a beat-store schedule runs, or ``None``.
+    """Return the PMM Extensions task name a beat-store schedule runs, or ``None``.
 
     Decode the row's ``args``/``kwargs`` and hand them to
     :func:`~app.tasks.periodic.models.resolve_task_name`. A row whose arguments
@@ -39,7 +39,7 @@ def resolve_schedule_task_name(periodic_task: PeriodicTask) -> str | None:
     iterating the whole beat store.
 
     :param periodic_task: The beat-store row to inspect.
-    :return: The resolved SEP task name, or ``None`` when it cannot be derived.
+    :return: The resolved PMM Extensions task name, or ``None`` when it cannot be derived.
     """
     try:
         args = json.loads(periodic_task.args) if periodic_task.args else None
@@ -57,7 +57,7 @@ async def attach_last_run_status(
 ) -> list[PeriodicTask]:
     """Stamp each schedule's own last-run result onto its beat-store rows.
 
-    Resolve the SEP task name behind every schedule, fetch system-triggered
+    Resolve the PMM Extensions task name behind every schedule, fetch system-triggered
     history points for those names in a single bulk query bounded by the earliest
     dispatch time in play, then attribute to each schedule the earliest point
     whose ``created_at`` is at or after that schedule's ``last_run_at`` -- the

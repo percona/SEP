@@ -36,12 +36,12 @@ from app.core.utils.fields import StrCredentialAnyUrl, StrDatabaseUrl, StrRelati
 #: not registry-derived; ``build_celery_include`` prepends them. Every entry must
 #: register regardless of which apps an image ships -- the tasks service, the
 #: library-owned snippet ingestion, the drain reconciler whose beat row is
-#: seeded unconditionally, and the SEP-side settings-override refresher.
+#: seeded unconditionally, and the PMM Extensions side settings-override refresher.
 STATIC_CELERY_INCLUDE: tuple[str, ...] = (
     "app.tasks.celery",
-    "app.sep.snippets.celery",
-    "app.sep.app_drain",
-    "app.sep.settings_override",
+    "app.extensions.snippets.celery",
+    "app.extensions.app_drain",
+    "app.extensions.settings_override",
 )
 
 
@@ -82,7 +82,7 @@ class CeleryOptions(BaseLowercaseModel):
     :param result_backend: The URL of the result backend. Defaults to None.
     :param beat_dburi: The database URI for storing scheduled tasks. Defaults to
         ``"sqlite:///schedule.db"`` for a bare ``CeleryOptions``; under ``Settings``
-        a lower-priority source supplies the resolved SEP database connection, so
+        a lower-priority source supplies the resolved PMM Extensions database connection, so
         the beat store follows ``EXTENSIONS__DATABASE__*`` unless something configures it.
     :param worker_state_db: Filesystem path where the Celery worker persists state
         such as revoked task ids. Defaults to ``.celery_worker_state``.
@@ -155,10 +155,10 @@ class CeleryOptions(BaseLowercaseModel):
     def set_include(self) -> Self:
         """Seed ``include`` with the static service base.
 
-        Reaching the app registry here would force ``sep_settings`` mid-construction,
+        Reaching the app registry here would force ``extensions_settings`` mid-construction,
         re-entering the same un-guarded lazy proxy that is building this ``Settings``.
         The registry-derived app modules are appended later, at a safe seam, via
-        :func:`app.sep.apps.framework.registry.build_celery_include`.
+        :func:`app.extensions.apps.framework.registry.build_celery_include`.
 
         :return: Validated options with the static include base set.
         """

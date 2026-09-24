@@ -42,12 +42,12 @@ from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
 
-POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+POSTGRES_DSN_ENV = "EXTENSIONS_TEST_POSTGRES_DSN"
 
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
 
-_LEGACY_PREFIX = "sep-legacy:"
+_LEGACY_PREFIX = "extensions-legacy:"
 
 _MANDATORY_COLUMNS = (
     ("node", "external_id"),
@@ -69,7 +69,7 @@ pytestmark = pytest.mark.postgres
 def postgres_async_url():
     """Return an ``asyncpg`` URL to the real-PostgreSQL test database.
 
-    Skip when ``$SEP_TEST_POSTGRES_DSN`` is unset (local runs without
+    Skip when ``$EXTENSIONS_TEST_POSTGRES_DSN`` is unset (local runs without
     PostgreSQL); the dedicated ``test_postgres`` CI job supplies it.
     """
     dsn = os.environ.get(POSTGRES_DSN_ENV)

@@ -74,10 +74,10 @@ from app.core.settings_override.registry import (
 )
 from app.core.utils import json_serializer
 from app.core.utils.fields import StrCredentialHttpUrl
+from app.extensions.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
+from app.extensions.apps.framework.registry import collect_app_owned_settings_classes
+from app.extensions.config import ExtensionsSettings
 from app.inventory.config import InventorySettings
-from app.sep.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
-from app.sep.apps.framework.registry import collect_app_owned_settings_classes
-from app.sep.config import ExtensionsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
@@ -94,7 +94,7 @@ from tests.app.core.settings_override.conftest import (
 )
 from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 
-_SEP_TRACK_CLASSES = (Settings, AlertSettings, ExtensionsSettings)
+_EXTENSIONS_TRACK_CLASSES = (Settings, AlertSettings, ExtensionsSettings)
 _TASKS_TRACK_CLASSES = (TasksSettings,)
 
 _DELIVERY_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
@@ -209,7 +209,7 @@ def _run(
 
 
 #: The Alembic tracks that each ship a re-encryption revision.
-_TRACKS = ("sep", "inventory", "tasks")
+_TRACKS = ("extensions", "inventory", "tasks")
 
 #: The revision-filename globs selecting each re-encryption family.
 _SECRET_REVISION_GLOB = "app/*/migrations/versions/*encrypt_secret_setting_overrides.py"
@@ -274,7 +274,7 @@ class TestUpgradeEncryptSecretOverrideValues:
         """Encrypt the secret leaf of each stored shape, leaving its siblings plain."""
         _seed(engine, _SECRET_ROWS)
 
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         stored = _stored(engine)
         pmm = stored[(SETTINGS_TOKEN, "PMM")]
@@ -295,7 +295,7 @@ class TestUpgradeEncryptSecretOverrideValues:
         _seed(engine, _NON_SECRET_ROWS)
         before = _stored(engine)
 
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine) == before
 
@@ -315,7 +315,7 @@ class TestUpgradeEncryptSecretOverrideValues:
         token = _foreign_token()
         _seed(engine, [(SETTINGS_TOKEN, "PMM__api_key", token)])
 
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine)[(SETTINGS_TOKEN, "PMM__api_key")] == token
 
@@ -326,10 +326,10 @@ class TestUpgradeEncryptSecretOverrideValues:
         chain to run reaches rows the first already rewrote.
         """
         _seed(engine, _SECRET_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
         after_first = _stored(engine)
 
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine) == after_first
 
@@ -341,7 +341,11 @@ class TestUpgradeEncryptSecretOverrideValues:
         """
         engine = create_engine("sqlite://", json_serializer=json_serializer)
         try:
-            _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+            _run(
+                engine,
+                upgrade_encrypt_secret_override_values,
+                _EXTENSIONS_TRACK_CLASSES,
+            )
 
             assert not inspect(engine).has_table("settingoverride")
         finally:
@@ -355,9 +359,11 @@ class TestDowngradeDecryptSecretOverrideValues:
         """Restore every stored shape to exactly what the upgrade found."""
         _seed(engine, _SECRET_ROWS)
         before = _stored(engine)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
 
         assert _stored(engine) == before
 
@@ -366,7 +372,9 @@ class TestDowngradeDecryptSecretOverrideValues:
         _seed(engine, _SECRET_ROWS)
         before = _stored(engine)
 
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
 
         assert _stored(engine) == before
 
@@ -390,7 +398,9 @@ class TestDowngradeDecryptSecretOverrideValues:
             ],
         )
 
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
 
         stored = _stored(engine)
         assert stored[(SETTINGS_TOKEN, "PMM__api_key")] == token
@@ -400,11 +410,15 @@ class TestDowngradeDecryptSecretOverrideValues:
     def test_a_second_run_rewrites_nothing(self, engine: Engine) -> None:
         """Leave already-plaintext rows alone when a second track runs the same downgrade."""
         _seed(engine, _SECRET_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
         after_first = _stored(engine)
 
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
 
         assert _stored(engine) == after_first
 
@@ -417,7 +431,7 @@ def test_encrypted_rows_are_not_plaintext(engine: Engine) -> None:
     """
     _seed(engine, _SECRET_ROWS)
 
-    _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+    _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
     stored = _stored(engine)
     assert is_stored_ciphertext(stored[(SETTINGS_TOKEN, "PMM")]["api_key"])
@@ -901,7 +915,7 @@ class TestCredentialUrlOverrideValues:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
 
         stored = _stored(engine)[(EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
@@ -914,7 +928,7 @@ class TestCredentialUrlOverrideValues:
         _run(
             engine,
             downgrade_decrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
 
         assert _stored(engine) == before
@@ -949,12 +963,12 @@ class TestCredentialUrlOverrideValues:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
         _run(
             engine,
             downgrade_decrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
 
         row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
@@ -979,7 +993,7 @@ class TestCredentialUrlOverrideValues:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
 
         row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
@@ -992,14 +1006,14 @@ class TestCredentialUrlOverrideValues:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
         after_first = _stored(engine)
 
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _SEP_TRACK_CLASSES,
+            _EXTENSIONS_TRACK_CLASSES,
         )
 
         assert _stored(engine) == after_first
@@ -1044,7 +1058,7 @@ class TestCredentialUrlOverrideValues:
             _run(
                 engine,
                 upgrade_encrypt_credential_url_override_values,
-                _SEP_TRACK_CLASSES,
+                _EXTENSIONS_TRACK_CLASSES,
             )
 
             assert not inspect(engine).has_table("settingoverride")
@@ -1106,61 +1120,67 @@ def _replica_classes(glob: str, track: str) -> set[type[BaseModel]]:
 #: claimed here, because a hand-written table cannot fail for a leaf it was
 #: never told about.
 _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
-    ("sep", SETTINGS_TOKEN, "SECRET_KEY", "settings-secret-key", _SECRET_LEAF),
+    ("extensions", SETTINGS_TOKEN, "SECRET_KEY", "settings-secret-key", _SECRET_LEAF),
     (
-        "sep",
+        "extensions",
         SETTINGS_TOKEN,
-        "SEP_INTERNAL_TOKEN",
+        "EXTENSIONS_INTERNAL_TOKEN",
         "internal-token",
         _SECRET_LEAF,
     ),
-    ("sep", SETTINGS_TOKEN, "ENCRYPTION_KEY", "encryption-key", _SECRET_LEAF),
-    ("sep", SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY, _SECRET_LEAF),
-    ("sep", SETTINGS_TOKEN, "PMM__endpoint", _CREDENTIAL_URL, _CREDENTIAL_URL_LEAF),
+    ("extensions", SETTINGS_TOKEN, "ENCRYPTION_KEY", "encryption-key", _SECRET_LEAF),
+    ("extensions", SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY, _SECRET_LEAF),
     (
-        "sep",
+        "extensions",
+        SETTINGS_TOKEN,
+        "PMM__endpoint",
+        _CREDENTIAL_URL,
+        _CREDENTIAL_URL_LEAF,
+    ),
+    (
+        "extensions",
         SETTINGS_TOKEN,
         "CELERY__broker_url",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         SETTINGS_TOKEN,
         "CELERY__result_backend",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "DATABASE__PASSWORD",
-        "sep-db-password",
+        "extensions-db-password",
         _SECRET_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "INVENTORY_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "TASKS_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__endpoint",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__endpoint",
         _CREDENTIAL_URL,
@@ -1196,19 +1216,19 @@ _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
 #: itself, while here the credential sits one level inside it.
 _FROZEN_CONTAINER_CASES: list[tuple[str, str, str, Any]] = [
     (
-        "sep",
+        "extensions",
         ALERT_SETTINGS_TOKEN,
         "PROVIDERS",
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__secrets",
         dict(_DELIVERY_SECRETS),
     ),
     (
-        "sep",
+        "extensions",
         LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
         dict(_DELIVERY_SECRETS),
@@ -1414,7 +1434,7 @@ class TestFrozenSecretRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_secret_override_values,
-            _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+            _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
         )
 
         stored = _stored(engine)
@@ -1447,7 +1467,7 @@ class TestFrozenSecretRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_secret_override_values,
-            _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+            _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
         )
 
         assert _stored(engine) == before
@@ -1466,7 +1486,7 @@ class TestFrozenSecretRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_secret_override_values,
-            _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+            _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
         )
 
         parsed = urlparse(_stored(engine)[(SETTINGS_TOKEN, "PMM__endpoint")])
@@ -1495,7 +1515,7 @@ class TestFrozenSecretRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_secret_override_values,
-            _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+            _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
         )
 
         stored = _stored(engine)
@@ -1546,7 +1566,7 @@ class TestFrozenSecretRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_secret_override_values,
-            _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+            _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
         )
 
         assert _stored(engine)[(SNIPPETS_SETTINGS_TOKEN, "SOME_KEY")] == "value"
@@ -1556,7 +1576,7 @@ class TestFrozenSecretRevisionOutcomes:
 
     def test_a_second_run_rewrites_nothing(self, engine: Engine) -> None:
         """Keep one layer of ciphertext when the frozen classes reach the rows twice."""
-        frozen = _frozen_classes(_SECRET_REVISION_GLOB, "sep")
+        frozen = _frozen_classes(_SECRET_REVISION_GLOB, "extensions")
         _seed(engine, _LEGACY_SECRET_ROWS)
         _run(engine, upgrade_encrypt_secret_override_values, frozen)
         after_first = _stored(engine)
@@ -1567,7 +1587,7 @@ class TestFrozenSecretRevisionOutcomes:
 
     def test_round_trips_back_to_the_seeded_plaintext(self, engine: Engine) -> None:
         """Restore every seeded shape byte-identically through the frozen downgrade."""
-        frozen = _frozen_classes(_SECRET_REVISION_GLOB, "sep")
+        frozen = _frozen_classes(_SECRET_REVISION_GLOB, "extensions")
         _seed(engine, _LEGACY_SECRET_ROWS)
         before = _stored(engine)
         _run(engine, upgrade_encrypt_secret_override_values, frozen)
@@ -1617,7 +1637,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "sep"),
+            _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "extensions"),
         )
 
         stored = _stored(engine)
@@ -1650,7 +1670,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         _run(
             engine,
             upgrade_encrypt_credential_url_override_values,
-            _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "sep"),
+            _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "extensions"),
         )
 
         row = _stored(engine)[(SETTINGS_TOKEN, "PMM")]
@@ -1659,7 +1679,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
 
     def test_round_trips_back_to_the_seeded_plaintext(self, engine: Engine) -> None:
         """Restore every seeded credential URL byte-identically."""
-        frozen = _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "sep")
+        frozen = _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "extensions")
         _seed(engine, _LEGACY_CREDENTIAL_URL_ROWS)
         before = _stored(engine)
         _run(engine, upgrade_encrypt_credential_url_override_values, frozen)
@@ -1749,7 +1769,7 @@ def test_a_frozen_revision_still_covers_a_renamed_legacy_leaf(engine: Engine) ->
     _run(
         engine,
         upgrade_encrypt_secret_override_values,
-        _frozen_classes(_SECRET_REVISION_GLOB, "sep"),
+        _frozen_classes(_SECRET_REVISION_GLOB, "extensions"),
     )
 
     assert (
@@ -1803,7 +1823,7 @@ class TestDowngradeUnmarkSecretOverrideValues:
         encryption.
         """
         _seed(engine, _SECRET_ROWS + _CREDENTIAL_URL_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
         seeded = _stored(engine)
         assert (
             marked_ciphertext(seeded[(SETTINGS_TOKEN, "PMM")]["api_key"]) is not None
@@ -1812,7 +1832,7 @@ class TestDowngradeUnmarkSecretOverrideValues:
             "passes even with marking removed from the write path"
         )
 
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         stored = _stored(engine)
         api_key = stored[(SETTINGS_TOKEN, "PMM")]["api_key"]
@@ -1841,7 +1861,7 @@ class TestDowngradeUnmarkSecretOverrideValues:
             [(SETTINGS_TOKEN, "PMM", {"endpoint": PMM_ENDPOINT, "api_key": token})],
         )
 
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == token
 
@@ -1861,7 +1881,7 @@ class TestDowngradeUnmarkSecretOverrideValues:
             ],
         )
 
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == token
 
@@ -1879,25 +1899,25 @@ class TestDowngradeUnmarkSecretOverrideValues:
         )
         before = _stored(engine)
 
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine) == before
 
     def test_is_idempotent(self, engine: Engine) -> None:
         """Leave a second run with nothing to rewrite."""
         _seed(engine, _SECRET_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
         once = _stored(engine)
 
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
         assert _stored(engine) == once
 
     def test_leaves_rows_this_track_cannot_resolve_alone(self, engine: Engine) -> None:
         """Skip another track's rows, so two tracks sharing one database never collide."""
         _seed(engine, _SECRET_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
         before = _stored(engine)
 
         _run(engine, downgrade_unmark_secret_override_values, _TASKS_TRACK_CLASSES)
@@ -1908,7 +1928,11 @@ class TestDowngradeUnmarkSecretOverrideValues:
         """Return without touching anything when another track already dropped the table."""
         engine = create_engine("sqlite://", json_serializer=json_serializer)
         try:
-            _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+            _run(
+                engine,
+                downgrade_unmark_secret_override_values,
+                _EXTENSIONS_TRACK_CLASSES,
+            )
 
             assert not inspect(engine).has_table("settingoverride")
         finally:
@@ -1923,9 +1947,11 @@ class TestDowngradeUnmarkSecretOverrideValues:
         marked again only when next written.
         """
         _seed(engine, _SECRET_ROWS)
-        _run(engine, upgrade_encrypt_secret_override_values, _SEP_TRACK_CLASSES)
-        _run(engine, downgrade_unmark_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(engine, upgrade_encrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
+        _run(engine, downgrade_unmark_secret_override_values, _EXTENSIONS_TRACK_CLASSES)
 
-        _run(engine, downgrade_decrypt_secret_override_values, _SEP_TRACK_CLASSES)
+        _run(
+            engine, downgrade_decrypt_secret_override_values, _EXTENSIONS_TRACK_CLASSES
+        )
 
         assert _stored(engine)[(SETTINGS_TOKEN, "PMM")]["api_key"] == PMM_API_KEY

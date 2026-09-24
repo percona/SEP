@@ -263,7 +263,7 @@ class TasksSettings(BaseYamlAppSettings):
     HOOK_MODULE_ALLOWLIST: tuple[
         HookModuleRoot, ...
     ] = (  # ty: ignore[invalid-assignment]
-        not_overridable_field(("app.sep.apps",))
+        not_overridable_field(("app.extensions.apps",))
     )
 
     @model_validator(mode="after")

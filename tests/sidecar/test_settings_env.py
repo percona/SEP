@@ -27,8 +27,8 @@ from cryptography.fernet import Fernet
 
 from app.core.auth.config import AuthSettings
 from app.core.config import Settings
+from app.extensions.config import ExtensionsSettings
 from app.inventory.config import InventorySettings
-from app.sep.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.sidecar.conftest import SETTINGS_ENV_HELPER, SIDECAR_DIR
 

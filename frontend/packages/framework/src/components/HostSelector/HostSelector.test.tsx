@@ -27,11 +27,11 @@ import { SchemaFormRenderer } from '../SchemaFormRenderer';
 import { FormFieldsProvider } from '../SchemaFormRenderer/formFieldsContext';
 import type { FormSection } from '../SchemaFormRenderer/types';
 
-vi.mock('@sep/api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@sep/api')>()),
+vi.mock('@pmm-extensions/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pmm-extensions/api')>()),
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { ApiError, apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function makeResponse(items: Array<{ id: string; name: string; address: string }>) {

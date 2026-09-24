@@ -84,12 +84,12 @@ class TestListNodes:
     ) -> None:
         """Serve a tombstone carrying the migration's synthetic origin.
 
-        The migration stamps ``sep-legacy:<pk>`` onto a brownfield row so the
+        The migration stamps ``extensions-legacy:<pk>`` onto a brownfield row so the
         NOT NULL constraint can land. ``NodeResponse`` now requires an origin, so
         the stamped value is what keeps such a row readable at all through the
         retired-inclusive route the historical and sync paths use.
         """
-        node.external_id = f"sep-legacy:{node.id}"
+        node.external_id = f"extensions-legacy:{node.id}"
         node.source = SourceEnum.PMM
         session.add(node)
         await session.commit()
@@ -101,7 +101,7 @@ class TestListNodes:
         retired = test_client.get(f"/nodes/{node.id}", params={"include_retired": True})
         assert retired.status_code == status.HTTP_200_OK
         body = retired.json()
-        assert body["external_id"] == f"sep-legacy:{node.id}"
+        assert body["external_id"] == f"extensions-legacy:{node.id}"
         assert body["source"] == SourceEnum.PMM.value
         assert body["retired_at"] is not None
 

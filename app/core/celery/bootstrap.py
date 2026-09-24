@@ -16,7 +16,7 @@
 """Create the Celery beat schedule tables ahead of the processes that read them.
 
 The ``sqlalchemy_celery_beat`` tables are created by no alembic revision in any of
-SEP's three migration tracks: the library builds them itself, from
+PMM Extensions' three migration tracks: the library builds them itself, from
 :meth:`sqlalchemy_celery_beat.session.SessionManager.prepare_models`, which
 :class:`~sqlalchemy_celery_beat.schedulers.DatabaseScheduler` reaches on beat's
 own startup. Every service that seeds periodic tasks during its lifespan

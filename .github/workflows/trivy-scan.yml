@@ -16,7 +16,7 @@
 # re-resolved from the registry every run without asking for it.
 #
 # Do not add --pull to the app image build: it re-resolves every FROM from a
-# registry, including the localhost/sep:builder that --build-context supplies
+# registry, including the localhost/extensions:builder that --build-context supplies
 # locally, which fails as "pull access denied" for docker.io/library/sep:builder.
 
 name: Trivy scan
@@ -57,7 +57,7 @@ jobs:
         with:
           context: .
           file: Containerfile.base
-          tags: sep:builder
+          tags: extensions:builder
           load: true
           pull: true
 
@@ -67,10 +67,10 @@ jobs:
       - name: Build app image
         run: >-
           docker build
-          --build-context "localhost/sep:builder=docker-image://sep:builder"
+          --build-context "localhost/extensions:builder=docker-image://extensions:builder"
           -f sidecar/Containerfile.sidecar
           --build-arg EXTENSIONS_RESTRICT_APPS=1
-          -t "sep:HEAD" .
+          -t "extensions:HEAD" .
 
       - name: Install Trivy
         # Installer pinned to the v0.69.3 tag's commit, matching how every
@@ -90,4 +90,4 @@ jobs:
           --ignorefile .trivyignore.yaml
           --severity HIGH,CRITICAL
           --exit-code 1
-          "sep:HEAD"
+          "extensions:HEAD"

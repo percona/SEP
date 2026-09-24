@@ -5,7 +5,7 @@ PMM deployment. One `supervisord` runs the five side-car programs plus a bundled
 broker under a single PID 1, so the whole product ships as one container with
 one log stream.
 
-Build it with `make image` (tag `sep:${RELEASE_VER}`, no suffix). This is the
+Build it with `make image` (tag `extensions:${RELEASE_VER}`, no suffix). This is the
 only image PMM Extensions ships; Jenkins builds and publishes that one tag to the internal
 registry, and to Docker Hub when the build's `pushImageDocker` parameter is set.
 
@@ -16,9 +16,9 @@ the app packages the settings profile activates — see [App set](#app-set).
 
 | Input | Role |
 |---|---|
-| `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `sep:builder` wheel image. |
+| `Containerfile.sidecar` | Final stage; ships the backend only, with no frontend-builder stage, and reuses the shared `extensions:builder` wheel image. |
 | `entrypoint.sh` | PID 1. Resolves `ENCRYPTION_KEY`, mints the broker credential for the container run, resolves the side-car's Grafana service-account token, then hands off to `supervisord`. |
-| `supervisord.conf` | Runs `valkey`, four `migrate-*` one-shots, the `sep`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
+| `supervisord.conf` | Runs `valkey`, four `migrate-*` one-shots, the `extensions`/`inventory`/`tasks` APIs, and the Celery worker and beat. |
 | `wait_for_api.py` | Run by `supervisord` ahead of the beat command; holds beat until the three APIs answer `/health`, then starts it whatever the outcome. |
 | `wait_for_schema.sh` | Run by `supervisord` ahead of each API command; holds the API until all four schema one-shots have published their sentinel, and fails rather than starting it if they do not. |
 | `clear_sentinels.sh` | Never run by `supervisord`; an operator runs it before a `supervisorctl` re-run of a schema step, to invalidate that step's sentinel. See [Re-running a schema step inside a running container](#re-running-a-schema-step-inside-a-running-container). |
@@ -146,9 +146,9 @@ never ran would otherwise be indistinguishable from a passing one.
 The strip removes an app's directory and leaves its `version_locations` entry in
 `alembic.ini` alone. That combination is load-bearing, not incidental. Each app
 owning migrations is an independent Alembic branch recorded in the shared
-`alembic_version_sep` table, so a database a full image migrated carries head
+`alembic_version_extensions` table, so a database a full image migrated carries head
 rows for apps this image does not ship. `skip_unresolvable_heads` in
-`app/sep/migrations/_orphan_heads.py` drops those rows from the heads it hands
+`app/extensions/migrations/_orphan_heads.py` drops those rows from the heads it hands
 Alembic — but only when a configured `version_locations` entry contributes no
 revisions (absent from disk or present and empty), which is what a stripped
 app looks like. With every configured location present and populated, an
@@ -162,7 +162,7 @@ owning none needs no entry, and must not carry one.
 On this image an `EXTENSIONS.APPS` override can therefore only **narrow** the baked
 set, never widen it. Registry construction imports each activated module, so
 activating a package the image does not ship raises a pydantic `ValidationError`
-(wrapping `No module named app.sep.apps.<name>`) and the container fails to
+(wrapping `No module named app.extensions.apps.<name>`) and the container fails to
 start. The two surfaces that reach `EXTENSIONS.APPS` are a bind
 mount at `/home/extensions/app/settings.yaml` (which, per above, replaces the profile
 wholesale — so its `EXTENSIONS.APPS` must be a subset of the baked one) and the
@@ -230,7 +230,7 @@ Already canonical, so they are passed straight through with no expansion:
 | Input | Required | Notes |
 |---|---|---|
 | `EXTENSIONS_INTERNAL_TOKEN` | no | Authenticates internal service-to-service calls, such as the scheduled inventory sync. Derived from `SECRET_KEY` by HMAC when unset, so every process sharing the key resolves the same token. Set it explicitly only to rotate it independently of `SECRET_KEY`. |
-| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors, including its URL prefix — `https://pmm-server:8443/extensions`, not `https://pmm-server:8443`. Download URLs are joined onto its path rather than replacing it, so a value omitting the prefix yields a well-formed URL that no longer routes to SEP; startup warns when it does. *Required when tasks download scripts or artifacts. |
+| `BASE_URL` | no* | The side-car's address as reachable from Nomad task executors, including its URL prefix — `https://pmm-server:8443/extensions`, not `https://pmm-server:8443`. Download URLs are joined onto its path rather than replacing it, so a value omitting the prefix yields a well-formed URL that no longer routes to PMM Extensions; startup warns when it does. *Required when tasks download scripts or artifacts. |
 
 Any canonical variable can also be set directly — an explicit
 `TASKS__DATABASE__HOST` outranks the one derived from `EXTENSIONS_DB_HOST`. It overrides
@@ -298,7 +298,7 @@ side-car — so recreating the side-car against a surviving database is an
 ordinary path, not an exotic one.
 
 So before minting, the helper reads the `settingoverride` table in all three
-service databases (`sep`, `inventory` and `tasks`, whose endpoints may differ),
+service databases (`extensions`, `inventory` and `tasks`, whose endpoints may differ),
 walking each stored value's JSON *leaves* rather than the row — the ciphertext
 sits inside lists and nested mappings, where a check against the row's own
 value finds nothing. It mints only if none of the three holds ciphertext under
@@ -541,7 +541,7 @@ The sentinels matter because a failed `alembic upgrade` ends in `EXITED` — the
 same state a successful one reaches — so program state alone cannot distinguish
 them.
 
-The same four sentinels gate the API programs: each runs `wait_for_schema.sh sep
+The same four sentinels gate the API programs: each runs `wait_for_schema.sh extensions
 inventory tasks beat` before `exec`-ing its app, so no API starts against a
 database whose schema has not been applied. The gate is uniform — `inventory`
 reads no beat table, but container health already requires all three APIs to
@@ -579,11 +579,11 @@ first, then restart that one-shot together with the API programs:
 ```
 docker exec <container> /home/extensions/app/clear_sentinels.sh sep
 docker exec <container> supervisorctl -c /home/extensions/app/supervisord.conf \
-    restart migrate-sep sep inventory tasks
+    restart migrate-extensions extensions inventory tasks
 ```
 
 If the step owns tables Celery reads, **stop the Celery programs before that
-clear** and start them again only once `/tmp/migrate-sep.ok` has reappeared:
+clear** and start them again only once `/tmp/migrate-extensions.ok` has reappeared:
 
 ```
 docker exec <container> supervisorctl -c /home/extensions/app/supervisord.conf \
@@ -602,9 +602,9 @@ sentinel is cleared there is nothing stale left to observe and the order stops
 mattering.
 
 **Name every step you are re-running, in one call** — `clear_sentinels.sh sep
-tasks`, then `restart migrate-sep migrate-tasks sep inventory tasks`. The script
+tasks`, then `restart migrate-extensions migrate-tasks extensions inventory tasks`. The script
 takes the bare step names the gate takes, not `supervisord` program names:
-`migrate-sep` is refused.
+`migrate-extensions` is refused.
 
 **Continue only if the clear exits 0.** A non-zero exit on an unrecognized name
 has removed nothing at all, so fix the name and re-run. A non-zero exit from `rm`
@@ -641,7 +641,7 @@ would be by a restart.
 because `healthcheck.sh` asserts all four. A re-run taking longer than roughly
 75-80s therefore surfaces as an unhealthy container until it finishes.
 
-**Expected output.** `migrate-sep: ERROR (not running)` from the stop half is
+**Expected output.** `migrate-extensions: ERROR (not running)` from the stop half is
 normal for a one-shot that has already exited, and leaves the command's exit
 status unchanged. The one-shot's own `started` or `ERROR (abnormal termination)`
 line is not its verdict either — a step that exits promptly is reported that way

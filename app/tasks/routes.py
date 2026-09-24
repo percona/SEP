@@ -745,7 +745,7 @@ async def create_task_history(session: SessionDep, task: TaskHistory) -> TaskHis
 
     A caller-supplied ``failure_reason`` is routed back through
     :meth:`TaskHistory.set_failure_reason` so the single-line and length bounds
-    hold on every write path, not only on the reasons SEP composes itself.
+    hold on every write path, not only on the reasons PMM Extensions composes itself.
 
     The saved row is re-read with ``task`` joined and ``execution_request``
     undeferred: ``save`` re-defers that column, and the response model requires

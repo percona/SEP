@@ -29,7 +29,7 @@ from sqlalchemy import create_engine, inspect
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
 
-_LEGACY_PREFIX = "sep-legacy:"
+_LEGACY_PREFIX = "extensions-legacy:"
 
 _INSERT_NODE = (
     "INSERT INTO node "

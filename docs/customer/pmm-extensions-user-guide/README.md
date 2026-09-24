@@ -172,7 +172,7 @@ configuration.
 **What it runs:** `**pbm backup`** (`--type logical` or `--type physical`), `**pbm config`**
 to apply storage/PITR settings, and `**pbm status`** to report state. Requires PBM CLI and a
 MongoDB connection URI configured on the target node (see the app's
-[README](../../../app/sep/apps/backup_mongo/README.md) for prerequisites).
+[README](../../../app/extensions/apps/backup_mongo/README.md) for prerequisites).
 
 **Root requirements:** no
 

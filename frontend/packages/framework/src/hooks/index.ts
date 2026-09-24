@@ -88,4 +88,4 @@ export type { TaskStatsView } from './useTaskStats';
 
 export { useDebouncedValue, SEARCH_DEBOUNCE_MS } from './useDebouncedValue';
 
-export { sepRetry } from './sepRetry';
+export { extensionsRetry } from './extensionsRetry';

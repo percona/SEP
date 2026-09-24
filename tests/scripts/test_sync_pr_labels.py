@@ -89,11 +89,11 @@ def test_report_app_assets_resolve_through_labeler_globs():
     """Map the report app's own template and asset files to ``app:report``.
 
     The PDF template and its logo live inside the app now, so they are covered
-    by the plain ``app/sep/apps/report/**`` glob rather than a template alias.
+    by the plain ``app/extensions/apps/report/**`` glob rather than a template alias.
     """
     for path in (
-        "app/sep/apps/report/templates/result_pdf.html.j2",
-        "app/sep/apps/report/assets/percona-logo.png",
+        "app/extensions/apps/report/templates/result_pdf.html.j2",
+        "app/extensions/apps/report/assets/percona-logo.png",
     ):
         assert sync_pr_labels.app_of(path, _APP_GLOBS) == "app:report"
 
@@ -135,7 +135,7 @@ def test_suffixed_e2e_spec_matches_the_app_label():
 def test_match_glob_supports_directory_and_wildcard_patterns():
     """Support ``/**`` directory globs and single-segment ``*`` wildcards."""
     assert sync_pr_labels.match_glob(
-        "app/sep/apps/report/**", "app/sep/apps/report/routes.py"
+        "app/extensions/apps/report/**", "app/extensions/apps/report/routes.py"
     )
     assert sync_pr_labels.match_glob(
         "frontend/packages/e2e/tests/report*.spec.ts",
@@ -148,13 +148,13 @@ def test_is_generated_discounts_lockfiles_and_generated_api_paths():
     assert sync_pr_labels.is_generated("poetry.lock")
     assert sync_pr_labels.is_generated("frontend/pnpm-lock.yaml")
     assert sync_pr_labels.is_generated("frontend/packages/api/src/generated/client.ts")
-    assert not sync_pr_labels.is_generated("app/sep/apps/report/routes.py")
+    assert not sync_pr_labels.is_generated("app/extensions/apps/report/routes.py")
 
 
 def test_compute_blast_radius_marks_a_single_app_pr_as_isolated():
     """Mark a PR confined to one app slice as ``app-isolated``."""
     files = [
-        _file("app/sep/apps/report/a.py", additions=1),
+        _file("app/extensions/apps/report/a.py", additions=1),
         _file("frontend/packages/apps/report/b.ts", additions=2),
     ]
     result = sync_pr_labels.compute_blast_radius(files, _APP_GLOBS)
@@ -166,11 +166,11 @@ def test_compute_blast_radius_marks_a_single_app_pr_as_isolated():
     "filenames",
     [
         pytest.param(
-            ["app/sep/apps/report/a.py", "app/sep/apps/alerts/b.py"],
+            ["app/extensions/apps/report/a.py", "app/extensions/apps/alerts/b.py"],
             id="two-app-slices",
         ),
         pytest.param(
-            ["app/sep/apps/report/a.py", "app/core/x.py"],
+            ["app/extensions/apps/report/a.py", "app/core/x.py"],
             id="app-slice-plus-cross-cutting",
         ),
         pytest.param([".github/labeler.yml"], id="cross-cutting-only"),
@@ -187,20 +187,24 @@ def test_compute_blast_radius_rejects_mixed_app_and_cross_cutting_prs(filenames)
 
 def test_compute_blast_radius_applies_threshold_with_generated_discount():
     """Apply the 1500-line threshold and discount generated paths."""
-    at_threshold = [_file("app/sep/apps/report/a.py", additions=1000, deletions=500)]
+    at_threshold = [
+        _file("app/extensions/apps/report/a.py", additions=1000, deletions=500)
+    ]
     assert (
         sync_pr_labels.compute_blast_radius(at_threshold, _APP_GLOBS).large_diff
         is False
     )
 
-    over_threshold = [_file("app/sep/apps/report/a.py", additions=1000, deletions=501)]
+    over_threshold = [
+        _file("app/extensions/apps/report/a.py", additions=1000, deletions=501)
+    ]
     assert (
         sync_pr_labels.compute_blast_radius(over_threshold, _APP_GLOBS).large_diff
         is True
     )
 
     discounted = [
-        _file("app/sep/apps/report/a.py", additions=100),
+        _file("app/extensions/apps/report/a.py", additions=100),
         _file("frontend/packages/api/src/generated/x.ts", additions=5000),
         _file("poetry.lock", additions=9000),
     ]
@@ -645,7 +649,11 @@ def test_list_pr_files_walks_every_page(monkeypatch):
     """Follow pagination until a short page ends the walk."""
     page_size = sync_pr_labels.GITHUB_PAGE_SIZE
     full_page = [
-        {"filename": f"app/sep/apps/report/f{index}.py", "additions": 1, "deletions": 0}
+        {
+            "filename": f"app/extensions/apps/report/f{index}.py",
+            "additions": 1,
+            "deletions": 0,
+        }
         for index in range(page_size)
     ]
     last_page = [{"filename": "app/core/x.py", "additions": 2, "deletions": 3}]
@@ -844,7 +852,7 @@ def test_main_fetches_the_file_list_once_and_feeds_both_label_syncs(
         "- any:\n"
         "  - changed-files:\n"
         "    - any-glob-to-any-file:\n"
-        "      - 'app/sep/apps/demo/**'\n",
+        "      - 'app/extensions/apps/demo/**'\n",
         encoding="utf-8",
     )
     recorded = _patch_urlopen_routes(

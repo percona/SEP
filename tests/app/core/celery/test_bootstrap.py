@@ -37,7 +37,7 @@ MAKEFILE = BASE_DIR / "Makefile"
 """The developer entry point this module asserts drives the bootstrap."""
 
 OVERRIDDEN_STORE = "postgresql+psycopg2://beat:{password}@beat-store.example:6543/beat"
-"""A beat store deliberately unlike the SEP database, for the override cases."""
+"""A beat store deliberately unlike the PMM Extensions database, for the override cases."""
 
 REFUSALS_BEFORE_THE_STORE_ANSWERS = 2
 """Connection attempts the flaky-store cases turn away before accepting one.
@@ -376,7 +376,7 @@ def test_readiness_follows_an_overridden_store(
     refuse_then_accept: Callable[[], int],
     caplog: pytest.LogCaptureFixture,
 ):
-    """Wait on the store ``CELERY__BEAT_DBURI`` names, not the SEP database.
+    """Wait on the store ``CELERY__BEAT_DBURI`` names, not the PMM Extensions database.
 
     Pointing beat at a separate store is a documented deployment input, so a
     readiness wait keyed on ``EXTENSIONS_DB_HOST`` would watch the wrong host.

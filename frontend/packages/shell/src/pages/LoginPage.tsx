@@ -27,7 +27,7 @@ import CardContent from '@mui/material/CardContent';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import { ApiError } from '@sep/api';
+import { ApiError } from '@pmm-extensions/api';
 import { useAuth } from '../contexts/auth';
 
 interface LoginFormValues {

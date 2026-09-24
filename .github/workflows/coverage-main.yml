@@ -42,7 +42,7 @@ jobs:
 
       - name: Run tests
         env:
-          SEP_PAYLOAD_CHECK_PYTHON: ${{ steps.py39.outputs.python-path }}
+          EXTENSIONS_PAYLOAD_CHECK_PYTHON: ${{ steps.py39.outputs.python-path }}
         run: make test
 
       - name: Store coverage data on data branch

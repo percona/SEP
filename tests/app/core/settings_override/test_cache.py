@@ -40,7 +40,7 @@ from app.core.settings_override.cache import (
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.registry import MaterializerPurpose
 from app.core.utils.fields import LogLevel
-from app.sep.config import CookieOptions, ExtensionsSettings
+from app.extensions.config import CookieOptions, ExtensionsSettings
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from tests.app.core.settings_override.conftest import (

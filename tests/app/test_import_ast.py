@@ -15,7 +15,7 @@
 
 """Check the import resolution both boundary guards read their verdicts from.
 
-The two guards that consume this -- :mod:`tests.app.sep.test_import_boundary`
+The two guards that consume this -- :mod:`tests.app.extensions.test_import_boundary`
 and :mod:`tests.app.test_factories_boundary` -- assert on classified paths, so a
 resolution that silently returns the wrong package reads as a clean tree in
 both. The relative levels are therefore pinned here directly, past the depth any
@@ -50,13 +50,13 @@ class TestAbsoluteBase:
         ("source", "expected"),
         [
             pytest.param(
-                "from app.sep.apps.atw.models import AtwIncident",
-                "app.sep.apps.atw.models",
+                "from app.extensions.apps.atw.models import AtwIncident",
+                "app.extensions.apps.atw.models",
                 id="absolute-is-returned-unchanged",
             ),
             pytest.param(
                 "from .sep.apps import atw",
-                "tests.app.sep.apps",
+                "tests.app.extensions.apps",
                 id="one-dot-anchors-at-the-package",
             ),
             pytest.param(
@@ -121,7 +121,9 @@ class TestAbsoluteBase:
         self, source: str, expected: str | None
     ) -> None:
         """Climb as many levels as the importing package has segments, and no more."""
-        assert absolute_base(_import_from(source), "app.sep.apps.atw") == expected
+        assert (
+            absolute_base(_import_from(source), "app.extensions.apps.atw") == expected
+        )
 
 
 class TestPackageOf:
@@ -133,8 +135,8 @@ class TestPackageOf:
             pytest.param("tests/app/factories.py", "tests.app", id="module"),
             pytest.param("tests/app/__init__.py", "tests.app", id="package-init"),
             pytest.param(
-                "tests/app/sep/apps/atw/factories.py",
-                "tests.app.sep.apps.atw",
+                "tests/app/extensions/apps/atw/factories.py",
+                "tests.app.extensions.apps.atw",
                 id="nested-module",
             ),
         ],

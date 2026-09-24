@@ -58,9 +58,9 @@ The UI does not submit arbitrary shell commands. PMM Extensions uses two main ex
 
 **Checksums example (canonical Path B):**
 
-1. **Create:** `POST /api/apps/checksums/` — `build_checksums_spec` assembles `pt-table-checksum` with args from inventory (`app/sep/apps/checksums/spec.py`), with the legacy Jinja form path using (`app/sep/apps/checksums/deps.py`, `_assemble_checksum_payload`).
+1. **Create:** `POST /api/apps/checksums/` — `build_checksums_spec` assembles `pt-table-checksum` with args from inventory (`app/extensions/apps/checksums/spec.py`), with the legacy Jinja form path using (`app/extensions/apps/checksums/deps.py`, `_assemble_checksum_payload`).
 2. **Persist:** `POST /api/tasks/` — task row with `owner=CHECKSUMS`, `backend=PROXY`, `data.task=run-command`.
-3. **Execute:** `POST /api/apps/checksums/{task_name}/execute` — body may only contain `eta`, `chain_task_names`, `chain_on_failure`; command comes from stored task (`app/sep/apps/framework/api.py`, `derive_execute_route`, which posts to `POST /api/tasks/execute/{task_name}`).
+3. **Execute:** `POST /api/apps/checksums/{task_name}/execute` — body may only contain `eta`, `chain_task_names`, `chain_on_failure`; command comes from stored task (`app/extensions/apps/framework/api.py`, `derive_execute_route`, which posts to `POST /api/tasks/execute/{task_name}`).
 
 The same two-phase pattern applies to **alters** (`command: pt-online-schema-change`).
 
@@ -84,7 +84,7 @@ Optional **Presidio anonymization** may mask log content when `anonymize_mask` i
 
 | Store | Access |
 |-------|--------|
-| **Tasks PostgreSQL** (`taskhistory`, `taskhistory_log`) | Any **authenticated** OAuth user can read task history and logs by ID. A separate `SEP_INTERNAL_TOKEN` service principal (synthetic non-admin user `sep-service`, id `00000000-0000-4000-8000-000000000000`) can authenticate for service-to-service calls and has the same read scope as a regular authenticated user. General list/retrieve APIs do **not** filter by `executed_by`. |
+| **Tasks PostgreSQL** (`taskhistory`, `taskhistory_log`) | Any **authenticated** OAuth user can read task history and logs by ID. A separate `EXTENSIONS_INTERNAL_TOKEN` service principal (synthetic non-admin user `extensions-service`, id `00000000-0000-4000-8000-000000000000`) can authenticate for service-to-service calls and has the same read scope as a regular authenticated user. General list/retrieve APIs do **not** filter by `executed_by`. |
 | **PMM** | Users with PMM annotation access for the environment. |
 | **Infrastructure logs** | Platform operators with access to the deployment log pipeline. |
 | **Snippet approval** | **Admin** users only. Single approve: `PUT /api/apps/snippets/snippet/approval?snippet_filename=...`. Bulk approve: `PATCH /api/apps/snippets/approvals`. Both gated via the `ApiAdminUser` dependency. |
@@ -131,22 +131,22 @@ Commit the updated `.mmd` sources with any README/checklist changes. The PDF und
 | DFD node | Source (representative) |
 |----------|-------------------------|
 | P1 Session exchange | `app/api/routes/oauth.py` (`spa_session_exchange`) |
-| P2 PMM Extensions bearer validation | `app/sep/deps.py` (`get_current_user`), `app/core/auth/providers/grafana/models.py` (`GrafanaUser.from_bearer`) |
+| P2 PMM Extensions bearer validation | `app/extensions/deps.py` (`get_current_user`), `app/core/auth/providers/grafana/models.py` (`GrafanaUser.from_bearer`) |
 | P3 PMM Extensions UI | `frontend/packages/shell/` (React 18 SPA — entry `src/main.tsx`, auth context `src/contexts/auth.tsx`). App UIs live under `frontend/packages/apps/{name}/` and `frontend/packages/framework/` (shared schema-driven UI). |
-| P4a Snippets app API | `app/sep/apps/snippets/app.py` (declarative `TaskExecutionApp`), `script_source.py` (`snippet_source` — derives list/schema/history/execute); auxiliary verbs (approval, refresh, preview) in `extra_routes.py` |
-| P4b Proxy app create (checksums) | `app/sep/apps/checksums/app.py` (declarative `TaskExecutionApp`), `spec.py` (`build_checksums_spec`), `models.py` (`ChecksumsForm`); create route derived by `app/sep/apps/framework/api.py` (`derive_crud_routes`) |
-| P4c Proxy app execute (checksums) | `app/sep/apps/framework/api.py` (`derive_execute_route`), enabled via `app/sep/apps/checksums/app.py` (`AppCapabilities(execute=True)`) |
+| P4a Snippets app API | `app/extensions/apps/snippets/app.py` (declarative `TaskExecutionApp`), `script_source.py` (`snippet_source` — derives list/schema/history/execute); auxiliary verbs (approval, refresh, preview) in `extra_routes.py` |
+| P4b Proxy app create (checksums) | `app/extensions/apps/checksums/app.py` (declarative `TaskExecutionApp`), `spec.py` (`build_checksums_spec`), `models.py` (`ChecksumsForm`); create route derived by `app/extensions/apps/framework/api.py` (`derive_crud_routes`) |
+| P4c Proxy app execute (checksums) | `app/extensions/apps/framework/api.py` (`derive_execute_route`), enabled via `app/extensions/apps/checksums/app.py` (`AppCapabilities(execute=True)`) |
 | PROXY meta merge | `app/tasks/deps.py` (`prepare_task_history`, lines ~191–193) |
 | P5 Tasks API | `app/tasks/routes.py` (`execute_task_name`), `app/tasks/deps.py` |
 | D4 Task definitions | `task` table via `POST /api/tasks/`; seed template `run-command` in `app/tasks/db/seed.py` |
-| Inventory (Path B) | `app/sep/apps/checksums/deps.py` (`get_created_entity` for services/schemas/tables) |
+| Inventory (Path B) | `app/extensions/apps/checksums/deps.py` (`get_created_entity` for services/schemas/tables) |
 | P6 Celery worker | `app/tasks/celery.py` (`dispatch_queue_item`) |
 | P7 Nomad executor | `app/tasks/execution/executors/nomad/models.py` |
 | P8 Record attribution | `app/tasks/deps.py` (`prepare_task_history`) |
 | P9 Persist logs | `app/tasks/logs/log_writer.py`, `app/tasks/crud.py` |
 | P10 PMM annotations | `app/core/pmm.py` |
 | P11 HTTP request context | `app/core/middleware/log_context.py`, `app/api/deps.py` |
-| D1 Snippet store | `app/sep/snippets/`, snippet approval in DB |
+| D1 Snippet store | `app/extensions/snippets/`, snippet approval in DB |
 | D2 Tasks PostgreSQL | `app/tasks/models.py`, `app/tasks/db/` |
 | D3 Nomad runtime | Nomad allocation logs/files (fetched via Nomad API) |
 | mTLS / TLS transport | PMM's Nginx fronts PMM Extensions (HTTPS termination is PMM-owned). PMM Extensions-internal mTLS: `app/core/requests/remote_api.py` (SSL context builder); inter-service certs at `/data/certs/sep/*`. Nomad mTLS: client cert and CA at `/data/certs/nomad/`. For external-Nomad deployments these are customer-supplied. |

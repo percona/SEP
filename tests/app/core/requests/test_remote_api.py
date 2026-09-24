@@ -58,7 +58,7 @@ from app.core.utils.fields import (
     PRESERVE_CREDENTIALS_CONTEXT,
     strip_credential_url_userinfo,
 )
-from app.sep.clients.pmm import PMMRemoteAPI
+from app.extensions.clients.pmm import PMMRemoteAPI
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 from tests.app.scan_recording import ScanRecordingBytearray
 
